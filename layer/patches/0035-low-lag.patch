@@ -65,7 +65,7 @@ index e3a6d011c2c371dfbffa6188dcba3346b465346a..881f18dbc804ca26a5f25acca8394ba3
      dm_fps_lock_tick();   // after the frame step: at 120 fps the target follows the hold just decided
      static uint64_t prev_in, prev_out, prev_pass, prev_draw;
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 9d9fa55f1114ea40770abc23fe3e82c9676bb6f6..60811435c672b5ec3f72a8b0e0f5f8822d6b81b9 100644
+index 8510429f1ae77aa43cd2f29e07a1d14560bd7980..6da7b04c1490e3704cf35f30db4eecea1b6ab6dc 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -156,6 +156,7 @@ static void ext_retire(NSArray *textures);

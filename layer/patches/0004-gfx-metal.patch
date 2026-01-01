@@ -390,7 +390,7 @@ index 91409123500f835373df42180aab9f8641194bfc..ae5d314aa53309e42cbe96e44c94cf4f
  void mtl_set_depth_zero(int on);          // NVN depth mode: 1 = near is 0 (D3D / Metal), 0 = near is -w (GL, NVN's default); picks the vertex shaders' entry point (see shader_load in nvn_mtl.m)
  void mtl_set_origin_lower_left(int on);   // NVN window origin: 1 = lower left (GL, NVN's default), 0 = upper left (D3D / Metal); see nvn_mtl.m
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 5a2d943ad8455f55e9fc5b9da4faf03aaecb25e7..c4dd437b706a5865a9aebf8bde7a8cf886de2f1e 100644
+index 5a2d943ad8455f55e9fc5b9da4faf03aaecb25e7..3e75352ff54812ef5ad917635339917ac942a914 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3,6 +3,13 @@
@@ -2155,7 +2155,7 @@ index 5a2d943ad8455f55e9fc5b9da4faf03aaecb25e7..c4dd437b706a5865a9aebf8bde7a8cf8
 +    int pf = pfx_mode();
 +    // The picture fills dst unflipped: MetalFX may write dst itself, as the pass would only copy its output 1:1 (fx_encode). NXForge: only when the pass has nothing of its own to add
 +    // (no present filter, and an SDR drawable: EDR highlights are the pass's)
-+    int direct = direct_ok && full && !flipped && pf == DM_PFX_OFF && dst.pixelFormat != MTLPixelFormatRGBA16Float;
++    int direct = direct_ok && full && !flipped && pf == DM_PFX_OFF && dst.pixelFormat != MTLPixelFormatRGBA16Float && dst.storageMode == MTLStorageModePrivate;   // MetalFX writes only private textures
 +    id<MTLTexture> up = fx && !px && (pf == DM_PFX_OFF || pf == DM_PFX_SHARPEN) && mtl_present_scale() != DM_PSCALE_INTEGER
 +        ? fx_encode(fx, cb, tex, r, vp, dst.pixelFormat, fx == &g_fx_present, direct ? dst : nil, &wrote) : nil;
      if (wrote) return PRESENT_METALFX;
