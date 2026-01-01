@@ -18,7 +18,7 @@ Check: make -C dm/gfx/tests GAME=<id> check_t_rt_lossy (Mac).
  create mode 100644 dm/gfx/tests/t_rt_lossy.m
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 0dcdd5a0a27e868ac4911bedc8fd26f00d40770e..a612423dd6375ecb5b0d95155351283d34c8d324 100644
+index 0dcdd5a0a27e868ac4911bedc8fd26f00d40770e..4b81cf3854f0b90ad7da29125895a4fc863a1f00 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3338,6 +3338,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
@@ -51,7 +51,7 @@ index 0dcdd5a0a27e868ac4911bedc8fd26f00d40770e..a612423dd6375ecb5b0d95155351283d
          mt = image_texture(t, d);
          if (!mt) mt = pool_heap_texture(t, d);
 -        if (!mt) { mt = rh_texture(t, d); if (!mt) mt = [g_dev newTextureWithDescriptor:d];
-+        if (!mt) { rt_lossy_apply(d); mt = rh_texture(t, d);   // NXForge: DM_NVN_RT_LOSSY if (!mt) mt = [g_dev newTextureWithDescriptor:d];
++        if (!mt) { rt_lossy_apply(d); mt = rh_texture(t, d); if (!mt) mt = [g_dev newTextureWithDescriptor:d];   // NXForge: rt_lossy_apply, DM_NVN_RT_LOSSY
              if (mt) { res_add(mt); if (!tex_init_fill(t, mt)) tex_zero_fill(mt); } }
          if (!mt) { RED_ONCE(2, "failed to create MTLTexture %ux%u format %#x target %d", t->d.width, t->d.height, t->d.format, t->d.target); return nil; }
      }
