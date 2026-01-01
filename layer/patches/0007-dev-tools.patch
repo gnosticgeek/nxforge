@@ -5,7 +5,6 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
  dm/tools/lint_c_baseline.tsv         | 17 +++++++++++++----
- dm/tools/lint_python_baseline.tsv    |  1 +
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
  dm/tools/tests/test_regress.py       | 14 +++++++-------
@@ -13,7 +12,7 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 19 ++++++++++---------
- 9 files changed, 64 insertions(+), 30 deletions(-)
+ 8 files changed, 63 insertions(+), 30 deletions(-)
 
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
 index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..c4ae3b59eee9ae1f916cc7e53f25458584afd886 100644
@@ -85,18 +84,6 @@ index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..c4ae3b59eee9ae1f916cc7e53f254585
  dm/host/tests/t_hid.c	bugprone-unsafe-functions	1
  dm/host/tests/t_hid.c	clang-analyzer-unix.Errno	1
  dm/host/tests/t_movie_vpx.c	clang-analyzer-core.UndefinedBinaryOperatorResult	1
-diff --git a/dm/tools/lint_python_baseline.tsv b/dm/tools/lint_python_baseline.tsv
-index ad81da4a0df8201f813cc494a159964d0b828215..076ce3c0348204ab41827b235134a13ade1c8848 100644
---- a/dm/tools/lint_python_baseline.tsv
-+++ b/dm/tools/lint_python_baseline.tsv
-@@ -194,6 +194,7 @@ pyright	scripts/build_ipa_from_nsp.py	reportArgumentType	1	Argument of type "str
- pyright	scripts/build_ipa_from_nsp.py	reportCallIssue	1	Argument expression after ** must be a mapping with a "str" key type
- pyright	scripts/build_ipa_from_nsp.py	reportCallIssue	1	No overloads for "__init__" match the provided arguments Argument types: (Unknown, str, str, str, str, **dict[str | ((n: Unknown) -> (Unknown | None)), str])
- pyright	scripts/build_ipa_from_nsp.py	reportOptionalOperand	1	Operator "-" not supported for "None"
-+ruff	dm/gfx/tools/dmsh_entry.py	F401	1	`dmsh_fetch` imported but unused
- ruff	dm/gfx/tools/shader_split.py	B006	1	Do not use mutable data structures for argument defaults
- ruff	dm/gfx/tools/shader_split.py	B023	1	Function definition does not bind loop variable `c`
- ruff	dm/gfx/tools/shader_split.py	B023	1	Function definition does not bind loop variable `order`
 diff --git a/dm/tools/tests/test_bench.py b/dm/tools/tests/test_bench.py
 index c299b03aa45c0d61c3ed1132b70fe5bbd1c43c0e..cce5b8009c5a42268ca0b2cdcf012aaa1cbba23d 100644
 --- a/dm/tools/tests/test_bench.py

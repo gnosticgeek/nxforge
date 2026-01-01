@@ -9,30 +9,30 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/gfx/tests/test_dmsh_ampere_mem.py          |   2 +-
  dm/gfx/tools/c1_guard.py                      |  22 ++--
  dm/gfx/tools/cb_extent.py                     |  10 +-
- dm/gfx/tools/dmsh_build.py                    |  78 ++++++++++---
- dm/gfx/tools/dmsh_mtlcache.py                 |  75 ++++++++++--
+ dm/gfx/tools/dmsh_build.py                    |  84 ++++++++++----
+ dm/gfx/tools/dmsh_mtlcache.py                 |  76 ++++++++++--
  dm/gfx/tools/dmsh_pch.py                      |  52 ++++++++-
  dm/gfx/tools/own_compilers.py                 |  41 ++++++-
  dm/gfx/tools/pso_offline.py                   | 109 ++++++++++++++++--
  dm/gfx/tools/shader_split.py                  |  85 ++++++++++++--
  dm/gfx/tools/vk_shaders.py                    |  12 +-
  dm/tools/fuzz/fuzz_shader_split.py            |  12 +-
- dm/tools/shader_cache.py                      |  18 +++
+ dm/tools/shader_cache.py                      |  21 +++-
  dm/tools/tests/test_own_compilers.py          |  33 ++++++
  dm/tools/tests/test_pso_offline.py            |  54 ++++++++-
  dm/tools/tests/test_shader_pch.py             |  16 ++-
  dm/tools/tests/test_shader_toolchain_cache.py |  64 +++++++++-
- 17 files changed, 594 insertions(+), 91 deletions(-)
+ 17 files changed, 601 insertions(+), 94 deletions(-)
 
 diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
-index f881b2f64278366a368efb3ddc9a4d22725bdd60..af50e5afcc9131249836a89e95157cfa1f927b3f 100644
+index f881b2f64278366a368efb3ddc9a4d22725bdd60..5d0bd8d20096f1c3e242b40da067526016ca6e53 100644
 --- a/dm/gfx/nvn/dmsh_chain.h
 +++ b/dm/gfx/nvn/dmsh_chain.h
 @@ -1,3 +1,3 @@
  // Generated file (dm/gfx/tools/dmsh_chain.py --header): the B shader library translation chain version this source tree expects (default options), one for every game;
  // the host loads only <library dir>/b-<V>/. Run dmsh_chain.py --header after changing the chain's tools and commit this file with the change
 -#define DMSH_CHAIN "94ec9a118fb3"
-+#define DMSH_CHAIN "90544e48dcd5"
++#define DMSH_CHAIN "75e7e527f49c"
 diff --git a/dm/gfx/tests/test_dmsh_ampere_mem.py b/dm/gfx/tests/test_dmsh_ampere_mem.py
 index ddddba2e796d76a564ce095732eb6ab3283ed579..f57fcd71dd59b2f3d6c26634b1b4d2193aef5b42 100644
 --- a/dm/gfx/tests/test_dmsh_ampere_mem.py
@@ -129,7 +129,7 @@ index 878932666fed6a57b8a003b2915c2b09a93bae62..280c0a0efdc61aeb3063a1b55b7bfa4d
  
  
 diff --git a/dm/gfx/tools/dmsh_build.py b/dm/gfx/tools/dmsh_build.py
-index 192673331442fe97d91d35a51029023ab01c5972..c7fd4ca54a037be8adba799ad52b6f0956d3bf2d 100644
+index 192673331442fe97d91d35a51029023ab01c5972..2b9a0022f49d8ee37385b2d7268f1433534f5f0d 100644
 --- a/dm/gfx/tools/dmsh_build.py
 +++ b/dm/gfx/tools/dmsh_build.py
 @@ -7,7 +7,7 @@
@@ -320,7 +320,32 @@ index 192673331442fe97d91d35a51029023ab01c5972..c7fd4ca54a037be8adba799ad52b6f09
      return False
  DONE = collections.Counter()
  def fin(key, wb):
-@@ -1093,6 +1134,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
+@@ -1003,7 +1044,8 @@ COUNTERS = (PRE_STATS, VIN_STATS, PULL_STATS, SIDE_STATS, BF_STATS, MTL.stats)
+ def worker_start():
+     global PROGRESS, STORE
+     assert SERVED is not None
+-    STORE = MTL.store = SERVED.worker()
++    STORE = SERVED.worker()
++    MTL.store = SERVED_MTL.worker() if SERVED_MTL else MTL.store   # NXForge: the shared Metal cache is a file of its own (MTL_STORE), served the same way
+     PROGRESS = None   # this build writes it, as the workers' shaders finish
+ def fin_worker(key, wb, job, err):
+     """fin in a worker process, given what translate left for the shader in this process (its job and c1, its translator error) → (fin's result, what it added to the counters)"""
+@@ -1027,12 +1069,13 @@ def results(fs):   # → what fin returned for them, in their order (a worker's
+         out.append(r)
+     return out
+ SERVED = shader_cache.Served(STORE, PROCS) if PROCS and keys else None
++SERVED_MTL = shader_cache.Served(MTL_STORE, PROCS) if SERVED else None   # NXForge: a worker no more opens metallib.db than cas.db (GitHub issue #2354)
+ px = cf.ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context('fork'), initializer=worker_start) if PROCS and keys else None
+ if px:
+     if 'mac' in TARGETS: dmsh_pch.header(MAC_RUN + METAL_DEPTH)
+     if IOSOUT: dmsh_pch.header(ios_metal.METAL + ios_metal.DEPTH)
+     px.submit(int).result()   # forks every worker now, while this process has no other thread
+-    assert SERVED is not None; SERVED.start()
++    assert SERVED is not None and SERVED_MTL is not None; SERVED.start(); SERVED_MTL.start()
+ # Two phases: paired vertex shaders read their pixel shaders' MSL (vs_pad), so they go last, in batches of their own, once every shader before them is finished. The next batch is
+ # translated while this one is finished, and handed out before this one is done, so that no worker waits for the slowest shader of a batch; a batch's working folder goes when it is done
+ batches = [b[i:i + BATCH] for b in ([k for k in keys if k not in PAIRS], [k for k in keys if k in PAIRS]) for i in range(0, len(b), BATCH)]
+@@ -1093,6 +1136,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
        f'{PULL_STATS["no stage input"]} vertex shaders without stage inputs (none needed)')
  print('mesh libraries (<vertex>_<geometry>_m3, dmsh_mesh.py): ' + (', '.join(f'{k} {v}' for k, v in MESH_STATS.items()) or 'none'))
  print(MTL.summary())
@@ -328,7 +353,7 @@ index 192673331442fe97d91d35a51029023ab01c5972..c7fd4ca54a037be8adba799ad52b6f09
  for lvl in [k for k in st if k != 'ok']:
      for e, n in collections.Counter(r[2] for r in res if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
  ok = [r[3] for r in res if r[1] == 'ok']
-@@ -1128,7 +1170,7 @@ if PROGRESS:
+@@ -1128,7 +1172,7 @@ if PROGRESS:
      except FileNotFoundError: pass
  if not want:
      for _tool, _table in (('c1_guard.py', 'c1_full.tsv'), ('cb_extent.py', 'cb_extent.tsv')):
@@ -338,7 +363,7 @@ index 192673331442fe97d91d35a51029023ab01c5972..c7fd4ca54a037be8adba799ad52b6f09
          print(f'{_table}: {(_r.stdout.strip().splitlines() or [""])[-1]}', flush=True)
  elif STAMP_BEFORE != INPUTS: print(f'no library stamp: the profile\'s inputs changed since the last full build ({STAMP_BEFORE} → {INPUTS}), and a partial build does not rebuild the rest', flush=True)
 diff --git a/dm/gfx/tools/dmsh_mtlcache.py b/dm/gfx/tools/dmsh_mtlcache.py
-index a50453bc8bc536e48c0eee5bf45dd81b4dff7d48..b00894e8c91865358cf3a86953fabf8aea96b273 100644
+index a50453bc8bc536e48c0eee5bf45dd81b4dff7d48..85d66a5a5a72282b235348560a00a793a3cde8f0 100644
 --- a/dm/gfx/tools/dmsh_mtlcache.py
 +++ b/dm/gfx/tools/dmsh_mtlcache.py
 @@ -12,8 +12,16 @@ import os, re, sys, json, shutil, ctypes, hashlib, threading, subprocess, collec
@@ -392,7 +417,7 @@ index a50453bc8bc536e48c0eee5bf45dd81b4dff7d48..b00894e8c91865358cf3a86953fabf8a
  
      def path(self, target, src):
          d = hashlib.sha256(self.ident[target] + b'\0' + src).hexdigest()
-@@ -56,11 +73,42 @@ class Cache:
+@@ -56,11 +73,43 @@ class Cache:
      def compile(self, target, msl, lib):
          """msl → lib for target: a clone of the library that the same source compiled to before, or a compile (then kept). Raises CalledProcessError as the compile does"""
          p = self.path(target, open(msl, 'rb').read())
@@ -435,12 +460,13 @@ index a50453bc8bc536e48c0eee5bf45dd81b4dff7d48..b00894e8c91865358cf3a86953fabf8a
 +        (the entries it used are the newest, so none of them goes). Returns the line to print"""
 +        with self.lock: mine = sum(self.used.values())
 +        limit_gb = max(limit_gb, mine / 2**30)
++        assert isinstance(self.store, shader_cache.Store), 'prune runs in the process that opened the cache'
 +        n, total, gone = self.store.prune_oldest('metallib/', int(limit_gb * 2**30))
 +        return f'Metal cache: {n - gone:,} libraries, {total / 2**30:.1f} GB in {self.store.path}' + (f' ({gone:,} unused the longest removed, limit {limit_gb:g} GB, DMSH_MTLCACHE_GB)' if gone else '')
  
      def compile_split(self, target, msl, libs, split):
          """msl → the libraries libs cut from its one compile, split(the library's bytes) → their bytes, in order: clones of what the same source gave before, or a compile (then the pieces
-@@ -70,7 +118,9 @@ class Cache:
+@@ -70,7 +119,9 @@ class Cache:
          paths = [p] + [f'{p[:-len(".metallib")]}_x{i if i > 1 else ""}.metallib' for i in range(1, len(libs))]
          if all(self.store.has(x) for x in paths):
              for src, dst in zip(paths, libs): self.store.to_file(src, dst)
@@ -451,7 +477,7 @@ index a50453bc8bc536e48c0eee5bf45dd81b4dff7d48..b00894e8c91865358cf3a86953fabf8a
          whole = f'{libs[0]}.tmp-{os.getpid()}-{threading.get_ident()}'
          self._compile(target, msl, whole)
          try:
-@@ -83,6 +133,7 @@ class Cache:
+@@ -83,6 +134,7 @@ class Cache:
          with self.store.batch():
              for path, lib in zip(paths, libs): self.store.put_file(path, lib)
          self.count((target, 'compiled'))
@@ -1034,7 +1060,7 @@ index 51ca2f68f9761b64d3f71e9b69f30f59d80154a1..bc70eaff86577224a540aca2c57189e0
  
  def check(data):
 diff --git a/dm/tools/shader_cache.py b/dm/tools/shader_cache.py
-index 5788d1bb234af885ce52d734b1e9a5e8b53b3f87..4f55f2711cc0f3ff374a47d6d3ee23891ce3f172 100644
+index 5788d1bb234af885ce52d734b1e9a5e8b53b3f87..a6df7db08d690bd45eaccbae6f2c580f72e2d9b7 100644
 --- a/dm/tools/shader_cache.py
 +++ b/dm/tools/shader_cache.py
 @@ -170,6 +170,24 @@ class Store(_Files):
@@ -1062,6 +1088,23 @@ index 5788d1bb234af885ce52d734b1e9a5e8b53b3f87..4f55f2711cc0f3ff374a47d6d3ee2389
      def delete_prefix(self, prefix):
          """Remove every entry whose name starts with prefix, and the bytes nothing names any more, giving their pages back (dmsh_build.py's staged outputs once its image is written)"""
          with self.lock:
+@@ -258,7 +276,7 @@ class Served:
+     where that worker's thread stood when the build finished its shaders in threads, on the one connection and under its lock. A worker's batch is that thread's batch, so it is whole
+     or absent as before, and is rolled back when the worker dies inside it.
+     Made before the fork; start() here once every worker is forked (it starts threads); worker() in each worker gives its store (get, has, names, put, put_file, to_file, delete_prefix, batch, full)"""
+-    OPS = ('get', 'has', 'names', 'put', 'delete_prefix')
++    OPS = ('get', 'has', 'names', 'put', 'delete_prefix', 'touch')   # touch: NXForge's shared Metal cache (dmsh_mtlcache.py)
+ 
+     def __init__(self, store, n):
+         ctx = multiprocessing.get_context('fork')
+@@ -316,6 +334,7 @@ class Remote(_Files):
+     def names(self, prefix): return self._call('names', prefix)
+     def put(self, name, data, when=None): self._call('put', name, data, when)
+     def delete_prefix(self, prefix): self._call('delete_prefix', prefix)
++    def touch(self, name): self._call('touch', name)   # NXForge: Store.touch
+ 
+     @contextlib.contextmanager
+     def batch(self):   # as Store.batch: nests, and the lock is held for all of it
 diff --git a/dm/tools/tests/test_own_compilers.py b/dm/tools/tests/test_own_compilers.py
 index e836b3088eaabec61e4606bb3200c45276610162..0454d8fbb71e3b39ccd859d0122b8a083eceb437 100644
 --- a/dm/tools/tests/test_own_compilers.py
