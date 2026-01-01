@@ -8,10 +8,10 @@ Subject: instant-replay: docs
  1 file changed, 1 insertion(+)
 
 diff --git a/docs/settings.md b/docs/settings.md
-index b41e3cb221aab2eefa30839c063b56b68bb33f23..ce370a4ee5696f41757baa9b3037cac2f362c4eb 100644
+index a8d1034ec12c952c2476a7ea8f2e6eb5e7efb38f..fd2f6c0176c423c69a2cfaeb049009427541272f 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -320,6 +320,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
+@@ -324,6 +324,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
  | Volume and mute | – | the slider and speaker at the top | – | `DMQuickSettings.volume.<game>`, `DMQuickSettings.muted.<game>` |
  | Pause the game, quieter sound while the sidebar is open | – | General | – | `DMQuickSettings.pauseOpen.<game>` (unset: on), `DMQuickSettings.duckOpen.<game>` |
  | Library keeps the game (a game NXForge's Play started): the sidebar's Library button pauses the game and hides it, and NXForge's Resume brings it back where it was; off, Library ends the game | – | General | – | `DMQuickSettings.keepLibrary.<game>` (unset: on) |

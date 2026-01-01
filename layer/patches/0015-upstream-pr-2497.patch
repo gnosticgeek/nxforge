@@ -29,7 +29,7 @@ Co-authored-by: dsi-hub <260802842+dsi-hub@users.noreply.github.com>
  5 files changed, 45 insertions(+)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index ddca61efb8f8303f81a4cbfc2bccf6c4dcdf8831..1d9c0a2f0ae72af570224db68634caf4f6448ea5 100644
+index 6e059ed0b7804eff8b30ddfd9d77a4820a4aaddc..12c4caa7770c5ee53063ebe0ef568727dfb1e885 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -170,6 +170,7 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
@@ -95,10 +95,10 @@ index 1de6c70b0c6c412fdcfabb95ff48a8f2ac300ff9..2f97a3d151f33314bbb44dfd8363ad47
 +        start = stub(heap_gpu_words, site, 0x37000040, {8: obj}, site + 8, fail)
 +        fs_put(site, [B(site, start)], 'full model heap: GPU memory the heap had no room for is made in its parents or the default heap (Hookshot issue 1697)')
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index b331e5cee8ce385ba3087eb5f33b2545069ade65..819998476f0406472af1193c3f0bfde41d474765 100644
+index 3e0aedaf9a08fb4d39556b1868ad8ae566c0cd01..51b6ed8189c63e844a6086de499de04badfccac3 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -2538,6 +2538,8 @@ static void power_line(uint64_t frame) {
+@@ -2564,6 +2564,8 @@ static void power_line(uint64_t frame) {
          double nf = frame > pf ? (double)(frame - pf) : 1;   // per frame: the fair comparison when one build holds the frame rate better than another
          LOG("[nvn] power up to frame %llu: CPU energy %.2f W, %.1f mJ per frame (%.1f fps); CPU %.0f%% (100 = one core), %.0f%% of it on performance cores; wakeups %.0f/s (out of platform idle %.0f); GPU %.1f ms/s; thermal %d; top yielders: %s", frame,
              (e - pe) / 1e9 / s, (e - pe) / 1e6 / nf, nf / s, (cpu - pcpu) / 1e7 / s, cpu > pcpu ? 100.0 * (double)(p - pp) / (double)(cpu - pcpu) : 0, (iw - piw) / s, (idw - ppw) / s, (g - pg) / 1e6 / s, dm_thermal_now(), yt);
@@ -108,10 +108,10 @@ index b331e5cee8ce385ba3087eb5f33b2545069ade65..819998476f0406472af1193c3f0bfde4
          if (dg + dc + du + dn != pdg + pdc + pdu + pdn) LOG("[nvn] compute dispatches up to frame %llu: %llu after a barrier of the game's, %llu after a copy's range, %llu in the full order (a binding with no range), %llu with no barrier (DM_NVN_DISPATCH_BARRIER)", frame,
              (unsigned long long)(dg - pdg), (unsigned long long)(dc - pdc), (unsigned long long)(du - pdu), (unsigned long long)(dn - pdn));
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index 36b0f418ab5c5703ea9d1928de8c16fcffe34ca2..6b84aae20a19cf16982b6328fcabf10672313360 100644
+index 262fd5c42ceccdeea2fb678c9375854a9336fb3b..8d17deab6ba1d53c71b5b17ae81703dab5fcc85f 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
-@@ -431,6 +431,8 @@ void dm_fps_state_apply(void) {
+@@ -508,6 +508,8 @@ void dm_fps_state_apply(void) {
      const char *dr = getenv("DM_DYNAMIC_RESOLUTION"); uint32_t dyn = dr && !strcmp(dr, "1");
      if (dr && strcmp(dr, "0") && strcmp(dr, "1")) LOG("[RED] DM_DYNAMIC_RESOLUTION=%s: must be 0 or 1; keeping full resolution", dr);
      memcpy(dm_fps_state + 0x40, &dyn, sizeof dyn);
@@ -121,10 +121,10 @@ index 36b0f418ab5c5703ea9d1928de8c16fcffe34ca2..6b84aae20a19cf16982b6328fcabf106
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 59516c835379d6dc24cb2a1fea3f93fb439959d1..b01e29c596474ff3795c8a97347ae0a82d95322f 100644
+index 3b08c2fee2bcae8664ffd2a0a54511cc75133070..a72d5147d93a90880e27c8eec31b3abcd9ed5452 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -95,6 +95,7 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
+@@ -97,6 +97,7 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
  DM_GUEST_FILE_PUNCH	switch	`0` keeps the disk blocks of guest memory the game gives back (with `DM_GUEST_FILE=1`); by default they are punched out (`F_PUNCHHOLE`, which also drops the pages): the heap's at once, the alias region's by a sweep every 10 s once they have stayed given back over a whole interval
  DM_GUEST_FILE_SCAN	diagnostic	`=1` (with `DM_GUEST_FILE=1`): every 30 s a `[mem] guest file scan` line, the dirty guest pages by region (heap, alias, stack, other) and how many of them read all 0
  DM_GUEST_SPAWN_TEST	diagnostic	`=1` runs a self-test before `nnMain`: a host-started guest thread does SDK malloc / free and locks an `nn::os` mutex, and the result is logged; `=2` also keeps a resident thread

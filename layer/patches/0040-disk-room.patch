@@ -7,9 +7,9 @@ Subject: disk-room: the shared Metal cache and the scratch folder make way on
 ---
  dm/gfx/tools/dmsh_mtlcache.py                 | 24 ++++++++++++++++---
  dm/tools/tests/test_nsp_mac.py                | 20 ++++++++++++++++
- dm/tools/tests/test_shader_toolchain_cache.py | 16 +++++++++++++
+ dm/tools/tests/test_shader_toolchain_cache.py | 17 +++++++++++++
  scripts/build_ipa_from_nsp.py                 | 11 ++++++++-
- 4 files changed, 67 insertions(+), 4 deletions(-)
+ 4 files changed, 68 insertions(+), 4 deletions(-)
 
 diff --git a/dm/gfx/tools/dmsh_mtlcache.py b/dm/gfx/tools/dmsh_mtlcache.py
 index 75204e168a59e51a01009e3e0e24ee1df33c4ced..06a6dce5335ee96663ada151e1df6db5b159bd08 100644
@@ -57,10 +57,10 @@ index 75204e168a59e51a01009e3e0e24ee1df33c4ced..06a6dce5335ee96663ada151e1df6db5
      def compile_split(self, target, msl, libs, split):
          """msl → the libraries libs cut from its one compile, split(the library's bytes) → their bytes, in order: clones of what the same source gave before, or a compile (then the pieces
 diff --git a/dm/tools/tests/test_nsp_mac.py b/dm/tools/tests/test_nsp_mac.py
-index 477b63b660b90a6f81be4514764a65f6c74c1b2d..3c191e5e9889b1d468a4c71b1d24fe1d7af8c64b 100644
+index 950dd93a946bebb3a6ca79fd4b2a1e68ff60923a..c2feed5969edff264f256b8b012553e2499bcbcf 100644
 --- a/dm/tools/tests/test_nsp_mac.py
 +++ b/dm/tools/tests/test_nsp_mac.py
-@@ -376,5 +376,25 @@ class EnvFile(Base):
+@@ -409,5 +409,25 @@ class EnvFile(Base):
          with self.assertRaises(nsp.BuildError): nsp.env_file_pairs(self.tmp / 'none.txt')
  
  
@@ -87,10 +87,18 @@ index 477b63b660b90a6f81be4514764a65f6c74c1b2d..3c191e5e9889b1d468a4c71b1d24fe1d
  if __name__ == '__main__':
      unittest.main()
 diff --git a/dm/tools/tests/test_shader_toolchain_cache.py b/dm/tools/tests/test_shader_toolchain_cache.py
-index 2626e88c7b80c7175641db24b55a5b0b2cab0456..560adb10324b7d7a88ca114a8c344ea3589661d8 100644
+index 0bc4fb55286a22c500f952a4ac2cd0b4c608d08d..3434bd80af9577ed8846f33e0a85ca4f52618618 100644
 --- a/dm/tools/tests/test_shader_toolchain_cache.py
 +++ b/dm/tools/tests/test_shader_toolchain_cache.py
-@@ -611,6 +611,22 @@ class SharedMetalCache(unittest.TestCase):
+@@ -644,6 +644,7 @@ class BuildProgress(unittest.TestCase):
+             GAME=types.SimpleNamespace(id='0100000000000000', table=lambda n: self.root / n),
+             INPUTS='aaaaaaaaaaaa', STAMP_BEFORE='aaaaaaaaaaaa', __file__=str(TOOLS / 'dmsh_build.py'),
+             subprocess=types.SimpleNamespace(run=lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, 'ok\n', '')),
++            spawn=lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, 'ok\n', ''),   # NXForge: dmsh_build runs its tools through spawn (dmsh_mtlcache.run)
+         )
+         exec(compile(ast.Module(body=funcs, type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), ns)
+         start = next(i for i, n in enumerate(self.tree.body) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '_img_labels' for t in n.targets))
+@@ -720,6 +721,22 @@ class SharedMetalCache(unittest.TestCase):
          for text in ('one', 'two', 'six'): self.assertTrue(self.store.has(self.cache.path('mac', (text * 5000).encode())))
          self.assertNotIn('removed', line)
  
@@ -114,10 +122,10 @@ index 2626e88c7b80c7175641db24b55a5b0b2cab0456..560adb10324b7d7a88ca114a8c344ea3
          old = self.root / 'NXForge/metallib'
          for target in ('mac', 'ios'):
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 088e8718c491e0be03cda82448e11191067a1cb6..065349ff6c4fe6745ca065f148272df12a19a1d8 100755
+index 552f14ce3cf2970fb42916a38c2474273eaa596c..f5fbaae4bdf989cb50258beb8c8ff74d2558a776 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3401,10 +3401,14 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+@@ -3550,10 +3550,14 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
  PSO_BASE_JOBS = int(os.environ.get('DM_PSO_BASE_JOBS') or 1)   # NXForge: metal-tt runs at a time for the pipeline archive's batches of bases (pso_offline.py --base-jobs)
  
  
@@ -133,7 +141,7 @@ index 088e8718c491e0be03cda82448e11191067a1cb6..065349ff6c4fe6745ca065f148272df1
      them in the build folder, NXFORGE_SCRATCH=<folder> names another place. Only temporary files: every cache and output stays in the build folder"""
      import atexit
      want = environ.get('NXFORGE_SCRATCH', '')
-@@ -3416,6 +3420,11 @@ def scratch_folder(work, gid, environ=os.environ):
+@@ -3565,6 +3569,11 @@ def scratch_folder(work, gid, environ=os.environ):
              if can_clone(work): return None
          except OSError: return None
          d = Path.home() / 'Library/Caches/NXForge/scratch' / gid

@@ -22,7 +22,7 @@ under Dynamic resolution on builds with the DRS_HEADROOM capability.
  6 files changed, 14 insertions(+)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 38245ded84158918c4320137a2f6e859d97d3442..9c927fedc2e5895d9bf8630d7857f104726600ce 100644
+index 93fc294f6fd3c3dcfef3c45ed0b563a0ff2e5607..6d38d38e1f75ae0bac0db179558edcf5e1f931cd 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -125,6 +125,7 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
@@ -54,7 +54,7 @@ index f45ca19b86daaaf2391904354cc2c3ccf90d55a0..c4c6a6b95a0c1c805818e578418e935f
  
  # Render scale (DM_RENDER_SCALE, state +0x10, dm/host/loader.c): the 3D views at that fraction of the game's own size, the dynamic resolution held at its top level (as Tears of the
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 3d48cc57d6cfa70444249adb6115f5b0d3765279..a4a6c094b51345f19d27d20906e47c1ac55fb6e0 100644
+index b90c39e528fc5d22d75160281d02179fbc0a4d3b..5010536f675b4383785828340df416bbbc014530 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -17,6 +17,7 @@
@@ -66,10 +66,10 @@ index 3d48cc57d6cfa70444249adb6115f5b0d3765279..a4a6c094b51345f19d27d20906e47c1a
  DM_OPMODE	choice	1=Docked,0=Handheld	DM_GAME_OPMODE	always	Game	Console mode		level=basic
  DM_PRESENT_UPSCALE	choice	off=Standard,metalfx=MetalFX	off|metalfx	always	Game	Upscaling	Uses more GPU time and can increase heat.
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index 3e83af6dcc59feb7a2acd03b7305b3af1b165231..c5cc82250a739106fe2d3e0b7572eae872d23d38 100644
+index b255060e79bd51fd7b82ef7205877d15cc95c9e9..561c7aaf01e7694f9de78702fa0d79294f6b2755 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
-@@ -441,6 +441,11 @@ void dm_fps_state_apply(void) {
+@@ -518,6 +518,11 @@ void dm_fps_state_apply(void) {
      const char *dr = getenv("DM_DYNAMIC_RESOLUTION"); uint32_t dyn = dr && !strcmp(dr, "1");
      if (dr && strcmp(dr, "0") && strcmp(dr, "1")) LOG("[RED] DM_DYNAMIC_RESOLUTION=%s: must be 0 or 1; keeping full resolution", dr);
      memcpy(dm_fps_state + 0x40, &dyn, sizeof dyn);
@@ -82,10 +82,10 @@ index 3e83af6dcc59feb7a2acd03b7305b3af1b165231..c5cc82250a739106fe2d3e0b7572eae8
      { const char *hr = getenv("DM_HEAP_RETRY"); if (hr && !strcmp(hr, "0")) { uint32_t off = 1; memcpy(dm_fps_state + 0x17c, &off, 4); LOG("%s: full model heap retry off (DM_HEAP_RETRY=0)", g_fps_mod); } }
      // Foliage (Ocarina of Time's patches.py foliage, from TVPort 8609a1cb), u32 at +0x300: DM_FOLIAGE=off makes the game's foliage module skip its grass and ground cover (its own
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 5bbc5933d5b6fcacbe3c63aed7b7ae6b62fa6177..7adfab67b9fd78537b7f254fbfbcef0e6b81e5ef 100644
+index 06973fb7b17006fd5660a093e4a9e758fc3f7431..58114427469d15dfddd7688067b8575a22b0dbec 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -42,6 +42,7 @@ DM_DETCLOCK	switch	`=<step ns>`: from the first present on, the guest clock adva
+@@ -43,6 +43,7 @@ DM_DETCLOCK	switch	`=<step ns>`: from the first present on, the guest clock adva
  DM_DETCLOCK_PACE	switch	`=1` with `DM_DETCLOCK`: each frame takes at least one clock step of wall time, so background loading keeps up with the fixed clock (used by the screenshot gate)
  DM_DISPLAY_NAME	switch	Overrides the iOS app's name in `build_ipa.sh` (default the game name in the base NSP's control data)
  DM_DYNAMIC_RESOLUTION	player	`1` lets the game's own dynamic resolution run, `0` (default) keeps full resolution; only on the builds that declare the DYNAMIC_RESOLUTION capability: NieR:Automata 1.0.3 (its patches.py; scales between 70 and 100 %, `hle_fpslock.c` `k_nier_dr`) and Ocarina of Time (its frame step stub of the level function, state page +0x40: on, it steps one level at a time on the measured load, as the game's own extrapolation from pixel count kept it at its lowest level on Apple GPUs). The launcher's Dynamic resolution
@@ -94,7 +94,7 @@ index 5bbc5933d5b6fcacbe3c63aed7b7ae6b62fa6177..7adfab67b9fd78537b7f254fbfbcef0e
  DM_ENTITLEMENTS	path	`=<plist>` gives a prepared Xcode project another entitlements file instead of the Increased Memory Limit one, and the ad-hoc signature of the unsigned IPA's executable carries them; relative paths start at the caller's directory; empty means no entitlements
  DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into the app as `dm/env.txt`, applied at boot; `Documents/env.txt` overrides them
 diff --git a/docs/settings.md b/docs/settings.md
-index ce370a4ee5696f41757baa9b3037cac2f362c4eb..930d4d6a78e93a0961f1fc8b6449fc9dfc3f818e 100644
+index fd2f6c0176c423c69a2cfaeb049009427541272f..e448731c457d3b34e6dfde0a6622883a0b92cb9f 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -34,6 +34,10 @@ Ocarina of Time also offers **40 fps**, on the iPhone and the Mac. Each frame st

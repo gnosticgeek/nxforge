@@ -10,10 +10,10 @@ Subject: appledouble-nro: the survey skips the macOS ._name.nro files beside a
  2 files changed, 12 insertions(+), 2 deletions(-)
 
 diff --git a/dm/games/profile_guess.py b/dm/games/profile_guess.py
-index 4e9db6ddd75ace968803b0aac4f6d2a46d799be8..1e10cb0da1bd5d0ff3033f59b967e9a8150235e2 100644
+index 5bb2ad92b1f4d137b6f63333418b4d5b5012d081..a4d09b903b1d3626f4f588afc422a4c6090ecb38 100644
 --- a/dm/games/profile_guess.py
 +++ b/dm/games/profile_guess.py
-@@ -239,7 +239,9 @@ def nro_modules(exefs, nros, modules, hooks=None):
+@@ -246,7 +246,9 @@ def nro_modules(exefs, nros, modules, hooks=None):
      A symbol a loaded module or another NRO defines, or the host supplies, needs nothing; NVIDIA's GPU drivers stay out as in guess()"""
      want, have = set(), set()
      for p in nros.values():
@@ -25,10 +25,10 @@ index 4e9db6ddd75ace968803b0aac4f6d2a46d799be8..1e10cb0da1bd5d0ff3033f59b967e9a8
              elif bind in (1, 2): have.add(s)
      return modules_supplying(exefs, want - have, modules, hooks)
 diff --git a/dm/tools/tests/test_profile_guess.py b/dm/tools/tests/test_profile_guess.py
-index edcd0d6351f271a5fb5b89e1066f7ca77a842b9f..e9af3857315aaee6bc8daa6153754653efb937ce 100644
+index d8a01006df56a2c8c551af72a9fe9e144e5202de..2b58bd78b37db70d337ee813bb8f6a7ac4d40d19 100644
 --- a/dm/tools/tests/test_profile_guess.py
 +++ b/dm/tools/tests/test_profile_guess.py
-@@ -258,10 +258,18 @@ class ModulesLeftOut(unittest.TestCase):
+@@ -290,10 +290,18 @@ class ModulesLeftOut(unittest.TestCase):
          self.module('subsdk2', exports=['m'], comp=b'NintendoSDK_movie-20_5_29')
          self.module('subsdk3', exports=['n'], comp=b'NintendoSDK_movie-20_5_29')
          for name, syms in (('a.nro', [('m', False, 1), ('n', False, 1)]), ('b.nro', [('n', True, 1)])):

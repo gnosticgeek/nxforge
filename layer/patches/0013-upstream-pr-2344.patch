@@ -24,22 +24,22 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
  6 files changed, 79 insertions(+), 10 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index d4089d690db646df49ace95f17dac98b4c2cd290..d5a0458845515cff82fed1403cfe22715acba941 100644
+index 8a540c6b6d5bd03c951d6dab9e1492d495653032..c594b5e700b0bb6c8a4ac7ba838c56ecd22be802 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
-@@ -432,6 +432,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+@@ -438,6 +438,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
  - [The pool walk's statistics made chunks of a large pool](../../../docs/reference/memory.md#the-pool-walks-statistics-made-chunks-of-a-large-pool): resolved, GPU allocated 3.3 to 15.8 GB in the area load on a 16 GB Mac (issue #2068); 77 overlapping 80 MB chunks of the 2,432 MB pool, made by two log statistics.
  - [Models black for one frame when a streaming step replaces their textures](../../../docs/reference/rendering.md#models-black-for-one-frame-when-a-streaming-step-replaces-their-textures): resolved, the castle town wall, Hyrule Castle, rocks and trees near the town and Lon Lon Ranch's barn black for one frame, twice, 4-5 frames apart, at the streaming steps that replace their material sets (PR #2022; seen on an M4 Pro and an M5 Max).
  - [A streamed texture's first read drew its surface dark for one frame](../../../docs/reference/rendering.md#a-streamed-textures-first-read-drew-its-surface-dark-for-one-frame): resolved, the cliff beside the castle town wall in Hyrule Field darker for one frame as the game streamed it a sharper texture set ([issue #1969](https://github.com/seedds/nxnative/issues/1969), PR #2075); the first read now samples the texture's own colours, coarse, for that frame. Seen also in Kakariko Village and its graveyard on a MacBook Air M5 (three flashes in 8 minutes before, none in 4 after, by eye).
 +- [Area loads froze late in a session as read marks piled up](../../../docs/reference/rendering.md#area-loads-froze-late-in-a-session-as-read-marks-piled-up): resolved, runs of 200-670 ms frames at the loads into Hyrule Field and the passages around it after about an hour of play, with 19,201 of 33,024 texture IDs marked as read; with the marks aged, area loads are single frames of 100-155 ms over a 78-minute session (M5 Pro). Aged whatever their size, they slowed the walk out of Kokiri Forest on an M2 MacBook Air (70-110 ms frames against 34), so marks now age only once they cover more than a quarter of Metal's working set; that form is not yet run in the game.
  - [Vertex shaders with layer entry points left out of the prebuild](../../../docs/reference/shaders.md#vertex-shaders-with-layer-entry-points-left-out-of-the-prebuild): resolved, a 230 ms frame at a camera turn in Hyrule Field. The effect vertex shaders (no stage inputs, layer entry points of their own) had no base in the bundled archive and were compiled at their first draw; with the fix (measured with PR #2065's form of it, the same bases as the reflection's `layer_out` gives) the archive holds 33,365 bases instead of 30,690, and the worst frame on the `field-run` route is 39 ms (M6).
  - [Unused border corrections retain sample registers](../../../docs/reference/rendering.md#unused-border-corrections-retain-sample-registers): about 1.5 ms of GPU a frame at 1080p ([measurements](#unused-border-corrections)).
- 
+ - [A DualSense's microphone over Bluetooth](../../../docs/reference/audio.md#a-dualsenses-microphone-over-bluetooth): not usable on a Mac. GameController reads the controller's mic frames as button presses and sticks, and the Mac's 15 ms Bluetooth polling carries 43 of its 100 frames a second, so the launcher offers the controller's mic only over USB, where its matched USB HID device is selected and unmuted before capture (verified on a DualSense over USB on M5 Pro / macOS 27.2 with #1822's capture; retest on `main`, multi-DualSense hardware, and DualSense Edge remain open).
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 3de8b6065f534baae94e05c24c3f0b6ef4beb8aa..879b1112777e0a464e16b1dd8a64703d41d84e17 100644
+index ac4f0d420d114c6c7919d593ba803f4b2b389813..8d64171ec243bf4df3839fe31c900064d83cf341 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -8506,10 +8506,15 @@ static inline int pool_seen_t(int id_, int dtt) {
+@@ -9342,10 +9342,15 @@ static inline int pool_seen_t(int id_, int dtt) {
      if (dtt < 0 || dtt >= POOL_SEEN_TYPES) return pool_seen(id_);
      return id_ >= 0 && id_ < (int)(POOL_SEEN_WORDS * 32) && (g_seen_typed[seen_sec(dtt)][(unsigned)id_ >> 5] >> (id_ & 31) & 1);
  }
@@ -55,7 +55,7 @@ index 3de8b6065f534baae94e05c24c3f0b6ef4beb8aa..879b1112777e0a464e16b1dd8a64703d
      g_seen_done[(unsigned)id_ >> 5] &= ~b;
      for (unsigned s_ = 0; s_ < POOL_SEEN_TYPES; s_++) {
          g_seen_typed[s_][(unsigned)id_ >> 5] &= ~b;
-@@ -8530,6 +8535,23 @@ static void pool_seen_retype(int id_) {
+@@ -9366,6 +9371,23 @@ static void pool_seen_retype(int id_) {
  // The NVN target a registration is read as: its view's, if the view sets one
  static int tex_reg_target_of(const tex_t *t, const view_t *v) { return v && v->set_target ? (int)v->target : t->d.target; }
  static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->has_v ? &r->v : NULL); }
@@ -79,7 +79,7 @@ index 3de8b6065f534baae94e05c24c3f0b6ef4beb8aa..879b1112777e0a464e16b1dd8a64703d
  void mtl_reg_tex_gone(int tid) {
      os_unfair_lock_lock(&g_rmu);
      if (tid >= 0 && tid < g_ntreg && g_treg[tid].ok) treg_gone(&g_treg[tid]);
-@@ -8551,12 +8573,16 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
+@@ -9387,12 +9409,16 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
          // Ocarina of Time allocates 15-18 GB against a 909 MB budget on a 24 GB Mac, and when its streaming replaced the 17 textures of the castle town wall's material set (3-7 MB each,
          // each step registered twice, 4-5 frames apart), each registration's first read found the dummy, and the wall, the rocks and the trees drew black for one frame, twice (PR #2022).
          // A render target no pass has written stays the dummy all the same (pool_unwritten_target). A texture streamed into an ID no shader has read yet holds its stand-in until its first read (pool_stand, issue #1969)
@@ -97,10 +97,10 @@ index 3de8b6065f534baae94e05c24c3f0b6ef4beb8aa..879b1112777e0a464e16b1dd8a64703d
          rr->retired = 0; rr->transient_sub = 0; rr->evicted = 0; rr->used = 0;
          if (t && t->serial) {
              rr->retired = !own_tex_live(t->serial);
-@@ -13695,23 +13721,33 @@ static void pool_seen_scan(void) {
-     g_seen_sub = g_sub_serial;
+@@ -14841,23 +14867,33 @@ static void pool_seen_scan(void) {
+     uint32_t forked = 0;
      uint64_t f = atomic_load(&g_cur_frame); if (f != g_walk_frame) { g_walk_frame = f; g_walk_spent = 0; g_walk_req = 0; }
-     if (g_stand_todo_n) pool_stand_scan();
+     if (g_stand_todo_n) pool_stand_scan(&forked);
 -    { static uint64_t at, was; uint64_t now = g_stand_made + g_first_stand + g_first_dummy;   // the totals, every 300 frames in which they changed
 +    { static uint64_t at, was; uint64_t now = g_stand_made + g_first_stand + g_first_dummy + g_seen_kept + g_seen_dropped;   // the totals, every 300 frames in which they changed
        if (f >= at + 300 && now != was) { at = f; was = now;
@@ -136,7 +136,7 @@ index 3de8b6065f534baae94e05c24c3f0b6ef4beb8aa..879b1112777e0a464e16b1dd8a64703d
 +    for (unsigned i = 0; i < words; i++) {
          for (uint32_t bits = g_seen_todo[i]; bits; bits &= bits - 1) {
              int b = __builtin_ctz(bits), id_ = (int)i * 32 + b;
-             if (id_ <= 0 || id_ >= g_ntreg || !g_treg[id_].ok || g_treg[id_].gone || (!g_treg[id_].view && !tex_storage_live(&g_treg[id_].t))) { g_seen_todo[i] &= ~(1u << b); continue; } // NOLINT(clang-analyzer-core.BitwiseShift): bits is nonzero, so ctz returns 0..31
+             if (id_ < 0 || id_ >= g_ntreg || !g_treg[id_].ok || g_treg[id_].gone || (!g_treg[id_].view && !tex_storage_live(&g_treg[id_].t))) { g_seen_todo[i] &= ~(1u << b); continue; } // NOLINT(clang-analyzer-core.BitwiseShift): bits is nonzero, so ctz returns 0..31
 diff --git a/dm/gfx/tests/t_pool_seen_replace.m b/dm/gfx/tests/t_pool_seen_replace.m
 index 5c66f94ec74f821508725e1f0cbaf181d5dd6af0..cc2461dd20790969c84ae5685d0ce8916292a06c 100644
 --- a/dm/gfx/tests/t_pool_seen_replace.m
@@ -179,10 +179,10 @@ index 5c66f94ec74f821508725e1f0cbaf181d5dd6af0..cc2461dd20790969c84ae5685d0ce891
      mtl_pool_del(mem); mtl_drain(); munmap(mem,LEN);
      fprintf(stderr,"pool_seen_replace: %d checks, %d failed\n",checks,failed);
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index f6433758fbfcf8a15b5af68e63a6140bdd612b10..d2c4bf4e2d448aaa87ed93de54164c829a039f29 100644
+index 17795ec3715752bad4c563c3cd6262eefe45020e..4c5fdc52638252d300f8c5eebe109e06b5c10ef8 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -1019,6 +1019,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -1060,6 +1060,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - large static and mesh-shader models (Ocarina of Time's castle town wall, rocks, trees, Lon Lon Ranch's barn) draw black for exactly one frame, with the fog in front and the terrain untouched, in pairs four or five frames apart; a few times a minute in play, at fixed places of a route. → [Models black for one frame when a streaming step replaces their textures](../reference/rendering.md#models-black-for-one-frame-when-a-streaming-step-replaces-their-textures)
  - a patch of scenery (Ocarina of Time's cliff beside the castle town wall) draws darker for exactly one frame, once, as the game gives it a sharper texture; a few times a minute while walking through Hyrule Field. Single frames, not the pairs of the entry above; no red line. → [A streamed texture's first read drew its surface dark for one frame](../reference/rendering.md#a-streamed-textures-first-read-drew-its-surface-dark-for-one-frame)
  - the first frame after a scene cut is dark where newly visible materials are: PRAGMATA's cut from the tower to the tablet draws the cockpit and tablet with their G-buffer base colour at 0.068 on that frame against 0.18 on the next. → [A sparse pool's streamed textures read 0 at their first read](../reference/rendering.md#a-sparse-pools-streamed-textures-read-0-at-their-first-read)
@@ -191,10 +191,10 @@ index f6433758fbfcf8a15b5af68e63a6140bdd612b10..d2c4bf4e2d448aaa87ed93de54164c82
  - the residency line adds and removes thousands of allocations every 300 frames, nearly all from one line, the `res_add` of a buffer texture's view in `tex_mtl_`; the memory line's `finalized textures still referenced` stays at the ghost table's 512 while its puts in total climb by about a hundred or more a frame. No red line and no visible effect: the cost is submit-thread time in residency commits. → [Transient buffer textures shared by storage](../reference/rendering.md#transient-buffer-textures-shared-by-storage)
  - a model has correct geometry, base colour and normals but appears as a black silhouette; deferred lighting's material-ID depth texture stays zero. → [IMAGE usage does not split texture storage](../reference/rendering.md#image-usage-does-not-split-texture-storage)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index e88e1e8fa1ce0d8419b1d56493325b13c23594ef..0d4f4e33939bcb4ff312579bd58e4718c574fe45 100644
+index 127f07bada87707029fe45e1ba1d83b5e88284f4..9d6339e782ba3cc0fa7f5d40b1cef7db479844b7 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -253,6 +253,7 @@ DM_NVN_RT_RECYCLE	switch	`0` makes each render target in a GPU-only pool, each f
+@@ -258,6 +258,7 @@ DM_NVN_RT_RECYCLE	switch	`0` makes each render target in a GPU-only pool, each f
  DM_NVN_RUNTIME_COMPILER	path	Mac development runs: `dmsh_live.py` from the same checkout as the host. Compiles missing NVN1 vertex and pixel stages with the packer's toolchain and caches them under `DM_TEMP/nvn-shaders`.
  DM_NVN_RUNTIME_PYTHON	path	Mac development runs: the Python executable that runs `DM_NVN_RUNTIME_COMPILER`.
  DM_NVN_RUNTIME_SOURCE	switch	`1` makes the shader compiler emit Metal source for the host to compile with the Metal API. The Mac app launcher sets this when the compiler is bundled.
@@ -203,7 +203,7 @@ index e88e1e8fa1ce0d8419b1d56493325b13c23594ef..0d4f4e33939bcb4ff312579bd58e4718
  DM_NVN_SHMAP	path	The shader map (`shader_map.tsv`); `c1_full.tsv` and `pso_manifest.tsv` are taken from the same folder. Default: the game profile's folder on the Mac; the iOS app sets it
  DM_NVN_SHOT	diagnostic	`=<frame>[,<frame>…]:<path>` saves the swapchain texture as an image at those frames (`%d` in the path = frame number); a window the game crops is saved as presented (the crop drawn at the texture's own size)
 diff --git a/docs/reference/rendering.md b/docs/reference/rendering.md
-index d7b78eab543770a245a42fc085d6ede8b2949030..a4b4a45deb962855c9b51287ea3cacd0d66731c0 100644
+index 9ea0b6f9cce3d0acb20335716447789191ac598b..58ea7116ba02a5392c30b84302c65bb32a63bedb 100644
 --- a/docs/reference/rendering.md
 +++ b/docs/reference/rendering.md
 @@ -405,7 +405,7 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
