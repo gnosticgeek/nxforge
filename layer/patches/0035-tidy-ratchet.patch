@@ -28,7 +28,7 @@ index 65d11bee3847ca916722b56f042d07a60b08833e..3bd711734f97fa5371c854e6fdf5cb50
              failed = 1; g_geo_lean_k[0] = g_geo_lean_k[1] = g_geo_lean_k[2] = nil;
              MLOG("[RED] lean geometry index kernels: %s", error.localizedDescription.UTF8String); return NULL;
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 4b81cf3854f0b90ad7da29125895a4fc863a1f00..b8a6d67bbf1ddfeaa28fbfbc28c518b01427dad1 100644
+index 0dd2b88c26c1e00bc171aaf7e9bb012846fd58a8..44f883df8fa27a7a96c489f71913d143087991d3 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -7030,7 +7030,7 @@ static int progpf_first(NSString *pc) {

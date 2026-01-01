@@ -28,7 +28,7 @@ index 1e9916777d6b0766d057317d7a1cfd2fbe02d790..a34fd1a6d77fe850146605905d5287b5
  - This game took the Mac down before the fixes (kernel panic in `IOGPUGroupMemory` at 14.7 GB wired): [raw pool table](../../../docs/reference/memory.md#memory-pools-nothing-gave-an-address-to-stay-out-of-the-raw-pool-table), [textures made only when read](../../../docs/reference/memory.md#shaders-report-which-textures-they-read-through-a-pool), [out-of-memory exit](../../../docs/reference/memory.md#repeated-gpu-out-of-memory-failures-end-the-game).
  - Why so much: the game's own memory is about the console's 9 GB application pool, and on the Mac its textures also exist as Metal textures, as Metal cannot sample the guest's block-linear storage.
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 2276811985ec421e009d41ca900587ad0c511662..147d16596f9befa85a151a8ef7ca1b15144b7d1f 100644
+index 7867de1a5d1bb969475f3ada82fa7ab5f1b6ea2f..83ea6d015bc91109254d25070ebeb2bb731c6db0 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -530,10 +530,16 @@ static void res_check(id r, const char *what, int reg) {

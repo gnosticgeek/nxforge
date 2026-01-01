@@ -30,7 +30,7 @@ index 693f7ae618bc9ec3b53b1838d3010dbef5fe8b1e..85fb4e914b5abcc32490925da67e835a
 +DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
  DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 147d16596f9befa85a151a8ef7ca1b15144b7d1f..0dcdd5a0a27e868ac4911bedc8fd26f00d40770e 100644
+index 83ea6d015bc91109254d25070ebeb2bb731c6db0..dd4545bb44fcc1f86af1a6345b40032d0eff5cee 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -522,6 +522,23 @@ static void res_check(id r, const char *what, int reg) {

@@ -390,7 +390,7 @@ index 39065f5d311e3c427a890110553247ee1716f539..65e45dfa6594867ccef124fb7e6faf14
  void mtl_set_depth_zero(int on);          // NVN depth mode: 1 = near is 0 (D3D / Metal), 0 = near is -w (GL, NVN's default); picks the vertex shaders' entry point (see shader_load in nvn_mtl.m)
  void mtl_set_origin_lower_left(int on);   // NVN window origin: 1 = lower left (GL, NVN's default), 0 = upper left (D3D / Metal); see nvn_mtl.m
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 97afb083c20aaf6f82ee7c8490c3bf7cc23bc74f..b02adbdd93ab1e0ebd0c6ca8aa14ff982249ca64 100644
+index 97afb083c20aaf6f82ee7c8490c3bf7cc23bc74f..13576627508d32e4e8f6d87da8e12395bb33d518 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3,6 +3,13 @@
@@ -1495,9 +1495,9 @@ index 97afb083c20aaf6f82ee7c8490c3bf7cc23bc74f..b02adbdd93ab1e0ebd0c6ca8aa14ff98
 +        int hit = 0;
 +        os_unfair_lock_lock(&g_rmu);
 +        for (int i = 0; i < fs->rf.nb && !hit; i++) { const nvn_rbind *b = &fs->rf.b[i];
-+            int image = b->kind == NVN_RB_IMG && !b->rw && !b->atom && b->reg < 32;
-+            if (!image && (b->kind != NVN_RB_TEX || b->reg >= NTEX)) continue;
-+            int tid = (int)((image ? S.img[1][b->reg] : tex_slot_h(S.tex[1], S.img[1], b->reg)) & 0xfffff); if (!tid || tid >= g_ntreg || !g_treg[tid].ok) continue;
++            int image = b->kind == NVN_RB_IMG && !b->rw && !b->atom && b->reg < 32, texu = b->kind == NVN_RB_TEXU && !b->n;   // texu: a handle in a uniform buffer, as below (PR #2528)
++            if (!image && !texu && (b->kind != NVN_RB_TEX || b->reg >= NTEX)) continue;
++            int tid = texu ? ubo_tex_id(ubo_bind_handle(1, b)) : (int)((image ? S.img[1][b->reg] : tex_slot_h(S.tex[1], S.img[1], b->reg)) & 0xfffff); if (!tid || tid >= g_ntreg || !g_treg[tid].ok) continue;
 +            uint64_t ser = g_treg[tid].t.serial; for (int q = 0; q < nr; q++) hit |= rs[q] == ser; }
 +        os_unfair_lock_unlock(&g_rmu);
 +        if (!hit) { g_fb_wmask |= wm; g_fb_dwrote |= (uint32_t)dsw; return; }
