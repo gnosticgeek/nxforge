@@ -5,12 +5,12 @@ Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
  findings in upstream's code silenced on their lines, three counts lowered
 
 ---
- dm/gfx/nvn/nvn_mtl.m         | 2 +-
+ dm/gfx/nvn/nvn_mtl.m         | 5 ++---
  dm/tools/lint_c_baseline.tsv | 4 ++--
- 2 files changed, 3 insertions(+), 3 deletions(-)
+ 2 files changed, 4 insertions(+), 5 deletions(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index ef0a681d7b7dcf990ee29c3cea219fd7e7cbe5d5..fc7e4715c4611d1200b1b54308f16a9859bea30a 100644
+index ef0a681d7b7dcf990ee29c3cea219fd7e7cbe5d5..9d9fa55f1114ea40770abc23fe3e82c9676bb6f6 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -6987,7 +6987,7 @@ static int progpf_first(NSString *pc) {
@@ -22,6 +22,18 @@ index ef0a681d7b7dcf990ee29c3cea219fd7e7cbe5d5..fc7e4715c4611d1200b1b54308f16a98
      if (o) return o;
      uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
      if (!o) return nil;
+@@ -17772,10 +17772,9 @@ static int up_mfx_encode(NvShader *cs) {
+     for (int i = 0; i < cs->rf.nb; i++) { int k = cs->rf.b[i].kind; if (k == NVN_RB_TEX && ti < 0) ti = i; else if (k == NVN_RB_IMG && oi < 0) oi = i; else if (k == NVN_RB_TEX || k == NVN_RB_IMG) return 0; }
+     if (ti < 0 || oi < 0) { static int once; if (!once++) MLOG("[RED] upscaler %s: not one texture and one image; the shader draws", cs->key); return 0; }
+     int tin = (int)(bound_tex(5, cs->rf.b[ti].reg) & 0xfffff), tout = cs->rf.b[oi].reg < 32 ? (int)(bound_img(5, cs->rf.b[oi].reg) & 0xfffff) : 0;
+-    tex_t dout = {0}; id<MTLTexture> in, out;
++    id<MTLTexture> in, out;   // NXForge (host_warnings): upstream's unused copy of the output's texture dropped
+     os_unfair_lock_lock(&g_rmu);
+     int ok = tin > 0 && tin < g_ntreg && g_treg[tin].ok && tout > 0 && tout < g_ntreg && g_treg[tout].ok;
+-    if (ok) dout = g_treg[tout].t;
+     in = ok ? tex_by_id(tin) : nil;
+     // The sampled view can be read-only (channel swizzle) even when the image backing is writable.
+     // Use the shader's image binding so its level and slice survive without replacing the backing with a sampled view.
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
 index fe826a0b2cd986a11ccdf950074a375763ad78f5..e27afbae12eb246fd65f461db5d7362d7327e99a 100644
 --- a/dm/tools/lint_c_baseline.tsv

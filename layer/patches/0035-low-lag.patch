@@ -65,7 +65,7 @@ index e3a6d011c2c371dfbffa6188dcba3346b465346a..881f18dbc804ca26a5f25acca8394ba3
      dm_fps_lock_tick();   // after the frame step: at 120 fps the target follows the hold just decided
      static uint64_t prev_in, prev_out, prev_pass, prev_draw;
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index fc7e4715c4611d1200b1b54308f16a9859bea30a..978fa8e02af29bdbdb21a53f55260a1ff739e0d2 100644
+index 9d9fa55f1114ea40770abc23fe3e82c9676bb6f6..60811435c672b5ec3f72a8b0e0f5f8822d6b81b9 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -156,6 +156,7 @@ static void ext_retire(NSArray *textures);
@@ -76,7 +76,7 @@ index fc7e4715c4611d1200b1b54308f16a9859bea30a..978fa8e02af29bdbdb21a53f55260a1f
  static uint64_t g_pq_done;
  static uint64_t g_pq_read;
  static id<MTLResidencySet> g_res, g_snap_res;   // g_snap_res: the present snapshots' textures (snap_take)
-@@ -18004,9 +18005,10 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -18003,9 +18004,10 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      present_pipeline(layer.pixelFormat);   // Same as the original path: the first frame compiles the pipeline before taking the drawable
      if (g_grab_cb && g_fi_phase != FI_HELD) grab_present(src, crop, layer.drawableSize);   // Game picture needed by the whole-window screenshot (peek without the lock first; the real take locks inside the function)
      if (atomic_load(&g_recorder_on) && g_fi_phase != FI_HELD) record_present(src, crop);   // the video recorder's frame (capture_mac.m)
@@ -88,7 +88,7 @@ index fc7e4715c4611d1200b1b54308f16a9859bea30a..978fa8e02af29bdbdb21a53f55260a1f
      if (!dr) return 0;
      int alloc_i = (int)(ticket % 3);
      if (g_present_alloc_fence[alloc_i]) {
-@@ -18261,6 +18263,7 @@ static void *link_main(void *arg) {   // Display link thread: started when switc
+@@ -18260,6 +18262,7 @@ static void *link_main(void *arg) {   // Display link thread: started when switc
      g_link_started = 0;
      return NULL;
  }
@@ -96,7 +96,7 @@ index fc7e4715c4611d1200b1b54308f16a9859bea30a..978fa8e02af29bdbdb21a53f55260a1f
  static void link_sync(void) {   // Called every frame by the game's present thread: aligns the display link object's state to g_dm_present_link and the power-saving mode (can change at run time)
      static int applied;
      pthread_mutex_lock(&g_pq_mu);
-@@ -18284,6 +18287,7 @@ static void link_sync(void) {   // Called every frame by the game's present thre
+@@ -18283,6 +18286,7 @@ static void link_sync(void) {   // Called every frame by the game's present thre
      static int vrr_was; int vrr = want == 1 && link_vrr_120();   // variable-refresh fullscreen that kept its mode: the 120 Hz link paces the 60 (link_vrr_120)
      if (vrr != vrr_was) { vrr_was = vrr; MLOG("display link: %s (frame %llu)", vrr ? "120 Hz in fullscreen on a variable-refresh screen, a frame every other tick (DM_PRESENT_LINK=1 keeps 60 Hz)" : "60 Hz again (window, fixed-rate screen or another frame rate)", (unsigned long long)atomic_load(&g_cur_frame)); }
      if (vrr) want = 2;
