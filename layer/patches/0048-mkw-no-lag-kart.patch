@@ -105,7 +105,7 @@ index c18fa32a03a872a5469c7411363a49a972e7261e..467cad3b1c0af7a4dc8a4f03b1a0672f
           f'#define DM_GAME_PAD_LAYOUT {("simple", "full", "touch").index(pl)}',
           f'#define DM_GAME_OPMODE {int(om == "console")}',
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index ef12b9eb133d6d6b18f17c51e7bf567a072c875b..6bc92ff2ebb491d3f7b9973a89ab119f449ee8fc 100644
+index d378a90c7ac1e9829413ee14429b159640147858..d0204ca2f23129cb3a52682c4ea243cad3be7a91 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
 @@ -3542,7 +3542,9 @@ _Static_assert(sizeof(map_req) == 0x28, "NVNmappingRequest");
