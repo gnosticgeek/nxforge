@@ -57,10 +57,10 @@ index 0c10e12444ce77f3ec3d6a030945ef3929ca23f3..9f9ab66a18125e3bdf93679d5e8940bd
      *e=(geo_ix_ent){.key=*key,.lo=lo,.hi=hi,.nu=nu,.words=words,.unique=n_unique,.raw_n=raw_n,.bytes=bytes};
      memcpy(e->data,raw,raw_n);memcpy(e->data+raw_n,map,words*4);memcpy(e->data+raw_n+words*4,unique,n_unique*4);
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 7426f6dc985440b274746e4067f5fef0ce8eb94b..c54bdf58ace9096d2bd9cf560aa5d3de5dddcf1f 100644
+index 776569197d103b9338d8bcd96a95a551ee29d3a3..cca48e48d55dfdbac41b4339f74cb8c4e05cc76c 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -3066,7 +3066,7 @@ static void post(post_op o) {
+@@ -3067,7 +3067,7 @@ static void post(post_op o) {
          size_t cap = g_postcap ? g_postcap * 2 : 64;
          g_post = realloc_or_die(g_post, cap * sizeof *g_post, "the deferred operations"); g_postcap = cap;
      }
@@ -69,7 +69,7 @@ index 7426f6dc985440b274746e4067f5fef0ce8eb94b..c54bdf58ace9096d2bd9cf560aa5d3de
  }
  // A submission's visibility buffer, taken from the ring at its first pass that counts samples: most submissions count none (a compute piece, a copy, a piece between two waits),
  // and one buffer each at their start kept the ring's 8 in flight as the allocators were. The ring holds one for every submission that can be in flight (VIS_RING), so one is
-@@ -8766,7 +8766,7 @@ static NvShader *shader_load(NSString *pc, int stage, int layer) {
+@@ -8767,7 +8767,7 @@ static NvShader *shader_load(NSString *pc, int stage, int layer) {
      if (o->rf.has_c1) c1_store(o);
      NSString *ext = g_cb_ext[[pc hasSuffix:@"_b"] ? [pc substringToIndex:pc.length - 2] : pc];   // bytes each uniform slot can read (cb_len), storage slots never written (sb_ro)
      for (NSString *f in [ext componentsSeparatedByString:@" "]) { int r = 0, n = 0;
@@ -78,7 +78,7 @@ index 7426f6dc985440b274746e4067f5fef0ce8eb94b..c54bdf58ace9096d2bd9cf560aa5d3de
          else if (sscanf(f.UTF8String, "s%d", &r) == 1 && r >= 0 && r < 32) o->sb_ro |= 1u << r; }
      return o;
  }
-@@ -8793,7 +8793,7 @@ static int progpf_first(NSString *pc) {
+@@ -8794,7 +8794,7 @@ static int progpf_first(NSString *pc) {
  }
  static NvShader *shader_get(NSString *pc, int stage) {
      if (!g_shcache) g_shcache = [NSMutableDictionary dictionary];
@@ -87,7 +87,7 @@ index 7426f6dc985440b274746e4067f5fef0ce8eb94b..c54bdf58ace9096d2bd9cf560aa5d3de
      if (o) return o;
      uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
      if (!o) return nil;
-@@ -22443,10 +22443,9 @@ static int up_mfx_encode(NvShader *cs) {
+@@ -22444,10 +22444,9 @@ static int up_mfx_encode(NvShader *cs) {
      for (int i = 0; i < cs->rf.nb; i++) { int k = cs->rf.b[i].kind; if (k == NVN_RB_TEX && ti < 0) ti = i; else if (k == NVN_RB_IMG && oi < 0) oi = i; else if (k == NVN_RB_TEX || k == NVN_RB_IMG) return 0; }
      if (ti < 0 || oi < 0) { static int once; if (!once++) MLOG("[RED] upscaler %s: not one texture and one image; the shader draws", cs->key); return 0; }
      int tin = bound_tex_id(bound_tex(5, cs->rf.b[ti].reg)), tout = cs->rf.b[oi].reg < 32 ? bound_tex_id(bound_img(5, cs->rf.b[oi].reg)) : -1;

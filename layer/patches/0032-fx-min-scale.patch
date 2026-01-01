@@ -9,10 +9,10 @@ Subject: fx-min-scale: MetalFX only where it enlarges the picture by 1.4x or
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 70a8a499bec51dea5b58b169d6b4aea697b55565..1194f4f522bdd2cba261dc8b63aa17ece6a314bf 100644
+index 27cc2c5c224e833578853013540e9ce32504d647..972ff1ed05bca5fdcd4923b4958eaa1f0df52ea6 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -22222,9 +22222,10 @@ static id<MTLTexture> aa_encode(fx_state *fx, id<MTL4CommandBuffer> cb, id<MTLTe
+@@ -22223,9 +22223,10 @@ static id<MTLTexture> aa_encode(fx_state *fx, id<MTL4CommandBuffer> cb, id<MTLTe
      return fx->aa;
  }
  // MetalFX scales the content (cw x ch) to its rectangle on the canvas (vp) when the rectangle is at least as large in both directions and larger in one

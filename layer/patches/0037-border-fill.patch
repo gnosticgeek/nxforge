@@ -12,10 +12,10 @@ Subject: border-fill: the picture blurred, or the game's art, around a picture
  4 files changed, 11 insertions(+)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 1194f4f522bdd2cba261dc8b63aa17ece6a314bf..5d9af5489ec433cf7c9140520f8559b56c128748 100644
+index 972ff1ed05bca5fdcd4923b4958eaa1f0df52ea6..9a916e47531447fee156d3bf134ba7bc507c7751 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -22506,6 +22506,7 @@ static int up_mfx_encode(NvShader *cs) {
+@@ -22507,6 +22507,7 @@ static int up_mfx_encode(NvShader *cs) {
      return 1;
  }
  #include "nxforge/pixel_art.inc"   // NXForge: pixel art
@@ -23,7 +23,7 @@ index 1194f4f522bdd2cba261dc8b63aa17ece6a314bf..5d9af5489ec433cf7c9140520f8559b5
  // The present pass: src's valid rectangle drawn into dst (the drawable, or a screenshot's texture) as present_encode draws it, through MetalFX first where fx_encode takes it
  // (fx: the scaler state to use, nil = bilinear). uvb: the pass's crop constants (one buffer per present allocator, written by the CPU)
  static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4], id<MTLBuffer> uvb, fx_state *fx) {
-@@ -22543,6 +22544,7 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+@@ -22544,6 +22545,7 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
               dst.pixelFormat == MTLPixelFormatRGBA16Float ? "EDR highlights follow it" : "the scaler cannot write it",
               (unsigned long)dst.width, (unsigned long)dst.height, (unsigned long)dst.pixelFormat, (unsigned long)dst.usage, (unsigned long)up.width, (unsigned long)up.height); }
      if (up) { tex = up; r[0] = r[1] = 0; r[2] = up.width; r[3] = up.height; fr[0] = fr[1] = 0; fr[2] = up.width; fr[3] = up.height; }   // the scaled picture, the viewport's size: drawn 1:1
@@ -31,7 +31,7 @@ index 1194f4f522bdd2cba261dc8b63aa17ece6a314bf..5d9af5489ec433cf7c9140520f8559b5
      MTL4RenderPassDescriptor *rp = [MTL4RenderPassDescriptor new];
      rp.colorAttachments[0].texture = dst;
      rp.colorAttachments[0].loadAction = full ? MTLLoadActionDontCare : MTLLoadActionClear;
-@@ -22562,6 +22564,7 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+@@ -22563,6 +22565,7 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
      if (flipped) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
      pfx_params(uv + 8, &vp, cw, ch); nxf_edr_params(uv + 24, dst.pixelFormat);   // NXForge: EDR highlights (present_edr.inc)
      at_addr(g_present_args, uvb.gpuAddress, 0, "present table slot", 1);

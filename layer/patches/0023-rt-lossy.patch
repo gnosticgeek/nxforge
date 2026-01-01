@@ -18,10 +18,10 @@ Check: make -C dm/gfx/tests GAME=<id> check_t_rt_lossy (Mac).
  create mode 100644 dm/gfx/tests/t_rt_lossy.m
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index aafc5f1efba83ca076987ae0a7d4705895c8af7a..7426f6dc985440b274746e4067f5fef0ce8eb94b 100644
+index 29fc531322befd0a9bf9c2f9180f9b154396d652..776569197d103b9338d8bcd96a95a551ee29d3a3 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -4221,6 +4221,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
+@@ -4222,6 +4222,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
      *w = l < 32 ? MAX(t->d.width >> l, 1u) : 1u; *h = l < 32 ? MAX(H >> l, 1u) : 1u;
      if (z) *z = l < 32 ? MAX(Z >> l, 1u) : 1u;
  }
@@ -46,7 +46,7 @@ index aafc5f1efba83ca076987ae0a7d4705895c8af7a..7426f6dc985440b274746e4067f5fef0
  // In-place upgrade: when the original texture was not created with PixelFormatView (off by default, to keep Apple GPU lossless compression) but a different-format view is needed, create a new one with the original spec + PixelFormatView, copy over every slice × level, and replace the registration.
  // Count: across the 4 screens character select / camp / wilderness / combat, 17473 textures needed a different-format view 0 times, so this is a fallback and does not rely on predicting which textures need it
  // The same upgrade adds render-target usage for a whole-level clear (clear_tex) of a texture made without it: Monster Hunter Rise clears a 32x80 packaged one
-@@ -7081,7 +7099,7 @@ static void *tex_mtl_resolve(const tex_t *ct, int *in_storage, id<MTLTexture> __
+@@ -7082,7 +7100,7 @@ static void *tex_mtl_resolve(const tex_t *ct, int *in_storage, id<MTLTexture> __
          mt = pair_texture(t, d);   // (neither filled: their storage is shared)
          if (!mt) mt = image_texture(t, d);
          if (!mt) mt = pool_heap_texture(t, d);
