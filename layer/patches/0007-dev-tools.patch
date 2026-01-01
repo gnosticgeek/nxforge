@@ -4,6 +4,10 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
+ dm/gfx/tests/t_res_commit.m          |  2 +-
+ dm/gfx/tests/t_upload_src.m          |  1 +
+ dm/gfx/tests/t_vk_swapchain_life.m   |  6 ++++--
+ dm/gfx/tests/t_zero_depth.m          |  2 ++
  dm/tools/lint_c_baseline.tsv         |  5 ++---
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
@@ -12,8 +16,63 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 25 +++++++++++++++----------
- 8 files changed, 57 insertions(+), 30 deletions(-)
+ 12 files changed, 65 insertions(+), 33 deletions(-)
 
+diff --git a/dm/gfx/tests/t_res_commit.m b/dm/gfx/tests/t_res_commit.m
+index bee2fcc72ca7fd60b81c8a22e2394555bc547fe8..7f918c74c25cb41474c49027ba6dae512ddd4386 100644
+--- a/dm/gfx/tests/t_res_commit.m
++++ b/dm/gfx/tests/t_res_commit.m
+@@ -15,7 +15,7 @@ static int checks, failed;
+ 
+ enum { BIG_BYTES = 48u << 20 };
+ 
+-static id<MTLBuffer> buf(size_t n) { return [g_dev newBufferWithLength:n options:MTLResourceStorageModePrivate]; }
++static id<MTLBuffer> buf(size_t n) { id<MTLBuffer> b = [g_dev newBufferWithLength:n options:MTLResourceStorageModePrivate]; if (!b) abort(); return b; }   // NXForge (lint_c): never nil past here
+ 
+ int main(void) { @autoreleasepool {
+     mtl_init();
+diff --git a/dm/gfx/tests/t_upload_src.m b/dm/gfx/tests/t_upload_src.m
+index c4a36f721a25b9e0a119222cd7e42b3e57be29ef..60e98a3bdc24c639578ac96cabeae9ebbf785a10 100644
+--- a/dm/gfx/tests/t_upload_src.m
++++ b/dm/gfx/tests/t_upload_src.m
+@@ -33,6 +33,7 @@ static void make(upl *u, uint8_t *pool_mem, pool_t *pool, size_t off, unsigned w
+ static int same_texels(id<MTLTexture> tex, const upl *u) {
+     unsigned w = u->t.d.width, h = u->t.d.height;
+     id<MTLBuffer> rb = [g_dev newBufferWithLength:u->bytes options:MTLResourceStorageModeShared];
++    if (!rb) return 0;   // NXForge (lint_c): the readback buffer could not be made
+     id<MTLCommandBuffer> cb = q_cb(); id<MTLBlitCommandEncoder> ce = [cb blitCommandEncoder];
+     [ce copyFromTexture:tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1) toBuffer:rb destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:u->bytes];
+     [ce endEncoding]; [cb commit]; [cb waitUntilCompleted];
+diff --git a/dm/gfx/tests/t_vk_swapchain_life.m b/dm/gfx/tests/t_vk_swapchain_life.m
+index b56c63946138cb8853a8f950d73917014e3d770a..9eeb06bbfa2a6319d338dac23f9f6587c4252939 100644
+--- a/dm/gfx/tests/t_vk_swapchain_life.m
++++ b/dm/gfx/tests/t_vk_swapchain_life.m
+@@ -21,8 +21,10 @@ enum { CYCLES = 140, FRAMES = 3, IMAGES = 3 };   // more cycles than the present
+ static void one_cycle(__weak id<MTLTexture> *weak) {
+     @autoreleasepool {
+         VkSwapchainCreateInfoKHR ci = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .minImageCount = IMAGES, .imageFormat = VK_FORMAT_B8G8R8A8_UNORM,
+-                                       .imageExtent = {64, 32}, .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, .presentMode = VK_PRESENT_MODE_FIFO_KHR};
+-        VkSwapchainKHR sc; h_vkCreateSwapchainKHR(&g_device, &ci, NULL, &sc);
++                                       .imageExtent = {64, 32}, .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, .presentMode = VK_PRESENT_MODE_FIFO_KHR,
++                                       .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR, .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR};
++        VkSwapchainKHR sc = NULL;
++        if (h_vkCreateSwapchainKHR(&g_device, &ci, NULL, &sc) != VK_SUCCESS || !sc) { CHECK(0, "the swap chain"); return; }   // NXForge (lint_c)
+         for (uint32_t i = 0; i < sc->n; i++) weak[i] = sc->img[i]->tex;
+         for (int f = 0; f < FRAMES; f++) {
+             uint32_t k; h_vkAcquireNextImageKHR(&g_device, sc, UINT64_MAX, NULL, NULL, &k);
+diff --git a/dm/gfx/tests/t_zero_depth.m b/dm/gfx/tests/t_zero_depth.m
+index 75cb681b8481af615b129151917723959e979774..27b206ec04aad173ffde1744b13ab1223875b7fc 100644
+--- a/dm/gfx/tests/t_zero_depth.m
++++ b/dm/gfx/tests/t_zero_depth.m
+@@ -36,6 +36,8 @@ int main(void) { @autoreleasepool {
+         if (!base) continue;
+         size_t bpp = base.pixelFormat == MTLPixelFormatDepth16Unorm ? 2 : 4, poison_bytes = (size_t)cases[i].w * cases[i].h * bpp;
+         id<MTLBuffer> poison = [g_dev newBufferWithLength:poison_bytes options:MTLResourceStorageModeShared];
++        CHECK(poison != nil, "the poison buffer allocates");
++        if (!poison) continue;   // NXForge (lint_c)
+         if (bpp == 2) for (size_t k = 0; k < poison_bytes / 2; k++) ((uint16_t *)poison.contents)[k] = 0xbfff;   // 0.75
+         else for (size_t k = 0; k < poison_bytes / 4; k++) ((float *)poison.contents)[k] = .75f;
+         id<MTLCommandBuffer> cb = [queue commandBuffer]; id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
 index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..f396b01e20cbe5d92e15fe9c444190d7090bc7d5 100644
 --- a/dm/tools/lint_c_baseline.tsv
