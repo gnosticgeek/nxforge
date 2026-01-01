@@ -13,8 +13,7 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/nvn/nvn_geometry.inc       |    1 +
  dm/gfx/nvn/nvn_mtl.h              |    1 +
  dm/gfx/nvn/nvn_mtl.m              | 1048 ++++++++++++++++++++++++++---
- dm/gfx/nvn/nvn_owner.h            |    3 +
- dm/gfx/nvn/nvn_owner.m            |    2 +
+ dm/gfx/nvn/nvn_owner.h            |    2 +
  dm/gfx/tests/Makefile             |   40 +-
  dm/gfx/tests/t_cpu_tex.m          |   34 +-
  dm/gfx/tests/t_dispatch_barrier.m |    8 +-
@@ -26,7 +25,7 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/tests/t_tg_spill.m         |    2 +-
  dm/gfx/tests/t_upscaler_mfx.m     |    2 +-
  dm/gfx/tests/t_view_swizzle.m     |    2 +-
- 21 files changed, 1347 insertions(+), 153 deletions(-)
+ 20 files changed, 1344 insertions(+), 153 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index 298ce8cf6acfdadae2716a35274bf21c8e396cdd..9aefa0fbb8a66e26ab5d8d191c5dc0ddd166146a 100644
@@ -2312,32 +2311,18 @@ index 5a2d943ad8455f55e9fc5b9da4faf03aaecb25e7..c4dd437b706a5865a9aebf8bde7a8cf8
      if (want && mtl_fps_target() == 30 && link_30hz()) want = 3;   // Power-saving mode: display link at 30 Hz
      if (want) front_screen_match(want == 3 ? 30 : want == 2 ? 120 : 60);   // the game's rate: a variable-refresh screen goes to a fixed-rate mode at a multiple where it has one
 diff --git a/dm/gfx/nvn/nvn_owner.h b/dm/gfx/nvn/nvn_owner.h
-index 377e424b833497abdfb595d8d0d760d340e7a8de..f46cd6119165bbdd115de1b3afcc9ecb779f57f6 100644
+index 377e424b833497abdfb595d8d0d760d340e7a8de..10e3adc2f5d46acee4fc28f90bdbf3f91ed56c6a 100644
 --- a/dm/gfx/nvn/nvn_owner.h
 +++ b/dm/gfx/nvn/nvn_owner.h
-@@ -116,6 +116,9 @@ own_alias_stats own_alias_stats_locked(void);
+@@ -116,6 +116,8 @@ own_alias_stats own_alias_stats_locked(void);
  // longest any of them has gone without a lookup, in submissions (issue #2629: how much of a long session's memory growth they are). A walk: the memory report
  typedef struct { uint32_t entries; uint64_t bytes, writable_bytes, oldest_idle; } own_alias_unheld;
  own_alias_unheld own_alias_unheld_locked(void);
 +uint64_t own_alias_seen_locked(const alias_key *k);              // the submission of k's last lookup or creation, 0 for none (NXForge: the GPU memory guard's idle entries)
 +void own_alias_seen_set_locked(const alias_key *k, uint64_t now);   // marks k looked up at submission now (a test's lookup)
-+uint32_t own_alias_unref_locked(void);                        // entries no live or ghost entry resolves to (a walk: the memory report)
  
  // Retirement eligibility (see above). Caller holds g_smu
  int own_retire_locked(id o);    // a retired resource whose fence has passed: 1, it may leave the residency set; 0, an entry holds it: the owner keeps it (the caller drops only its reference)
-diff --git a/dm/gfx/nvn/nvn_owner.m b/dm/gfx/nvn/nvn_owner.m
-index da8fb2b00a2eb255d8b8cb4944801268e003d8af..f228f507e47b147d84cd949817b01ad30588ab15 100644
---- a/dm/gfx/nvn/nvn_owner.m
-+++ b/dm/gfx/nvn/nvn_owner.m
-@@ -203,6 +203,8 @@ id own_alias_get_locked(const alias_key *k) { return hm_get_id(&g_alias, k); }
- id own_alias_peek(const alias_key *k) { pthread_mutex_lock(&g_smu); id o = hm_get_id(&g_alias, k); pthread_mutex_unlock(&g_smu); return o; }
- void own_alias_put_locked(const alias_key *k, id o, uint64_t seen) { alias_put(k, o, seen); }
- int own_alias_del_locked(const alias_key *k) { return alias_del(k); }
-+    return n;
-+}
- // A new shared texture takes over storage: entries of the same pool whose storage overlaps the new texture's under another description go, unless a live texture object still resolves
- // to them (an object rebuilt over the same storage with the same description must keep finding it: SMBW's transient render targets) or a lookup found them in the last ALIAS_IDLE submissions
- // (Breath of the Wild finalizes its transient render targets before it submits and makes them again the next frame: targets sharing storage would evict each other every frame). On NVN
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
 index 7cdb354e497bc7f5e53f041c1717b8e5dc5f2bae..84f6633927634dfdb018bafd56ad9409ea7aaa83 100644
 --- a/dm/gfx/tests/Makefile
