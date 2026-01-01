@@ -44,7 +44,7 @@ index 85fb4e914b5abcc32490925da67e835a5ee12a5e..e66b18700d562978975a02179b881196
  DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
  DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
 diff --git a/dm/host/hle_audio.c b/dm/host/hle_audio.c
-index 8190080d5be876f99b365d0df3cde1b760a36653..4a02df9ddfcfda2381525c414fd5bdcbfe336e04 100644
+index 8190080d5be876f99b365d0df3cde1b760a36653..0c43c58c49b1ddb88e5c76bd9d0181846714b3d7 100644
 --- a/dm/host/hle_audio.c
 +++ b/dm/host/hle_audio.c
 @@ -9,6 +9,7 @@
@@ -194,7 +194,7 @@ index 8190080d5be876f99b365d0df3cde1b760a36653..4a02df9ddfcfda2381525c414fd5bdcb
 +    is_name(name, "AudioTrueRawInput");
 +}
 +HLE_FORCE("_ZN2nn5audio31GetVirtualInputDevicePropertiesEPNS0_23VirtualDevicePropertiesERKNS0_15AudioDeviceNameE", "connect to auddmg:u; no properties kept", Result, h_is_Props, void *props, const char *name) { (void)props; (void)name; return RES_FAIL; }
-+HLE_FORCE_BIG("_ZN2nn5audio15OpenInputStreamEPNS0_15InputStreamTypeEPvmRKNS0_15AudioDeviceNameERKNS0_12StreamFormatEi", "connect to auddmg:u; with DM_MIC=1 a stream on the Mac's microphone",
++HLE_FORCE("_ZN2nn5audio15OpenInputStreamEPNS0_15InputStreamTypeEPvmRKNS0_15AudioDeviceNameERKNS0_12StreamFormatEi", "connect to auddmg:u; with DM_MIC=1 a stream on the Mac's microphone",
 +              Result, h_is_Open, void *g, void *buf, size_t size, const char *dev, const int32_t *fmt, int frames) {
 +    (void)buf; (void)size;
 +    if (!mic_on()) return RES_FAIL;
@@ -219,16 +219,16 @@ index 8190080d5be876f99b365d0df3cde1b760a36653..4a02df9ddfcfda2381525c414fd5bdcb
 +    if (state == OS_STARTED) { s->state = state; if (g_mic_started++ == 0) mic_queue(1); }
 +    else { s->state = state; if (--g_mic_started == 0) mic_queue(0); }
 +}
-+HLE_FORCE_BIG("_ZN2nn5audio16StartInputStreamEPNS0_15InputStreamTypeE", "start capturing into the stream", Result, h_is_Start, void *g) {
++HLE_FORCE("_ZN2nn5audio16StartInputStreamEPNS0_15InputStreamTypeE", "start capturing into the stream", Result, h_is_Start, void *g) {
 +    istream *s = is_of(g); if (!s) return RES_FAIL;
 +    pthread_mutex_lock(&g_mic_m); is_set_state(s, OS_STARTED); pthread_mutex_unlock(&g_mic_m);
 +    return RES_OK;
 +}
-+HLE_FORCE_BIG("_ZN2nn5audio15StopInputStreamEPNS0_15InputStreamTypeE", "stop capturing into the stream", void, h_is_Stop, void *g) {
++HLE_FORCE("_ZN2nn5audio15StopInputStreamEPNS0_15InputStreamTypeE", "stop capturing into the stream", void, h_is_Stop, void *g) {
 +    istream *s = is_of(g); if (!s) return;
 +    pthread_mutex_lock(&g_mic_m); is_set_state(s, OS_STOPPED); pthread_mutex_unlock(&g_mic_m);
 +}
-+HLE_FORCE_BIG("_ZN2nn5audio16CloseInputStreamEPNS0_15InputStreamTypeE", "close the stream", void, h_is_Close, void *g) {
++HLE_FORCE("_ZN2nn5audio16CloseInputStreamEPNS0_15InputStreamTypeE", "close the stream", void, h_is_Close, void *g) {
 +    istream *s = is_of(g); if (!s) return;
 +    pthread_mutex_lock(&g_mic_m);
 +    is_set_state(s, OS_STOPPED);
