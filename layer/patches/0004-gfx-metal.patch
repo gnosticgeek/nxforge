@@ -20,14 +20,14 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/tests/t_dispatch_barrier.m |    8 +-
  dm/gfx/tests/t_dispatch_own.m     |    2 +-
  dm/gfx/tests/t_dlss_mfx.m         |    2 +-
- dm/gfx/tests/t_present_crop.m     |  118 ++++
+ dm/gfx/tests/t_present_crop.m     |  120 +++-
  dm/gfx/tests/t_present_rescue.m   |   30 +-
  dm/gfx/tests/t_sbw.m              |   12 +-
  dm/gfx/tests/t_tg_spill.m         |    2 +-
  dm/gfx/tests/t_upscaler_mfx.m     |    2 +-
  dm/gfx/tests/t_view_swizzle.m     |    2 +-
  docs/reference/rendering.md       |    2 +-
- 22 files changed, 1371 insertions(+), 163 deletions(-)
+ 22 files changed, 1372 insertions(+), 164 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index a1c3db4c1a52f250e3f446821f75ccef74ba20e5..b4ccb6b7c0b7325ebdc3b1942cfab9da63cc6db7 100644
@@ -2609,7 +2609,7 @@ index 1aa2868884124e0be10dc9c63fbadbd7012f6c68..6af8aa1d51484bc619886a47307d8f67
  static void fill(id<MTLTexture> t, MTLClearColor c, int depth) {
      id<MTLCommandBuffer> cb = q_cb(); MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
 diff --git a/dm/gfx/tests/t_present_crop.m b/dm/gfx/tests/t_present_crop.m
-index 17ee296587fd7ede2687ba2662e79b0e2db4f261..ed04cf73fedfbf5d938b9ee1910bfb8fc6de2d82 100644
+index 17ee296587fd7ede2687ba2662e79b0e2db4f261..71fdacf74ef8498ef52d3de74a02d62f8b68252e 100644
 --- a/dm/gfx/tests/t_present_crop.m
 +++ b/dm/gfx/tests/t_present_crop.m
 @@ -112,6 +112,90 @@ int main(void) { @autoreleasepool {
@@ -2744,6 +2744,15 @@ index 17ee296587fd7ede2687ba2662e79b0e2db4f261..ed04cf73fedfbf5d938b9ee1910bfb8f
          MTLTextureDescriptor *smallD=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:32 height:32 mipmapped:NO];
          smallD.storageMode=MTLStorageModePrivate;smallD.usage=MTLTextureUsageRenderTarget;
          id<MTLTexture> small=[g_dev newTextureWithDescriptor:smallD];int whole[4]={0},invalidCrop[4]={63,0,2,2};
+@@ -217,7 +335,7 @@ int main(void) { @autoreleasepool {
+             }
+             EXPECT("in-place presents go through MetalFX",ROUNDS,kinds);
+             EXPECT("the scaler read the window texture in place: no input copy made",1,g_fx_present.in==nil&&g_fx_present.in_place_n>=ROUNDS);
+-            EXPECT("the scaler wrote the canvas: no present pass, no output texture made",1,g_fx_present.out==nil&&g_fx_present.direct_n>=ROUNDS);
++            EXPECT("NXForge: the scaler writes its own output, which the present pass draws (no direct canvas write: AA, pixel art, filters and HDR follow there)",1,g_fx_present.out!=nil&&g_fx_present.direct_n==0);
+             EXPECT("the scaler saw the whole frame still drawing at the present, rounds stale",0,stale);
+             res_remove(win);res_remove(canvas);res_remove(args);
+         }
 diff --git a/dm/gfx/tests/t_present_rescue.m b/dm/gfx/tests/t_present_rescue.m
 index f39c50ad500d66cbc8430da87a4abd80c6c63582..c0fac386162e054acab22cccb7c8927aab912762 100644
 --- a/dm/gfx/tests/t_present_rescue.m
