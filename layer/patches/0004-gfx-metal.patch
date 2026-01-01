@@ -5,27 +5,28 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  pool bounds, PSO archive
 
 ---
- dm/gfx/README.md                |    3 +-
- dm/gfx/hle_vi.c                 |   26 +-
- dm/gfx/msl/present.metal        |  103 ++-
- dm/gfx/nvn/hle_nvn.c            |   55 +-
- dm/gfx/nvn/nvn_dirty.c          |    8 +-
- dm/gfx/nvn/nvn_geometry.inc     |    1 +
- dm/gfx/nvn/nvn_mtl.h            |    1 +
- dm/gfx/nvn/nvn_mtl.m            | 1101 ++++++++++++++++++++++++++++---
- dm/gfx/nvn/nvn_owner.h          |    2 +
- dm/gfx/nvn/nvn_owner.m          |    2 +
- dm/gfx/tests/Makefile           |   40 +-
- dm/gfx/tests/t_cpu_tex.m        |   34 +-
- dm/gfx/tests/t_dispatch_own.m   |    2 +-
- dm/gfx/tests/t_dlss_mfx.m       |    2 +-
- dm/gfx/tests/t_present_crop.m   |  118 ++++
- dm/gfx/tests/t_present_rescue.m |   30 +-
- dm/gfx/tests/t_sbw.m            |   12 +-
- dm/gfx/tests/t_tg_spill.m       |    2 +-
- dm/gfx/tests/t_upscaler_mfx.m   |    2 +-
- dm/gfx/tests/t_view_swizzle.m   |    2 +-
- 20 files changed, 1387 insertions(+), 159 deletions(-)
+ dm/gfx/README.md                  |    3 +-
+ dm/gfx/hle_vi.c                   |   26 +-
+ dm/gfx/msl/present.metal          |  103 ++-
+ dm/gfx/nvn/hle_nvn.c              |   55 +-
+ dm/gfx/nvn/nvn_dirty.c            |    8 +-
+ dm/gfx/nvn/nvn_geometry.inc       |    1 +
+ dm/gfx/nvn/nvn_mtl.h              |    1 +
+ dm/gfx/nvn/nvn_mtl.m              | 1101 ++++++++++++++++++++++++++---
+ dm/gfx/nvn/nvn_owner.h            |    2 +
+ dm/gfx/nvn/nvn_owner.m            |    2 +
+ dm/gfx/tests/Makefile             |   40 +-
+ dm/gfx/tests/t_cpu_tex.m          |   34 +-
+ dm/gfx/tests/t_dispatch_barrier.m |    8 +-
+ dm/gfx/tests/t_dispatch_own.m     |    2 +-
+ dm/gfx/tests/t_dlss_mfx.m         |    2 +-
+ dm/gfx/tests/t_present_crop.m     |  118 ++++
+ dm/gfx/tests/t_present_rescue.m   |   30 +-
+ dm/gfx/tests/t_sbw.m              |   12 +-
+ dm/gfx/tests/t_tg_spill.m         |    2 +-
+ dm/gfx/tests/t_upscaler_mfx.m     |    2 +-
+ dm/gfx/tests/t_view_swizzle.m     |    2 +-
+ 21 files changed, 1391 insertions(+), 163 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index a1c3db4c1a52f250e3f446821f75ccef74ba20e5..b4ccb6b7c0b7325ebdc3b1942cfab9da63cc6db7 100644
@@ -2603,6 +2604,45 @@ index 0888da9d8bd4c324a6f772bd60103bedbf492d1a..850ff65b15b798ca9afd6e0292d13149
 +    if (argc > 1 && !strcmp(argv[1], "--metal")) { mtl_init(); finalized_upload(0); finalized_upload(1); packaged_entry_outside_the_set(); finalize_during_walk(); poll_asks_again(); poll_beside(); handover_holders(); retire_after_completion(); retire_across_threads(); }
      printf("t_cpu_tex: %d checks, %d failed\n", checks, failed); return failed != 0;
  } }
+diff --git a/dm/gfx/tests/t_dispatch_barrier.m b/dm/gfx/tests/t_dispatch_barrier.m
+index f26d27ba233f7ca0d49a619b79382e6b63c200ad..b7a066fcea8a83bcdac3e7a08659f6b5f23332d2 100644
+--- a/dm/gfx/tests/t_dispatch_barrier.m
++++ b/dm/gfx/tests/t_dispatch_barrier.m
+@@ -56,7 +56,7 @@ int main(void) { @autoreleasepool {
+     // 2. Dispatches into slots of their own, no game barrier: none in game mode, one each in full mode
+     { for (int i = 0; i < N; i++) { word[16 * i] = 0; word[16 * i + 1] = (uint32_t)i; }
+       begin(); S.cprog = &ps; uint64_t b0 = mtl_blit_barriers(), f0 = g_dbar_free;
+-      for (int i = 0; i < N; i++) { S.ssbo[5][0] = (p_bind_buf){.addr=(uint64_t)(mem + 64 * i), .size=64}; dispatch(&one); }
++      for (int i = 0; i < N; i++) { S.ssbo[5][0] = (p_bind_buf){.addr=(uint64_t)(mem + 64 * i), .size=64}; dispatch(&one, NULL); }
+       EXPECT("barriers between dispatches the game did not order", game ? 0 : N - 1, mtl_blit_barriers() - b0);
+       if (game) EXPECT("counted as none", N, g_dbar_free - f0);
+       end("the slots complete"); int ok = 1; for (int i = 0; i < N; i++) ok &= word[16 * i] == (uint32_t)i + 1;
+@@ -66,7 +66,7 @@ int main(void) { @autoreleasepool {
+     { word[0] = 0;
+       begin(); S.cprog = &pc; S.ssbo[5][0] = (p_bind_buf){.addr=(uint64_t)mem, .size=64};
+       uint64_t b0 = mtl_blit_barriers(), c0 = g_dbar_copy;
+-      mtl_sub_fill((uint64_t)mem, 4, 7); dispatch(&one);
++      mtl_sub_fill((uint64_t)mem, 4, 7); dispatch(&one, NULL);
+       EXPECT("a barrier between a fill and the dispatch that reads it", 1, mtl_blit_barriers() - b0);
+       if (game) EXPECT("counted as a copy's range", 1, g_dbar_copy - c0);
+       end("the fill and its dispatch complete"); EXPECT("the dispatch sees the fill", 7 * 3 + 1, word[0]); }
+@@ -84,14 +84,14 @@ int main(void) { @autoreleasepool {
+     { word[0] = 1;
+       begin(); S.cprog = &pc; S.ssbo[5][0] = (p_bind_buf){.addr=(uint64_t)mem, .size=0};
+       uint64_t b0 = mtl_blit_barriers(), u0 = g_dbar_unknown;
+-      dispatch(&one); dispatch(&one); S.ssbo[5][0].size = 64; dispatch(&one);
++      dispatch(&one, NULL); dispatch(&one, NULL); S.ssbo[5][0].size = 64; dispatch(&one, NULL);
+       EXPECT("barriers around dispatches with no range", 2, mtl_blit_barriers() - b0);
+       if (game) EXPECT("counted as no range", 2, g_dbar_unknown - u0);
+       end("the rangeless dispatches complete"); EXPECT("they run in order", ((1 * 3 + 1) * 3 + 1) * 3 + 1, word[0]); }
+ 
+     // 6. What a dispatch wrote orders nothing in the next copy encoder, which starts behind a full barrier of its own: two fills there, the second over the dispatch's range, get no barrier
+     { word[0] = 0;
+-      begin(); S.cprog = &pc; S.ssbo[5][0] = (p_bind_buf){.addr=(uint64_t)mem, .size=64}; dispatch(&one); end("the dispatch completes");
++      begin(); S.cprog = &pc; S.ssbo[5][0] = (p_bind_buf){.addr=(uint64_t)mem, .size=64}; dispatch(&one, NULL); end("the dispatch completes");
+       begin(); uint64_t b0 = mtl_blit_barriers();
+       mtl_sub_fill((uint64_t)(mem + 2048), 4, 1); mtl_sub_fill((uint64_t)mem, 4, 9);
+       EXPECT("no barrier from a closed encoder's dispatch", 0, mtl_blit_barriers() - b0);
 diff --git a/dm/gfx/tests/t_dispatch_own.m b/dm/gfx/tests/t_dispatch_own.m
 index b7179fe579609fc12637bdb43cd41aa531f626b4..59463e273c0065ea37bc21090b272284f970296c 100644
 --- a/dm/gfx/tests/t_dispatch_own.m
