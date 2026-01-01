@@ -7,7 +7,7 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  dm/gfx/tests/t_res_commit.m          |  2 +-
  dm/gfx/tests/t_upload_src.m          |  1 +
  dm/gfx/tests/t_vk_swapchain_life.m   |  6 ++++--
- dm/gfx/tests/t_zero_depth.m          |  2 ++
+ dm/gfx/tests/t_zero_depth.m          |  7 ++++++-
  dm/tools/lint_c_baseline.tsv         |  5 ++---
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
@@ -16,7 +16,7 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 25 +++++++++++++++----------
- 12 files changed, 65 insertions(+), 33 deletions(-)
+ 12 files changed, 69 insertions(+), 34 deletions(-)
 
 diff --git a/dm/gfx/tests/t_res_commit.m b/dm/gfx/tests/t_res_commit.m
 index bee2fcc72ca7fd60b81c8a22e2394555bc547fe8..7f918c74c25cb41474c49027ba6dae512ddd4386 100644
@@ -61,10 +61,22 @@ index b56c63946138cb8853a8f950d73917014e3d770a..9eeb06bbfa2a6319d338dac23f9f6587
          for (int f = 0; f < FRAMES; f++) {
              uint32_t k; h_vkAcquireNextImageKHR(&g_device, sc, UINT64_MAX, NULL, NULL, &k);
 diff --git a/dm/gfx/tests/t_zero_depth.m b/dm/gfx/tests/t_zero_depth.m
-index 75cb681b8481af615b129151917723959e979774..27b206ec04aad173ffde1744b13ab1223875b7fc 100644
+index 75cb681b8481af615b129151917723959e979774..528495a6dd9f610cec211d68822e228f1e9afe6b 100644
 --- a/dm/gfx/tests/t_zero_depth.m
 +++ b/dm/gfx/tests/t_zero_depth.m
-@@ -36,6 +36,8 @@ int main(void) { @autoreleasepool {
+@@ -14,7 +14,10 @@ int main(void) { @autoreleasepool {
+     NSError *error = nil;
+     id<MTLLibrary> library = [g_dev newLibraryWithSource:@"#include <metal_stdlib>\nusing namespace metal;\n"
+         "kernel void count_nz(depth2d<float,access::read> d [[texture(0)]], device atomic_uint *o [[buffer(0)]], uint2 p [[thread_position_in_grid]]) { if (p.x < d.get_width() && p.y < d.get_height() && d.read(p) != 0.0f) atomic_fetch_add_explicit(o, 1u, memory_order_relaxed); }\n" options:nil error:&error];
+-    id<MTLComputePipelineState> counter = [g_dev newComputePipelineStateWithFunction:[library newFunctionWithName:@"count_nz"] error:&error];
++    id<MTLFunction> count_nz = [library newFunctionWithName:@"count_nz"];
++    CHECK(count_nz != nil, "the counter's function");   // NXForge (lint_c): a library that failed to compile has none
++    if (!count_nz) return 1;
++    id<MTLComputePipelineState> counter = [g_dev newComputePipelineStateWithFunction:count_nz error:&error];
+     CHECK(counter != nil, "synthetic non-zero counter compiles");
+     if (!counter) return 1;
+     id<MTLCommandQueue> queue = [g_dev newCommandQueue];
+@@ -36,6 +39,8 @@ int main(void) { @autoreleasepool {
          if (!base) continue;
          size_t bpp = base.pixelFormat == MTLPixelFormatDepth16Unorm ? 2 : 4, poison_bytes = (size_t)cases[i].w * cases[i].h * bpp;
          id<MTLBuffer> poison = [g_dev newBufferWithLength:poison_bytes options:MTLResourceStorageModeShared];
