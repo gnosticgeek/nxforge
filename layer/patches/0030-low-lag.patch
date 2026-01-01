@@ -45,7 +45,7 @@ index bba28d04a401f097cea3daa2e145c148ce647345..3d48cc57d6cfa70444249adb6115f5b0
  DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
  DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 819998476f0406472af1193c3f0bfde41d474765..1ac66b1c95734cc88090759365ff02a977e9462e 100644
+index d6ab71453c2c9b976877398cc94f7c305a4446ec..b72ae92a0e8f4e4f9f8425c7dc1b17ebd08fb111 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
 @@ -2148,6 +2148,7 @@ static int link_wait(const win_t *o, uint64_t timeout_ns);

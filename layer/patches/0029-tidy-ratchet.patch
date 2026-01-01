@@ -5,14 +5,47 @@ Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
  findings in upstream's code silenced on their lines, three counts lowered
 
 ---
+ dm/gfx/nvn/hle_nvn.c                  | 6 +++---
  dm/gfx/nvn/nvn_mtl.m                  | 7 +++----
  dm/gfx/tests/t_lazy_clear_order.m     | 2 ++
  dm/gfx/tests/t_present_crop.m         | 4 ++--
+ dm/gfx/tests/t_sparse_shadow.m        | 8 ++++----
  dm/gfx/tests/t_vk_clear_attachments.m | 2 +-
  dm/gfx/tests/t_vk_renderdragon.m      | 2 +-
  dm/tools/lint_c_baseline.tsv          | 2 +-
- 6 files changed, 10 insertions(+), 9 deletions(-)
+ 8 files changed, 17 insertions(+), 16 deletions(-)
 
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index 819998476f0406472af1193c3f0bfde41d474765..d6ab71453c2c9b976877398cc94f7c305a4446ec 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -288,7 +288,7 @@ typedef struct { uint8_t *mem, *orig; size_t alen; } reback_t;
+ static reback_t *g_reback; static size_t g_nreback, g_creback; static pthread_mutex_t g_reback_mu = PTHREAD_MUTEX_INITIALIZER;
+ static void reback_add(uint8_t *mem, uint8_t *orig, size_t alen) {
+     pthread_mutex_lock(&g_reback_mu);
+-    if (g_nreback == g_creback && !(g_reback = realloc(g_reback, (g_creback = g_creback ? g_creback * 2 : 16) * sizeof *g_reback))) die("reback allocation failed");
++    if (g_nreback == g_creback && !(g_reback = realloc(g_reback, (g_creback = g_creback ? g_creback * 2 : 16) * sizeof *g_reback))) die("reback allocation failed");   // NOLINT(bugprone-suspicious-realloc-usage): die() ends the process when it fails, so no buffer is left to leak
+     g_reback[g_nreback++] = (reback_t){mem, orig, alen};
+     pthread_mutex_unlock(&g_reback_mu);
+ }
+@@ -3657,7 +3657,7 @@ static void vshadow_cut(struct vpool *v, uint64_t lo, uint64_t hi) {   // drop o
+         if (b > hi) piece[np++] = vshadow_slice(&e, hi, b - hi);
+         vshadow_free(&e);
+         for (int k = 0; k < np; k++) {
+-            if (v->nsh == v->csh && !(v->sh = realloc(v->sh, (size_t)(v->csh = v->csh ? 2 * v->csh : 64) * sizeof *v->sh))) die("sparse pool copy table allocation failed");
++            if (v->nsh == v->csh && !(v->sh = realloc(v->sh, (size_t)(v->csh = v->csh ? 2 * v->csh : 64) * sizeof *v->sh))) die("sparse pool copy table allocation failed");   // NOLINT(bugprone-suspicious-realloc-usage): die() ends the process when it fails, so no buffer is left to leak
+             v->sh[v->nsh++] = piece[k];
+             atomic_fetch_add(&g_sh_bytes, piece[k].size);
+         }
+@@ -3690,7 +3690,7 @@ static int vshadow_map(struct vpool *v, const map_req *r, const uint8_t *src) {
+     memcpy(to, src, r->size);
+     uint8_t *abase = NULL; uint64_t alen = 0;
+     uint8_t *alias = vshadow_phys_alias(src, r->size, &abase, &alen);
+-    if (v->nsh == v->csh && !(v->sh = realloc(v->sh, (size_t)(v->csh = v->csh ? 2 * v->csh : 64) * sizeof *v->sh))) die("sparse pool copy table allocation failed");
++    if (v->nsh == v->csh && !(v->sh = realloc(v->sh, (size_t)(v->csh = v->csh ? 2 * v->csh : 64) * sizeof *v->sh))) die("sparse pool copy table allocation failed");   // NOLINT(bugprone-suspicious-realloc-usage): die() ends the process when it fails, so no buffer is left to leak
+     v->sh[v->nsh++] = (struct vshadow){(uint64_t)r->voff, r->size, src, abase, alias, alen, stamp, NULL, vshadow_npages(src, r->size)};
+     for (uint64_t o = 0; o < r->size; o += 0x1000) { vpte *e = (vpte *)vpt_get(v, (uint64_t)r->voff + o); if (e) e->shadow = 1; }
+     vshadow_written(v, (uint64_t)r->voff, (uint64_t)r->voff + r->size);
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
 index ec79e252be6c8558351edd28760f286323ba75a0..3ead637b0a83a3fa1540617683d408ac9f13f0b1 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
@@ -86,6 +119,40 @@ index a33e72bacc3a009bcb28d6b3adfedd38252e9c79..d46cf4bec18312a0234c9f963bb6f6c8
      // Leave the producer unsubmitted while the external present first reaches readback.
      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_global_queue(0, 0), ^{ [cb commit]; });
      uint64_t serial = mtl_ext_tex((__bridge void *)tex);
+diff --git a/dm/gfx/tests/t_sparse_shadow.m b/dm/gfx/tests/t_sparse_shadow.m
+index e2d3b034962156724133c51b06099f3411c8f95b..4fdad585253579327b3f7baaa5a72089d4b24ab2 100644
+--- a/dm/gfx/tests/t_sparse_shadow.m
++++ b/dm/gfx/tests/t_sparse_shadow.m
+@@ -157,7 +157,7 @@ int main(void) {
+     h_nvnCommandBufferAddCommandMemory(&cmd, &cpool, 0, 64 << 10);
+     h_nvnCommandBufferAddControlMemory(&cmd, ctl_mem, sizeof ctl_mem);
+     NVNtextureHandle handles[49];
+-    for (int i = 0; i < 49; i++) handles[i] = (NVNtextureHandle)(i + 100);
++    for (int i = 0; i < 49; i++) handles[i] = (NVNtextureHandle)i + 100;
+     h_nvnCommandBufferBeginRecording(&cmd);
+     h_nvnCommandBufferBindTextures(&cmd, NVN_SHADER_STAGE_FRAGMENT, 0, 49, handles);
+     NVNcommandHandle ch = h_nvnCommandBufferEndRecording(&cmd);
+@@ -165,17 +165,17 @@ int main(void) {
+     memset(S.tex[1], 0, sizeof S.tex[1]);
+     uint8_t *lin = nvn_rec_linear(ch, NULL);
+     mtl_exec(lin); free(lin);
+-    int all49 = 1; for (int i = 0; i < 49; i++) if (S.tex[1][i] != (uint64_t)(i + 100)) all49 = 0;
++    int all49 = 1; for (int i = 0; i < 49; i++) if (S.tex[1][i] != (uint64_t)i + 100) all49 = 0;
+     CHECK("BindTextures 49 handles replayed across split records", all49);
+     // Deferred bind >32 handles: mutate array after recording, before replay
+     h_nvnCommandBufferBeginRecording(&cmd);
+     h_nvnCommandBufferBindTexturesDeferred(&cmd, NVN_SHADER_STAGE_VERTEX, 0, 49, handles);
+     NVNcommandHandle ch_def = h_nvnCommandBufferEndRecording(&cmd);
+-    for (int i = 0; i < 49; i++) handles[i] = (NVNtextureHandle)(i + 500);
++    for (int i = 0; i < 49; i++) handles[i] = (NVNtextureHandle)i + 500;
+     memset(S.tex[0], 0, sizeof S.tex[0]);
+     lin = nvn_rec_linear(ch_def, NULL);
+     mtl_exec(lin); free(lin);
+-    int def49 = 1; for (int i = 0; i < 49; i++) if (S.tex[0][i] != (uint64_t)(i + 500)) def49 = 0;
++    int def49 = 1; for (int i = 0; i < 49; i++) if (S.tex[0][i] != (uint64_t)i + 500) def49 = 0;
+     CHECK("BindTexturesDeferred 49 handles read updated handles at replay", def49);
+ 
+     // 8. Geometry GPU-only scratch pool: reuses multiple blocks across geo_big_reset, trims completed blocks on memory pressure
 diff --git a/dm/gfx/tests/t_vk_clear_attachments.m b/dm/gfx/tests/t_vk_clear_attachments.m
 index 1d184c8775b89ad563c69a432f7cccd406fc436d..26f224e4be7555828675877939ad7ab0f14bb144 100644
 --- a/dm/gfx/tests/t_vk_clear_attachments.m
