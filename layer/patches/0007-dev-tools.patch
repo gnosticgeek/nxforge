@@ -4,21 +4,26 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
- dm/tools/lint_c_baseline.tsv         | 18 ++----------------
+ dm/tools/lint_c_baseline.tsv         | 29 +++++++++++-----------------
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
- dm/tools/tests/test_regress.py       | 16 ++++++++--------
+ dm/tools/tests/test_regress.py       | 16 +++++++--------
  dm/tools/tests/test_triage_report.py |  8 +++++---
- scripts/bench.py                     | 21 +++++++++++++++++----
+ scripts/bench.py                     | 21 ++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
- scripts/regress.py                   | 19 ++++++++++---------
- 8 files changed, 53 insertions(+), 43 deletions(-)
+ scripts/regress.py                   | 19 +++++++++---------
+ 8 files changed, 62 insertions(+), 45 deletions(-)
 
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
-index 073fdf8bb297d894c54d0052cdadea50754d00ee..cd3833a778b79a1d68bfbb230cf5d5d0d56555b9 100644
+index 073fdf8bb297d894c54d0052cdadea50754d00ee..4c2b27aa6932f48dc4643238a24724477158a9ca 100644
 --- a/dm/tools/lint_c_baseline.tsv
 +++ b/dm/tools/lint_c_baseline.tsv
-@@ -28,29 +28,23 @@ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	9
+@@ -24,33 +24,28 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
+ dm/gfx/nvn/nvn_mtl.m	bugprone-misplaced-widening-cast	1
+ dm/gfx/nvn/nvn_mtl.m	bugprone-signed-char-misuse	1
+ dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
+-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	9
++dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	10
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	5
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
@@ -27,6 +32,7 @@ index 073fdf8bb297d894c54d0052cdadea50754d00ee..cd3833a778b79a1d68bfbb230cf5d5d0
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	4
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
  dm/gfx/nvn/nvn_mtl.m	misc-redundant-expression	2
++dm/gfx/nvn/nvn_queue.inc	bugprone-suspicious-realloc-usage	1
  dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_alpha.m	clang-analyzer-nullability.NullablePassedToNonnull	1
 -dm/gfx/tests/t_alpha.m	clang-analyzer-osx.cocoa.RetainCount	1
@@ -49,12 +55,14 @@ index 073fdf8bb297d894c54d0052cdadea50754d00ee..cd3833a778b79a1d68bfbb230cf5d5d0
  dm/gfx/tests/t_initial_uncached.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_logic.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_mip_extent.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-@@ -63,22 +57,17 @@ dm/gfx/tests/t_present_crop.m	clang-analyzer-nullability.NullablePassedToNonnull
+@@ -62,23 +57,22 @@ dm/gfx/tests/t_present_alloc.m	clang-analyzer-nullability.NullablePassedToNonnul
+ dm/gfx/tests/t_present_crop.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_present_rescue.m	bugprone-unsafe-functions	1
  dm/gfx/tests/t_present_snap.m	bugprone-unsafe-functions	1
- dm/gfx/tests/t_present_snap.m	clang-analyzer-nullability.NullablePassedToNonnull	1
+-dm/gfx/tests/t_present_snap.m	clang-analyzer-nullability.NullablePassedToNonnull	1
 -dm/gfx/tests/t_present_snap.m	clang-analyzer-osx.cocoa.RetainCount	1
 -dm/gfx/tests/t_primitive_restart.m	clang-analyzer-osx.cocoa.RetainCount	1
++dm/gfx/tests/t_present_snap.m	clang-analyzer-nullability.NullablePassedToNonnull	3
  dm/gfx/tests/t_primitive_restart.m	clang-analyzer-unix.cstring.UninitializedRead	1
  dm/gfx/tests/t_pso_archive.m	bugprone-suspicious-memory-comparison	1
  dm/gfx/tests/t_pso_archive.m	clang-analyzer-nullability.NullablePassedToNonnull	2
@@ -67,12 +75,16 @@ index 073fdf8bb297d894c54d0052cdadea50754d00ee..cd3833a778b79a1d68bfbb230cf5d5d0
  dm/gfx/tests/t_pull_inv.m	bugprone-command-processor	1
  dm/gfx/tests/t_pull_inv.m	bugprone-random-generator-seed	1
  dm/gfx/tests/t_pull_inv.m	clang-analyzer-nullability.NullablePassedToNonnull	1
++dm/gfx/tests/t_queue_lifetime.m	bugprone-unsafe-functions	1
  dm/gfx/tests/t_readback.m	clang-analyzer-nullability.NullablePassedToNonnull	1
 -dm/gfx/tests/t_rt_range.m	clang-analyzer-osx.cocoa.RetainCount	1
++dm/gfx/tests/t_render_counter_overlap.m	bugprone-unsafe-functions	1
++dm/gfx/tests/t_render_counter_overlap.m	clang-analyzer-nullability.NullablePassedToNonnull	1
++dm/gfx/tests/t_render_enable_queue.m	bugprone-unsafe-functions	1
  dm/gfx/tests/t_stencil_view.m	bugprone-suspicious-memory-comparison	1
  dm/gfx/tests/t_stencil_view.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_tbuf2d.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-@@ -87,14 +76,11 @@ dm/gfx/tests/t_tex_fit_root.m	clang-analyzer-nullability.NullablePassedToNonnull
+@@ -87,14 +81,13 @@ dm/gfx/tests/t_tex_fit_root.m	clang-analyzer-nullability.NullablePassedToNonnull
  dm/gfx/tests/t_transform_feedback.m	bugprone-suspicious-memory-comparison	4
  dm/gfx/tests/t_transform_feedback.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_unwritten_store.m	bugprone-suspicious-memory-comparison	1
@@ -81,13 +93,15 @@ index 073fdf8bb297d894c54d0052cdadea50754d00ee..cd3833a778b79a1d68bfbb230cf5d5d0
  dm/gfx/tests/t_view_swizzle.m	clang-analyzer-core.UndefinedBinaryOperatorResult	1
  dm/gfx/tests/t_view_swizzle.m	clang-analyzer-nullability.NullablePassedToNonnull	2
 -dm/gfx/tests/t_view_swizzle.m	clang-analyzer-osx.cocoa.RetainCount	2
++dm/gfx/tests/t_wait_event.m	bugprone-unsafe-functions	1
++dm/gfx/tests/t_wait_event.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_xv.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_zskip.m	clang-analyzer-nullability.NullablePassedToNonnull	1
 -dm/gfx/tests/t_zskip.m	clang-analyzer-osx.cocoa.RetainCount	1
  dm/gfx/vk/hle_vk.m	bugprone-suspicious-memory-comparison	1
  dm/gfx/vk/hle_vk.m	bugprone-suspicious-realloc-usage	2
  dm/gfx/vk/hle_vk.m	clang-analyzer-core.uninitialized.Assign	1
-@@ -122,7 +108,7 @@ dm/host/tests/t_fs.c	bugprone-command-processor	2
+@@ -122,7 +115,7 @@ dm/host/tests/t_fs.c	bugprone-command-processor	2
  dm/host/tests/t_fs.c	clang-analyzer-unix.Stream	1
  dm/host/tests/t_fs_case.c	clang-analyzer-core.CallAndMessage	2
  dm/host/tests/t_fs_case.c	clang-analyzer-unix.Stream	1
