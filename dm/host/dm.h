@@ -57,6 +57,8 @@ static inline const char *dm_main_build(void) { for (int i = 0; i < g_nmod; i++)
 extern pthread_key_t g_key18, g_keytls, g_keytlr, g_keygate;
 
 void load_modules(const char *dir, const char **names, int n);
+void cheats_patch_code(module_t *m);   // cheats_host.c: the enabled cheats' code patches, into a module the loader has copied in and not yet sealed (Mac)
+void cheats_frame(void);                // cheats_host.c: run the enabled cheats once (every present)
 void run_module_inits(void);
 module_t *nro_find(const uint8_t sha256[32]);   // the mapped NRO with this hash (loader.c)
 int nro_refused(const uint8_t sha256[32]);      // an NRO the pack refused (an online SDK, nro.tsv "refused")
