@@ -122,6 +122,7 @@ class App(unittest.TestCase):
                          (str(res / 'romfs'), str(res / 'msl'), str(res / 'dm/shader_map.tsv'), str(res / 'dm/font'), str(res / 'aoc')))
         self.assertEqual((r['DM_SAVE'], r['DM_TEMP'], r['DM_ROOT'], r['cwd']), (str(self.tmp / 'Saves/save'), str(sup / 'temp'), str(sup), str(sup)))   # the save in the game folder; pso_user.tsv in the Library
         self.assertEqual(r['DM_GAME_FOLDER'], str(self.tmp))   # captures go there too (capture_mac.m)
+        self.assertEqual(r['DM_PSO_USER'], str(sup / 'pso_user.tsv'))   # the pipeline list stays in the Library, not beside the game's save
         self.assertEqual((r['DM_WINDOW'], r['DM_AUDIO'], r['DM_LANG']), ('1', '1', 'ja'))   # the caller's DM_LANG wins over the packed language
         self.assertEqual((r['DM_BAKED'], r['DM_BOTH']), ('1', 'player'))   # the player's env.txt before the bundle's
         self.assertTrue((self.tmp / 'Saves/save').is_dir()); self.assertTrue((sup / 'temp').is_dir())
