@@ -1,7 +1,7 @@
 // Mac front end: with DM_WINDOW=1 open a window (CAMetalLayer, for the graphics backend to present frames) + keyboard and controllers → dm_input; the guest runs on a large-stack thread instead and the main thread belongs to AppKit.
 // Without DM_WINDOW: the guest runs directly on the current thread, behaving the same as with no front end (windowless tests use this).
 // The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN starts it that way. ⌘Q quits; the left mouse button is the touchscreen.
-// The Graphics menu and its panel (⇧⌘G) pick the present filter while the game runs (DmGraphics); the choice is kept per game.
+// Esc (or ⇧⌘G, or the Graphics menu) opens the Quick settings sidebar over the game (DmSettings): the present filter, a frame-rate counter and mods, kept per game.
 // Key map (Nintendo layout): WASD left stick, arrow keys D-pad, J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller.
 // Controllers: buttons by position as on the iPhone (right A, bottom B, top X, left Y), shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
 // Each controller is a player of its own (local co-op): the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (pad_slots.h);
@@ -214,62 +214,345 @@ static void pads_start(void) {
 - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self fitDrawable]; }
 @end
 
-// Graphics menu and panel: the present filter (front.h mtl_present_filter_set, nvn_mtl.m) changes on the next frame, so it is picked while the game runs rather than in a launcher.
-// The panel floats over the game window, fullscreen too, and never becomes key (a non-activating panel that becomes key only if needed): the game window keeps the keyboard and the
-// controllers, and the game neither loses focus nor sees its input released (input_release) while the panel is up. The choice is kept per game in the user defaults (the app bundle's
-// own domain; the key names the game for a bare dmhost); DM_PRESENT_FILTER in the environment wins over it and is not saved
+// Quick settings: a sidebar over the right of the game picture (Esc, ⇧⌘G or the Graphics menu opens it; Esc, its close button or Resume game closes it), fullscreen too. Kept per game in the user
+// defaults (the app bundle's own domain; the keys name the game for a bare dmhost); a setting the environment names wins over its saved value and is not saved.
+// - Graphics & shaders: the present filter (front.h mtl_present_filter_set, nvn_mtl.m), from the next frame, so the game runs on behind the sidebar and shows the change at once.
+//   DM_PRESENT_FILTER / DM_PRESENT_FILTER_STRENGTH / DM_PRESENT_SCANLINE in the environment.
+// - Performance: a frame-rate counter in a corner of the game picture, the frames put on screen in the last second (nvn_mtl.m mtl_present_count, as on the iPhone). DM_SHOW_FPS=0 / 1.
+// - Mods: each folder in ~/Library/Application Support/nxnative/<title ID>/mods is a mod, the game's RomFS files it replaces either in it or in its romfs folder (the layout other
+//   Switch tools use). The enabled ones are overlaid on the RomFS at launch in name order, the first one holding a file winning (hle_fs.c DM_ROMFS_OVERLAY, which names them),
+//   so a change applies on the next launch. DM_ROMFS_OVERLAY in the environment replaces them.
+// - Cheats: not in the host yet; the row says so.
+// While the sidebar is up the game sees what it sees when its window loses focus: its input is released (input_release) and its focus state is out of focus (dm_focus_set 2), so a game
+// that pauses for the HOME menu pauses; the keyboard goes to the sidebar's controls. The game itself is not suspended, so the filter shows live
 static NSString *const g_pfx_title[DM_PFX_N] = {@"Off", @"Sharpen", @"Pixel-perfect", @"CRT"};
+static NSString *const g_fps_pos[4] = {@"Top left", @"Top right", @"Bottom left", @"Bottom right"};
 static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"DMPresentFilter.%@.%s", what, DM_GAME_NAME]; }
-@interface DmGraphics : NSObject
-@property NSPanel *panel; @property NSSegmentedControl *seg, *rows; @property NSSlider *slider; @property NSMutableArray<NSMenuItem *> *items;
+static NSString *opt_key(NSString *what) { return [NSString stringWithFormat:@"DMQuickSettings.%@.%s", what, DM_GAME_NAME]; }
+static int g_menu_open;   // main thread: the sidebar is up (the window's focus notifications leave the game out of focus meanwhile)
+
+static NSString *mods_dir(void) {
+    NSURL *u = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
+    return [u.path stringByAppendingFormat:@"/nxnative/%s/mods", DM_GAME_ID];
+}
+static NSArray<NSString *> *mods_list(void) {   // the mod folders, in the order they are overlaid
+    NSMutableArray *r = [NSMutableArray array]; NSString *d = mods_dir();
+    for (NSString *n in [NSFileManager.defaultManager contentsOfDirectoryAtPath:d error:nil] ?: @[]) {
+        BOOL dir = NO;
+        if (![n hasPrefix:@"."] && [NSFileManager.defaultManager fileExistsAtPath:[d stringByAppendingPathComponent:n] isDirectory:&dir] && dir) [r addObject:n];
+    }
+    return [r sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
+}
+static NSString *mod_root(NSString *name) {
+    NSString *p = [mods_dir() stringByAppendingPathComponent:name], *rf = [p stringByAppendingPathComponent:@"romfs"]; BOOL dir = NO;
+    return [NSFileManager.defaultManager fileExistsAtPath:rf isDirectory:&dir] && dir ? rf : p;
+}
+static NSSet<NSString *> *g_mods_run;   // the mods this launch overlaid (nil: DM_ROMFS_OVERLAY came from the environment)
+static void mods_start(void) {   // main thread, before the guest runs (the game mounts its RomFS later, hle_fs.c h_fs_MountRom)
+    if (getenv("DM_ROMFS_OVERLAY")) { LOG("front end: RomFS overlay from DM_ROMFS_OVERLAY; this game's enabled mods are not used"); return; }
+    NSArray *want = [NSUserDefaults.standardUserDefaults arrayForKey:opt_key(@"mods")] ?: @[];
+    NSMutableArray *roots = [NSMutableArray array]; NSMutableSet *on = [NSMutableSet set]; size_t len = 0;
+    for (NSString *n in mods_list()) {
+        if (![want containsObject:n]) continue;
+        NSString *r = mod_root(n); size_t k = strlen(r.fileSystemRepresentation) + 1;
+        if ([r containsString:@":"]) { LOG("[RED] mod '%s' not used: its path has a ':' (the overlay list separator)", n.UTF8String); continue; }
+        if (len + k > 4096) { LOG("[RED] mod '%s' and the ones after it not used: the overlay list is full (4,096 bytes of paths)", n.UTF8String); break; }
+        [roots addObject:r]; [on addObject:n]; len += k;
+    }
+    g_mods_run = on;
+    if (!roots.count) return;
+    setenv("DM_ROMFS_OVERLAY", [roots componentsJoinedByString:@":"].fileSystemRepresentation, 1);
+    LOG("front end: %lu mod%s over the RomFS (Quick settings): %s", (unsigned long)roots.count, roots.count == 1 ? "" : "s", [on.allObjects componentsJoinedByString:@", "].UTF8String);
+}
+
+static NSTextField *label(NSString *s, CGFloat size, NSFontWeight w, NSColor *c) {
+    NSTextField *l = [NSTextField labelWithString:s]; l.font = [NSFont systemFontOfSize:size weight:w]; l.textColor = c;
+    l.lineBreakMode = NSLineBreakByTruncatingTail; [l setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
+    return l;
+}
+static NSImageView *symbol(NSString *name, CGFloat size, NSColor *c) {
+    NSImageView *v = [NSImageView imageViewWithImage:[[NSImage imageWithSystemSymbolName:name accessibilityDescription:nil] imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:size weight:NSFontWeightRegular]]];
+    v.contentTintColor = c; return v;
+}
+static NSView *hrow(NSArray<NSView *> *views, CGFloat spacing) {   // left to right, vertically centred, the first view taking the room left over
+    NSStackView *s = [NSStackView stackViewWithViews:views]; s.orientation = NSUserInterfaceLayoutOrientationHorizontal; s.alignment = NSLayoutAttributeCenterY; s.spacing = spacing;
+    s.distribution = NSStackViewDistributionFill; [views.firstObject setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
+    return s;
+}
+static NSView *spacer(void) { NSView *v = [NSView new]; [v setContentHuggingPriority:1 forOrientation:NSLayoutConstraintOrientationHorizontal]; return v; }
+static NSView *separator(void) { NSBox *b = [NSBox new]; b.boxType = NSBoxSeparator; return b; }
+
+@interface DmFlipped : NSView @end
+@implementation DmFlipped
+- (BOOL)isFlipped { return YES; }
+- (void)mouseDown:(NSEvent *)e { (void)e; }   // a click on the sidebar's background is not a touch on the game behind it
 @end
-@implementation DmGraphics
+
+// One collapsible section: a header row (icon, title, a summary or a count, chevron) whose click shows or hides its body
+@interface DmSection : NSObject
+@property NSView *header, *body; @property NSTextField *detail; @property NSTextField *badge; @property NSImageView *chevron; @property BOOL enabled;
+@end
+@implementation DmSection @end
+
+@interface DmSettings : NSObject
+@property NSView *view; @property NSStackView *stack; @property NSMutableArray<DmSection *> *sections; @property NSMutableArray<NSMenuItem *> *items;
+@property NSSegmentedControl *seg; @property NSSlider *slider; @property NSTextField *pct, *rowsNote; @property NSPopUpButton *rows, *fpsPos; @property NSSwitch *fps;
+@property NSStackView *modList; @property NSTextField *fpsLabel; @property NSTimer *fpsTimer; @property uint64_t fpsN0; @property double fpsT0;
+@end
+@implementation DmSettings
+// ---- the settings
 - (void)apply:(int)mode strength:(float)k save:(BOOL)save {
     mtl_present_filter_set(mode, k);
     if (save && !getenv("DM_PRESENT_FILTER")) { NSUserDefaults *d = NSUserDefaults.standardUserDefaults; [d setInteger:mode forKey:pfx_key(@"mode")]; [d setFloat:k forKey:pfx_key(@"strength")]; }
     [self sync];
 }
-- (void)sync {   // the menu's check mark and the panel's controls show the filter now
+- (BOOL)fpsOn {
+    const char *e = getenv("DM_SHOW_FPS"); if (e) return atoi(e) != 0;
+    return [NSUserDefaults.standardUserDefaults boolForKey:opt_key(@"fps")];
+}
+- (int)fpsCorner { return (int)MIN(MAX([NSUserDefaults.standardUserDefaults integerForKey:opt_key(@"fpsPos")], 0), 3); }
+- (NSArray<NSString *> *)modsWanted { return [NSUserDefaults.standardUserDefaults arrayForKey:opt_key(@"mods")] ?: @[]; }
+- (void)sync {   // every control, menu check mark and section summary shows the settings now
     float k; int m = mtl_present_filter(&k);
     for (NSMenuItem *it in self.items) it.state = it.tag == m ? NSControlStateValueOn : NSControlStateValueOff;
-    self.seg.selectedSegment = m; self.slider.floatValue = k;
-    self.slider.enabled = m == DM_PFX_SHARPEN || m == DM_PFX_CRT;   // the pixel filter has no strength
-    self.rows.selectedSegment = mtl_present_scanline(); self.rows.enabled = m == DM_PFX_CRT;
+    if (!self.view) return;
+    self.seg.selectedSegment = m; self.slider.floatValue = k; self.pct.stringValue = [NSString stringWithFormat:@"%.0f%%", k * 100];
+    BOOL strength = m == DM_PFX_SHARPEN || m == DM_PFX_CRT;   // the pixel filter has no strength
+    self.slider.enabled = strength; self.pct.textColor = strength ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor;
+    [self.rows selectItemAtIndex:mtl_present_scanline()]; self.rows.enabled = m == DM_PFX_CRT; self.rowsNote.hidden = m == DM_PFX_CRT;
+    self.fps.state = self.fpsOn ? NSControlStateValueOn : NSControlStateValueOff; [self.fpsPos selectItemAtIndex:self.fpsCorner]; self.fpsPos.enabled = self.fpsOn;
+    NSArray *want = self.modsWanted; NSUInteger on = 0; for (NSString *n in mods_list()) on += [want containsObject:n];
+    self.sections[0].detail.stringValue = m ? g_pfx_title[m] : @"";
+    self.sections[1].detail.stringValue = self.fpsOn ? @"FPS on" : @"FPS off";
+    self.sections[2].detail.stringValue = on ? @"" : @"None enabled"; self.sections[2].badge.hidden = !on;
+    self.sections[2].badge.stringValue = [NSString stringWithFormat:@"%lu enabled", (unsigned long)on];
 }
-- (BOOL)validateMenuItem:(NSMenuItem *)it { if (it.action == @selector(togglePanel:)) it.state = self.panel.visible ? NSControlStateValueOn : NSControlStateValueOff; return YES; }
 - (void)pickItem:(NSMenuItem *)it { float k; mtl_present_filter(&k); [self apply:(int)it.tag strength:k save:YES]; }
 - (void)pickSeg:(NSSegmentedControl *)c { [self apply:(int)c.selectedSegment strength:self.slider.floatValue save:YES]; }
-- (void)pickRows:(NSSegmentedControl *)c {   // 0 = auto, else source rows per scanline
-    mtl_present_scanline_set((int)c.selectedSegment);
-    if (!getenv("DM_PRESENT_SCANLINE")) [NSUserDefaults.standardUserDefaults setInteger:c.selectedSegment forKey:pfx_key(@"scanline")];
+- (void)slide:(NSSlider *)sl { [self apply:mtl_present_filter(NULL) strength:sl.floatValue save:YES]; }
+- (void)pickRows:(NSPopUpButton *)p {   // 0 = auto, else source rows per scanline
+    mtl_present_scanline_set((int)p.indexOfSelectedItem);
+    if (!getenv("DM_PRESENT_SCANLINE")) [NSUserDefaults.standardUserDefaults setInteger:p.indexOfSelectedItem forKey:pfx_key(@"scanline")];
     [self sync];
 }
-- (void)slide:(NSSlider *)sl { [self apply:mtl_present_filter(NULL) strength:sl.floatValue save:YES]; }
-- (void)togglePanel:(id)sender {
-    (void)sender;
-    if (!self.panel) {
-        NSPanel *p = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 360, 150)
-                                                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskUtilityWindow | NSWindowStyleMaskHUDWindow | NSWindowStyleMaskNonactivatingPanel
-                                                  backing:NSBackingStoreBuffered defer:NO];
-        p.title = @"Graphics"; p.floatingPanel = YES; p.becomesKeyOnlyIfNeeded = YES; p.hidesOnDeactivate = YES; p.releasedWhenClosed = NO;
-        p.collectionBehavior = NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorMoveToActiveSpace;
-        NSView *cv = p.contentView;
-        NSTextField *l1 = [NSTextField labelWithString:@"Filter"], *l2 = [NSTextField labelWithString:@"Strength"];
-        NSTextField *l3 = [NSTextField labelWithString:@"Scanlines"];
-        l1.frame = NSMakeRect(16, 108, 70, 20); l2.frame = NSMakeRect(16, 68, 70, 20); l3.frame = NSMakeRect(16, 28, 70, 20);
-        self.seg = [NSSegmentedControl segmentedControlWithLabels:[NSArray arrayWithObjects:g_pfx_title count:DM_PFX_N] trackingMode:NSSegmentSwitchTrackingSelectOne target:self action:@selector(pickSeg:)];
-        self.seg.frame = NSMakeRect(86, 104, 260, 26);
-        self.slider = [NSSlider sliderWithValue:0.5 minValue:0 maxValue:1 target:self action:@selector(slide:)];
-        self.slider.frame = NSMakeRect(86, 66, 260, 24); self.slider.continuous = YES;
-        // CRT scanline height in the game's frame rows: Auto gives about 240 lines; a pixel-art game's own pixel size (frame rows per art pixel) lines them up with its art
-        self.rows = [NSSegmentedControl segmentedControlWithLabels:@[@"Auto", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8"] trackingMode:NSSegmentSwitchTrackingSelectOne target:self action:@selector(pickRows:)];
-        self.rows.frame = NSMakeRect(86, 24, 260, 26);
-        for (NSView *x in @[l1, l2, l3, self.seg, self.slider, self.rows]) [cv addSubview:x];
-        NSRect w = g_win.frame; [p setFrameTopLeftPoint:NSMakePoint(NSMaxX(w) - 380, NSMaxY(w) - 40)];   // the window's top right corner, over the game
-        self.panel = p;
-    }
-    if (self.panel.visible) [self.panel orderOut:nil]; else { [self sync]; [self.panel orderFront:nil]; }
+- (void)pickFps:(NSSwitch *)s { if (!getenv("DM_SHOW_FPS")) [NSUserDefaults.standardUserDefaults setBool:s.state == NSControlStateValueOn forKey:opt_key(@"fps")]; [self fpsCounter]; [self sync]; }
+- (void)pickFpsPos:(NSPopUpButton *)p { [NSUserDefaults.standardUserDefaults setInteger:p.indexOfSelectedItem forKey:opt_key(@"fpsPos")]; [self fpsCounter]; [self sync]; }
+- (void)pickMod:(NSSwitch *)s {
+    NSString *n = s.identifier; NSMutableArray *want = [self.modsWanted mutableCopy];
+    [want removeObject:n]; if (s.state == NSControlStateValueOn) [want addObject:n];
+    [NSUserDefaults.standardUserDefaults setObject:want forKey:opt_key(@"mods")];
+    [self fillMods]; [self sync];
 }
+- (void)openMods:(id)sender {
+    (void)sender; NSString *d = mods_dir();
+    [NSFileManager.defaultManager createDirectoryAtPath:d withIntermediateDirectories:YES attributes:nil error:nil];
+    [NSWorkspace.sharedWorkspace openURL:[NSURL fileURLWithPath:d]];
+}
+- (void)refreshMods:(id)sender { (void)sender; [self fillMods]; [self sync]; }
+
+// ---- the frame-rate counter, in the chosen corner of the game view
+- (void)fpsCounter {
+    if (!self.fpsOn) { [self.fpsTimer invalidate]; self.fpsTimer = nil; [self.fpsLabel removeFromSuperview]; self.fpsLabel = nil; return; }
+    NSView *gv = g_win.contentView;
+    if (!self.fpsLabel) {
+        NSTextField *l = label(@"-- FPS", 13, NSFontWeightSemibold, NSColor.whiteColor);
+        l.font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightSemibold];
+        NSShadow *sh = [NSShadow new]; sh.shadowColor = [NSColor colorWithWhite:0 alpha:0.8]; sh.shadowBlurRadius = 2; sh.shadowOffset = NSMakeSize(0, -1); l.shadow = sh;
+        [gv addSubview:l positioned:NSWindowBelow relativeTo:self.view]; self.fpsLabel = l;
+        self.fpsN0 = mtl_present_count(); self.fpsT0 = CACurrentMediaTime();
+        __weak DmSettings *me = self;
+        self.fpsTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
+            (void)t; DmSettings *s = me; if (!s) return;
+            uint64_t n = mtl_present_count(); double now = CACurrentMediaTime();
+            if (now - s.fpsT0 < 1.5) s.fpsLabel.stringValue = [NSString stringWithFormat:@"%.0f FPS", (n - s.fpsN0) / (now - s.fpsT0)];   // a longer span was a stall (minimized): no reading
+            s.fpsN0 = n; s.fpsT0 = now;
+        }];
+        LOG("front end: frame-rate counter on");
+    }
+    [self.fpsLabel sizeToFit];
+    int c = self.fpsCorner; NSSize b = gv.bounds.size, s = self.fpsLabel.frame.size; s.width += 24;   // room for wider readings
+    self.fpsLabel.frame = NSMakeRect(c & 1 ? b.width - s.width - 12 : 12, c & 2 ? 10 : b.height - s.height - 10, s.width, s.height);
+    self.fpsLabel.alignment = c & 1 ? NSTextAlignmentRight : NSTextAlignmentLeft;
+    self.fpsLabel.autoresizingMask = (c & 1 ? NSViewMinXMargin : NSViewMaxXMargin) | (c & 2 ? NSViewMaxYMargin : NSViewMinYMargin);
+}
+
+// ---- the sidebar
+- (void)add:(NSView *)v to:(NSStackView *)s { [s addArrangedSubview:v]; [v.widthAnchor constraintEqualToAnchor:s.widthAnchor].active = YES; }
+- (DmSection *)section:(NSString *)icon title:(NSString *)title body:(NSView *)body {
+    DmSection *x = [DmSection new]; x.body = body; x.enabled = body != nil;
+    NSColor *tc = body ? NSColor.labelColor : NSColor.tertiaryLabelColor;
+    NSImageView *ic = symbol(icon, 20, body ? NSColor.systemBlueColor : NSColor.tertiaryLabelColor); [ic.widthAnchor constraintEqualToConstant:28].active = YES;
+    x.detail = label(@"", 13, NSFontWeightRegular, NSColor.secondaryLabelColor);
+    x.badge = label(@"", 12, NSFontWeightMedium, NSColor.systemBlueColor); x.badge.hidden = YES; x.badge.wantsLayer = YES;
+    x.badge.layer.backgroundColor = [NSColor.systemBlueColor colorWithAlphaComponent:0.18].CGColor; x.badge.layer.cornerRadius = 9; x.badge.alignment = NSTextAlignmentCenter;
+    [x.badge.heightAnchor constraintEqualToConstant:20].active = YES; [x.badge.widthAnchor constraintGreaterThanOrEqualToConstant:80].active = YES;
+    x.chevron = symbol(@"chevron.right", 12, NSColor.secondaryLabelColor); x.chevron.hidden = !body; [x.chevron.widthAnchor constraintEqualToConstant:16].active = YES;
+    NSView *row = hrow(@[label(title, 16, NSFontWeightSemibold, tc), x.detail, x.badge, x.chevron], 10);
+    NSView *h = hrow(@[row], 0); NSStackView *hs = (NSStackView *)h; [hs insertArrangedSubview:ic atIndex:0]; hs.spacing = 12;
+    [h.heightAnchor constraintEqualToConstant:50].active = YES;
+    if (body) {   // the whole row is the button
+        NSButton *b = [NSButton buttonWithTitle:@"" target:self action:@selector(toggleSection:)]; b.bordered = NO; b.transparent = YES; b.tag = self.sections.count;
+        b.translatesAutoresizingMaskIntoConstraints = NO; [h addSubview:b];
+        [NSLayoutConstraint activateConstraints:@[[b.leadingAnchor constraintEqualToAnchor:h.leadingAnchor], [b.trailingAnchor constraintEqualToAnchor:h.trailingAnchor],
+                                                  [b.topAnchor constraintEqualToAnchor:h.topAnchor], [b.bottomAnchor constraintEqualToAnchor:h.bottomAnchor]]];
+        b.toolTip = title;
+    } else x.detail.stringValue = @"Coming later";
+    x.header = h; [self.sections addObject:x];
+    if (self.sections.count > 1) [self add:separator() to:self.stack];
+    [self add:h to:self.stack];
+    if (body) { body.hidden = YES; [self add:body to:self.stack]; }
+    return x;
+}
+- (void)expand:(NSInteger)i {   // one section open at a time; i < 0 closes them all
+    for (NSInteger j = 0; j < (NSInteger)self.sections.count; j++) {
+        DmSection *x = self.sections[j]; if (!x.body) continue; BOOL open = j == i;
+        x.body.hidden = !open; x.chevron.image = [[NSImage imageWithSystemSymbolName:open ? @"chevron.down" : @"chevron.right" accessibilityDescription:nil]
+                                                 imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:12 weight:NSFontWeightRegular]];
+        x.detail.hidden = open && j != 2;   // the mods count stays up while its list is open, as a reminder of what the next launch loads
+    }
+    [NSUserDefaults.standardUserDefaults setInteger:i forKey:opt_key(@"section")];
+}
+- (void)toggleSection:(NSButton *)b { [self expand:self.sections[b.tag].body.hidden ? b.tag : -1]; }
+- (NSStackView *)vstack:(CGFloat)spacing { NSStackView *s = [NSStackView new]; s.orientation = NSUserInterfaceLayoutOrientationVertical; s.alignment = NSLayoutAttributeLeading; s.spacing = spacing; return s; }
+- (NSView *)graphicsBody {
+    NSStackView *s = [self vstack:12]; s.edgeInsets = NSEdgeInsetsMake(0, 0, 16, 0);
+    [self add:label(@"Filter", 13, NSFontWeightRegular, NSColor.secondaryLabelColor) to:s];
+    self.seg = [NSSegmentedControl segmentedControlWithLabels:[NSArray arrayWithObjects:g_pfx_title count:DM_PFX_N] trackingMode:NSSegmentSwitchTrackingSelectOne target:self action:@selector(pickSeg:)];
+    self.seg.segmentDistribution = NSSegmentDistributionFillEqually; self.seg.controlSize = NSControlSizeLarge; [self add:self.seg to:s];
+    self.slider = [NSSlider sliderWithValue:0.5 minValue:0 maxValue:1 target:self action:@selector(slide:)]; self.slider.continuous = YES;
+    self.pct = label(@"50%", 13, NSFontWeightRegular, NSColor.secondaryLabelColor); self.pct.alignment = NSTextAlignmentRight; [self.pct.widthAnchor constraintEqualToConstant:44].active = YES;
+    NSTextField *l1 = label(@"Strength", 14, NSFontWeightRegular, NSColor.labelColor), *l2 = label(@"Scanlines", 14, NSFontWeightRegular, NSColor.labelColor);
+    for (NSTextField *l in @[l1, l2]) [l.widthAnchor constraintEqualToConstant:92].active = YES;
+    NSView *r1 = hrow(@[self.slider, self.pct], 10); NSStackView *r1s = (NSStackView *)r1; [r1s insertArrangedSubview:l1 atIndex:0]; [self add:r1 to:s];
+    // CRT scanline height in the game's frame rows: Auto gives about 240 lines; a pixel-art game's own pixel size (frame rows per art pixel) lines them up with its art
+    self.rows = [NSPopUpButton new]; [self.rows addItemWithTitle:@"Auto"];
+    for (int i = 1; i <= 8; i++) [self.rows addItemWithTitle:[NSString stringWithFormat:@"%d frame row%s", i, i == 1 ? "" : "s"]];
+    self.rows.target = self; self.rows.action = @selector(pickRows:); self.rows.controlSize = NSControlSizeLarge;
+    NSView *r2 = hrow(@[self.rows], 10); [(NSStackView *)r2 insertArrangedSubview:l2 atIndex:0]; [self add:r2 to:s];
+    self.rowsNote = label(@"Available with CRT", 11, NSFontWeightRegular, NSColor.tertiaryLabelColor);
+    NSView *r3 = hrow(@[spacer()], 0); NSStackView *r3s = (NSStackView *)r3; [r3s insertArrangedSubview:self.rowsNote atIndex:0]; r3s.edgeInsets = NSEdgeInsetsMake(-6, 102, 0, 0);
+    [self add:r3 to:s];
+    return s;
+}
+- (NSView *)performanceBody {
+    NSStackView *s = [self vstack:12]; s.edgeInsets = NSEdgeInsetsMake(0, 0, 16, 0);
+    self.fps = [NSSwitch new]; self.fps.target = self; self.fps.action = @selector(pickFps:);
+    [self add:hrow(@[label(@"Show FPS", 14, NSFontWeightRegular, NSColor.labelColor), self.fps], 10) to:s];
+    self.fpsPos = [NSPopUpButton new]; [self.fpsPos addItemsWithTitles:[NSArray arrayWithObjects:g_fps_pos count:4]];
+    self.fpsPos.target = self; self.fpsPos.action = @selector(pickFpsPos:); self.fpsPos.controlSize = NSControlSizeLarge; [self.fpsPos.widthAnchor constraintEqualToConstant:190].active = YES;
+    [self add:hrow(@[label(@"Counter position", 14, NSFontWeightRegular, NSColor.labelColor), self.fpsPos], 10) to:s];
+    return s;
+}
+- (NSView *)modsBody {
+    NSStackView *s = [self vstack:12]; s.edgeInsets = NSEdgeInsetsMake(0, 0, 16, 0);
+    NSTextField *about = label(@"Each folder in this game's mods folder replaces game files. Enabled mods load in name order; the first one with a file wins.", 12, NSFontWeightRegular, NSColor.secondaryLabelColor);
+    about.lineBreakMode = NSLineBreakByWordWrapping; about.maximumNumberOfLines = 0; about.preferredMaxLayoutWidth = 360;
+    [self add:about to:s];
+    self.modList = [self vstack:14]; [self add:self.modList to:s];
+    NSButton *open = [NSButton buttonWithTitle:@"Open mods folder" image:[NSImage imageWithSystemSymbolName:@"folder" accessibilityDescription:nil] target:self action:@selector(openMods:)];
+    NSButton *ref = [NSButton buttonWithTitle:@"Refresh" image:[NSImage imageWithSystemSymbolName:@"arrow.clockwise" accessibilityDescription:nil] target:self action:@selector(refreshMods:)];
+    for (NSButton *b in @[open, ref]) { b.controlSize = NSControlSizeLarge; b.imagePosition = NSImageLeading; }
+    NSStackView *bs = (NSStackView *)hrow(@[open, ref], 10); bs.distribution = NSStackViewDistributionFillEqually; [self add:bs to:s];
+    [self add:label(@"Restart the game to apply mod changes.", 12, NSFontWeightRegular, NSColor.secondaryLabelColor) to:s];
+    [self fillMods];
+    return s;
+}
+- (void)fillMods {
+    if (!self.modList) return;
+    for (NSView *v in self.modList.arrangedSubviews.copy) [v removeFromSuperview];
+    NSArray *want = self.modsWanted, *all = mods_list();
+    if (!all.count) {
+        NSTextField *t = label(@"No mods yet. Put each mod in a folder of its own in the mods folder (its files, or a romfs folder holding them), then Refresh.", 13, NSFontWeightRegular, NSColor.tertiaryLabelColor);
+        t.lineBreakMode = NSLineBreakByWordWrapping; t.maximumNumberOfLines = 0; t.preferredMaxLayoutWidth = 360; [self add:t to:self.modList]; return;
+    }
+    for (NSString *n in all) {
+        BOOL on = [want containsObject:n], ran = [g_mods_run containsObject:n];
+        NSStackView *txt = [self vstack:3]; [txt addArrangedSubview:label(n, 14, NSFontWeightMedium, NSColor.labelColor)];
+        NSString *note = !g_mods_run ? @"Not used: DM_ROMFS_OVERLAY is set" : on != ran ? @"Restart required" : on ? @"Loaded" : @"Off";
+        NSTextField *nl = label(note, 12, NSFontWeightRegular, NSColor.secondaryLabelColor);
+        if (g_mods_run && on != ran) [txt addArrangedSubview:hrow(@[symbol(@"circle.fill", 7, NSColor.systemOrangeColor), nl], 6)]; else [txt addArrangedSubview:nl];
+        [txt setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
+        NSSwitch *sw = [NSSwitch new]; sw.state = on ? NSControlStateValueOn : NSControlStateValueOff; sw.identifier = n; sw.target = self; sw.action = @selector(pickMod:);
+        [self add:hrow(@[txt, sw], 10) to:self.modList];
+    }
+}
+- (void)build {
+    NSView *gv = g_win.contentView; CGFloat w = 440;
+    DmFlipped *v = [[DmFlipped alloc] initWithFrame:NSMakeRect(gv.bounds.size.width - w, 0, w, gv.bounds.size.height)];
+    v.autoresizingMask = NSViewMinXMargin | NSViewHeightSizable; v.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    v.wantsLayer = YES; v.layer.backgroundColor = [NSColor colorWithSRGBRed:0.106 green:0.114 blue:0.133 alpha:1].CGColor;   // opaque: the game's picture showed through a translucent one as stray lines
+    CALayer *edge = [CALayer layer]; edge.backgroundColor = [NSColor colorWithWhite:1 alpha:0.08].CGColor; edge.frame = CGRectMake(0, 0, 1, 10000); [v.layer addSublayer:edge];
+    // Header: what this is and for which game, with a close button
+    NSTextField *kicker = label(@"IN-GAME OPTIONS", 11, NSFontWeightSemibold, NSColor.secondaryLabelColor);
+    kicker.attributedStringValue = [[NSAttributedString alloc] initWithString:@"IN-GAME OPTIONS" attributes:@{NSKernAttributeName: @1.2, NSFontAttributeName: kicker.font, NSForegroundColorAttributeName: NSColor.secondaryLabelColor}];
+    NSStackView *head = [self vstack:4];
+    [head addArrangedSubview:kicker]; [head setCustomSpacing:8 afterView:kicker];
+    [head addArrangedSubview:label(@"Quick settings", 28, NSFontWeightBold, NSColor.labelColor)];
+    [head addArrangedSubview:label(@DM_GAME_NAME, 15, NSFontWeightRegular, NSColor.secondaryLabelColor)];
+    NSButton *close = [NSButton buttonWithImage:[[NSImage imageWithSystemSymbolName:@"xmark" accessibilityDescription:@"Close"] imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:13 weight:NSFontWeightSemibold]]
+                                         target:self action:@selector(toggle:)];
+    close.bordered = NO; close.wantsLayer = YES; close.layer.cornerRadius = 18; close.layer.backgroundColor = [NSColor colorWithWhite:1 alpha:0.1].CGColor; close.contentTintColor = NSColor.labelColor;
+    // Sections, scrolling when the window is short
+    self.stack = [self vstack:0]; self.sections = [NSMutableArray array];
+    [self section:@"display" title:@"Graphics & shaders" body:[self graphicsBody]];
+    [self section:@"chart.bar.fill" title:@"Performance" body:[self performanceBody]];
+    [self section:@"puzzlepiece.extension" title:@"Mods" body:[self modsBody]];
+    [self section:@"wand.and.stars" title:@"Cheats" body:nil];
+    DmFlipped *doc = [DmFlipped new]; doc.translatesAutoresizingMaskIntoConstraints = NO; self.stack.translatesAutoresizingMaskIntoConstraints = NO; [doc addSubview:self.stack];
+    NSScrollView *sc = [NSScrollView new]; sc.drawsBackground = NO; sc.hasVerticalScroller = YES; sc.autohidesScrollers = YES; sc.documentView = doc;
+    // Footer: resume, and how else to close
+    NSTextField *saved = label(@"Settings saved for this game", 12, NSFontWeightRegular, NSColor.secondaryLabelColor);
+    NSButton *resume = [NSButton buttonWithTitle:@"" target:self action:@selector(toggle:)]; resume.bordered = NO; resume.wantsLayer = YES;
+    resume.layer.backgroundColor = NSColor.systemBlueColor.CGColor; resume.layer.cornerRadius = 10; resume.keyEquivalent = @"\r";
+    resume.attributedTitle = [[NSAttributedString alloc] initWithString:@"Resume game" attributes:@{NSFontAttributeName: [NSFont systemFontOfSize:16 weight:NSFontWeightMedium], NSForegroundColorAttributeName: NSColor.whiteColor}];
+    NSTextField *esc = label(@"Esc", 12, NSFontWeightMedium, NSColor.labelColor); esc.alignment = NSTextAlignmentCenter; esc.wantsLayer = YES;
+    esc.layer.backgroundColor = [NSColor colorWithWhite:1 alpha:0.1].CGColor; esc.layer.cornerRadius = 5; esc.layer.borderWidth = 1; esc.layer.borderColor = [NSColor colorWithWhite:1 alpha:0.15].CGColor;
+    [esc.widthAnchor constraintEqualToConstant:40].active = YES; [esc.heightAnchor constraintEqualToConstant:24].active = YES;
+    NSView *hint = hrow(@[esc, label(@"Close menu", 13, NSFontWeightRegular, NSColor.secondaryLabelColor)], 10);
+    NSView *savedRow = hrow(@[symbol(@"gearshape", 14, NSColor.secondaryLabelColor), saved], 8);
+    for (NSView *x in @[head, close, sc, savedRow, resume, hint]) { x.translatesAutoresizingMaskIntoConstraints = NO; [v addSubview:x]; }
+    NSView *top = separator(), *bottom = separator(); for (NSView *x in @[top, bottom]) { x.translatesAutoresizingMaskIntoConstraints = NO; [v addSubview:x]; }
+    CGFloat m = 28;
+    [NSLayoutConstraint activateConstraints:@[
+        [head.topAnchor constraintEqualToAnchor:v.topAnchor constant:34], [head.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:m],
+        [head.trailingAnchor constraintLessThanOrEqualToAnchor:close.leadingAnchor constant:-8],
+        [close.topAnchor constraintEqualToAnchor:v.topAnchor constant:28], [close.trailingAnchor constraintEqualToAnchor:v.trailingAnchor constant:-24],
+        [close.widthAnchor constraintEqualToConstant:36], [close.heightAnchor constraintEqualToConstant:36],
+        [top.topAnchor constraintEqualToAnchor:head.bottomAnchor constant:20], [top.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:m], [top.trailingAnchor constraintEqualToAnchor:v.trailingAnchor constant:-m],
+        [sc.topAnchor constraintEqualToAnchor:top.bottomAnchor constant:4], [sc.leadingAnchor constraintEqualToAnchor:v.leadingAnchor], [sc.trailingAnchor constraintEqualToAnchor:v.trailingAnchor],
+        [sc.bottomAnchor constraintEqualToAnchor:bottom.topAnchor constant:-4],
+        [doc.leadingAnchor constraintEqualToAnchor:sc.contentView.leadingAnchor], [doc.trailingAnchor constraintEqualToAnchor:sc.contentView.trailingAnchor], [doc.topAnchor constraintEqualToAnchor:sc.contentView.topAnchor],
+        [self.stack.topAnchor constraintEqualToAnchor:doc.topAnchor], [self.stack.bottomAnchor constraintEqualToAnchor:doc.bottomAnchor],
+        [self.stack.leadingAnchor constraintEqualToAnchor:doc.leadingAnchor constant:m], [self.stack.trailingAnchor constraintEqualToAnchor:doc.trailingAnchor constant:-m],
+        [bottom.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:m], [bottom.trailingAnchor constraintEqualToAnchor:v.trailingAnchor constant:-m],
+        [savedRow.topAnchor constraintEqualToAnchor:bottom.bottomAnchor constant:16], [savedRow.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:m],
+        [resume.topAnchor constraintEqualToAnchor:savedRow.bottomAnchor constant:18], [resume.leadingAnchor constraintEqualToAnchor:v.leadingAnchor constant:m],
+        [resume.trailingAnchor constraintEqualToAnchor:v.trailingAnchor constant:-m], [resume.heightAnchor constraintEqualToConstant:46],
+        [hint.topAnchor constraintEqualToAnchor:resume.bottomAnchor constant:12], [hint.centerXAnchor constraintEqualToAnchor:v.centerXAnchor],
+        [hint.bottomAnchor constraintEqualToAnchor:v.bottomAnchor constant:-18],
+    ]];
+    self.view = v;
+    NSInteger open = [NSUserDefaults.standardUserDefaults objectForKey:opt_key(@"section")] ? [NSUserDefaults.standardUserDefaults integerForKey:opt_key(@"section")] : 0;
+    [self expand:open >= 0 && open < 3 ? open : -1];
+}
+- (void)toggle:(id)sender {
+    (void)sender;
+    if (!g_menu_open) {
+        if (!self.view) [self build];
+        NSView *gv = g_win.contentView; CGFloat w = MIN(440, gv.bounds.size.width);
+        self.view.frame = NSMakeRect(gv.bounds.size.width - w, 0, w, gv.bounds.size.height);
+        [self fillMods]; [self sync];
+        [gv addSubview:self.view]; g_menu_open = 1;
+        input_release(); dm_focus_set(2);   // as when the window loses focus: nothing stays held, and a game that pauses for the HOME menu pauses
+        LOG("front end: Quick settings open");
+    } else {
+        [self.view removeFromSuperview]; g_menu_open = 0;
+        [g_win makeFirstResponder:g_win.contentView];
+        if (g_win.isKeyWindow) { input_resume(); dm_focus_set(1); }   // otherwise the window's becoming key resumes them
+        LOG("front end: Quick settings closed");
+    }
+}
+- (BOOL)validateMenuItem:(NSMenuItem *)it { if (it.action == @selector(toggle:)) it.state = g_menu_open ? NSControlStateValueOn : NSControlStateValueOff; return YES; }
 - (void)menuIn:(NSMenu *)bar {
     NSMenu *gm = [[NSMenu alloc] initWithTitle:@"Graphics"]; self.items = [NSMutableArray array];
     [[bar addItemWithTitle:@"Graphics" action:nil keyEquivalent:@""] setSubmenu:gm];
@@ -278,18 +561,19 @@ static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"D
         it.target = self; it.tag = i; [self.items addObject:it];
     }
     [gm addItem:NSMenuItem.separatorItem];
-    NSMenuItem *it = [gm addItemWithTitle:@"Graphics Panel" action:@selector(togglePanel:) keyEquivalent:@"g"];   // ⇧⌘G, checked while the panel is up (validateMenuItem)
+    NSMenuItem *it = [gm addItemWithTitle:@"Quick Settings" action:@selector(toggle:) keyEquivalent:@"g"];   // ⇧⌘G (and Esc in the game window), checked while the sidebar is up (validateMenuItem)
     it.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; it.target = self;
-    [self sync];
+    [self sync]; [self fpsCounter];
 }
 @end
-static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, unless the environment names one
+static void graphics_start(void) {   // main thread, before the guest runs: the saved filter and mods, unless the environment names them
+    mods_start();
     NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
     if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);
     if (getenv("DM_PRESENT_FILTER")) return;
     if (![d objectForKey:pfx_key(@"mode")]) return;
     int m = (int)[d integerForKey:pfx_key(@"mode")]; float k = [d objectForKey:pfx_key(@"strength")] ? [d floatForKey:pfx_key(@"strength")] : 0.5f;
-    mtl_present_filter_set(m, k); LOG("front end: present filter from the saved choice for this game (Graphics menu)");
+    mtl_present_filter_set(m, k); LOG("front end: present filter from the saved choice for this game (Quick settings)");
 }
 
 typedef struct { void (*fn)(void); } guest_arg;
@@ -336,7 +620,7 @@ void front_run(void (*guest)(void)) {
         [[bar addItemWithTitle:@"Window" action:nil keyEquivalent:@""] setSubmenu:wm];
         [wm addItemWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"].keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagCommand;
         graphics_start();
-        static DmGraphics *gfx; gfx = [DmGraphics new]; [gfx menuIn:bar];
+        static DmSettings *opts; opts = [DmSettings new]; [opts menuIn:bar];
         NSApp.mainMenu = bar;
         if (getenv("DM_FULLSCREEN")) dispatch_async(dispatch_get_main_queue(), ^{ [win toggleFullScreen:nil]; });   // start in fullscreen
         for (NSNotificationName nm in @[GCControllerDidConnectNotification, GCControllerDidDisconnectNotification])
@@ -349,6 +633,8 @@ void front_run(void (*guest)(void)) {
         [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent *(NSEvent *e) {
             if (e.window != win) return e;   // Only swallow keys for the game window; other windows such as the software keyboard input box receive typing as usual
             if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
+            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
+            if (g_menu_open) return e;   // the sidebar's controls take the keyboard; the game's input was released when it opened
             if (!e.isARepeat) on_key(e, e.type == NSEventTypeKeyDown);
             return nil;   // Swallow it to avoid the system beep
         }];
@@ -363,7 +649,7 @@ void front_run(void (*guest)(void)) {
         [nc addObserverForName:NSWindowDidEnterFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; g_layer.contentsScale = win.backingScaleFactor; screen_match_apply(); }];
         [nc addObserverForName:NSWindowDidExitFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; g_layer.contentsScale = win.backingScaleFactor; screen_match_apply(); }];
         [nc addObserverForName:NSWindowDidResignKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); if (!win.miniaturized) dm_focus_set(2); }];
-        [nc addObserverForName:NSWindowDidBecomeKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_resume(); dm_focus_set(1); }];
+        [nc addObserverForName:NSWindowDidBecomeKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; if (g_menu_open) return; input_resume(); dm_focus_set(1); }];   // the sidebar keeps the game out of focus until it closes
         [nc addObserverForName:NSWindowDidMiniaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); dm_focus_set(3); dm_audio_suspend(1); dm_gfx_suspend(1); }];
         [nc addObserverForName:NSWindowDidDeminiaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; dm_gfx_suspend(0); dm_audio_suspend(0); dm_focus_set(2); }];
         // Guest thread: 64 MiB stack (the Switch main thread stack is specified by npdm; the host gives plenty)

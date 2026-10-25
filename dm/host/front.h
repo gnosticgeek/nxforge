@@ -1,5 +1,6 @@
 // Host front end (Mac: front_mac.m; iOS: dm/ios separately implements the same-named interface).
 #pragma once
+#include <stdint.h>
 // Run the guest: with a window the guest runs on its own thread and the main thread belongs to the system UI; without a window it runs directly on the current thread.
 void front_run(void (*guest)(void));
 // The CAMetalLayer the graphics backend presents frames to (NULL when there is no window)
@@ -17,7 +18,8 @@ void mtl_present_filter_set(int mode, float strength);
 // The CRT filter's scanline height in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
 int mtl_present_scanline(void);
 void mtl_present_scanline_set(int rows);
-#include <stdint.h>
+// Frames put on screen so far (nvn_mtl.m, NVN and the Vulkan layer alike; frames the display link merged away are not counted): the front ends' frame-rate counters. Any thread
+uint64_t mtl_present_count(void);
 // Text input box (for the software keyboard swkbd): the main thread shows a native input box and the calling thread blocks until the user confirms / cancels.
 // All text is UTF-8; max_chars is the maximum character count (0 = unlimited, only a hint for the front end; truncation is done uniformly by the caller hle_swkbd.c in UTF-16 units).
 // Confirm returns 1 and writes the result into out (including the terminating 0); cancel returns 0;
