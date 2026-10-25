@@ -144,6 +144,23 @@ int main(void) { @autoreleasepool {
         EXPECT("an unknown filter is off",DM_PFX_OFF,m);EXPECT("strength clamped to 1 (x100)",100,(int)(k*100+0.5f));
         mtl_present_filter_set(DM_PFX_OFF,0.5f);
         check(src,"filter off again: the default whole frame as before, 64 pixels",zero,8,8,-1);
+        // Anisotropic filtering floor (front.h mtl_aniso_set, mtl_aniso_pick): raises eligible samplers only, never lowers the game's own, and is taken at the first sampler
+        g_aniso=-1;g_aniso_latched=0;unsetenv("DM_ANISO");
+        EXPECT("anisotropic floor: off by default",0,mtl_aniso());
+        mtl_aniso_set(16);
+        EXPECT("anisotropic floor 16: an eligible 1x sampler gets 16",16,(int)mtl_aniso_pick(1,1));
+        EXPECT("anisotropic floor 16: an ineligible sampler keeps the game's 2",2,(int)mtl_aniso_pick(2,0));
+        EXPECT("anisotropic floor 16: the game's value is clamped to 16",16,(int)mtl_aniso_pick(64,0));
+        mtl_aniso_set(4);
+        EXPECT("after the first sampler a new floor waits for the next launch",16,mtl_aniso());
+        g_aniso=-1;g_aniso_latched=0;mtl_aniso_set(4);
+        EXPECT("anisotropic floor 4: a game asking 8 keeps 8",8,(int)mtl_aniso_pick(8,1));
+        EXPECT("anisotropic floor 4: NaN or 0 from the game counts as 1 (ineligible)",1,(int)mtl_aniso_pick(nanf(""),0));
+        g_aniso=-1;g_aniso_latched=0;setenv("DM_ANISO","8x",1);
+        EXPECT("DM_ANISO=8x",8,mtl_aniso());
+        g_aniso=-1;setenv("DM_ANISO","3",1);
+        EXPECT("DM_ANISO=3 is refused: the game's own",0,mtl_aniso());
+        g_aniso=-1;g_aniso_latched=0;unsetenv("DM_ANISO");mtl_aniso_set(0);
     }
 #endif
     int invalid[4][4]={{-1,0,4,4},{0,-1,4,4},{0,0,0,4},{7,0,4,4}};
