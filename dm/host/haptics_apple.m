@@ -18,6 +18,7 @@
 @property(nonatomic) id<CHHapticPatternPlayer> pattern;
 @property(nonatomic) BOOL plain;               // the engine refused an advanced (looping) player: a plain one, renewed before its 30 s event ends
 @property(nonatomic) NSTimeInterval renewAt;
+@property(nonatomic) BOOL fellBack, retryNow;
 @property(nonatomic) dm_haptic_level level;
 @property(nonatomic, copy) CHHapticEngine *(^createEngine)(NSError **);
 @property(nonatomic, copy) NSString *target;
@@ -86,22 +87,23 @@ static void report(NSError *e, NSString *target, const char *stage) {
         id<CHHapticAdvancedPatternPlayer> advanced = [self.engine createAdvancedPlayerWithPattern:pattern error:error];
         if (advanced) {
             advanced.loopEnabled = YES; advanced.isMuted = YES; self.pattern = advanced;
-        } else {
+        } else if ([(*error).domain isEqual:NSCocoaErrorDomain] && (*error).code == NSXPCConnectionInterrupted) {
             // Some controllers' haptics helpers refuse advanced players (an 8BitDo SN30 Pro on macOS: NSCocoaErrorDomain 4097 at every attempt) but play plain ones.
-            fprintf(stderr, "haptics: %s refuses an advanced player (%s %ld), trying a plain one\n", self.target.UTF8String,
+            // The refusal also breaks that engine's helper connection (a plain player on it fails with -4810), so the plain one gets a new engine, without a backoff.
+            fprintf(stderr, "haptics: %s refuses an advanced player (%s %ld), trying a plain one on a new engine\n", self.target.UTF8String,
                     (*error).domain.UTF8String ?: "no error", (long)(*error).code);
-            self.plain = YES; *error = nil;
+            self.plain = self.fellBack = self.retryNow = YES;
+            [self stop]; self.engine = nil;
+            return NO;
         }
-    }
-    BOOL fellBack = self.plain && !self.pattern;
-    if (self.plain) self.pattern = [self.engine createPlayerWithPattern:pattern error:error];
+    } else self.pattern = [self.engine createPlayerWithPattern:pattern error:error];
     if (!self.pattern) {
-        if (fellBack) self.plain = NO;   // neither kind: a failing engine, not a refused player kind
+        if (self.fellBack) self.plain = self.fellBack = NO;   // neither kind: a failing engine, not a refused player kind
         [self failed:*error stage:"create player"]; return NO;
     }
     // A plain player cannot start muted: its event plays at the full initial intensity until the first control arrives, sent right after the start.
     if (![self.pattern startAtTime:CHHapticTimeImmediate error:error]) { [self failed:*error stage:"start player"]; return NO; }
-    self.renewAt = now() + 29;
+    self.renewAt = now() + 29; self.fellBack = NO;
     return YES;
 }
 - (void)apply:(dm_haptic_level)level {
@@ -131,7 +133,10 @@ static void report(NSError *e, NSString *target, const char *stage) {
         self.engine.resetHandler = reset;
         // Startup can itself fail or reset the service: install handlers before contacting it.
         if (![self.engine startAndReturnError:&error]) { [self engineFailed:error stage:"start engine"]; return; }
-        if (![self startPlayer:&error]) return;
+        if (![self startPlayer:&error]) {
+            if (self.retryNow) { self.retryNow = NO; [self apply:level]; }
+            return;
+        }
     } else if (self.plain && now() >= self.renewAt && level.intensity > 0) {
         [self.pattern stopAtTime:CHHapticTimeImmediate error:nil]; self.pattern = nil;
         if (![self startPlayer:&error]) return;
