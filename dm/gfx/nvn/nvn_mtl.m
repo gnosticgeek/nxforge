@@ -8258,9 +8258,9 @@ static int pfx_mode(void) {   // any thread: the filter now, read from the envir
     const char *e = getenv("DM_PRESENT_FILTER"), *k = getenv("DM_PRESENT_FILTER_STRENGTH"); int want = 0;
     if (e && *e) { for (int i = 0; i < DM_PFX_N; i++) if (!strcasecmp(e, g_pfx_name[i])) want = i;
         if (!want && strcasecmp(e, "off") && strcmp(e, "0")) MLOG("[RED] DM_PRESENT_FILTER=%s: not off, sharpen, pixel or crt; presenting without a filter", e); }
-    if (k && *k) { char *end; float v = strtof(k, &end); if (end != k && !*end && v >= 0 && v <= 1) g_pfx_k = v; else MLOG("[RED] DM_PRESENT_FILTER_STRENGTH=%s: must be 0 to 1; keeping %.2f", k, g_pfx_k); }
+    if (k && *k) { char *end; float v = strtof(k, &end); if (end != k && !*end && v >= 0 && v <= 1) g_pfx_k = v; else MLOG("[RED] DM_PRESENT_FILTER_STRENGTH=%s: must be 0 to 1; keeping %.2f", k, (double)g_pfx_k); }
     int none = -1;
-    if (atomic_compare_exchange_strong(&g_pfx, &none, want) && want) MLOG("present: filter %s, strength %.2f (DM_PRESENT_FILTER)", g_pfx_name[want], g_pfx_k);
+    if (atomic_compare_exchange_strong(&g_pfx, &none, want) && want) MLOG("present: filter %s, strength %.2f (DM_PRESENT_FILTER)", g_pfx_name[want], (double)g_pfx_k);
     return g_pfx;
 }
 int mtl_present_filter(float *strength) { int m = pfx_mode(); if (strength) *strength = g_pfx_k; return m; }
