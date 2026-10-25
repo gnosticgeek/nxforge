@@ -74,10 +74,10 @@ static void choose(void) {
         if (g_on[i] || c->master) LOG("cheats: %s%s", c->master ? "master code: " : "on: ", c->name);
     }
 }
-static void cheats_init(void) {
+static void cheats_init(const char *bid) {   // bid: main's build ID (the loader calls before main counts in g_nmod, so dm_main_build() is still empty there)
     if (g_inited) return;
     g_inited = 1;
-    const char *bid = dm_main_build(), *dir = getenv("DM_CHEATS"); char def[1024];
+    const char *dir = getenv("DM_CHEATS"); char def[1024];
     if (!dir) { const char *h = getenv("HOME"); if (!h) return; snprintf(def, sizeof def, "%s/Library/Application Support/nxnative/%s/cheats", h, DM_GAME_ID); dir = def; }
     if (!bid[0]) { if (getenv("DM_CHEATS")) LOG("[RED] cheats: main has no build ID (an older build output): no cheats"); return; }
     if (!find_file(dir, bid)) { if (getenv("DM_CHEATS")) LOG("cheats: no file in %s for %s build %.16s", dir, DM_GAME_ID, bid); return; }
@@ -131,7 +131,7 @@ static int code_only(const dm_cheat *c) {
 // Loader (map_image, Mac): main is copied in and its text not yet sealed
 void cheats_patch_code(module_t *m) {
     if (strcmp(m->name, "main")) return;
-    cheats_init();
+    cheats_init(m->build_id);
     for (unsigned k = 0; k < g_file.n; k++) {
         const dm_cheat *c = &g_file.c[k];
         if (!(g_on[k] || c->master) || !code_only(c)) continue;
@@ -182,7 +182,7 @@ void cheats_frame(void) {
     static _Atomic int tried;
     if (!atomic_load_explicit(&g_live, memory_order_acquire)) {
         if (atomic_exchange(&tried, 1)) return;
-        cheats_init();
+        cheats_init(dm_main_build());
         if (!g_file.n) return;
         if (dm_cheat_vm_load(&g_vm, &g_file, g_on) < 0) { LOG("[RED] cheats: the enabled cheats are longer than 0x400 words together (Atmosphere's limit): none run"); return; }
         if (!g_vm.nprog) return;
