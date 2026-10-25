@@ -1,5 +1,6 @@
 // Host front end (Mac: front_mac.m; iOS: dm/ios separately implements the same-named interface).
 #pragma once
+#include <stdint.h>
 // Run the guest: with a window the guest runs on its own thread and the main thread belongs to the system UI; without a window it runs directly on the current thread.
 void front_run(void (*guest)(void));
 // The CAMetalLayer the graphics backend presents frames to (NULL when there is no window)
@@ -9,7 +10,16 @@ int front_screen_max_fps(void);
 // The frame rate the display link paces the game at (60, 30, 120; nvn_mtl.m link_sync): in fullscreen, a screen whose refresh rate is not a multiple of it is switched, while the game runs,
 // to a mode of the same size whose rate is, and back when the window leaves fullscreen or that screen (front_mac.m; none on iOS). Called from the present thread
 void front_screen_match(int fps);
-#include <stdint.h>
+// Present filter (implemented by the graphics backend, nvn_mtl.m; set by the Mac front end's Graphics menu and panel, or DM_PRESENT_FILTER / DM_PRESENT_FILTER_STRENGTH): how the game picture
+// is drawn into the window, taken at every present. Strength 0 to 1. Any thread
+enum { DM_PFX_OFF, DM_PFX_SHARPEN, DM_PFX_PIXEL, DM_PFX_CRT, DM_PFX_N };
+int mtl_present_filter(float *strength);
+void mtl_present_filter_set(int mode, float strength);
+// The CRT filter's scanline height in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
+int mtl_present_scanline(void);
+void mtl_present_scanline_set(int rows);
+// Frames put on screen so far (nvn_mtl.m, NVN and the Vulkan layer alike; frames the display link merged away are not counted): the front ends' frame-rate counters. Any thread
+uint64_t mtl_present_count(void);
 // Text input box (for the software keyboard swkbd): the main thread shows a native input box and the calling thread blocks until the user confirms / cancels.
 // All text is UTF-8; max_chars is the maximum character count (0 = unlimited, only a hint for the front end; truncation is done uniformly by the caller hle_swkbd.c in UTF-16 units).
 // Confirm returns 1 and writes the result into out (including the terminating 0); cancel returns 0;

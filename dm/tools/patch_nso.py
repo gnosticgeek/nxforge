@@ -8,6 +8,7 @@
 #   sub sp, sp, xN      → xN rounded up to 16 first (Apple's kernel faults on a misaligned sp, Horizon does not; site_sp_align)
 #   spin wait loops     → a copy whose back-edges pass a spin gate (the host yields there; a busy poll costs nothing on the Switch, see "Spin waits")
 #   Registered cuts (CUTS of the patch files, restricted by NSO build ID, see "Registered patches"): before rewriting, the original bytes are asserted one by one and any mismatch aborts; results are listed in <name>.cuts.tsv
+#   Function-matched cuts (MATCH_CUTS of the selected game's patches.py): unknown builds only, unique complete-function and direct-callee fingerprints, then original-byte assertions
 #   Registered observation gates (OBS of the patch files, restricted by build ID): one instruction at the entry is replaced with "enter the host observation callback → execute the original instruction → jump back", so diagnostics modify zero code at runtime; listed in <name>.obs.tsv
 # The key page only stores "actual key number × 8" at the end of the data segment, and patch code fetches thread slots indirectly through the key page: the loader may use any key number.
 # Output: <name>.patched.bin (key page and patch area appended after the image at PATCH_OFF; when that would start beyond 112 MB the patch area sits before the base, see FAR), <name>.fixups.tsv (layout and key page index header), <name>.gates.tsv, <name>.sites.tsv, <name>.cuts.tsv, <name>.obs.tsv
@@ -66,12 +67,17 @@ else:
 #   OBS = {build ID: [(offset, number, original instruction word, reason)]}: observation gates. Numbers match OBS_* in the host's hle.h; the original instruction must be position
 #     independent (no PC-relative / branch / anything involving x18 or tpidr), asserted offline; when the host has no callback attached the gate block goes in and out once and returns
 #   FRAME_STEP = {build ID: function(ctx)}: the frame step stubs of a main ("Frame step in whole vsyncs" below)
+#   MATCH_CUTS = {module name: [nso_match rule, ...]}: fallback for modules without registered CUTS. Only the repository profile selected by DM_GAME participates,
+#     including when DM_GAMES_DIR selects a derived profile. Missing or ambiguous matches are reported and skipped; known builds retain their exact CUTS.
 PATCH_FILES = [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sdk_patches.py')] + sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../games/*/patches.py')))
 def load_patches():
-    tables, where = {'CUTS': {}, 'OBS': {}, 'FRAME_STEP': {}}, {}
+    tables, where = {'CUTS': {}, 'OBS': {}, 'FRAME_STEP': {}, 'MATCH_CUTS': {}}, {}
     for n, path in enumerate(PATCH_FILES):
         spec = importlib.util.spec_from_file_location(f'patches_{n}', path); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
         for kind, table in tables.items():
+            if kind == 'MATCH_CUTS':
+                if getattr(m, kind, {}): table[os.path.basename(os.path.dirname(path))] = m.MATCH_CUTS
+                continue
             for bid, v in getattr(m, kind, {}).items():
                 assert bid not in table, f'{kind} of build {bid} in both {where[kind, bid]} and {path}'
                 table[bid], where[kind, bid] = v, path
@@ -79,6 +85,10 @@ def load_patches():
 PATCHES, PATCH_WHERE = load_patches()
 BUILD_ID = d[0x40:0x50].hex()
 cuts = list(PATCHES['CUTS'].get(BUILD_ID, []))
+if BUILD_ID not in PATCHES['CUTS']:
+    from nso_match import resolve
+    profile = os.path.basename(os.environ.get('DM_GAME', '').rstrip('/'))
+    cuts += resolve(IMG, TEXT_END, PATCHES['MATCH_CUTS'].get(profile, {}).get(NAME, []))
 for off, ob, nb, why in cuts:
     ob, nb = bytes.fromhex(ob), bytes.fromhex(nb)
     assert len(ob) == len(nb) and IMG[off:off + len(ob)] == ob, f'cut original bytes mismatch {off:#x}: {bytes(IMG[off:off + len(ob)]).hex()}'
@@ -504,7 +514,8 @@ done = set(); windows = []; jumps = {}; tabjumps = {}; tailcalls = set(); retrie
 def check_before_copy(insl, ctx, ld, idx):
     """The index copied from the checked register before the check, far back (DRAGON QUEST XI S main+0x2dd8cd0: mov w0,w18, then 41 instructions with two other jump tables on x0, then
     cmp w18,#4; b.hi; ldrsw x18,[x11,x0,lsl #2]; add x18,x18,x11; br x18). Accepted when the cmp and its b.hi come right before the load and the mov is the last writer of the index and of the
-    checked register before them (64 instructions back at most). The compiler checks one register and indexes with the other only when it knows they are equal; blocks in between that branch out
+    checked register before them (128 instructions back at most: Bloodstained: Curse of the Moon's GLSLC subsdk0+0x733f94 has mov w18,w17 at its loop head and
+    cmp w17,#4; b.hi; ldrsw x18,[x9,x18,lsl #2] 71 instructions later, after a switch on x1 whose cases each repeat the check). The compiler checks one register and indexes with the other only when it knows they are equal; blocks in between that branch out
     and back (main+0x2dd8ce0 → main+0x2dd8cb8) write neither. Tried only when every other form has failed (jump_offsets copy_first), so sites that rewrote before come out the same:
     the one br x18 of its kind among the 25,508 x18 sites of that main. → the cmp, or None"""
     k = ctx.index(ld)
@@ -514,7 +525,7 @@ def check_before_copy(insl, ctx, ld, idx):
     src, kl = m.group(1), insl.index(ld)
     def writes(p):   # capstone lists a compare's first operand as written (cmp w18,#4 at main+0x2dd8c30); it only sets the flags
         return set() if p.mnemonic in ('cmp', 'cmn', 'tst') else {'w' + p.reg_name(r)[1:] for r in p.regs_access()[1]}
-    for q in range(kl - 3, max(0, kl - 64) - 1, -1):
+    for q in range(kl - 3, max(0, kl - 128) - 1, -1):
         p = insl[q]
         mm = re.fullmatch(r'(w\d+), (w\d+)', p.op_str) if p.mnemonic == 'mov' else None
         if mm and mm.group(1) in idx and mm.group(2) == src: break

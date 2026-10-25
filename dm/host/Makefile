@@ -31,6 +31,12 @@ gen/vpx/%.o: $(VPX)/%.c $(wildcard $(VPX)/config/*.h)
 	clang -O2 -g -I$(VPX) -I$(VPX)/config -c $< -o $@
 $(VPX_LIB): $(VPX_OBJ)
 	rm -f $@; ar rcs $@ $^
+# Quick settings sidebar (quick_settings_mac.swift, SwiftUI): compiled on its own into an object the host's single compile line links, as libvpx is; the Swift runtime and SwiftUI come with macOS
+QS_OBJ=gen/quick_settings_mac.o
+$(QS_OBJ): quick_settings_mac.swift quick_settings_mac.h front.h cheats.h
+	@mkdir -p gen
+	swiftc -O -parse-as-library -module-name dmquick -import-objc-header quick_settings_mac.h -c quick_settings_mac.swift -o $@
+SWIFT_LD=-L$(shell xcrun --show-sdk-path)/usr/lib/swift -L$(dir $(shell xcrun -f swiftc))../lib/swift/macosx -Xlinker -rpath -Xlinker /usr/lib/swift
 .DEFAULT_GOAL := dmhost   # The header generation rules are written first below, so the default goal must be stated explicitly (otherwise make only generates the headers and does not build the host)
 .PHONY: game_profile
 game_profile: $(GAME_H)
@@ -50,8 +56,8 @@ endif
 endif
 .PHONY: FORCE
 FORCE:
-dmhost: $(SRC) $(GFX) ../third_party/stb_vorbis/stb_vorbis.c dm.h hle.h dm_input.h cheats.h pad_slots.h hle_haptics.h haptics_apple.h front.h $(GFX_H) $(GAME_H) $(GAME_STAMP) $(VPX_LIB)
-	clang $(CFLAGS) -I../gfx/nvn/include -I../third_party/vulkan-headers/include -I$(dir $(GAME_H)) -I$(VPX) -I../third_party/stb_vorbis -fobjc-arc -o $@ $(SRC) $(GFX) $(VPX_LIB) -framework Cocoa -framework QuartzCore -framework Metal -framework GameController -framework CoreHaptics -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers
+dmhost: $(SRC) $(GFX) ../third_party/stb_vorbis/stb_vorbis.c dm.h hle.h dm_input.h cheats.h pad_slots.h hle_haptics.h haptics_apple.h front.h quick_settings_mac.h $(GFX_H) $(GAME_H) $(GAME_STAMP) $(VPX_LIB) $(QS_OBJ)
+	clang $(CFLAGS) -I../gfx/nvn/include -I../third_party/vulkan-headers/include -I$(dir $(GAME_H)) -I$(VPX) -I../third_party/stb_vorbis -fobjc-arc -o $@ $(SRC) $(GFX) $(VPX_LIB) $(QS_OBJ) $(SWIFT_LD) -framework SwiftUI -framework Cocoa -framework QuartzCore -framework Metal -framework GameController -framework CoreHaptics -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers
 clean:   # the host and everything make generates for it (gen/: the profile headers, the game stamp and the libvpx build; dmhost_* and *.dSYM beside them, as in .gitignore)
 	rm -rf gen dmhost dmhost_* *.dSYM
 .PHONY: clean
