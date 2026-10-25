@@ -8601,10 +8601,10 @@ static void present_pipeline(MTLPixelFormat format) {
             "  float2 g = (f - clamp(f, -r, r)) * k + 0.5f;\n"
             "  return t.sample(s, clamp((floor(tx) + g) / sz, c.edge.xy, c.edge.zw));\n"
             "}\n"
-            // CRT: each source row lit brightest at its centre and darkest at its edges, and every third output column leaning red, green, blue; strength scales both
+            // CRT: each source row lit brightest at its centre and darkest at its edges, and every third output column leaning red, green, blue; strength scales both (the row is taken before UV's clamp to the half-texel edge, which would light the image's first and last half row fully)
             "fragment float4 fs_crt(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
             "  float2 uv = UV; float k = saturate(c.fx.x); float3 col = t.sample(s, uv).rgb;\n"
-            "  float row = fract(uv.y * t.get_height()), scan = 0.5f + 0.5f * cos(6.2831853f * (row - 0.5f));\n"
+            "  float row = fract((in.uv.y * c.rect.w + c.rect.y) * t.get_height()), scan = 0.5f + 0.5f * cos(6.2831853f * (row - 0.5f));\n"
             "  col *= mix(1.0f, 0.45f + 0.55f * scan, k);\n"
             "  uint ph = uint(in.p.x) % 3u; float3 mask = ph == 0u ? float3(1, 0.7f, 0.7f) : ph == 1u ? float3(0.7f, 1, 0.7f) : float3(0.7f, 0.7f, 1);\n"
             "  col *= mix(float3(1), mask, float3(0.5f * k));\n"
