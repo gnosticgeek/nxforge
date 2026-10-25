@@ -6,7 +6,12 @@ import AppKit
 import SwiftUI
 
 private let env = ProcessInfo.processInfo.environment
-private let filterNames = ["Off", "Sharpen", "Pixel-perfect", "CRT"]
+private let filterNames = ["Off", "Sharpen", "Pixel-perfect", "CRT", "CRT-Lottes", "LCD Grid"]   // front.h DM_PFX_*, in that order
+private let filterShort = ["Off", "Sharpen", "Pixel", "CRT", "Lottes", "LCD"]
+private let filterAbout = ["The picture scaled smoothly, as the game drew it.", "Crisper edges and texture detail, without halos.",
+                           "Crisp pixel art at any window size, without shimmer.", "Scanlines and an RGB mask, like a TV.",
+                           "Timothy Lottes' CRT: soft beams, bloom and a shadow mask.", "A handheld's screen: a fine grid and RGB subpixels."]
+private let usesStrength: Set<Int> = [1, 3, 4, 5], usesLines: Set<Int> = [3, 4, 5]   // pixel-perfect has no strength; the CRT filters and LCD Grid work on lines (cells)
 private let cornerNames = ["Top left", "Top right", "Bottom left", "Bottom right"]
 
 final class QuickSettings: ObservableObject {
@@ -143,11 +148,12 @@ struct QuickSettingsView: View {
         .background(.white.opacity(open ? 0.07 : 0.04), in: .rect(cornerRadius: 16))
     }
     private var graphics: some View {
-        let hasStrength = m.filter == 1 || m.filter == 3
+        let hasStrength = usesStrength.contains(m.filter)
         return VStack(alignment: .leading, spacing: 12) {
             Picker("Filter", selection: Binding(get: { m.filter }, set: { m.setFilter($0, m.strength) })) {
-                ForEach(0..<4) { Text(filterNames[$0]).tag($0) }
+                ForEach(0..<filterNames.count, id: \.self) { Text(filterShort[$0]).tag($0).help(filterNames[$0]) }
             }.pickerStyle(.segmented).labelsHidden().controlSize(.large)
+            Text(filterAbout[min(m.filter, filterAbout.count - 1)]).font(.caption).foregroundStyle(.secondary)
             Row(title: "Strength") {
                 HStack(spacing: 10) {
                     Slider(value: Binding(get: { m.strength }, set: { m.setFilter(m.filter, $0) }), in: 0...1)
@@ -158,9 +164,9 @@ struct QuickSettingsView: View {
                 Picker("Scanlines", selection: Binding(get: { m.scanline }, set: { m.setScanline($0) })) {
                     Text("Auto").tag(0)
                     ForEach(1..<9) { Text("\($0) frame row\($0 == 1 ? "" : "s")").tag($0) }
-                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(m.filter != 3)
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(!usesLines.contains(m.filter))
             }
-            if m.filter != 3 { Text("Scanlines are available with CRT").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .trailing) }
+            if !usesLines.contains(m.filter) { Text("Scanlines are available with CRT, Lottes and LCD").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .trailing) }
         }
     }
     private var performance: some View {

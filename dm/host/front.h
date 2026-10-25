@@ -12,10 +12,10 @@ int front_screen_max_fps(void);
 void front_screen_match(int fps);
 // Present filter (implemented by the graphics backend, nvn_mtl.m; set by the Mac front end's Graphics menu and panel, or DM_PRESENT_FILTER / DM_PRESENT_FILTER_STRENGTH): how the game picture
 // is drawn into the window, taken at every present. Strength 0 to 1. Any thread
-enum { DM_PFX_OFF, DM_PFX_SHARPEN, DM_PFX_PIXEL, DM_PFX_CRT, DM_PFX_N };
+enum { DM_PFX_OFF, DM_PFX_SHARPEN, DM_PFX_PIXEL, DM_PFX_CRT, DM_PFX_LOTTES, DM_PFX_LCD, DM_PFX_N };   // in the order they were added: the saved choice is the number
 int mtl_present_filter(float *strength);
 void mtl_present_filter_set(int mode, float strength);
-// The CRT filter's scanline height in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
+// The CRT filters' scanline height (and the LCD grid's cell) in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
 int mtl_present_scanline(void);
 void mtl_present_scanline_set(int rows);
 // Frames put on screen so far (nvn_mtl.m, NVN and the Vulkan layer alike; frames the display link merged away are not counted): the front ends' frame-rate counters. Any thread
