@@ -26,7 +26,8 @@
 @property TestPlayer *testPlayer;
 @property int starts, stops;
 @property BOOL fail;
-@property BOOL failPattern, failPlayer, failSend, handlersAtStart, resetDuringStart;
+@property BOOL failPattern, failPlayer, failSend, handlersAtStart, resetDuringStart, refusesAdvanced, broken;
+@property int plainPlayers;
 @property(copy) void (^startingReset)(void);
 @end
 @implementation TestEngine
@@ -39,7 +40,15 @@
 }
 - (void)stopWithCompletionHandler:(CHHapticCompletionHandler)handler { self.stops++; if (handler) handler(nil); }
 - (id<CHHapticAdvancedPatternPlayer>)createAdvancedPlayerWithPattern:(CHHapticPattern *)p error:(NSError **)e {
-    (void)p; (void)e; if (self.failPattern) return nil;
+    (void)p; if (self.failPattern) return nil;
+    if (self.refusesAdvanced) { self.broken = YES; if (e) *e = [NSError errorWithDomain:NSCocoaErrorDomain code:4097 userInfo:nil]; return nil; }
+    self.testPlayer = [TestPlayer new]; self.testPlayer.failStart = self.failPlayer; self.testPlayer.failSend = self.failSend;
+    return (id)self.testPlayer;
+}
+- (id<CHHapticPatternPlayer>)createPlayerWithPattern:(CHHapticPattern *)p error:(NSError **)e {
+    (void)p; if (self.failPattern) return nil;
+    if (self.broken) { if (e) *e = [NSError errorWithDomain:CoreHapticsErrorDomain code:CHHapticErrorCodeServerInitFailed userInfo:nil]; return nil; }   // as on the SN30 Pro
+    self.plainPlayers++;
     self.testPlayer = [TestPlayer new]; self.testPlayer.failStart = self.failPlayer; self.testPlayer.failSend = self.failSend;
     return (id)self.testPlayer;
 }
@@ -175,6 +184,26 @@ int main(void) { @autoreleasepool {
     unsupported.haptics.supportedLocalities = [NSSet set];
     dm_haptics_apple_controller(0, (id)unsupported); drain();
     assert(!(dm_haptics_available() & 1) && unsupported.haptics.attempts == 0);
+    // A helper that refuses advanced players (8BitDo SN30 Pro on macOS) gets plain players on a new engine, renewed before their 30 s event ends.
+    NSMutableArray<TestEngine *> *plainEngines = [NSMutableArray new];
+    dispatch_sync(queue, ^{
+        channels[0] = [NSMutableArray new];
+        add_engine(0, @"test plain", ^CHHapticEngine *(NSError **e) { (void)e; TestEngine *t = [TestEngine new]; t.refusesAdvanced = YES; [plainEngines addObject:t]; return (id)t; });
+        dm_haptics_route(0, 1);
+    }); drain();
+    send_pair(0.6, 0);
+    TestEngine *plainOnly = plainEngines.lastObject;
+    assert(plainEngines.count == 2 && plainEngines[0].plainPlayers == 0 && plainOnly.plainPlayers == 1);   // the refusing engine is replaced at once
+    assert(plainOnly.testPlayer.starts == 1 && fabsf(plainOnly.testPlayer.levels.lastObject.floatValue - 0.6f) < 1e-6f);
+    assert(dm_haptics_actual(0, 0).amplitude_low == 0.6f);   // not a failure: no backoff, the value stands
+    TestPlayer *first = plainOnly.testPlayer;
+    dispatch_sync(queue, ^{ channels[0][0].renewAt = 0; });
+    send_pair(0.7, 0);
+    assert(plainOnly.plainPlayers == 2 && first.stops == 1 && fabsf(plainOnly.testPlayer.levels.lastObject.floatValue - 0.7f) < 1e-6f);
+    send_pair(0, 0); usleep(1100000); drain();
+    assert(plainOnly.testPlayer.stops == 1);   // idle release as with an advanced player
+    send_pair(0.5, 0);
+    assert(plainEngines.count == 2 && plainOnly.plainPlayers == 3 && fabsf(plainOnly.testPlayer.levels.lastObject.floatValue - 0.5f) < 1e-6f);   // no advanced attempt again
     dm_haptics_apple_shutdown();
-    puts("Apple haptics: channels, pulses, idle release, startup handlers, engine replacement, backoff and stale callbacks passed");
+    puts("Apple haptics: channels, pulses, idle release, startup handlers, engine replacement, backoff and stale callbacks, plain players passed");
 } }

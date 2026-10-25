@@ -47,6 +47,11 @@ uint32_t dm_haptics_available(void) {
     uint32_t m = enabled && output ? available : 0;
     pthread_mutex_unlock(&lock); return m;
 }
+int dm_haptics_enabled(void) {
+    pthread_mutex_lock(&lock);
+    int on = enabled && output != NULL;
+    pthread_mutex_unlock(&lock); return on;
+}
 void dm_haptics_suspend(unsigned reason, int on) {
     pthread_mutex_lock(&lock);
     unsigned before = suspended;

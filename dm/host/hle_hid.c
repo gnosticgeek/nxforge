@@ -382,12 +382,15 @@ static void vib_send(const uint32_t *handles, const dm_vibration *values, int n)
     for (int k = 0; k < DM_PLAYERS * 2; k++) if (used >> k & 1) updates[count++] = updates[k];
     dm_haptics_send(updates, count);
 }
-HLE_FORCE("_ZN2nn3hid20IsVibrationPermittedEv", "vibration permission: enabled and an output available", unsigned, h_hid_VibPermit, void) { return dm_haptics_available() != 0; }
+// Permission and handles do not wait for a controller: games ask once at startup, often before the front end has seen one (Bloodstained: Curse of the Moon,
+// a Bluetooth controller about a second after nnMain), and never ask again. On the Switch both answer from the npad id and style alone; vib_targets drops sends
+// to an npad without an output, so rumble starts when a controller with haptics connects.
+HLE_FORCE("_ZN2nn3hid20IsVibrationPermittedEv", "vibration permission: rumble enabled and an output adapter present", unsigned, h_hid_VibPermit, void) { return dm_haptics_enabled(); }
 HLE_FORCE("_ZN2nn3hid25GetVibrationDeviceHandlesEPNS0_21VibrationDeviceHandleEiRKjNS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE", "vibration devices of the connected controller",
           int, h_hid_VibHandles, uint32_t *h, int n, const uint32_t *id, uint32_t style) {
-    if (!h || !id || n <= 0 || !(style & style_of(*id))) return 0;
+    uint32_t own = !id ? 0 : *id == NPAD_HANDHELD ? STYLE_HANDHELD : *id < DM_PLAYERS ? STYLE_FULLKEY : 0;
+    if (!h || n <= 0 || !(style & own) || !dm_haptics_enabled()) return 0;
     uint32_t base = (*id << 8) | (*id == NPAD_HANDHELD ? 4u : 3u);
-    if (!vib_targets(base)) return 0;
     int count = n < 2 ? n : 2;
     for (int i = 0; i < count; i++) h[i] = base | (uint32_t)i << 16;
     return count;
