@@ -28,7 +28,9 @@ final class QuickSettings: ObservableObject {
     @Published var mods: [String] = []
     @Published var wanted: [String] = []
     @Published var cheats: [Cheat] = []
-    @Published var cheatsBuild = "", cheatsVersion = "", cheatsProblem = ""
+    @Published var cheatsBuild = ""
+    @Published var cheatsVersion = ""
+    @Published var cheatsProblem = ""
     @Published var open: Int
     init(game: String, modsDir: String, modsRun: Set<String>?, close: @escaping () -> Void, fpsChanged: @escaping () -> Void) {
         self.game = game; self.modsDir = modsDir; self.modsRun = modsRun; self.close = close; self.fpsChanged = fpsChanged
