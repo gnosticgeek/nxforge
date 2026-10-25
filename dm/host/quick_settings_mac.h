@@ -12,3 +12,10 @@ void front_qs_record(void);
 int front_qs_recording(void);
 // A short message over the top of the game picture for a moment (quick_settings_mac.swift): parent is the game view; main thread
 void dm_qs_toast(void *parent, const char *msg);
+// Controller and keyboard navigation (front_mac.m sends it while the sidebar is up): 1 up, 2 down, 3 left, 4 right (change the value), 5 activate, 6 close, 7 / 8 the previous / next section
+void dm_qs_nav(int cmd);
+// The Controls section's map (front_mac.m): assign the next key (pad 0, actions 0–20) or controller button (pad 1, 0–11) to an action (-1 cancels); what is waiting (-1, or action * 2 + pad);
+// read the saved map again after the sidebar reset it
+void front_qs_assign(int action, int pad);
+int front_qs_assigning(void);
+void front_qs_controls_reload(void);

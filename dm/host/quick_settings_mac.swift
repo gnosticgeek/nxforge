@@ -14,6 +14,16 @@ private let filterAbout = ["The picture scaled smoothly, as the game drew it.", 
 private let usesStrength: Set<Int> = [1, 3, 4, 5], usesLines: Set<Int> = [3, 4, 5]   // pixel-perfect has no strength; the CRT filters and LCD Grid work on lines (cells)
 private let cornerNames = ["Top left", "Top right", "Bottom left", "Bottom right"]
 
+// The Controls section's rows: actions 0–15 are the Switch's buttons in NpadButton order, 16–19 the left stick, 20 shaking (front_mac.m's map); the controller map has the first 12
+private let actionNames = ["A", "B", "X", "Y", "Left stick press", "Right stick press", "L", "R", "ZL", "ZR", "+ (Plus)", "− (Minus)", "D-pad left", "D-pad up", "D-pad right", "D-pad down",
+                           "Left stick up", "Left stick left", "Left stick down", "Left stick right", "Shake"]
+private let keyDefaults = ["J", "K", "U", "I", "F", "G", "Q", "E", "Z", "C", "Return", "Tab", "←", "↑", "→", "↓", "W", "A", "S", "D", "Space"]
+private let padDefaults = ["Right button", "Bottom button", "Top button", "Left button", "Left stick press", "Right stick press", "Left shoulder", "Right shoulder",
+                           "Left trigger", "Right trigger", "Menu", "Options"]
+// What the controller and keyboard selection can be on (dm_qs_nav), in the order the sidebar shows it
+enum Nav: Hashable { case header(Int), filter, strength, scanlines, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, key(Int), pad(Int), resetControls, resume }
+private let sectionOrder = [0, 1, 5, 6, 2, 7]
+
 final class QuickSettings: ObservableObject {
     let game: String, modsDir: String, modsRun: Set<String>?, close: () -> Void, fpsChanged: () -> Void
     @Published var filter = 0
@@ -26,6 +36,10 @@ final class QuickSettings: ObservableObject {
     @Published var open: Int
     @Published var volume = 1.0
     @Published var recording = false
+    @Published var sel: Nav?
+    @Published var assigning = -1
+    @Published var keyNames: [String] = keyDefaults
+    @Published var padNames: [String] = padDefaults
     init(game: String, modsDir: String, modsRun: Set<String>?, close: @escaping () -> Void, fpsChanged: @escaping () -> Void) {
         self.game = game; self.modsDir = modsDir; self.modsRun = modsRun; self.close = close; self.fpsChanged = fpsChanged
         let d = UserDefaults.standard, k = "DMQuickSettings.section.\(game)"
@@ -42,6 +56,9 @@ final class QuickSettings: ObservableObject {
         corner = min(max(d.integer(forKey: optKey("fpsPos")), 0), 3)
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
         volume = Double(dm_audio_volume()); recording = front_qs_recording() != 0
+        assigning = Int(front_qs_assigning())
+        let kn = d.dictionary(forKey: optKey("keyNames")) as? [String: String] ?? [:], pn = d.dictionary(forKey: optKey("padNames")) as? [String: String] ?? [:]
+        keyNames = keyDefaults.indices.map { kn[String($0)] ?? keyDefaults[$0] }; padNames = padDefaults.indices.map { pn[String($0)] ?? padDefaults[$0] }
         let fm = FileManager.default
         mods = ((try? fm.contentsOfDirectory(atPath: modsDir)) ?? []).filter { n in
             var dir: ObjCBool = false
@@ -64,6 +81,75 @@ final class QuickSettings: ObservableObject {
         if let v = NSApp.keyWindow?.contentView { dm_qs_toast(Unmanaged.passUnretained(v).toOpaque(), "Mods apply when the game next starts") }
     }
     func setVolume(_ v: Double) { volume = v; dm_audio_volume_set(Float(v)); UserDefaults.standard.set(v, forKey: optKey("volume")) }
+    func assign(_ i: Int, pad: Bool) { front_qs_assign(Int32(i), pad ? 1 : 0); assigning = Int(front_qs_assigning()) }
+    func resetControls() {
+        for k in ["keys", "keyNames", "pad", "padNames"] { UserDefaults.standard.removeObject(forKey: optKey(k)) }
+        front_qs_controls_reload(); refresh()
+    }
+    // Controller and keyboard navigation (after RetroReplay's pause menu): a selection over the visible items
+    var items: [Nav] {
+        var r: [Nav] = []
+        for i in sectionOrder {
+            r.append(.header(i)); guard open == i else { continue }
+            switch i {
+            case 0: r += [.filter, .strength, .scanlines]
+            case 1: r += [.fps, .corner]
+            case 5: r += [.volume]
+            case 6: r += [.shot, .record]
+            case 2: r += mods.map { .mod($0) } + [.modsOpen, .modsRefresh]
+            case 7: r += actionNames.indices.map { .key($0) } + padDefaults.indices.map { .pad($0) } + [.resetControls]
+            default: break
+            }
+        }
+        return r + [.resume]
+    }
+    func nav(_ cmd: Int32) {
+        let list = items
+        guard let cur = sel, let at = list.firstIndex(of: cur) else { if cmd == 6 { close() } else if cmd == 5 && sel == nil { sel = list.first } else { sel = list.first }; return }
+        switch cmd {
+        case 1: sel = list[max(at - 1, 0)]
+        case 2: sel = list[min(at + 1, list.count - 1)]
+        case 3, 4: adjust(cur, cmd == 4 ? 1 : -1)
+        case 5: activate(cur)
+        case 6: close()
+        case 7, 8:   // the previous / next section's header
+            let heads = list.enumerated().filter { if case .header = $0.element { return true }; return false }.map(\.offset)
+            if let to = cmd == 7 ? heads.last(where: { $0 < at }) : heads.first(where: { $0 > at }) { sel = list[to] }
+        default: break
+        }
+    }
+    private func adjust(_ n: Nav, _ d: Int) {
+        switch n {
+        case .header(let i): if (d > 0) != (open == i) { toggle(i) }
+        case .filter: setFilter(min(max(filter + d, 0), filterNames.count - 1), strength)
+        case .strength: if usesStrength.contains(filter) { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
+        case .scanlines: if usesLines.contains(filter) { setScanline(min(max(scanline + d, 0), 8)) }
+        case .fps: setFps(d > 0)
+        case .corner: if fps { setCorner((corner + d + 4) % 4) }
+        case .volume: setVolume(min(max(volume + 0.05 * Double(d), 0), 1))
+        case .mod(let name): setMod(name, d > 0)
+        default: break
+        }
+    }
+    private func activate(_ n: Nav) {
+        switch n {
+        case .header(let i): toggle(i)
+        case .filter: setFilter((filter + 1) % filterNames.count, strength)
+        case .scanlines: if usesLines.contains(filter) { setScanline((scanline + 1) % 9) }
+        case .fps: setFps(!fps)
+        case .corner: if fps { setCorner((corner + 1) % 4) }
+        case .shot: front_qs_screenshot()
+        case .record: front_qs_record(); recording = front_qs_recording() != 0
+        case .mod(let name): setMod(name, !wanted.contains(name))
+        case .modsOpen: openModsFolder()
+        case .modsRefresh: refresh()
+        case .key(let i): assign(i, pad: false)
+        case .pad(let i): assign(i, pad: true)
+        case .resetControls: resetControls()
+        case .resume: close()
+        case .strength, .volume: break
+        }
+    }
     func toggle(_ i: Int) { open = open == i ? -1 : i; UserDefaults.standard.set(open, forKey: optKey("section")) }
     func openModsFolder() {
         try? FileManager.default.createDirectory(atPath: modsDir, withIntermediateDirectories: true)
@@ -99,6 +185,15 @@ private struct GlassButton: ViewModifier {
     }
 }
 
+// The controller / keyboard selection's mark: an accent outline around the selected item, which the scroll view keeps in sight
+private struct NavMark: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        content.padding(4).overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor, lineWidth: 2).opacity(on ? 1 : 0)).padding(-4)
+    }
+}
+extension View { fileprivate func nav(_ m: QuickSettings, _ n: Nav) -> some View { id(n).modifier(NavMark(on: m.sel == n)) } }
+
 // One row: a label of a fixed width on the left, the control filling the rest, so every control in the sidebar lines up
 private struct Row<C: View>: View {
     let title: String; @ViewBuilder let control: () -> C
@@ -114,16 +209,18 @@ struct QuickSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(.horizontal, 22).padding(.top, compact ? 14 : 22).padding(.bottom, compact ? 8 : 14)
             Divider().padding(.horizontal, 22)
-            ScrollView {
+            ScrollViewReader { proxy in ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     section(0, "Graphics & shaders", "display", summary: m.filter == 0 ? "Off" : filterNames[m.filter]) { graphics }
                     section(1, "Performance", "chart.bar.fill", summary: m.fps ? "FPS on" : "FPS off") { performance }
                     section(5, "Sound", "speaker.wave.2.fill", summary: "\(Int((m.volume * 100).rounded()))%") { sound }
                     section(6, "Capture", "camera", summary: m.recording ? "Recording" : "", badge: m.recording) { capture }
                     section(2, "Mods", "puzzlepiece.extension", summary: m.modsOn == 0 ? "None enabled" : "\(m.modsOn) enabled", badge: m.modsOn > 0) { mods }
+                    section(7, "Controls", "gamecontroller", summary: "") { controls }
                     cheats
                 }.padding(.horizontal, 16).padding(.vertical, 14)
             }.scrollIndicators(.automatic)
+            .onChange(of: m.sel) { _, s in if let s { withAnimation(motion) { proxy.scrollTo(s, anchor: .center) } } } }
             Divider().padding(.horizontal, 22)
             footer.padding(.horizontal, 22).padding(.top, compact ? 10 : 14).padding(.bottom, compact ? 12 : 18)
         }
@@ -158,7 +255,7 @@ struct QuickSettingsView: View {
                     else if !open { Text(summary).font(.callout).foregroundStyle(.secondary) }
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).rotationEffect(.degrees(open ? 90 : 0))
                 }.contentShape(.rect)
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).nav(m, .header(i))
             if open { body().transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))) }
         }
         .padding(14)
@@ -169,31 +266,31 @@ struct QuickSettingsView: View {
         return VStack(alignment: .leading, spacing: 12) {
             Picker("Filter", selection: Binding(get: { m.filter }, set: { m.setFilter($0, m.strength) })) {
                 ForEach(0..<filterNames.count, id: \.self) { Text(filterShort[$0]).tag($0).help(filterNames[$0]) }
-            }.pickerStyle(.segmented).labelsHidden().controlSize(.large)
+            }.pickerStyle(.segmented).labelsHidden().controlSize(.large).nav(m, .filter)
             Text(filterAbout[min(m.filter, filterAbout.count - 1)]).font(.caption).foregroundStyle(.secondary)
             Row(title: "Strength") {
                 HStack(spacing: 10) {
                     Slider(value: Binding(get: { m.strength }, set: { m.setFilter(m.filter, $0) }), in: 0...1)
                     Text("\(Int((m.strength * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
                 }.disabled(!hasStrength)
-            }
+            }.nav(m, .strength)
             Row(title: "Scanlines") {
                 Picker("Scanlines", selection: Binding(get: { m.scanline }, set: { m.setScanline($0) })) {
                     Text("Auto").tag(0)
                     ForEach(1..<9) { Text("\($0) frame row\($0 == 1 ? "" : "s")").tag($0) }
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(!usesLines.contains(m.filter))
-            }
+            }.nav(m, .scanlines)
             if !usesLines.contains(m.filter) { Text("Scanlines are available with CRT, Lottes and LCD").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .trailing) }
         }
     }
     private var performance: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Row(title: "Show FPS") { Toggle("Show FPS", isOn: Binding(get: { m.fps }, set: { m.setFps($0) })).toggleStyle(.switch).labelsHidden() }
+            Row(title: "Show FPS") { Toggle("Show FPS", isOn: Binding(get: { m.fps }, set: { m.setFps($0) })).toggleStyle(.switch).labelsHidden() }.nav(m, .fps)
             Row(title: "Counter position") {
                 Picker("Counter position", selection: Binding(get: { m.corner }, set: { m.setCorner($0) })) {
                     ForEach(0..<4) { Text(cornerNames[$0]).tag($0) }
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(!m.fps)
-            }
+            }.nav(m, .corner)
         }
     }
     private var mods: some View {
@@ -214,11 +311,11 @@ struct QuickSettingsView: View {
                             else { Text(on ? "Loaded" : "Off").font(.caption).foregroundStyle(.secondary) }
                         } else { Text("Not used: DM_ROMFS_OVERLAY is set").font(.caption).foregroundStyle(.secondary) }
                     }
-                }.toggleStyle(.switch)
+                }.toggleStyle(.switch).nav(m, .mod(n))
             }
             HStack(spacing: 10) {
-                Button { m.openModsFolder() } label: { Label("Open mods folder", systemImage: "folder").frame(maxWidth: .infinity) }
-                Button { withAnimation(motion) { m.refresh() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }
+                Button { m.openModsFolder() } label: { Label("Open mods folder", systemImage: "folder").frame(maxWidth: .infinity) }.nav(m, .modsOpen)
+                Button { withAnimation(motion) { m.refresh() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }.nav(m, .modsRefresh)
             }.modifier(GlassButton(prominent: false)).controlSize(.large)
             Text("Restart the game to apply mod changes.").font(.caption).foregroundStyle(.secondary)
         }
@@ -230,19 +327,38 @@ struct QuickSettingsView: View {
                 Slider(value: Binding(get: { m.volume }, set: { m.setVolume($0) }), in: 0...1)
                 Text("\(Int((m.volume * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
             }
-        }
+        }.nav(m, .volume)
     }
     private var capture: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Button { front_qs_screenshot() } label: { Label("Screenshot", systemImage: "camera.viewfinder").frame(maxWidth: .infinity) }
+                Button { front_qs_screenshot() } label: { Label("Screenshot", systemImage: "camera.viewfinder").frame(maxWidth: .infinity) }.nav(m, .shot)
                 Button { front_qs_record(); m.recording = front_qs_recording() != 0 } label: {
                     Label(m.recording ? "Stop" : "Record", systemImage: m.recording ? "stop.circle.fill" : "record.circle").frame(maxWidth: .infinity)
-                }.tint(m.recording ? .red : nil)
+                }.tint(m.recording ? .red : nil).nav(m, .record)
             }.modifier(GlassButton(prominent: false)).controlSize(.large)
             Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording. The picture is saved as you see it, filter included; screenshots go to Pictures › NxNative, recordings (with sound) to Movies › NxNative.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+    private var controls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Choose a key or button, then press the new one; Esc cancels. Saved for this game.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Keyboard").font(.subheadline.weight(.semibold)).padding(.top, 4)
+            ForEach(actionNames.indices, id: \.self) { i in Row(title: actionNames[i]) { assignButton(i, pad: false) }.nav(m, .key(i)) }
+            Text("Controller").font(.subheadline.weight(.semibold)).padding(.top, 6)
+            ForEach(padDefaults.indices, id: \.self) { i in Row(title: actionNames[i]) { assignButton(i, pad: true) }.nav(m, .pad(i)) }
+            Text("A controller's D-pad and sticks stay as they are. Its Home button, or − and + together, opens this sidebar; the D-pad moves, A chooses, B closes, L and R jump between sections.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button { m.resetControls() } label: { Label("Reset to defaults", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
+                .modifier(GlassButton(prominent: false)).controlSize(.large).nav(m, .resetControls)
+        }
+    }
+    private func assignButton(_ i: Int, pad: Bool) -> some View {
+        let waiting = m.assigning == i * 2 + (pad ? 1 : 0)
+        return Button { m.assign(i, pad: pad) } label: {
+            Text(waiting ? (pad ? "Press a button…" : "Press a key…") : (pad ? m.padNames[i] : m.keyNames[i])).lineLimit(1).frame(minWidth: 130)
+        }.modifier(GlassButton(prominent: waiting))
     }
     private var cheats: some View {
         HStack(spacing: 12) {
@@ -259,7 +375,7 @@ struct QuickSettingsView: View {
         VStack(spacing: 12) {
             Label("Settings saved for this game", systemImage: "gearshape").font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             Button(action: m.close) { Text("Resume game").font(.headline).frame(maxWidth: .infinity) }
-                .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction)
+                .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction).nav(m, .resume)
             HStack(spacing: 8) {
                 Text("Esc").font(.caption.weight(.medium)).padding(.horizontal, 8).padding(.vertical, 3)
                     .background(.white.opacity(0.1), in: .rect(cornerRadius: 5)).overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.18)))
@@ -321,5 +437,7 @@ public func dm_qs_make(_ game: UnsafePointer<CChar>, _ modsDir: UnsafePointer<CC
     v.sizingOptions = []   // front_mac.m sizes it: the right of the game window, full height
     return Unmanaged.passRetained(v).toOpaque()
 }
+@_cdecl("dm_qs_nav")
+public func dm_qs_nav(_ cmd: Int32) { shared?.nav(cmd) }
 @_cdecl("dm_qs_refresh")
 public func dm_qs_refresh() { shared?.refresh() }
