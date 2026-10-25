@@ -14,6 +14,7 @@ private let filterAbout = ["The picture scaled smoothly, as the game drew it.", 
                            "Timothy Lottes' CRT: soft beams, bloom and a shadow mask.", "A handheld's screen: a fine grid and RGB subpixels."]
 private let usesStrength: Set<Int> = [1, 3, 4, 5], usesLines: Set<Int> = [3, 4, 5]   // pixel-perfect has no strength; the CRT filters and LCD Grid work on lines (cells)
 private let cornerNames = ["Top left", "Top right", "Bottom left", "Bottom right"]
+private let anisoSteps = [0, 2, 4, 8, 16]   // front.h mtl_aniso_set: 0 is the game's own
 
 // The Controls section's rows: actions 0–15 are the Switch's buttons in NpadButton order, 16–19 the left stick, 20 shaking (front_mac.m's map); the controller map has the first 12
 private let actionNames = ["A", "B", "X", "Y", "Left stick press", "Right stick press", "L", "R", "ZL", "ZR", "+ (Plus)", "− (Minus)", "D-pad left", "D-pad up", "D-pad right", "D-pad down",
@@ -22,7 +23,7 @@ private let keyDefaults = ["J", "K", "U", "I", "F", "G", "Q", "E", "Z", "C", "Re
 private let padDefaults = ["Right button", "Bottom button", "Top button", "Left button", "Left stick press", "Right stick press", "Left shoulder", "Right shoulder",
                            "Left trigger", "Right trigger", "Menu", "Options"]
 // What the controller and keyboard selection can be on (dm_qs_nav), in the order the sidebar shows it
-enum Nav: Hashable { case header(Int), filter, strength, scanlines, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, showFolder, changeFolder, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume }
+enum Nav: Hashable { case header(Int), filter, strength, scanlines, aniso, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, showFolder, changeFolder, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume }
 private let sectionOrder = [0, 1, 5, 6, 2, 3, 7]
 struct Cheat: Identifiable {
     let id: Int, name: String, desc: String, flags: Int32
@@ -49,6 +50,8 @@ final class QuickSettings: ObservableObject {
     @Published var volume = 1.0
     @Published var recording = false
     @Published var shotDir = ""
+    @Published var aniso = 0      // the chosen anisotropic filtering floor (0: the game's own)
+    @Published var anisoRun = 0   // the one this launch took
     @Published var recDir = ""
     @Published var customDir = false
     @Published var sel: Nav?
@@ -72,6 +75,7 @@ final class QuickSettings: ObservableObject {
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
         volume = Double(dm_audio_volume()); recording = front_qs_recording() != 0
         assigning = Int(front_qs_assigning())
+        anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil ? anisoRun : d.integer(forKey: optKey("aniso"))
         shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
         let kn = d.dictionary(forKey: optKey("keyNames")) as? [String: String] ?? [:], pn = d.dictionary(forKey: optKey("padNames")) as? [String: String] ?? [:]
         keyNames = keyDefaults.indices.map { kn[String($0)] ?? keyDefaults[$0] }; padNames = padDefaults.indices.map { pn[String($0)] ?? padDefaults[$0] }
@@ -106,6 +110,9 @@ final class QuickSettings: ObservableObject {
         mtl_present_filter_set(Int32(m), Float(k)); filter = m; strength = k
         if env["DM_PRESENT_FILTER"] == nil { UserDefaults.standard.set(m, forKey: pfxKey("mode")); UserDefaults.standard.set(Float(k), forKey: pfxKey("strength")) }
     }
+    func setAniso(_ n: Int) {   // saved for the next launch (Metal's samplers are made once): the engine only logs it when the game has made its first one
+        aniso = n; if env["DM_ANISO"] == nil { UserDefaults.standard.set(n, forKey: optKey("aniso")); mtl_aniso_set(Int32(n)) }
+    }
     func setScanline(_ r: Int) {
         mtl_present_scanline_set(Int32(r)); scanline = r
         if env["DM_PRESENT_SCANLINE"] == nil { UserDefaults.standard.set(r, forKey: pfxKey("scanline")) }
@@ -139,7 +146,7 @@ final class QuickSettings: ObservableObject {
         for i in sectionOrder {
             r.append(.header(i)); guard open == i else { continue }
             switch i {
-            case 0: r += [.filter, .strength, .scanlines]
+            case 0: r += [.filter, .strength, .scanlines, .aniso]
             case 1: r += [.fps, .corner]
             case 5: r += [.volume]
             case 6: r += [.shot, .record, .showFolder, .changeFolder]
@@ -172,6 +179,7 @@ final class QuickSettings: ObservableObject {
         case .filter: setFilter(min(max(filter + d, 0), filterNames.count - 1), strength)
         case .strength: if usesStrength.contains(filter) { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
         case .scanlines: if usesLines.contains(filter) { setScanline(min(max(scanline + d, 0), 8)) }
+        case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[min(max(i + d, 0), anisoSteps.count - 1)]) }
         case .fps: setFps(d > 0)
         case .corner: if fps { setCorner((corner + d + 4) % 4) }
         case .volume: setVolume(min(max(volume + 0.05 * Double(d), 0), 1))
@@ -185,6 +193,7 @@ final class QuickSettings: ObservableObject {
         case .header(let i): toggle(i)
         case .filter: setFilter((filter + 1) % filterNames.count, strength)
         case .scanlines: if usesLines.contains(filter) { setScanline((scanline + 1) % 9) }
+        case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[(i + 1) % anisoSteps.count]) }
         case .fps: setFps(!fps)
         case .corner: if fps { setCorner((corner + 1) % 4) }
         case .shot: front_qs_screenshot()
@@ -335,6 +344,17 @@ struct QuickSettingsView: View {
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(!usesLines.contains(m.filter))
             }.nav(m, .scanlines)
             if !usesLines.contains(m.filter) { Text("Scanlines are available with CRT, Lottes and LCD").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .trailing) }
+            // Anisotropic filtering: sharper textures on surfaces seen at an angle; the game's samplers take it when they are made, so it applies at the next start
+            Row(title: "Anisotropic filtering") {
+                Picker("Anisotropic filtering", selection: Binding(get: { m.aniso }, set: { m.setAniso($0) })) {
+                    ForEach(anisoSteps, id: \.self) { Text($0 == 0 ? "Game default" : "\($0)x").tag($0) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(env["DM_ANISO"] != nil)
+            }.nav(m, .aniso)
+            Group {
+                if env["DM_ANISO"] != nil { Text("Set by DM_ANISO for this run").foregroundStyle(.tertiary) }
+                else if m.aniso != m.anisoRun { Label("Applies when the game next starts", systemImage: "circle.fill").foregroundStyle(.orange).labelStyle(DotLabel()) }
+                else { Text("Applies when the game next starts").foregroundStyle(.tertiary) }
+            }.font(.caption).frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
     private var performance: some View {
