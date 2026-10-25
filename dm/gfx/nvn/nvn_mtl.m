@@ -3750,7 +3750,7 @@ static id<MTLSamplerState> samp_by_id(int sid) {   // Caller holds g_rmu
     d.mipFilter = p.minf <= 1 ? MTLSamplerMipFilterNotMipmapped : (p.minf == 2 || p.minf == 3) ? MTLSamplerMipFilterNearest : MTLSamplerMipFilterLinear;
     d.sAddressMode = wrapm(p.ws); d.tAddressMode = wrapm(p.wt); d.rAddressMode = wrapm(p.wr);
     d.lodMinClamp = p.lod_min < 0 ? 0 : p.lod_min; d.lodMaxClamp = p.lod_max;
-    d.maxAnisotropy = p.aniso < 1 ? 1 : p.aniso > 16 ? 16 : (NSUInteger)p.aniso;
+    d.maxAnisotropy = mtl_aniso_pick(p.aniso, (p.minf == 3 || p.minf == 5) && !p.cmp_mode && !p.reduction);   // linear min filter with mips (NVN_MIN_FILTER_LINEAR_MIPMAP_*)
     if (p.cmp_mode) d.compareFunction = (MTLCompareFunction)(p.cmp_func - 1);
     // Reduction (NVN 1 min / 2 max): the minimum or maximum of the texels a filtered sample covers, per channel (Metal 26). Pokémon Legends: Z-A builds its depth pyramid with a min sampler
     // (151607c7a92386cc reads the level above at an explicit LOD) and tests occlusion boxes against it; averaged, the pyramid is nearer than the scene at depth edges. Metal ignores the reduction
@@ -8320,6 +8320,36 @@ void mtl_present_filter_set(int mode, float strength) {
     strength = strength < 0 ? 0 : strength > 1 ? 1 : strength;
     int was = g_pfx; float k0 = g_pfx_k; g_pfx_k = strength; g_pfx = mode;
     if (was != mode || fabsf(k0 - strength) > 0.001f) MLOG("present: filter %s, strength %.2f", g_pfx_name[mode], strength);
+}
+// Anisotropic filtering floor (front.h mtl_aniso_set; DM_ANISO=2|4|8|16, 0 or unset = the game's own): every filtered, mipmapped sampler the game makes (NVN, GL and Vulkan alike)
+// samples at least that many taps along a surface seen at an angle; a game asking for more keeps its own. Samplers without mips, with a nearest minifying filter, depth comparison or
+// a min / max reduction keep the game's value: they are lookup tables, pixel art, shadow maps and depth pyramids, where extra taps change the result rather than sharpen it.
+// The floor is taken when the first sampler is made (Metal sampler states are immutable and the game holds its own), so a change after that applies at the next launch
+static _Atomic int g_aniso = -1;   // -1: not read yet
+static _Atomic int g_aniso_latched;
+static int aniso_norm(int n) { return n >= 16 ? 16 : n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 0; }
+int mtl_aniso(void) {
+    int a = g_aniso;
+    if (a >= 0) return a;
+    const char *e = getenv("DM_ANISO"); int want = 0;
+    if (e && *e) { char *end; long v = strtol(e, &end, 10);
+        if (end != e && (!*end || !strcasecmp(end, "x")) && (v == 0 || v == 1 || v == 2 || v == 4 || v == 8 || v == 16)) want = aniso_norm((int)v);
+        else MLOG("[RED] DM_ANISO=%s: not 0, 2, 4, 8 or 16; keeping the game's anisotropic filtering", e); }
+    int none = -1;
+    if (atomic_compare_exchange_strong(&g_aniso, &none, want) && want) MLOG("samplers: anisotropic filtering at least %dx (DM_ANISO)", want);
+    return g_aniso;
+}
+void mtl_aniso_set(int n) {
+    n = aniso_norm(n);
+    if (g_aniso_latched) { if (n != g_aniso) MLOG("samplers: anisotropic filtering %dx applies at the next launch (keeping %dx)", n, g_aniso); return; }
+    if (g_aniso != n) { if (n) MLOG("samplers: anisotropic filtering at least %dx", n); else MLOG("samplers: the game's own anisotropic filtering"); }
+    g_aniso = n;
+}
+unsigned mtl_aniso_pick(float game, int eligible) {
+    unsigned g = !(game >= 1) ? 1 : game > 16 ? 16 : (unsigned)game;   // NaN and below 1 → 1
+    if (!g_aniso_latched) { mtl_aniso(); g_aniso_latched = 1; }
+    unsigned f = (unsigned)g_aniso;
+    return eligible && f > g ? f : g;
 }
 // The filter's parameters (the fragment functions' Crop.fx): strength, the output pixels per source texel on x and y (the viewport over the crop), which sharp bilinear needs,
 // and the CRT filter's scanline height in source rows

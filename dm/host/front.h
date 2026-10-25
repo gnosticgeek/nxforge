@@ -15,6 +15,10 @@ void front_screen_match(int fps);
 enum { DM_PFX_OFF, DM_PFX_SHARPEN, DM_PFX_PIXEL, DM_PFX_CRT, DM_PFX_LOTTES, DM_PFX_LCD, DM_PFX_N };   // in the order they were added: the saved choice is the number
 int mtl_present_filter(float *strength);
 void mtl_present_filter_set(int mode, float strength);
+// Anisotropic filtering floor (nvn_mtl.m; the Mac front end's sidebar, or DM_ANISO): 0 = the game's own, else 2, 4, 8 or 16 taps at least for the game's filtered, mipmapped
+// samplers. Taken when the game makes its first sampler, so mtl_aniso_set must come before the guest runs; later calls only log that the change applies at the next launch. Any thread
+int mtl_aniso(void);
+void mtl_aniso_set(int n);
 // The CRT filters' scanline height (and the LCD grid's cell) in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
 int mtl_present_scanline(void);
 void mtl_present_scanline_set(int rows);
