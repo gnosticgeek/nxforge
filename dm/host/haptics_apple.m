@@ -15,7 +15,10 @@
 
 @interface DmRumbleChannel : NSObject
 @property(nonatomic) CHHapticEngine *engine;
-@property(nonatomic) id<CHHapticAdvancedPatternPlayer> pattern;
+@property(nonatomic) id<CHHapticPatternPlayer> pattern;
+@property(nonatomic) BOOL plain;               // the engine refused an advanced (looping) player: a plain one, renewed before its 30 s event ends
+@property(nonatomic) NSTimeInterval renewAt;
+@property(nonatomic) dm_haptic_level level;
 @property(nonatomic, copy) CHHapticEngine *(^createEngine)(NSError **);
 @property(nonatomic, copy) NSString *target;
 @property(nonatomic, copy) void (^fallback)(NSTimeInterval);
@@ -72,6 +75,35 @@ static void report(NSError *e, NSString *target, const char *stage) {
     // a player or parameter failure (a service reset, say) is retried on the same handle.
     if (self.fallback) self.fallback(self.retryAfter);
 }
+- (BOOL)startPlayer:(NSError **)error {
+    CHHapticEvent *event = [[CHHapticEvent alloc] initWithEventType:CHHapticEventTypeHapticContinuous parameters:@[
+        [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticIntensity value:1],
+        [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticSharpness value:0.5]
+    ] relativeTime:0 duration:30];
+    CHHapticPattern *pattern = [[CHHapticPattern alloc] initWithEvents:@[event] parameters:@[] error:error];
+    if (!pattern) { [self failed:*error stage:"create pattern"]; return NO; }
+    if (!self.plain) {
+        id<CHHapticAdvancedPatternPlayer> advanced = [self.engine createAdvancedPlayerWithPattern:pattern error:error];
+        if (advanced) {
+            advanced.loopEnabled = YES; advanced.isMuted = YES; self.pattern = advanced;
+        } else {
+            // Some controllers' haptics helpers refuse advanced players (an 8BitDo SN30 Pro on macOS: NSCocoaErrorDomain 4097 at every attempt) but play plain ones.
+            fprintf(stderr, "haptics: %s refuses an advanced player (%s %ld), trying a plain one\n", self.target.UTF8String,
+                    (*error).domain.UTF8String ?: "no error", (long)(*error).code);
+            self.plain = YES; *error = nil;
+        }
+    }
+    BOOL fellBack = self.plain && !self.pattern;
+    if (self.plain) self.pattern = [self.engine createPlayerWithPattern:pattern error:error];
+    if (!self.pattern) {
+        if (fellBack) self.plain = NO;   // neither kind: a failing engine, not a refused player kind
+        [self failed:*error stage:"create player"]; return NO;
+    }
+    // A plain player cannot start muted: its event plays at the full initial intensity until the first control arrives, sent right after the start.
+    if (![self.pattern startAtTime:CHHapticTimeImmediate error:error]) { [self failed:*error stage:"start player"]; return NO; }
+    self.renewAt = now() + 29;
+    return YES;
+}
 - (void)apply:(dm_haptic_level)level {
     uint64_t silence = ++self.silenceGeneration;
     NSError *error = nil;
@@ -99,16 +131,10 @@ static void report(NSError *e, NSString *target, const char *stage) {
         self.engine.resetHandler = reset;
         // Startup can itself fail or reset the service: install handlers before contacting it.
         if (![self.engine startAndReturnError:&error]) { [self engineFailed:error stage:"start engine"]; return; }
-        CHHapticEvent *event = [[CHHapticEvent alloc] initWithEventType:CHHapticEventTypeHapticContinuous parameters:@[
-            [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticIntensity value:1],
-            [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticSharpness value:0.5]
-        ] relativeTime:0 duration:30];
-        CHHapticPattern *pattern = [[CHHapticPattern alloc] initWithEvents:@[event] parameters:@[] error:&error];
-        self.pattern = pattern ? [self.engine createAdvancedPlayerWithPattern:pattern error:&error] : nil;
-        if (!self.pattern) { [self failed:error stage:"create player"]; return; }
-        self.pattern.loopEnabled = YES;
-        self.pattern.isMuted = YES;
-        if (![self.pattern startAtTime:CHHapticTimeImmediate error:&error]) { [self failed:error stage:"start player"]; return; }
+        if (![self startPlayer:&error]) return;
+    } else if (self.plain && now() >= self.renewAt && level.intensity > 0) {
+        [self.pattern stopAtTime:CHHapticTimeImmediate error:nil]; self.pattern = nil;
+        if (![self startPlayer:&error]) return;
     }
     // Controls live outside the loop: the loop boundary never replays an initial intensity.
     NSArray *parameters = @[
@@ -118,8 +144,16 @@ static void report(NSError *e, NSString *target, const char *stage) {
     if (![self.pattern sendParameters:parameters atTime:CHHapticTimeImmediate error:&error]) {
         [self failed:error stage:"send parameters"]; return;
     }
-    self.failures = 0;
-    self.pattern.isMuted = NO;
+    self.failures = 0; self.level = level;
+    if (!self.plain) ((id<CHHapticAdvancedPatternPlayer>)self.pattern).isMuted = NO;
+    if (self.plain && level.intensity > 0) {
+        // A steady effect outlives the plain player's event: renew it with the current level just before it ends.
+        __weak DmRumbleChannel *weak = self; uint64_t generation = self.generation; id player = self.pattern;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((self.renewAt - now() + 0.01) * NSEC_PER_SEC)), queue, ^{
+            DmRumbleChannel *c = weak;
+            if (c && c.generation == generation && c.pattern == player && c.level.intensity > 0 && now() >= c.renewAt) [c apply:c.level];
+        });
+    }
     if (level.intensity == 0) {
         // Reuse a warm player for nearby pulses, then release idle hardware. This never times out an active effect.
         __weak DmRumbleChannel *weak = self;
