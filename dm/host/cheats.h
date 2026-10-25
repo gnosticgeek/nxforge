@@ -55,3 +55,16 @@ typedef struct {
 int dm_cheat_vm_load(dm_cheat_vm *vm, const dm_cheat_file *f, const uint8_t *enabled);
 // Runs the program once from the top (registers cleared, static registers kept). Returns 0, or -1 when it stopped on an opcode it could not decode.
 int dm_cheat_vm_run(dm_cheat_vm *vm, const dm_cheat_env *env);
+
+// The host's cheats (cheats_host.c) as the Mac's Quick settings sidebar sees them (main thread). Flags of a cheat: on now, a master code, a code patch (made at load:
+// a change shows at the next launch), made at this launch. A change to the set is saved by the sidebar (DMQuickSettings.cheats.<game>) and runs from the next frame
+enum { DM_CHEAT_ON = 1, DM_CHEAT_MASTER = 2, DM_CHEAT_CODE = 4, DM_CHEAT_APPLIED = 8 };
+unsigned dm_cheats_count(void);
+void dm_cheats_info(unsigned i, const char **name, const char **desc, int *flags);
+void dm_cheats_set(unsigned i, int on);
+void dm_cheats_rescan(void);           // read the folder again
+const char *dm_cheats_dir(void);       // the cheats folder
+const char *dm_cheats_build(void);     // main's build ID (32 hex digits; "" before the game is loaded)
+const char *dm_cheats_path(void);      // the file in use, "" when none
+const char *dm_cheats_version(void);   // its front matter's version, "" when none
+const char *dm_cheats_problem(void);   // the first cheat it left out and why, "" when none

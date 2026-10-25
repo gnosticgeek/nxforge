@@ -224,7 +224,8 @@ static void pads_start(void) {
 // - Mods: each folder in ~/Library/Application Support/nxnative/<title ID>/mods is a mod, the game's RomFS files it replaces either in it or in its romfs folder (the layout other
 //   Switch tools use). The enabled ones are overlaid on the RomFS at launch in name order, the first one holding a file winning (hle_fs.c DM_ROMFS_OVERLAY, which names them),
 //   so a change applies on the next launch. DM_ROMFS_OVERLAY in the environment replaces them.
-// - Cheats: not in the host yet; the row says so.
+// - Cheats: this build's cheat file (cheats_host.c), a switch per cheat; the host reads the saved names at launch (DMQuickSettings.cheats.<game>), and the sidebar
+//   switches the running set (dm_cheats_set). Code patches are made only at launch. DM_CHEATS / DM_CHEATS_ON in the environment win.
 // While the sidebar is up the game sees what it sees when its window loses focus: its input is released (input_release) and its focus state is out of focus (dm_focus_set 2), so a game
 // that pauses for the HOME menu pauses; the keyboard goes to the sidebar's controls. The game itself is not suspended, so the filter shows live
 static NSString *const g_pfx_title[DM_PFX_N] = {@"Off", @"Sharpen", @"Pixel-perfect", @"CRT"};

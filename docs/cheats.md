@@ -6,7 +6,7 @@ nxnative runs Atmosphere's cheat codes (the dmnt cheat VM's opcodes, the format 
 
 | Where | Layout |
 |---|---|
-| The Mac app | `~/Library/Application Support/nxnative/<title ID>/cheats/`, beside the game's `mods` folder; `DM_CHEATS=<folder>` names another |
+| The Mac app | `~/Library/Application Support/nxnative/<title ID>/cheats/`, beside the game's `mods` folder; `DM_CHEATS=<folder>` names another. The Quick settings sidebar (Esc) lists the cheats with a switch each, shows the build ID the file must be named after, and opens the folder |
 | A Git repository (to share them) | `<title ID>/<build ID>.md` at the root, so one file is a fixed URL: `https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<title ID>/<build ID>.md`. A missing file means no cheats for that build |
 
 The title ID is the base game's (`dm/games/<id>`, the one Atmosphere's `contents/<title ID>/cheats/` uses, updates included). The build ID is main's NSO build ID; its first 16 hex digits name the file, as Atmosphere names `<build ID>.txt`. The log prints it, and the profile's `build` rows list the builds a game was brought up on. The host looks for `<build ID>.md`, then `<build ID>.txt` (Atmosphere's own file, as it is), then any `.md` in the folder whose front matter names this game and build.
@@ -35,7 +35,7 @@ Keeps the lives counter at 99. (This line is the cheat's description; the addres
 ~~~
 
 - Each `## ` heading is a cheat, named by the heading. The prose under it, before its code, is its description. Other headings and prose are free text.
-- Its code is in fenced blocks whose info string starts with `dmnt`: lines of 8-digit hex words, exactly Atmosphere's. `dmnt master` marks the master code (Atmosphere's `{...}`), which always runs, first; `dmnt on` enables a cheat until the player changes it. Code blocks of other languages are text.
+- Its code is in fenced blocks whose info string starts with `dmnt`: lines of 8-digit hex words, exactly Atmosphere's. `dmnt master` marks the master code (Atmosphere's `{...}`), which always runs, first; `dmnt on` enables a cheat until the player changes it in the sidebar (which saves the names it has on; `DM_CHEATS_ON=all` or `name;name` overrides both). Code blocks of other languages are text.
 - A cheat with a line that is not hex words, or with more than 256 words, is left out and the log says why. All enabled cheats together may have 1,024 words (Atmosphere's limit).
 - `python3 dm/tools/cheats_md.py check <file>` lists what the host will see; `cheats_md.py convert <atmosphere contents folder or .txt> <out folder>` writes `<title ID>/<build ID>.md` for each Atmosphere file.
 
