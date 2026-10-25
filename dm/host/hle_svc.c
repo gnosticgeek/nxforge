@@ -70,6 +70,10 @@ static size_t big_bss_bytes(void) { size_t n = 0; for (int i = 0; i < g_nmod; i+
 
 // For memory accounting (memstat.m): the range of the whole guest address space block (base = NULL when not initialized)
 void svc_guest_range(uint8_t **base, size_t *size) { *base = g_as; *size = RESERVE; }
+// For cheats (cheats_host.c): the regions as GetInfo reports them, which cheat addresses are relative to (Atmosphere's heap, alias and ASLR regions)
+void svc_cheat_regions(uint64_t *heap, uint64_t *heap_size, uint64_t *alias, uint64_t *alias_size, uint64_t *aslr, uint64_t *aslr_size) {
+    *heap = (uint64_t)(uintptr_t)g_heap; *heap_size = g_heap_cap; *alias = (uint64_t)(uintptr_t)g_alias; *alias_size = g_alias_cap; *aslr = (uint64_t)(uintptr_t)g_as; *aslr_size = RESERVE;
+}
 
 enum { I_CoreMask=0, I_PriorityMask=1, I_AliasAddr=2, I_AliasSize=3, I_HeapAddr=4, I_HeapSize=5,
        I_TotalMem=6, I_UsedMem=7, I_DebuggerAttached=8, I_ResourceLimit=9, I_IdleTick=10, I_RandomEntropy=11,

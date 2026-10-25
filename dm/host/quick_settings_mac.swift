@@ -1,7 +1,8 @@
 // Quick settings sidebar (front_mac.m opens and closes it; quick_settings_mac.h is the C side): SwiftUI with the system's controls, on a Liquid Glass panel on macOS 26 and later
 // (a material panel before). The settings are front_mac.m's: the same user defaults keys (per game), the same rule that a setting the environment names wins and is not saved.
 // Filter, strength and scanlines go to the graphics backend at once (front.h mtl_present_*); the frame-rate counter is drawn by front_mac.m, told through the fps callback;
-// mods are the folders of this game's mods folder, overlaid at the next launch (front_mac.m mods_start)
+// mods are the folders of this game's mods folder, overlaid at the next launch (front_mac.m mods_start); cheats are the host's (cheats_host.c dm_cheats_*): this build's
+// cheat file, a switch each, saved by name (the host reads the names at the next launch) and run from the next frame, except code patches, made only at launch
 import AppKit
 import SwiftUI
 
@@ -21,8 +22,15 @@ private let keyDefaults = ["J", "K", "U", "I", "F", "G", "Q", "E", "Z", "C", "Re
 private let padDefaults = ["Right button", "Bottom button", "Top button", "Left button", "Left stick press", "Right stick press", "Left shoulder", "Right shoulder",
                            "Left trigger", "Right trigger", "Menu", "Options"]
 // What the controller and keyboard selection can be on (dm_qs_nav), in the order the sidebar shows it
-enum Nav: Hashable { case header(Int), filter, strength, scanlines, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, key(Int), pad(Int), resetControls, resume }
-private let sectionOrder = [0, 1, 5, 6, 2, 7]
+enum Nav: Hashable { case header(Int), filter, strength, scanlines, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume }
+private let sectionOrder = [0, 1, 5, 6, 2, 3, 7]
+struct Cheat: Identifiable {
+    let id: Int, name: String, desc: String, flags: Int32
+    var on: Bool { flags & 1 != 0 }        // DM_CHEAT_ON
+    var master: Bool { flags & 2 != 0 }    // DM_CHEAT_MASTER
+    var code: Bool { flags & 4 != 0 }      // DM_CHEAT_CODE: made at launch
+    var applied: Bool { flags & 8 != 0 }   // DM_CHEAT_APPLIED: made at this launch
+}
 
 final class QuickSettings: ObservableObject {
     let game: String, modsDir: String, modsRun: Set<String>?, close: () -> Void, fpsChanged: () -> Void
@@ -33,6 +41,10 @@ final class QuickSettings: ObservableObject {
     @Published var corner = 0
     @Published var mods: [String] = []
     @Published var wanted: [String] = []
+    @Published var cheats: [Cheat] = []
+    @Published var cheatsBuild = ""
+    @Published var cheatsVersion = ""
+    @Published var cheatsProblem = ""
     @Published var open: Int
     @Published var volume = 1.0
     @Published var recording = false
@@ -64,7 +76,28 @@ final class QuickSettings: ObservableObject {
             var dir: ObjCBool = false
             return !n.hasPrefix(".") && fm.fileExists(atPath: (modsDir as NSString).appendingPathComponent(n), isDirectory: &dir) && dir.boolValue
         }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        refreshCheats()
     }
+    func refreshCheats() {
+        cheats = (0..<Int(dm_cheats_count())).map { i in
+            var n: UnsafePointer<CChar>? = nil, d: UnsafePointer<CChar>? = nil, f: Int32 = 0
+            dm_cheats_info(UInt32(i), &n, &d, &f)
+            return Cheat(id: i, name: n.map { String(cString: $0) } ?? "", desc: d.map { String(cString: $0) } ?? "", flags: f)
+        }
+        cheatsBuild = String(String(cString: dm_cheats_build()).prefix(16)).uppercased()
+        cheatsVersion = String(cString: dm_cheats_version()); cheatsProblem = String(cString: dm_cheats_problem())
+    }
+    func setCheat(_ c: Cheat, _ on: Bool) {
+        dm_cheats_set(UInt32(c.id), on ? 1 : 0); refreshCheats()
+        if env["DM_CHEATS_ON"] == nil { UserDefaults.standard.set(cheats.filter { $0.on && !$0.master }.map(\.name), forKey: optKey("cheats")) }
+    }
+    func rescanCheats() { dm_cheats_rescan(); refreshCheats() }
+    func openCheatsFolder() {
+        let dir = String(cString: dm_cheats_dir())
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(URL(fileURLWithPath: dir))
+    }
+    var cheatsOn: Int { cheats.filter { $0.on && !$0.master }.count }
     func setFilter(_ m: Int, _ k: Double) {
         mtl_present_filter_set(Int32(m), Float(k)); filter = m; strength = k
         if env["DM_PRESENT_FILTER"] == nil { UserDefaults.standard.set(m, forKey: pfxKey("mode")); UserDefaults.standard.set(Float(k), forKey: pfxKey("strength")) }
@@ -97,6 +130,7 @@ final class QuickSettings: ObservableObject {
             case 5: r += [.volume]
             case 6: r += [.shot, .record]
             case 2: r += mods.map { .mod($0) } + [.modsOpen, .modsRefresh]
+            case 3: r += cheats.map { .cheat($0.id) } + [.cheatsOpen, .cheatsRefresh]
             case 7: r += actionNames.indices.map { .key($0) } + padDefaults.indices.map { .pad($0) } + [.resetControls]
             default: break
             }
@@ -128,6 +162,7 @@ final class QuickSettings: ObservableObject {
         case .corner: if fps { setCorner((corner + d + 4) % 4) }
         case .volume: setVolume(min(max(volume + 0.05 * Double(d), 0), 1))
         case .mod(let name): setMod(name, d > 0)
+        case .cheat(let id): if let c = cheats.first(where: { $0.id == id }), !c.master { setCheat(c, d > 0) }
         default: break
         }
     }
@@ -143,6 +178,9 @@ final class QuickSettings: ObservableObject {
         case .mod(let name): setMod(name, !wanted.contains(name))
         case .modsOpen: openModsFolder()
         case .modsRefresh: refresh()
+        case .cheat(let id): if let c = cheats.first(where: { $0.id == id }), !c.master { setCheat(c, !c.on) }
+        case .cheatsOpen: openCheatsFolder()
+        case .cheatsRefresh: rescanCheats()
         case .key(let i): assign(i, pad: false)
         case .pad(let i): assign(i, pad: true)
         case .resetControls: resetControls()
@@ -216,8 +254,8 @@ struct QuickSettingsView: View {
                     section(5, "Sound", "speaker.wave.2.fill", summary: "\(Int((m.volume * 100).rounded()))%") { sound }
                     section(6, "Capture", "camera", summary: m.recording ? "Recording" : "", badge: m.recording) { capture }
                     section(2, "Mods", "puzzlepiece.extension", summary: m.modsOn == 0 ? "None enabled" : "\(m.modsOn) enabled", badge: m.modsOn > 0) { mods }
+                    section(3, "Cheats", "wand.and.stars", summary: m.cheats.isEmpty ? "None for this build" : m.cheatsOn == 0 ? "None on" : "\(m.cheatsOn) on", badge: m.cheatsOn > 0) { cheats }
                     section(7, "Controls", "gamecontroller", summary: "") { controls }
-                    cheats
                 }.padding(.horizontal, 16).padding(.vertical, 14)
             }.scrollIndicators(.automatic)
             .onChange(of: m.sel) { _, s in if let s { withAnimation(motion) { proxy.scrollTo(s, anchor: .center) } } } }
@@ -361,15 +399,41 @@ struct QuickSettingsView: View {
         }.modifier(GlassButton(prominent: waiting))
     }
     private var cheats: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "wand.and.stars").font(.title3).frame(width: 26)
-            Text("Cheats").font(.headline)
-            Spacer()
-            Text("Coming later").font(.callout)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Atmosphere cheat codes from this game build's file in the cheats folder (Markdown, or Atmosphere's .txt).")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Row(title: "Game build") {
+                HStack(spacing: 6) {
+                    Text(m.cheatsVersion.isEmpty ? m.cheatsBuild : "\(m.cheatsVersion) · \(m.cheatsBuild)").font(.callout.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(m.cheatsBuild, forType: .string) } label: { Image(systemName: "doc.on.doc") }
+                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Copy the build ID: the cheat file is named after it")
+                }
+            }
+            if m.cheats.isEmpty {
+                Text("No cheats for this build. Put \(m.cheatsBuild).md, or Atmosphere's \(m.cheatsBuild).txt, in the cheats folder, then Refresh.")
+                    .font(.callout).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(m.cheats) { c in
+                Toggle(isOn: Binding(get: { c.on || c.master }, set: { m.setCheat(c, $0) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(c.name).font(.body.weight(.medium))
+                        if !c.desc.isEmpty { Text(c.desc).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                        if c.master { Text("Master code: always on").font(.caption).foregroundStyle(.secondary) }
+                        else if c.code && c.on != c.applied { Label("Restart required", systemImage: "circle.fill").font(.caption).foregroundStyle(.orange).labelStyle(DotLabel()) }
+                        else if c.code { Text(c.on ? "Patched at launch" : "Off · changes the game's code at launch").font(.caption).foregroundStyle(.secondary) }
+                        else { Text(c.on ? "Active" : "Off").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }.toggleStyle(.switch).disabled(c.master).nav(m, .cheat(c.id))
+            }
+            if !m.cheatsProblem.isEmpty {
+                Label("Left out: \(m.cheatsProblem)", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 10) {
+                Button { m.openCheatsFolder() } label: { Label("Open cheats folder", systemImage: "folder").frame(maxWidth: .infinity) }.nav(m, .cheatsOpen)
+                Button { withAnimation(motion) { m.rescanCheats() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }.nav(m, .cheatsRefresh)
+            }.modifier(GlassButton(prominent: false)).controlSize(.large)
+            Text("Cheats that change the game's code apply when you restart the game; the others switch on and off at once.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(.tertiary).padding(14)
-        .background(.white.opacity(0.02), in: .rect(cornerRadius: 16))
-        .help("Cheats are not in the engine yet")
     }
     private var footer: some View {
         VStack(spacing: 12) {

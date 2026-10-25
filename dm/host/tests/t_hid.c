@@ -116,11 +116,17 @@ static void t_vibration(void) {
     dm_vibration v = {0.25, 160, 0.5, 320}, got;
     g_mode = 1; ids((uint32_t[]){0, 1, NPAD_HANDHELD}, 3); dm_pad_players(3);
     CHECK(!h_hid_VibPermit() && !h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY), "no sink: no vibration devices");
-    dm_haptics_init(vibration_sink, 1); dm_haptics_route(0, 1); dm_haptics_route(1, 1);
+    dm_haptics_init(vibration_sink, 1);
+    CHECK(h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY) == 2, "handles at startup, before any controller output is routed");
+    vibration_calls = 0; h_hid_SendVib(&h[0], &v);
+    CHECK(!vibration_calls, "a send before a controller output is routed is dropped");
+    dm_haptics_route(0, 1); dm_haptics_route(1, 1);
+    vibration_calls = 0; h_hid_SendVib(&h[0], &v);
+    CHECK(vibration_calls == 1 && vibration[0].motor[0].amplitude_low == 0.25f, "a startup handle reaches a controller that connects later");
     CHECK(h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY) == 2, "two vibration motors available");
     CHECK(h[0] == 3 && h[1] == 0x10003, "SDK vibration handle bytes: style 3, npad 0, motors 0 and 1");
     CHECK(!h_hid_VibHandles(h, 2, &id, STYLE_HANDHELD), "wrong controller style gets no motors");
-    CHECK(!h_hid_VibHandles(h, 2, &(uint32_t){2}, STYLE_FULLKEY), "disconnected player gets no motors");
+    CHECK(!h_hid_VibHandles(h, 2, &(uint32_t){DM_PLAYERS}, STYLE_FULLKEY), "an npad id past the players gets no motors");
     CHECK(h_hid_VibHandles(h, 1, &id, STYLE_FULLKEY) == 1, "handle count respects caller capacity");
     h_hid_SendVib(&h[0], &v); h_hid_VibActual(&got, &h[0]);
     CHECK(!memcmp(&got, &v, sizeof v) && vibration[1].motor[0].amplitude_low == 0, "game value is retained for the addressed player only");
@@ -143,7 +149,8 @@ static void t_vibration(void) {
     CHECK(h_hid_VibHandles(h, 2, &id, STYLE_HANDHELD) == 2 && h[0] == 0x2004 && h[1] == 0x12004, "handheld SDK vibration handles");
     CHECK(!vib_targets(3), "old docked handle is not valid in handheld mode");
     dm_haptics_route(1, 0);
-    CHECK(!h_hid_VibPermit(), "disconnecting the last output disables vibration");
+    vibration_calls = 0; h_hid_SendVib(&h[0], &v);
+    CHECK(h_hid_VibPermit() && !vibration_calls, "permission stays after the last output disconnects; sends are dropped");
 }
 
 int main(void) {
