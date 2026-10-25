@@ -20,3 +20,8 @@ void dm_qs_nav(int cmd);
 void front_qs_assign(int action, int pad);
 int front_qs_assigning(void);
 void front_qs_controls_reload(void);
+// Where captures go (front_mac.m): the folder of the next screenshot (0) or recording (1); whether this game has a folder of its own; choose one (NULL: back to the default,
+// Screenshots / Recordings in the game folder). Main thread
+const char *front_qs_capture_folder(int video);
+int front_qs_capture_custom(void);
+void front_qs_capture_folder_set(const char *dir);

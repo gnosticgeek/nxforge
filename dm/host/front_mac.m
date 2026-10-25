@@ -364,15 +364,27 @@ static void qs_toggle(void) { [g_opts toggle:nil]; }
 static void qs_fps(void) { [g_opts fpsCounter]; }
 static void toast(NSString *msg) { dm_qs_toast((__bridge void *)g_win.contentView, msg.UTF8String); }
 // Capture (capture_mac.m): from the sidebar's Capture section, the Capture menu (⇧⌘S, ⇧⌘R) or a controller (front_controller); a toast says where the file went
+static NSString *where(NSString *path) {   // a saved file's folder for a toast: its last two folders ("Curse of the Moon › Screenshots")
+    NSArray *c = path.stringByDeletingLastPathComponent.pathComponents; NSUInteger n = c.count;
+    return n >= 2 ? [NSString stringWithFormat:@"%@ › %@", c[n - 2], c[n - 1]] : path.stringByDeletingLastPathComponent;
+}
 void front_qs_screenshot(void) {
-    capture_screenshot(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? @"Screenshot saved to Pictures › NxNative" : err); });
+    capture_screenshot(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Screenshot saved to " stringByAppendingString:where(path)] : err); });
 }
 void front_qs_record(void) {
     if (capture_recording()) { capture_record_stop(); toast(@"Saving the recording…"); return; }
-    capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? @"Recording saved to Movies › NxNative" : err); if (g_menu_open) dm_qs_refresh(); });
+    capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Recording saved to " stringByAppendingString:where(path)] : err); if (g_menu_open) dm_qs_refresh(); });
     if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
 }
 int front_qs_recording(void) { return capture_recording(); }
+// Where captures go, for the Capture section: the folder chosen for this game (saved), or none for the default
+const char *front_qs_capture_folder(int video) { return capture_folder(video).fileSystemRepresentation; }
+int front_qs_capture_custom(void) { return [NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")].length > 0; }
+void front_qs_capture_folder_set(const char *dir) {
+    NSString *d = dir && *dir ? @(dir) : nil;
+    if (d) [NSUserDefaults.standardUserDefaults setObject:d forKey:opt_key(@"captureDir")]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:opt_key(@"captureDir")];
+    capture_folder_set(d);
+}
 // While the sidebar is up the game picture moves aside into the window's left part (front.h mtl_present_inset), sliding with it unless Reduce Motion is on
 static float g_inset_now, g_inset_to; static NSTimer *g_inset_timer;
 static void inset_to(float share) {
@@ -472,6 +484,7 @@ static void inset_to(float share) {
 @end
 static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, volume, controls and mods, unless the environment names them
     mods_start(); controls_load();
+    capture_folder_set([NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")]);
     NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
     if ([d objectForKey:opt_key(@"volume")]) dm_audio_volume_set([d floatForKey:opt_key(@"volume")]);
     if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);

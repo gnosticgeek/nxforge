@@ -22,7 +22,7 @@ private let keyDefaults = ["J", "K", "U", "I", "F", "G", "Q", "E", "Z", "C", "Re
 private let padDefaults = ["Right button", "Bottom button", "Top button", "Left button", "Left stick press", "Right stick press", "Left shoulder", "Right shoulder",
                            "Left trigger", "Right trigger", "Menu", "Options"]
 // What the controller and keyboard selection can be on (dm_qs_nav), in the order the sidebar shows it
-enum Nav: Hashable { case header(Int), filter, strength, scanlines, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume }
+enum Nav: Hashable { case header(Int), filter, strength, scanlines, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, showFolder, changeFolder, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume }
 private let sectionOrder = [0, 1, 5, 6, 2, 3, 7]
 struct Cheat: Identifiable {
     let id: Int, name: String, desc: String, flags: Int32
@@ -48,6 +48,9 @@ final class QuickSettings: ObservableObject {
     @Published var open: Int
     @Published var volume = 1.0
     @Published var recording = false
+    @Published var shotDir = ""
+    @Published var recDir = ""
+    @Published var customDir = false
     @Published var sel: Nav?
     @Published var assigning = -1
     @Published var keyNames: [String] = keyDefaults
@@ -69,6 +72,7 @@ final class QuickSettings: ObservableObject {
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
         volume = Double(dm_audio_volume()); recording = front_qs_recording() != 0
         assigning = Int(front_qs_assigning())
+        shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
         let kn = d.dictionary(forKey: optKey("keyNames")) as? [String: String] ?? [:], pn = d.dictionary(forKey: optKey("padNames")) as? [String: String] ?? [:]
         keyNames = keyDefaults.indices.map { kn[String($0)] ?? keyDefaults[$0] }; padNames = padDefaults.indices.map { pn[String($0)] ?? padDefaults[$0] }
         let fm = FileManager.default
@@ -114,6 +118,16 @@ final class QuickSettings: ObservableObject {
         if let v = NSApp.keyWindow?.contentView { dm_qs_toast(Unmanaged.passUnretained(v).toOpaque(), "Mods apply when the game next starts") }
     }
     func setVolume(_ v: Double) { volume = v; dm_audio_volume_set(Float(v)); UserDefaults.standard.set(v, forKey: optKey("volume")) }
+    func showCaptureFolder() {
+        try? FileManager.default.createDirectory(atPath: shotDir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(URL(fileURLWithPath: shotDir == recDir ? shotDir : (shotDir as NSString).deletingLastPathComponent))
+    }
+    func chooseCaptureFolder() {
+        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true; p.prompt = "Choose"
+        p.message = "Screenshots and recordings of \(game) go to this folder."; p.directoryURL = URL(fileURLWithPath: shotDir)
+        if p.runModal() == .OK, let u = p.url { front_qs_capture_folder_set(u.path); refresh() }
+    }
+    func defaultCaptureFolder() { front_qs_capture_folder_set(nil); refresh() }
     func assign(_ i: Int, pad: Bool) { front_qs_assign(Int32(i), pad ? 1 : 0); assigning = Int(front_qs_assigning()) }
     func resetControls() {
         for k in ["keys", "keyNames", "pad", "padNames"] { UserDefaults.standard.removeObject(forKey: optKey(k)) }
@@ -128,7 +142,7 @@ final class QuickSettings: ObservableObject {
             case 0: r += [.filter, .strength, .scanlines]
             case 1: r += [.fps, .corner]
             case 5: r += [.volume]
-            case 6: r += [.shot, .record]
+            case 6: r += [.shot, .record, .showFolder, .changeFolder]
             case 2: r += mods.map { .mod($0) } + [.modsOpen, .modsRefresh]
             case 3: r += cheats.map { .cheat($0.id) } + [.cheatsOpen, .cheatsRefresh]
             case 7: r += actionNames.indices.map { .key($0) } + padDefaults.indices.map { .pad($0) } + [.resetControls]
@@ -174,6 +188,8 @@ final class QuickSettings: ObservableObject {
         case .fps: setFps(!fps)
         case .corner: if fps { setCorner((corner + 1) % 4) }
         case .shot: front_qs_screenshot()
+        case .showFolder: showCaptureFolder()
+        case .changeFolder: chooseCaptureFolder()
         case .record: front_qs_record(); recording = front_qs_recording() != 0
         case .mod(let name): setMod(name, !wanted.contains(name))
         case .modsOpen: openModsFolder()
@@ -375,7 +391,16 @@ struct QuickSettingsView: View {
                     Label(m.recording ? "Stop" : "Record", systemImage: m.recording ? "stop.circle.fill" : "record.circle").frame(maxWidth: .infinity)
                 }.tint(m.recording ? .red : nil).nav(m, .record)
             }.modifier(GlassButton(prominent: false)).controlSize(.large)
-            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording. The picture is saved as you see it, filter included; screenshots go to Pictures › NxNative, recordings (with sound) to Movies › NxNative.")
+            VStack(alignment: .leading, spacing: 3) {   // where they go: by default beside the game, in the game folder
+                if m.shotDir == m.recDir { Text(tilde(m.shotDir)).font(.callout).lineLimit(2).truncationMode(.middle) }
+                else { Text("Screenshots: \(tilde(m.shotDir))").font(.callout).lineLimit(1).truncationMode(.middle); Text("Recordings: \(tilde(m.recDir))").font(.callout).lineLimit(1).truncationMode(.middle) }
+            }.foregroundStyle(.secondary).textSelection(.enabled)
+            HStack(spacing: 10) {
+                Button { m.showCaptureFolder() } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }.nav(m, .showFolder)
+                Button { m.chooseCaptureFolder() } label: { Label("Change…", systemImage: "folder.badge.gearshape").frame(maxWidth: .infinity) }.nav(m, .changeFolder)
+            }.modifier(GlassButton(prominent: false)).controlSize(.large)
+            if m.customDir { Button("Use the game folder again") { m.defaultCaptureFolder() }.buttonStyle(.link).font(.caption) }
+            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording (with sound). The picture is saved as you see it, filter included.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -448,6 +473,7 @@ struct QuickSettingsView: View {
         }
     }
 }
+private func tilde(_ p: String) -> String { (p as NSString).abbreviatingWithTildeInPath }
 private struct DotLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View { HStack(spacing: 5) { configuration.icon.font(.system(size: 6)); configuration.title } }
 }
