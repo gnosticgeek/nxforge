@@ -562,7 +562,7 @@ static id<MTLSamplerState> tex_sampler(tex_t *t) {
     d.lodMaxClamp = mips ? k.lv : 0;
     d.sAddressMode = wrap_of(k.ws); d.tAddressMode = wrap_of(k.wt); d.rAddressMode = wrap_of(k.wr);
     d.borderColor = k.b == 2.f ? MTLSamplerBorderColorOpaqueWhite : k.b == 1.f ? MTLSamplerBorderColorOpaqueBlack : MTLSamplerBorderColorTransparentBlack;
-    d.maxAnisotropy = (NSUInteger)fmaxf(1, fminf(16, k.aniso));
+    d.maxAnisotropy = mtl_aniso_pick(k.aniso, d.minFilter == MTLSamplerMinMagFilterLinear && d.mipFilter != MTLSamplerMipFilterNotMipmapped && !k.cmp);
     if (k.cmp) d.compareFunction = (MTLCompareFunction)(k.cmp - GL_NEVER);
     id<MTLSamplerState> s = [g_dev newSamplerStateWithDescriptor:d];
     if (n < 256) { cache[n].k = k; cache[n].s = s; n++; } else RED1("more than 256 distinct sampler parameter sets");
