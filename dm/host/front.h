@@ -20,6 +20,24 @@ int mtl_present_scanline(void);
 void mtl_present_scanline_set(int rows);
 // Frames put on screen so far (nvn_mtl.m, NVN and the Vulkan layer alike; frames the display link merged away are not counted): the front ends' frame-rate counters. Any thread
 uint64_t mtl_present_count(void);
+// Recording (nvn_mtl.m; the Mac front end's video recorder, capture_mac.m): while a recorder is set, every present also draws the frame as it is presented (the filter too) into a texture
+// next() hands out (an id<MTLTexture> of the system default device, bridged; NULL skips the frame), on a command buffer of its own as the whole-window screenshot does, and done() gets the same
+// texture back with the frame's present time (now_ns) once the GPU has drawn it. NULL stops; done() may still come for frames already drawn. Any thread
+typedef struct { void *(*next)(void *ctx); void (*done)(void *ctx, void *tex, uint64_t ns); void *ctx; } mtl_recorder;
+void mtl_record_set(const mtl_recorder *r);
+// The whole-window screenshot (nvn_mtl.m): at the next present the frame as presented, at the drawable's size, comes to cb on a GPU completion thread (NULL when it could not be drawn)
+#ifdef __OBJC__
+#include <CoreGraphics/CoreGraphics.h>
+void mtl_grab_next_present(void (^cb)(CGImageRef img));
+#endif
+// The share of the window's width (0 to 0.9) kept free on the right for a panel: the game picture fits and centres in the rest (nvn_mtl.m; the Mac's Quick settings sidebar). Any thread
+void mtl_present_inset(float share);
+// Host volume (hle_audio.c; the Mac's Quick settings): a gain 0 to 1 on everything the game plays, on top of its own volumes. Any thread
+void dm_audio_volume_set(float v);
+float dm_audio_volume(void);
+// Audio tap (hle_audio.c; the video recorder): the 48 kHz 16-bit PCM of the first output playing, as it goes to the sound card before the host volume, ch channels interleaved. fn runs on the
+// real-time audio thread: it must not block or allocate. NULL stops
+void dm_audio_tap_set(void (*fn)(void *ctx, const int16_t *pcm, uint32_t frames, int ch), void *ctx);
 // Text input box (for the software keyboard swkbd): the main thread shows a native input box and the calling thread blocks until the user confirms / cancels.
 // All text is UTF-8; max_chars is the maximum character count (0 = unlimited, only a hint for the front end; truncation is done uniformly by the caller hle_swkbd.c in UTF-16 units).
 // Confirm returns 1 and writes the result into out (including the terminating 0); cancel returns 0;

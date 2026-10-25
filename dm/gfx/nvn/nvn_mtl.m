@@ -8333,10 +8333,24 @@ static struct { uint64_t frame; char path[1024]; } g_shotq[SHOTQ_MAX]; static in
 static pthread_mutex_t g_shotq_mu = PTHREAD_MUTEX_INITIALIZER;
 static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4]);
 static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4], int uv_i);
+static _Atomic float g_present_inset;   // front.h mtl_present_inset: the share of the window's width kept free on the right
+void mtl_present_inset(float share) { atomic_store(&g_present_inset, share < 0 ? 0 : share > 0.9f ? 0.9f : share); }
 // Game picture needed by the whole-window screenshot (front end window_shot; no longer does drawViewHierarchy on a Metal layer with the display link attached): at the next present, the present thread draws the same frame
 // with the same encoding as the present (present_encode) into an offscreen texture of the same size as the swapchain, and after the GPU finishes hands out a CGImage in the completion callback (the callback does not block the present). Guarded by g_shotq_mu
 static void (^g_grab_cb)(CGImageRef img);
 void mtl_grab_next_present(void (^cb)(CGImageRef img)) { pthread_mutex_lock(&g_shotq_mu); g_grab_cb = [cb copy]; pthread_mutex_unlock(&g_shotq_mu); }
+// Recording (front.h mtl_record_set): set by the front end on any thread, read by the present thread at each present
+static mtl_recorder g_recorder; static _Atomic int g_recorder_on;
+void mtl_record_set(const mtl_recorder *r) { pthread_mutex_lock(&g_shotq_mu); if (r) g_recorder = *r; atomic_store(&g_recorder_on, r != NULL); pthread_mutex_unlock(&g_shotq_mu); }
+static void record_present(id<MTLTexture> src, const int crop[4]) {
+    pthread_mutex_lock(&g_shotq_mu); mtl_recorder r = g_recorder; int on = atomic_load(&g_recorder_on); pthread_mutex_unlock(&g_shotq_mu);
+    if (!on || !r.next) return;
+    id<MTLTexture> out = (__bridge id<MTLTexture>)r.next(r.ctx); if (!out) return;
+    uint64_t ns = now_ns(); id<MTLCommandBuffer> cb = q_cb();
+    if (!present_encode(cb, src, out, crop)) return;
+    [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { (void)c; r.done(r.ctx, (__bridge void *)out, ns); }];
+    [cb commit];
+}
 static void grab_present(id<MTLTexture> src, const int crop[4], CGSize sz) {
     pthread_mutex_lock(&g_shotq_mu); void (^cb)(CGImageRef) = g_grab_cb; g_grab_cb = nil; pthread_mutex_unlock(&g_shotq_mu);
     if (!cb) return;
@@ -8756,9 +8770,10 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
         cx = crop[0]; cy = crop[1]; cw = crop[2]; ch = crop[3];
     }
     present_pipeline(dst.pixelFormat);
-    double dw = dst.width, dh = dst.height, s = fmin(dw / cw, dh / ch);
-    MTLViewport vp = {floor((dw - cw * s) / 2), floor((dh - ch * s) / 2), round(cw * s), round(ch * s), 0, 1};
-    if (fabs((dw / dh) / ((double)cw / ch) - 1) < 0.01) vp = (MTLViewport){0, 0, dw, dh, 0, 1};
+    // The window's right part a front end keeps for a panel (mtl_present_inset): the picture fits and centres in what is left. Only the window's present (this path): screenshots and recordings stay whole
+    double dw = dst.width, dh = dst.height, aw = dw * (1 - atomic_load(&g_present_inset)), s = fmin(aw / cw, dh / ch);
+    MTLViewport vp = {floor((aw - cw * s) / 2), floor((dh - ch * s) / 2), round(cw * s), round(ch * s), 0, 1};
+    if (aw == dw && fabs((dw / dh) / ((double)cw / ch) - 1) < 0.01) vp = (MTLViewport){0, 0, dw, dh, 0, 1};
     int full = vp.originX == 0 && vp.originY == 0 && vp.width == dw && vp.height == dh;
     MTL4RenderPassDescriptor *rp = [MTL4RenderPassDescriptor new];
     rp.colorAttachments[0].texture = dst;
@@ -8843,6 +8858,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
 #endif
     present_pipeline(layer.pixelFormat);   // Same as the original path: the first frame compiles the pipeline before taking the drawable
     if (g_grab_cb) grab_present(src, crop, layer.drawableSize);   // Game picture needed by the whole-window screenshot (peek without the lock first; the real take locks inside the function)
+    if (atomic_load(&g_recorder_on)) record_present(src, crop);   // the video recorder's frame (capture_mac.m)
     uint64_t dt0 = now_ns();
     id<CAMetalDrawable> dr = supplied ? supplied : [layer nextDrawable];
     if (!supplied) g_drawable_ns += now_ns() - dt0;

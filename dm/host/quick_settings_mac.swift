@@ -24,6 +24,8 @@ final class QuickSettings: ObservableObject {
     @Published var mods: [String] = []
     @Published var wanted: [String] = []
     @Published var open: Int
+    @Published var volume = 1.0
+    @Published var recording = false
     init(game: String, modsDir: String, modsRun: Set<String>?, close: @escaping () -> Void, fpsChanged: @escaping () -> Void) {
         self.game = game; self.modsDir = modsDir; self.modsRun = modsRun; self.close = close; self.fpsChanged = fpsChanged
         let d = UserDefaults.standard, k = "DMQuickSettings.section.\(game)"
@@ -39,6 +41,7 @@ final class QuickSettings: ObservableObject {
         if let e = env["DM_SHOW_FPS"] { fps = (Int(e) ?? 0) != 0 } else { fps = d.bool(forKey: optKey("fps")) }
         corner = min(max(d.integer(forKey: optKey("fpsPos")), 0), 3)
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
+        volume = Double(dm_audio_volume()); recording = front_qs_recording() != 0
         let fm = FileManager.default
         mods = ((try? fm.contentsOfDirectory(atPath: modsDir)) ?? []).filter { n in
             var dir: ObjCBool = false
@@ -58,7 +61,9 @@ final class QuickSettings: ObservableObject {
     func setMod(_ n: String, _ on: Bool) {
         wanted.removeAll { $0 == n }; if on { wanted.append(n) }
         UserDefaults.standard.set(wanted, forKey: optKey("mods"))
+        if let v = NSApp.keyWindow?.contentView { dm_qs_toast(Unmanaged.passUnretained(v).toOpaque(), "Mods apply when the game next starts") }
     }
+    func setVolume(_ v: Double) { volume = v; dm_audio_volume_set(Float(v)); UserDefaults.standard.set(v, forKey: optKey("volume")) }
     func toggle(_ i: Int) { open = open == i ? -1 : i; UserDefaults.standard.set(open, forKey: optKey("section")) }
     func openModsFolder() {
         try? FileManager.default.createDirectory(atPath: modsDir, withIntermediateDirectories: true)
@@ -68,9 +73,15 @@ final class QuickSettings: ObservableObject {
 }
 
 // The panel: Liquid Glass with a dark tint on macOS 26 and later, so the game behind does not compete with the text; a dark material before
+// With Reduce Transparency or Increase Contrast on, a solid panel instead (after RetroReplay's PauseGlassSurface)
 private struct Panel: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
     func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
+        if reduceTransparency || contrast == .increased {
+            content.background(Color(red: 0.14, green: 0.15, blue: 0.18), in: .rect(cornerRadius: 26))
+                .overlay(RoundedRectangle(cornerRadius: 26).stroke(.white.opacity(contrast == .increased ? 0.5 : 0.12)))
+        } else if #available(macOS 26, *) {
             content.glassEffect(.regular.tint(.black.opacity(0.55)), in: .rect(cornerRadius: 26))
         } else {
             content.background(.ultraThickMaterial, in: .rect(cornerRadius: 26))
@@ -96,22 +107,28 @@ private struct Row<C: View>: View {
 
 struct QuickSettingsView: View {
     @ObservedObject var m: QuickSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var compact = false   // a short window: a smaller title and tighter spacing
+    private var motion: Animation? { reduceMotion ? nil : .snappy }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header.padding(.horizontal, 22).padding(.top, 22).padding(.bottom, 14)
+            header.padding(.horizontal, 22).padding(.top, compact ? 14 : 22).padding(.bottom, compact ? 8 : 14)
             Divider().padding(.horizontal, 22)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     section(0, "Graphics & shaders", "display", summary: m.filter == 0 ? "Off" : filterNames[m.filter]) { graphics }
                     section(1, "Performance", "chart.bar.fill", summary: m.fps ? "FPS on" : "FPS off") { performance }
+                    section(5, "Sound", "speaker.wave.2.fill", summary: "\(Int((m.volume * 100).rounded()))%") { sound }
+                    section(6, "Capture", "camera", summary: m.recording ? "Recording" : "", badge: m.recording) { capture }
                     section(2, "Mods", "puzzlepiece.extension", summary: m.modsOn == 0 ? "None enabled" : "\(m.modsOn) enabled", badge: m.modsOn > 0) { mods }
                     cheats
                 }.padding(.horizontal, 16).padding(.vertical, 14)
             }.scrollIndicators(.automatic)
             Divider().padding(.horizontal, 22)
-            footer.padding(.horizontal, 22).padding(.top, 14).padding(.bottom, 18)
+            footer.padding(.horizontal, 22).padding(.top, compact ? 10 : 14).padding(.bottom, compact ? 12 : 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onGeometryChange(for: Bool.self) { $0.size.height < 640 } action: { compact = $0 }
         .modifier(Panel())
         .padding(12)
         .environment(\.colorScheme, .dark)
@@ -120,7 +137,7 @@ struct QuickSettingsView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("IN-GAME OPTIONS").font(.caption.weight(.semibold)).kerning(1.2).foregroundStyle(.secondary)
-                Text("Quick settings").font(.largeTitle.bold())
+                Text("Quick settings").font(compact ? .title.bold() : .largeTitle.bold())
                 Text(m.game).font(.title3).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
@@ -132,7 +149,7 @@ struct QuickSettingsView: View {
     private func section<B: View>(_ i: Int, _ title: String, _ icon: String, summary: String, badge: Bool = false, @ViewBuilder body: () -> B) -> some View {
         let open = m.open == i
         return VStack(alignment: .leading, spacing: 14) {
-            Button { withAnimation(.snappy) { m.toggle(i) } } label: {
+            Button { withAnimation(motion) { m.toggle(i) } } label: {
                 HStack(spacing: 12) {
                     Image(systemName: icon).font(.title3).foregroundStyle(.tint).frame(width: 26)
                     Text(title).font(.headline)
@@ -142,7 +159,7 @@ struct QuickSettingsView: View {
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).rotationEffect(.degrees(open ? 90 : 0))
                 }.contentShape(.rect)
             }.buttonStyle(.plain)
-            if open { body().transition(.opacity.combined(with: .move(edge: .top))) }
+            if open { body().transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))) }
         }
         .padding(14)
         .background(.white.opacity(open ? 0.07 : 0.04), in: .rect(cornerRadius: 16))
@@ -201,9 +218,30 @@ struct QuickSettingsView: View {
             }
             HStack(spacing: 10) {
                 Button { m.openModsFolder() } label: { Label("Open mods folder", systemImage: "folder").frame(maxWidth: .infinity) }
-                Button { withAnimation(.snappy) { m.refresh() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }
+                Button { withAnimation(motion) { m.refresh() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }
             }.modifier(GlassButton(prominent: false)).controlSize(.large)
             Text("Restart the game to apply mod changes.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private var sound: some View {
+        Row(title: "Volume") {
+            HStack(spacing: 10) {
+                Image(systemName: "speaker.fill").foregroundStyle(.secondary)
+                Slider(value: Binding(get: { m.volume }, set: { m.setVolume($0) }), in: 0...1)
+                Text("\(Int((m.volume * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
+            }
+        }
+    }
+    private var capture: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Button { front_qs_screenshot() } label: { Label("Screenshot", systemImage: "camera.viewfinder").frame(maxWidth: .infinity) }
+                Button { front_qs_record(); m.recording = front_qs_recording() != 0 } label: {
+                    Label(m.recording ? "Stop" : "Record", systemImage: m.recording ? "stop.circle.fill" : "record.circle").frame(maxWidth: .infinity)
+                }.tint(m.recording ? .red : nil)
+            }.modifier(GlassButton(prominent: false)).controlSize(.large)
+            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording. The picture is saved as you see it, filter included; screenshots go to Pictures › NxNative, recordings (with sound) to Movies › NxNative.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
     private var cheats: some View {
@@ -232,6 +270,44 @@ struct QuickSettingsView: View {
 }
 private struct DotLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View { HStack(spacing: 5) { configuration.icon.font(.system(size: 6)); configuration.title } }
+}
+
+// Toasts: a glass capsule over the top of the game picture for 2 seconds; a new one replaces the one showing
+final class ToastModel: ObservableObject { @Published var text: String? }
+private struct ToastView: View {
+    @ObservedObject var t: ToastModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        VStack {
+            if let text = t.text {
+                Text(text).font(.callout.weight(.medium)).padding(.horizontal, 18).padding(.vertical, 10).modifier(ToastSurface())
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+            }
+            Spacer()
+        }.padding(.top, 18).frame(maxWidth: .infinity).environment(\.colorScheme, .dark).animation(reduceMotion ? nil : .snappy, value: t.text)
+    }
+}
+private struct ToastSurface: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *), !reduceTransparency { content.glassEffect(.regular.tint(.black.opacity(0.4)), in: .capsule) }
+        else { content.background(Color(red: 0.14, green: 0.15, blue: 0.18), in: .capsule) }
+    }
+}
+private final class PassThroughHost: NSHostingView<ToastView> { override func hitTest(_ point: NSPoint) -> NSView? { nil } }   // clicks go to the game under it
+private let toastModel = ToastModel()
+private var toastHost: PassThroughHost?
+private var toastSerial = 0
+@_cdecl("dm_qs_toast")
+public func dm_qs_toast(_ parent: UnsafeMutableRawPointer, _ msg: UnsafePointer<CChar>) {
+    let p = Unmanaged<NSView>.fromOpaque(parent).takeUnretainedValue()
+    if toastHost?.superview !== p {
+        toastHost?.removeFromSuperview()
+        let h = PassThroughHost(rootView: ToastView(t: toastModel)); h.frame = NSRect(x: 0, y: p.bounds.height - 90, width: p.bounds.width, height: 90)
+        h.autoresizingMask = [.width, .minYMargin]; p.addSubview(h, positioned: .above, relativeTo: nil); toastHost = h
+    } else if let h = toastHost { p.addSubview(h, positioned: .above, relativeTo: nil) }   // over a sidebar opened since
+    toastModel.text = String(cString: msg); toastSerial += 1; let serial = toastSerial
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { if toastSerial == serial { toastModel.text = nil } }
 }
 
 private var shared: QuickSettings?
