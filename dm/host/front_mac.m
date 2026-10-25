@@ -221,7 +221,7 @@ static void pads_start(void) {
 static NSString *const g_pfx_title[DM_PFX_N] = {@"Off", @"Sharpen", @"Pixel-perfect", @"CRT"};
 static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"DMPresentFilter.%@.%s", what, DM_GAME_NAME]; }
 @interface DmGraphics : NSObject
-@property NSPanel *panel; @property NSSegmentedControl *seg; @property NSSlider *slider; @property NSMutableArray<NSMenuItem *> *items;
+@property NSPanel *panel; @property NSSegmentedControl *seg, *rows; @property NSSlider *slider; @property NSMutableArray<NSMenuItem *> *items;
 @end
 @implementation DmGraphics
 - (void)apply:(int)mode strength:(float)k save:(BOOL)save {
@@ -234,27 +234,37 @@ static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"D
     for (NSMenuItem *it in self.items) it.state = it.tag == m ? NSControlStateValueOn : NSControlStateValueOff;
     self.seg.selectedSegment = m; self.slider.floatValue = k;
     self.slider.enabled = m == DM_PFX_SHARPEN || m == DM_PFX_CRT;   // the pixel filter has no strength
+    self.rows.selectedSegment = mtl_present_scanline(); self.rows.enabled = m == DM_PFX_CRT;
 }
 - (BOOL)validateMenuItem:(NSMenuItem *)it { if (it.action == @selector(togglePanel:)) it.state = self.panel.visible ? NSControlStateValueOn : NSControlStateValueOff; return YES; }
 - (void)pickItem:(NSMenuItem *)it { float k; mtl_present_filter(&k); [self apply:(int)it.tag strength:k save:YES]; }
 - (void)pickSeg:(NSSegmentedControl *)c { [self apply:(int)c.selectedSegment strength:self.slider.floatValue save:YES]; }
+- (void)pickRows:(NSSegmentedControl *)c {   // 0 = auto, else source rows per scanline
+    mtl_present_scanline_set((int)c.selectedSegment);
+    if (!getenv("DM_PRESENT_SCANLINE")) [NSUserDefaults.standardUserDefaults setInteger:c.selectedSegment forKey:pfx_key(@"scanline")];
+    [self sync];
+}
 - (void)slide:(NSSlider *)sl { [self apply:mtl_present_filter(NULL) strength:sl.floatValue save:YES]; }
 - (void)togglePanel:(id)sender {
     (void)sender;
     if (!self.panel) {
-        NSPanel *p = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 360, 112)
+        NSPanel *p = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 360, 150)
                                                 styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskUtilityWindow | NSWindowStyleMaskHUDWindow | NSWindowStyleMaskNonactivatingPanel
                                                   backing:NSBackingStoreBuffered defer:NO];
         p.title = @"Graphics"; p.floatingPanel = YES; p.becomesKeyOnlyIfNeeded = YES; p.hidesOnDeactivate = YES; p.releasedWhenClosed = NO;
         p.collectionBehavior = NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorMoveToActiveSpace;
         NSView *cv = p.contentView;
         NSTextField *l1 = [NSTextField labelWithString:@"Filter"], *l2 = [NSTextField labelWithString:@"Strength"];
-        l1.frame = NSMakeRect(16, 70, 70, 20); l2.frame = NSMakeRect(16, 30, 70, 20);
+        NSTextField *l3 = [NSTextField labelWithString:@"Scanlines"];
+        l1.frame = NSMakeRect(16, 108, 70, 20); l2.frame = NSMakeRect(16, 68, 70, 20); l3.frame = NSMakeRect(16, 28, 70, 20);
         self.seg = [NSSegmentedControl segmentedControlWithLabels:[NSArray arrayWithObjects:g_pfx_title count:DM_PFX_N] trackingMode:NSSegmentSwitchTrackingSelectOne target:self action:@selector(pickSeg:)];
-        self.seg.frame = NSMakeRect(86, 66, 260, 26);
+        self.seg.frame = NSMakeRect(86, 104, 260, 26);
         self.slider = [NSSlider sliderWithValue:0.5 minValue:0 maxValue:1 target:self action:@selector(slide:)];
-        self.slider.frame = NSMakeRect(86, 28, 260, 24); self.slider.continuous = YES;
-        for (NSView *x in @[l1, l2, self.seg, self.slider]) [cv addSubview:x];
+        self.slider.frame = NSMakeRect(86, 66, 260, 24); self.slider.continuous = YES;
+        // CRT scanline height in the game's frame rows: Auto gives about 240 lines; a pixel-art game's own pixel size (frame rows per art pixel) lines them up with its art
+        self.rows = [NSSegmentedControl segmentedControlWithLabels:@[@"Auto", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8"] trackingMode:NSSegmentSwitchTrackingSelectOne target:self action:@selector(pickRows:)];
+        self.rows.frame = NSMakeRect(86, 24, 260, 26);
+        for (NSView *x in @[l1, l2, l3, self.seg, self.slider, self.rows]) [cv addSubview:x];
         NSRect w = g_win.frame; [p setFrameTopLeftPoint:NSMakePoint(NSMaxX(w) - 380, NSMaxY(w) - 40)];   // the window's top right corner, over the game
         self.panel = p;
     }
@@ -274,8 +284,9 @@ static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"D
 }
 @end
 static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, unless the environment names one
-    if (getenv("DM_PRESENT_FILTER")) return;
     NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);
+    if (getenv("DM_PRESENT_FILTER")) return;
     if (![d objectForKey:pfx_key(@"mode")]) return;
     int m = (int)[d integerForKey:pfx_key(@"mode")]; float k = [d objectForKey:pfx_key(@"strength")] ? [d floatForKey:pfx_key(@"strength")] : 0.5f;
     mtl_present_filter_set(m, k); LOG("front end: present filter from the saved choice for this game (Graphics menu)");

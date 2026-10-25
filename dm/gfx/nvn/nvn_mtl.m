@@ -8246,12 +8246,28 @@ static id<MTLSamplerState> g_blit_samp;
 // one fragment function per filter and takes the one set at each present, so a change shows on the next frame and costs no pipeline build then (all are built with the bilinear one).
 // Off is the bilinear stretch as before. Sharpen: contrast-adaptive (after AMD's FidelityFX CAS), a cross of the source texels around each sample, weighted less where the neighbourhood
 // already has contrast, so edges sharpen without ringing. Pixel: sharp bilinear, each source texel a block of one colour and only the seam between two blocks blended over one output pixel,
-// so pixel art at a non-integer scale (720p into a 1898-pixel-high fullscreen) neither blurs nor shimmers. CRT: scanlines on the source rows and an RGB aperture mask on the output columns,
-// brightened by what they take away. The filters work on the stored bytes as the bilinear stretch does (present_raw_src); the whole-window screenshot (grab_present) shows the filter too,
+// so pixel art at a non-integer scale (720p into a 1898-pixel-high fullscreen) neither blurs nor shimmers. CRT: scanlines (about 240 lines, or a set height in source rows: mtl_present_scanline)
+// and an RGB aperture mask on the output columns, brightened by part of what they take away. The filters work on the stored bytes as the bilinear stretch does (present_raw_src); the whole-window screenshot (grab_present) shows the filter too,
 // the raw swapchain screenshots (shot: DM_NVN_SHOT, DM_NVN_SHOT_UI) do not
 static const char *const g_pfx_name[DM_PFX_N] = {"off", "sharpen", "pixel", "crt"};
 static id<MTLRenderPipelineState> g_pfx_pso[DM_PFX_N];   // [0] is g_blit_pso
 static _Atomic int g_pfx = -1; static _Atomic float g_pfx_k = 0.5f;
+// The CRT filter's scanline height in source rows (DM_PRESENT_SCANLINE=1 to 8; 0 = auto, -1 = not read yet). Auto gives about 240 lines whatever the frame's size: a pixel-art game
+// draws its art at a low resolution and enlarges it into a 720p or 1080p frame itself (Bloodstained: Curse of the Moon hands over 1280x720), so a line per frame row was a stripe of
+// one or two screen pixels, too fine to see, and the filter only darkened the picture and brightened it again
+static _Atomic int g_pfx_rows = -1;
+int mtl_present_scanline(void) {
+    int r = g_pfx_rows;
+    if (r >= 0) return r;
+    const char *e = getenv("DM_PRESENT_SCANLINE"); int want = 0;
+    if (e && *e && strcasecmp(e, "auto")) { char *end; long v = strtol(e, &end, 10); if (end != e && !*end && v >= 0 && v <= 8) want = (int)v; else MLOG("[RED] DM_PRESENT_SCANLINE=%s: must be auto or 0 to 8; using auto", e); }
+    int none = -1; atomic_compare_exchange_strong(&g_pfx_rows, &none, want);
+    return g_pfx_rows;
+}
+void mtl_present_scanline_set(int rows) {
+    rows = rows < 0 ? 0 : rows > 8 ? 8 : rows;
+    if (g_pfx_rows != rows) { g_pfx_rows = rows; if (rows) MLOG("present: CRT scanlines every %d source rows", rows); else MLOG("present: CRT scanlines auto (about 240 lines)"); }
+}
 static int pfx_mode(void) {   // any thread: the filter now, read from the environment the first time (a front end's mtl_present_filter_set before that wins)
     int m = g_pfx;
     if (m >= 0) return m;
@@ -8270,9 +8286,11 @@ void mtl_present_filter_set(int mode, float strength) {
     int was = g_pfx; float k0 = g_pfx_k; g_pfx_k = strength; g_pfx = mode;
     if (was != mode || fabsf(k0 - strength) > 0.001f) MLOG("present: filter %s, strength %.2f", g_pfx_name[mode], strength);
 }
-// The filter's parameters (the fragment functions' Crop.fx): strength, then the output pixels per source texel on x and y (the viewport over the crop), which sharp bilinear needs
+// The filter's parameters (the fragment functions' Crop.fx): strength, the output pixels per source texel on x and y (the viewport over the crop), which sharp bilinear needs,
+// and the CRT filter's scanline height in source rows
 static void pfx_params(float fx[4], const MTLViewport *vp, NSUInteger cw, NSUInteger ch) {
-    fx[0] = g_pfx_k; fx[1] = cw ? (float)(vp->width / cw) : 1; fx[2] = ch ? (float)(vp->height / ch) : 1; fx[3] = 0;
+    int rows = mtl_present_scanline(); if (!rows) rows = (int)fmax(1, floor(ch / 240.0 + 0.5));
+    fx[0] = g_pfx_k; fx[1] = cw ? (float)(vp->width / cw) : 1; fx[2] = ch ? (float)(vp->height / ch) : 1; fx[3] = (float)rows;
 }
 static uint64_t g_present_n;
 uint64_t mtl_present_count(void) { return g_present_n; }   // Actual present count (heat attribution DM_HEAT computes the present frame rate)
@@ -8581,7 +8599,7 @@ static void present_pipeline(MTLPixelFormat format) {
             "#include <metal_stdlib>\nusing namespace metal;\n"
             "struct V { float4 p [[position]]; float2 uv; };\n"
             "vertex V vs(uint id [[vertex_id]]) { float2 uv = float2((id << 1) & 2, id & 2); V o; o.p = float4(uv * float2(2, -2) + float2(-1, 1), 0, 1); o.uv = uv; return o; }\n"
-            "struct Crop { float4 rect; float4 edge; float4 fx; };\n"   // fx: the present filter's strength, output pixels per source texel x / y (pfx_params)
+            "struct Crop { float4 rect; float4 edge; float4 fx; };\n"   // fx: the present filter's strength, output pixels per source texel x / y, scanline height in source rows (pfx_params)
             "#define UV clamp(in.uv * c.rect.zw + c.rect.xy, c.edge.xy, c.edge.zw)\n"
             "fragment float4 fs(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) { return t.sample(s, UV); }\n"
             // Sharpen (contrast-adaptive, after FidelityFX CAS): the cross one source texel away; the weight falls where the cross already spans the range, and strength 0 to 1 is CAS's 0 to 1
@@ -8601,14 +8619,14 @@ static void present_pipeline(MTLPixelFormat format) {
             "  float2 g = (f - clamp(f, -r, r)) * k + 0.5f;\n"
             "  return t.sample(s, clamp((floor(tx) + g) / sz, c.edge.xy, c.edge.zw));\n"
             "}\n"
-            // CRT: each source row lit brightest at its centre and darkest at its edges, and every third output column leaning red, green, blue; strength scales both (the row is taken before UV's clamp to the half-texel edge, which would light the image's first and last half row fully)
+            // CRT: each scanline (fx.w source rows) lit brightest at its centre and darkest at its edges, and every third output column leaning red, green, blue; strength scales both (the row is taken before UV's clamp to the half-texel edge, which would light the image's first and last half row fully)
             "fragment float4 fs_crt(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
             "  float2 uv = UV; float k = saturate(c.fx.x); float3 col = t.sample(s, uv).rgb;\n"
-            "  float row = fract((in.uv.y * c.rect.w + c.rect.y) * t.get_height()), scan = 0.5f + 0.5f * cos(6.2831853f * (row - 0.5f));\n"
-            "  col *= mix(1.0f, 0.45f + 0.55f * scan, k);\n"
+            "  float row = fract((in.uv.y * c.rect.w + c.rect.y) * t.get_height() / max(c.fx.w, 1.0f)), scan = 0.5f + 0.5f * cos(6.2831853f * (row - 0.5f));\n"
+            "  col *= mix(1.0f, 0.3f + 0.7f * scan, k);\n"
             "  uint ph = uint(in.p.x) % 3u; float3 mask = ph == 0u ? float3(1, 0.7f, 0.7f) : ph == 1u ? float3(0.7f, 1, 0.7f) : float3(0.7f, 0.7f, 1);\n"
             "  col *= mix(float3(1), mask, float3(0.5f * k));\n"
-            "  return float4(saturate(col * (1.0f + 0.6f * k)), 1);\n"
+            "  return float4(saturate(col * (1.0f + 0.35f * k)), 1);\n"
             "}\n";
         NSError *e = nil;
         id<MTLLibrary> lib = [g_dev newLibraryWithSource:@(src_msl) options:nil error:&e];

@@ -14,6 +14,9 @@ void front_screen_match(int fps);
 enum { DM_PFX_OFF, DM_PFX_SHARPEN, DM_PFX_PIXEL, DM_PFX_CRT, DM_PFX_N };
 int mtl_present_filter(float *strength);
 void mtl_present_filter_set(int mode, float strength);
+// The CRT filter's scanline height in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
+int mtl_present_scanline(void);
+void mtl_present_scanline_set(int rows);
 #include <stdint.h>
 // Text input box (for the software keyboard swkbd): the main thread shows a native input box and the calling thread blocks until the user confirms / cancels.
 // All text is UTF-8; max_chars is the maximum character count (0 = unlimited, only a hint for the front end; truncation is done uniformly by the caller hle_swkbd.c in UTF-16 units).

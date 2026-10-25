@@ -106,6 +106,17 @@ int main(void) { @autoreleasepool {
             else{int edge=0,mid=0;for(int x=0;x<32;x++){edge+=o[4*(0*32+x)]+o[4*(0*32+x)+1]+o[4*(0*32+x)+2];mid+=o[4*(2*32+x)]+o[4*(2*32+x)+1]+o[4*(2*32+x)+2];}
                 printf("crt row sums: edge %d, centre %d\n",edge,mid);EXPECT("CRT scanline: a source row's edge darker than its centre",1,edge<mid);}
         }
+        {   // scanlines every 2 source rows: 8 output rows per line on the 4x picture, so output row 0 is a line's edge and row 4 its centre
+            mtl_present_filter_set(DM_PFX_CRT,1);mtl_present_scanline_set(2);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:32 height:32 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            ENCODE(cb,fl,dst,zero);[cb commit];[cb waitUntilCompleted];
+            static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
+            int r0=0,r2=0,r4=0;for(int x=0;x<32;x++){r0+=o[4*(0*32+x)];r2+=o[4*(2*32+x)];r4+=o[4*(4*32+x)];}
+            printf("crt 2-row scanline red sums: rows 0 %d, 2 %d, 4 %d\n",r0,r2,r4);
+            EXPECT("CRT scanline set to 2 rows: the line's centre (row 4) brighter than its quarter (row 2) and its edge (row 0)",1,r4>r2&&r2>r0);
+            mtl_present_scanline_set(0);EXPECT("scanline back to auto",0,mtl_present_scanline());
+        }
         mtl_present_filter_set(99,7);
         int m=mtl_present_filter(&k);
         EXPECT("an unknown filter is off",DM_PFX_OFF,m);EXPECT("strength clamped to 1 (x100)",100,(int)(k*100+0.5f));
