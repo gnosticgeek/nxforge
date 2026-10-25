@@ -90,7 +90,7 @@ int main(void) { @autoreleasepool {
             static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
             for(int i=0;i<32*32;i++){int pure=0;for(int q=0;q<4;q++)pure|=memcmp(o+4*i,colors[q],3)==0;mixed[m]+=!pure;}
         }
-        printf("pixels between two colours: off %d, sharpen %d, pixel %d, crt %d\n",mixed[0],mixed[1],mixed[2],mixed[3]);
+        printf("pixels between two colours: off %d, sharpen %d, pixel %d, crt %d, lottes %d, lcd %d\n",mixed[0],mixed[1],mixed[2],mixed[3],mixed[4],mixed[5]);
         EXPECT("bilinear blends the seam over more than one column and row",1,mixed[DM_PFX_OFF]>2*32);
         EXPECT("pixel filter blends at most one column and one row",1,mixed[DM_PFX_PIXEL]<=2*32);
         // On one flat colour sharpening changes nothing, and the CRT filter's scanlines make a source row's edge darker than its centre (4 output rows per source row)
@@ -116,6 +116,28 @@ int main(void) { @autoreleasepool {
             printf("crt 2-row scanline red sums: rows 0 %d, 2 %d, 4 %d\n",r0,r2,r4);
             EXPECT("CRT scanline set to 2 rows: the line's centre (row 4) brighter than its quarter (row 2) and its edge (row 0)",1,r4>r2&&r2>r0);
             mtl_present_scanline_set(0);EXPECT("scanline back to auto",0,mtl_present_scanline());
+        }
+        // CRT-Lottes and LCD Grid on the flat colour, 4 output pixels per cell: Lottes' beam is darker at a row's edge (output row 0) than at its centre (row 2), and the LCD grid's gap
+        // darkens a cell's edge row; CRT at 1:1 (a line one output pixel high) fades its scanlines out, every row the same
+        for(int m=DM_PFX_LOTTES;m<=DM_PFX_LCD;m++) {
+            mtl_present_filter_set(m,1);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:32 height:32 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            EXPECT(m==DM_PFX_LOTTES?"CRT-Lottes encode succeeds":"LCD Grid encode succeeds",1,ENCODE(cb,fl,dst,zero));[cb commit];[cb waitUntilCompleted];
+            static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
+            int edge=0,mid=0;for(int x=0;x<32;x++)for(int q=0;q<3;q++){edge+=o[4*(0*32+x)+q];mid+=o[4*(2*32+x)+q];}
+            printf("%s row sums: edge %d, centre %d\n",m==DM_PFX_LOTTES?"lottes":"lcd",edge,mid);
+            EXPECT(m==DM_PFX_LOTTES?"CRT-Lottes: a cell row's edge darker than its centre":"LCD Grid: a cell's edge row darker than its centre",1,edge<mid&&mid>0);
+        }
+        {
+            mtl_present_filter_set(DM_PFX_CRT,1);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:8 height:8 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            ENCODE(cb,fl,dst,zero);[cb commit];[cb waitUntilCompleted];
+            uint8_t o[8*8*4];[dst getBytes:o bytesPerRow:32 fromRegion:MTLRegionMake2D(0,0,8,8) mipmapLevel:0];
+            int spread=0;for(int y=1;y<8;y++)for(int x=0;x<8;x++)spread=MAX(spread,abs(o[4*(y*8+x)]-o[4*x]));
+            printf("crt at 1:1: largest difference from row 0 %d\n",spread);
+            EXPECT("CRT at 1:1: scanlines faded out, every row as row 0",1,spread<=1);
         }
         mtl_present_filter_set(99,7);
         int m=mtl_present_filter(&k);

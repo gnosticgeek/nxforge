@@ -8281,9 +8281,10 @@ static id<MTLSamplerState> g_blit_samp;
 // Off is the bilinear stretch as before. Sharpen: contrast-adaptive (after AMD's FidelityFX CAS), a cross of the source texels around each sample, weighted less where the neighbourhood
 // already has contrast, so edges sharpen without ringing. Pixel: sharp bilinear, each source texel a block of one colour and only the seam between two blocks blended over one output pixel,
 // so pixel art at a non-integer scale (720p into a 1898-pixel-high fullscreen) neither blurs nor shimmers. CRT: scanlines (about 240 lines, or a set height in source rows: mtl_present_scanline)
-// and an RGB aperture mask on the output columns, brightened by part of what they take away. The filters work on the stored bytes as the bilinear stretch does (present_raw_src); the whole-window screenshot (grab_present) shows the filter too,
+// and an RGB aperture mask on the output columns, brightened by part of what they take away; the scanlines fade out where a line spans under 2.5 output pixels. CRT-Lottes: Timothy Lottes'
+// public-domain CRT shader (beams, bloom and a shadow mask on cells of the scanline height). LCD Grid: each cell a square with a dark gap and RGB thirds, like a handheld's screen. The filters work on the stored bytes as the bilinear stretch does (present_raw_src); the whole-window screenshot (grab_present) shows the filter too,
 // the raw swapchain screenshots (shot: DM_NVN_SHOT, DM_NVN_SHOT_UI) do not
-static const char *const g_pfx_name[DM_PFX_N] = {"off", "sharpen", "pixel", "crt"};
+static const char *const g_pfx_name[DM_PFX_N] = {"off", "sharpen", "pixel", "crt", "lottes", "lcd"};
 static id<MTLRenderPipelineState> g_pfx_pso[DM_PFX_N];   // [0] is g_blit_pso
 static _Atomic int g_pfx = -1; static _Atomic float g_pfx_k = 0.5f;
 // The CRT filter's scanline height in source rows (DM_PRESENT_SCANLINE=1 to 8; 0 = auto, -1 = not read yet). Auto gives about 240 lines whatever the frame's size: a pixel-art game
@@ -8307,7 +8308,7 @@ static int pfx_mode(void) {   // any thread: the filter now, read from the envir
     if (m >= 0) return m;
     const char *e = getenv("DM_PRESENT_FILTER"), *k = getenv("DM_PRESENT_FILTER_STRENGTH"); int want = 0;
     if (e && *e) { for (int i = 0; i < DM_PFX_N; i++) if (!strcasecmp(e, g_pfx_name[i])) want = i;
-        if (!want && strcasecmp(e, "off") && strcmp(e, "0")) MLOG("[RED] DM_PRESENT_FILTER=%s: not off, sharpen, pixel or crt; presenting without a filter", e); }
+        if (!want && strcasecmp(e, "off") && strcmp(e, "0")) MLOG("[RED] DM_PRESENT_FILTER=%s: not off, sharpen, pixel, crt, lottes or lcd; presenting without a filter", e); }
     if (k && *k) { char *end; float v = strtof(k, &end); if (end != k && !*end && v >= 0 && v <= 1) g_pfx_k = v; else MLOG("[RED] DM_PRESENT_FILTER_STRENGTH=%s: must be 0 to 1; keeping %.2f", k, (double)g_pfx_k); }
     int none = -1;
     if (atomic_compare_exchange_strong(&g_pfx, &none, want) && want) MLOG("present: filter %s, strength %.2f (DM_PRESENT_FILTER)", g_pfx_name[want], (double)g_pfx_k);
@@ -8366,10 +8367,24 @@ static struct { uint64_t frame; char path[1024]; } g_shotq[SHOTQ_MAX]; static in
 static pthread_mutex_t g_shotq_mu = PTHREAD_MUTEX_INITIALIZER;
 static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4]);
 static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4], int uv_i);
+static _Atomic float g_present_inset;   // front.h mtl_present_inset: the share of the window's width kept free on the right
+void mtl_present_inset(float share) { atomic_store(&g_present_inset, share < 0 ? 0 : share > 0.9f ? 0.9f : share); }
 // Game picture needed by the whole-window screenshot (front end window_shot; no longer does drawViewHierarchy on a Metal layer with the display link attached): at the next present, the present thread draws the same frame
 // with the same encoding as the present (present_encode) into an offscreen texture of the same size as the swapchain, and after the GPU finishes hands out a CGImage in the completion callback (the callback does not block the present). Guarded by g_shotq_mu
 static void (^g_grab_cb)(CGImageRef img);
 void mtl_grab_next_present(void (^cb)(CGImageRef img)) { pthread_mutex_lock(&g_shotq_mu); g_grab_cb = [cb copy]; pthread_mutex_unlock(&g_shotq_mu); }
+// Recording (front.h mtl_record_set): set by the front end on any thread, read by the present thread at each present
+static mtl_recorder g_recorder; static _Atomic int g_recorder_on;
+void mtl_record_set(const mtl_recorder *r) { pthread_mutex_lock(&g_shotq_mu); if (r) g_recorder = *r; atomic_store(&g_recorder_on, r != NULL); pthread_mutex_unlock(&g_shotq_mu); }
+static void record_present(id<MTLTexture> src, const int crop[4]) {
+    pthread_mutex_lock(&g_shotq_mu); mtl_recorder r = g_recorder; int on = atomic_load(&g_recorder_on); pthread_mutex_unlock(&g_shotq_mu);
+    if (!on || !r.next) return;
+    id<MTLTexture> out = (__bridge id<MTLTexture>)r.next(r.ctx); if (!out) return;
+    uint64_t ns = now_ns(); id<MTLCommandBuffer> cb = q_cb();
+    if (!present_encode(cb, src, out, crop)) return;
+    [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { (void)c; r.done(r.ctx, (__bridge void *)out, ns); }];
+    [cb commit];
+}
 static void grab_present(id<MTLTexture> src, const int crop[4], CGSize sz) {
     pthread_mutex_lock(&g_shotq_mu); void (^cb)(CGImageRef) = g_grab_cb; g_grab_cb = nil; pthread_mutex_unlock(&g_shotq_mu);
     if (!cb) return;
@@ -8657,10 +8672,51 @@ static void present_pipeline(MTLPixelFormat format) {
             "fragment float4 fs_crt(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
             "  float2 uv = UV; float k = saturate(c.fx.x); float3 col = t.sample(s, uv).rgb;\n"
             "  float row = fract((in.uv.y * c.rect.w + c.rect.y) * t.get_height() / max(c.fx.w, 1.0f)), scan = 0.5f + 0.5f * cos(6.2831853f * (row - 0.5f));\n"
-            "  col *= mix(1.0f, 0.3f + 0.7f * scan, k);\n"
+            "  float vis = smoothstep(1.0f, 2.5f, c.fx.z * max(c.fx.w, 1.0f));\n"   // scanlines fade out where a line spans under 2.5 output pixels: finer ones only make moire (after RetroReplay's)
+            "  col *= mix(1.0f, 0.3f + 0.7f * scan, k * vis);\n"
             "  uint ph = uint(in.p.x) % 3u; float3 mask = ph == 0u ? float3(1, 0.7f, 0.7f) : ph == 1u ? float3(0.7f, 1, 0.7f) : float3(0.7f, 0.7f, 1);\n"
             "  col *= mix(float3(1), mask, float3(0.5f * k));\n"
-            "  return float4(saturate(col * (1.0f + 0.35f * k)), 1);\n"
+            "  return float4(saturate(col * (1.0f + 0.35f * k * vis)), 1);\n"
+            "}\n"
+            // The CRT-Lottes and LCD Grid filters see the picture on a grid of cells fx.w source rows high and wide (the scanline height: about 240 lines by default), so a game that enlarges
+            // its own pixel art gets one cell per art pixel. A cell's colour is the source texel at its centre, nearest-sampled and clamped to the valid area
+            "static float3 cell_texel(texture2d<float> t, float2 cell, float n, float4 edge) {\n"
+            "  constexpr sampler near(coord::normalized, address::clamp_to_edge, filter::nearest);\n"
+            "  float2 sz = float2(t.get_width(), t.get_height());\n"
+            "  return t.sample(near, clamp((floor(cell) * n + floor(n * 0.5f) + 0.5f) / sz, edge.xy, edge.zw)).rgb;\n"
+            "}\n"
+            // CRT-Lottes: Timothy Lottes' public-domain CRT shader ("PUBLIC DOMAIN CRT STYLED SCAN-LINE SHADER by Timothy Lottes. Please take and use, change, or whatever."; libretro's
+            // crt/shaders/crt-lottes.slang), in RetroReplay's Metal port (GameVideo/CRTLottesShader.swift): Gaussian beams over the 3 nearest rows of cells, a wider bloom over 5, and the
+            // stretched VGA shadow mask (shadowMask 3, maskDark 0.5, maskLight 1.5) on the output pixels; no curvature, so the whole picture shows. Strength mixes it with the plain picture
+            "static float3 lot_lin(float3 c) { return select(pow((c + 0.055f) / 1.055f, 2.4f), c / 12.92f, c <= 0.04045f); }\n"
+            "static float3 lot_srgb(float3 c) { return select(1.055f * pow(c, 0.41666f) - 0.055f, c * 12.92f, c < 0.0031308f); }\n"
+            "static float lot_gauss(float d, float hard) { return exp2(hard * d * d); }\n"
+            "static float3 lot_row(texture2d<float> t, float2 g, float row, int radius, float hard, float dx, float n, float4 edge) {\n"
+            "  float3 col = 0; float tot = 0;\n"
+            "  for (int x = -radius; x <= radius; x++) { float w = lot_gauss(dx + float(x), hard); col += lot_lin(cell_texel(t, g + float2(x, row), n, edge)) * w; tot += w; }\n"
+            "  return col / tot;\n"
+            "}\n"
+            "fragment float4 fs_lottes(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
+            "  float n = max(c.fx.w, 1.0f), k = saturate(c.fx.x); float2 sz = float2(t.get_width(), t.get_height());\n"
+            "  float2 g = (in.uv * c.rect.zw + c.rect.xy) * sz / n, d = 0.5f - fract(g);\n"
+            "  float3 beam = 0, bloom = 0;\n"
+            "  for (int r = -1; r <= 1; r++) beam += lot_row(t, g, float(r), r == 0 ? 2 : 1, -3.0f, d.x, n, c.edge) * lot_gauss(d.y + float(r), -8.0f);\n"
+            "  for (int r = -2; r <= 2; r++) bloom += lot_row(t, g, float(r), abs(r) == 2 ? 2 : 3, -1.5f, d.x, n, c.edge) * lot_gauss(d.y + float(r), -2.0f);\n"
+            "  float ph = fract((in.p.x + in.p.y * 3.0f) * 0.166666666f); float3 mask = 0.5f;\n"
+            "  if (ph < 0.333f) mask.r = 1.5f; else if (ph < 0.666f) mask.g = 1.5f; else mask.b = 1.5f;\n"
+            "  float3 crt = saturate(lot_srgb((beam + bloom * 0.15f) * mask));\n"
+            "  return float4(mix(t.sample(s, UV).rgb, crt, k), 1);\n"
+            "}\n"
+            // LCD Grid: each cell a lit square with a dark gap of about one output pixel around it and its three thirds leaning red, green, blue, like a handheld's screen; the grid fades
+            // out where a cell spans under 4 output pixels (it would only make moire there). Strength scales the gap and the subpixels
+            "fragment float4 fs_lcd(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
+            "  float n = max(c.fx.w, 1.0f), k = saturate(c.fx.x); float2 sz = float2(t.get_width(), t.get_height());\n"
+            "  float2 g = (in.uv * c.rect.zw + c.rect.xy) * sz / n, f = fract(g), px = max(abs(c.fx.yz) * n, float2(1.0f));\n"
+            "  float vis = smoothstep(2.0f, 4.0f, min(px.x, px.y)) * k;\n"
+            "  float2 dist = min(f, 1.0f - f) * px; float lit = saturate(min(dist.x, dist.y) / 0.75f);\n"
+            "  float third = floor(f.x * 3.0f); float3 sub = third < 1.0f ? float3(1, 0.6f, 0.6f) : third < 2.0f ? float3(0.6f, 1, 0.6f) : float3(0.6f, 0.6f, 1);\n"
+            "  float3 col = cell_texel(t, g, n, c.edge) * mix(float3(1), sub * mix(0.25f, 1.0f, lit), vis);\n"
+            "  return float4(saturate(col * (1.0f + 0.3f * vis)), 1);\n"
             "}\n";
         NSError *e = nil;
         id<MTLLibrary> lib = [g_dev newLibraryWithSource:@(src_msl) options:nil error:&e];
@@ -8671,7 +8727,7 @@ static void present_pipeline(MTLPixelFormat format) {
         g_blit_pso = [g_dev newRenderPipelineStateWithDescriptor:pd error:&e];
         if (!g_blit_pso) MDIE("present pipeline failed %s", e.localizedDescription.UTF8String);
         g_pfx_pso[DM_PFX_OFF] = g_blit_pso;
-        static const char *const fn[DM_PFX_N] = {NULL, "fs_sharpen", "fs_pixel", "fs_crt"};
+        static const char *const fn[DM_PFX_N] = {NULL, "fs_sharpen", "fs_pixel", "fs_crt", "fs_lottes", "fs_lcd"};
         for (int i = 1; i < DM_PFX_N; i++) {   // a filter whose pipeline fails presents without one (pfx_pso), so the game still shows
             pd.fragmentFunction = [lib newFunctionWithName:@(fn[i])]; e = nil;
             g_pfx_pso[i] = pd.fragmentFunction ? [g_dev newRenderPipelineStateWithDescriptor:pd error:&e] : nil;
@@ -8748,9 +8804,10 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
         cx = crop[0]; cy = crop[1]; cw = crop[2]; ch = crop[3];
     }
     present_pipeline(dst.pixelFormat);
-    double dw = dst.width, dh = dst.height, s = fmin(dw / cw, dh / ch);
-    MTLViewport vp = {floor((dw - cw * s) / 2), floor((dh - ch * s) / 2), round(cw * s), round(ch * s), 0, 1};
-    if (fabs((dw / dh) / ((double)cw / ch) - 1) < 0.01) vp = (MTLViewport){0, 0, dw, dh, 0, 1};
+    // The window's right part a front end keeps for a panel (mtl_present_inset): the picture fits and centres in what is left. Only the window's present (this path): screenshots and recordings stay whole
+    double dw = dst.width, dh = dst.height, aw = dw * (1 - atomic_load(&g_present_inset)), s = fmin(aw / cw, dh / ch);
+    MTLViewport vp = {floor((aw - cw * s) / 2), floor((dh - ch * s) / 2), round(cw * s), round(ch * s), 0, 1};
+    if (aw == dw && fabs((dw / dh) / ((double)cw / ch) - 1) < 0.01) vp = (MTLViewport){0, 0, dw, dh, 0, 1};
     int full = vp.originX == 0 && vp.originY == 0 && vp.width == dw && vp.height == dh;
     MTL4RenderPassDescriptor *rp = [MTL4RenderPassDescriptor new];
     rp.colorAttachments[0].texture = dst;
@@ -8835,6 +8892,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
 #endif
     present_pipeline(layer.pixelFormat);   // Same as the original path: the first frame compiles the pipeline before taking the drawable
     if (g_grab_cb) grab_present(src, crop, layer.drawableSize);   // Game picture needed by the whole-window screenshot (peek without the lock first; the real take locks inside the function)
+    if (atomic_load(&g_recorder_on)) record_present(src, crop);   // the video recorder's frame (capture_mac.m)
     uint64_t dt0 = now_ns();
     id<CAMetalDrawable> dr = supplied ? supplied : [layer nextDrawable];
     if (!supplied) g_drawable_ns += now_ns() - dt0;
