@@ -77,6 +77,42 @@ int main(void) { @autoreleasepool {
         EXPECT("sRGB swapchain present sends raw bytes, 64 pixels",0,bad);
     }
 #endif
+#ifndef CROP_LEGACY_HEADER
+    {
+        // Present filters (front.h mtl_present_filter_set): the quadrant picture 8x8 → 32x32. Bilinear blends about four columns and rows around the middle seam; the pixel filter
+        // (sharp bilinear) blends at most one of each, every other pixel one quadrant's colour exactly
+        int mixed[DM_PFX_N]={0}; float k=-1;
+        for(int m=0;m<DM_PFX_N;m++) {
+            mtl_present_filter_set(m,1);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:32 height:32 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            EXPECT("filtered encode succeeds",1,ENCODE(cb,src,dst,zero));[cb commit];[cb waitUntilCompleted];
+            static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
+            for(int i=0;i<32*32;i++){int pure=0;for(int q=0;q<4;q++)pure|=memcmp(o+4*i,colors[q],3)==0;mixed[m]+=!pure;}
+        }
+        printf("pixels between two colours: off %d, sharpen %d, pixel %d, crt %d\n",mixed[0],mixed[1],mixed[2],mixed[3]);
+        EXPECT("bilinear blends the seam over more than one column and row",1,mixed[DM_PFX_OFF]>2*32);
+        EXPECT("pixel filter blends at most one column and one row",1,mixed[DM_PFX_PIXEL]<=2*32);
+        // On one flat colour sharpening changes nothing, and the CRT filter's scanlines make a source row's edge darker than its centre (4 output rows per source row)
+        uint8_t flat[8*8*4];for(int i=0;i<64;i++){flat[4*i]=flat[4*i+1]=flat[4*i+2]=128;flat[4*i+3]=255;}
+        id<MTLTexture> fl=[g_dev newTextureWithDescriptor:d];[fl replaceRegion:MTLRegionMake2D(0,0,8,8) mipmapLevel:0 withBytes:flat bytesPerRow:32];
+        for(int m=DM_PFX_SHARPEN;m<=DM_PFX_CRT;m+=DM_PFX_CRT-DM_PFX_SHARPEN) {
+            mtl_present_filter_set(m,1);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:32 height:32 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            ENCODE(cb,fl,dst,zero);[cb commit];[cb waitUntilCompleted];
+            static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
+            if(m==DM_PFX_SHARPEN){int bad=0;for(int i=0;i<32*32;i++)bad+=abs(o[4*i]-128)>1||abs(o[4*i+1]-128)>1||abs(o[4*i+2]-128)>1;EXPECT("sharpen leaves a flat colour as it is, 1024 pixels",0,bad);}
+            else{int edge=0,mid=0;for(int x=0;x<32;x++){edge+=o[4*(0*32+x)]+o[4*(0*32+x)+1]+o[4*(0*32+x)+2];mid+=o[4*(2*32+x)]+o[4*(2*32+x)+1]+o[4*(2*32+x)+2];}
+                printf("crt row sums: edge %d, centre %d\n",edge,mid);EXPECT("CRT scanline: a source row's edge darker than its centre",1,edge<mid);}
+        }
+        mtl_present_filter_set(99,7);
+        int m=mtl_present_filter(&k);
+        EXPECT("an unknown filter is off",DM_PFX_OFF,m);EXPECT("strength clamped to 1 (x100)",100,(int)(k*100+0.5f));
+        mtl_present_filter_set(DM_PFX_OFF,0.5f);
+        check(src,"filter off again: the default whole frame as before, 64 pixels",zero,8,8,-1);
+    }
+#endif
     int invalid[4][4]={{-1,0,4,4},{0,-1,4,4},{0,0,0,4},{7,0,4,4}};
     for(int i=0;i<4;i++) {
         MTLTextureDescriptor *dd=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:8 height:8 mipmapped:NO];dd.usage=MTLTextureUsageRenderTarget;dd.storageMode=MTLStorageModeShared;

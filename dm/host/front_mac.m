@@ -1,6 +1,7 @@
 // Mac front end: with DM_WINDOW=1 open a window (CAMetalLayer, for the graphics backend to present frames) + keyboard and controllers → dm_input; the guest runs on a large-stack thread instead and the main thread belongs to AppKit.
 // Without DM_WINDOW: the guest runs directly on the current thread, behaving the same as with no front end (windowless tests use this).
 // The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN starts it that way. ⌘Q quits; the left mouse button is the touchscreen.
+// The Graphics menu and its panel (⇧⌘G) pick the present filter while the game runs (DmGraphics); the choice is kept per game.
 // Key map (Nintendo layout): WASD left stick, arrow keys D-pad, J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller.
 // Controllers: buttons by position as on the iPhone (right A, bottom B, top X, left Y), shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
 // Each controller is a player of its own (local co-op): the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (pad_slots.h);
@@ -213,6 +214,73 @@ static void pads_start(void) {
 - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self fitDrawable]; }
 @end
 
+// Graphics menu and panel: the present filter (front.h mtl_present_filter_set, nvn_mtl.m) changes on the next frame, so it is picked while the game runs rather than in a launcher.
+// The panel floats over the game window, fullscreen too, and never becomes key (a non-activating panel that becomes key only if needed): the game window keeps the keyboard and the
+// controllers, and the game neither loses focus nor sees its input released (input_release) while the panel is up. The choice is kept per game in the user defaults (the app bundle's
+// own domain; the key names the game for a bare dmhost); DM_PRESENT_FILTER in the environment wins over it and is not saved
+static NSString *const g_pfx_title[DM_PFX_N] = {@"Off", @"Sharpen", @"Pixel-perfect", @"CRT"};
+static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"DMPresentFilter.%@.%s", what, DM_GAME_NAME]; }
+@interface DmGraphics : NSObject
+@property NSPanel *panel; @property NSSegmentedControl *seg; @property NSSlider *slider; @property NSMutableArray<NSMenuItem *> *items;
+@end
+@implementation DmGraphics
+- (void)apply:(int)mode strength:(float)k save:(BOOL)save {
+    mtl_present_filter_set(mode, k);
+    if (save && !getenv("DM_PRESENT_FILTER")) { NSUserDefaults *d = NSUserDefaults.standardUserDefaults; [d setInteger:mode forKey:pfx_key(@"mode")]; [d setFloat:k forKey:pfx_key(@"strength")]; }
+    [self sync];
+}
+- (void)sync {   // the menu's check mark and the panel's controls show the filter now
+    float k; int m = mtl_present_filter(&k);
+    for (NSMenuItem *it in self.items) it.state = it.tag == m ? NSControlStateValueOn : NSControlStateValueOff;
+    self.seg.selectedSegment = m; self.slider.floatValue = k;
+    self.slider.enabled = m == DM_PFX_SHARPEN || m == DM_PFX_CRT;   // the pixel filter has no strength
+}
+- (BOOL)validateMenuItem:(NSMenuItem *)it { if (it.action == @selector(togglePanel:)) it.state = self.panel.visible ? NSControlStateValueOn : NSControlStateValueOff; return YES; }
+- (void)pickItem:(NSMenuItem *)it { float k; mtl_present_filter(&k); [self apply:(int)it.tag strength:k save:YES]; }
+- (void)pickSeg:(NSSegmentedControl *)c { [self apply:(int)c.selectedSegment strength:self.slider.floatValue save:YES]; }
+- (void)slide:(NSSlider *)sl { [self apply:mtl_present_filter(NULL) strength:sl.floatValue save:YES]; }
+- (void)togglePanel:(id)sender {
+    (void)sender;
+    if (!self.panel) {
+        NSPanel *p = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 360, 112)
+                                                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskUtilityWindow | NSWindowStyleMaskHUDWindow | NSWindowStyleMaskNonactivatingPanel
+                                                  backing:NSBackingStoreBuffered defer:NO];
+        p.title = @"Graphics"; p.floatingPanel = YES; p.becomesKeyOnlyIfNeeded = YES; p.hidesOnDeactivate = YES; p.releasedWhenClosed = NO;
+        p.collectionBehavior = NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorMoveToActiveSpace;
+        NSView *cv = p.contentView;
+        NSTextField *l1 = [NSTextField labelWithString:@"Filter"], *l2 = [NSTextField labelWithString:@"Strength"];
+        l1.frame = NSMakeRect(16, 70, 70, 20); l2.frame = NSMakeRect(16, 30, 70, 20);
+        self.seg = [NSSegmentedControl segmentedControlWithLabels:[NSArray arrayWithObjects:g_pfx_title count:DM_PFX_N] trackingMode:NSSegmentSwitchTrackingSelectOne target:self action:@selector(pickSeg:)];
+        self.seg.frame = NSMakeRect(86, 66, 260, 26);
+        self.slider = [NSSlider sliderWithValue:0.5 minValue:0 maxValue:1 target:self action:@selector(slide:)];
+        self.slider.frame = NSMakeRect(86, 28, 260, 24); self.slider.continuous = YES;
+        for (NSView *x in @[l1, l2, self.seg, self.slider]) [cv addSubview:x];
+        NSRect w = g_win.frame; [p setFrameTopLeftPoint:NSMakePoint(NSMaxX(w) - 380, NSMaxY(w) - 40)];   // the window's top right corner, over the game
+        self.panel = p;
+    }
+    if (self.panel.visible) [self.panel orderOut:nil]; else { [self sync]; [self.panel orderFront:nil]; }
+}
+- (void)menuIn:(NSMenu *)bar {
+    NSMenu *gm = [[NSMenu alloc] initWithTitle:@"Graphics"]; self.items = [NSMutableArray array];
+    [[bar addItemWithTitle:@"Graphics" action:nil keyEquivalent:@""] setSubmenu:gm];
+    for (int i = 0; i < DM_PFX_N; i++) {
+        NSMenuItem *it = [gm addItemWithTitle:[NSString stringWithFormat:@"Filter: %@", g_pfx_title[i]] action:@selector(pickItem:) keyEquivalent:@""];
+        it.target = self; it.tag = i; [self.items addObject:it];
+    }
+    [gm addItem:NSMenuItem.separatorItem];
+    NSMenuItem *it = [gm addItemWithTitle:@"Graphics Panel" action:@selector(togglePanel:) keyEquivalent:@"g"];   // ⇧⌘G, checked while the panel is up (validateMenuItem)
+    it.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; it.target = self;
+    [self sync];
+}
+@end
+static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, unless the environment names one
+    if (getenv("DM_PRESENT_FILTER")) return;
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    if (![d objectForKey:pfx_key(@"mode")]) return;
+    int m = (int)[d integerForKey:pfx_key(@"mode")]; float k = [d objectForKey:pfx_key(@"strength")] ? [d floatForKey:pfx_key(@"strength")] : 0.5f;
+    mtl_present_filter_set(m, k); LOG("front end: present filter from the saved choice for this game (Graphics menu)");
+}
+
 typedef struct { void (*fn)(void); } guest_arg;
 static void *guest_tramp(void *p) {
     static char alt[65536];                       // The signal alternate stack is per thread; crash printing must also work on the guest thread
@@ -256,6 +324,8 @@ void front_run(void (*guest)(void)) {
         [app addItemWithTitle:@"Quit " DM_GAME_NAME action:@selector(terminate:) keyEquivalent:@"q"];
         [[bar addItemWithTitle:@"Window" action:nil keyEquivalent:@""] setSubmenu:wm];
         [wm addItemWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"].keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagCommand;
+        graphics_start();
+        static DmGraphics *gfx; gfx = [DmGraphics new]; [gfx menuIn:bar];
         NSApp.mainMenu = bar;
         if (getenv("DM_FULLSCREEN")) dispatch_async(dispatch_get_main_queue(), ^{ [win toggleFullScreen:nil]; });   // start in fullscreen
         for (NSNotificationName nm in @[GCControllerDidConnectNotification, GCControllerDidDisconnectNotification])

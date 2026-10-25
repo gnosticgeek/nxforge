@@ -383,7 +383,7 @@ void mtl_init(void) {
     g_present_args = [g_dev newArgumentTableWithDescriptor:pad error:&ate];
     if (!g_present_args) MDIE("failed to create the present argument table: %s", ate.localizedDescription.UTF8String);
     for (int i = 0; i < 3; i++) {
-        g_present_uv[i] = [g_dev newBufferWithLength:sizeof(float) * 8 options:MTLResourceStorageModeShared];
+        g_present_uv[i] = [g_dev newBufferWithLength:sizeof(float) * 12 options:MTLResourceStorageModeShared];   // the crop (8) and the present filter's parameters (4, pfx_params)
         if (!g_present_uv[i]) MDIE("failed to create present UV buffer[%d]", i);
         res_add(g_present_uv[i]);
     }
@@ -8242,6 +8242,38 @@ void mtl_exec(const uint8_t *p) {
 // ---------- Present: draw the swapchain texture to the CAMetalLayer; optional screenshot ----------
 static id<MTLRenderPipelineState> g_blit_pso; static MTLPixelFormat g_blit_fmt;
 static id<MTLSamplerState> g_blit_samp;
+// Present filter (front.h; the Mac's Graphics menu and panel, front_mac.m; DM_PRESENT_FILTER=sharpen|pixel|crt with DM_PRESENT_FILTER_STRENGTH=0 to 1, 0.5 by default): the present pass has
+// one fragment function per filter and takes the one set at each present, so a change shows on the next frame and costs no pipeline build then (all are built with the bilinear one).
+// Off is the bilinear stretch as before. Sharpen: contrast-adaptive (after AMD's FidelityFX CAS), a cross of the source texels around each sample, weighted less where the neighbourhood
+// already has contrast, so edges sharpen without ringing. Pixel: sharp bilinear, each source texel a block of one colour and only the seam between two blocks blended over one output pixel,
+// so pixel art at a non-integer scale (720p into a 1898-pixel-high fullscreen) neither blurs nor shimmers. CRT: scanlines on the source rows and an RGB aperture mask on the output columns,
+// brightened by what they take away. The filters work on the stored bytes as the bilinear stretch does (present_raw_src); the whole-window screenshot (grab_present) shows the filter too,
+// the raw swapchain screenshots (shot: DM_NVN_SHOT, DM_NVN_SHOT_UI) do not
+static const char *const g_pfx_name[DM_PFX_N] = {"off", "sharpen", "pixel", "crt"};
+static id<MTLRenderPipelineState> g_pfx_pso[DM_PFX_N];   // [0] is g_blit_pso
+static _Atomic int g_pfx = -1; static _Atomic float g_pfx_k = 0.5f;
+static int pfx_mode(void) {   // any thread: the filter now, read from the environment the first time (a front end's mtl_present_filter_set before that wins)
+    int m = g_pfx;
+    if (m >= 0) return m;
+    const char *e = getenv("DM_PRESENT_FILTER"), *k = getenv("DM_PRESENT_FILTER_STRENGTH"); int want = 0;
+    if (e && *e) { for (int i = 0; i < DM_PFX_N; i++) if (!strcasecmp(e, g_pfx_name[i])) want = i;
+        if (!want && strcasecmp(e, "off") && strcmp(e, "0")) MLOG("[RED] DM_PRESENT_FILTER=%s: not off, sharpen, pixel or crt; presenting without a filter", e); }
+    if (k && *k) { char *end; float v = strtof(k, &end); if (end != k && !*end && v >= 0 && v <= 1) g_pfx_k = v; else MLOG("[RED] DM_PRESENT_FILTER_STRENGTH=%s: must be 0 to 1; keeping %.2f", k, g_pfx_k); }
+    int none = -1;
+    if (atomic_compare_exchange_strong(&g_pfx, &none, want) && want) MLOG("present: filter %s, strength %.2f (DM_PRESENT_FILTER)", g_pfx_name[want], g_pfx_k);
+    return g_pfx;
+}
+int mtl_present_filter(float *strength) { int m = pfx_mode(); if (strength) *strength = g_pfx_k; return m; }
+void mtl_present_filter_set(int mode, float strength) {
+    if (mode < 0 || mode >= DM_PFX_N) mode = 0;
+    strength = strength < 0 ? 0 : strength > 1 ? 1 : strength;
+    int was = g_pfx; float k0 = g_pfx_k; g_pfx_k = strength; g_pfx = mode;
+    if (was != mode || fabsf(k0 - strength) > 0.001f) MLOG("present: filter %s, strength %.2f", g_pfx_name[mode], strength);
+}
+// The filter's parameters (the fragment functions' Crop.fx): strength, then the output pixels per source texel on x and y (the viewport over the crop), which sharp bilinear needs
+static void pfx_params(float fx[4], const MTLViewport *vp, NSUInteger cw, NSUInteger ch) {
+    fx[0] = g_pfx_k; fx[1] = cw ? (float)(vp->width / cw) : 1; fx[2] = ch ? (float)(vp->height / ch) : 1; fx[3] = 0;
+}
 static uint64_t g_present_n;
 uint64_t mtl_present_count(void) { return g_present_n; }   // Actual present count (heat attribution DM_HEAT computes the present frame rate)
 void mtl_res_snapshot(mtl_res_count *out) {
@@ -8549,8 +8581,35 @@ static void present_pipeline(MTLPixelFormat format) {
             "#include <metal_stdlib>\nusing namespace metal;\n"
             "struct V { float4 p [[position]]; float2 uv; };\n"
             "vertex V vs(uint id [[vertex_id]]) { float2 uv = float2((id << 1) & 2, id & 2); V o; o.p = float4(uv * float2(2, -2) + float2(-1, 1), 0, 1); o.uv = uv; return o; }\n"
-            "struct Crop { float4 rect; float4 edge; };\n"
-            "fragment float4 fs(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) { return t.sample(s, clamp(in.uv * c.rect.zw + c.rect.xy, c.edge.xy, c.edge.zw)); }\n";
+            "struct Crop { float4 rect; float4 edge; float4 fx; };\n"   // fx: the present filter's strength, output pixels per source texel x / y (pfx_params)
+            "#define UV clamp(in.uv * c.rect.zw + c.rect.xy, c.edge.xy, c.edge.zw)\n"
+            "fragment float4 fs(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) { return t.sample(s, UV); }\n"
+            // Sharpen (contrast-adaptive, after FidelityFX CAS): the cross one source texel away; the weight falls where the cross already spans the range, and strength 0 to 1 is CAS's 0 to 1
+            "fragment float4 fs_sharpen(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
+            "  float2 uv = UV, d = 1.0f / float2(t.get_width(), t.get_height());\n"
+            "  float3 m = t.sample(s, uv).rgb, n = t.sample(s, clamp(uv - float2(0, d.y), c.edge.xy, c.edge.zw)).rgb, so = t.sample(s, clamp(uv + float2(0, d.y), c.edge.xy, c.edge.zw)).rgb;\n"
+            "  float3 w = t.sample(s, clamp(uv - float2(d.x, 0), c.edge.xy, c.edge.zw)).rgb, e = t.sample(s, clamp(uv + float2(d.x, 0), c.edge.xy, c.edge.zw)).rgb;\n"
+            "  float3 lo = min(m, min(min(n, so), min(w, e))), hi = max(m, max(max(n, so), max(w, e)));\n"
+            "  float3 amp = sqrt(saturate(min(lo, 1.0f - hi) / max(hi, float3(1e-4f))));\n"
+            "  float3 wt = -amp / mix(8.0f, 5.0f, saturate(c.fx.x));\n"
+            "  return float4(saturate((m + (n + so + w + e) * wt) / (1.0f + 4.0f * wt)), 1);\n"
+            "}\n"
+            // Pixel (sharp bilinear): inside a texel the coordinate snaps to its centre, and over the last half output pixel before a seam it moves on linearly to the next one
+            "fragment float4 fs_pixel(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
+            "  float2 sz = float2(t.get_width(), t.get_height()), tx = UV * sz, k = max(abs(c.fx.yz), float2(1.0f));\n"
+            "  float2 f = fract(tx) - 0.5f, r = 0.5f - 0.5f / k;\n"
+            "  float2 g = (f - clamp(f, -r, r)) * k + 0.5f;\n"
+            "  return t.sample(s, clamp((floor(tx) + g) / sz, c.edge.xy, c.edge.zw));\n"
+            "}\n"
+            // CRT: each source row lit brightest at its centre and darkest at its edges, and every third output column leaning red, green, blue; strength scales both
+            "fragment float4 fs_crt(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
+            "  float2 uv = UV; float k = saturate(c.fx.x); float3 col = t.sample(s, uv).rgb;\n"
+            "  float row = fract(uv.y * t.get_height()), scan = 0.5f + 0.5f * cos(6.2831853f * (row - 0.5f));\n"
+            "  col *= mix(1.0f, 0.45f + 0.55f * scan, k);\n"
+            "  uint ph = uint(in.p.x) % 3u; float3 mask = ph == 0u ? float3(1, 0.7f, 0.7f) : ph == 1u ? float3(0.7f, 1, 0.7f) : float3(0.7f, 0.7f, 1);\n"
+            "  col *= mix(float3(1), mask, float3(0.5f * k));\n"
+            "  return float4(saturate(col * (1.0f + 0.6f * k)), 1);\n"
+            "}\n";
         NSError *e = nil;
         id<MTLLibrary> lib = [g_dev newLibraryWithSource:@(src_msl) options:nil error:&e];
         if (!lib) MDIE("present shader compile failed %s", e.localizedDescription.UTF8String);
@@ -8559,11 +8618,19 @@ static void present_pipeline(MTLPixelFormat format) {
         pd.colorAttachments[0].pixelFormat = format;
         g_blit_pso = [g_dev newRenderPipelineStateWithDescriptor:pd error:&e];
         if (!g_blit_pso) MDIE("present pipeline failed %s", e.localizedDescription.UTF8String);
+        g_pfx_pso[DM_PFX_OFF] = g_blit_pso;
+        static const char *const fn[DM_PFX_N] = {NULL, "fs_sharpen", "fs_pixel", "fs_crt"};
+        for (int i = 1; i < DM_PFX_N; i++) {   // a filter whose pipeline fails presents without one (pfx_pso), so the game still shows
+            pd.fragmentFunction = [lib newFunctionWithName:@(fn[i])]; e = nil;
+            g_pfx_pso[i] = pd.fragmentFunction ? [g_dev newRenderPipelineStateWithDescriptor:pd error:&e] : nil;
+            if (!g_pfx_pso[i]) MLOG("[RED] present filter %s: pipeline failed (%s); that filter presents without one", g_pfx_name[i], e ? e.localizedDescription.UTF8String : "no function");
+        }
         g_blit_fmt = format;
         MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new]; sd.minFilter = sd.magFilter = MTLSamplerMinMagFilterLinear; sd.supportArgumentBuffers = YES;
         g_blit_samp = [g_dev newSamplerStateWithDescriptor:sd];
     }
 }
+static id<MTLRenderPipelineState> pfx_pso(void) { id<MTLRenderPipelineState> p = g_pfx_pso[pfx_mode()]; return p ? p : g_blit_pso; }
 // Present samples only the valid source rectangle declared by NVN; kept separate from the raw swapchain readback screenshot. Edges are clamped to the texel centers of the valid area, so bilinear does not read the black texels outside.
 // Present samples the raw bytes stored in the swapchain texture (the Switch's scan-out sends the stored bytes as they are): an sRGB source is replaced by a non-sRGB view of the same storage,
 // otherwise sampling decodes to linear first, the BGRA8Unorm layer does not encode again, and the whole picture comes out dark. Other formats are returned as they are (Mario's swapchain is RGBA8 and does not come here).
@@ -8609,9 +8676,10 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
     rp.colorAttachments[0].storeAction = MTLStoreActionStore;
     id<MTLRenderCommandEncoder> en = [cb renderCommandEncoderWithDescriptor:rp];
     [en setViewport:vp];
-    [en setRenderPipelineState:g_blit_pso]; [en setFragmentTexture:present_raw_src(src) atIndex:0]; [en setFragmentSamplerState:g_blit_samp atIndex:0];
-    float uv[8] = {(float)cx / src.width, (float)cy / src.height, (float)cw / src.width, (float)ch / src.height,
+    [en setRenderPipelineState:pfx_pso()]; [en setFragmentTexture:present_raw_src(src) atIndex:0]; [en setFragmentSamplerState:g_blit_samp atIndex:0];
+    float uv[12] = {(float)cx / src.width, (float)cy / src.height, (float)cw / src.width, (float)ch / src.height,
                    (cx + 0.5f) / src.width, (cy + 0.5f) / src.height, (cx + cw - 0.5f) / src.width, (cy + ch - 0.5f) / src.height};
+    pfx_params(uv + 8, &vp, cw, ch);
     if (atomic_load_explicit(&g_origin_ll, memory_order_relaxed)) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
     [en setFragmentBytes:uv length:sizeof uv atIndex:0];
     [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
@@ -8647,8 +8715,9 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
     uv[0] = (float)cx / src.width; uv[1] = (float)cy / src.height; uv[2] = (float)cw / src.width; uv[3] = (float)ch / src.height;
     uv[4] = (cx + 0.5f) / src.width; uv[5] = (cy + 0.5f) / src.height; uv[6] = (cx + cw - 0.5f) / src.width; uv[7] = (cy + ch - 0.5f) / src.height;
     if (atomic_load_explicit(&g_origin_ll, memory_order_relaxed)) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
+    pfx_params(uv + 8, &vp, cw, ch);
     [g_present_args setAddress:g_present_uv[uv_i].gpuAddress atIndex:0];
-    [en setViewport:vp]; [en setRenderPipelineState:g_blit_pso];
+    [en setViewport:vp]; [en setRenderPipelineState:pfx_pso()];
     [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     m4_end(en);
     return 1;
