@@ -92,7 +92,7 @@ Verified on Curse of the Moon 1.1.1.
 | Forced anisotropic filtering override | Idea | |
 | MetalFX spatial upscaling | Research | Test upstream #33 against #160 on the M4 Pro before building anything. |
 | General resolution scaling | Research | Hard; per-game resolution mods are the near-term route. |
-| MetalFX frame interpolation ("Smooth motion") | Research | |
+| 120 fps frame interpolation on ProMotion displays | Research | Tom's ask: take 60 fps games to 120 fps by generating an in-between frame, turned on automatically when the game's screen runs at 120 Hz (ProMotion MacBook Pro, Studio Display XDR) and off on 60 Hz screens, with a sidebar switch to override. Basis: MetalFX frame interpolation, which needs motion vectors and depth the game doesn't hand to Metal, so most games would need an optical-flow fallback that estimates motion from two finished frames. Open questions: added latency (one frame held back), artefacts on HUD and text, GPU cost on battery, and pacing alongside the full-screen display-link fix (#194). Detect the refresh rate from the screen's `maximumFramesPerSecond` and re-check when the window moves screens. |
 | EDR / HDR inverse tone-map | Idea | |
 | Mac thermal and Low Power Mode awareness | Idea | `dm_thermal_now` / `dm_low_power_now` return -1 on Mac. |
 
