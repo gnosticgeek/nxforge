@@ -235,6 +235,13 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Fix:** the flush calls it through the PLT, so an `HLE_FORCE` on that symbol catches it and returns success (`hle_hid.c`).
 - **Found on:** [Metroid Dread](../../dm/games/010093801237C000/README.md).
 
+### Vibration handles before a controller connects
+
+- **Symptom:** a Mac controller with haptics never rumbles, though the log names it with its localities and channels (`haptics: player 1 controller …, 2 channels`) and shows no `[RED] haptics` line. `DM_HLECOUNT` shows `GetVibrationDeviceHandles` called and no `InitializeVibrationDevice` or `SendVibrationValue`.
+- **Cause:** the game asks for its vibration handles (and permission) once, while it sets up its npads in the first second of `nnMain`. A Bluetooth controller reaches the front end later, so there was no haptics output yet: the host returned no handles and no permission, and the game never asked again.
+- **Fix:** as on the Switch, `IsVibrationPermitted` and `GetVibrationDeviceHandles` answer from the npad id and style alone, whenever rumble is on and an output adapter exists (`dm_haptics_enabled`, `hle_hid.c`). Sends to an npad without an output are still dropped, so rumble starts when a controller with haptics connects.
+- **Found on:** Bloodstained: Curse of the Moon (01004B800AF5A000) on a Mac with an 8BitDo SN30 Pro over Bluetooth.
+
 ### Touch gestures recognized from the touch points
 
 - **Symptom:** taps in handheld mode do nothing, though the game reads the touch screen (the title's PRESS ANY BUTTON, the menus' cards).
