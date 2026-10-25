@@ -1,6 +1,7 @@
 // Mac front end: with DM_WINDOW=1 open a window (CAMetalLayer, for the graphics backend to present frames) + keyboard and controllers → dm_input; the guest runs on a large-stack thread instead and the main thread belongs to AppKit.
 // Without DM_WINDOW: the guest runs directly on the current thread, behaving the same as with no front end (windowless tests use this).
 // The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN starts it that way. ⌘Q quits; the left mouse button is the touchscreen.
+// Esc (or ⇧⌘G, or the Graphics menu) opens the Quick settings sidebar over the game (DmSettings): the present filter, a frame-rate counter and mods, kept per game.
 // Key map (Nintendo layout): WASD left stick, arrow keys D-pad, J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller.
 // Controllers: buttons by position as on the iPhone (right A, bottom B, top X, left Y), shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
 // Each controller is a player of its own (local co-op): the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (pad_slots.h);
@@ -12,6 +13,8 @@
 #include "dm.h"
 #include "dm_input.h"
 #include "front.h"
+#include "quick_settings_mac.h"
+#include "capture_mac.h"
 #include "hle.h"
 #include "pad_slots.h"
 #include "haptics_apple.h"
@@ -213,6 +216,185 @@ static void pads_start(void) {
 - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self fitDrawable]; }
 @end
 
+// Quick settings: a sidebar over the right of the game picture (Esc, ⇧⌘G or the Graphics menu opens it; Esc, its close button or Resume game closes it), fullscreen too. The sidebar itself is
+// SwiftUI (quick_settings_mac.swift: the system's controls on a Liquid Glass panel); this side opens and closes it, draws the frame-rate counter and loads the mods at launch. Kept per game in the
+// user defaults (the app bundle's own domain; the keys name the game for a bare dmhost); a setting the environment names wins over its saved value and is not saved.
+// - Graphics & shaders: the present filter (front.h mtl_present_filter_set, nvn_mtl.m), from the next frame, so the game runs on behind the sidebar and shows the change at once.
+//   DM_PRESENT_FILTER / DM_PRESENT_FILTER_STRENGTH / DM_PRESENT_SCANLINE in the environment.
+// - Performance: a frame-rate counter in a corner of the game picture, the frames put on screen in the last second (nvn_mtl.m mtl_present_count, as on the iPhone). DM_SHOW_FPS=0 / 1.
+// - Mods: each folder in ~/Library/Application Support/nxnative/<title ID>/mods is a mod, the game's RomFS files it replaces either in it or in its romfs folder (the layout other
+//   Switch tools use). The enabled ones are overlaid on the RomFS at launch in name order, the first one holding a file winning (hle_fs.c DM_ROMFS_OVERLAY, which names them),
+//   so a change applies on the next launch. DM_ROMFS_OVERLAY in the environment replaces them.
+// - Cheats: this build's cheat file (cheats_host.c), a switch per cheat; the host reads the saved names at launch (DMQuickSettings.cheats.<game>), and the sidebar
+//   switches the running set (dm_cheats_set). Code patches are made only at launch. DM_CHEATS / DM_CHEATS_ON in the environment win.
+// While the sidebar is up the game sees what it sees when its window loses focus: its input is released (input_release) and its focus state is out of focus (dm_focus_set 2), so a game
+// that pauses for the HOME menu pauses; the keyboard goes to the sidebar's controls. The game itself is not suspended, so the filter shows live
+static NSString *const g_pfx_title[DM_PFX_N] = {@"Off", @"Sharpen", @"Pixel-perfect", @"CRT", @"CRT-Lottes", @"LCD Grid"};
+static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"DMPresentFilter.%@.%s", what, DM_GAME_NAME]; }
+static NSString *opt_key(NSString *what) { return [NSString stringWithFormat:@"DMQuickSettings.%@.%s", what, DM_GAME_NAME]; }
+static int g_menu_open;   // main thread: the sidebar is up (the window's focus notifications leave the game out of focus meanwhile)
+
+static NSString *mods_dir(void) {
+    NSURL *u = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
+    return [u.path stringByAppendingFormat:@"/nxnative/%s/mods", DM_GAME_ID];
+}
+static NSArray<NSString *> *mods_list(void) {   // the mod folders, in the order they are overlaid (quick_settings_mac.swift lists them the same way)
+    NSMutableArray *r = [NSMutableArray array]; NSString *d = mods_dir();
+    for (NSString *n in [NSFileManager.defaultManager contentsOfDirectoryAtPath:d error:nil] ?: @[]) {
+        BOOL dir = NO;
+        if (![n hasPrefix:@"."] && [NSFileManager.defaultManager fileExistsAtPath:[d stringByAppendingPathComponent:n] isDirectory:&dir] && dir) [r addObject:n];
+    }
+    return [r sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
+}
+static NSString *mod_root(NSString *name) {
+    NSString *p = [mods_dir() stringByAppendingPathComponent:name], *rf = [p stringByAppendingPathComponent:@"romfs"]; BOOL dir = NO;
+    return [NSFileManager.defaultManager fileExistsAtPath:rf isDirectory:&dir] && dir ? rf : p;
+}
+static NSSet<NSString *> *g_mods_run;   // the mods this launch overlaid (nil: DM_ROMFS_OVERLAY came from the environment)
+static void mods_start(void) {   // main thread, before the guest runs (the game mounts its RomFS later, hle_fs.c h_fs_MountRom)
+    if (getenv("DM_ROMFS_OVERLAY")) { LOG("front end: RomFS overlay from DM_ROMFS_OVERLAY; this game's enabled mods are not used"); return; }
+    NSArray *want = [NSUserDefaults.standardUserDefaults arrayForKey:opt_key(@"mods")] ?: @[];
+    NSMutableArray *roots = [NSMutableArray array]; NSMutableSet *on = [NSMutableSet set]; size_t len = 0;
+    for (NSString *n in mods_list()) {
+        if (![want containsObject:n]) continue;
+        NSString *r = mod_root(n); size_t k = strlen(r.fileSystemRepresentation) + 1;
+        if ([r containsString:@":"]) { LOG("[RED] mod '%s' not used: its path has a ':' (the overlay list separator)", n.UTF8String); continue; }
+        if (len + k > 4096) { LOG("[RED] mod '%s' and the ones after it not used: the overlay list is full (4,096 bytes of paths)", n.UTF8String); break; }
+        [roots addObject:r]; [on addObject:n]; len += k;
+    }
+    g_mods_run = on;
+    if (!roots.count) return;
+    setenv("DM_ROMFS_OVERLAY", [roots componentsJoinedByString:@":"].fileSystemRepresentation, 1);
+    LOG("front end: %lu mod%s over the RomFS (Quick settings): %s", (unsigned long)roots.count, roots.count == 1 ? "" : "s", [on.allObjects componentsJoinedByString:@", "].UTF8String);
+}
+
+
+@interface DmSettings : NSObject
+@property NSView *view; @property NSMutableArray<NSMenuItem *> *items; @property NSTextField *fpsLabel; @property NSTimer *fpsTimer; @property uint64_t fpsN0; @property double fpsT0;
+- (void)toggle:(id)sender; - (void)fpsCounter;
+@end
+static DmSettings *g_opts;
+static void qs_close(void) { if (g_menu_open) [g_opts toggle:nil]; }
+static void qs_fps(void) { [g_opts fpsCounter]; }
+static void toast(NSString *msg) { dm_qs_toast((__bridge void *)g_win.contentView, msg.UTF8String); }
+// Capture (capture_mac.m): from the sidebar's Capture section, the Capture menu (⇧⌘S, ⇧⌘R) or a controller (front_controller); a toast says where the file went
+void front_qs_screenshot(void) {
+    capture_screenshot(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? @"Screenshot saved to Pictures › NxNative" : err); });
+}
+void front_qs_record(void) {
+    if (capture_recording()) { capture_record_stop(); toast(@"Saving the recording…"); return; }
+    capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? @"Recording saved to Movies › NxNative" : err); if (g_menu_open) dm_qs_refresh(); });
+    if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
+}
+int front_qs_recording(void) { return capture_recording(); }
+// While the sidebar is up the game picture moves aside into the window's left part (front.h mtl_present_inset), sliding with it unless Reduce Motion is on
+static float g_inset_now, g_inset_to; static NSTimer *g_inset_timer;
+static void inset_to(float share) {
+    g_inset_to = share; [g_inset_timer invalidate]; g_inset_timer = nil;
+    if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) { g_inset_now = share; mtl_present_inset(share); return; }
+    float from = g_inset_now; double t0 = CACurrentMediaTime();
+    g_inset_timer = [NSTimer scheduledTimerWithTimeInterval:1 / 120.0 repeats:YES block:^(NSTimer *t) {
+        double u = fmin(1, (CACurrentMediaTime() - t0) / 0.25); u = 1 - pow(1 - u, 3);   // ease out over a quarter second
+        g_inset_now = from + (g_inset_to - from) * (float)u; mtl_present_inset(g_inset_now);
+        if (u >= 1) { [t invalidate]; g_inset_timer = nil; } }];
+}
+@implementation DmSettings
+- (BOOL)fpsOn {
+    const char *e = getenv("DM_SHOW_FPS"); if (e) return atoi(e) != 0;
+    return [NSUserDefaults.standardUserDefaults boolForKey:opt_key(@"fps")];
+}
+// The frame-rate counter, in the chosen corner of the game view, under the sidebar
+- (void)fpsCounter {
+    if (!self.fpsOn) { [self.fpsTimer invalidate]; self.fpsTimer = nil; [self.fpsLabel removeFromSuperview]; self.fpsLabel = nil; return; }
+    NSView *gv = g_win.contentView;
+    if (!self.fpsLabel) {
+        NSTextField *l = [NSTextField labelWithString:@"-- FPS"]; l.font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightSemibold]; l.textColor = NSColor.whiteColor;
+        NSShadow *sh = [NSShadow new]; sh.shadowColor = [NSColor colorWithWhite:0 alpha:0.8]; sh.shadowBlurRadius = 2; sh.shadowOffset = NSMakeSize(0, -1); l.shadow = sh;
+        if (self.view.superview) [gv addSubview:l positioned:NSWindowBelow relativeTo:self.view]; else [gv addSubview:l];
+        self.fpsLabel = l; self.fpsN0 = mtl_present_count(); self.fpsT0 = CACurrentMediaTime();
+        __weak DmSettings *me = self;
+        self.fpsTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
+            (void)t; DmSettings *s = me; if (!s) return;
+            uint64_t n = mtl_present_count(); double now = CACurrentMediaTime();
+            if (now - s.fpsT0 < 1.5) s.fpsLabel.stringValue = [NSString stringWithFormat:@"%.0f FPS", (n - s.fpsN0) / (now - s.fpsT0)];   // a longer span was a stall (minimized): no reading
+            s.fpsN0 = n; s.fpsT0 = now;
+        }];
+        LOG("front end: frame-rate counter on");
+    }
+    [self.fpsLabel sizeToFit];
+    int c = (int)MIN(MAX([NSUserDefaults.standardUserDefaults integerForKey:opt_key(@"fpsPos")], 0), 3);
+    NSSize b = gv.bounds.size, s = self.fpsLabel.frame.size; s.width += 24;   // room for wider readings
+    self.fpsLabel.frame = NSMakeRect(c & 1 ? b.width - s.width - 12 : 12, c & 2 ? 10 : b.height - s.height - 10, s.width, s.height);
+    self.fpsLabel.alignment = c & 1 ? NSTextAlignmentRight : NSTextAlignmentLeft;
+    self.fpsLabel.autoresizingMask = (c & 1 ? NSViewMinXMargin : NSViewMaxXMargin) | (c & 2 ? NSViewMaxYMargin : NSViewMinYMargin);
+}
+- (void)toggle:(id)sender {
+    (void)sender;
+    if (!g_menu_open) {
+        if (!self.view) {
+            NSString *run = g_mods_run ? [g_mods_run.allObjects componentsJoinedByString:@"\n"] : nil;
+            self.view = (__bridge_transfer NSView *)dm_qs_make(DM_GAME_NAME, mods_dir().fileSystemRepresentation, run.UTF8String, qs_close, qs_fps);
+            self.view.autoresizingMask = NSViewMinXMargin | NSViewHeightSizable;
+            NSView *gv = g_win.contentView; gv.postsFrameChangedNotifications = YES;
+            [NSNotificationCenter.defaultCenter addObserverForName:NSViewFrameDidChangeNotification object:gv queue:nil usingBlock:^(NSNotification *n) {   // a resize while it is up: the picture keeps beside it
+                (void)n; if (!g_menu_open || g_inset_timer) return; CGFloat W = gv.bounds.size.width, sw = self.view.frame.size.width;
+                g_inset_now = g_inset_to = sw < W ? (float)(sw / W) : 0; mtl_present_inset(g_inset_now); }];
+        }
+        NSView *gv = g_win.contentView; CGFloat w = MIN(460, gv.bounds.size.width);
+        self.view.frame = NSMakeRect(gv.bounds.size.width - w, 0, w, gv.bounds.size.height);
+        dm_qs_refresh();
+        [gv addSubview:self.view]; g_menu_open = 1;
+        inset_to(w < gv.bounds.size.width ? (float)(w / gv.bounds.size.width) : 0);   // a sidebar as wide as the window covers the game instead
+        input_release(); dm_focus_set(2);   // as when the window loses focus: nothing stays held, and a game that pauses for the HOME menu pauses
+        LOG("front end: Quick settings open");
+    } else {
+        [self.view removeFromSuperview]; g_menu_open = 0; inset_to(0);
+        [g_win makeFirstResponder:g_win.contentView];
+        if (g_win.isKeyWindow) { input_resume(); dm_focus_set(1); }   // otherwise the window's becoming key resumes them
+        LOG("front end: Quick settings closed");
+    }
+}
+- (void)pickItem:(NSMenuItem *)it {
+    float k; mtl_present_filter(&k); mtl_present_filter_set((int)it.tag, k);
+    if (!getenv("DM_PRESENT_FILTER")) { NSUserDefaults *d = NSUserDefaults.standardUserDefaults; [d setInteger:it.tag forKey:pfx_key(@"mode")]; [d setFloat:k forKey:pfx_key(@"strength")]; }
+    if (g_menu_open) dm_qs_refresh();
+}
+- (BOOL)validateMenuItem:(NSMenuItem *)it {   // check marks: the filter now, and the sidebar while it is up
+    if (it.action == @selector(toggle:)) it.state = g_menu_open ? NSControlStateValueOn : NSControlStateValueOff;
+    else if (it.action == @selector(record:)) it.title = capture_recording() ? @"Stop Recording" : @"Start Recording";
+    else if (it.action == @selector(pickItem:)) it.state = it.tag == mtl_present_filter(NULL) ? NSControlStateValueOn : NSControlStateValueOff;
+    return YES;
+}
+- (void)screenshot:(id)sender { (void)sender; front_qs_screenshot(); }
+- (void)record:(id)sender { (void)sender; front_qs_record(); if (g_menu_open) dm_qs_refresh(); }
+- (void)menuIn:(NSMenu *)bar {
+    NSMenu *gm = [[NSMenu alloc] initWithTitle:@"Graphics"]; self.items = [NSMutableArray array];
+    [[bar addItemWithTitle:@"Graphics" action:nil keyEquivalent:@""] setSubmenu:gm];
+    for (int i = 0; i < DM_PFX_N; i++) {
+        NSMenuItem *it = [gm addItemWithTitle:[NSString stringWithFormat:@"Filter: %@", g_pfx_title[i]] action:@selector(pickItem:) keyEquivalent:@""];
+        it.target = self; it.tag = i; [self.items addObject:it];
+    }
+    [gm addItem:NSMenuItem.separatorItem];
+    NSMenuItem *it = [gm addItemWithTitle:@"Quick Settings" action:@selector(toggle:) keyEquivalent:@"g"];   // ⇧⌘G (and Esc in the game window), checked while the sidebar is up (validateMenuItem)
+    it.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; it.target = self;
+    NSMenu *cm = [[NSMenu alloc] initWithTitle:@"Capture"];   // ⇧⌘S and ⇧⌘R: ⌘ shortcuts never reach the game
+    [[bar addItemWithTitle:@"Capture" action:nil keyEquivalent:@""] setSubmenu:cm];
+    NSMenuItem *sh = [cm addItemWithTitle:@"Take Screenshot" action:@selector(screenshot:) keyEquivalent:@"s"], *rc = [cm addItemWithTitle:@"Start Recording" action:@selector(record:) keyEquivalent:@"r"];
+    for (NSMenuItem *x in @[sh, rc]) { x.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; x.target = self; }
+    g_opts = self; [self fpsCounter];
+}
+@end
+static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, volume and mods, unless the environment names them
+    mods_start();
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    if ([d objectForKey:opt_key(@"volume")]) dm_audio_volume_set([d floatForKey:opt_key(@"volume")]);
+    if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);
+    if (getenv("DM_PRESENT_FILTER")) return;
+    if (![d objectForKey:pfx_key(@"mode")]) return;
+    int m = (int)[d integerForKey:pfx_key(@"mode")]; float k = [d objectForKey:pfx_key(@"strength")] ? [d floatForKey:pfx_key(@"strength")] : 0.5f;
+    mtl_present_filter_set(m, k); LOG("front end: present filter from the saved choice for this game (Quick settings)");
+}
+
 typedef struct { void (*fn)(void); } guest_arg;
 static void *guest_tramp(void *p) {
     static char alt[65536];                       // The signal alternate stack is per thread; crash printing must also work on the guest thread
@@ -256,6 +438,8 @@ void front_run(void (*guest)(void)) {
         [app addItemWithTitle:@"Quit " DM_GAME_NAME action:@selector(terminate:) keyEquivalent:@"q"];
         [[bar addItemWithTitle:@"Window" action:nil keyEquivalent:@""] setSubmenu:wm];
         [wm addItemWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"].keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagCommand;
+        graphics_start();
+        static DmSettings *opts; opts = [DmSettings new]; [opts menuIn:bar];
         NSApp.mainMenu = bar;
         if (getenv("DM_FULLSCREEN")) dispatch_async(dispatch_get_main_queue(), ^{ [win toggleFullScreen:nil]; });   // start in fullscreen
         for (NSNotificationName nm in @[GCControllerDidConnectNotification, GCControllerDidDisconnectNotification])
@@ -268,6 +452,8 @@ void front_run(void (*guest)(void)) {
         [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent *(NSEvent *e) {
             if (e.window != win) return e;   // Only swallow keys for the game window; other windows such as the software keyboard input box receive typing as usual
             if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
+            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
+            if (g_menu_open) return e;   // the sidebar's controls take the keyboard; the game's input was released when it opened
             if (!e.isARepeat) on_key(e, e.type == NSEventTypeKeyDown);
             return nil;   // Swallow it to avoid the system beep
         }];
@@ -282,7 +468,7 @@ void front_run(void (*guest)(void)) {
         [nc addObserverForName:NSWindowDidEnterFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; g_layer.contentsScale = win.backingScaleFactor; screen_match_apply(); }];
         [nc addObserverForName:NSWindowDidExitFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; g_layer.contentsScale = win.backingScaleFactor; screen_match_apply(); }];
         [nc addObserverForName:NSWindowDidResignKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); if (!win.miniaturized) dm_focus_set(2); }];
-        [nc addObserverForName:NSWindowDidBecomeKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_resume(); dm_focus_set(1); }];
+        [nc addObserverForName:NSWindowDidBecomeKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; if (g_menu_open) return; input_resume(); dm_focus_set(1); }];   // the sidebar keeps the game out of focus until it closes
         [nc addObserverForName:NSWindowDidMiniaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); dm_focus_set(3); dm_audio_suspend(1); dm_gfx_suspend(1); }];
         [nc addObserverForName:NSWindowDidDeminiaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; dm_gfx_suspend(0); dm_audio_suspend(0); dm_focus_set(2); }];
         // Guest thread: 64 MiB stack (the Switch main thread stack is specified by npdm; the host gives plenty)

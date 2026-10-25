@@ -3,6 +3,7 @@
 //       iOS defaults to real audio output (the product must have sound), tests that want silence set DM_AUDIO=0 explicitly; Mac defaults to the silent sink (replay / gate checks are silent), DM_AUDIO=1 for real audio output.
 // The contents of AudioOut / AudioOutBuffer / AudioOutParameter are read and written only through the interfaces below; the host defines its own internal layout and only writes the front part of the structs (AudioOut: the SDK's own fields, au_info).
 #include "hle.h"
+#include "front.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <TargetConditionals.h>
 #include <dispatch/dispatch.h>
@@ -141,6 +142,12 @@ static void pull_device(aout *a, uint8_t *dst, uint64_t bytes) {
     }
 }
 
+// Host volume and the recorder's tap (front.h): the gain as float bits, 1.0 by default; the tap and the output it listens to (the first one to play after it was set; -1 none yet)
+static _Atomic uint32_t g_host_vol = 0x3f800000u;
+void dm_audio_volume_set(float v) { v = v < 0 ? 0 : v > 1 ? 1 : v; uint32_t b; memcpy(&b, &v, 4); atomic_store(&g_host_vol, b); }
+float dm_audio_volume(void) { uint32_t b = atomic_load(&g_host_vol); float v; memcpy(&v, &b, 4); return v; }
+static void (*_Atomic g_tap_fn)(void *, const int16_t *, uint32_t, int); static void *_Atomic g_tap_ctx; static _Atomic int g_tap_id = -1;
+void dm_audio_tap_set(void (*fn)(void *ctx, const int16_t *pcm, uint32_t frames, int ch), void *ctx) { atomic_store(&g_tap_fn, NULL); atomic_store(&g_tap_ctx, ctx); atomic_store(&g_tap_id, -1); atomic_store(&g_tap_fn, fn); }
 static _Atomic uint64_t g_render_calls;   // Cumulative sound card callbacks (lifecycle verification: must keep growing after resume)
 uint64_t dm_audio_render_calls(void) { return atomic_load_explicit(&g_render_calls, memory_order_relaxed); }
 static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioTimeStamp *ts, UInt32 bus, UInt32 frames, AudioBufferList *bl) {
@@ -156,6 +163,11 @@ static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioT
             LOG("audio #%d device callbacks %llu: %u–%u frames each, %.1f blocks queued on average at callback; in these 2000, %llu underruns, %.1f ms zero-padded", a->id, (unsigned long long)a->st_calls, a->st_fmin, a->st_fmax, a->st_qsum / 2000.0,
                 (unsigned long long)(un - a->st_u0), (ubb - a->st_ub0) / (2.0 * a->ch) / (RATE / 1000.0)); a->st_fmin = ~0u; a->st_fmax = 0; a->st_qsum = 0; a->st_u0 = un; a->st_ub0 = ubb; } }
     pull_device(a, bl->mBuffers[0].mData, bl->mBuffers[0].mDataByteSize);
+    { int16_t *pcm = bl->mBuffers[0].mData; uint32_t n = bl->mBuffers[0].mDataByteSize / (2u * device_channels(a));
+      void (*tap)(void *, const int16_t *, uint32_t, int) = atomic_load(&g_tap_fn);
+      if (tap) { int want = -1; if (atomic_compare_exchange_strong(&g_tap_id, &want, a->id) || want == a->id) tap(atomic_load(&g_tap_ctx), pcm, n, device_channels(a)); }
+      uint32_t vb = atomic_load_explicit(&g_host_vol, memory_order_relaxed);
+      if (vb != 0x3f800000u) { float v; memcpy(&v, &vb, 4); for (uint32_t i = 0; i < n * (uint32_t)device_channels(a); i++) pcm[i] = (int16_t)(pcm[i] * v); } }
     { static int mute = -1; if (mute < 0) { const char *e = getenv("DM_AUDIO_MUTE"); mute = e && atoi(e); }   // diagnostic: the whole real-output path (AudioUnit callback pacing, background take-over) but with the output silenced (lifecycle tests on the Mac without noise)
       if (mute) memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize); }
     return noErr;
