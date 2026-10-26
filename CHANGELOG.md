@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+- **NXForge Converter:** a finished build clears the Convert page and opens Builds on the new app; an update NSP tagged only by its version (Cyber Shadow) now counts as an update.
+
 ## 0.1.0 (2026-10-26)
 
 The baseline release: nxnative's main branch as merged on 2026-10-25, plus:
