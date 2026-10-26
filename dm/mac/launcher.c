@@ -2,10 +2,14 @@
 // The host is not exec'ed: macOS privacy checks (TCC) attribute a child's file access to the app that launched it, while a launcher that hands its process over (a shell script exec'ing
 // dmhost) gets EPERM on every open on a removable volume, with no prompt, signed or not. The launcher forwards SIGTERM / SIGINT / SIGHUP to the host and returns its exit code.
 // Bundle layout: Resources/romfs (the game's RomFS), Resources/msl/<b-chain | vk | gl> (the Mac shader libraries), Resources/aoc/<index> (DLC), Resources/dm (the rewritten modules, the
-// shader tables, font/, env.txt). Saves, the pipeline list and temporary files go to ~/Library/Application Support/nxnative/<title ID>/, the host's output to ~/Library/Logs/nxnative/<title ID>.log
-// (the previous run's kept as <title ID>.prev.log). Environment switches: one KEY=VALUE per line in <Application Support folder>/env.txt, then Resources/dm/env.txt (the first one wins; neither
+// shader tables, font/, env.txt). The save goes to the game folder (the folder holding the .app: Saves/save in it, beside the game), and so do screenshots and recordings (DM_GAME_FOLDER,
+// capture_mac.m); where that folder is no place for them (game_folder) the save stays in ~/Library/Application Support/nxnative/<title ID>/save as before. The pipeline list and temporary
+// files go to that Application Support folder, the host's output to ~/Library/Logs/nxnative/<title ID>.log (the previous run's kept as <title ID>.prev.log). Environment switches: one KEY=VALUE per line in <Application Support folder>/env.txt, then Resources/dm/env.txt (the first one wins; neither
 // replaces a variable already set), as the iOS app reads Documents/env.txt and dm/env.txt.
 #include <CoreFoundation/CoreFoundation.h>
+#include <copyfile.h>
+#include <dirent.h>
+#include <removefile.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -57,6 +61,41 @@ static void mkdirs(const char *path) {   // mkdir -p
     mkdir(p, 0755);
 }
 
+// The game folder: the folder holding the .app, unless it is no place for saves and captures (not writable, an Applications folder, or the read-only copy macOS runs a
+// quarantined app from, App Translocation); DM_GAME_FOLDER=0 in an env.txt keeps everything where it was. 0: none
+static int game_folder(const char *contents, const char *home, char *out, size_t n) {
+    const char *e = getenv("DM_GAME_FOLDER"); if (e && !strcmp(e, "0")) return 0;
+    snprintf(out, n, "%s", contents); char *sl = strrchr(out, '/'); if (!sl) return 0; *sl = 0;   // .../Game.app
+    sl = strrchr(out, '/'); if (!sl || sl == out) return 0; *sl = 0;
+    char ua[PATH_MAX]; snprintf(ua, sizeof ua, "%s/Applications", home);
+    if (strstr(out, "/AppTranslocation/")) { fprintf(stderr, "launcher: run from a quarantine copy (App Translocation): the save and captures stay in the Library\n"); return 0; }
+    if (!strcmp(out, "/Applications") || !strcmp(out, ua)) return 0;
+    if (access(out, W_OK)) { fprintf(stderr, "launcher: the game folder %s is not writable: the save and captures stay in the Library\n", out); return 0; }
+    return 1;
+}
+static int has_data(const char *dir) {   // a folder with anything in it besides Finder's .DS_Store
+    DIR *d = opendir(dir); if (!d) return 0;
+    struct dirent *e; int any = 0;
+    while (!any && (e = readdir(d))) any = strcmp(e->d_name, ".") && strcmp(e->d_name, "..") && strcmp(e->d_name, ".DS_Store");
+    closedir(d); return any;
+}
+// The save in the game folder (to: <game folder>/Saves/save). The first time, the save in Application Support (from) is copied there: into a temporary folder beside it, then renamed
+// into place, so a copy cut short is never taken for the save. The old one is never moved or deleted. When both hold a save the game folder's wins and neither is touched.
+// 0: use from instead this time (the copy failed)
+static int save_move_in(const char *from, const char *to) {
+    if (has_data(to)) { if (has_data(from)) fprintf(stderr, "launcher: save %s (the older one in %s stays as it was)\n", to, from); return 1; }
+    if (!has_data(from)) { mkdirs(to); return 1; }
+    char tmp[PATH_MAX], dir[PATH_MAX]; snprintf(dir, sizeof dir, "%s", to); *strrchr(dir, '/') = 0; mkdirs(dir);
+    snprintf(tmp, sizeof tmp, "%s/.save-copy-%d", dir, (int)getpid());
+    if (copyfile(from, tmp, NULL, COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_CLONE) || (rmdir(to) && errno != ENOENT) || rename(tmp, to)) {
+        fprintf(stderr, "[RED] launcher: could not copy the save from %s to %s (%s): using it where it is this time\n", from, to, strerror(errno));
+        removefile(tmp, NULL, REMOVEFILE_RECURSIVE);   // only the half-made copy
+        return 0;
+    }
+    fprintf(stderr, "launcher: copied the save from %s to %s; the old one stays where it was\n", from, to);
+    return 1;
+}
+
 static void env_file(const char *path) {   // KEY=VALUE lines, # starts a comment; a variable already set stays
     FILE *f = fopen(path, "r"); if (!f) return;
     char ln[4096];
@@ -93,14 +132,23 @@ int main(void) {
     snprintf(save, sizeof save, "%s/save", sup); snprintf(temp, sizeof temp, "%s/temp", sup);
     snprintf(logs, sizeof logs, "%s/Library/Logs/nxnative", home);
     snprintf(log, sizeof log, "%s/%s.log", logs, id); snprintf(prev, sizeof prev, "%s/%s.prev.log", logs, id);
-    mkdirs(save); mkdirs(temp); mkdirs(logs);
+    mkdirs(temp); mkdirs(logs);
     rename(log, prev);
     int fd = open(log, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); close(fd); setvbuf(stdout, NULL, _IOLBF, 0); }
     fprintf(stderr, "launcher: %s (%s), host %s\n", name, id, host);
     snprintf(p, sizeof p, "%s/env.txt", sup); env_file(p);
     snprintf(p, sizeof p, "%s/env.txt", dm); env_file(p);
+    char game[PATH_MAX];
+    if (game_folder(contents, home, game, sizeof game)) {   // a DM_SAVE from an env.txt keeps the save there; the captures still go to the game folder
+        char to[PATH_MAX]; snprintf(to, sizeof to, "%s/Saves/save", game);
+        if (!getenv("DM_SAVE") && save_move_in(save, to)) snprintf(save, sizeof save, "%s", to);
+        setenv("DM_GAME_FOLDER", game, 1);
+    } else unsetenv("DM_GAME_FOLDER");
+    if (!getenv("DM_SAVE")) mkdirs(save);
+    fprintf(stderr, "launcher: save %s\n", getenv("DM_SAVE") ?: save);
     setenv("DM_ROOT", sup, 0); setenv("DM_ROMFS", romfs, 0); setenv("DM_SAVE", save, 0); setenv("DM_TEMP", temp, 0);
+    snprintf(p, sizeof p, "%s/pso_user.tsv", sup); setenv("DM_PSO_USER", p, 0);   // the pipeline list (and pso_archive/ beside it) stays in the Library wherever the save is
     snprintf(p, sizeof p, "%s/msl", res); setenv("DM_MSL_DIR", p, 0);
     snprintf(p, sizeof p, "%s/font", dm); setenv("DM_FONT_DIR", p, 0);
     snprintf(p, sizeof p, "%s/shader_map.tsv", dm); if (!stat(p, &st)) setenv("DM_NVN_SHMAP", p, 0);

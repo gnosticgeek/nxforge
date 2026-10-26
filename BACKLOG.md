@@ -11,8 +11,8 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 
 | Item | Status | Notes |
 |---|---|---|
-| Full-screen 60 fps fix | Upstream PR open ([#194](https://github.com/seedds/nxnative/pull/194)) | Branch `claude/project-thread-ly6qu8` (e20c2a5). No display link while full screen on 120 Hz ProMotion; verified 3 runs on an M4 Pro. Overlaps upstream #198 (silent display-link fallback). Review fixes go on the fork branch. |
-| NxNative Converter app | Upstream PR open ([#209](https://github.com/seedds/nxnative/pull/209)) | Branch `mac-converter-app`, now a SwiftUI app. Not on fork main yet; the name stays NxNative Converter while it is an upstream PR. When it lands on NXForge main, rename it NXForge Converter (window, bundle name, `org.nxforge.converter`, its settings folder, the clone URL in `Toolchain.swift`). |
+| Full-screen 60 fps fix | Upstream PR open ([#194](https://github.com/seedds/nxnative/pull/194)), on fork main | Branch `claude/project-thread-ly6qu8` (e20c2a5). No display link while full screen on 120 Hz ProMotion; verified 3 runs on an M4 Pro. Overlaps upstream #198 (silent display-link fallback). Review fixes go on the fork branch. |
+| NXForge Converter app | Upstream PR open ([#209](https://github.com/seedds/nxnative/pull/209)), on fork main | Branch `mac-converter-app` (SwiftUI), merged into fork main 2026-10-26 and renamed NXForge Converter there (`org.nxforge.converter`; settings folder and executable name unchanged). The upstream PR keeps the NxNative name. |
 | Swift rewrite of the Converter | Next | SwiftUI app (macOS 26+, Liquid Glass) built to the four UI mockups: Convert, Builds, Toolchain, Settings. Full Mario build passes from the window. Replaces the Rust app on #209 once Tom signs off on the look. |
 | Rumble fix | On fork main, not sent upstream | Fork PR #1 (merge 5bc2563). Vibration handles before the controller connects, plus a plain Core Haptics player fallback for controllers that refuse advanced players (8BitDo SN30 Pro). Verified in MvDK and Curse of the Moon. PR body drafted (`nxnative-pr/rumble-pr.md` in project files). |
 | Rewriter jump-table fix (49a670a) | On fork main, needs splitting out | Looks 128 instructions back for an index copied before its bounds check (Curse of the Moon GLSLC). Commit is authored as `seedds` by mistake: re-author it and send it as its own small PR, separate from the sidebar. |
@@ -21,9 +21,9 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 
 ## Quick settings sidebar and filters
 
-Branch `claude/project-thread-skozua`. Fork main has it up to 8a5a4dd (via
-fork PR #2); the branch is ahead with the controller navigation, key remap
-and game-folder work below.
+Branch `claude/project-thread-skozua`. Merged into fork main in full on 2026-10-26 (earlier up to 8a5a4dd via
+fork PR #2), including the controller navigation, key remap and game-folder
+work below.
 
 | Item | Status | Notes |
 |---|---|---|
@@ -32,11 +32,11 @@ and game-folder work below.
 | Filters: CRT-Lottes, LCD Grid, scanline fade | On fork main | Lottes is public domain. Not tried in a running game yet. |
 | Capture: screenshots ⇧⌘S, recording ⇧⌘R | On fork main | Needs a hands-on check in game. |
 | Volume | On fork main | Needs a hands-on check. |
-| Controller navigation (Home or −/+ opens) | On branch | 367f518. Cheats added to the navigation list in 6e6be90. |
-| Key and button remapping, per game | On branch | 367f518. Not tried in game yet. |
-| Saves, screenshots, recordings in the game folder | On branch | c4940d7, 4529349. Old Library save is copied once, never moved. Waiting on Tom to confirm progress, rumble, a screenshot and a recording in the rebuilt Curse of the Moon. |
+| Controller navigation (Home or −/+ opens) | On fork main | 367f518. Cheats added to the navigation list in 6e6be90. |
+| Key and button remapping, per game | On fork main | 367f518. Not tried in game yet. |
+| Saves, screenshots, recordings in the game folder | On fork main | c4940d7, 4529349. Old Library save is copied once, never moved. Waiting on Tom to confirm progress, rumble, a screenshot and a recording in the rebuilt Curse of the Moon. |
 | Mods section (romfs folders per title) | On fork main | Untested with a real mod. |
-| Merge branch into main, then open the upstream PR | Next | After Tom's hands-on checks. Split 49a670a out first. |
+| Open the upstream PR | Next | Branch merged into fork main 2026-10-26. Still wants Tom's hands-on checks. Split 49a670a out first. |
 
 ## Save states and rewind
 
@@ -107,7 +107,7 @@ Verified on Curse of the Moon 1.1.1.
 
 | Item | Status | Notes |
 |---|---|---|
-| Rebrand as NXForge | On branch | `claude/project-thread-6gmf9o`: README, NOTICE, UPSTREAM.md, bundle IDs `org.nxforge.<title ID>` with a one-time Quick settings copy from the old ID on the Mac. Then: rename the GitHub repository (Tom), the converter rename above, and the `~/Pictures/NxNative` / `~/Movies/NxNative` capture fallback on the sidebar branch. |
+| Rebrand as NXForge | On fork main | Fork PR #6, then the converter and capture folders (`~/Pictures/NXForge`, `~/Movies/NXForge`) in the merge-everything PR. Left: Tom renames the GitHub repository to nxforge. |
 | Longer MvDK prewarm list | Next | The current list was recorded on level 1-1 only. |
 | Test MvDK past level 1-1 | Next | The game note's Mac route only covers 1-1. |
 | 49 Mac host compiler warnings | Idea | Clean up in a separate PR. |

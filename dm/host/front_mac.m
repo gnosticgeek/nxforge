@@ -2,7 +2,7 @@
 // Without DM_WINDOW: the guest runs directly on the current thread, behaving the same as with no front end (windowless tests use this).
 // The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN starts it that way. ⌘Q quits; the left mouse button is the touchscreen.
 // Esc (or ⇧⌘G, or the Graphics menu) opens the Quick settings sidebar over the game (DmSettings): the present filter, a frame-rate counter and mods, kept per game.
-// Key map (Nintendo layout): WASD left stick, arrow keys D-pad, J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller.
+// Key map (Nintendo layout): WASD left stick, arrow keys D-pad, J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller; the sidebar's Controls section remaps it and the controllers' buttons per game (controls_load).
 // Controllers: buttons by position as on the iPhone (right A, bottom B, top X, left Y), shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
 // Each controller is a player of its own (local co-op): the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (pad_slots.h);
 // DM_PAD_MERGE=1 merges every controller into player 1 instead, DM_KBD_PLAYER=own makes the keyboard player 1 on its own, with the controllers from player 2 on.
@@ -25,8 +25,13 @@ static CAMetalLayer *g_layer;
 static uint64_t g_btn;
 static int g_w, g_a, g_s, g_d;
 static int g_input_on = 1;   // main thread: the game window is key, so its keyboard, mouse and controllers reach the game (input_release / input_resume)
+static int g_menu_open;   // main thread: the Quick settings sidebar is up (the window's focus notifications leave the game out of focus meanwhile)
+static void (*g_menu_toggle)(void);   // opens or closes it (DmSettings toggle:), for the controller's Home button
+static NSString *opt_key(NSString *what);
 
 void *front_metal_layer(void) { return (__bridge void *)g_layer; }
+static _Atomic int g_fullscreen;   // the window is in fullscreen (set on NSWindowDidEnter/ExitFullScreenNotification); the present path does without the display link there (nvn_mtl.m link_sync)
+int front_fullscreen(void) { return g_fullscreen; }
 static _Atomic int g_screen_fps;   // the window's screen's maximumFramesPerSecond, kept up to date when the window moves to another screen
 int front_screen_max_fps(void) { return g_screen_fps; }
 // The screen's refresh rate matched to the game's frame rate in fullscreen (front_screen_match, from PR #79; DM_SCREEN_MATCH=0 turns it off). 60 fps on a 144 Hz screen cannot be paced
@@ -89,24 +94,64 @@ static void push(void) {
     int32_t lx = (g_d - g_a) * 32767, ly = (g_w - g_s) * 32767;
     dm_input_set(g_btn, lx, ly, 0, 0);
 }
-static int key_bit(unsigned short code) {
-    switch (code) {
-        case 38: return 0;  case 40: return 1;  case 32: return 2;  case 34: return 3;    // J K U I → A B X Y
-        case 3: return 4;   case 5: return 5;                                            // F G → press stick
-        case 12: return 6;  case 14: return 7;  case 6: return 8;   case 8: return 9;    // Q E Z C → L R ZL ZR
-        case 36: return 10; case 48: return 11;                                          // Return Tab → + −
-        case 123: return 12; case 126: return 13; case 124: return 14; case 125: return 15; // ← ↑ → ↓
-    }
-    return -1;
+// Key and controller map (the sidebar's Controls section, quick_settings_mac.swift; saved per game). Actions 0–15 are the NpadButton bits (dm_input.h: A B X Y, the stick presses,
+// L R ZL ZR, + −, the D-pad), 16–19 the left stick (up, left, down, right) and 20 shaking the controller. The keyboard map holds a key code per action (0xffff: none), the controller map a
+// GameController input name (GCInputButtonA…, a key of the controller's physicalInputProfile.buttons) per button 0–11; a controller's D-pad and sticks stay where they are. The defaults are
+// the fixed map from before: WASD left stick, arrow keys D-pad, J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F / G the stick presses, Return=+ Tab=−, Space shakes; buttons by position
+enum { ACT_STICK_UP = 16, ACT_STICK_LEFT, ACT_STICK_DOWN, ACT_STICK_RIGHT, ACT_SHAKE, ACT_N, PAD_N = 12, KEY_NONE = 0xffff };
+static const unsigned short g_key_default[ACT_N] = {38, 40, 32, 34, 3, 5, 12, 14, 6, 8, 36, 48, 123, 126, 124, 125, 13, 0, 1, 2, 49};
+static unsigned short g_keys[ACT_N];
+static NSString *g_pad[PAD_N];
+static NSString *pad_default(int i) {
+    NSString *d[PAD_N] = {GCInputButtonB, GCInputButtonA, GCInputButtonY, GCInputButtonX, GCInputLeftThumbstickButton, GCInputRightThumbstickButton,
+                          GCInputLeftShoulder, GCInputRightShoulder, GCInputLeftTrigger, GCInputRightTrigger, GCInputButtonMenu, GCInputButtonOptions};
+    return d[i];
+}
+static void controls_load(void) {   // main thread: the saved map over the defaults (at start, and when the sidebar changes it)
+    NSDictionary *k = [NSUserDefaults.standardUserDefaults dictionaryForKey:opt_key(@"keys")], *p = [NSUserDefaults.standardUserDefaults dictionaryForKey:opt_key(@"pad")];
+    for (int i = 0; i < ACT_N; i++) { NSNumber *n = k[@(i).stringValue]; g_keys[i] = n ? n.unsignedShortValue : g_key_default[i]; }
+    for (int i = 0; i < PAD_N; i++) { NSString *n = p[@(i).stringValue]; g_pad[i] = [n isKindOfClass:NSString.class] ? n : pad_default(i); }
 }
 static void on_key(NSEvent *e, int down) {
     if (!g_input_on) return;
-    unsigned short c = e.keyCode;
-    switch (c) { case 13: g_w = down; break; case 0: g_a = down; break; case 1: g_s = down; break; case 2: g_d = down; break; }
-    int b = key_bit(c);
-    uint64_t m = b >= 0 ? 1ull << b : c == 49 ? DM_BTN_SHAKE : 0;   // Space: shaken while held
+    unsigned short c = e.keyCode; uint64_t m = 0;
+    for (int i = 0; i < ACT_N; i++) if (g_keys[i] == c) {
+        if (i < 16) m |= 1ull << i; else if (i == ACT_SHAKE) m |= DM_BTN_SHAKE;   // shaken while held
+        else if (i == ACT_STICK_UP) g_w = down; else if (i == ACT_STICK_LEFT) g_a = down; else if (i == ACT_STICK_DOWN) g_s = down; else g_d = down;
+    }
     g_btn = down ? (g_btn | m) : (g_btn & ~m);
     push();
+}
+// Assigning (the Controls section: front_qs_assign): the next key, or the next controller button, becomes that action's; Esc cancels. Another action holding that key loses it
+static int g_assign = -1, g_assign_pad;
+void front_qs_assign(int action, int pad) { g_assign = action >= 0 && action < (pad ? PAD_N : ACT_N) ? action : -1; g_assign_pad = pad; }
+int front_qs_assigning(void) { return g_assign < 0 ? -1 : g_assign * 2 + g_assign_pad; }
+void front_qs_controls_reload(void) { controls_load(); }
+static void toast(NSString *msg);
+static void assign_save(NSString *map, NSString *names, int action, id value, NSString *label, BOOL key) {
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    NSMutableDictionary *m = [[d dictionaryForKey:opt_key(map)] mutableCopy] ?: [NSMutableDictionary dictionary], *n = [[d dictionaryForKey:opt_key(names)] mutableCopy] ?: [NSMutableDictionary dictionary];
+    for (int i = 0; i < (key ? ACT_N : PAD_N); i++) if (i != action) {
+        id cur = m[@(i).stringValue] ?: (key ? (id)@(g_key_default[i]) : pad_default(i));
+        if ([cur isEqual:value]) { m[@(i).stringValue] = key ? @(KEY_NONE) : @""; n[@(i).stringValue] = @"Not set"; }
+    }
+    m[@(action).stringValue] = value; n[@(action).stringValue] = label;
+    [d setObject:m forKey:opt_key(map)]; [d setObject:n forKey:opt_key(names)];
+    g_assign = -1; controls_load(); dm_qs_refresh();
+}
+static NSString *key_label(NSEvent *e) {
+    switch (e.keyCode) {
+        case 36: return @"Return"; case 48: return @"Tab"; case 49: return @"Space"; case 51: return @"Delete"; case 76: return @"Enter";
+        case 123: return @"←"; case 124: return @"→"; case 125: return @"↓"; case 126: return @"↑";
+    }
+    NSString *c = e.charactersIgnoringModifiers.uppercaseString;
+    return c.length && [c characterAtIndex:0] > ' ' ? c : [NSString stringWithFormat:@"Key %d", e.keyCode];
+}
+static BOOL assign_key(NSEvent *e) {   // key monitor: the key that answers a pending assignment (YES: taken)
+    if (g_assign < 0 || g_assign_pad || e.type != NSEventTypeKeyDown) return NO;
+    if (e.keyCode == 53) { g_assign = -1; dm_qs_refresh(); return YES; }
+    assign_save(@"keys", @"keyNames", g_assign, @(e.keyCode), key_label(e), YES);
+    return YES;
 }
 
 // Physical controllers (GameController) go to dm_pad_set_player, mapped as the iPhone's (DmGamepad.m read_pad, same layout); player 1's is ORed with the keyboard, a stick takes
@@ -118,18 +163,59 @@ static pad_slots g_slots;
 static GCController *g_held[DM_PLAYERS];   // the controller of each slot, kept alive while it holds it (the slot table keys on its pointer)
 static int g_merge, g_kbd_own;
 static int32_t pad_axis(float v) { return (int32_t)(fmaxf(-1.f, fminf(1.f, v)) * DM_STICK_MAX); }
+static int g_pad_quiet;   // the sidebar just closed: controllers stay silent until every button is up, so the press that closed it does not reach the game
 static void pad_read(GCExtendedGamepad *g) {
     if (!g_input_on) return;
     int p = g_merge ? 0 : pad_slot_of(&g_slots, (__bridge const void *)g.controller); if (p < 0) return;
     dm_haptics_apple_controller(p, g.controller);
-    uint64_t m = 0;
+    uint64_t m = 0; GCPhysicalInputProfile *pf = g.controller.physicalInputProfile;
+    for (int i = 0; i < PAD_N; i++) if (g_pad[i].length && pf.buttons[g_pad[i]].isPressed) m |= 1ull << i;   // the map (default by position: right A, bottom B, top X, left Y); a button a pad lacks: not pressed
     #define K(btn, bit) if (btn.isPressed) m |= bit
-    K(g.buttonB, DM_BTN_A); K(g.buttonA, DM_BTN_B); K(g.buttonY, DM_BTN_X); K(g.buttonX, DM_BTN_Y);   // by position: right A, bottom B, top X, left Y
-    K(g.leftShoulder, DM_BTN_L); K(g.rightShoulder, DM_BTN_R); K(g.leftTrigger, DM_BTN_ZL); K(g.rightTrigger, DM_BTN_ZR);
-    K(g.buttonMenu, DM_BTN_PLUS); K(g.buttonOptions, DM_BTN_MINUS); K(g.leftThumbstickButton, DM_BTN_LS); K(g.rightThumbstickButton, DM_BTN_RS);   // nil on pads without them: not pressed
     K(g.dpad.left, DM_BTN_LEFT); K(g.dpad.up, DM_BTN_UP); K(g.dpad.right, DM_BTN_RIGHT); K(g.dpad.down, DM_BTN_DOWN);
     #undef K
+    if (g_pad_quiet) { if (m) { dm_pad_set_player(p, 0, 0, 0, 0, 0); return; } g_pad_quiet = 0; }
     dm_pad_set_player(p, m, pad_axis(g.leftThumbstick.xAxis.value), pad_axis(g.leftThumbstick.yAxis.value), pad_axis(g.rightThumbstick.xAxis.value), pad_axis(g.rightThumbstick.yAxis.value));
+}
+// The sidebar with a controller (after RetroReplay's pause menu): the D-pad or left stick moves the selection, left / right change its value, A (the right face button) activates it,
+// B (the bottom one), + or Home close the sidebar, L / R jump between sections; a held direction repeats. quick_settings_mac.swift dm_qs_nav keeps the selection
+enum { NAV_UP = 1, NAV_DOWN, NAV_LEFT, NAV_RIGHT, NAV_OK, NAV_BACK, NAV_PREV, NAV_NEXT };
+static uint32_t g_nav_prev; static NSTimer *g_nav_rep;
+static void pad_nav(GCExtendedGamepad *g) {
+    float x = g.leftThumbstick.xAxis.value, y = g.leftThumbstick.yAxis.value; uint32_t now = 0;
+    if (g.dpad.up.isPressed || y > 0.6f) now |= 1u << NAV_UP;
+    if (g.dpad.down.isPressed || y < -0.6f) now |= 1u << NAV_DOWN;
+    if (g.dpad.left.isPressed || x < -0.6f) now |= 1u << NAV_LEFT;
+    if (g.dpad.right.isPressed || x > 0.6f) now |= 1u << NAV_RIGHT;
+    if (g.buttonB.isPressed) now |= 1u << NAV_OK;
+    if (g.buttonA.isPressed || g.buttonMenu.isPressed || g.buttonHome.isPressed) now |= 1u << NAV_BACK;
+    if (g.leftShoulder.isPressed) now |= 1u << NAV_PREV;
+    if (g.rightShoulder.isPressed) now |= 1u << NAV_NEXT;
+    uint32_t pressed = now & ~g_nav_prev, dirs = (1u << NAV_UP) | (1u << NAV_DOWN) | (1u << NAV_LEFT) | (1u << NAV_RIGHT); g_nav_prev = now;
+    for (int c = NAV_UP; c <= NAV_NEXT && g_menu_open; c++) if (pressed & (1u << c)) dm_qs_nav(c);
+    if (!(now & dirs) || !g_menu_open) { [g_nav_rep invalidate]; g_nav_rep = nil; }
+    else if (pressed & dirs) {
+        [g_nav_rep invalidate];
+        g_nav_rep = [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:NO block:^(NSTimer *t0) { (void)t0;
+            g_nav_rep = [NSTimer scheduledTimerWithTimeInterval:0.09 repeats:YES block:^(NSTimer *t) { (void)t;
+                for (int c = NAV_UP; c <= NAV_RIGHT; c++) if (g_menu_open && (g_nav_prev & (1u << c))) dm_qs_nav(c); }]; }];
+    }
+}
+static BOOL assign_pad(GCExtendedGamepad *g, GCControllerElement *el) {   // a controller button that answers a pending assignment
+    if (g_assign < 0 || !g_assign_pad || ![el isKindOfClass:GCControllerButtonInput.class] || !((GCControllerButtonInput *)el).isPressed) return g_assign >= 0 && g_assign_pad;
+    GCPhysicalInputProfile *pf = g.controller.physicalInputProfile; NSString *name = nil;
+    for (NSString *a in el.aliases) if (pf.buttons[a] && (!name || a.length < name.length)) name = a;
+    if (!name || [name hasPrefix:@"Direction Pad"] || [name isEqualToString:GCInputButtonHome]) return YES;   // the D-pad and Home stay as they are
+    assign_save(@"pad", @"padNames", g_assign, name, el.localizedName ?: name, NO);
+    return YES;
+}
+static void pad_event(GCExtendedGamepad *g, GCControllerElement *el) {
+    if (assign_pad(g, el)) return;
+    if (g_menu_open) { pad_nav(g); return; }
+    // The controller opens the sidebar: Home, or − and + pressed together (a game sees those two for a moment)
+    static BOOL held; BOOL now = g.buttonHome.isPressed || (g.buttonMenu.isPressed && g.buttonOptions.isPressed);
+    if (now && !held && g_menu_toggle) { held = YES; g_nav_prev = ~0u; g_menu_toggle(); return; }   // every button counts as held, so the opening press does not also act in the sidebar
+    held = now;
+    pad_read(g);
 }
 static const char *pad_name(GCController *c) { return c.vendorName.UTF8String ?: "?"; }
 static void npad_name(int p, char *out, size_t cap) { uint32_t id = dm_player_npad(p); if (id == 0x20) snprintf(out, cap, "handheld"); else snprintf(out, cap, "%u", id); }
@@ -138,7 +224,8 @@ static void pads_changed(GCController *gone) {
     if (g_merge) {
         int any = 0;
         for (GCController *c in GCController.controllers) if (c.extendedGamepad && c != gone) {
-            any = 1; c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { (void)el; pad_read(g); };
+            any = 1; c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { pad_event(g, el); };
+            c.extendedGamepad.buttonHome.preferredSystemGestureState = GCSystemGestureStateDisabled;   // Home opens the sidebar instead of the system's game overlay
             pad_read(c.extendedGamepad);
         }
         if (!any) { dm_pad_set(0, 0, 0, 0, 0); dm_haptics_apple_controller(0, nil); }
@@ -156,7 +243,8 @@ static void pads_changed(GCController *gone) {
         int p = pad_slot_take(&g_slots, (__bridge const void *)c, pad_name(c));
         if (p < 0) { LOG("controller '%s' connected: all %d players are taken, not used", pad_name(c), DM_PLAYERS); continue; }
         g_held[p] = c;
-        c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { (void)el; pad_read(g); };
+        c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { pad_event(g, el); };
+        c.extendedGamepad.buttonHome.preferredSystemGestureState = GCSystemGestureStateDisabled;   // Home opens the sidebar instead of the system's game overlay
         npad_name(p, nb, sizeof nb); LOG("controller '%s' connected: player %d (npad %s)", pad_name(c), p + 1, nb);
         pad_read(c.extendedGamepad);
     }
@@ -232,7 +320,6 @@ static void pads_start(void) {
 static NSString *const g_pfx_title[DM_PFX_N] = {@"Off", @"Sharpen", @"Pixel-perfect", @"CRT", @"CRT-Lottes", @"LCD Grid"};
 static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"DMPresentFilter.%@.%s", what, DM_GAME_NAME]; }
 static NSString *opt_key(NSString *what) { return [NSString stringWithFormat:@"DMQuickSettings.%@.%s", what, DM_GAME_NAME]; }
-static int g_menu_open;   // main thread: the sidebar is up (the window's focus notifications leave the game out of focus meanwhile)
 
 static NSString *mods_dir(void) {
     NSURL *u = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
@@ -275,18 +362,31 @@ static void mods_start(void) {   // main thread, before the guest runs (the game
 @end
 static DmSettings *g_opts;
 static void qs_close(void) { if (g_menu_open) [g_opts toggle:nil]; }
+static void qs_toggle(void) { [g_opts toggle:nil]; }
 static void qs_fps(void) { [g_opts fpsCounter]; }
 static void toast(NSString *msg) { dm_qs_toast((__bridge void *)g_win.contentView, msg.UTF8String); }
 // Capture (capture_mac.m): from the sidebar's Capture section, the Capture menu (⇧⌘S, ⇧⌘R) or a controller (front_controller); a toast says where the file went
+static NSString *where(NSString *path) {   // a saved file's folder for a toast: its last two folders ("Curse of the Moon › Screenshots")
+    NSArray *c = path.stringByDeletingLastPathComponent.pathComponents; NSUInteger n = c.count;
+    return n >= 2 ? [NSString stringWithFormat:@"%@ › %@", c[n - 2], c[n - 1]] : path.stringByDeletingLastPathComponent;
+}
 void front_qs_screenshot(void) {
-    capture_screenshot(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? @"Screenshot saved to Pictures › NxNative" : err); });
+    capture_screenshot(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Screenshot saved to " stringByAppendingString:where(path)] : err); });
 }
 void front_qs_record(void) {
     if (capture_recording()) { capture_record_stop(); toast(@"Saving the recording…"); return; }
-    capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? @"Recording saved to Movies › NxNative" : err); if (g_menu_open) dm_qs_refresh(); });
+    capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Recording saved to " stringByAppendingString:where(path)] : err); if (g_menu_open) dm_qs_refresh(); });
     if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
 }
 int front_qs_recording(void) { return capture_recording(); }
+// Where captures go, for the Capture section: the folder chosen for this game (saved), or none for the default
+const char *front_qs_capture_folder(int video) { return capture_folder(video).fileSystemRepresentation; }
+int front_qs_capture_custom(void) { return [NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")].length > 0; }
+void front_qs_capture_folder_set(const char *dir) {
+    NSString *d = dir && *dir ? @(dir) : nil;
+    if (d) [NSUserDefaults.standardUserDefaults setObject:d forKey:opt_key(@"captureDir")]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:opt_key(@"captureDir")];
+    capture_folder_set(d);
+}
 // While the sidebar is up the game picture moves aside into the window's left part (front.h mtl_present_inset), sliding with it unless Reduce Motion is on
 static float g_inset_now, g_inset_to; static NSTimer *g_inset_timer;
 static void inset_to(float share) {
@@ -348,7 +448,7 @@ static void inset_to(float share) {
         input_release(); dm_focus_set(2);   // as when the window loses focus: nothing stays held, and a game that pauses for the HOME menu pauses
         LOG("front end: Quick settings open");
     } else {
-        [self.view removeFromSuperview]; g_menu_open = 0; inset_to(0);
+        [self.view removeFromSuperview]; g_menu_open = 0; inset_to(0); g_pad_quiet = 1; g_assign = -1;
         [g_win makeFirstResponder:g_win.contentView];
         if (g_win.isKeyWindow) { input_resume(); dm_focus_set(1); }   // otherwise the window's becoming key resumes them
         LOG("front end: Quick settings closed");
@@ -381,12 +481,14 @@ static void inset_to(float share) {
     [[bar addItemWithTitle:@"Capture" action:nil keyEquivalent:@""] setSubmenu:cm];
     NSMenuItem *sh = [cm addItemWithTitle:@"Take Screenshot" action:@selector(screenshot:) keyEquivalent:@"s"], *rc = [cm addItemWithTitle:@"Start Recording" action:@selector(record:) keyEquivalent:@"r"];
     for (NSMenuItem *x in @[sh, rc]) { x.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; x.target = self; }
-    g_opts = self; [self fpsCounter];
+    g_opts = self; g_menu_toggle = qs_toggle; [self fpsCounter];
 }
 @end
-static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, volume and mods, unless the environment names them
-    mods_start();
+static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, anisotropic filtering, volume, controls and mods, unless the environment names them
+    mods_start(); controls_load();
+    capture_folder_set([NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")]);
     NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    if (!getenv("DM_ANISO") && [d objectForKey:opt_key(@"aniso")]) mtl_aniso_set((int)[d integerForKey:opt_key(@"aniso")]);   // taken at the game's first sampler: before the guest runs
     if ([d objectForKey:opt_key(@"volume")]) dm_audio_volume_set([d floatForKey:opt_key(@"volume")]);
     if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);
     if (getenv("DM_PRESENT_FILTER")) return;
@@ -464,8 +566,14 @@ void front_run(void (*guest)(void)) {
         [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent *(NSEvent *e) {
             if (e.window != win) return e;   // Only swallow keys for the game window; other windows such as the software keyboard input box receive typing as usual
             if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
+            if (assign_key(e)) return nil;   // a key being assigned in the Controls section
             if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
-            if (g_menu_open) return e;   // the sidebar's controls take the keyboard; the game's input was released when it opened
+            if (g_menu_open) {   // the arrow keys, Return and Space move through the sidebar as a controller does; other keys go to its controls
+                int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK : 0;
+                if (!nav) return e;
+                if (e.type == NSEventTypeKeyDown) dm_qs_nav(nav);
+                return nil;
+            }
             if (!e.isARepeat) on_key(e, e.type == NSEventTypeKeyDown);
             return nil;   // Swallow it to avoid the system beep
         }];
@@ -477,8 +585,8 @@ void front_run(void (*guest)(void)) {
         [nc addObserverForName:NSWindowDidChangeScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; if (win.screen) { g_screen_fps = (int)win.screen.maximumFramesPerSecond; g_layer.contentsScale = win.backingScaleFactor; } screen_match_apply(); }];
         // Entering and leaving fullscreen: the layer is layer-backed, so its frame (and with it the drawable) follows the
         // content view by itself; only the scale factor has to be carried over to the screen the window ended up on. The screen's rate is matched in fullscreen only (screen_match_apply)
-        [nc addObserverForName:NSWindowDidEnterFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; g_layer.contentsScale = win.backingScaleFactor; screen_match_apply(); }];
-        [nc addObserverForName:NSWindowDidExitFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; g_layer.contentsScale = win.backingScaleFactor; screen_match_apply(); }];
+        [nc addObserverForName:NSWindowDidEnterFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; g_fullscreen = 1; g_layer.contentsScale = win.backingScaleFactor; screen_match_apply(); }];
+        [nc addObserverForName:NSWindowDidExitFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; g_fullscreen = 0; g_layer.contentsScale = win.backingScaleFactor; screen_match_apply(); }];
         [nc addObserverForName:NSWindowDidResignKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); if (!win.miniaturized) dm_focus_set(2); }];
         [nc addObserverForName:NSWindowDidBecomeKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; if (g_menu_open) return; input_resume(); dm_focus_set(1); }];   // the sidebar keeps the game out of focus until it closes
         [nc addObserverForName:NSWindowDidMiniaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); dm_focus_set(3); dm_audio_suspend(1); dm_gfx_suspend(1); }];
