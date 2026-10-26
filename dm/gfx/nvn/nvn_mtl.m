@@ -3255,6 +3255,7 @@ static NvShader *shader_get(NSString *pc, int stage) {
     if (!g_shcache) g_shcache = [NSMutableDictionary dictionary];
     NvShader *o = g_shcache[pc];
     if (o) return o;
+    warm_claim(); if ((o = g_shcache[pc])) return o;   // loaded in the background since this submission started (mtl_shader_prefetch, the startup warmer)
     uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
     if (!o) return nil;
     g_shcache[pc] = o;
@@ -4724,6 +4725,51 @@ static void warm_enqueue(WarmItem *item) {
     [g_warm_items addObject:item];
     atomic_store_explicit(&g_warm_ready, 1, memory_order_release);
     os_unfair_lock_unlock(&g_warm_lock);
+}
+// Shader prefetch at program creation: games create a level's programs (nvnProgramSetShaders, which computes the stage keys) while it loads, well before its first draw, but a
+// shader's library was loaded only when a draw first needed it, on the submit thread (shader_get), 5-50 ms each: Super Mario 3D World's first run had 201 long frames from 626
+// libraries and 613 pipelines built mid-frame. Each new key is loaded on a utility queue, at most two at once so a loading burst cannot starve the game's threads or audio, and
+// handed to the submit thread like the startup warmer's shaders (warm_enqueue, warm_claim); a draw that comes first loads it itself as before and the late copy is dropped.
+// Only after the first present (the depth mode, which picks a vertex library's entry point, is set by then) and not for geometry shaders (prog_fold_gs). A game that creates
+// every program up front (thousands) would load shaders it never draws, so at most DM_NVN_PREFETCH shaders are prefetched (1,500 by default on the Mac; 0 turns it off). Off on
+// iOS until its memory is measured
+static os_unfair_lock g_pf_lock = OS_UNFAIR_LOCK_INIT;
+static NSMutableSet<NSString *> *g_pf_seen;
+static _Atomic uint64_t g_pf_loaded, g_pf_failed;
+static uint64_t g_present_n;   // presents so far (defined with the present path below)
+void mtl_shader_prefetch(const uint8_t md[8]) {
+    static long cap = -1;
+    if (cap < 0) { const char *e = getenv("DM_NVN_PREFETCH");
+#if TARGET_OS_IPHONE
+        cap = e ? atol(e) : 0;
+#else
+        cap = e ? atol(e) : 1500;
+#endif
+        if (cap < 0) cap = 0; }
+    if (!cap || !g_dev || !g_shmap || !g_present_n) return;
+    NSString *k = [NSString stringWithFormat:@"%02x%02x%02x%02x%02x%02x%02x%02x", md[0], md[1], md[2], md[3], md[4], md[5], md[6], md[7]];
+    NSString *stage = g_shmap[k]; int st = stage ? stage_of(stage) : -1;
+    if (st < 0 || st == 2) return;
+    NSString *key = [k stringByAppendingString:@"_b"];
+    os_unfair_lock_lock(&g_pf_lock);
+    if (!g_pf_seen) g_pf_seen = [NSMutableSet set];
+    int fresh = ![g_pf_seen containsObject:key] && (long)g_pf_seen.count < cap; if (fresh) [g_pf_seen addObject:key];
+    int full = !fresh && (long)g_pf_seen.count >= cap;
+    os_unfair_lock_unlock(&g_pf_lock);
+    static _Atomic int full_logged; if (full && !atomic_exchange(&full_logged, 1)) MLOG("shader prefetch: the cap of %ld shaders is reached, later programs load their shaders at the first draw (DM_NVN_PREFETCH=<n>)", cap);
+    if (!fresh) return;
+    static dispatch_queue_t q; static dispatch_semaphore_t slots; static dispatch_once_t once;
+    dispatch_once(&once, ^{ q = dispatch_queue_create("nvn-shader-prefetch", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_CONCURRENT, QOS_CLASS_UTILITY, 0)); slots = dispatch_semaphore_create(2); });
+    dispatch_async(q, ^{
+        dispatch_semaphore_wait(slots, DISPATCH_TIME_FOREVER);
+        @autoreleasepool {
+            NvShader *sh = shader_load(key, st, 0);
+            if (sh) { WarmItem *item = [WarmItem new]; item->kind = 0; item->key = key; item->shader = sh; warm_enqueue(item);
+                uint64_t n = atomic_fetch_add(&g_pf_loaded, 1) + 1; if (n == 1 || n % 200 == 0) MLOG("shader prefetch: %llu shaders loaded at program creation, off the submit thread (cap %ld, DM_NVN_PREFETCH=0 turns it off)", (unsigned long long)n, cap); }
+            else if (!atomic_fetch_add(&g_pf_failed, 1)) MLOG("[RED] shader prefetch: %s (%s) did not load", key.UTF8String, stage.UTF8String);
+        }
+        dispatch_semaphore_signal(slots);
+    });
 }
 static void warm_worker(NSArray<NSString *> *paths) {
     @autoreleasepool {
@@ -8656,6 +8702,25 @@ typedef struct { uint64_t n; double t; } pres_ent;
 static pres_ent g_pres[PRING];
 // Get the actual presentation time of the nth present (returns 0 if not ready, -1 if dropped)
 double mtl_presented_time(uint64_t n) { pres_ent e = g_pres[n % PRING]; return e.n == n ? e.t : 0; }
+// Present latency: the time from the game handing a frame to the present queue (its t_in, by ticket) to the system putting it on screen (presentedTime), the part of input
+// lag after the game's own frame. Every 300 frames shown, a line with p50 / p95 / max and the pacing that presented them (the display link, or the present thread in
+// fullscreen and rescue), so windowed and fullscreen compare directly; the display link line's "game enqueue to target display" is only the link's own target
+static double g_tin[PRING];   // ticket -> t_in (CACurrentMediaTime), written under g_pq_mu at enqueue
+static pthread_mutex_t g_lat_mu = PTHREAD_MUTEX_INITIALIZER;
+static double g_lat[300]; static int g_lat_n, g_lat_link;
+static void present_latency_note(uint64_t pn, double shown, int link) {
+    double tin = g_tin[pn % PRING]; if (shown <= 0 || tin <= 0 || shown < tin) return;
+    pthread_mutex_lock(&g_lat_mu);
+    g_lat[g_lat_n++] = (shown - tin) * 1000.0; g_lat_link += link;
+    if (g_lat_n == 300) {
+        double a[300]; memcpy(a, g_lat, sizeof a);
+        for (int i = 1; i < 300; i++) { double v = a[i]; int j = i - 1; while (j >= 0 && a[j] > v) { a[j + 1] = a[j]; j--; } a[j + 1] = v; }
+        MLOG("frame → screen up to frame %llu: game enqueue to on screen p50 %.1f / p95 %.1f / max %.1f ms (300 frames shown, %d by the display link, %d by the present thread)",
+             (unsigned long long)atomic_load(&g_cur_frame), a[149], a[284], a[299], g_lat_link, 300 - g_lat_link);
+        g_lat_n = 0; g_lat_link = 0;
+    }
+    pthread_mutex_unlock(&g_lat_mu);
+}
 static _Atomic uint64_t g_drawable_ns;   // Accumulated wall clock waiting for nextDrawable in present (timing instrumentation)
 uint64_t mtl_drawable_ns_take(void) { return atomic_exchange(&g_drawable_ns, 0); }
 // Maximum refresh rate (Hz) of the screen when there is a window; returns 0 without a window. Mac uses CoreGraphics display modes (thread-safe C interface; the present configuration is read on the game thread)
@@ -8917,7 +8982,9 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
 
     CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
     if (!layer) return 0;
-    if (g_present_layer_resident != layer) { [g_q4 addResidencySet:layer.residencySet]; g_present_layer_resident = layer; }
+    if (g_present_layer_resident != layer) { [g_q4 addResidencySet:layer.residencySet]; g_present_layer_resident = layer;
+        const char *nd = getenv("DM_PRESENT_DRAWABLES");   // lag experiments: 2 drawables instead of the layer's default 3
+        if (nd && (atoi(nd) == 2 || atoi(nd) == 3)) { layer.maximumDrawableCount = (NSUInteger)atoi(nd); MLOG("present: %d drawables (DM_PRESENT_DRAWABLES)", atoi(nd)); } }
 #if TARGET_OS_OSX
     if (!layer.displaySyncEnabled) layer.displaySyncEnabled = YES;   // Windowed mode follows the display's vsync to prevent tearing
 #endif
@@ -8968,10 +9035,12 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
 #if TARGET_OS_SIMULATOR   // The iOS simulator SDK has no presentation-time callback and no minimum display duration (used only for picture acceptance, display-link ticks are not counted)
     (void)period; [dr present];
 #else
+    int by_link = target_ts > 0;
     uint64_t pn = ticket;   // Record the present time by the game's present sequence number (ticket number): hle's present statistics are taken by "the game's nth present"; in the display link path the actual present count != the game's present count (old frames get merged and dropped)
     [dr addPresentedHandler:^(id<MTLDrawable> d) {   // Actual presentation time (the time this frame is really put on screen, CACurrentMediaTime base)
         CFTimeInterval tt = d.presentedTime;
         g_pres[pn % PRING] = (pres_ent){pn, tt > 0 ? tt : -1};
+        present_latency_note(pn, tt, by_link);
     }];
     // Each frame is displayed for at least one present period: when the GPU completion time jitters around a 120 Hz refresh boundary, the paired "25 ms + 8.33 ms" stutter no longer appears
     if (target_ts > 0) [dr present];
@@ -9324,6 +9393,7 @@ static uint64_t present_enqueue(const tex_t *t, double period, const int crop[4]
     pq_item *it = &g_pq[g_pq_in % PQ]; *it = (pq_item){*t, period, atomic_load(&g_cur_frame), {0}, CACurrentMediaTime(), ev_val, ss ? g_snap[slot].ev : 0};
     if (crop) memcpy(it->crop, crop, sizeof it->crop);   // The current frame's state is enqueued with the ticket number, rather than reading the mutable window late on the present thread
     uint64_t tk = ++g_pq_in;
+    g_tin[tk % PRING] = it->t_in;
     if (ss) { g_snap[slot].ticket = tk; atomic_fetch_add(&g_snap_next, 1); }
     pthread_cond_broadcast(&g_pq_cv);
     pthread_mutex_unlock(&g_pq_mu);
@@ -9366,6 +9436,15 @@ void mtl_present_wait(uint64_t tk) {
 // Wait until all queued presents have been processed (used by mtl_finish = nvnQueueFinish etc.): goes through mtl_present_wait, so there is still a fallback when the display link stops (real device: the game called QueueFinish once while the display link was stopped,
 // and this used to wait here without a timeout; nobody took the 3 queued frames and the game stalled; those two runs on Mac did not hit this call)
 void mtl_present_flush(void) { pthread_mutex_lock(&g_pq_mu); uint64_t h = g_pq_in; pthread_mutex_unlock(&g_pq_mu); mtl_present_wait(h); }
+// Frames in flight (lag experiments, DM_PRESENT_DEPTH=n): the game acquires its next swapchain texture once that texture's own previous present has gone out, so with three
+// textures it can have two frames queued for the screen, about 30 ms of the 80 ms measured from enqueue to screen on an M4 Pro. With a depth, acquire also waits until no more
+// than n - 1 earlier presents are still waiting (1: every earlier frame has been handed to the GPU). Off by default until the bench shows what it costs a late frame
+int mtl_present_depth(void) { static int d = -1; if (d < 0) { const char *e = getenv("DM_PRESENT_DEPTH"); d = e ? atoi(e) : 0; if (d < 0) d = 0; if (d) MLOG("present depth %d: acquire waits until at most %d earlier presents are queued (DM_PRESENT_DEPTH)", d, d - 1); } return d; }
+void mtl_present_depth_wait(void) {
+    int d = mtl_present_depth(); if (!d || mtl_snap_on()) return;
+    pthread_mutex_lock(&g_pq_mu); uint64_t h = g_pq_in; pthread_mutex_unlock(&g_pq_mu);
+    if (h >= (uint64_t)d) mtl_present_wait(h - (uint64_t)(d - 1));
+}
 void mtl_stats(uint64_t *passes, uint64_t *draws) { *passes = g_stat_pass; *draws = g_stat_draw; }
 void mtl_args_stats(uint64_t *enc, uint64_t *reuse) { *enc = g_stat_args_enc; *reuse = g_stat_args_reuse; }
 void mtl_vbuf_stats(uint64_t *resolve, uint64_t *reuse, uint64_t *set, uint64_t *skip) {
