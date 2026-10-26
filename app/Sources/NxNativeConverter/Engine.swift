@@ -84,8 +84,17 @@ enum Engine {
 
     static func builds() -> [BuildRecord] {
         guard let d = try? Data(contentsOf: buildsFile) else { return [] }
-        return ((try? JSONDecoder().decode([BuildRecord].self, from: d)) ?? []).map { b in   // records made before releases were tagged: their release looked up in the engine's history
-            var b = b; if b.engine.version == nil { b.engine.version = versionOf(b.engine.commit, repo: b.repo) }; return b
+        let all = (try? JSONDecoder().decode([BuildRecord].self, from: d)) ?? []
+        // records made before releases were tagged: their release looked up in the engine's history, in the checkout
+        // they were built from, else in today's engine (the checkout may have moved since: nxnative-src → NXForge)
+        lazy var engine = Toolchain.findRepo(Settings.load())
+        return all.map { b in
+            var b = b
+            if b.engine.version == nil {
+                let repo = Toolchain.isRepo(b.repo) ? b.repo : engine
+                b.engine.version = repo.flatMap { versionOf(b.engine.commit, repo: $0) }
+            }
+            return b
         }
     }
 
