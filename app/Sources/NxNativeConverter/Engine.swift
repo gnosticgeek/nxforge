@@ -117,6 +117,25 @@ enum Engine {
         return v.isEmpty ? nil : v
     }
 
+    /// The newest release's first change from the upstream branch's CHANGELOG.md, after a fetch: "0.1.1 · Quick settings sidebar …"
+    static func upstreamNote(_ repo: String) -> String? {
+        guard let up = git(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"]), let log = git(repo, ["show", "\(up):CHANGELOG.md"]) else { return nil }
+        let lines = log.split(separator: "\n").map { String($0) }
+        guard let h = lines.firstIndex(where: { $0.hasPrefix("## ") }) else { return nil }
+        let title = lines[h].dropFirst(3).split(separator: " (").first.map(String.init) ?? ""
+        let first = lines[(h + 1)...].first { $0.hasPrefix("- ") }.map { String($0.dropFirst(2)).replacingOccurrences(of: "**", with: "") } ?? ""
+        let note = first.count > 110 ? String(first.prefix(110)) + "…" : first
+        return note.isEmpty ? title : "\(title) · \(note)"
+    }
+
+    /// Drop an app from the build records (the app itself is left where it is).
+    static func forget(_ app: String) {
+        let all = builds().filter { $0.app != app }
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let d = try? enc.encode(all) { try? d.write(to: buildsFile) }
+    }
+
     static func record(_ b: BuildRecord) {
         var all = builds().filter { $0.app != b.app }
         all.append(b)

@@ -82,6 +82,7 @@ struct SourceFilesCard: View {
                 }
                 Spacer()
                 EngineStatus(model: model)
+                    .help(model.updateNote.map { "New: \($0)" } ?? "")
                 if model.updatesAvailable {
                     Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.glassProminent)
                         .disabled(model.run.running || model.engine?.dirty == true || model.engineBusy)
@@ -168,6 +169,13 @@ struct MacAppCard: View {
                 .disabled(!model.ready)
                 .help(model.ready ? "" : !model.allOK ? "Some toolchain checks failed: see Toolchain" : "Choose a game folder and keys that validate")
             }
+            if let d = disk {
+                HStack(spacing: 6) {
+                    Image(systemName: d.short ? "exclamationmark.triangle.fill" : "internaldrive").foregroundStyle(d.short ? .orange : .secondary)
+                    Text(d.text).font(.callout).foregroundStyle(d.short ? .orange : .secondary)
+                }
+                .help("A first build extracts the game and compiles its shaders: allow about twice the game files' size plus 10 GB. A rebuild reuses most of that.")
+            }
 
             Divider()
             if case .failure(let e)? = model.run.result {
@@ -205,6 +213,20 @@ struct MacAppCard: View {
                 Text("No Mac app in this folder yet.").foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Free space where the build and the app go, against what a build needs: a first build (no build cache yet)
+    /// about twice the game files plus 10 GB, as the README says; with a cache, a few GB for the new app's own files.
+    var disk: (text: String, short: Bool)? {
+        guard let dir = model.settings.gameDir, !model.run.running else { return nil }
+        let fm = FileManager.default
+        let nsp = GameFiles.list(in: dir.url).reduce(Int64(0)) { $0 + ((try? fm.attributesOfItem(atPath: $1.path)[.size] as? Int64) ?? 0) }
+        let cached = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).contains { $0.hasSuffix("_build") }
+        let need = cached ? Int64(2) << 30 : nsp * 2 + (Int64(10) << 30)
+        guard let free = try? dir.url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage else { return nil }
+        let gb = { (b: Int64) in String(format: "%.0f GB", Double(b) / 1e9) }
+        if free < need { return ("Only \(gb(free)) free: \(cached ? "a rebuild" : "a first build") needs about \(gb(need))", true) }
+        return ("\(gb(free)) free · \(cached ? "a rebuild" : "a first build") needs about \(gb(need))", false)
     }
 
     /// The newest game app in the game or output folder, with its recorded build.

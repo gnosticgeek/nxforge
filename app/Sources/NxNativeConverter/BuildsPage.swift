@@ -26,10 +26,27 @@ struct BuildsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(title: "Builds", subtitle: "Your native Mac apps, ready to play.") {
+                    let outdated = model.outdatedBuilds
+                    if !outdated.isEmpty || !model.rebuildQueue.isEmpty {
+                        Button { model.rebuildAll() } label: {
+                            Label(model.queueMessage == "" ? "Rebuilding all… \(model.rebuildQueue.count) to go" : "Rebuild all on \(model.engine?.short ?? "the current engine") (\(outdated.count))",
+                                  systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.glassProminent).controlSize(.large)
+                        .disabled(model.run.running || !model.allOK)
+                        .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
+                    }
                     Picker("Sort", selection: $model.buildSort) {
                         ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue) }
                     }
                     .pickerStyle(.menu).fixedSize()
+                }
+                if let m = model.queueMessage, !m.isEmpty {
+                    HStack {
+                        StatusDot(color: .red, text: m)
+                        Spacer()
+                        Button("Dismiss") { model.queueMessage = nil }.buttonStyle(.glass)
+                    }
                 }
                 if list.isEmpty {
                     Card { Text(model.buildSearch.isEmpty ? "Nothing built yet. Convert a game to see it here." : "No builds match “\(model.buildSearch)”.").foregroundStyle(.secondary) }
@@ -70,13 +87,34 @@ struct BuildRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
                 StatusDot(color: .green, text: "Ready")
-                Text("Apple Silicon").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                if model.engine != nil && !model.isCurrent(build) {
+                    Text("older · \(build.engine.short)").font(.caption.weight(.semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(.orange.opacity(selected ? 0.55 : 0.25), in: .capsule)
+                        .help("Built on \(build.engine.short); the engine is now \(model.engine?.short ?? "")")
+                } else {
+                    Text("Apple Silicon").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                }
             }
         }
         .padding(10)
         .foregroundStyle(selected ? .white : .primary)
         .background(selected ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 12))
         .contentShape(.rect)
+        .contextMenu {
+            Button("Open") { NSWorkspace.shared.open(build.app.url) }
+            Button("Show in Finder") { reveal(build.app) }
+            Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the current engine")") { model.rebuild(build) }
+                .disabled(model.run.running || !model.allOK)
+            Divider()
+            Button("Remove from List") { Engine.forget(build.app); model.revision += 1 }
+            Button("Move App to Trash…") {
+                guard model.confirm("Move \(name) to the Trash?", "The app goes to the Trash and leaves this list. Its game files, build cache and saves stay where they are.", action: "Move to Trash") else { return }
+                try? FileManager.default.trashItem(at: build.app.url, resultingItemURL: nil)
+                Engine.forget(build.app)
+                model.revision += 1
+            }
+        }
     }
 }
 
