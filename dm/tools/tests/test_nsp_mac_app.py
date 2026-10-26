@@ -102,7 +102,7 @@ class App(unittest.TestCase):
 
     def test_info_plist(self):
         p = plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())
-        self.assertEqual((p['CFBundleExecutable'], p['CFBundleName'], p['CFBundleIdentifier'], p['CFBundleShortVersionString']), ('nxnative', 'Game: Test', 'org.nxnative.01008cf01baac000', '1.0.1'))
+        self.assertEqual((p['CFBundleExecutable'], p['CFBundleName'], p['CFBundleIdentifier'], p['CFBundleShortVersionString']), ('nxnative', 'Game: Test', 'org.nxforge.01008cf01baac000', '1.0.1'))
         self.assertEqual((p['DMTitleID'], p['DMLanguage'], p['DMRomfsMarker'], p['CFBundleIconFile']), (TID, 'fr', 'region_common/audio/edward.bfsar', 'AppIcon'))
 
     def test_signed(self):   # ad-hoc, both the host and the bundle, never the hardened runtime (it refuses the executable memory the host makes for the game's code)
@@ -229,7 +229,7 @@ class Script(unittest.TestCase):
         g = types.SimpleNamespace(table=lambda n: tmp / 'profile' / n, get={'app_category': 'public.app-category.games', 'romfs_marker': 'a/b'}.get)
         with mock.patch.object(nsp, 'run', fake_run), mock.patch.object(nsp, 'PROG', mock.Mock()), mock.patch.object(nsp, 'chain_of', lambda repo: '0123456789ab'):
             clones = nsp.mac_app(sys.executable, REPO, out, 0x01008CF01BAAC000, tmp, tmp / 'ex', tmp / 'patched', tmp / 'dmhost', tmp / 'font', tmp / 'shader/cache' if gfx == 'nvn' else tmp / 'shader',
-                                 kw.get('aoc'), gfx, 'en-US', g, 'Game', '1.0.0', 'org.nxnative.01008cf01baac000', None, kw.get('sign', ''), {}, tmp)
+                                 kw.get('aoc'), gfx, 'en-US', g, 'Game', '1.0.0', 'org.nxforge.01008cf01baac000', None, kw.get('sign', ''), {}, tmp)
         self.assertTrue(clones)
         c = ran[0]; return {c[i]: c[i + 1] for i in range(3, len(c) - 1) if c[i].startswith('--')}, tmp
 

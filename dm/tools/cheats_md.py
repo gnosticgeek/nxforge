@@ -1,4 +1,4 @@
-# Atmosphere cheat files (.txt) to nxnative's Markdown cheat files (docs/cheats.md), and a check of Markdown ones.
+# Atmosphere cheat files (.txt) to NXForge's Markdown cheat files (docs/cheats.md), and a check of Markdown ones.
 # Usage:
 #   cheats_md.py convert <in> <out dir> [--version V] [--game NAME] [--source URL]
 #       <in> is one <build ID>.txt, or a folder holding Atmosphere's layout (<title ID>/cheats/<build ID>.txt, as in atmosphere/contents or the community cheat collections).
@@ -105,7 +105,7 @@ def check(args):
     return 1 if bad else 0
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser(description='Atmosphere cheat .txt to nxnative Markdown cheat files, and checks of Markdown ones')
+    ap = argparse.ArgumentParser(description='Atmosphere cheat .txt to NXForge Markdown cheat files, and checks of Markdown ones')
     sub = ap.add_subparsers(dest='cmd', required=True)
     c = sub.add_parser('convert'); c.add_argument('input'); c.add_argument('out'); c.add_argument('--title-id'); c.add_argument('--version'); c.add_argument('--game'); c.add_argument('--source')
     k = sub.add_parser('check'); k.add_argument('files', nargs='+')

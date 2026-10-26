@@ -109,7 +109,7 @@ One row per profile; the notes are each profile's `README.md`.
 | Key | Meaning |
 |---|---|
 | `title_id`, `program_id` | Identity. `program_id` is what `svcGetInfo(ProgramId)` reports. The game's name is not stored: the NSP script reads it from the NSP's control data (NACP) |
-| `name` | The game's name, only a label for `game.py list`, error messages and the Mac window title. The iOS app's name is the game name in the base NSP's control data and its bundle ID is `org.nxnative.<title ID in lowercase>`; the NSP script's `APP_NAME` / `BUNDLE_ID` and `build_ipa.sh`'s `DM_DISPLAY_NAME` / `DM_BUNDLE_ID` override them |
+| `name` | The game's name, only a label for `game.py list`, error messages and the Mac window title. The iOS app's name is the game name in the base NSP's control data and its bundle ID is `org.nxforge.<title ID in lowercase>`; the NSP script's `APP_NAME` / `BUNDLE_ID` and `build_ipa.sh`'s `DM_DISPLAY_NAME` / `DM_BUNDLE_ID` override them |
 | `ipa`, `app_category` | iOS app: the default IPA file name and the App Store category |
 | `build <ver> <display version> <module>=<build ID>…` | One row per version the game was brought up on. The NSP script builds any version (the base game alone, any update): a registered one from the profile as it is, any other from a profile derived from it (`<id>_build/profile`: the same keys, that version's own shader tables; `derive_profile`), with a red line naming the modules whose build no row registers, which the per-build cuts and host fixes do not reach. The host reports the display version by `main`'s build ID |
 | `package` | The version the profile's tables, prewarm list and notes were made on. The NSP script packs the newest version in the folder (`-p` / `PACKAGE` picks another) |
