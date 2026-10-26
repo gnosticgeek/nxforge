@@ -1,13 +1,22 @@
-# nxnative
+# NXForge
 
-Play your own Nintendo Switch games natively on iPhone and iPad. Bring your game (its NSP files) and your `prod.keys`; one script turns them into an IPA that you sideload.
+NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It tracks nxnative closely and adds Mac features on top: a Quick settings sidebar with picture filters, cheats, mods, screenshots and recordings, and controller rumble fixes. Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
+
+Play your own Nintendo Switch games natively on Mac, iPhone and iPad. Bring your game (its NSP files) and your `prod.keys`; one script turns them into an IPA that you sideload.
 
 It is not an emulator: the game's own code runs directly on the Apple chip, with Switch graphics rebuilt on Metal. Nothing from any game is in this repository, and the project is not affiliated with Nintendo or any game publisher.
+
+## Upstream: nxnative
+
+NXForge exists because of **[nxnative](https://github.com/seedds/nxnative)**, created by **seedds** and built up by its community of contributors: the engine, the rewriter, the host, the NVN, Vulkan and OpenGL layers on Metal, the game profiles and the packing scripts all come from there. Its history, with every contributor's commits, is kept in this repository, and its MIT license and copyright notice stay in [LICENSE](LICENSE); [NOTICE](NOTICE) records the attribution.
+
+NXForge stays a downstream, not a replacement. It merges nxnative's main branch regularly, and fixes that help every platform go back to nxnative as small pull requests; [UPSTREAM.md](UPSTREAM.md) has the policy. Please report problems that also happen with plain nxnative there, and problems with NXForge's own features here.
 
 ## Acknowledgements
 
 This project is built on other people's work:
 
+- **[nxnative](https://github.com/seedds/nxnative)** (MIT) by seedds and its contributors, which NXForge is a downstream of (see [above](#upstream-nxnative)).
 - **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** (MIT) developed this native-execution approach, for Diablo II: Resurrected. nxnative started as a copy of its generic parts: the NSO rewriter, the host that stands in for Horizon, the NVN-on-Metal layer and the iOS app shell. Fixes go both ways.
 - **Ryujinx** (MIT): its shader translator (`Ryujinx.Graphics.Shader`, `Ryujinx.Common` and `Spv.Generator` 1.3.2, in `dm/third_party/ryujinx` with a few fixes listed in [its README](dm/third_party/ryujinx/README.md)) turns the games' Maxwell shaders into SPIR-V. Its emulation of the kernel and system services is also a reference when the host's behaviour is in doubt.
 - **[Atmosphère](https://github.com/Atmosphere-NX/Atmosphere)**: its kernel, mesosphère, is the reference for Horizon's synchronization semantics (address arbiter, condition variables).
@@ -140,12 +149,12 @@ Under each game: the IPA's size, and "60 fps with 1.2.0" where the game runs at 
 
 ## Pack an IPA
 
-Prefer a graphical interface to the command line? **[NX2Apple](https://github.com/LNPANDY/NX2Apple)** is a community fork with a macOS app that runs this whole pipeline for you and packs the game files into a sharded RomFS archive for a slimmer IPA. It is a separate project that follows this one; the steps below are nxnative's own command-line way.
+Prefer a graphical interface to the command line? **[NX2Apple](https://github.com/LNPANDY/NX2Apple)** is a community fork with a macOS app that runs this whole pipeline for you and packs the game files into a sharded RomFS archive for a slimmer IPA. It is a separate project that follows this one; the steps below are the command-line way built into nxnative and NXForge.
 
-**1. Get nxnative and its tools** (once, on a Mac with [Xcode](https://apps.apple.com/app/xcode/id497799835) and [Homebrew](https://brew.sh)):
+**1. Get NXForge and its tools** (once, on a Mac with [Xcode](https://apps.apple.com/app/xcode/id497799835) and [Homebrew](https://brew.sh)):
 
 ```
-git clone https://github.com/seedds/nxnative.git && cd nxnative
+git clone https://github.com/gnosticgeek/nxforge.git && cd nxforge
 brew install xcodegen zstd spirv-cross glslang
 brew install --cask dotnet-sdk
 python3 -m pip install lz4 capstone fonttools "backports.zstd; python_version < '3.14'"
@@ -209,4 +218,4 @@ How it works, the script's options, running games on the Mac and adding a game: 
 
 ## License
 
-MIT (see [LICENSE](LICENSE)). Third-party code keeps its own license; see [dm/third_party](dm/third_party/README.md).
+MIT (see [LICENSE](LICENSE)), the license nxnative is published under; the copyright notice for seedds stays with it, and [NOTICE](NOTICE) lists where NXForge's code comes from. Third-party code keeps its own license; see [dm/third_party](dm/third_party/README.md).

@@ -404,6 +404,18 @@ static void *guest_tramp(void *p) {
 
 // Metal reads MTL_HUD_ENABLED when the process makes its first device, which can be before the window: set from DM_METAL_HUD before main (set in front_run, the HUD did not show)
 __attribute__((constructor)) static void hud_env(void) { if (getenv("DM_METAL_HUD") && atoi(getenv("DM_METAL_HUD"))) setenv("MTL_HUD_ENABLED", "1", 0); }
+// NXForge packs apps as org.nxforge.<title ID> (before the rename org.nxnative.<title ID>), and the defaults domain follows the bundle ID:
+// once, before anything reads it (cheats_host.c too), copy the saved Quick settings (filter, volume, mods, cheats, FPS counter) from the old ID
+__attribute__((constructor)) static void prefs_from_old_id(void) {
+    @autoreleasepool {
+        NSString *bid = NSBundle.mainBundle.bundleIdentifier, *pre = @"org.nxforge.";
+        if (![bid hasPrefix:pre]) return;
+        NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+        if ([d persistentDomainForName:bid].count) return;
+        NSDictionary *old = [d persistentDomainForName:[@"org.nxnative." stringByAppendingString:[bid substringFromIndex:pre.length]]];
+        if (old.count) [d setPersistentDomain:old forName:bid];
+    }
+}
 void front_run(void (*guest)(void)) {
     // A game: tell macOS its work is latency-critical, so the system does not trade its frame time for power while the frame rate is capped
     static id activity; activity = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"game"];

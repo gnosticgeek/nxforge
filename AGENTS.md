@@ -26,4 +26,4 @@
 
   The translator is `dm/gfx/tools/dmsh_xlate_bin`, which matches `dmsh_chain.lock`; a fresh `dotnet publish` does not.
 - iOS builds are unsigned IPAs that the user sideloads and tests; diagnostics come back as the app's `Documents/log.txt`. Do not sign or install builds on the user's devices.
-- Commit only when asked, with `git -c user.name=seedds -c user.email=seedds@gmail.com commit`.
+- Commit only when asked. This is NXForge, a downstream of seedds/nxnative: commit as yourself, never as seedds, and follow [UPSTREAM.md](UPSTREAM.md) for what goes upstream.

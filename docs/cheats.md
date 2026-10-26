@@ -1,6 +1,6 @@
 # Cheats
 
-nxnative runs Atmosphere's cheat codes (the dmnt cheat VM's opcodes, the format the community cheat collections use) from Markdown files, one file per build of a game. The host's side is `dm/host/cheats.c` (the parser and the VM) and `dm/host/cheats_host.c` (finding the file, applying it); `dm/tools/cheats_md.py` converts Atmosphere's `.txt` files and checks Markdown ones.
+NXForge runs Atmosphere's cheat codes (the dmnt cheat VM's opcodes, the format the community cheat collections use) from Markdown files, one file per build of a game. The host's side is `dm/host/cheats.c` (the parser and the VM) and `dm/host/cheats_host.c` (finding the file, applying it); `dm/tools/cheats_md.py` converts Atmosphere's `.txt` files and checks Markdown ones.
 
 ## Where the files are
 

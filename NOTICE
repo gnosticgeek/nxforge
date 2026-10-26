@@ -1,0 +1,25 @@
+NXForge
+https://github.com/gnosticgeek/nxforge
+
+NXForge is a downstream fork of nxnative:
+
+  nxnative
+  https://github.com/seedds/nxnative
+  Copyright (c) 2026 seedds and the nxnative contributors
+  Licensed under the MIT License (see LICENSE)
+
+Most of the code in this repository, and its full commit history, comes from
+nxnative and the people who contributed to it. Their copyright and license
+notices are kept unchanged in LICENSE and in the files they wrote. NXForge's
+own changes are released under the same MIT License.
+
+nxnative itself started from the generic parts of d2r-mobile
+(https://github.com/jhaizhou-ops/d2r-mobile, MIT License).
+
+Third-party code shipped in dm/third_party (including the Ryujinx shader
+translator, libvpx, stb_vorbis, the Vulkan headers and NVIDIA FLIP) keeps its
+own license; see dm/third_party/README.md for the list. Other projects the
+work relies on are credited in README.md under Acknowledgements.
+
+NXForge and nxnative are not affiliated with Nintendo or any game publisher.
+No game code, keys or assets are included in this repository.
