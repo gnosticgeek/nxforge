@@ -8656,6 +8656,25 @@ typedef struct { uint64_t n; double t; } pres_ent;
 static pres_ent g_pres[PRING];
 // Get the actual presentation time of the nth present (returns 0 if not ready, -1 if dropped)
 double mtl_presented_time(uint64_t n) { pres_ent e = g_pres[n % PRING]; return e.n == n ? e.t : 0; }
+// Present latency: the time from the game handing a frame to the present queue (its t_in, by ticket) to the system putting it on screen (presentedTime), the part of input
+// lag after the game's own frame. Every 300 frames shown, a line with p50 / p95 / max and the pacing that presented them (the display link, or the present thread in
+// fullscreen and rescue), so windowed and fullscreen compare directly; the display link line's "game enqueue to target display" is only the link's own target
+static double g_tin[PRING];   // ticket -> t_in (CACurrentMediaTime), written under g_pq_mu at enqueue
+static pthread_mutex_t g_lat_mu = PTHREAD_MUTEX_INITIALIZER;
+static double g_lat[300]; static int g_lat_n, g_lat_link;
+static void present_latency_note(uint64_t pn, double shown, int link) {
+    double tin = g_tin[pn % PRING]; if (shown <= 0 || tin <= 0 || shown < tin) return;
+    pthread_mutex_lock(&g_lat_mu);
+    g_lat[g_lat_n++] = (shown - tin) * 1000.0; g_lat_link += link;
+    if (g_lat_n == 300) {
+        double a[300]; memcpy(a, g_lat, sizeof a);
+        for (int i = 1; i < 300; i++) { double v = a[i]; int j = i - 1; while (j >= 0 && a[j] > v) { a[j + 1] = a[j]; j--; } a[j + 1] = v; }
+        MLOG("frame → screen up to frame %llu: game enqueue to on screen p50 %.1f / p95 %.1f / max %.1f ms (300 frames shown, %d by the display link, %d by the present thread)",
+             (unsigned long long)atomic_load(&g_cur_frame), a[149], a[284], a[299], g_lat_link, 300 - g_lat_link);
+        g_lat_n = 0; g_lat_link = 0;
+    }
+    pthread_mutex_unlock(&g_lat_mu);
+}
 static _Atomic uint64_t g_drawable_ns;   // Accumulated wall clock waiting for nextDrawable in present (timing instrumentation)
 uint64_t mtl_drawable_ns_take(void) { return atomic_exchange(&g_drawable_ns, 0); }
 // Maximum refresh rate (Hz) of the screen when there is a window; returns 0 without a window. Mac uses CoreGraphics display modes (thread-safe C interface; the present configuration is read on the game thread)
@@ -8968,10 +8987,12 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
 #if TARGET_OS_SIMULATOR   // The iOS simulator SDK has no presentation-time callback and no minimum display duration (used only for picture acceptance, display-link ticks are not counted)
     (void)period; [dr present];
 #else
+    int by_link = target_ts > 0;
     uint64_t pn = ticket;   // Record the present time by the game's present sequence number (ticket number): hle's present statistics are taken by "the game's nth present"; in the display link path the actual present count != the game's present count (old frames get merged and dropped)
     [dr addPresentedHandler:^(id<MTLDrawable> d) {   // Actual presentation time (the time this frame is really put on screen, CACurrentMediaTime base)
         CFTimeInterval tt = d.presentedTime;
         g_pres[pn % PRING] = (pres_ent){pn, tt > 0 ? tt : -1};
+        present_latency_note(pn, tt, by_link);
     }];
     // Each frame is displayed for at least one present period: when the GPU completion time jitters around a 120 Hz refresh boundary, the paired "25 ms + 8.33 ms" stutter no longer appears
     if (target_ts > 0) [dr present];
@@ -9324,6 +9345,7 @@ static uint64_t present_enqueue(const tex_t *t, double period, const int crop[4]
     pq_item *it = &g_pq[g_pq_in % PQ]; *it = (pq_item){*t, period, atomic_load(&g_cur_frame), {0}, CACurrentMediaTime(), ev_val, ss ? g_snap[slot].ev : 0};
     if (crop) memcpy(it->crop, crop, sizeof it->crop);   // The current frame's state is enqueued with the ticket number, rather than reading the mutable window late on the present thread
     uint64_t tk = ++g_pq_in;
+    g_tin[tk % PRING] = it->t_in;
     if (ss) { g_snap[slot].ticket = tk; atomic_fetch_add(&g_snap_next, 1); }
     pthread_cond_broadcast(&g_pq_cv);
     pthread_mutex_unlock(&g_pq_mu);

@@ -1,0 +1,3 @@
+# Benchmark routes for scripts/bench.py: name, DM_KEYS (seconds from host start), measuring window start and length (s), description.
+# A fresh save: the opening movie cannot be skipped and runs to about 52 s, then the title (L+R), file 1, Classic, OK and the first cutscene skipped by holding A; level 1-1 is up at about 100 s
+w1-1	58:L+R~0.5,63:A,67:A,71:A,81:A,82:A~1.5,92:A,93:A~1.5,103:A~1.5	110	60	a fresh save into level 1-1, Mario standing at the start

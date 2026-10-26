@@ -9,6 +9,9 @@
 #   each run gets a copy, the folder itself is not changed. --variant 'label:KEY=VALUE,KEY=VALUE': a variant (repeatable; KEY host=<path> runs another host binary, msl=<folder>
 #   other Mac shader libraries, shmap=<file> another shader map (with the c1_full.tsv / cb_extent.tsv of those libraries beside it), patched=<folder> other rewritten modules,
 #   pso=<folder> another pipeline archive); without one, a single variant 'base'. --runs N: each variant N times, in turn (default 2).
+#   The pipeline cache (archive and pso_user.tsv) is shared by every run, in ~/Library/Caches/nxforge-bench/<id>, seeded once from the game's own cache in
+#   ~/Library/Application Support/nxnative/<id> (never written to); --fresh-cache gives every run an empty one instead, to measure first-play stutter.
+#   --cooldown S idles S seconds between runs (default 60); each run's results keep the thermal state (pmset -g therm) taken before it.
 #   --fps / --scale: DM_FPS_TARGET (with the display link at that rate) / DM_RENDER_SCALE for every variant; --env KEY=VALUE for every variant. --out <folder>: where the runs go
 #   (default <id>_build/bench/<date-time>): per run log.txt, frames.tsv and the screenshots, and results.json and results.md for all.
 # A route line in bench.tsv: name, DM_KEYS (seconds from host start), the window's start and length in seconds, a description. The window starts once the scene is loaded and the
@@ -84,6 +87,9 @@ def run_one(a, gid, build, var, route, out, lock):
                DM_FONT_DIR=str(build / 'font'), DM_NVN_SHMAP=str(var.get('shmap') or prof / 'shader_map.tsv'), DM_WINDOW='1', DM_AUDIO='0', DM_KEYS=route['keys'],
                DM_NVN_TSV=str(out / 'frames.tsv'), DM_NVN_TSV_CALLS='0', DM_CTL=str(out / 'ctl'), DM_METAL_HUD='0' if a.no_hud else '1')
     if (build / 'aoc').is_dir(): env['DM_AOC_DIR'] = str(build / 'aoc')
+    if a.fresh_cache: cache = out / 'pso'; shutil.rmtree(cache, ignore_errors=True); cache.mkdir()
+    else: cache = a.cache_dir
+    env.update(DM_PSO_ARCHIVE=str(cache / 'pso_archive'), DM_PSO_USER=str(cache / 'pso_user.tsv'))   # beside the save the host would use the run folder, a cold cache each run
     if var.get('pso') or a.pso_archive: env['DM_PSO_ARCHIVE'] = var.get('pso') or a.pso_archive
     if a.fps: env['DM_FPS_TARGET'] = str(a.fps)
     if a.fps and a.fps > 60: env.update(DM_PRESENT_HZ=str(a.fps), DM_PRESENT_LINK='2')   # the display link at the screen's rate for the variable frame step; at 60 or 30 the host matches the screen to the cap itself
@@ -115,7 +121,26 @@ def run_one(a, gid, build, var, route, out, lock):
     m = re.findall(r'variable frame step: [\d.]+ fps, game time .*?\(([\d.]+) of real time\)', (out / 'log.txt').read_text(errors='replace'))
     if m: s['game_speed'] = float(m[-1])
     s['red_lines'] = sum(1 for ln in open(out / 'log.txt', errors='replace') if '[RED]' in ln)
+    log = (out / 'log.txt').read_text(errors='replace')
+    s['long_frames'] = log.count('[longframe]')
+    m = re.findall(r'frame → screen up to frame \d+: [^\n]*?p50 ([\d.]+) / p95 ([\d.]+)', log)   # the host's present latency line (nvn_mtl.m present_latency_log)
+    if m: s['screen_p50'], s['screen_p95'] = float(m[-1][0]), float(m[-1][1])
     return s
+
+
+def thermal():   # macOS's CPU speed limit and thermal warning level before a run (pmset -g therm); empty where pmset is missing
+    try: return ' '.join(subprocess.run(['pmset', '-g', 'therm'], capture_output=True, text=True, timeout=10).stdout.split())
+    except (OSError, subprocess.SubprocessError): return ''
+
+
+def seed_cache(gid):   # the shared warm pipeline cache: a copy of the game's own cache the first time, so the first run is not the only cold one
+    d = Path.home() / 'Library/Caches/nxforge-bench' / gid
+    src = Path.home() / 'Library/Application Support/nxnative' / gid
+    if not d.is_dir():
+        d.mkdir(parents=True)
+        if (src / 'pso_archive').is_dir(): shutil.copytree(src / 'pso_archive', d / 'pso_archive')
+        if (src / 'pso_user.tsv').is_file(): shutil.copy2(src / 'pso_user.tsv', d / 'pso_user.tsv')
+    return d
 
 
 def wait_lock(lock):   # the measuring lock other runs on this Mac hold while a game runs (an empty file name turns it off); taken atomically
@@ -130,7 +155,9 @@ def table(results, keys):
     rows = ['| ' + ' | '.join(head) + ' |', '|' + '---|' * len(head)]
     for label, rs in results.items():
         ok = [r for r in rs if r.get('frames')]
-        cell = lambda k: '–' if not ok or ok[0].get(k) is None else (f'{statistics.median(r[k] for r in ok):g}' + (f' ({min(r[k] for r in ok):g}–{max(r[k] for r in ok):g})' if len(ok) > 1 else ''))
+        def cell(k):   # runs without the value (a log line a host does not write) are left out
+            xs = [r[k] for r in ok if r.get(k) is not None]
+            return '–' if not xs else f'{statistics.median(xs):g}' + (f' ({min(xs):g}–{max(xs):g})' if len(xs) > 1 else '')
         rows.append('| ' + ' | '.join([label, str(len(ok))] + [cell(k) for k in keys]) + ' |')
     return '\n'.join(rows)
 
@@ -149,6 +176,8 @@ def main():
     ap.add_argument('--lock', default='', help='a lock file to hold while a game runs, shared with other measuring runs on this Mac')
     ap.add_argument('--shots', type=lambda v: [float(x) for x in v.split(',')], help='screenshot times in seconds from host start, comma-separated (default: a quarter and three quarters into the window)')
     ap.add_argument('--no-hud', action='store_true', help='no Metal performance HUD')
+    ap.add_argument('--fresh-cache', action='store_true', help='an empty pipeline cache for every run (first-play stutter); default a warm cache shared by all runs')
+    ap.add_argument('--cooldown', type=float, default=60, help='seconds idle between runs (default 60), so a run does not start on a hot chip')
     ap.add_argument('--out', help='the output folder (default <id>_build/bench/<date-time>)')
     a = ap.parse_args()
     build = Path(a.build).expanduser().resolve()
@@ -169,12 +198,17 @@ def main():
     lock = Path(a.lock) if a.lock else None
     print(f'{gid}, route {a.route!r} ({route["about"]}): window {route["from"]:g}–{route["from"] + route["secs"]:g} s; {len(variants)} variant(s) × {a.runs} run(s) → {out}', flush=True)
     results = {k: [] for k in variants}
+    a.cache_dir = None if a.fresh_cache else seed_cache(gid)
+    first = True
     for i in range(a.runs):
         for label, var in variants.items():
             d = out / f'{label}-{i + 1}'
-            s = run_one(a, gid, build, var, route, d, lock); results[label].append(s)
+            if not first and a.cooldown > 0: time.sleep(a.cooldown)
+            first = False
+            th = thermal()
+            s = run_one(a, gid, build, var, route, d, lock); s['thermal_before'] = th; results[label].append(s)
             print(f'  {label} run {i + 1}: ' + (f'{s["fps"]} fps, frame p50 {s["frame_p50"]} / p99 {s["frame_p99"]} / max {s["frame_max"]} ms, GPU p50 {s["gpu_p50"]} ms' if s.get('frames') else f'no frames (see {d / "log.txt"})'), flush=True)
-    keys = ['fps', 'frame_p50', 'frame_p95', 'frame_p99', 'frame_max', 'shown_p99', 'shown_max', 'dropped', 'over_budget', 'gpu_p50', 'gpu_p95', 'game_speed', 'red_lines']
+    keys = ['fps', 'frame_p50', 'frame_p95', 'frame_p99', 'frame_max', 'shown_p99', 'shown_max', 'dropped', 'over_budget', 'gpu_p50', 'gpu_p95', 'game_speed', 'red_lines', 'long_frames', 'screen_p50', 'screen_p95']
     md = (f'{gid}, route `{a.route}` ({route["about"]}), window {route["secs"]:g} s, fps target {a.fps or "profile"}, render scale {a.scale or "profile"}; '
           f'medians over runs (range); times in ms; over_budget = frames longer than 1.5 frame times\n\n' + table(results, keys) + '\n')
     (out / 'results.md').write_text(md); (out / 'results.json').write_text(json.dumps({'game': gid, 'route': a.route, **{k: v for k, v in vars(a).items() if k != 'build' and k != 'save'}, 'save': str(a.save), 'variants': variants, 'results': results}, indent=1, default=str))
