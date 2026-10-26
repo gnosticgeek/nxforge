@@ -2,11 +2,32 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## Unreleased
+## 0.2.0 (2026-10-26)
 
-- **NXForge Converter:** engines and builds show as releases (`0.1.0`, `0.1.0+3`, `pre-0.1.0`), and Rebuild is the blue button when an app is on an older engine.
-- **NXForge Converter:** its own Python (Set up on Toolchain), an "older" badge on Builds with Rebuild all, game folders dropped on the window or Dock icon, a free-space check before building, an app icon, build progress on the Dock icon, menu shortcuts (⌘O, ⌘B, ⌘R, ⌘.), a right-click menu on Builds (remove from list, move to Trash), and an engine update check at launch with the newest release's first change.
-- **NXForge Converter:** a finished build clears the Convert page and opens Builds on the new app; an update NSP tagged only by its version (Cyber Shadow) now counts as an update.
+The NXForge Converter release: everything since 0.1.0 is in the converter app (`app/`); the engine and the game profiles are as in 0.1.0, and there is no upstream merge.
+
+**Engine versions you can read**
+- Engines and builds show as releases: `0.2.0` at a release tag, `0.2.0+3` three commits after it, `pre-0.1.0` for anything built before the first release. The commit is in the tooltip.
+- Build records from before release tags get their version from the engine's history, also when the checkout they were built from has moved (nxnative-src → NXForge).
+- The converter checks the engine's branch for updates when it opens, and shows the newest release's first change from this changelog.
+- The converter's own version is the engine's release tag.
+
+**Rebuilding**
+- Rebuild is the large blue button whenever an app was built on an older engine, on Convert and on Builds.
+- Builds marks those apps with an "older" badge, and **Rebuild all** rebuilds them one after another; a failure stops the rest and says which game.
+- A right-click on an app in Builds opens it, shows it in Finder, rebuilds it, removes it from the list or moves it to the Trash.
+
+**Converting**
+- A finished build clears the Convert page (folder, keys, file check, activity) and opens Builds on the new app; a failed build stays on Convert with its stages and log.
+- Drop a game folder, or a file in it, on the window or the Dock icon to convert it.
+- Convert shows the free disk space and what the build needs (a first build: about twice the game files plus 10 GB), in orange when it is short.
+- The build's progress shows on the Dock icon, with the step number as a badge.
+- An update NSP tagged with the base game's ID and only a version above v0 (Cyber Shadow) counts as an update.
+
+**Setup and everyday use**
+- **Set up** on Toolchain makes the converter's own Python (a venv in Application Support with lz4, capstone, fontTools, zstd and nsz), so it depends on no other copy of Python.
+- A Build menu: Build Mac App (⌘B), Rebuild (⌘R), Rebuild All on Older Engines, Stop Build (⌘.), and ⌘O to choose a game folder.
+- An app icon.
 
 ## 0.1.0 (2026-10-26)
 
