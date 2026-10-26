@@ -25,6 +25,12 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .navigationTitle("NXForge Converter")
+            // a game folder (or a file in it) dropped anywhere on the window becomes the game to convert
+            .dropDestination(for: URL.self) { urls, _ in
+                guard !model.run.running, !urls.isEmpty else { return false }
+                model.openDropped(urls)
+                return true
+            }
             .toolbar {
                 if model.page == .builds {
                     ToolbarItem {

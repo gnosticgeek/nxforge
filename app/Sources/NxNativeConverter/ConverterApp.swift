@@ -11,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+    /// A game folder dropped on the Dock icon (Info.plist lists folders as a document type)
+    func application(_ app: NSApplication, open urls: [URL]) {
+        MainActor.assumeIsolated { AppModel.shared?.openDropped(urls) }
+    }
 }
 
 struct ConverterApp: App {
@@ -25,6 +29,22 @@ struct ConverterApp: App {
         }
         .defaultSize(width: 1280, height: 980)
         .windowToolbarStyle(.unified)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Choose Game Folder…") {
+                    if let d = model.choose(folder: true, start: model.settings.gameDir) { model.openDropped([d.url]) }
+                }
+                .keyboardShortcut("o")
+                .disabled(model.run.running)
+            }
+            CommandMenu("Build") {
+                Button("Build Mac App") { model.build() }.keyboardShortcut("b").disabled(!model.ready)
+                Button("Rebuild") { model.rebuildCurrent() }.keyboardShortcut("r").disabled(model.run.running || !model.allOK)
+                Button("Rebuild All on Older Engines") { model.rebuildAll() }.disabled(model.run.running || !model.allOK || model.outdatedBuilds.isEmpty)
+                Divider()
+                Button("Stop Build") { model.run.cancel() }.keyboardShortcut(".").disabled(!model.run.running)
+            }
+        }
     }
 
     @MainActor
@@ -36,7 +56,9 @@ struct ConverterApp: App {
         if env["NXC_AUTOBUILD"] != nil {
             while !model.ready && model.run.result == nil { try? await Task.sleep(for: .milliseconds(300)) }
             model.build()
-            while model.run.result == nil { try? await Task.sleep(for: .milliseconds(300)) }
+            // a successful build clears its result as it hands the app to Builds, so wait for the run to end instead
+            try? await Task.sleep(for: .seconds(1))
+            while model.run.running { try? await Task.sleep(for: .milliseconds(300)) }
             try? await Task.sleep(for: .seconds(1))
         }
         guard let w = NSApp.windows.first(where: { $0.isVisible }), let view = w.contentView?.superview ?? w.contentView else { exit(1) }

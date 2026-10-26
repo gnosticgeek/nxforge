@@ -33,7 +33,7 @@ struct ToolchainPage: View {
                 HStack {
                     Text("Tool").frame(width: 260, alignment: .leading)
                     Text("Version or location").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Status").frame(width: 190, alignment: .leading)
+                    Text("Status").frame(width: 250, alignment: .leading)
                 }
                 .font(.callout).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.vertical, 9)
                 ForEach(CheckGroup.allCases, id: \.self) { g in
@@ -46,6 +46,14 @@ struct ToolchainPage: View {
                             row(c)
                         }
                     }
+                }
+            }
+
+            if let p = model.pythonSetup {
+                HStack(spacing: 8) {
+                    if p.running { ProgressView().controlSize(.small) }
+                    else { StatusIcon(ok: !p.text.hasPrefix("No ") && !p.text.hasPrefix("Could") && !p.text.hasPrefix("pip")) }
+                    Text(p.text).foregroundStyle(.secondary)
                 }
             }
 
@@ -78,6 +86,7 @@ struct ToolchainPage: View {
                     }
                 }
                 if let m = model.engineMessage { Text(m.text).font(.callout).foregroundStyle(m.ok ? Color.secondary : Color.red) }
+                if let n = model.updateNote { Label("New: \(n)", systemImage: "sparkles").font(.callout).foregroundStyle(.blue) }
                 if let repoCheck = model.checks?.first(where: { $0.name == "nxnative repository" }), !repoCheck.ok, let fix = repoCheck.fix {
                     HStack {
                         StatusDot(color: .red, text: "No nxnative checkout found")
@@ -124,16 +133,28 @@ struct ToolchainPage: View {
             .frame(width: 260, alignment: .leading)
             Text(c.short).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading).help(c.detail)
             HStack(spacing: 8) {
+                // Python and nsz are fixed by the converter's own Python, set up here rather than in Terminal
+                let python = c.name == "Python modules" || c.name == "nsz"
                 if c.ok {
                     Image(systemName: "checkmark").foregroundStyle(.green).fontWeight(.semibold)
                     Text(c.optional ? "Available" : "Ready").foregroundStyle(.green)
+                    if c.name == "Python modules" && !model.ownPython {
+                        Button("Set up own") { model.setUpPython() }.buttonStyle(.glass).controlSize(.small)
+                            .disabled(model.pythonSetup?.running == true)
+                            .help("Make the converter's own Python in Application Support, so it no longer uses \(model.env?.python ?? "another copy")")
+                    }
                 } else {
                     Image(systemName: c.optional ? "minus" : "xmark").foregroundStyle(c.optional ? Color.secondary : .red).fontWeight(.semibold)
                     Text(c.optional ? "Not installed" : "Missing").foregroundStyle(c.optional ? Color.secondary : .red)
-                    if let fix = c.fix { Button("Fix") { Toolchain.runInTerminal(fix) }.buttonStyle(.glass).controlSize(.small).help(fix) }
+                    if python {
+                        Button("Set up") { model.setUpPython() }.buttonStyle(.glassProminent).controlSize(.small)
+                            .disabled(model.pythonSetup?.running == true).help("Make the converter's own Python with the modules the script needs")
+                    } else if let fix = c.fix {
+                        Button("Fix") { Toolchain.runInTerminal(fix) }.buttonStyle(.glass).controlSize(.small).help(fix)
+                    }
                 }
             }
-            .frame(width: 190, alignment: .leading)
+            .frame(width: 250, alignment: .leading)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
     }

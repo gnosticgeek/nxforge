@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+- **NXForge Converter:** engines and builds show as releases (`0.1.0`, `0.1.0+3`, `pre-0.1.0`), and Rebuild is the blue button when an app is on an older engine.
+- **NXForge Converter:** its own Python (Set up on Toolchain), an "older" badge on Builds with Rebuild all, game folders dropped on the window or Dock icon, a free-space check before building, an app icon, build progress on the Dock icon, menu shortcuts (⌘O, ⌘B, ⌘R, ⌘.), a right-click menu on Builds (remove from list, move to Trash), and an engine update check at launch with the newest release's first change.
+- **NXForge Converter:** a finished build clears the Convert page and opens Builds on the new app; an update NSP tagged only by its version (Cyber Shadow) now counts as an update.
+
 ## 0.1.0 (2026-10-26)
 
 The baseline release: nxnative's main branch as merged on 2026-10-25, plus:

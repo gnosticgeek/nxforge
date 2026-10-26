@@ -47,10 +47,23 @@ final class AppModel {
     var buildSearch = ""
     var buildSort: BuildSort = .newest
     var selectedBuild: String?
+    /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
+    var rebuildQueue: [BuildRecord] = []
+    var queueMessage: String?
+    /// the converter's own Python being set up: (running, what it says)
+    var pythonSetup: (running: Bool, text: String)?
+    /// the newest release's first change, when the engine's branch has updates
+    var updateNote: String?
+    private var checkedForUpdates = false
+    /// the window's model, for the Dock (a folder dropped on its icon) and the menu commands
+    nonisolated(unsafe) static weak var shared: AppModel?
 
     init() {
+        AppModel.shared = self
         run.onChange = { [weak self] in
-            guard let self, !self.run.running, let r = self.run.result else { return }
+            guard let self else { return }
+            DockProgress.show(self.run)
+            guard !self.run.running, let r = self.run.result else { return }
             self.refreshGame()
             self.revision += 1
             self.buildEnded(r)
@@ -85,6 +98,8 @@ final class AppModel {
             let ver = e.repo.flatMap(Engine.current)
             await MainActor.run {
                 self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.checking = false; self.lastChecked = Date()
+                // once per launch: look for a newer engine (a fetch; quiet when offline)
+                if !self.checkedForUpdates, ver != nil { self.checkedForUpdates = true; self.engineAction(update: false) }
             }
         }
     }
@@ -125,7 +140,8 @@ final class AppModel {
                 else { let n = try Engine.checkUpdates(repo); msg = (true, n == 0 ? "Up to date" : "\(n) update\(n == 1 ? "" : "s") available") }
             } catch { msg = (false, "\(error)") }
             let ver = Engine.current(repo)
-            await MainActor.run { self.engineMessage = msg; self.engine = ver; self.engineBusy = false }
+            let note = msg.1.contains("available") ? Engine.upstreamNote(repo) : nil
+            await MainActor.run { self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note }
         }
     }
 
@@ -149,8 +165,76 @@ final class AppModel {
         Task {
             while validating { try? await Task.sleep(for: .milliseconds(200)) }
             if ready { build(rebuild: b.app) }
+            else if !rebuildQueue.isEmpty || queueMessage == "" {
+                queueMessage = "Rebuild all stopped: \(b.app.lastComponent) could not be checked against its keys."
+                rebuildQueue = []
+            }
         }
     }
+
+    /// Whether a recorded build is on the engine in use now.
+    func isCurrent(_ b: BuildRecord) -> Bool { b.engine.commit == engine?.commit && engine?.dirty == false }
+
+    /// The recorded apps built on another engine than today's.
+    var outdatedBuilds: [BuildRecord] {
+        let _ = revision
+        guard engine != nil else { return [] }
+        return Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) && !isCurrent($0) }
+    }
+
+    /// Rebuild every app on an older engine, one after another; a failure stops the rest.
+    func rebuildAll() {
+        let all = outdatedBuilds
+        guard let first = all.first, !run.running else { return }
+        rebuildQueue = Array(all.dropFirst())
+        queueMessage = ""
+        rebuild(first)
+    }
+
+    /// ⌘R: the app selected on Builds, else the newest app beside the chosen game files.
+    func rebuildCurrent() {
+        guard !run.running else { return }
+        let builds = Engine.builds()
+        if page == .builds, let b = builds.first(where: { $0.app == selectedBuild }) ?? builds.max(by: { $0.builtAt < $1.builtAt }) { rebuild(b); return }
+        if let dir = settings.gameDir, let a = Engine.apps(in: settings.outDir ?? dir).first ?? Engine.apps(in: dir).first, ready { build(rebuild: a.app) }
+    }
+
+    /// A folder (or a game file in it) dropped on the window or the Dock icon becomes the game folder.
+    func openDropped(_ urls: [URL]) {
+        guard !run.running, let u = urls.first else { return }
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir)
+        setGameDir(isDir.boolValue ? u.path : u.deletingLastPathComponent().path)
+        page = .convert
+    }
+
+    /// The converter's own Python: a venv in Application Support with the script's modules (and nsz), so the
+    /// converter depends on no other copy of Python. Needs the network once, for pip.
+    func setUpPython() {
+        guard pythonSetup?.running != true else { return }
+        pythonSetup = (true, "Creating the converter's Python…")
+        let venv = Settings.supportDir.appending(path: "venv").path
+        let base = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/Library/Frameworks/Python.framework/Versions/Current/bin/python3", "/usr/bin/python3"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        Task.detached {
+            let result: (Bool, String)
+            if let base, NxNativeConverter.run(base, ["-m", "venv", "--clear", venv]).map({ $0.ok }) == true {
+                await MainActor.run { self.pythonSetup = (true, "Installing lz4, capstone, fontTools, zstd and nsz…") }
+                let pip = NxNativeConverter.run(venv + "/bin/python3", ["-m", "pip", "install", "--quiet", "--disable-pip-version-check", "lz4", "capstone", "fonttools", "nsz", "backports.zstd; python_version < '3.14'"])
+                result = pip?.ok == true ? (true, "The converter's own Python is ready.") : (false, "pip could not install the modules: \(pip?.out.split(separator: "\n").last ?? "no output")")
+            } else {
+                result = (false, base == nil ? "No python3 to start from: install Python 3 (brew install python)." : "Could not create \(venv).")
+            }
+            await MainActor.run {
+                self.pythonSetup = (false, result.1)
+                if result.0 { self.settings.python = nil }   // automatic: the converter's own venv comes first
+                self.recheck()
+            }
+        }
+    }
+
+    /// Whether Python is the converter's own (in Application Support) rather than another copy.
+    var ownPython: Bool { env?.python?.hasPrefix(Settings.supportDir.path) == true }
 
     private func buildEnded(_ r: Result<String, ConverterError>) {
         let name = game?.name ?? "The game"
@@ -163,6 +247,28 @@ final class AppModel {
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
         if settings.openAfterBuild, case .success = r, let app = run.app { NSWorkspace.shared.open(app.url) }
+        if case .success = r {
+            finishConvert()
+            if let next = rebuildQueue.first { rebuildQueue.removeFirst(); rebuild(next) }
+            else if queueMessage == "" { queueMessage = nil }
+        } else if !rebuildQueue.isEmpty || queueMessage == "" {
+            queueMessage = "Rebuild all stopped at \(game?.name ?? "a game"): its build failed."
+            rebuildQueue = []
+        }
+    }
+
+    /// A built game leaves Convert: the folder, its keys, the check and the activity are cleared for the next game,
+    /// and Builds opens on the new app. A failed build stays on Convert with its stages and log.
+    private func finishConvert() {
+        selectedBuild = run.app
+        buildSearch = ""
+        settings.gameDir = nil
+        settings.keys = settings.defaultKeys
+        validation = nil
+        validatedFor = nil
+        game = nil
+        run.reset()
+        page = .builds
     }
 
     func requestNotifications() {

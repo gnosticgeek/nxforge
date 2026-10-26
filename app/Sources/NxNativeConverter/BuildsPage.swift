@@ -26,10 +26,27 @@ struct BuildsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(title: "Builds", subtitle: "Your native Mac apps, ready to play.") {
+                    let outdated = model.outdatedBuilds
+                    if !outdated.isEmpty || !model.rebuildQueue.isEmpty {
+                        Button { model.rebuildAll() } label: {
+                            Label(model.queueMessage == "" ? "Rebuilding all… \(model.rebuildQueue.count) to go" : "Rebuild all on \(model.engine?.short ?? "the current engine") (\(outdated.count))",
+                                  systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.glassProminent).controlSize(.large)
+                        .disabled(model.run.running || !model.allOK)
+                        .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
+                    }
                     Picker("Sort", selection: $model.buildSort) {
                         ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue) }
                     }
                     .pickerStyle(.menu).fixedSize()
+                }
+                if let m = model.queueMessage, !m.isEmpty {
+                    HStack {
+                        StatusDot(color: .red, text: m)
+                        Spacer()
+                        Button("Dismiss") { model.queueMessage = nil }.buttonStyle(.glass)
+                    }
                 }
                 if list.isEmpty {
                     Card { Text(model.buildSearch.isEmpty ? "Nothing built yet. Convert a game to see it here." : "No builds match “\(model.buildSearch)”.").foregroundStyle(.secondary) }
@@ -70,13 +87,34 @@ struct BuildRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
                 StatusDot(color: .green, text: "Ready")
-                Text("Apple Silicon").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                if model.engine != nil && !model.isCurrent(build) {
+                    Text("older · \(build.engine.short)").font(.caption.weight(.semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(.orange.opacity(selected ? 0.55 : 0.25), in: .capsule)
+                        .help("Built on \(build.engine.short); the engine is now \(model.engine?.short ?? "")")
+                } else {
+                    Text("Apple Silicon").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                }
             }
         }
         .padding(10)
         .foregroundStyle(selected ? .white : .primary)
         .background(selected ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 12))
         .contentShape(.rect)
+        .contextMenu {
+            Button("Open") { NSWorkspace.shared.open(build.app.url) }
+            Button("Show in Finder") { reveal(build.app) }
+            Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the current engine")") { model.rebuild(build) }
+                .disabled(model.run.running || !model.allOK)
+            Divider()
+            Button("Remove from List") { Engine.forget(build.app); model.revision += 1 }
+            Button("Move App to Trash…") {
+                guard model.confirm("Move \(name) to the Trash?", "The app goes to the Trash and leaves this list. Its game files, build cache and saves stay where they are.", action: "Move to Trash") else { return }
+                try? FileManager.default.trashItem(at: build.app.url, resultingItemURL: nil)
+                Engine.forget(build.app)
+                model.revision += 1
+            }
+        }
     }
 }
 
@@ -99,7 +137,7 @@ struct BuildDetail: View {
             }
             HStack {
                 Button { NSWorkspace.shared.open(build.app.url) } label: { Label("Open app", systemImage: "play.fill").font(.title3).frame(maxWidth: .infinity) }
-                    .buttonStyle(.glassProminent)
+                    .modifier(GlassButton(prominent: current || model.engine == nil))   // on an older engine Rebuild is the blue one
                 Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.glass)
             }
@@ -109,7 +147,7 @@ struct BuildDetail: View {
                 Divider()
                 HStack {
                     Text("Engine").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
-                    Text(build.engine.short).help(build.engine.subject)
+                    Text(build.engine.short).help("\(build.engine.commit.prefix(7)) · \(build.engine.subject)")
                     if !current, model.engine != nil { Text("older").font(.caption).padding(.horizontal, 6).padding(.vertical, 2).background(.orange.opacity(0.25), in: .capsule) }
                     Spacer()
                 }
@@ -126,9 +164,9 @@ struct BuildDetail: View {
                 .padding(.vertical, 6)
             }
             Button { model.rebuild(build) } label: {
-                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
+                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").font(current ? .body : .title3).frame(maxWidth: .infinity)
             }
-            .buttonStyle(.glass).controlSize(.large)
+            .modifier(GlassButton(prominent: !current)).controlSize(current ? .large : .extraLarge)
             .disabled(!model.allOK || model.run.running)
             DisclosureGroup(isExpanded: $detailsOpen) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -215,5 +253,13 @@ struct PreviousBuilds: View {
             _ = model.confirm("Could not restore", "\(error)", action: "OK")
         }
         model.revision += 1
+    }
+}
+
+/// .glassProminent (the blue one) or .glass: the card's main action is blue, the open app when it is current, the rebuild when it is not
+struct GlassButton: ViewModifier {
+    let prominent: Bool
+    func body(content: Content) -> some View {
+        if prominent { content.buttonStyle(.glassProminent) } else { content.buttonStyle(.glass) }
     }
 }
