@@ -18,7 +18,7 @@ struct ConverterApp: App {
     @State private var model = AppModel()
 
     var body: some Scene {
-        Window("NxNative Converter", id: "main") {
+        Window("NXForge Converter", id: "main") {
             RootView(model: model)
                 .frame(minWidth: 1080, minHeight: 720)
                 .task { await snapshotIfAsked() }

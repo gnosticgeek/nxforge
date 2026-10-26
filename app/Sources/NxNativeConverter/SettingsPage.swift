@@ -8,7 +8,7 @@ struct SettingsPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PageHeader(title: "Settings", subtitle: "Make NxNative Converter work your way.")
+                PageHeader(title: "Settings", subtitle: "Make NXForge Converter work your way.")
                 form
             }
             .padding(24)
@@ -18,7 +18,7 @@ struct SettingsPage: View {
     @ViewBuilder var form: some View {
         Group {
             SettingsSection(title: "General") {
-                setting("Appearance", "Choose how NxNative Converter looks.") {
+                setting("Appearance", "Choose how NXForge Converter looks.") {
                     Picker("", selection: $model.settings.appearance) {
                         ForEach(Appearance.allCases, id: \.self) { Text($0.rawValue) }
                     }

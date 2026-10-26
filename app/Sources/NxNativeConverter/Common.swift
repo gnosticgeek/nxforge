@@ -2,7 +2,7 @@
 import AppKit
 import SwiftUI
 
-let helpURL = URL(string: "https://github.com/gnosticgeek/nxnative/blob/main/app/README.md")!
+let helpURL = URL(string: "https://github.com/gnosticgeek/nxforge/blob/main/app/README.md")!
 
 struct RootView: View {
     @Bindable var model: AppModel
@@ -24,7 +24,7 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .navigationTitle("NxNative Converter")
+            .navigationTitle("NXForge Converter")
             .toolbar {
                 if model.page == .builds {
                     ToolbarItem {
@@ -36,7 +36,7 @@ struct RootView: View {
                     }
                 }
                 ToolbarItem {
-                    Button { NSWorkspace.shared.open(helpURL) } label: { Image(systemName: "questionmark") }.help("NxNative Converter help")
+                    Button { NSWorkspace.shared.open(helpURL) } label: { Image(systemName: "questionmark") }.help("NXForge Converter help")
                 }
             }
         }

@@ -78,7 +78,7 @@ struct SourceFilesCard: View {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Engine").font(.headline)
-                    Text("NxNative engine version").font(.callout).foregroundStyle(.secondary)
+                    Text("NXForge engine version").font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
                 EngineStatus(model: model)
@@ -144,7 +144,7 @@ struct MacAppCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(model.game?.name ?? "No game selected").font(.title2.weight(.bold)).lineLimit(2)
                     Text("Apple Silicon · Metal").foregroundStyle(.secondary)
-                    Text("A native macOS version built with NxNative.").foregroundStyle(.secondary)
+                    Text("A native macOS version built with NXForge.").foregroundStyle(.secondary)
                 }
             }
             PathField(label: "Output folder", labelWidth: 100, symbol: "folder", value: model.outputFolder?.lastComponent) {

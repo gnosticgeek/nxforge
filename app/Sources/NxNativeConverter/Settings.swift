@@ -1,4 +1,4 @@
-// Settings kept between runs in ~/Library/Application Support/NxNative Converter/settings.json.
+// Settings kept between runs in ~/Library/Application Support/NxNative Converter/settings.json (the folder keeps its pre-NXForge name, so settings carry over).
 // Paths only: the keys file's location is remembered, never its content.
 import Foundation
 

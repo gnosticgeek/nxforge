@@ -1,7 +1,7 @@
 // Screenshots and video of the game as it is presented, the present filter included and the sidebar left out (front.h mtl_record_set: the present thread draws each frame once more into
 // a texture handed out here). Screenshots: PNG, 16:9 at the window's height in pixels (720 at least). Video: H.264 with AAC sound in a QuickTime movie, 1920x1080 at the game's frame rate,
 // the sound from the first audio output (front.h dm_audio_tap_set) before the host volume. Where (capture_folder): a folder the player chose, else Screenshots / Recordings in the game folder
-// (DM_GAME_FOLDER, which the app's launcher sets), else ~/Pictures/NxNative / ~/Movies/NxNative. Writing files there needs no permission
+// (DM_GAME_FOLDER, which the app's launcher sets), else ~/Pictures/NXForge / ~/Movies/NXForge. Writing files there needs no permission
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Metal/Metal.h>
@@ -18,7 +18,7 @@ NSString *capture_folder(int video) {
     const char *g = getenv("DM_GAME_FOLDER");
     if (g && *g) return [@(g) stringByAppendingPathComponent:video ? @"Recordings" : @"Screenshots"];
     NSURL *base = [NSFileManager.defaultManager URLsForDirectory:video ? NSMoviesDirectory : NSPicturesDirectory inDomains:NSUserDomainMask].firstObject;
-    return [base.path stringByAppendingPathComponent:@"NxNative"];
+    return [base.path stringByAppendingPathComponent:@"NXForge"];
 }
 static NSString *capture_path(int video, const char *game, NSString *ext) {
     NSString *dir = capture_folder(video);

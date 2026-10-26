@@ -1,4 +1,4 @@
-# NxNative Converter
+# NXForge Converter
 
 A native Mac app (SwiftUI, macOS 26 or later) over `scripts/build_ipa_from_nsp.py --platform mac-app`: it turns one game's folder into a native Mac app ([A Mac app](../docs/development.md#a-mac-app)) without the command line. It needs only Xcode to build: the key check uses the system's CommonCrypto.
 
@@ -7,13 +7,13 @@ A native Mac app (SwiftUI, macOS 26 or later) over `scripts/build_ipa_from_nsp.p
 - **Toolchain.** Each tool the script needs, found as the script finds it: its own `TOOL_PATHS` first, then `PATH`, so a tick means the script finds the same tool. The shader translator is started, not just found: its launcher finds .NET only through `DOTNET_ROOT`, which the converter sets to the folder of the `dotnet` the script uses. A missing tool's **Fix** runs its install command in Terminal. The engine section shows the checkout's commit, **Check for updates** fetches its branch's upstream and **Update engine** fast-forwards to it. **Copy diagnostics** copies the findings (paths and versions, no key values).
 - **Settings.** Appearance, a notification when a build ends, opening the app after a build, the signing identity (`--mac-sign`; ad-hoc by default), the default output folder and keys file, reusing cached stages (off deletes the stage keys in `<id>_build`, so every stage runs again), keeping previous builds (off moves the replaced app to the Trash), log detail (Detailed adds the tools' own logs to Copy log) and the game's build cache.
 
-Settings are in `~/Library/Application Support/NxNative Converter/settings.json`. The repository is found from the setting, then the checkout the app was built in, then `~/Developer/nxnative`, `~/nxnative` and similar. Python is the setting, then `~/Library/Application Support/NxNative Converter/venv`, then the checkout's `.venv`, then each `python3` on `PATH`, the first with the modules winning.
+Settings are in `~/Library/Application Support/NxNative Converter/settings.json`. The repository is found from the setting, then the checkout the app was built in, then `~/Developer/nxforge`, `~/nxforge`, `~/Developer/nxnative`, `~/nxnative` and similar. Python is the setting, then `~/Library/Application Support/NxNative Converter/venv`, then the checkout's `.venv`, then each `python3` on `PATH`, the first with the modules winning.
 
 ## Build
 
 ```
 app/bundle.sh
-open "app/.build/NxNative Converter.app"
+open "app/.build/NXForge Converter.app"
 ```
 
 The same steps run without the window, which is how it is tested:

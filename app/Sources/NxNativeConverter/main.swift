@@ -1,4 +1,4 @@
-// NxNative Converter: a window over scripts/build_ipa_from_nsp.py --platform mac-app.
+// NXForge Converter (formerly NxNative Converter): a window over scripts/build_ipa_from_nsp.py --platform mac-app.
 // 1. lists what the script needs, ticked or crossed; 2. checks a game folder against prod.keys;
 // 3. converts the folder to a signed Mac app, and rebuilds it when the engine changes. The same steps run headless:
 //   NxNativeConverter --check | --validate <folder> <prod.keys> | --convert <folder> <prod.keys> [--sign <identity>]

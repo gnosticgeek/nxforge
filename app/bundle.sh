@@ -1,11 +1,11 @@
 #!/bin/bash
-# Builds "NxNative Converter.app" from this package: swift build -c release, then a minimal bundle, signed ad-hoc
+# Builds "NXForge Converter.app" from this package: swift build -c release, then a minimal bundle, signed ad-hoc
 # (or with the identity in $SIGN). Usage: app/bundle.sh [output folder, default app/.build]
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 out="${1:-$here/.build}"
 swift build -c release --package-path "$here"
-app="$out/NxNative Converter.app"
+app="$out/NXForge Converter.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp "$here/.build/release/NxNativeConverter" "$app/Contents/MacOS/"
@@ -13,9 +13,9 @@ cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>NxNative Converter</string>
-  <key>CFBundleDisplayName</key><string>NxNative Converter</string>
-  <key>CFBundleIdentifier</key><string>org.nxnative.converter</string>
+  <key>CFBundleName</key><string>NXForge Converter</string>
+  <key>CFBundleDisplayName</key><string>NXForge Converter</string>
+  <key>CFBundleIdentifier</key><string>org.nxforge.converter</string>
   <key>CFBundleExecutable</key><string>NxNativeConverter</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.2.0</string>

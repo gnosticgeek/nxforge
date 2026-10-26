@@ -3,7 +3,7 @@
 import Foundation
 
 let scriptPath = "scripts/build_ipa_from_nsp.py"
-let forkURL = "https://github.com/gnosticgeek/nxnative.git"
+let forkURL = "https://github.com/gnosticgeek/nxforge.git"
 
 enum CheckGroup: String, CaseIterable { case system = "System", build = "Build tools", packaging = "Processing & packaging", optional = "Optional tools" }
 
@@ -46,7 +46,7 @@ enum Toolchain {
         var u = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
         while u.path != "/" { u.deleteLastPathComponent(); cands.append(u.path) }
         let home = NSHomeDirectory()
-        cands += ["Developer/nxnative", "nxnative", "src/nxnative", "Documents/nxnative", "Projects/nxnative", "code/nxnative"].map { home + "/" + $0 }
+        cands += ["Developer/nxforge", "nxforge", "src/nxforge", "Documents/nxforge", "Projects/nxforge", "code/nxforge", "Developer/nxnative", "nxnative", "src/nxnative", "Documents/nxnative", "Projects/nxnative", "code/nxnative"].map { home + "/" + $0 }
         cands.append(Settings.supportDir.appending(path: "nxnative").path)
         return cands.first(where: isRepo)
     }
