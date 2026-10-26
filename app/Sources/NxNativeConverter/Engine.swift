@@ -1,5 +1,5 @@
-// The engine is the nxnative checkout the script runs from: its commit is the version a game app is built
-// with. Each successful build is recorded in builds.json (beside settings.json) with that commit, since the
+// The engine is the NXForge checkout the script runs from: its commit is the version a game app is built
+// with, shown as its release tag (git describe: v0.1.0, or v0.1.0-3-gabc1234 three commits after it) when it has one. Each successful build is recorded in builds.json (beside settings.json) with that commit, since the
 // app bundle itself does not carry one; an app built before that shows as "unknown".
 import Foundation
 
@@ -10,8 +10,10 @@ struct EngineVersion: Codable, Hashable {
     var branch: String
     /// uncommitted changes to tracked files in the checkout when it was read
     var dirty: Bool
+    /// git describe from the nearest vX.Y.Z release tag (nil before tags, and in records made before them)
+    var version: String? = nil
 
-    var short: String { String(commit.prefix(7)) }
+    var short: String { version ?? String(commit.prefix(7)) }
     var label: String { "\(short)\(dirty ? "+changes" : "") · \(subject) · \(date)" }
 }
 
@@ -62,7 +64,8 @@ enum Engine {
         guard p.count == 3 else { return nil }
         let branch = git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? ""
         let dirty = !(git(repo, ["status", "--porcelain", "--untracked-files=no"]) ?? "").isEmpty
-        return EngineVersion(commit: p[0], subject: p[1], date: p[2], branch: branch, dirty: dirty)
+        let version = git(repo, ["describe", "--tags", "--match", "v[0-9]*", p[0]]).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return EngineVersion(commit: p[0], subject: p[1], date: p[2], branch: branch, dirty: dirty, version: version?.isEmpty == false ? version : nil)
     }
 
     /// After a fetch: how many commits the upstream branch has that HEAD lacks.

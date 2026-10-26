@@ -15,6 +15,12 @@ NXForge is a downstream of [nxnative](https://github.com/seedds/nxnative) (seedd
 - Credit is kept both ways. Commits are authored by the person (or tool) who wrote them, never as `seedds`. A fix ported from nxnative or another fork names its source commit or PR, as the reference docs already do.
 - Track what is open in [BACKLOG.md](BACKLOG.md) under "Upstream contributions": PR number, branch and status.
 
+## Versions
+
+- NXForge releases are tags `vX.Y.Z` on `main`, following [semantic versioning](https://semver.org): the minor number for new features or an upstream merge that changes behaviour, the patch number for fixes. Before 1.0 a minor release may change how things work.
+- Each release has an entry in [CHANGELOG.md](CHANGELOG.md) and a GitHub release with the same notes. The NXForge Converter shows the engine as its nearest tag (`v0.1.0`, or `v0.1.0-3-gabc1234` three commits after it).
+- The version is NXForge's own and says nothing about nxnative's; the changelog names the upstream merge each release includes.
+
 ## Reporting problems
 
 A problem that also happens with plain nxnative belongs in [nxnative's issues](https://github.com/seedds/nxnative/issues). A problem with an NXForge feature (the Quick settings sidebar, filters, cheats, capture, the Mac converter) belongs here.
