@@ -18,7 +18,7 @@ NXForge is a downstream of [nxnative](https://github.com/seedds/nxnative) (seedd
 ## Versions
 
 - NXForge releases are tags `vX.Y.Z` on `main`, following [semantic versioning](https://semver.org): the minor number for new features or an upstream merge that changes behaviour, the patch number for fixes. Before 1.0 a minor release may change how things work.
-- Each release has an entry in [CHANGELOG.md](CHANGELOG.md) and a GitHub release with the same notes. The NXForge Converter shows the engine as the release it is: `0.1.0` at the tag, `0.1.0+3` three commits after it, `pre-0.1.0` before the first release (the commit is in its tooltip).
+- Each release has an entry in [CHANGELOG.md](CHANGELOG.md) and a GitHub release with the same notes. The NXForge Converter shows the engine as the release it is: `0.2.0` at the tag, `0.2.0+3` three commits after it, `pre-0.1.0` before the first release (the commit is in its tooltip).
 - The version is NXForge's own and says nothing about nxnative's; the changelog names the upstream merge each release includes.
 
 ## Reporting problems
