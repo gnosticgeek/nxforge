@@ -8982,7 +8982,9 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
 
     CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
     if (!layer) return 0;
-    if (g_present_layer_resident != layer) { [g_q4 addResidencySet:layer.residencySet]; g_present_layer_resident = layer; }
+    if (g_present_layer_resident != layer) { [g_q4 addResidencySet:layer.residencySet]; g_present_layer_resident = layer;
+        const char *nd = getenv("DM_PRESENT_DRAWABLES");   // lag experiments: 2 drawables instead of the layer's default 3
+        if (nd && (atoi(nd) == 2 || atoi(nd) == 3)) { layer.maximumDrawableCount = (NSUInteger)atoi(nd); MLOG("present: %d drawables (DM_PRESENT_DRAWABLES)", atoi(nd)); } }
 #if TARGET_OS_OSX
     if (!layer.displaySyncEnabled) layer.displaySyncEnabled = YES;   // Windowed mode follows the display's vsync to prevent tearing
 #endif
@@ -9434,6 +9436,15 @@ void mtl_present_wait(uint64_t tk) {
 // Wait until all queued presents have been processed (used by mtl_finish = nvnQueueFinish etc.): goes through mtl_present_wait, so there is still a fallback when the display link stops (real device: the game called QueueFinish once while the display link was stopped,
 // and this used to wait here without a timeout; nobody took the 3 queued frames and the game stalled; those two runs on Mac did not hit this call)
 void mtl_present_flush(void) { pthread_mutex_lock(&g_pq_mu); uint64_t h = g_pq_in; pthread_mutex_unlock(&g_pq_mu); mtl_present_wait(h); }
+// Frames in flight (lag experiments, DM_PRESENT_DEPTH=n): the game acquires its next swapchain texture once that texture's own previous present has gone out, so with three
+// textures it can have two frames queued for the screen, about 30 ms of the 80 ms measured from enqueue to screen on an M4 Pro. With a depth, acquire also waits until no more
+// than n - 1 earlier presents are still waiting (1: every earlier frame has been handed to the GPU). Off by default until the bench shows what it costs a late frame
+int mtl_present_depth(void) { static int d = -1; if (d < 0) { const char *e = getenv("DM_PRESENT_DEPTH"); d = e ? atoi(e) : 0; if (d < 0) d = 0; if (d) MLOG("present depth %d: acquire waits until at most %d earlier presents are queued (DM_PRESENT_DEPTH)", d, d - 1); } return d; }
+void mtl_present_depth_wait(void) {
+    int d = mtl_present_depth(); if (!d || mtl_snap_on()) return;
+    pthread_mutex_lock(&g_pq_mu); uint64_t h = g_pq_in; pthread_mutex_unlock(&g_pq_mu);
+    if (h >= (uint64_t)d) mtl_present_wait(h - (uint64_t)(d - 1));
+}
 void mtl_stats(uint64_t *passes, uint64_t *draws) { *passes = g_stat_pass; *draws = g_stat_draw; }
 void mtl_args_stats(uint64_t *enc, uint64_t *reuse) { *enc = g_stat_args_enc; *reuse = g_stat_args_reuse; }
 void mtl_vbuf_stats(uint64_t *resolve, uint64_t *reuse, uint64_t *set, uint64_t *skip) {
