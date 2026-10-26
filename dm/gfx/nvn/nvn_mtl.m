@@ -3255,6 +3255,7 @@ static NvShader *shader_get(NSString *pc, int stage) {
     if (!g_shcache) g_shcache = [NSMutableDictionary dictionary];
     NvShader *o = g_shcache[pc];
     if (o) return o;
+    warm_claim(); if ((o = g_shcache[pc])) return o;   // loaded in the background since this submission started (mtl_shader_prefetch, the startup warmer)
     uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
     if (!o) return nil;
     g_shcache[pc] = o;
@@ -4724,6 +4725,51 @@ static void warm_enqueue(WarmItem *item) {
     [g_warm_items addObject:item];
     atomic_store_explicit(&g_warm_ready, 1, memory_order_release);
     os_unfair_lock_unlock(&g_warm_lock);
+}
+// Shader prefetch at program creation: games create a level's programs (nvnProgramSetShaders, which computes the stage keys) while it loads, well before its first draw, but a
+// shader's library was loaded only when a draw first needed it, on the submit thread (shader_get), 5-50 ms each: Super Mario 3D World's first run had 201 long frames from 626
+// libraries and 613 pipelines built mid-frame. Each new key is loaded on a utility queue, at most two at once so a loading burst cannot starve the game's threads or audio, and
+// handed to the submit thread like the startup warmer's shaders (warm_enqueue, warm_claim); a draw that comes first loads it itself as before and the late copy is dropped.
+// Only after the first present (the depth mode, which picks a vertex library's entry point, is set by then) and not for geometry shaders (prog_fold_gs). A game that creates
+// every program up front (thousands) would load shaders it never draws, so at most DM_NVN_PREFETCH shaders are prefetched (1,500 by default on the Mac; 0 turns it off). Off on
+// iOS until its memory is measured
+static os_unfair_lock g_pf_lock = OS_UNFAIR_LOCK_INIT;
+static NSMutableSet<NSString *> *g_pf_seen;
+static _Atomic uint64_t g_pf_loaded, g_pf_failed;
+static uint64_t g_present_n;   // presents so far (defined with the present path below)
+void mtl_shader_prefetch(const uint8_t md[8]) {
+    static long cap = -1;
+    if (cap < 0) { const char *e = getenv("DM_NVN_PREFETCH");
+#if TARGET_OS_IPHONE
+        cap = e ? atol(e) : 0;
+#else
+        cap = e ? atol(e) : 1500;
+#endif
+        if (cap < 0) cap = 0; }
+    if (!cap || !g_dev || !g_shmap || !g_present_n) return;
+    NSString *k = [NSString stringWithFormat:@"%02x%02x%02x%02x%02x%02x%02x%02x", md[0], md[1], md[2], md[3], md[4], md[5], md[6], md[7]];
+    NSString *stage = g_shmap[k]; int st = stage ? stage_of(stage) : -1;
+    if (st < 0 || st == 2) return;
+    NSString *key = [k stringByAppendingString:@"_b"];
+    os_unfair_lock_lock(&g_pf_lock);
+    if (!g_pf_seen) g_pf_seen = [NSMutableSet set];
+    int fresh = ![g_pf_seen containsObject:key] && (long)g_pf_seen.count < cap; if (fresh) [g_pf_seen addObject:key];
+    int full = !fresh && (long)g_pf_seen.count >= cap;
+    os_unfair_lock_unlock(&g_pf_lock);
+    static _Atomic int full_logged; if (full && !atomic_exchange(&full_logged, 1)) MLOG("shader prefetch: the cap of %ld shaders is reached, later programs load their shaders at the first draw (DM_NVN_PREFETCH=<n>)", cap);
+    if (!fresh) return;
+    static dispatch_queue_t q; static dispatch_semaphore_t slots; static dispatch_once_t once;
+    dispatch_once(&once, ^{ q = dispatch_queue_create("nvn-shader-prefetch", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_CONCURRENT, QOS_CLASS_UTILITY, 0)); slots = dispatch_semaphore_create(2); });
+    dispatch_async(q, ^{
+        dispatch_semaphore_wait(slots, DISPATCH_TIME_FOREVER);
+        @autoreleasepool {
+            NvShader *sh = shader_load(key, st, 0);
+            if (sh) { WarmItem *item = [WarmItem new]; item->kind = 0; item->key = key; item->shader = sh; warm_enqueue(item);
+                uint64_t n = atomic_fetch_add(&g_pf_loaded, 1) + 1; if (n == 1 || n % 200 == 0) MLOG("shader prefetch: %llu shaders loaded at program creation, off the submit thread (cap %ld, DM_NVN_PREFETCH=0 turns it off)", (unsigned long long)n, cap); }
+            else if (!atomic_fetch_add(&g_pf_failed, 1)) MLOG("[RED] shader prefetch: %s (%s) did not load", key.UTF8String, stage.UTF8String);
+        }
+        dispatch_semaphore_signal(slots);
+    });
 }
 static void warm_worker(NSArray<NSString *> *paths) {
     @autoreleasepool {

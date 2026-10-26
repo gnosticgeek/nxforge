@@ -233,5 +233,6 @@ int mtl_tex_gpu_owned(uint64_t serial);                                  // its 
 int prog_key(const prog_t *p, unsigned stage, uint8_t key[8]);
 void mtl_reg_samp(int id, const samp_par *p);
 void mtl_prog_release(prog_t *p);
+void mtl_shader_prefetch(const uint8_t md[8]);   // nvn_mtl.m: load a stage's library in the background (nvnProgramSetShaders)
 // New serial (> 0, globally increasing)
 uint64_t nvn_new_serial(void);

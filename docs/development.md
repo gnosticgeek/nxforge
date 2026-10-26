@@ -303,6 +303,8 @@ The lines name shaders by content key and hold no compiled code and nothing pers
 
 Record on the game version you ship. At launch the log names each list it read and its line count (`pipeline prewarm list …: N lines`), or says that `pso_user.tsv` does not exist yet.
 
+Shaders the lists do not name are loaded when the game creates the program that uses them (`nvnProgramSetShaders`, usually while a level loads), on a utility queue two at a time, and handed to the submit thread as the warmer's are; before, each loaded at its first draw, on the submit thread, 5–50 ms each. It starts after the first present and stops after 1,500 shaders, so a game that creates every program up front does not load thousands it never draws (`DM_NVN_PREFETCH=<n>` sets the cap, `0` turns it off; off on iOS). The log says `shader prefetch: N shaders loaded at program creation`.
+
 During rendering, a pipeline miss compiles and caches the demanded pipeline before scanning subsequent draws for speculative work. The scan admits at most two new jobs, with at most two speculative compilations outstanding; completed predictions remain available by exact key. This limit does not apply to the startup warmer. `t_pso_pending` checks scheduling and ownership with a gated compiler; it does not establish that the two-job budget is optimal on every device or remove the cost of compiling an unseen pipeline.
 ### Pipeline bases and the pipeline archive
 

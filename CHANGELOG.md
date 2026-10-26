@@ -5,6 +5,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 ## Unreleased
 
 - **Benchmark:** `scripts/bench.py` (from seedds/nxnative#191) with fresh-save routes for Mario vs. Donkey Kong and Super Mario 3D World, a shared warm pipeline cache or `--fresh-cache`, cooldowns and the thermal state per run.
+- **Less first-play stutter:** a shader's library loads in the background when the game creates its program, not mid-frame at its first draw (`DM_NVN_PREFETCH`).
 - **Present latency in the log:** `frame → screen` lines give the time from a frame leaving the game to it being on screen, in windowed and full screen pacing alike.
 
 ## 0.1.0 (2026-10-26)
