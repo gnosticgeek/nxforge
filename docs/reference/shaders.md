@@ -96,6 +96,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Note:** SDK 4's GLSLC needs its section headers read ([GLSLC outputs read through their section headers](#glslc-outputs-read-through-their-section-headers)).
 - **Found on:** [DARK SOULS: REMASTERED](../../dm/games/01004AB00A260000/README.md).
 
+### Shaders in Yacht Club Games' YCD paks
+
+- **Symptom:** the split finds no shader in the game (0 shaders); every RomFS file ends in `.yc`.
+- **How it is stored:** every RomFS file is a YCD container (`YCD\0`, version 8, a type hash at +0x10). Paks (`*.pak.yc`, type hash `4196c753a4bfda00`) are directories: a table of 0x20-byte records with self-relative pointers to each name and its data, stored whole. The shaders are the `.bin` entries of `shaders.pak.yc`, one stage each: {u32 control length, u32 code length, control section, code area}, beside a `.meta` reflection entry and `shaders/shader.db`.
+- **Reader:** `shader_split.py` `ycd_members` / `ycd_shaders`; only paks are read (the sound banks are left unread). The shaders pair as single-stage programs (`#YCD`, the cover).
+- **Found on:** [Mina the Hollower](../../dm/games/0100DCD01F306000/README.md) (SDK 21.4.3): 114 entries, 110 unique shaders.
+
 ### MSHD in MercurySteam's bshdat files
 
 - **How it is stored:** `system/shd/*.bshdat`, the only place the game's shaders live (nothing in `main` or the `.pkg` packs). Each stage is a control section, whose length is at control +0x20, sometimes followed by a small compiler-option table (`fastmath true`), then the code area at the next code header. Every file holds vertex / pixel stages in alternating order (1, 2 or 4 programs) and is paired two by two.

@@ -62,6 +62,13 @@ CUTS = {
     (0x145d0c, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
     (0x145d78, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
   ],
+  # SDK 21.4.3 sdk cb82ed522163 (Mina the Hollower 1.0.5): the same node area cut. Its malloc StandardAllocator (cut to 4 GB in its patches.py) takes its region after the node area, which a
+  # 4.375 GB alias region does not hold after a 1 GB node area. The constructor is at sdk+0x14fbe0 (the limit at +0x14fbf0, the occupied length at +0x14fc5c); VammManager::AllocateAddressRegion
+  # (sdk+0x14fd00) aligns regions to 64 KB or 2 MB only, as SDK 20.5.22's
+  'cb82ed52216313df5626154efb64d45f': [
+    (0x14fbf0, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
+    (0x14fc5c, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
+  ],
   # SDK 20.5.19 sdk 8bfebccd6f5c (BALL x PIT 1.293, Unity 6000.0.62f1): the same node area cut, for the same reason as Hollow Knight: Silksong's (Unity 6 takes all its memory through
   # AllocateAddressRegion). The AddressRegionManager constructor is the SDK 20.5.22 build's above at the same offsets (sdk+0x145cfc, the limit at +0x145d0c, the occupied length at +0x145d78)
   '8bfebccd6f5c1392597b364b9ab22a8d': [

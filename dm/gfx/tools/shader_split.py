@@ -636,6 +636,41 @@ def gfpak_members(d, label):
         if len(data) != usz: red(f'{label}#{i}: {len(data):#x} bytes, the entry says {usz:#x}')
         yield f'#{i}', data
 
+YCD, YCD_PAK = b'YCD\0', bytes.fromhex('4196c753a4bfda00')
+def ycd_members(d, label):
+    """Yacht Club Games' YCD container (Mina the Hollower: the RomFS's 107 '.yc' files, 100 of them paks): 'YCD\0', u32 version 8, u64 header length 0xc0, +0x10 u64 type hash
+    (YCD_PAK for a pak, a directory of files; the sound banks, colour maps and every asset inside a pak have others), +0x28 u64 table offset, +0x30 u64 data offset, +0x38 u64 length.
+    A pak's table: u32 16 × count, u32 4 × count, then a self-relative pointer {u32, u32 offset from the pointer} to count 0x20-byte records {u32 0, u32 name length, pointer to the name,
+    u32 length, u32 alignment, pointer to the data}. Entries are stored whole (no compression); none of the game's paks holds another pak, but one would be walked too. → (name, data) of each file"""
+    if d[0x10:0x18] != YCD_PAK: return
+    table = struct.unpack_from('<Q', d, 0x28)[0]
+    n, n4, _, rec = struct.unpack_from('<4I', d, table)
+    if n % 16 or n4 * 4 != n: red(f'{label}: YCD table counts {n:#x} / {n4:#x} disagree')
+    rec += table + 8
+    for i in range(n // 16):
+        r = rec + 0x20 * i
+        nlen, _, noff, size, _, _, doff = struct.unpack_from('<4x7I', d, r)
+        name, at = d[r + 8 + noff:r + 8 + noff + nlen].decode(), r + 0x18 + doff
+        if at + size > len(d): red(f'{label}/{name}: entry out of bounds')
+        m = d[at:at + size]
+        if m[:4] == YCD and m[0x10:0x18] == YCD_PAK: yield from ((f'{name}/{k}', v) for k, v in ycd_members(m, f'{label}/{name}'))
+        else: yield name, m
+
+def ycd_shaders(d, label):
+    """The shaders of a YCD pak (Mina the Hollower: 114 in shaders.pak.yc, one stage each, a shaders/<name>.bin beside its shaders/<name>.meta reflection and shaders/shader.db): each .bin is
+    {u32 control length, u32 code length, control section, code area}. Separate programs, paired as single-stage programs (separable_pairs)"""
+    out = []
+    for name, m in ycd_members(d, label):
+        if not name.endswith('.bin') or len(m) < 8 or m[8:12] != CTL_MAGIC: continue
+        nctl, ncode = struct.unpack_from('<II', m, 0)
+        if 8 + nctl + ncode != len(m): red(f'{label}/{name}: control {nctl:#x} + code {ncode:#x} is not the entry\'s length {len(m) - 8:#x}')
+        ctl, code = m[8:8 + nctl], m[8 + nctl:]
+        st = glslc_stage(ctl, code)
+        why = check(label, st, ctl, code) if st else 'no stage in the code area'
+        if why: red(f'{label}/{name}: {why}')
+        out.append((f'{label}/{name}#YCD', st, ctl, code))
+    return out
+
 NLG_DICT = bytes.fromhex('5824f3a9')
 def nlg_dict(d):
     """Next Level Games' archive index (Luigi's Mansion 3: '<name>.dict' beside '<name>.data', every RomFS file but the Wwise banks): u32 magic 0xa9f32458, u8 4, u8 1, u8 compressed,
@@ -1543,10 +1578,10 @@ def ps_inputs(code):
     """Generic attributes a pixel shader reads: SPH words 6–13 are the input map, 8 bits for each of the 32 attributes (Ryujinx ShaderHeader.ImapTypes), non-zero = read; the translated MSL inputs are exactly user(locn<attribute>)"""
     return {i for i in range(32) if struct.unpack_from('<I', code, 0x30 + 4 * (6 + (i >> 2)))[0] >> ((i & 3) * 8) & 0xff}
 
-SINGLE_STAGE = ('#GLSLC@', '#UE', '#MTSPK@', '#MGFX@', '#NLG', '#PGSO', '#RAW@', '#TFXO@', '#NEEDLE@')   # sources whose every shader is a program of one stage: GLSLC outputs, Unreal's shader records, MT Framework's shader package (BNSH variations, Unity programs, MSHD and SDF pair theirs);
+SINGLE_STAGE = ('#GLSLC@', '#UE', '#MTSPK@', '#MGFX@', '#NLG', '#PGSO', '#RAW@', '#TFXO@', '#NEEDLE@', '#YCD')   # sources whose every shader is a program of one stage: GLSLC outputs, Unreal's shader records, MT Framework's shader package (BNSH variations, Unity programs, MSHD and SDF pair theirs);
 # MonoGame's effects, whose passes may name no vertex shader and keep the one bound (Celeste: 10 of its 13 effects draw through SpriteBatch's vertex shader, which is in main); Next Level Games'
 # archives (Luigi's Mansion 3 makes 5,317 programs of one stage each at boot); PlatinumGames' shader objects (Bayonetta 3: one stage each, pg_shader); control sections loose in main
-# (Advance Wars 1+2: Re-Boot Camp's Bink shaders, raw_shaders), which no file pairs; and YEBIS's effect file (tfxo_shaders)
+# (Advance Wars 1+2: Re-Boot Camp's Bink shaders, raw_shaders), which no file pairs; YEBIS's effect file (tfxo_shaders); and Yacht Club Games' shader pak (ycd_shaders)
 def separable_pairs(keys):
     """Single-stage programs (13 Sentinels: each GLSLC output becomes a program with one stage, and BindProgram's stage bits combine vertex and pixel programs per draw; Unreal combines its shaders per draw
     from the pipeline state) have their real pairs only at draw time. vs_pad uses only the union of the locations the paired pixel shaders read, so every single-stage vertex shader is paired with
@@ -1647,6 +1682,10 @@ def scan_file(args):
         return rel, uniq_keys(found), var_pairs(found), trees
     if head[:8] == GFPAK:   # a Game Freak archive (gfpak_members): each entry scanned as a file of its own (the shaders are BNSH entries)
         for nm, m in gfpak_members(open(path, 'rb').read(), '/' + rel): scan_blob(m, f'/{rel}{nm}', found)
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if head[:4] == YCD:   # a Yacht Club Games container (ycd_shaders): only paks hold files; the sound banks (0.77 GB) and colour maps are left unread
+        with open(path, 'rb') as f: f.seek(0x10); pak = f.read(8) == YCD_PAK
+        if pak: found += ycd_shaders(open(path, 'rb').read(), '/' + rel)
         return rel, uniq_keys(found), var_pairs(found), trees
     d = unzs(path) if head[:4] == ZSTD_MAGIC else open(path, 'rb').read()   # by the magic: Paper Mario: The Thousand-Year Door names its zstd files .zst (8,726, its shaders among them)
     if d[:4] == b'Yaz0': d = yaz0(d)
