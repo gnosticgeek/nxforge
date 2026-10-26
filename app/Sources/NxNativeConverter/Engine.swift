@@ -161,7 +161,9 @@ enum Engine {
             guard let r = n.range(of: #"\[[0-9A-Fa-f]{16}\]"#, options: .regularExpression) else { return nil }
             return String(n[r].dropFirst(14).prefix(3))
         }
-        let upd = tails.filter { $0 == "800" }.count
+        // an update is tagged …800, though some dumps tag it with the base game's ID and only a version above v0 (Cyber Shadow)
+        let versioned = names.filter { $0.range(of: #"\[v[1-9][0-9]*\]"#, options: .regularExpression) != nil }.count
+        let upd = max(tails.filter { $0 == "800" }.count, versioned)
         let dlc = tails.filter { $0 != "800" && $0 != "000" }.count
         var parts = ["Base game"]
         if upd > 0 { parts.append("update") }

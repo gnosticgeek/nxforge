@@ -36,7 +36,9 @@ struct ConverterApp: App {
         if env["NXC_AUTOBUILD"] != nil {
             while !model.ready && model.run.result == nil { try? await Task.sleep(for: .milliseconds(300)) }
             model.build()
-            while model.run.result == nil { try? await Task.sleep(for: .milliseconds(300)) }
+            // a successful build clears its result as it hands the app to Builds, so wait for the run to end instead
+            try? await Task.sleep(for: .seconds(1))
+            while model.run.running { try? await Task.sleep(for: .milliseconds(300)) }
             try? await Task.sleep(for: .seconds(1))
         }
         guard let w = NSApp.windows.first(where: { $0.isVisible }), let view = w.contentView?.superview ?? w.contentView else { exit(1) }

@@ -163,6 +163,21 @@ final class AppModel {
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
         if settings.openAfterBuild, case .success = r, let app = run.app { NSWorkspace.shared.open(app.url) }
+        if case .success = r { finishConvert() }
+    }
+
+    /// A built game leaves Convert: the folder, its keys, the check and the activity are cleared for the next game,
+    /// and Builds opens on the new app. A failed build stays on Convert with its stages and log.
+    private func finishConvert() {
+        selectedBuild = run.app
+        buildSearch = ""
+        settings.gameDir = nil
+        settings.keys = settings.defaultKeys
+        validation = nil
+        validatedFor = nil
+        game = nil
+        run.reset()
+        page = .builds
     }
 
     func requestNotifications() {

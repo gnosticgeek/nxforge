@@ -66,6 +66,12 @@ final class BuildRun {
         }
     }
 
+    /// Back to the state before any build (after a successful one has been handed to Builds).
+    func reset() {
+        guard !running else { return }
+        stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil
+    }
+
     /// Ask the script to stop as Ctrl-C would (it ends the stage and exits with 130).
     func cancel() { process?.interrupt() }
 
