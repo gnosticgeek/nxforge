@@ -1,5 +1,5 @@
 """NSP script Mac app (scripts/build_ipa_from_nsp.py --platform mac-app, dm/mac/pack_app.py, dm/mac/launcher.c): the bundle's layout, Info.plist and ad-hoc signature without the hardened
-runtime; the launcher's environment for the host (the bundle's files, the save, temporary files and log in the player's Library), the previous log kept, environment files, the host's exit
+runtime; the launcher's environment for the host (the bundle's files, the save in the game folder with the old one copied in, temporary files and log in the player's Library), the previous log kept, environment files, the host's exit
 code returned and SIGTERM forwarded to it, an alert when the game data is missing; the script's options and its pack_app.py command line.
 No game files, keys or Xcode needed: a stand-in host compiled here records what it was given (temporary files only in a temporary folder)."""
 import contextlib
@@ -120,10 +120,12 @@ class App(unittest.TestCase):
         self.assertEqual(r['argv0'], str(self.app / 'Contents/MacOS/dmhost')); self.assertEqual(r['argv1'], str(res / 'dm'))
         self.assertEqual((r['DM_ROMFS'], r['DM_MSL_DIR'], r['DM_NVN_SHMAP'], r['DM_FONT_DIR'], r['DM_AOC_DIR']),
                          (str(res / 'romfs'), str(res / 'msl'), str(res / 'dm/shader_map.tsv'), str(res / 'dm/font'), str(res / 'aoc')))
-        self.assertEqual((r['DM_SAVE'], r['DM_TEMP'], r['DM_ROOT'], r['cwd']), (str(sup / 'save'), str(sup / 'temp'), str(sup), str(sup)))   # pso_user.tsv goes beside save/
+        self.assertEqual((r['DM_SAVE'], r['DM_TEMP'], r['DM_ROOT'], r['cwd']), (str(self.tmp / 'Saves/save'), str(sup / 'temp'), str(sup), str(sup)))   # the save in the game folder; pso_user.tsv in the Library
+        self.assertEqual(r['DM_GAME_FOLDER'], str(self.tmp))   # captures go there too (capture_mac.m)
+        self.assertEqual(r['DM_PSO_USER'], str(sup / 'pso_user.tsv'))   # the pipeline list stays in the Library, not beside the game's save
         self.assertEqual((r['DM_WINDOW'], r['DM_AUDIO'], r['DM_LANG']), ('1', '1', 'ja'))   # the caller's DM_LANG wins over the packed language
         self.assertEqual((r['DM_BAKED'], r['DM_BOTH']), ('1', 'player'))   # the player's env.txt before the bundle's
-        self.assertTrue((sup / 'save').is_dir()); self.assertTrue((sup / 'temp').is_dir())
+        self.assertTrue((self.tmp / 'Saves/save').is_dir()); self.assertTrue((sup / 'temp').is_dir())
         self.assertIn('standin host output', (logs / f'{TID}.log').read_text())
         p = self.launch(); p.communicate(timeout=30)
         self.assertIn('standin host output', (logs / f'{TID}.prev.log').read_text())
@@ -176,6 +178,32 @@ class App(unittest.TestCase):
         args = (home / 'alert.args').read_bytes().decode().split('\0')[:-1]
         self.assertEqual(args[2], title)   # data is passed separately from the compiled script
         self.assertIn('game data inside this app is missing', args[3])
+
+    def test_save_moves_in(self):   # the Library's save copied into the game folder once (temporary folder, then rename), the old one left; a save already there wins and neither changes
+        home = self.tmp / 'home'; old = home / f'Library/Application Support/nxnative/{TID}/save'; new = self.tmp / 'Saves/save'; logs = home / 'Library/Logs/nxnative'
+        shutil.rmtree(self.tmp / 'Saves', ignore_errors=True); shutil.rmtree(old, ignore_errors=True)
+        (old / '0000000000000001').mkdir(parents=True); (old / '0000000000000001/slot.bin').write_bytes(b'progress')
+        p = self.launch(); p.communicate(timeout=30)
+        self.assertEqual(self.host_run()['DM_SAVE'], str(new))
+        self.assertEqual((new / '0000000000000001/slot.bin').read_bytes(), b'progress'); self.assertEqual((old / '0000000000000001/slot.bin').read_bytes(), b'progress')
+        self.assertEqual([x.name for x in (self.tmp / 'Saves').iterdir()], ['save'])   # no temporary copy left beside it
+        self.assertIn('copied the save from', (logs / f'{TID}.log').read_text())
+        (new / '0000000000000001/slot.bin').write_bytes(b'newer'); (old / '0000000000000001/slot.bin').write_bytes(b'older')
+        p = self.launch(); p.communicate(timeout=30)
+        self.assertEqual(((new / '0000000000000001/slot.bin').read_bytes(), (old / '0000000000000001/slot.bin').read_bytes()), (b'newer', b'older'))
+        self.assertIn('the older one in', (logs / f'{TID}.log').read_text())
+
+    def test_save_stays_in_library(self):   # DM_GAME_FOLDER=0, or a game folder the launcher cannot write: the save where it was, no captures folder
+        home = self.tmp / 'home'; sup = home / f'Library/Application Support/nxnative/{TID}'
+        p = self.launch(DM_GAME_FOLDER='0'); p.communicate(timeout=30)
+        r = self.host_run(); self.assertEqual(r['DM_SAVE'], str(sup / 'save')); self.assertNotIn('DM_GAME_FOLDER', r)
+        ro = self.tmp / 'ro'; ro.mkdir(exist_ok=True); copy = ro / self.app.name
+        subprocess.run(['ditto', self.app, copy], check=True); ro.chmod(0o555)
+        try:
+            p = subprocess.Popen([copy / 'Contents/MacOS/nxnative'], env=dict(HOME=str(home), PATH='/usr/bin:/bin'), stdout=subprocess.PIPE, stderr=subprocess.STDOUT); p.communicate(timeout=30)
+            r = self.host_run(); self.assertEqual(r['DM_SAVE'], str(sup / 'save')); self.assertNotIn('DM_GAME_FOLDER', r)
+        finally:
+            ro.chmod(0o755); shutil.rmtree(ro)
 
     def test_relocated(self):   # run with the entire build folder unavailable
         with tempfile.TemporaryDirectory() as dst:

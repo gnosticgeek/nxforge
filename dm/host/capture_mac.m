@@ -1,6 +1,7 @@
 // Screenshots and video of the game as it is presented, the present filter included and the sidebar left out (front.h mtl_record_set: the present thread draws each frame once more into
-// a texture handed out here). Screenshots: PNG in ~/Pictures/NxNative, 16:9 at the window's height in pixels (720 at least). Video: H.264 with AAC sound in a QuickTime movie in
-// ~/Movies/NxNative, 1920x1080 at the game's frame rate, the sound from the first audio output (front.h dm_audio_tap_set) before the host volume. Writing files there needs no permission
+// a texture handed out here). Screenshots: PNG, 16:9 at the window's height in pixels (720 at least). Video: H.264 with AAC sound in a QuickTime movie, 1920x1080 at the game's frame rate,
+// the sound from the first audio output (front.h dm_audio_tap_set) before the host volume. Where (capture_folder): a folder the player chose, else Screenshots / Recordings in the game folder
+// (DM_GAME_FOLDER, which the app's launcher sets), else ~/Pictures/NxNative / ~/Movies/NxNative. Writing files there needs no permission
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Metal/Metal.h>
@@ -10,9 +11,17 @@
 #include "capture_mac.h"
 #include <stdatomic.h>
 
-static NSString *capture_path(NSSearchPathDirectory where, const char *game, NSString *ext) {
-    NSURL *base = [NSFileManager.defaultManager URLsForDirectory:where inDomains:NSUserDomainMask].firstObject;
-    NSString *dir = [base.path stringByAppendingPathComponent:@"NxNative"];
+static NSString *g_folder;   // the player's choice (capture_folder_set), nil: the default
+void capture_folder_set(NSString *dir) { g_folder = dir.length ? [dir copy] : nil; }
+NSString *capture_folder(int video) {
+    if (g_folder) return g_folder;
+    const char *g = getenv("DM_GAME_FOLDER");
+    if (g && *g) return [@(g) stringByAppendingPathComponent:video ? @"Recordings" : @"Screenshots"];
+    NSURL *base = [NSFileManager.defaultManager URLsForDirectory:video ? NSMoviesDirectory : NSPicturesDirectory inDomains:NSUserDomainMask].firstObject;
+    return [base.path stringByAppendingPathComponent:@"NxNative"];
+}
+static NSString *capture_path(int video, const char *game, NSString *ext) {
+    NSString *dir = capture_folder(video);
     [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSDateFormatter *f = [NSDateFormatter new]; f.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
     NSString *name = [[NSString stringWithFormat:@"%s %@", game, [f stringFromDate:NSDate.date]] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
@@ -114,7 +123,7 @@ void capture_screenshot(const char *game, void (^done)(NSString *, NSString *)) 
     CGFloat hgt = NSApp.keyWindow ? NSApp.keyWindow.contentView.bounds.size.height * NSApp.keyWindow.backingScaleFactor : 1080;
     size_t h = (size_t)MAX(720, (long)hgt) & ~1ul, w = (size_t)(h * 16 / 9) & ~1ul;
     DmRecording *r = rec_new(w, h); if (!r) { done(nil, @"The screenshot could not be set up"); return; }
-    r.single = YES; NSString *path = capture_path(NSPicturesDirectory, game, @"png"); g_rec = r;
+    r.single = YES; NSString *path = capture_path(0, game, @"png"); g_rec = r;
     r.shot = ^(CVPixelBufferRef pb) {
         mtl_record_set(NULL);
         CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
@@ -136,7 +145,7 @@ void capture_screenshot(const char *game, void (^done)(NSString *, NSString *)) 
 int capture_recording(void) { return g_rec && !g_rec.single; }
 void capture_record_start(const char *game, void (^done)(NSString *, NSString *)) {
     if (g_rec) { done(nil, @"A capture is already in progress"); return; }
-    DmRecording *r = rec_new(1920, 1080); NSError *e = nil; NSString *path = capture_path(NSMoviesDirectory, game, @"mov");
+    DmRecording *r = rec_new(1920, 1080); NSError *e = nil; NSString *path = capture_path(1, game, @"mov");
     r.writer = r ? [AVAssetWriter assetWriterWithURL:[NSURL fileURLWithPath:path] fileType:AVFileTypeQuickTimeMovie error:&e] : nil;
     if (!r.writer) { done(nil, [NSString stringWithFormat:@"The recording could not start: %@", e.localizedDescription ?: @"no writer"]); return; }
     r.video = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:@{AVVideoCodecKey: AVVideoCodecTypeH264, AVVideoWidthKey: @1920, AVVideoHeightKey: @1080,
