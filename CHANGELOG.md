@@ -2,6 +2,18 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.3.0 (2026-10-26)
+
+Mina the Hollower, the first Yacht Club Games title; no upstream merge.
+
+**New game**
+- Mina the Hollower (`0100DCD01F306000`, 1.0.5, SDK 21.4.3) converts and boots on the Mac: the intro and the menus, with input. Its profile cuts the 24 GB of address space it reserves at boot (malloc and two engine heaps) to fit the 5 GB block. In bring-up: gameplay is not tested yet.
+
+**Engine**
+- The shader split reads Yacht Club Games' YCD paks (`.yc`): the shaders of `shaders.pak.yc`.
+- A guest thread blocked in the host (the blocking `oe::PopNotificationMessage`) no longer counts as running on its core, so lower-priority threads on that core are no longer held after waking it. Mina the Hollower stayed on a black screen because of it.
+- The node-area cut for the SDK 21.4.3 `sdk` build.
+
 ## 0.2.0 (2026-10-26)
 
 The NXForge Converter release: everything since 0.1.0 is in the converter app (`app/`); the engine and the game profiles are as in 0.1.0, and there is no upstream merge.
