@@ -99,7 +99,7 @@ struct BuildDetail: View {
             }
             HStack {
                 Button { NSWorkspace.shared.open(build.app.url) } label: { Label("Open app", systemImage: "play.fill").font(.title3).frame(maxWidth: .infinity) }
-                    .buttonStyle(.glassProminent)
+                    .modifier(GlassButton(prominent: current || model.engine == nil))   // on an older engine Rebuild is the blue one
                 Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.glass)
             }
@@ -109,7 +109,7 @@ struct BuildDetail: View {
                 Divider()
                 HStack {
                     Text("Engine").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
-                    Text(build.engine.short).help(build.engine.subject)
+                    Text(build.engine.short).help("\(build.engine.commit.prefix(7)) · \(build.engine.subject)")
                     if !current, model.engine != nil { Text("older").font(.caption).padding(.horizontal, 6).padding(.vertical, 2).background(.orange.opacity(0.25), in: .capsule) }
                     Spacer()
                 }
@@ -126,9 +126,9 @@ struct BuildDetail: View {
                 .padding(.vertical, 6)
             }
             Button { model.rebuild(build) } label: {
-                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
+                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").font(current ? .body : .title3).frame(maxWidth: .infinity)
             }
-            .buttonStyle(.glass).controlSize(.large)
+            .modifier(GlassButton(prominent: !current)).controlSize(current ? .large : .extraLarge)
             .disabled(!model.allOK || model.run.running)
             DisclosureGroup(isExpanded: $detailsOpen) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -215,5 +215,13 @@ struct PreviousBuilds: View {
             _ = model.confirm("Could not restore", "\(error)", action: "OK")
         }
         model.revision += 1
+    }
+}
+
+/// .glassProminent (the blue one) or .glass: the card's main action is blue, the open app when it is current, the rebuild when it is not
+struct GlassButton: ViewModifier {
+    let prominent: Bool
+    func body(content: Content) -> some View {
+        if prominent { content.buttonStyle(.glassProminent) } else { content.buttonStyle(.glass) }
     }
 }

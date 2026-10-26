@@ -198,7 +198,7 @@ struct MacAppCard: View {
                     Button { model.build(rebuild: app) } label: {
                         Label("Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glass).controlSize(.large).disabled(!model.ready)
+                    .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(!model.ready)
                     .help(model.settings.keepBackups ? "Moves this app to app-backups/ and builds it again on the current engine" : "Builds this app again on the current engine; the old one goes to the Trash")
                 }
             } else if !model.run.running {
