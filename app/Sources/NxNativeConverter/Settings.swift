@@ -4,6 +4,11 @@ import Foundation
 
 enum Appearance: String, Codable, CaseIterable { case system = "System", light = "Light", dark = "Dark" }
 enum LogDetail: String, Codable, CaseIterable { case standard = "Standard", detailed = "Detailed" }
+/// --cleanup: what the script deletes from <id>_build after a successful build
+enum Cleanup: String, Codable, CaseIterable {
+    case off, unused, all
+    var label: String { switch self { case .off: "Keep everything"; case .unused: "Remove unused files"; case .all: "Remove build cache" } }
+}
 
 struct Settings: Codable, Equatable {
     var repo: String?
@@ -25,11 +30,13 @@ struct Settings: Codable, Equatable {
     var keepBackups = true
     /// detailed: Copy log adds the tools' own logs from <id>_build/logs
     var logDetail: LogDetail = .standard
+    /// what a successful build deletes from <id>_build (--cleanup)
+    var cleanup: Cleanup = .off
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
         case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys"
-        case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail"
+        case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
     }
 
     init() {}
@@ -50,6 +57,7 @@ struct Settings: Codable, Equatable {
         reuseCache = (try? c.decodeIfPresent(Bool.self, forKey: .reuseCache)) ?? true
         keepBackups = (try? c.decodeIfPresent(Bool.self, forKey: .keepBackups)) ?? true
         logDetail = (try? c.decodeIfPresent(LogDetail.self, forKey: .logDetail)) ?? .standard
+        cleanup = (try? c.decodeIfPresent(Cleanup.self, forKey: .cleanup)) ?? .off
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)
@@ -74,7 +82,7 @@ struct Settings: Codable, Equatable {
     mutating func restoreDefaults() {
         let d = Settings()
         signIdentity = d.signIdentity; outDir = d.outDir; defaultKeys = d.defaultKeys; appearance = d.appearance; notify = d.notify
-        openAfterBuild = d.openAfterBuild; reuseCache = d.reuseCache; keepBackups = d.keepBackups; logDetail = d.logDetail; python = nil
+        openAfterBuild = d.openAfterBuild; reuseCache = d.reuseCache; keepBackups = d.keepBackups; logDetail = d.logDetail; cleanup = d.cleanup; python = nil
     }
 }
 

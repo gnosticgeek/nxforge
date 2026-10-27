@@ -155,7 +155,7 @@ final class AppModel {
         let name = game?.name ?? ""
         let out = settings.outDir.flatMap { $0 == dir || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
         run.start(Job(gameDir: dir, keys: keys, sign: settings.signIdentity, env: env, rebuild: rebuild, out: out,
-                      keepBackup: settings.keepBackups, reuseCache: settings.reuseCache))
+                      keepBackup: settings.keepBackups, reuseCache: settings.reuseCache, cleanup: settings.cleanup))
     }
 
     /// Rebuild a recorded app: its own game folder becomes the chosen one first.

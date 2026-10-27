@@ -65,6 +65,12 @@ struct SettingsPage: View {
                 setting("Keep previous app builds", "Save the existing app before replacing it.") {
                     Toggle("", isOn: $model.settings.keepBackups).toggleStyle(.switch).labelsHidden()
                 }
+                setting("After a build", model.settings.cleanup == .all ? "Deletes the build cache; the next build starts over (about 30 min)." : "Unused removes old versions' extracted files.") {
+                    Picker("", selection: $model.settings.cleanup) {
+                        ForEach(Cleanup.allCases, id: \.self) { Text($0.label) }
+                    }
+                    .labelsHidden().fixedSize()
+                }
                 setting("Build logs", "Detailed adds each tool's own log to Copy log.") {
                     Picker("", selection: $model.settings.logDetail) {
                         ForEach(LogDetail.allCases, id: \.self) { Text($0.rawValue) }

@@ -16,6 +16,8 @@ struct Job {
     var keepBackup = true
     /// false: delete the stage keys in <id>_build first, so every step runs again
     var reuseCache = true
+    /// what a successful build deletes from <id>_build (--cleanup)
+    var cleanup: Cleanup = .off
 }
 
 struct Stage: Hashable {
@@ -146,6 +148,7 @@ final class BuildRun {
         var args = ["-u", repo + "/" + scriptPath, job.gameDir, "-k", job.keys, "--platform", "mac-app", "--progress", "json"]
         if let id = job.sign { args += ["--mac-sign", id] }
         if let o = job.rebuild ?? job.out { args += ["-o", o] }
+        if job.cleanup != .off { args += ["--cleanup", job.cleanup.rawValue] }
         p.arguments = args
         p.currentDirectoryURL = URL(fileURLWithPath: repo)
         var env = ProcessInfo.processInfo.environment
