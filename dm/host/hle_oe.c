@@ -193,7 +193,7 @@ HLE_FORCE("_ZN2nn2oe22PopNotificationMessageEv", "system notification queue (blo
     uint32_t m = 0;
     for (;;) {
         pthread_mutex_lock(&g_mq_lock);
-        while (!g_mqn) pthread_cond_wait(&g_mq_cond, &g_mq_lock);
+        if (!g_mqn) { dm_thread_host_wait(1); while (!g_mqn) pthread_cond_wait(&g_mq_cond, &g_mq_lock); dm_thread_host_wait(0); }   // blocked, as in the kernel: not a runnable core peer
         pthread_mutex_unlock(&g_mq_lock);
         if (h_oe_TryPopMsg(&m)) return m;   // another thread may have taken it in between: wait again
     }

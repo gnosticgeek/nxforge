@@ -41,6 +41,13 @@ Guest threads, their synchronization and how the host schedules them. Each entry
 - **Found on:** [Metroid Dread](../../dm/games/010093801237C000/README.md), whose per-build movie request-ring gates and `core_preempt on` setting are now removed.
 - **Scope:** these are cooperative thread-SVC handoffs, not a complete asynchronous guest scheduler. The optional `core_preempt` profile key (`DM_PREEMPT=0` / `1` overrides it) additionally checks already-runnable peers after every thread SVC; it defaults off. Historically that broader policy moved [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md)'s first frame from 0.6 s to 2.9 s by waiting for busy decompression threads. Wake-triggered handoffs apply with either setting.
 
+### HLE calls that block in the host leave the core
+
+- **Symptom:** a black screen for good, every frame a clear only, no red line; a thread dump shows a lower-priority thread pinned to core 0 "running" inside `dm_yield_to_core_peers` (a sampler shows it in `nanosleep` there), and a higher-priority core-0 thread "running" inside an HLE call (`h_oe_PopMsg`).
+- **Cause:** a same-core handoff ([Same-core wake handoffs](#same-core-wake-handoffs)) waits until every higher-priority peer pinned to the caller's core blocks. A guest thread inside an HLE call that waits on a host condition variable (the blocking `oe::PopNotificationMessage`) had no guest wait state, so it counted as runnable for as long as it waited; on Horizon it waits in the kernel and leaves the core. Mina the Hollower's `NxMessagePump` (priority 44, core 0) waits there for good, and its audio decoder (priority 59, core 0) stalled in the handoff after each heap mutex unlock, so the game never finished loading its sound banks.
+- **Fix:** `dm_thread_host_wait(1 / 0)` (`hle_thread.c`) marks the calling guest thread as not runnable around such a wait (the `sleeping` state `dm_guest_sleep_ns` uses); `h_oe_PopMsg` (`hle_oe.c`) uses it. Other HLE calls that block guest threads on host primitives should do the same.
+- **Found on:** [Mina the Hollower](../../dm/games/0100DCD01F306000/README.md) (SDK 21.4.3).
+
 ### Simultaneous crashes of several threads
 
 - **Symptom:** several threads crash at once and the dumps interleave, then the process hangs instead of exiting.

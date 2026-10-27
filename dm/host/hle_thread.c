@@ -733,6 +733,10 @@ static void sleep_precise(uint64_t dl) {
 }
 // A guest thread sleeps ns nanoseconds the way SleepThread does: on the guest clock under the deterministic clock, else on time (sleep_precise). Also for host hooks that stand for a
 // call which blocks on hardware (hle_net.c: Poll / Select with nothing to wait on)
+// The calling guest thread blocks in the host (an HLE call waiting on a host condition variable, e.g. oe::PopNotificationMessage): on Horizon it waits in the kernel and leaves its core,
+// so same-core handoffs (dm_yield_to_core_peers) must not count it as runnable. Mina the Hollower's NxMessagePump (priority 44, core 0) blocks in PopNotificationMessage for good; counted as
+// runnable it held every lower-priority core-0 thread in its handoff after each wake (its audio decoder, which unlocks a heap mutex the game thread waits on), and the game never left a black screen
+void dm_thread_host_wait(int on) { thr_t *me = pthread_getspecific(g_keythr); if (me) me->sleeping = on; }
 void dm_guest_sleep_ns(int64_t ns) {
     if (ns <= 0) return;
     if (dm_detclock_enabled()) {
