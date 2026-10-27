@@ -28,6 +28,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix:** it now goes by the zstd magic (`28 b5 2f fd`) whatever the name.
 - **Found on:** [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) (8,726 of the RomFS's 9,959 files, the shader archives among them). Of the other 21 games' RomFS on hand only Super Mario Galaxy's `GDDR3.zst` (a Vulkan game, no NVN split) has such a file.
 
+### HAL Laboratory's .cmp files
+
+- **Symptom:** the title screen's 3D background is black and the logo's effects are missing; the boot's 3D intro scene plays only its music over a black screen; the log has hundreds of `[RED] shader … is not in the shader map` lines (189 to 304 distinct keys in a minute), and the split found only 133 shaders.
+- **Cause:** almost every model, effect and layout is a `.cmp` file: u32 decompressed size, then one zstd frame (the `gfx` models, `.bfres`, and the `lyt` layouts, SARC) or one LZ4 frame (the `ptcl` effects and the fonts). The split read them as they are and saw no BNSH.
+- **Fix:** `hal_cmp` decompresses a file whose bytes at +4 are the zstd or LZ4 frame magic, whatever its name, when it decompresses to the size in front; a file that only looks like one is read as it is.
+- **Found on:** Kirby's Return to Dream Land Deluxe (01006B601380E000, v0): all 3,051 `.cmp` files decompress (2,365 models, 370 layouts, 251 effects, 65 fonts), and the split finds 47,099 shaders (36,950 in the models, 9,693 in the effects, 323 in the layouts), every key missing in the run among them.
+
 ### BNSH in Bezel Engine archives
 
 - **How it is stored:** the shaders are BNSH in the `.bfsha` entries of the `.bea` archives (zstd entries, [01](../agents/01-extract.md)), most of them the engine's own in `System.nx.bea` (`_BezelSystemResources/<system>/shader/*.bfsha`: PBR shadow maps 846, post effects 770, …), the rest in the layouts' `__ArchiveShader.bnsh` and the per-archive shader packs (`.bnbshpk`), plus one BNSH in `main`.
