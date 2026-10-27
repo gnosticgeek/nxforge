@@ -2,6 +2,21 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.3.0 (2026-10-27)
+
+Mina the Hollower, the first Yacht Club Games title, and Kirby's Return to Dream Land Deluxe; no upstream merge.
+
+**New games**
+- Mina the Hollower (`0100DCD01F306000`, 1.0.5, SDK 21.4.3) converts and boots on the Mac: the intro and the menus, with input. Its profile cuts the 24 GB of address space it reserves at boot (malloc and two engine heaps) to fit the 5 GB block. In bring-up: gameplay is not tested yet.
+- Kirby's Return to Dream Land Deluxe (`01006B601380E000`, base game without updates, SDK 13.3.5) converts from a provisional profile and plays on the Mac at 60 fps: the 3D intro, the title and gameplay, with its movies. The first minute of a first launch hitches while Metal builds pipelines. No hand-checked profile yet.
+
+**Engine**
+- The shader split reads Yacht Club Games' YCD paks (`.yc`): the shaders of `shaders.pak.yc`.
+- A guest thread blocked in the host (the blocking `oe::PopNotificationMessage`) no longer counts as running on its core, so lower-priority threads on that core are no longer held after waking it. Mina the Hollower stayed on a black screen because of it.
+- The node-area cut for the SDK 21.4.3 `sdk` build.
+- The shader split reads HAL Laboratory's `.cmp` files (a u32 size, then a zstd or LZ4 frame), recognised by their content: Kirby's models, effects and layouts hold 47,099 shaders, where 133 were found before, and without them its title screen and intro were black.
+- The survey names files packed that way instead of listing them as unknown, and the shader split prints a `[RED]` line for RomFS files that open with an LZ4 frame or a zlib stream it does not unpack, so a build with shaders missing that way no longer goes quietly to a black screen.
+
 ## 0.2.0 (2026-10-26)
 
 The NXForge Converter release: everything since 0.1.0 is in the converter app (`app/`); the engine and the game profiles are as in 0.1.0, and there is no upstream merge.

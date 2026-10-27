@@ -1,0 +1,35 @@
+# Mina the Hollower (Yacht Club Games). Started from the provisional profile scripts/build_ipa_from_nsp.py wrote; memory values still the survey's guesses
+# SDK 21.4.3, NVN; the shaders are in shaders.pak.yc (YCD paks, shader_split.py ycd_shaders)
+
+# ---- Identity ----
+title_id	0100DCD01F306000
+program_id	0100DCD01F306000
+
+# ---- App ----
+name	Mina the Hollower
+ipa	MinaTheHollower.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v262144	1.0.5	main=2bc484524f0c86bc7c2228d6fbfb0817	sdk=cb82ed52216313df5626154efb64d45f
+package	v262144
+shader_versions	v262144
+
+# ---- Files ----
+# every module main imports from
+modules	main sdk
+romfs_marker	default.sndbnk.yc
+zip_store	.yc:.metallib
+
+# ---- Memory ----
+# the NPDM declares 32 MB of system resource (virtual address memory) and main never sets a heap: a 5 GB block with a 4.375 GB alias region, where the game maps its memory itself
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 32 MB of system resource
+sys_resource	0x2000000
+
+# ---- Shader split ----
+shader_groups	/=romfs
+shader_note	Mina the Hollower shaders
