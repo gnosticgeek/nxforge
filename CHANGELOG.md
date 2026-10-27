@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+**Converter**
+- `--cleanup unused|all` (and *After a build* in the converter's settings) tidies `<id>_build/` after a successful build. `unused` deletes other versions' extracted files and rewritten modules (an update replaced by a newer one), half-written folders and the survey; `all` deletes the whole build cache but its logs and profile. The NSPs, `prod.keys`, the app and the save are never touched.
+
 ## 0.3.0 (2026-10-27)
 
 Mina the Hollower, the first Yacht Club Games title, and Kirby's Return to Dream Land Deluxe; no upstream merge.

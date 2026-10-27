@@ -18,7 +18,7 @@
 # Uses only three things: this repository, a folder holding one game's NSPs (the base game, with or without an update; DLC NSPs, when present, are packed too and unlock the add-on content already in the game), and prod.keys.
 #   The newest version in the folder is packed. A version the profile registers (with every version in its shader_versions in the folder) is built from the profile as it is; any other
 #   version (the base game alone, another update) from a profile derived from it in <id>_build/profile: the same settings, and the version's own shaders (derive_profile).
-# Every intermediate file is under <id>_build/ in the NSP folder: nsp/ (NSZ / XCZ files converted to NSP / XCI with nsz -D, kept for the next build; pip install nsz), extract/ (the extracted game files, kept for the next build unless KEEP_EXTRACTED / --no-keep-extracted), aoc/ (each DLC's RomFS by index), tools/ (nx_extract, and the Mac host for a run-time shader capture), patched_*/, shader/ (shader package and caches, kept so the next build is fast), logs/ (each step's full output), tmp/, ipa/. The finished IPA also goes to the NSP folder by default.
+# Every intermediate file is under <id>_build/ in the NSP folder: nsp/ (NSZ / XCZ files converted to NSP / XCI with nsz -D, kept for the next build; pip install nsz), extract/ (the extracted game files, kept for the next build unless KEEP_EXTRACTED / --no-keep-extracted), aoc/ (each DLC's RomFS by index), tools/ (nx_extract, and the Mac host for a run-time shader capture), patched_*/, shader/ (shader package and caches, kept so the next build is fast), logs/ (each step's full output), tmp/, ipa/. The finished IPA also goes to the NSP folder by default. CLEANUP / --cleanup tidies <id>_build after a successful build (cleanup).
 # The DLC, the rewrite, the shader split and the iOS (or Vulkan) shaders are reused when all their inputs are as at their last successful run (the game files, the tools, the profile, Xcode and spirv-cross: fingerprint() keys beside their output);
 #   the iOS shaders' inputs are the shader package's content and the chain's own tools, so a split that runs again and writes the same package leaves them reused.
 #   The chain version header dm/gfx/nvn/dmsh_chain.h (one version for every game) is written again when a chain change was committed without it (chain_header: it follows from the source alone),
@@ -47,6 +47,9 @@ XCODE_WORKSPACE = ''                    # shared .xcworkspace (empty = NxNative.
 LANGUAGE = ''                           # game language, a code or a name: 'ja', 'fr', 'de', 'es', 'zh-Hans', 'zh-Hant', 'ko', 'Japanese', ... (empty = English); it must be one the game supports (the console line lists them);
                                         #   DM_LANG=<code> in the app's Documents/env.txt changes it without a rebuild
 KEEP_EXTRACTED = True                   # keep the extracted game files after the IPA is built (saves extraction next time; as big as the game files); False deletes them
+CLEANUP = 'off'                         # after a successful build: 'off' keeps <id>_build as it is; 'unused' deletes what this build did not use (other versions' extracted files and rewritten modules,
+                                        #   half-written *.partial folders, the survey of a game that has a profile now); 'all' (an IPA or a Mac app) also deletes the rest of <id>_build but logs/ and
+                                        #   profile/, so the next build extracts and compiles everything again (a Mac app's shaders: about half an hour). Never the NSPs, prod.keys or the game's save
 DM_ENV_FILE = ''                        # optional: environment switches for a diagnostic build (one KEY=VALUE per line)
 SHOW_FPS = True                         # True shows the game's frame rate on the iPhone (frames on screen per second, top left); DM_SHOW_FPS=0 / 1 in the app's Documents/env.txt changes it without a rebuild
 SURVEY_ONLY = False                     # a game with no profile in dm/games: only write the survey, no provisional profile and no IPA
@@ -1552,6 +1555,32 @@ def mac_run(work, game, patched, host, font, msl, aoc, gfx, lang, g, env_file=''
     return f'cd {q(rd)} && ' + ' '.join(f'{k}={q(v)}' for k, v in renv.items()) + f' {q(host)} {q(patched)}'
 
 
+def cleanup(mode, work, versions, pkg_ver, survey=None, everything=False):
+    """CLEANUP / --cleanup after a successful build (mode 'unused' or 'all'). Deleted in either mode: extract/ folders of versions this build did not use (an update since replaced by a newer
+    one, a version that cannot be built), patched_ / nro_ folders and keys of versions other than the packed one, *.partial folders, tmp/, and survey (the survey of a game that has a profile now).
+    everything ('all', for an IPA or a Mac app, which need nothing from <id>_build): every other entry of <id>_build too but logs/ (the converter's detailed log), profile/ (a provisional or
+    derived profile) and run/ (a Mac-only build's save). Nothing outside <id>_build and survey: not the NSPs, prod.keys, the built app or IPA, or the save in ~/Library/Application Support/nxnative.
+    The space freed is measured on the volume: a Mac app's game files are APFS clones of extract/<version>, which free nothing while the app is there"""
+    ex, gone = work / 'extract', []
+    def drop(p):
+        if p.exists() or p.is_symlink(): gone.append(p.relative_to(work.parent)); rmtree(p)
+    before = free_gb(work)
+    if everything:
+        for p in sorted(work.iterdir()):
+            if p.name not in ('logs', 'profile', 'run'): drop(p)
+    else:
+        for p in sorted(ex.iterdir()) if ex.is_dir() else []:
+            if p.name not in versions: drop(p)
+        for p in sorted(work.iterdir()):
+            v = p.name.removesuffix('.partial').removesuffix('.key')
+            if p.name.endswith('.partial') or p.name == 'tmp' or (v.startswith(('patched_', 'nro_')) and v.split('_', 1)[1] != pkg_ver): drop(p)
+    if survey and survey.is_dir(): drop(survey)
+    freed = max(free_gb(work) - before, 0)
+    if gone: say(f'cleanup ({mode}): deleted {", ".join(str(p) for p in gone)}; {freed:.1f} GB freed')
+    else: say(f'cleanup ({mode}): nothing to delete')
+    if everything: say('cleanup: the next build extracts the game and compiles its shaders again; it needs the NSPs and prod.keys as before')
+
+
 def mac_app_name(name):   # the app's file name: the game name with the characters Finder shows otherwise (':' and '/') as ' - '
     return re.sub(r'\s*[:/]\s*', ' - ', name).strip(' .-') or 'nxnative'
 
@@ -1604,6 +1633,9 @@ def parse_args(argv):
     ap.add_argument('-l', '--language', help='game language, a code or a name: ja, fr, de, es, it, nl, pt, ru, ko, zh-Hans, zh-Hant, en-GB, fr-CA, es-419, pt-BR, Japanese, ... (default: the LANGUAGE setting, else English); '
                     'it must be one the game supports, which the console lists')
     ap.add_argument('--keep-extracted', action=argparse.BooleanOptionalAction, help='keep the extracted game files after the IPA is built, for the next build (default: the KEEP_EXTRACTED setting, on)')
+    ap.add_argument('--cleanup', choices=('off', 'unused', 'all'), help='after a successful build: off = keep <id>_build as it is; unused = delete what this build did not use (other versions\' extracted files and '
+                    'rewritten modules, *.partial folders, tmp/, the survey of a game that has a profile now); all = an IPA or a Mac app only: also every other file in <id>_build but logs/ and profile/, '
+                    'so the next build starts from the NSPs again. Never the NSPs, prod.keys or the game\'s save (default: the CLEANUP setting, off)')
     ap.add_argument('--env-file', help='environment switches for a diagnostic build (one KEY=VALUE per line)')
     ap.add_argument('--show-fps', action=argparse.BooleanOptionalAction, help='show the game\'s frame rate on the iPhone, frames on screen per second at the top left (default: the SHOW_FPS setting, on)')
     ap.add_argument('--survey-only', action='store_true', help='a game with no profile: only the survey, no provisional profile and no IPA')
@@ -1651,6 +1683,9 @@ def main(args=None):
     if mac and not keep: say('keeping the extracted game files all the same: the game runs from them on the Mac' + (' and the app is made of clones of them' if mac_pack else '')); keep = True
     if prepare_xcode and not keep: raise BuildError('--prepare-xcode requires --keep-extracted: Xcode builds from the extracted files')
     if args.xcode_workspace and not prepare_xcode: raise BuildError('--xcode-workspace requires --prepare-xcode')
+    clean = args.cleanup or CLEANUP
+    if clean not in ('off', 'unused', 'all'): raise BuildError(f'CLEANUP / --cleanup must be off, unused or all: {clean}')
+    if clean == 'all' and (prepare_xcode or (mac and not mac_pack)): raise BuildError(f'--cleanup all deletes the extracted files, which {"the Xcode project builds" if prepare_xcode else "a Mac-only build runs"} from: use --cleanup unused')
     nsp_dir = Path(os.path.expanduser(args.nsp_dir or NSP_DIR or ask('NSP folder: ', 'the NSP folder'))).resolve()
     keys = Path(os.path.expanduser(args.keys or PROD_KEYS or ask('path of prod.keys: ', 'prod.keys (-k)'))).resolve()
     if not nsp_dir.is_dir(): raise BuildError(f'not a folder: {nsp_dir}')
@@ -1762,6 +1797,7 @@ def main(args=None):
         g = gamemod.load(g.id)
         say(f'derived game profile for {pkg_ver} ({disp}): {g.dir}')
     sv = versions if derived else need   # the versions whose files the shaders come from
+    survey_dir = None if provisional else nsp_dir / f'{app:016X}_survey'   # a provisional profile names its survey; a game with a profile has no more use for one
     game = dirs[pkg_ver]
     # how the shaders are got follows from the packed version's files (profile_guess.py shader_sources): the graphics API, and the shaders made only at run time
     src = pg.build_sources(game / 'ExeFS', game / 'RomFS', g.words('modules'))
@@ -1827,6 +1863,7 @@ def main(args=None):
         rmtree(work / 'tmp')
         say(f'done: {out_ipa} ({tree_size(out_ipa)[1] / 2**30:.1f} GB{", its game files APFS clones of the extracted ones, which take no space of their own" if clones else ""}); '
             f'open it from Finder. Its save is in ~/Library/Application Support/nxnative/{app:016X}/, its log in ~/Library/Logs/nxnative/{app:016X}.log')
+        if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir, clean == 'all')
         report_profile_status(g, reg, pkg_ver, derived, provisional, 'Mac app')
         return
     if mac:   # a Mac-only build ends with the Mac host and the command that runs the game
@@ -1835,6 +1872,7 @@ def main(args=None):
         rmtree(work / 'tmp')
         say(f'done: the game runs on the Mac with this command (its save in {work / "run/save"}, kept from run to run; DM_WINDOW=1 opens a window, DM_AUDIO=1 plays sound):')
         PROG.say(cmd)
+        if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir)
         report_profile_status(g, reg, pkg_ver, derived, provisional, 'Mac build')
         return
 
@@ -1861,6 +1899,7 @@ def main(args=None):
         say(f'game project: {project}')
         say(f'Xcode derived data: {work / "xcode-derived-data"}')
         say('choose the game scheme in Xcode, select your Team and iPhone or iPad, then Run (Release)')
+        if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir)
         report_profile_status(g, reg, pkg_ver, derived, provisional, 'Xcode project')
         return
     watch = IpaWatch(repo, work / 'ipa', out_ipa)
@@ -1872,6 +1911,7 @@ def main(args=None):
     if not keep:
         say(f'deleting the extracted game files: {ex}'); rmtree(ex)
     say(f'done: {out_ipa} ({out_ipa.stat().st_size / 2**30:.1f} GB)')
+    if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir, clean == 'all')
     report_profile_status(g, reg, pkg_ver, derived, provisional)
 
 
