@@ -534,6 +534,7 @@ def survey(nsp_dir, app, fam, keys, repo, py, env):
     say(f'extracting the code modules and a RomFS manifest (no game files written) → {ex}')
     run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'extract.log')
     swap_in(tmp, ex)
+    need_aarch64(ex, 'v0' if upd is None else f'v{ups[-1][0] or 1}')
     PROG.stage('survey: code modules', step='reading')
     xlog = (logs / 'extract.log').read_text(errors='replace')
     dv = re.search(r'display version (\S+)', xlog)
@@ -796,6 +797,15 @@ def extracted(log):   # (files, bytes) from the summary lines nx_extract wrote t
     try: rows = re.findall(r'[:|] (\d+) files ([\d.]+) MB', log.read_text(errors='replace'))
     except OSError: return None
     return (sum(int(n) for n, _ in rows), int(sum(float(mb) for _, mb in rows) * 2**20)) if rows else None
+
+
+def need_aarch64(d, name, g=None):
+    """Stop on a 32-bit (AArch32) program before anything reads its modules as AArch64 ones: Apple Silicon runs only AArch64 code, and the host runs the game's code natively.
+    Mario Kart 8 Deluxe 3.0.1 is one; its 4.0.0 is AArch64"""
+    if not pg.aarch32(d / 'ExeFS/main.npdm'): return
+    regs = ', '.join(f'{v} ({b["display"]})' for v, b in (g.builds() if g else {}).items())
+    hint = f"; game profile {g.id} registers {regs}: put that update's NSP in the folder" if regs else ''
+    raise BuildError(f'{name} ({nacp.version(d / "control.nacp") or "?"}) is a 32-bit (AArch32) program: Apple Silicon Macs and iPhones run only 64-bit Arm code, so the host cannot run it{hint}')
 
 
 def extract(nx, keys, ex, name, base, upd, cmp_dir, logs, g):   # the build IDs are checked by the caller (build_mismatch)
@@ -1735,6 +1745,7 @@ def main(args=None):
     for ver in versions:   # the base game is extracted alone first; later updates clone against its RomFS
         b, u = picks[ver]
         dirs[ver] = extract(nx, keys, ex, ver, b, u, clone, logs, g)
+        if ver == pkg_ver: need_aarch64(dirs[ver], ver, g)
         if u is None and clone is None and can_clone(ex): clone = dirs[ver] / 'RomFS'
     bad = [] if derived else [f'{v}: {x}' for v in versions for x in build_mismatch(dirs[v], v, g)]   # every module's build ID must be the one the profile registers for its version
     if bad and provisional: raise BuildError(f'not the builds provisional game profile {g.id} registers: {"; ".join(bad)}')

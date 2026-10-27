@@ -26,6 +26,7 @@ def dynsyms(img):
         t, v = struct.unpack_from('<qQ', img, dyn + i * 16)
         if t == 0: break
         tags.setdefault(t, v)
+    if 6 not in tags or 5 not in tags: raise ValueError('no DT_SYMTAB / DT_STRTAB in the dynamic section: not an AArch64 module (a 32-bit program has a 32-bit one)')
     symtab, strtab = tags[6], tags[5]
     n = struct.unpack_from('<I', img, tags[4] + 4)[0] if 4 in tags else (strtab - symtab) // 24
     out = []

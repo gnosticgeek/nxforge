@@ -72,6 +72,12 @@ def npdm(path):   # (system resource size, program ID) from main.npdm; a non-zer
     return (struct.unpack_from('<I', d, 0x14)[0] if d[:4] == b'META' else 0), (struct.unpack_from('<Q', d, a + 0x10)[0] if a >= 0 else None)
 
 
+def aarch32(path):   # True when main.npdm marks a 32-bit (AArch32) program (META flags bit 0 clear): Apple Silicon runs only AArch64 code, so the host cannot run it; False without the file
+    if not Path(path).exists(): return False
+    d = Path(path).read_bytes()
+    return d[:4] == b'META' and not d[0xc] & 1
+
+
 def facts_of(exefs, romfs):
     """What the profile rules (and the survey report) need from a game's code modules and RomFS"""
     exefs = Path(exefs)
