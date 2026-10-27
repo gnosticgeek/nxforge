@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # All of Mario's shaders → the "package directory" dmsh_build.py understands + the shader map + the translation query answer table (thread group / shared memory of compute shaders).
-# Sources (a full scan, not relying on file names): every file under RomFS (a zstd file is decompressed first, whatever its name: Mario's .zs, Paper Mario: The Thousand-Year Door's .zst; Yaz0 is decompressed, SARC is expanded member by member) and ExeFS main (NSO, lz4-decompressed), looking for
+# Sources (a full scan, not relying on file names): every file under RomFS (a zstd file is decompressed first, whatever its name: Mario's .zs, Paper Mario: The Thousand-Year Door's .zst; Yaz0 is decompressed, so is HAL Laboratory's .cmp (a u32 size + one zstd or LZ4 frame, Kirby's Return to Dream Land Deluxe), SARC is expanded member by member) and ExeFS main (NSO, lz4-decompressed), looking for
 #   · BNSH ('BNSH\0\0\0\0', carried by bfsha / particle effect esetb / UI layout blarc / embedded in main):
 #       +0x60 grsc block; +0x7c variation count u32; +0x80 variation table pointer (pointers are relative to the BNSH start). A variation is 0x40 bytes; the binary program is at +0x10;
 #       the binary program has 6 stage pointers from +0x08: vertex, hull, domain, geometry, pixel, compute; the stage code descriptor has +0x08 control pointer, +0x10 code area pointer, +0x18 code area length, +0x1c control length.
@@ -1427,6 +1427,21 @@ def zs_dicts(romfs):
     d = zstd_mod().decompress(open(p, 'rb').read())
     return {struct.unpack_from('<I', m, 4)[0]: m for _, m in sarc_members(d) if m[:4] == bytes.fromhex('37a430ec')}
 
+LZ4F_MAGIC = bytes.fromhex('04224d18')
+
+def hal_cmp(d, path):
+    """HAL Laboratory's .cmp files (Kirby's Return to Dream Land Deluxe: 2,365 gfx/*.bfres, 370 lyt/*.arc SARC, 251 ptcl/*.ptcl, 65 fonts): u32 decompressed size, then one zstd frame
+    (the models and layouts) or LZ4 frame (the effects and fonts). Taken by the magic at +4, whatever the file's name; a file that only looks like one (it does not decompress to the size
+    in front) is left as it is. → the decompressed file, or None"""
+    size = struct.unpack_from('<I', d)[0]
+    try:
+        if d[4:8] == ZSTD_MAGIC: x = zstd_mod().decompress(d[4:])
+        else:
+            import lz4.frame
+            x = lz4.frame.decompress(d[4:])
+    except Exception: return None
+    return x if len(x) == size else None
+
 def unzs(path):
     """A zstd file decompressed: frames without a dictionary through the zstd command as before, frames that name one with that dictionary from ZDICTS"""
     d = open(path, 'rb').read()
@@ -1649,6 +1664,7 @@ def scan_file(args):
         for nm, m in gfpak_members(open(path, 'rb').read(), '/' + rel): scan_blob(m, f'/{rel}{nm}', found)
         return rel, uniq_keys(found), var_pairs(found), trees
     d = unzs(path) if head[:4] == ZSTD_MAGIC else open(path, 'rb').read()   # by the magic: Paper Mario: The Thousand-Year Door names its zstd files .zst (8,726, its shaders among them)
+    if len(d) > 8 and d[4:8] in (ZSTD_MAGIC, LZ4F_MAGIC) and (x := hal_cmp(d, path)) is not None: d = x   # HAL Laboratory's .cmp (Kirby's Return to Dream Land Deluxe): the models, effects and layouts, with their BNSH
     if d[:4] == b'Yaz0': d = yaz0(d)
     if d[:3] == b'XNB' and d[4] == 5 and d[5] & 0xC0 and len(d) > 14:   # a compressed XNB (Stardew Valley: 3,535 LZ4 files, 8 LZX): only effects (EffectReader) carry MGFX shaders, and for LZX the reader names sit in the first block, so it decides whether the rest is worth decoding
         if d[5] & 0x80:
