@@ -2,10 +2,16 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## Unreleased
+## 0.4.0 (2026-10-27)
+
+Build-cache cleanup in the converter and a clear stop on 32-bit game versions; no upstream merge.
 
 **Converter**
 - `--cleanup unused|all` (and *After a build* in the converter's settings) tidies `<id>_build/` after a successful build. `unused` deletes other versions' extracted files and rewritten modules (an update replaced by a newer one), half-written folders and the survey; `all` deletes the whole build cache but its logs and profile. The NSPs, `prod.keys`, the app and the save are never touched.
+- A 32-bit (AArch32) game version stops the build with a message that names the versions the game's profile registers, instead of crashing in the symbol reader (`KeyError: 6`). Apple Silicon runs only 64-bit Arm code; Mario Kart 8 Deluxe 3.0.1 is one such version.
+
+**Games**
+- Mario Kart 8 Deluxe (`0100152000022000`): 4.0.1 packs from a profile derived from 4.0.0's and runs at 60 fps on the Mac; only 3.0.1 is ruled out.
 
 ## 0.3.0 (2026-10-27)
 
