@@ -2,6 +2,8 @@
 
 Update 4.0.0 (v1441792) over the base game, SDK 4.4.0, the oldest SDK until [Bayonetta 2](../01007960049A0000/README.md)'s 3.6.0. Nintendo's sead / agl / gsys engine with NintendoWare (G3d, Ui2d, Vfx, Atk) and Pia networking, on NVN. Modules `main`, `subsdk0` (the SDK's movie library: the menus' H.264 previews) and `sdk`. RomFS is mostly Yaz0-compressed SARC (`.szs`), BFRES models and BNTX textures, which the game reads itself. Plays on the iPhone (A20 Pro): 60 fps docked with about 6 ms of GPU time a frame, a 2.4 GB footprint with 3.7 GB of headroom, no audio underruns. Mii heads draw nothing (no firmware); see [Miis](#miis).
 
+Only 4.0.0 can be packed: 3.0.1 (v1179648) is a 32-bit (AArch32) program (its `main.npdm` clears the 64-bit flag, its modules have 32-bit dynamic sections), which Apple Silicon cannot run, and the NSP script stops on it (`need_aarch64`) instead of deriving a profile.
+
 Brought up on the Mac from 4.0.0: boot, the title with its demo race, the Mii pick, the menus (their movie previews play), a 50cc Grand Prix race at Mario Kart Stadium to its results, and a second boot that loads the save. 60 fps (p50 16.7 ms), sound; about 2.4 GB resident and 1.26 GB of Metal allocations in the race, flat over minutes.
 
 ## What it needs
