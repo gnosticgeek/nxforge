@@ -2407,7 +2407,7 @@ def main(args=None):
                 (args.gpu or PSO_GPUS).strip())
         rmtree(work / 'tmp')
         say(f'done: {out_ipa} ({tree_size(out_ipa)[1] / 2**30:.1f} GB); '
-            f'open it from Finder. Its save is in ~/Library/Application Support/nxnative/{app:016X}/, its log in ~/Library/Logs/nxnative/{app:016X}.log')
+            f'open it from Finder. Its save goes to Saves/ beside it (~/Library/Application Support/nxnative/{app:016X}/ where that folder is not writable), its log to ~/Library/Logs/nxnative/{app:016X}.log')
         if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir, clean == 'all')
         report_profile_status(g, reg, pkg_ver, derived, provisional, 'Mac app', patched)
         return
