@@ -310,8 +310,8 @@ static void pads_start(void) {
 // - Graphics & shaders: the present filter (front.h mtl_present_filter_set, nvn_mtl.m), from the next frame, so the game runs on behind the sidebar and shows the change at once.
 //   DM_PRESENT_FILTER / DM_PRESENT_FILTER_STRENGTH / DM_PRESENT_SCANLINE in the environment.
 // - Performance: a frame-rate counter in a corner of the game picture, the frames put on screen in the last second (nvn_mtl.m mtl_present_count, as on the iPhone). DM_SHOW_FPS=0 / 1.
-// - Mods: each folder in ~/Library/Application Support/nxnative/<title ID>/mods is a mod, the game's RomFS files it replaces either in it or in its romfs folder (the layout other
-//   Switch tools use). The enabled ones are overlaid on the RomFS at launch in name order, the first one holding a file winning (hle_fs.c DM_ROMFS_OVERLAY, which names them),
+// - Mods: each folder in ~/Library/Application Support/nxnative/<title ID>/mods is a mod, the game's RomFS files it replaces either in it, in its romfs folder (the layout other
+//   Switch tools use) or in Atmosphere's atmosphere/contents/<title ID>/romfs (mod_root). The enabled ones are overlaid on the RomFS at launch in name order, the first one holding a file winning (hle_fs.c DM_ROMFS_OVERLAY, which names them),
 //   so a change applies on the next launch. DM_ROMFS_OVERLAY in the environment replaces them.
 // - Cheats: this build's cheat file (cheats_host.c), a switch per cheat; the host reads the saved names at launch (DMQuickSettings.cheats.<game>), and the sidebar
 //   switches the running set (dm_cheats_set). Code patches are made only at launch. DM_CHEATS / DM_CHEATS_ON in the environment win.
@@ -333,9 +333,16 @@ static NSArray<NSString *> *mods_list(void) {   // the mod folders, in the order
     }
     return [r sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
 }
+// A mod's RomFS files: its romfs folder, or the one in the Atmosphere layout a mod is usually downloaded in (atmosphere/contents/<title ID>/romfs,
+// contents/<title ID>/romfs or <title ID>/romfs, after the NxNative Launcher's mod manager), or else the mod folder itself
 static NSString *mod_root(NSString *name) {
-    NSString *p = [mods_dir() stringByAppendingPathComponent:name], *rf = [p stringByAppendingPathComponent:@"romfs"]; BOOL dir = NO;
-    return [NSFileManager.defaultManager fileExistsAtPath:rf isDirectory:&dir] && dir ? rf : p;
+    NSString *p = [mods_dir() stringByAppendingPathComponent:name], *tid = @DM_GAME_ID;
+    for (NSString *sub in @[@"romfs", [NSString stringWithFormat:@"atmosphere/contents/%@/romfs", tid], [NSString stringWithFormat:@"contents/%@/romfs", tid],
+                            [NSString stringWithFormat:@"%@/romfs", tid]]) {
+        NSString *rf = [p stringByAppendingPathComponent:sub]; BOOL dir = NO;
+        if ([NSFileManager.defaultManager fileExistsAtPath:rf isDirectory:&dir] && dir) return rf;
+    }
+    return p;
 }
 static NSSet<NSString *> *g_mods_run;   // the mods this launch overlaid (nil: DM_ROMFS_OVERLAY came from the environment)
 static void mods_start(void) {   // main thread, before the guest runs (the game mounts its RomFS later, hle_fs.c h_fs_MountRom)
