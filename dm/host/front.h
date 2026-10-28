@@ -1,6 +1,15 @@
 // Host front end (Mac: front_mac.m; iOS: dm/ios separately implements the same-named interface).
 #pragma once
 #include <stdint.h>
+#include <stdlib.h>
+// Metal reads HUD switches when the first device is made. Called before host preload and again after the launcher applies its settings; explicit environment values win.
+static inline void front_hud_env(void) {
+    const char *e = getenv("DM_METAL_HUD");
+    if (!e || !atoi(e)) return;
+    setenv("MTL_HUD_ENABLED", "1", 0);
+    // Spatial scaling has no temporal exposure: showing that HUD metric makes the MetalFX rows flicker.
+    setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 0);
+}
 // Run the guest: with a window the guest runs on its own thread and the main thread belongs to the system UI; without a window it runs directly on the current thread.
 void front_run(void (*guest)(void));
 // The CAMetalLayer the graphics backend presents frames to (NULL when there is no window)
@@ -43,6 +52,10 @@ float dm_audio_volume(void);
 // Audio tap (hle_audio.c; the video recorder): the 48 kHz 16-bit PCM of the first output playing, as it goes to the sound card before the host volume, ch channels interleaved. fn runs on the
 // real-time audio thread: it must not block or allocate. NULL stops
 void dm_audio_tap_set(void (*fn)(void *ctx, const int16_t *pcm, uint32_t frames, int ch), void *ctx);
+// Progress screen of the first-start prepare step (nvn_mtl.m warm_prepare: "Preparing shaders" while the pipelines of the prewarm lists are built before the game's first frame):
+// title and done of total shown over the game's view (a dark screen, the title, a bar and a count), updated on each call; title NULL hides it. Any thread; the front end switches to its main
+// thread and does not block. Nothing is shown without a window
+void front_progress(const char *title, long done, long total);
 // Text input box (for the software keyboard swkbd): the main thread shows a native input box and the calling thread blocks until the user confirms / cancels.
 // All text is UTF-8; max_chars is the maximum character count (0 = unlimited, only a hint for the front end; truncation is done uniformly by the caller hle_swkbd.c in UTF-16 units).
 // Confirm returns 1 and writes the result into out (including the terminating 0); cancel returns 0;

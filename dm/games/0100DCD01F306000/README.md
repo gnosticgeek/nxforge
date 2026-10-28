@@ -23,7 +23,7 @@ Update 1.0.5 (v262144), SDK 21.4.3. Yacht Club Games' own engine on NVN; every R
 
 ## Threads
 
-- **Resolved: black screen for good, every frame a clear only, no red line.** The game's `NxMessagePump` thread (priority 44, core 0) blocks in `oe::PopNotificationMessage`, which the host answers by waiting on a host condition variable; counted as a runnable core-0 peer, it held the audio decoder (priority 59, core 0) in a same-core handoff after each mutex unlock, so the sound banks never finished loading ([HLE calls that block in the host leave the core](../../../docs/reference/threads.md#hle-calls-that-block-in-the-host-leave-the-core)).
+- **Resolved: black screen for good, every frame a clear only, no red line.** The game's `NxMessagePump` thread (priority 44, core 0) blocks in `oe::PopNotificationMessage`, which the host answers by waiting on a host condition variable; counted as a runnable core-0 peer, it held the audio decoder (priority 59, core 0) in a same-core handoff after each mutex unlock, so the sound banks never finished loading ([Native HLE waits release the guest core](../../../docs/reference/threads.md#native-hle-waits-release-the-guest-core)).
 
 ## Running on the Mac
 
@@ -32,7 +32,7 @@ Update 1.0.5 (v262144), SDK 21.4.3. Yacht Club Games' own engine on NVN; every R
 ## Found on this game
 
 - **YCD paks** (`ycd_members` / `ycd_shaders` in `shader_split.py`): [Shaders in Yacht Club Games' YCD paks](../../../docs/reference/shaders.md#shaders-in-yacht-club-games-ycd-paks).
-- **Host-blocking HLE calls are not runnable core peers** (`dm_thread_host_wait`, `hle_thread.c`; used by `oe::PopNotificationMessage`): [HLE calls that block in the host leave the core](../../../docs/reference/threads.md#hle-calls-that-block-in-the-host-leave-the-core).
+- **Host-blocking HLE calls are not runnable core peers** (`dm_thread_native_wait`, `hle_thread.c`; used by `oe::PopNotificationMessage`): [Native HLE waits release the guest core](../../../docs/reference/threads.md#native-hle-waits-release-the-guest-core).
 - **The SDK 21.4.3 `sdk` build's node-area cut**: [The SDK's address-region node area](../../../docs/reference/memory.md#the-sdks-address-region-node-area).
 
 ## Open
