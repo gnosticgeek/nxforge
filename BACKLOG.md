@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-26.
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-28.
 
 Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 **Idea**, **Research**.
@@ -18,6 +18,7 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 | Rewriter jump-table fix (49a670a) | On fork main, needs splitting out | Looks 128 instructions back for an index copied before its bounds check (Curse of the Moon GLSLC). Commit is authored as `seedds` by mistake: re-author it and send it as its own small PR, separate from the sidebar. |
 | Filters + Quick settings sidebar | On hold for upstream | Tom holds the upstream PR until the sidebar is finished (see the next section). |
 | Cheats engine | On fork main, not sent upstream | Goes upstream after the sidebar, or alongside it. |
+| Merge upstream main | Next | 245 commits behind seedds/nxnative as of 2026-10-28 (merge base 9a56ecf). Brings the Mac settings window before the game (frame rate, render scale, docked or handheld, game language, display mode, MetalFX upscaling, rumble cutoff; `launcher.json`, `DM_LAUNCHER`), NSZ executables, about 20 new games and many host fixes. A trial merge conflicts in 31 files, mostly the host (`front_mac.m`, `nvn_mtl.m`, `launcher.c`, `hle_hid.c`, haptics) and the NSP script, so it needs a Mac build and a play test; its own thread. Most of what NX2Apple and the NxNative Launcher offer on top of the engine comes from here. |
 
 ## Quick settings sidebar and filters
 
@@ -37,6 +38,21 @@ work below.
 | Saves, screenshots, recordings in the game folder | On fork main | c4940d7, 4529349. Old Library save is copied once, never moved. Waiting on Tom to confirm progress, rumble, a screenshot and a recording in the rebuilt Curse of the Moon. |
 | Mods section (romfs folders per title) | On fork main | Untested with a real mod. |
 | Open the upstream PR | Next | Branch merged into fork main 2026-10-26. Still wants Tom's hands-on checks. Split 49a670a out first. |
+
+## Ideas from other front ends
+
+From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-wrapper), the [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher) and [NX2Apple](https://github.com/LNPANDY/NX2Apple), all MIT. Done in 0.5.0: Keep this build, Quit game in Quick settings, Atmosphere-layout mods, issue forms.
+
+| Item | Status | Notes |
+|---|---|---|
+| Save backup to a private Git repository | Idea | NX Play: while a game plays, copy its save into `<slug>-<title ID>/` of a clone you choose each time it saves, commit and push, once more on quit. NXForge could do it from the launcher (`dm/mac/launcher.c`) or the converter, watching `Saves/save` in the game folder. |
+| Copy saves between the Mac and an iPhone or iPad | Idea | NX Play and the Launcher: `xcrun devicectl device copy from/to --domain-type appDataContainer`, comparing both sides file by file first and keeping the replaced save. Needs an IPA build path in the converter. |
+| Install on a device and Build IPA from the converter | Idea | NX Play, NX2Apple, Launcher. The script already builds IPAs; the converter only makes Mac apps. |
+| Console mode: a controller-driven library | Idea | NX Play and the Launcher: a full-screen carousel of built games with key art, driven by a controller (A plays, B backs out), last played first. NXForge's Builds page plus controller navigation like the sidebar's. |
+| Game metadata from the control data | Idea | NX Play reads `control.nacp` (title, publisher, display version, supported languages). Lets Builds show the real title and version, and a language picker list only the game's languages. |
+| Custom cover art | Idea | The Launcher: pick any image as a game's art, kept per title ID. |
+| Nightly upstream check | Idea | NX2Apple and the Launcher run a daily job that test-merges upstream and opens a PR, or an issue naming the conflict. Would have flagged the 245-commit gap early. |
+| Per-game launch settings | Comes with the upstream merge | Game language, frame rate, docked or handheld and render scale without a rebuild: upstream's Mac settings window does it. Otherwise a Game section in Quick settings writing the game's `env.txt`. |
 
 ## Save states and rewind
 

@@ -30,9 +30,12 @@ struct BuildRecord: Codable, Hashable, Identifiable {
     var shaders: String?
     /// "Base game + update"
     var gameFiles: String?
+    /// Keep this build: one that plays well, which Rebuild all and the "older" badge leave alone (an explicit rebuild still
+    /// replaces it, and its new record starts unkept). nil in records made before it.
+    var kept: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case app, engine, repo, steps, shaders
+        case app, engine, repo, steps, shaders, kept
         case gameDir = "game_dir"
         case builtAt = "built_at"
         case gameFiles = "game_files"
@@ -134,6 +137,13 @@ enum Engine {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         if let d = try? enc.encode(all) { try? d.write(to: buildsFile) }
+    }
+
+    /// Keep a build (or stop keeping it): Rebuild all then passes it by.
+    static func setKept(_ app: String, _ on: Bool) {
+        guard var b = builds().first(where: { $0.app == app }) else { return }
+        b.kept = on ? true : nil
+        record(b)
     }
 
     static func record(_ b: BuildRecord) {

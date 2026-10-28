@@ -1,0 +1,54 @@
+name: Converter or build problem
+description: NXForge Converter or build_ipa_from_nsp.py fails, or the converter misbehaves
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never attach game files, `prod.keys`, title keys or anything extracted from a game.** Copy diagnostics and the build log name keys, never their values.
+  - type: input
+    id: game
+    attributes:
+      label: Game, title ID and the files you built from
+      description: The game's name and title ID, and which files were in the folder (base game, update, DLC; NSP, NSZ, XCI or XCZ).
+      placeholder: "Kirby's Return to Dream Land Deluxe, 01006B601380E000, base NSP only"
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you built
+      options:
+        - NXForge Converter
+        - build_ipa_from_nsp.py from the command line
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The stage it stopped at and the message it showed, or what the converter did that it should not.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Copy diagnostics
+      description: In the converter, Toolchain > Copy diagnostics, pasted here. It has macOS, the engine version, Python, .NET and each tool's check. From the command line, give `git describe --tags`, `python3 --version` and `xcodebuild -version` instead.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Build log
+      description: In the converter, Copy log on Convert (with Log detail set to Detailed in Settings for the tools' own logs). From the command line, the script's output and the files in `<title ID>_build/logs`.
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: no-game-files
+    attributes:
+      label: No keys, no game files
+      options:
+        - label: Nothing attached here contains keys, game files or data extracted from a game.
+          required: true

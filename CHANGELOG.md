@@ -2,6 +2,20 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.5.0 (unreleased)
+
+Ideas from other nxnative front ends (NX Play, the NxNative Launcher and NX2Apple, all MIT), reimplemented for NXForge; no upstream merge.
+
+**Converter**
+- **Keep this build** (after NX Play): an app that plays well can be kept as it is. It shows a lock instead of the "older" badge, Rebuild all and its count pass it by, and Rebuild asks before replacing it. A switch in the build's detail panel, or the right-click menu on Builds.
+
+**In the game**
+- **Quit game** in Quick settings (after the NxNative Launcher's couch exit): Home opens the sidebar, and Quit game, pressed twice, ends the game as ⌘Q does.
+- **Mods as downloaded**: a mod folder holding Atmosphere's layout (`atmosphere/contents/<title ID>/romfs`, or `contents/<title ID>/romfs`, or `<title ID>/romfs`) overlays that `romfs` folder, so a mod unzipped as it comes works without moving its files.
+
+**Project**
+- Issue forms for a game problem and a converter or build problem (after NX2Apple's), each asking for the log or Copy diagnostics and confirming nothing attached holds keys or game files.
+
 ## 0.4.0 (2026-10-27)
 
 Build-cache cleanup in the converter and a clear stop on 32-bit game versions; no upstream merge.

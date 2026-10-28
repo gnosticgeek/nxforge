@@ -23,7 +23,7 @@ private let keyDefaults = ["J", "K", "U", "I", "F", "G", "Q", "E", "Z", "C", "Re
 private let padDefaults = ["Right button", "Bottom button", "Top button", "Left button", "Left stick press", "Right stick press", "Left shoulder", "Right shoulder",
                            "Left trigger", "Right trigger", "Menu", "Options"]
 // What the controller and keyboard selection can be on (dm_qs_nav), in the order the sidebar shows it
-enum Nav: Hashable { case header(Int), filter, strength, scanlines, aniso, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, showFolder, changeFolder, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume }
+enum Nav: Hashable { case header(Int), filter, strength, scanlines, aniso, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, showFolder, changeFolder, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume, quit }
 private let sectionOrder = [0, 1, 5, 6, 2, 3, 7]
 struct Cheat: Identifiable {
     let id: Int, name: String, desc: String, flags: Int32
@@ -54,7 +54,8 @@ final class QuickSettings: ObservableObject {
     @Published var anisoRun = 0   // the one this launch took
     @Published var recDir = ""
     @Published var customDir = false
-    @Published var sel: Nav?
+    @Published var sel: Nav? { didSet { if sel != .quit { quitArmed = false } } }
+    @Published var quitArmed = false   // Quit game asks twice, so a stray A press on the couch does not end the game
     @Published var assigning = -1
     @Published var keyNames: [String] = keyDefaults
     @Published var padNames: [String] = padDefaults
@@ -156,7 +157,7 @@ final class QuickSettings: ObservableObject {
             default: break
             }
         }
-        return r + [.resume]
+        return r + [.resume, .quit]
     }
     func nav(_ cmd: Int32) {
         let list = items
@@ -172,6 +173,10 @@ final class QuickSettings: ObservableObject {
             if let to = cmd == 7 ? heads.last(where: { $0 < at }) : heads.first(where: { $0 > at }) { sel = list[to] }
         default: break
         }
+    }
+    /// Quit game (after the NxNative Launcher's hold-Home exit): the first press arms it, the second ends the game as ⌘Q does
+    func quit() {
+        if quitArmed { NSApp.terminate(nil) } else { quitArmed = true }
     }
     private func adjust(_ n: Nav, _ d: Int) {
         switch n {
@@ -210,6 +215,7 @@ final class QuickSettings: ObservableObject {
         case .pad(let i): assign(i, pad: true)
         case .resetControls: resetControls()
         case .resume: close()
+        case .quit: quit()
         case .strength, .volume: break
         }
     }
@@ -372,7 +378,7 @@ struct QuickSettingsView: View {
             Text("Each folder in this game's mods folder replaces game files. Enabled mods load in name order; the first one with a file wins.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if m.mods.isEmpty {
-                Text("No mods yet. Put each mod in a folder of its own in the mods folder (its files, or a romfs folder holding them), then Refresh.")
+                Text("No mods yet. Put each mod in a folder of its own in the mods folder (its files, a romfs folder holding them, or a mod as downloaded for Atmosphere), then Refresh.")
                     .font(.callout).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
             }
             ForEach(m.mods, id: \.self) { n in
@@ -485,6 +491,11 @@ struct QuickSettingsView: View {
             Label("Settings saved for this game", systemImage: "gearshape").font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             Button(action: m.close) { Text("Resume game").font(.headline).frame(maxWidth: .infinity) }
                 .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction).nav(m, .resume)
+            Button(action: m.quit) {
+                Label(m.quitArmed ? "Press again to quit" : "Quit game", systemImage: "power").frame(maxWidth: .infinity)
+            }
+            .modifier(GlassButton(prominent: false)).controlSize(.large).tint(m.quitArmed ? Color.red : nil).nav(m, .quit)
+            .help("Ends the game, as ⌘Q does. Asks twice.")
             HStack(spacing: 8) {
                 Text("Esc").font(.caption.weight(.medium)).padding(.horizontal, 8).padding(.vertical, 3)
                     .background(.white.opacity(0.1), in: .rect(cornerRadius: 5)).overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.18)))
