@@ -562,3 +562,5 @@ public func dm_qs_make(_ game: UnsafePointer<CChar>, _ modsDir: UnsafePointer<CC
 public func dm_qs_nav(_ cmd: Int32) { shared?.nav(cmd) }
 @_cdecl("dm_qs_refresh")
 public func dm_qs_refresh() { shared?.refresh() }
+@_cdecl("dm_qs_opened")
+public func dm_qs_opened() { shared?.quitArmed = false }

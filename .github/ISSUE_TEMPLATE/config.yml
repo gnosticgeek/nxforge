@@ -3,3 +3,9 @@ contact_links:
   - name: The engine itself (seedds/nxnative)
     url: https://github.com/seedds/nxnative/issues
     about: NXForge follows nxnative. A fault you have traced into the engine that also happens on upstream's main belongs there; for a game that fails in an NXForge build, use the Game problem form here first.
+  - name: Building, packing and playing
+    url: https://github.com/gnosticgeek/nxforge/blob/main/README.md
+    about: How to pack an IPA or a Mac app, where saves and logs are, and the known issues.
+  - name: Development, porting a game and debugging
+    url: https://github.com/gnosticgeek/nxforge/blob/main/docs/development.md
+    about: The internals, the script's options, building by hand, and how to port another game.

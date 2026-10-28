@@ -2,7 +2,25 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.5.0 (unreleased)
+## 0.6.0 (unreleased)
+
+Merges nxnative's `main` up to `beea17c` (245 commits since `9a56ecf`). Most of what this brings is upstream's own work; the notes below are what changes for NXForge.
+
+**From upstream**
+- **A settings window before the game** in Mac apps (`dm/mac/Launcher.swift`): frame rate, render scale, docked or handheld, game language, display mode, MetalFX upscaling and the rumble cutoff, saved per game. `DM_LAUNCHER=0` or `--no-launcher` starts the game without it.
+- **About 30 new game profiles** (Kirby and the Forgotten Land, Xenoblade Chronicles 2, 3 and Definitive Edition, Pokémon Legends: Arceus, Scarlet and Shield, Super Mario Party Jamboree, Paper Mario: The Origami King, Mario + Rabbids Kingdom Battle and Sparks of Hope, Donkey Kong Country Returns HD and Tropical Freeze, Sea of Stars and others), NSZ executables, RomFS images instead of loose files, an offline pipeline archive in Mac apps, controller motion (gyro), DualShock 4 rumble, and many host, shader and frame-pacing fixes.
+- Upstream fixed three things NXForge had fixed its own way, and its versions replace ours: rumble on controllers without advanced haptic players (NXForge's 8BitDo SN30 Pro fallback), the rewriter's copy-before-check search (NXForge's 128-instruction window for Curse of the Moon's GLSLC), and HAL's `.cmp` shader containers (NXForge's Kirby's Return to Dream Land Deluxe reader). The blocking wait in `oe::PopNotificationMessage` (Mina the Hollower) also uses upstream's native HLE wait now.
+
+**Kept from NXForge on top**
+- Quick settings, filters, anisotropic filtering, cheats, captures, controls, mods and game-folder saves work as before, alongside upstream's settings window.
+- Rumble permission is still given before a controller connects (Bloodstained: Curse of the Moon asks only once at startup); upstream ties it to a connected controller.
+- In fullscreen the display link stays off, as in NXForge's 60 fps fix, rather than upstream's frame latency 2 (which settled at about 42 fps on Mario vs. Donkey Kong here). `DM_PRESENT_LATENCY=<n>` keeps the link at that latency, to compare.
+- MetalFX upscaling applies only while the present filter is off, since the filters work on the game's own pixels.
+
+**Fixes**
+- **Quit game** no longer stays armed after the sidebar is closed and opened again: the first press after reopening arms it again.
+
+## 0.5.0 (2026-10-28)
 
 Ideas from other nxnative front ends (NX Play, the NxNative Launcher and NX2Apple, all MIT), reimplemented for NXForge; no upstream merge.
 
