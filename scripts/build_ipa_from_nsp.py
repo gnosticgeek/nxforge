@@ -941,7 +941,7 @@ def need_aarch64(d, name, g=None):
     Mario Kart 8 Deluxe 3.0.1 is one; its 4.0.0 is AArch64"""
     if pg.aarch64(d / 'ExeFS/main.npdm'): return
     regs = ', '.join(f'{v} ({b["display"]})' for v, b in (g.builds() if g else {}).items())
-    hint = f"; game profile {g.id} registers {regs}: put that update's NSP in the folder" if regs else ''
+    hint = f"; game profile {g.id} registers {regs}: put that update's NSP in the folder" if g and regs else ''
     raise BuildError(f'{name} ({nacp.version(d / "control.nacp") or "?"}) is a 32-bit (AArch32) program: Apple Silicon Macs and iPhones run only 64-bit Arm code, so the host cannot run it{hint}')
 
 

@@ -87,7 +87,7 @@ def convert(args):
         if not tid or not HEX16.match(stem): sys.exit(f'{args.input}: name it <build ID>.txt and give --title-id (or keep Atmosphere\'s <title ID>/cheats/ path)')
         jobs.append((args.input, tid, stem))
     for path, tid, bid in sorted(jobs):
-        cheats = parse_txt(open(path, encoding='utf-8', errors='replace').read(), lambda s: print(f'{path}: {s}', file=sys.stderr))
+        cheats = parse_txt(open(path, encoding='utf-8', errors='replace').read(), lambda s, path=path: print(f'{path}: {s}', file=sys.stderr))
         out = os.path.join(args.out, tid.upper(), bid.upper() + '.md')
         os.makedirs(os.path.dirname(out), exist_ok=True)
         open(out, 'w', encoding='utf-8').write(to_md(cheats, tid, bid, args.version, args.game, args.source))

@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.6.0 (unreleased)
+## 0.6.0 (2026-10-28)
 
 Merges nxnative's `main` up to `beea17c` (245 commits since `9a56ecf`). Most of what this brings is upstream's own work; the notes below are what changes for NXForge.
 
@@ -19,6 +19,7 @@ Merges nxnative's `main` up to `beea17c` (245 commits since `9a56ecf`). Most of 
 
 **Fixes**
 - **Quit game** no longer stays armed after the sidebar is closed and opened again: the first press after reopening arms it again.
+- The iPhone build compiles again: the cheats engine used `mach_vm.h`, which the iPhone SDK does not have (upstream's new CI caught it).
 
 ## 0.5.0 (2026-10-28)
 
