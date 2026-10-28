@@ -1,0 +1,64 @@
+name: Game problem
+description: A game built with NXForge crashes, freezes, runs slowly or looks wrong
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never attach game files, `prod.keys`, title keys or anything extracted from a game** (RomFS, NSOs, shaders). Logs and screenshots are fine.
+        If the build itself fails, use the Converter or build problem form instead.
+  - type: input
+    id: game
+    attributes:
+      label: Game, title ID and versions
+      description: The game's name, its title ID, and the base and update versions you built from.
+      placeholder: "Mario vs. Donkey Kong, 0100B99019412000, base 1.0.0, update 1.0.1"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac, chip, memory and macOS version
+      placeholder: "MacBook Pro 14-inch, M4 Pro, 24 GB, macOS 26.1"
+    validations:
+      required: true
+  - type: input
+    id: engine
+    attributes:
+      label: NXForge engine version
+      description: The engine release the app was built on, as the converter's Builds page shows it (for example 0.5.0 or 0.4.0+3).
+      placeholder: "0.5.0"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and when
+      description: What you did and what you saw (at the menu, in a level, after how many minutes), and whether it happens every time.
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Quick settings, mods, cheats and env.txt
+      description: Anything you changed from the defaults (filter, anisotropic filtering, mods, cheats, controls, lines in env.txt), full screen or windowed, and the controller. Write "none" if you changed nothing.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The game's log
+      description: Attach the whole log of the run (drag the file here), not excerpts. It is `~/Library/Logs/nxnative/<title ID>.log`; the run before is `<title ID>.prev.log`.
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots and frame rates
+      description: For a wrong picture, a screenshot (⇧⌘S in the game). For slow running, the frame rate from Quick settings' counter or `DM_METAL_HUD=1`.
+  - type: checkboxes
+    id: no-game-files
+    attributes:
+      label: No keys, no game files
+      options:
+        - label: Nothing attached here contains keys, game files or data extracted from a game.
+          required: true

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: The engine itself (seedds/nxnative)
+    url: https://github.com/seedds/nxnative/issues
+    about: NXForge follows nxnative. A fault you have traced into the engine that also happens on upstream's main belongs there; for a game that fails in an NXForge build, use the Game problem form here first.
