@@ -87,7 +87,12 @@ struct BuildRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
                 StatusDot(color: .green, text: "Ready")
-                if model.engine != nil && !model.isCurrent(build) {
+                if build.kept == true {
+                    Label("kept · \(build.engine.short)", systemImage: "lock.fill").font(.caption.weight(.semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(.secondary.opacity(selected ? 0.45 : 0.18), in: .capsule)
+                        .help("Kept as it is: Rebuild all passes it by")
+                } else if model.engine != nil && !model.isCurrent(build) {
                     Text("older · \(build.engine.short)").font(.caption.weight(.semibold))
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(.orange.opacity(selected ? 0.55 : 0.25), in: .capsule)
@@ -104,8 +109,9 @@ struct BuildRow: View {
         .contextMenu {
             Button("Open") { NSWorkspace.shared.open(build.app.url) }
             Button("Show in Finder") { reveal(build.app) }
-            Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the current engine")") { model.rebuild(build) }
+            Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the current engine")") { model.rebuildAsked(build) }
                 .disabled(model.run.running || !model.allOK)
+            Button(build.kept == true ? "Stop Keeping This Build" : "Keep This Build") { model.setKept(build, build.kept != true) }
             Divider()
             Button("Remove from List") { Engine.forget(build.app); model.revision += 1 }
             Button("Move App to Trash…") {
@@ -126,6 +132,8 @@ struct BuildDetail: View {
 
     var body: some View {
         let current = build.engine.commit == model.engine?.commit && model.engine?.dirty == false
+        // a kept build is not nudged towards a rebuild: Open stays the blue button
+        let nudge = !current && build.kept != true && model.engine != nil
         Card {
             HStack(spacing: 16) {
                 AppIcon(path: build.app, size: 128)
@@ -137,7 +145,7 @@ struct BuildDetail: View {
             }
             HStack {
                 Button { NSWorkspace.shared.open(build.app.url) } label: { Label("Open app", systemImage: "play.fill").font(.title3).frame(maxWidth: .infinity) }
-                    .modifier(GlassButton(prominent: current || model.engine == nil))   // on an older engine Rebuild is the blue one
+                    .modifier(GlassButton(prominent: !nudge))   // on an older engine Rebuild is the blue one, unless the build is kept
                 Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.glass)
             }
@@ -153,6 +161,15 @@ struct BuildDetail: View {
                 }
                 .padding(.vertical, 8)
                 Divider()
+                HStack {
+                    Text("Keep").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+                    Toggle("Keep this build", isOn: Binding(get: { build.kept == true }, set: { model.setKept(build, $0) })).toggleStyle(.switch).labelsHidden()
+                    Text(build.kept == true ? "Rebuild all passes it by" : "For a build that plays well").foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.vertical, 6)
+                .help("A kept build stays as it is when the engine updates: no \"older\" nudge and Rebuild all passes it by. Rebuild still replaces it, after asking.")
+                Divider()
                 detail("Game files", build.gameFiles ?? Engine.describeFiles(build.gameDir))
                 Divider()
                 HStack {
@@ -163,10 +180,10 @@ struct BuildDetail: View {
                 }
                 .padding(.vertical, 6)
             }
-            Button { model.rebuild(build) } label: {
-                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").font(current ? .body : .title3).frame(maxWidth: .infinity)
+            Button { model.rebuildAsked(build) } label: {
+                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").font(nudge ? .title3 : .body).frame(maxWidth: .infinity)
             }
-            .modifier(GlassButton(prominent: !current)).controlSize(current ? .large : .extraLarge)
+            .modifier(GlassButton(prominent: nudge)).controlSize(nudge ? .extraLarge : .large)
             .disabled(!model.allOK || model.run.running)
             DisclosureGroup(isExpanded: $detailsOpen) {
                 VStack(alignment: .leading, spacing: 8) {

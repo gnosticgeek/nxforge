@@ -158,6 +158,18 @@ final class AppModel {
                       keepBackup: settings.keepBackups, reuseCache: settings.reuseCache, cleanup: settings.cleanup))
     }
 
+    /// Keep a build as it is, or stop keeping it.
+    func setKept(_ b: BuildRecord, _ on: Bool) {
+        Engine.setKept(b.app, on)
+        revision += 1
+    }
+
+    /// Rebuild a kept app only once it is confirmed, since the new build replaces the one that plays well.
+    func rebuildAsked(_ b: BuildRecord) {
+        if b.kept == true, !confirm("Rebuild a kept build?", "\(b.app.url.deletingPathExtension().lastPathComponent) is kept because it plays well. A rebuild replaces it (the old app goes to app-backups when Keep previous app builds is on) and the new build is not kept.", action: "Rebuild") { return }
+        rebuild(b)
+    }
+
     /// Rebuild a recorded app: its own game folder becomes the chosen one first.
     func rebuild(_ b: BuildRecord) {
         if settings.gameDir != b.gameDir { setGameDir(b.gameDir) }
@@ -175,11 +187,11 @@ final class AppModel {
     /// Whether a recorded build is on the engine in use now.
     func isCurrent(_ b: BuildRecord) -> Bool { b.engine.commit == engine?.commit && engine?.dirty == false }
 
-    /// The recorded apps built on another engine than today's.
+    /// The recorded apps built on another engine than today's, except the ones kept as they are.
     var outdatedBuilds: [BuildRecord] {
         let _ = revision
         guard engine != nil else { return [] }
-        return Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) && !isCurrent($0) }
+        return Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) && !isCurrent($0) && $0.kept != true }
     }
 
     /// Rebuild every app on an older engine, one after another; a failure stops the rest.
@@ -195,7 +207,7 @@ final class AppModel {
     func rebuildCurrent() {
         guard !run.running else { return }
         let builds = Engine.builds()
-        if page == .builds, let b = builds.first(where: { $0.app == selectedBuild }) ?? builds.max(by: { $0.builtAt < $1.builtAt }) { rebuild(b); return }
+        if page == .builds, let b = builds.first(where: { $0.app == selectedBuild }) ?? builds.max(by: { $0.builtAt < $1.builtAt }) { rebuildAsked(b); return }
         if let dir = settings.gameDir, let a = Engine.apps(in: settings.outDir ?? dir).first ?? Engine.apps(in: dir).first, ready { build(rebuild: a.app) }
     }
 
