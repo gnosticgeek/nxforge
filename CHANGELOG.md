@@ -8,6 +8,11 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 - `app/install.sh` builds the converter into `~/Applications` and opens it, so it opens from Spotlight, Launchpad or the Dock; run it again to update.
 - The game folder picker (and File > Choose Game Folder…) also takes a game file: pick an `.xci` or `.nsp` and its folder becomes the game folder.
 
+**Faster shader builds**
+- The Metal shader step runs its tools (spirv-cross, the Metal compiler) with `posix_spawn` instead of forking the build process: each fork held Python's lock for about 6 ms, so only about half of the compile workers ran at once. Kirby's Return to Dream Land Deluxe (47,099 shaders, M4 Pro): 25:31 → 14:20, with byte-identical libraries.
+- Compiled Metal libraries go to one cache for every game, `~/Library/Caches/NXForge/metallib` (`DMSH_MTLCACHE`), kept under 4 GB by dropping the least recently used (`DMSH_MTLCACHE_GB`). It survives a Mac app's cleanup, so rebuilding a game after an NXForge update compiles only the shaders whose Metal source changed: Kirby's rebuild took 5:21. A game's own cache from earlier builds (`shader/cache/cas/metallib`) moves into it on its next build. Two workers compiling the same source now compile it once, and the fetch variants go through the cache too.
+- This changes the translation chain version, so each game's next build translates its shaders again (the Metal compiles come from its moved cache).
+
 **Fixes**
 - Cartridge dumps (`.xci`) named without a `[title ID]` tag (`Game.xci`) build: the script read the title ID only from a ticket or the file name, and a cartridge has no ticket, so a lone untagged XCI stopped with "no NSP with a readable title ID". It now reads the title ID from the XCI's own NCA headers with prod.keys' `header_key`. Game file extensions match in any case (`Game.XCI`).
 - A cartridge with its update on it (1G+1U) shows as the base game in the converter's file check, not as an update with "no base game in the folder".

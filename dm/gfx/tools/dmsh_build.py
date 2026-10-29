@@ -4,7 +4,7 @@
 # Source of query answers: the answer table in the game profile, dm/games/<id>/shader_facts.tsv (dmsh_facts.py) - texture types, vertex attribute / fragment output component types, compute thread group size and shared memory.
 # Usage: dmsh_build.py <Switch package dir> <output cache dir> [key...] (no keys = all); build output is actually written to <output cache dir>/b-<chain version>/ (same for IOSOUT), for the chain version see dmsh_chain.py.
 # A full build (no keys) also stamps both directories with the game and the digest of its profile inputs (inputs.tsv) and writes the profile's c1_full.tsv and cb_extent.tsv (c1_guard.py, cb_extent.py)
-# from its Mac outputs. One output directory per game: the chain version is the same for every game   Environment: DM_GAME=game profile (required, dm/games/<id>), XLATE=path to the translation tool (default the in-repo dmsh_xlate_bin), DMSH_CAS=content-addressed cache dir (default <output cache dir>/cas), DMSH_PREFILL=Mac library root[=iOS library root] (separated by :, their b-*/ go into the MSL-keyed compile cache first; sibling b-*/ always do), J=concurrency
+# from its Mac outputs. One output directory per game: the chain version is the same for every game   Environment: DM_GAME=game profile (required, dm/games/<id>), XLATE=path to the translation tool (default the in-repo dmsh_xlate_bin), DMSH_CAS=content-addressed cache dir (default <output cache dir>/cas), DMSH_PREFILL=Mac library root[=iOS library root] (separated by :, their b-*/ go into the MSL-keyed compile cache first; sibling b-*/ always do), DMSH_MTLCACHE=that compile cache (default ~/Library/Caches/NXForge/metallib, one for every game; DMSH_MTLCACHE_GB its size limit, default 4; dmsh_mtlcache.py), J=concurrency
 # Build output: <key>_b.metallib, <key>_b.json (replay reflection, including drv_reads, the runtime read offsets into driver segments c0 / c2), <key>_b.metal (MSL)
 # Environment IOSOUT=dir: the same MSL also goes through dm/ios/tools/ios_metal.compile to produce an iphoneos metallib + reflection (chain_metal records the iOS compile convention)
 # Final summary: success / failure counts and the distribution of reasons; distribution of driver segment read offsets (those outside the range the replay layer can fill are listed separately)
@@ -61,9 +61,13 @@ MAC_RECORD = ' '.join(MAC_METAL) + '; xcrun -sdk macosx metallib'
 # The outer shader and fetch-variant caches restore compiled libraries directly,
 # before the MSL compile cache can check their compiler. Keep override builds separate there too.
 METAL_FP = dmsh_mtlcache.compiler_id('macosx') + ('\0iphoneos\0' + dmsh_mtlcache.compiler_id('iphoneos') if IOSOUT else '')
+spawn = dmsh_mtlcache.run   # subprocess.run without a fork (dmsh_mtlcache.run)
 def mac_compile(msl, air, lib):   # same interface as ios_metal.compile
-    subprocess.run([*MAC_METAL, msl, '-o', air], check=True)
-    subprocess.run(['xcrun', '-sdk', 'macosx', 'metallib', air, '-o', lib], check=True)
+    spawn([*MAC_METAL, msl, '-o', air], check=True)
+    spawn(['xcrun', '-sdk', 'macosx', 'metallib', air, '-o', lib], check=True)
+def ios_compile(msl, air, lib):   # ios_metal.compile's commands, without a fork
+    spawn([*ios_metal.METAL, msl, '-o', air], check=True)
+    spawn([*ios_metal.METALLIB, air, '-o', lib], check=True)
 # The NVN driver's constant segments have one layout in every game, which dm/gfx/nvn/dmsh_abi.h holds for the host and this build (through dmsh_abi.py); nvn_mtl.m fills them the same way at run time.
 #   c2 C2_TEX + 8 r: handles bound with nvnCommandBufferBindTexture (combined texture and sampler), slot r. The driver has 32 such slots, but a game may bind higher ones, whose words lie in the
 #     image table (Hades II binds slot 34, and no image), so a texture instruction's handle anywhere below the separate texture table names a combined slot. In the image
@@ -97,7 +101,7 @@ def shader_rule_source(name):
     return b''.join(inspect.getsource(f).encode() for f, applies in RULES if applies(name))
 
 def tool_fingerprint():
-    sc = subprocess.run([SPIRV_CROSS, '--version'], capture_output=True, text=True, timeout=30)
+    sc = spawn([SPIRV_CROSS, '--version'], capture_output=True, text=True, timeout=30)
     return ('lock\0' + open(dmsh_chain.LOCK).read() + '\0options\0' + dmsh_chain.options() +
             '\0xlate\0' + dmsh_chain.xlate_source_sha() + '\0spirv-cross\0' + sc.stdout + sc.stderr +
             '\0xc\0' + repr(XC) + '\0mac\0' + MAC_RECORD + '\0ios\0' + (ios_metal.RECORD if IOSOUT else '') + '\0metal\0' + METAL_FP)
@@ -226,17 +230,13 @@ def fetch_finish(key, src, refl):
             if not bf_cache_restore(key, digest, fmeta, fmsl):
                 BF_STATS['miss'] += 1
                 open(fmsl, 'w').write(fv)
-                fair = fmsl[:-6] + '.air'; flib = os.path.join(out, key + '_bf.metallib') if 'mac' in TARGETS else None
+                flib = os.path.join(out, key + '_bf.metallib') if 'mac' in TARGETS else None
                 try:
-                    if flib:
-                        tmp_flib = flib + '.tmp-' + str(os.getpid())
-                        mac_compile(fmsl, fair, tmp_flib)
-                        os.replace(tmp_flib, flib)
+                    if flib: MTL.compile('mac', fmsl, flib)   # through the MSL-keyed cache, which outlives this game's variant cache
                     ilib = None
                     if IOSOUT:
                         ilib = os.path.join(IOSOUT, key + '_bf.metallib')
-                        ios_metal.compile(fmsl, fmsl[:-6] + '.ios.air', ilib + '.tmp')
-                        os.replace(ilib + '.tmp', ilib)
+                        MTL.compile('ios', fmsl, ilib)
                 except subprocess.CalledProcessError:
                     return refl
                 BF_STATS['compile'] += 1
@@ -703,7 +703,7 @@ def gs_slice(spv):
     grading LUT the tone mapper reads, and without it the screen came out a flat blue). Metal has no geometry stage, so the host drops such a shader and draws with the vertex shader's
     layer entry points instead (vs_layer_entry), which write that component as the layer. Read from the SPIR-V as GLSL (SPIRV-Cross writes no MSL for a geometry stage).
     → {'loc': input location, 'comp': component} or None (any other geometry shader: one-pass cube shadows emit six transformed triangles)"""
-    r = subprocess.run([SPIRV_CROSS, spv, '--version', '450'], capture_output=True, text=True)
+    r = spawn([SPIRV_CROSS, spv, '--version', '450'], capture_output=True, text=True)
     g = r.stdout
     if r.returncode or 'layout(triangles) in;' not in g or 'layout(max_vertices = 3, triangle_strip) out;' not in g or g.count('EmitVertex();') != 3 or 'EndPrimitive' in g: return None
     ins = {m.group(2): int(m.group(1)) for m in re.finditer(r'layout\(location = (\d+)\) in vec4 (\w+)\[3\];', g)}
@@ -878,14 +878,14 @@ def geometry_finish(key, w, j, c1):
     dmsh_geometry.output_layout(code, 0)   # validate before running the translator
     jobs = [{**j, 'key': key + '_g' + str(t), 'geometry_topology': t} for t in range(5)]
     jp = os.path.join(w, key + '_geometry.json'); atomic_json(jp, jobs)
-    rx = subprocess.run([XLATE, jp, w], capture_output=True, text=True)
+    rx = spawn([XLATE, jp, w], capture_output=True, text=True)
     if rx.returncode: return 'geometry failed', rx.stderr.strip()[:160], None
     base = None
     for t, job in enumerate(jobs):
         layout = dmsh_geometry.output_layout(code, t)
         k = job['key']; spv = os.path.join(w, k + '.spv')
         dmsh_geometry.flatten_sets(spv)
-        r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
+        r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
         if r.returncode: return 'geometry MSL failed', r.stderr.strip()[:160], None
         plain = dmsh_geometry.topology_pointer(precise(dmsh_atomic.check_msl(r.stdout)))
         src = dmsh_geometry.capture_input(plain)
@@ -915,7 +915,7 @@ def geometry_finish(key, w, j, c1):
             base = {**refl, 'key': key + '_b'}
             save('_b', src, base)
             spv = os.path.join(w, k + '.reader.spv'); dmsh_geometry.flatten_sets(spv)
-            r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
+            r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
             if r.returncode: return 'geometry reader failed', r.stderr.strip()[:160], None
             reader = vs_layer(vs_init(dmsh_geometry.reader(precise(dmsh_atomic.check_msl(r.stdout)))))
             analysis, full = vs_depth(reader)
@@ -943,17 +943,17 @@ def finish(key, w, j, c1):
         try: return geometry_finish(key, w, j, c1)
         except (ValueError, subprocess.CalledProcessError) as e: return 'geometry failed', str(e)[:160], None
     if j['stage'] == 'vs': spv_single_lane(os.path.join(w, key + '.spv'))   # one-lane subgroups (see spv_single_lane)
-    r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, os.path.join(w, key + '.spv')), os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
+    r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, os.path.join(w, key + '.spv')), os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
     if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
     src = open(msl).read()
     if j['stage'] == 'vs':   # second pass: re-translate with inputs that are only used as integers reported as uint (see int_inputs)
         extra = {l: t for l, t in int_inputs(src).items() if l not in j['attr']}
         if extra:
             j['attr'].update(extra); jp = os.path.join(w, f'job1_{key}.json'); json.dump([j], open(jp, 'w'))
-            rx = subprocess.run([XLATE, jp, w], capture_output=True, text=True)
+            rx = spawn([XLATE, jp, w], capture_output=True, text=True)
             if rx.returncode or not os.path.exists(os.path.join(w, key + '.spv')): return 'translation failed', ('integer-input retranslation: ' + rx.stderr.strip())[:160], None
             spv_single_lane(os.path.join(w, key + '.spv'))
-            r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, os.path.join(w, key + '.spv')), os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
+            r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, os.path.join(w, key + '.spv')), os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
             if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
             src = open(msl).read()
     try: src = dmsh_atomic.check_msl(src)
@@ -1020,7 +1020,9 @@ for _d in [out] + ([IOSOUT] if IOSOUT else []):
         if _m and (not want or _m.group(1) in want): os.unlink(os.path.join(_d, _n))
     if (not want or STAMP_BEFORE != INPUTS) and os.path.exists(os.path.join(_d, dmsh_chain.STAMP)): os.unlink(os.path.join(_d, dmsh_chain.STAMP))
 w = tempfile.mkdtemp(prefix='dmsh_', dir=os.environ.get('WORK'))
-MTL = dmsh_mtlcache.Cache(os.path.join(CAS, 'metallib'), {'mac': ('macosx', MAC_RECORD, mac_compile), **({'ios': ('iphoneos', ios_metal.RECORD, ios_metal.compile)} if IOSOUT else {})}, w)
+MTL = dmsh_mtlcache.Cache(dmsh_mtlcache.SHARED, {'mac': ('macosx', MAC_RECORD, mac_compile), **({'ios': ('iphoneos', ios_metal.RECORD, ios_compile)} if IOSOUT else {})}, w)
+if os.path.isdir(os.path.join(CAS, 'metallib')) and os.path.realpath(os.path.join(CAS, 'metallib')) != os.path.realpath(MTL.root):   # this game's own cache from before the shared one
+    print(f'Metal cache: {MTL.adopt(os.path.join(CAS, "metallib")):,} libraries moved from {os.path.join(CAS, "metallib")}', flush=True)
 # first take the libraries earlier chain versions left on disk: the b-*/ beside the output (iOS: the folder of the same name) and the roots DMSH_PREFILL lists
 for _spec in [cache_root + ('=' + os.path.dirname(IOSOUT) if IOSOUT else '')] + [x for x in os.environ.get('DMSH_PREFILL', '').split(os.pathsep) if x]:
     _mac, _, _ios = _spec.partition('=')
@@ -1050,7 +1052,7 @@ misses = [key for key in keys if key not in cache_hits]
 chunks = [misses[i::NJ] for i in range(NJ)]
 def xl(ch):
     jp = os.path.join(w, f'job_{abs(hash(ch[0]))}.json'); json.dump([jobs[k] for k in ch], open(jp, 'w'))
-    return subprocess.run([XLATE, jp, w], capture_output=True, text=True)
+    return spawn([XLATE, jp, w], capture_output=True, text=True)
 with cf.ThreadPoolExecutor(NJ) as ex: xr = list(ex.map(xl, [c for c in chunks if c]))
 xerr = {}
 for r in xr:
@@ -1101,6 +1103,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
       f'{PULL_STATS["no stage input"]} vertex shaders without stage inputs (none needed)')
 print('mesh libraries (<vertex>_<geometry>_m3, dmsh_mesh.py): ' + (', '.join(f'{k} {v}' for k, v in MESH_STATS.items()) or 'none'))
 print(MTL.summary())
+print(MTL.prune(), flush=True)
 for lvl in [k for k in st if k != 'ok']:
     for e, n in collections.Counter(r[2] for r in res if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
 ok = [r[3] for r in res if r[1] == 'ok']
@@ -1124,7 +1127,7 @@ if not want:   # a full build: the stamp, then the c1 guard and uniform read ext
     for _d in [out] + ([IOSOUT] if IOSOUT else []): dmsh_chain.write_stamp(_d, GAME.id, INPUTS)
     print(f'library stamp: game {GAME.id}, inputs {INPUTS}', flush=True)
     for _tool, _table in (('c1_guard.py', 'c1_full.tsv'), ('cb_extent.py', 'cb_extent.tsv')):
-        _r = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), _tool), out, str(GAME.table(_table))], capture_output=True, text=True)
+        _r = spawn([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), _tool), out, str(GAME.table(_table))], capture_output=True, text=True)
         if _r.returncode: sys.exit(f'[RED] {_tool} failed ({_r.returncode}): {_r.stderr.strip()[-500:]}')
         print(f'{_table}: {(_r.stdout.strip().splitlines() or [""])[-1]}', flush=True)
 elif STAMP_BEFORE != INPUTS: print(f'no library stamp: the profile\'s inputs changed since the last full build ({STAMP_BEFORE} → {INPUTS}), and a partial build does not rebuild the rest', flush=True)

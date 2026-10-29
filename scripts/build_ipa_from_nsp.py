@@ -1859,12 +1859,14 @@ def build_shaders(py, repo, sh, xlate, env, logs, g, pkg_key=None, mac=False):
     t = log.read_text(errors='replace')
     if own := re.search(r'^note: (built with this Mac\'s compilers.*)$', t, re.M): say(own.group(1))
     m, c = re.search(r'shaders (\d+): ok (\d+)', t), re.search(r'shader cache: hit (\d+)', t)
+    mc = re.search(r'^Metal cache: \w+ (\d+) reused, (\d+) compiled', t, re.M)   # the shared MSL-keyed cache: a rebuild after a chain change misses the shader cache but compiles little
     note = ''
     if m:
         total, ok = int(m.group(1)), int(m.group(2))
         failed = f'; {total - ok:,} failed, reasons at the end of {log}' if ok < total else ''
         note = f'{ok:,} of {total:,} shaders ready{failed}'
-        PROG.end(f'{ok:,} of {total:,} shaders ready' + (f' ({int(c.group(1)):,} from the cache)' if c else '') + failed)
+        from_mtl = f', {int(mc.group(1)):,} of {int(mc.group(1)) + int(mc.group(2)):,} Metal libraries from the Metal cache' if mc else ''
+        PROG.end(f'{ok:,} of {total:,} shaders ready' + (f' ({int(c.group(1)):,} from the cache{from_mtl})' if c else '') + failed)
     else: PROG.end()
     shader_regressions(py, repo, sh / 'cache', chain, logs)   # before the key: a stopped build is checked again on the next run
     if key:
