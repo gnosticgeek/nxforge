@@ -454,7 +454,7 @@ void mtl_init(void) {
     g_present_args = [g_dev newArgumentTableWithDescriptor:pad error:&ate];
     if (!g_present_args) MDIE("failed to create the present argument table: %s", ate.localizedDescription.UTF8String);
     for (int i = 0; i < 3; i++) {
-        g_present_uv[i] = [g_dev newBufferWithLength:sizeof(float) * 12 options:MTLResourceStorageModeShared];   // the crop (8) and the present filter's parameters (4, pfx_params)
+        g_present_uv[i] = [g_dev newBufferWithLength:sizeof(float) * 24 options:MTLResourceStorageModeShared];   // the crop (8) and the present filter's parameters (4, pfx_params), then the anti-aliasing pass's (12, aa_encode)
         if (!g_present_uv[i]) MDIE("failed to create present UV buffer[%d]", i);
         res_add(g_present_uv[i]);
     }
@@ -1565,7 +1565,7 @@ void mtl_drain(void) { present_drop_for_suspend(); mtl_present_flush(); snap_dra
 
 // ================= Render replay =================
 #include "../../host/front.h"
-static int g_red_once[122];
+static int g_red_once[124];
 #define RED_ONCE(k, ...) do { if (!g_red_once[k]++) MLOG("[RED] " __VA_ARGS__); } while (0)
 // NVN vertex streams 0–15 → Metal vertex buffer slots: 0–13 go to 16–29 (30 is the constant fallback buffer), 14 and 15 to 14 and 15. Metal has only the 31 slots 0–30; translated shaders use only buffer(0) (the argument buffer),
 // and the host's own vertex functions read no vertex buffers. 13 Sentinels uses stream 15, and the old 16 + stream went out of range (Metal assertion: buffer index (31) must be < 31)
@@ -10485,6 +10485,7 @@ int mtl_display_hz(void) {
 static _Atomic uint64_t g_present_stall_ns;   // For unit tests: an extra pause before each present on the present thread (simulating a drawable that stays unavailable)
 static CAMetalLayer *g_present_layer_resident;
 void mtl_present_test_stall(uint64_t ns) { g_present_stall_ns = ns; }
+static id<MTLLibrary> g_present_lib;   // the present's shaders (present_pipeline), which the anti-aliasing pass takes its function from
 static void present_pipeline(MTLPixelFormat format) {
     if (!g_blit_pso || g_blit_fmt != format) {
         static const char *src_msl =
@@ -10503,6 +10504,23 @@ static void present_pipeline(MTLPixelFormat format) {
             "  float3 amp = sqrt(saturate(min(lo, 1.0f - hi) / max(hi, float3(1e-4f))));\n"
             "  float3 wt = -amp / mix(8.0f, 5.0f, saturate(c.fx.x));\n"
             "  return float4(saturate((m + (n + so + w + e) * wt) / (1.0f + 4.0f * wt)), 1);\n"
+            "}\n"
+            // FXAA (after Timothy Lottes' FXAA 3.11 console pass), the present's anti-aliasing (mtl_present_aa): where the 2x2 diagonal neighbours span a contrast edge, blend along the edge's
+            // direction, two taps or four, keeping the two-tap blend when the four-tap one leaves the neighbourhood's luma range. Runs on the game's own pixels before any upscaling (aa_encode)
+            "fragment float4 fs_fxaa(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
+            "  float2 uv = UV, d = 1.0f / float2(t.get_width(), t.get_height()); const float3 L = float3(0.299f, 0.587f, 0.114f);\n"
+            "  float4 m = t.sample(s, uv); float lm = dot(m.rgb, L);\n"
+            "  float nw = dot(t.sample(s, clamp(uv + float2(-d.x, -d.y), c.edge.xy, c.edge.zw)).rgb, L), ne = dot(t.sample(s, clamp(uv + float2(d.x, -d.y), c.edge.xy, c.edge.zw)).rgb, L);\n"
+            "  float sw = dot(t.sample(s, clamp(uv + float2(-d.x, d.y), c.edge.xy, c.edge.zw)).rgb, L), se = dot(t.sample(s, clamp(uv + float2(d.x, d.y), c.edge.xy, c.edge.zw)).rgb, L);\n"
+            "  float lo = min(lm, min(min(nw, ne), min(sw, se))), hi = max(lm, max(max(nw, ne), max(sw, se)));\n"
+            "  if (hi - lo < max(0.0312f, hi * 0.125f)) return m;\n"   // no edge worth smoothing: the pixel as it is
+            "  float2 dir = float2((sw + se) - (nw + ne), (nw + sw) - (ne + se));\n"
+            "  float red = max((nw + ne + sw + se) * 0.03125f, 1.0f / 128.0f);\n"
+            "  dir = clamp(dir / (min(abs(dir.x), abs(dir.y)) + red), -8.0f, 8.0f) * d;\n"
+            "  float3 a = 0.5f * (t.sample(s, clamp(uv - dir / 6.0f, c.edge.xy, c.edge.zw)).rgb + t.sample(s, clamp(uv + dir / 6.0f, c.edge.xy, c.edge.zw)).rgb);\n"
+            "  float3 b = 0.5f * a + 0.25f * (t.sample(s, clamp(uv - dir * 0.5f, c.edge.xy, c.edge.zw)).rgb + t.sample(s, clamp(uv + dir * 0.5f, c.edge.xy, c.edge.zw)).rgb);\n"
+            "  float lb = dot(b, L);\n"
+            "  return float4(lb < lo || lb > hi ? a : b, m.a);\n"
             "}\n"
             // Pixel (sharp bilinear): inside a texel the coordinate snaps to its centre, and over the last half output pixel before a seam it moves on linearly to the next one
             "fragment float4 fs_pixel(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant Crop& c [[buffer(0)]]) {\n"
@@ -10564,6 +10582,7 @@ static void present_pipeline(MTLPixelFormat format) {
         NSError *e = nil;
         id<MTLLibrary> lib = [g_dev newLibraryWithSource:@(src_msl) options:nil error:&e];
         if (!lib) MDIE("present shader compile failed %s", e.localizedDescription.UTF8String);
+        g_present_lib = lib;
         MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new];
         pd.vertexFunction = [lib newFunctionWithName:@"vs"]; pd.fragmentFunction = [lib newFunctionWithName:@"fs"];
         pd.colorAttachments[0].pixelFormat = format;
@@ -10652,19 +10671,101 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
 // bytes), then draw 1:1 with the usual origin and output format. Queue barriers serialize both the frame's rendering and reuse of the scaler's textures across presents.
 // Replacing those textures waits for earlier presents; throttle replacement during resizing, and keep standard scaling for refused sizes. Offscreen captures own separate state.
 #define FX_REMAKE_PRESENTS 30
-typedef struct { id<MTL4FXSpatialScaler> sc; id<MTLTexture> in, out; uint64_t made_at; int made; NSUInteger refused[6]; } fx_state;
+// aa: the anti-aliasing pass's output (aa_encode), the game's picture at its own size, which the scaler or the present pass then reads in place of the game's texture
+typedef struct { id<MTL4FXSpatialScaler> sc; id<MTLTexture> in, out, aa; uint64_t made_at; int made; NSUInteger refused[6]; } fx_state;
 static fx_state g_fx_present;   // only the present thread encodes or replaces the scaler
 static id<MTL4Compiler> g_fx_comp;
-static int g_fx_mode = -1;   // 1 = metalfx, 0 = off
+// The upscaling wanted (front.h mtl_present_upscale_set, or DM_PRESENT_UPSCALE read the first time): 1 = metalfx, 0 = off, -1 = not read yet. Whether this GPU has the scaler is
+// checked at the first present that wants it (g_fx_ok), so a front end can choose before the device exists; without one the present scales bilinearly
+static _Atomic int g_fx_mode = -1;
+static int g_fx_ok = -1;
 static int fx_mode(void) {
-    if (g_fx_mode >= 0) return g_fx_mode;
-    const char *e = getenv("DM_PRESENT_UPSCALE"); int v = 0;
-    if (e && (!strcmp(e, "metalfx") || !strcmp(e, "1"))) v = 1;
-    else if (e && (!strcmp(e, "off") || !strcmp(e, "0"))) v = 0;
-    else if (e && *e) MLOG("[RED] DM_PRESENT_UPSCALE=%s: metalfx or off; keeping %s", e, v ? "metalfx" : "off");
-    if (v && !(g_q4 && [MTLFXSpatialScalerDescriptor supportsMetal4FX:g_dev])) { MLOG("present upscaling: this GPU has no Metal 4 MetalFX spatial scaler; the present scales bilinearly"); v = 0; }
-    MLOG("present upscaling (DM_PRESENT_UPSCALE): %s", v ? "metalfx, MetalFX's spatial scaler where the picture is shown larger than the game renders it" : "off, bilinear");
-    return g_fx_mode = v;
+    int v = g_fx_mode;
+    if (v < 0) {
+        const char *e = getenv("DM_PRESENT_UPSCALE"); int want = 0;
+        if (e && (!strcmp(e, "metalfx") || !strcmp(e, "1"))) want = 1;
+        else if (e && *e && strcmp(e, "off") && strcmp(e, "0")) MLOG("[RED] DM_PRESENT_UPSCALE=%s: metalfx or off; keeping off", e);
+        int none = -1;
+        if (atomic_compare_exchange_strong(&g_fx_mode, &none, want)) MLOG("present upscaling (DM_PRESENT_UPSCALE): %s", want ? "metalfx, MetalFX's spatial scaler where the picture is shown larger than the game renders it" : "off, bilinear");
+        v = g_fx_mode;
+    }
+    if (v && g_fx_ok < 0) { g_fx_ok = g_q4 && [MTLFXSpatialScalerDescriptor supportsMetal4FX:g_dev]; if (!g_fx_ok) MLOG("present upscaling: this GPU has no Metal 4 MetalFX spatial scaler; the present scales bilinearly"); }
+    return v && g_fx_ok == 1;
+}
+int mtl_present_upscale(void) { fx_mode(); return g_fx_mode == 1; }
+void mtl_present_upscale_set(int on) {
+    on = !!on; int was = atomic_exchange(&g_fx_mode, on);
+    if (was != on) MLOG("present upscaling: %s", on ? "MetalFX where the picture is shown larger than the game renders it" : "off, bilinear");
+}
+// ---------- Anti-aliasing in the present (DM_PRESENT_AA) ----------
+// FXAA over the game's finished picture at its own size, before MetalFX and the present filter: smooths the stair-stepped edges of a game that ships no anti-aliasing of its own.
+// It sees the HUD too, so small text softens a little; off by default, chosen per game in Quick settings. Off, the present reads the game's texture as before
+static const char *const g_aa_name[DM_PAA_N] = {"off", "fxaa"};
+static _Atomic int g_aa = -1;   // -1: not read yet
+static int aa_mode(void) {
+    int a = g_aa;
+    if (a >= 0) return a;
+    const char *e = getenv("DM_PRESENT_AA"); int want = 0;
+    if (e && *e) { for (int i = 0; i < DM_PAA_N; i++) if (!strcasecmp(e, g_aa_name[i])) want = i;
+        if (!want && strcasecmp(e, "off") && strcmp(e, "0")) MLOG("[RED] DM_PRESENT_AA=%s: not off or fxaa; presenting without anti-aliasing", e); }
+    int none = -1;
+    if (atomic_compare_exchange_strong(&g_aa, &none, want) && want) MLOG("present: anti-aliasing %s (DM_PRESENT_AA)", g_aa_name[want]);
+    return g_aa;
+}
+int mtl_present_aa(void) { return aa_mode(); }
+void mtl_present_aa_set(int mode) {
+    if (mode < 0 || mode >= DM_PAA_N) mode = DM_PAA_OFF;
+    int was = atomic_exchange(&g_aa, mode);
+    if (was != mode) MLOG("present: anti-aliasing %s", g_aa_name[mode]);
+}
+// The FXAA pipeline for the game picture's format (the pass writes a texture of that format, so the bytes stay as the game stored them); present thread and captures
+static id<MTLRenderPipelineState> aa_pso(MTLPixelFormat pf) {
+    static id<MTLRenderPipelineState> pso; static MTLPixelFormat fmt; static int failed; static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&mu);
+    if ((!pso || fmt != pf) && g_present_lib) {
+        MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new]; NSError *e = nil;
+        pd.vertexFunction = [g_present_lib newFunctionWithName:@"vs"]; pd.fragmentFunction = [g_present_lib newFunctionWithName:@"fs_fxaa"];
+        pd.colorAttachments[0].pixelFormat = pf;
+        pso = [g_dev newRenderPipelineStateWithDescriptor:pd error:&e]; fmt = pf;
+        if (!pso && !failed++) MLOG("[RED] present anti-aliasing: pipeline for format %lu failed (%s); presenting without it", (unsigned long)pf, e ? e.localizedDescription.UTF8String : "no function");
+    }
+    id<MTLRenderPipelineState> p = pso;
+    pthread_mutex_unlock(&mu);
+    return p;
+}
+// Encodes FXAA of the rectangle r of raw into fx->aa (cw x ch, raw's format) and returns it, or nil (the present reads raw as before). uvb + 48 bytes: the pass's constants.
+// remake_wait as in fx_encode: a new size or format waits for the presents still reading the old texture
+static id<MTLTexture> aa_encode(fx_state *fx, id<MTL4CommandBuffer> cb, id<MTLTexture> raw, const NSUInteger r[4], id<MTLBuffer> uvb, int remake_wait) {
+    NSUInteger cw = r[2], ch = r[3];
+    if (aa_mode() == DM_PAA_OFF || !cw || !ch) return nil;
+    id<MTLRenderPipelineState> pso = aa_pso(raw.pixelFormat);
+    if (!pso) return nil;
+    if (!fx->aa || fx->aa.width != cw || fx->aa.height != ch || fx->aa.pixelFormat != raw.pixelFormat) {
+        if (remake_wait && fx->aa) { pthread_mutex_lock(&g_pq_mu); while (g_pq_inflight) pthread_cond_wait(&g_pq_cv, &g_pq_mu); pthread_mutex_unlock(&g_pq_mu); }
+        res_remove(fx->aa); fx->aa = nil;
+        MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:raw.pixelFormat width:cw height:ch mipmapped:NO];
+        td.storageMode = MTLStorageModePrivate; td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        id<MTLTexture> t = [g_dev newTextureWithDescriptor:td];
+        if (!t) { RED_ONCE(122, "present anti-aliasing: cannot create its %lux%lu texture; presenting without it", (unsigned long)cw, (unsigned long)ch); return nil; }
+        t.label = @"present anti-aliasing"; res_add(t); res_commit(); fx->aa = t;
+    }
+    MTL4RenderPassDescriptor *rp = [MTL4RenderPassDescriptor new];
+    rp.colorAttachments[0].texture = fx->aa; rp.colorAttachments[0].loadAction = MTLLoadActionDontCare; rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    id<MTL4RenderCommandEncoder> en = [cb renderCommandEncoderWithDescriptor:rp];
+    if (!en) { RED_ONCE(123, "present anti-aliasing: no render encoder; presenting without it"); return nil; }
+    [en barrierAfterQueueStages:MTLStageAll beforeStages:MTLStageAll visibilityOptions:resource_vis()];   // after the frame's work, and after earlier presents' reads of fx->aa
+    [en setArgumentTable:g_present_args atStages:MTLRenderStageFragment];
+    [g_present_args setTexture:raw.gpuResourceID atIndex:0];
+    [g_present_args setSamplerState:g_blit_samp.gpuResourceID atIndex:0];
+    float *c = (float *)uvb.contents + 12; NSUInteger tw = raw.width, th = raw.height;   // the crop in raw's coordinates, unflipped: fx->aa keeps raw's row order
+    c[0] = (float)r[0] / tw; c[1] = (float)r[1] / th; c[2] = (float)cw / tw; c[3] = (float)ch / th;
+    c[4] = (r[0] + 0.5f) / tw; c[5] = (r[1] + 0.5f) / th; c[6] = (r[0] + cw - 0.5f) / tw; c[7] = (r[1] + ch - 0.5f) / th;
+    c[8] = c[9] = c[10] = c[11] = 0;
+    [g_present_args setAddress:uvb.gpuAddress + 12 * sizeof(float) atIndex:0];
+    [en setViewport:(MTLViewport){0, 0, cw, ch, 0, 1}]; [en setRenderPipelineState:pso];
+    [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    m4_end(en);
+    return fx->aa;
 }
 // MetalFX scales the content (cw x ch) to its rectangle on the canvas (vp) when the rectangle is at least as large in both directions and larger in one
 static int fx_wanted(MTLViewport vp, NSUInteger cw, NSUInteger ch) {
@@ -10724,8 +10825,13 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
     double dw = dst.width, dh = dst.height, aw = fx == &g_fx_present ? dw * (1 - atomic_load(&g_present_inset)) : dw;
     MTLViewport vp = present_viewport(r[2], r[3], aw, dh);
     int full = vp.originX == 0 && vp.originY == 0 && vp.width == dw && vp.height == dh;
-    // MetalFX only with no present filter (front.h mtl_present_filter): the filters work on the game's own pixels, which the scaler would already have resampled
-    id<MTLTexture> tex = present_raw_src(src), up = fx && pfx_mode() == DM_PFX_OFF ? fx_encode(fx, cb, tex, r, vp, dst.pixelFormat, fx == &g_fx_present) : nil;
+    // Anti-aliasing first, on the game's own pixels (aa_encode); its output stands in for the game's texture from here on, at the origin
+    id<MTLTexture> tex = present_raw_src(src), aa = fx ? aa_encode(fx, cb, tex, r, uvb, fx == &g_fx_present) : nil;
+    if (aa) { tex = aa; r[0] = r[1] = 0; }
+    // MetalFX with no present filter or with Sharpen, which then sharpens the scaled picture as FSR's RCAS follows its upscale (front.h mtl_present_filter); the other filters work on
+    // the game's own pixels, which the scaler would already have resampled
+    int pf = pfx_mode();
+    id<MTLTexture> up = fx && (pf == DM_PFX_OFF || pf == DM_PFX_SHARPEN) ? fx_encode(fx, cb, tex, r, vp, dst.pixelFormat, fx == &g_fx_present) : nil;
     if (up) { tex = up; r[0] = r[1] = 0; r[2] = up.width; r[3] = up.height; }   // the scaled picture, the viewport's size: drawn 1:1
     MTL4RenderPassDescriptor *rp = [MTL4RenderPassDescriptor new];
     rp.colorAttachments[0].texture = dst;
@@ -10753,7 +10859,7 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
 // returns whether it was submitted. Completion reports the encoding kind, or PRESENT_FAILED on a GPU error. Resources remain resident and retained until GPU completion.
 static int present_offscreen_m4(id<MTLTexture> src, const int crop[4], id<MTLTexture> out, void (^done)(int)) {
     id<MTL4CommandAllocator> al = [g_dev newCommandAllocator]; id<MTL4CommandBuffer> cb = [g_dev newCommandBuffer];
-    id<MTLBuffer> uvb = [g_dev newBufferWithLength:sizeof(float) * 12 options:MTLResourceStorageModeShared];   // the crop (8) and the present filter's parameters (4)
+    id<MTLBuffer> uvb = [g_dev newBufferWithLength:sizeof(float) * 24 options:MTLResourceStorageModeShared];   // the crop (8) and the present filter's parameters (4), then the anti-aliasing pass's (12)
     if (!al || !cb || !uvb) { MLOG("[RED] offscreen present: no command allocator or buffer"); return 0; }
     id<MTLTexture> raw = present_raw_src(src);
     fx_state fx = {0};
@@ -10761,11 +10867,11 @@ static int present_offscreen_m4(id<MTLTexture> src, const int crop[4], id<MTLTex
     [cb beginCommandBufferWithAllocator:al];
     int kind = present_encode_m4(cb, raw, out, crop, uvb, &fx);
     [cb endCommandBuffer];
-    if (!kind) { res_remove(out); res_remove(uvb); res_remove(fx.in); res_remove(fx.out); return 0; }
+    if (!kind) { res_remove(out); res_remove(uvb); res_remove(fx.in); res_remove(fx.out); res_remove(fx.aa); return 0; }
     MTL4CommitOptions *options = [MTL4CommitOptions new];
     [options addFeedbackHandler:^(id<MTL4CommitFeedback> f) {
         (void)al; (void)cb; (void)raw; (void)fx.sc;   // keep the Metal 4 commands, source view and scaler alive too
-        res_remove(out); res_remove(uvb); res_remove(fx.in); res_remove(fx.out);
+        res_remove(out); res_remove(uvb); res_remove(fx.in); res_remove(fx.out); res_remove(fx.aa);
         if (f.error) MLOG("[RED] offscreen present: %s", f.error.description.UTF8String);
         done(f.error ? PRESENT_FAILED : kind);
     }];

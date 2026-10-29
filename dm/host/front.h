@@ -29,6 +29,14 @@ void mtl_present_filter_set(int mode, float strength);
 // samplers. Taken when the game makes its first sampler, so mtl_aniso_set must come before the guest runs; later calls only log that the change applies at the next launch. Any thread
 int mtl_aniso(void);
 void mtl_aniso_set(int n);
+// Present upscaling (nvn_mtl.m; the Mac front end's Quick settings, or DM_PRESENT_UPSCALE): 1 = MetalFX's spatial scaler where the picture is shown larger than the game renders it,
+// 0 = bilinear. Taken at every present; a GPU without the Metal 4 scaler scales bilinearly whatever is chosen. mtl_present_upscale answers the choice. Any thread
+int mtl_present_upscale(void);
+void mtl_present_upscale_set(int on);
+// Present anti-aliasing (nvn_mtl.m; Quick settings per game, or DM_PRESENT_AA): FXAA over the game's finished picture before upscaling and the filter. Taken at every present. Any thread
+enum { DM_PAA_OFF, DM_PAA_FXAA, DM_PAA_N };   // the saved choice is the number
+int mtl_present_aa(void);
+void mtl_present_aa_set(int mode);
 // The CRT filters' scanline height (and the LCD grid's cell) in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
 int mtl_present_scanline(void);
 void mtl_present_scanline_set(int rows);

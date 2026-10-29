@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+- **Picture quality on the Mac.** MetalFX upscaling is now on by default in Mac apps and has a live switch in Quick settings (Graphics & shaders), saved together with the settings window's Upscaling choice. Sharpen now works together with MetalFX, sharpening the scaled picture. A new Anti-aliasing row (Off, FXAA; `DM_PRESENT_AA`) smooths jagged edges in games without their own anti-aliasing. Anisotropic filtering defaults to 16x on the Mac until a game's choice is saved ("Game default" keeps the game's own).
+
 ## 0.6.0 (2026-10-28)
 
 Merges nxnative's `main` up to `beea17c` (245 commits since `9a56ecf`). Most of what this brings is upstream's own work; the notes below are what changes for NXForge.
