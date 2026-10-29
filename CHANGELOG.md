@@ -6,8 +6,11 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 **Converter**
 - `app/install.sh` builds the converter into `~/Applications` and opens it, so it opens from Spotlight, Launchpad or the Dock; run it again to update.
+- The game folder picker (and File > Choose Game Folder…) also takes a game file: pick an `.xci` or `.nsp` and its folder becomes the game folder.
 
 **Fixes**
+- Cartridge dumps (`.xci`) named without a `[title ID]` tag (`Game.xci`) build: the script read the title ID only from a ticket or the file name, and a cartridge has no ticket, so a lone untagged XCI stopped with "no NSP with a readable title ID". It now reads the title ID from the XCI's own NCA headers with prod.keys' `header_key`. Game file extensions match in any case (`Game.XCI`).
+- A cartridge with its update on it (1G+1U) shows as the base game in the converter's file check, not as an update with "no base game in the folder".
 - Cruis'n Blast no longer stops after a race: its name entry's China-region profanity check (`nn::ngc::CheckProfanityWordsInTextForPlatformRegionChina`, and the matching mask) went to the `ngct:u` service, which the host does not serve; the host now answers both itself (no profanity, nothing masked).
 - The Mac pipeline archive step checks free disk space before metal-tt starts and names a full disk when metal-tt fails, instead of only "applegpu-nt command failed" (Cruis'n Blast's 33,858 bases failed with 366 MB free). A failed run's temporary files are cleared from `pso/mac-work`.
 

@@ -22,6 +22,31 @@ def pfs0(path, names):   # a PFS0 holding empty files with these names (enough f
     path.write_bytes(b'PFS0' + struct.pack('<III', len(names), len(strs), 0) + ent + strs)
 
 
+HEADER_KEY = bytes(range(32))
+
+
+def nca(tid):   # an NCA header naming this title, encrypted as a console does: AES-128-XTS, 0x200-byte sectors, the sector number big-endian as the tweak
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    h = bytearray(0x400); h[0x200:0x204] = b'NCA3'; struct.pack_into('<Q', h, 0x210, tid)
+    out = b''
+    for sec in range(2):
+        e = Cipher(algorithms.AES(HEADER_KEY), modes.XTS(sec.to_bytes(16, 'big'))).encryptor()
+        out += e.update(bytes(h[sec * 0x200:(sec + 1) * 0x200])) + e.finalize()
+    return out
+
+
+def hfs0(files):   # an HFS0 partition holding these (name, data) files
+    strs = b''.join(n.encode() + b'\0' for n, _ in files); ent, o, so = b'', 0, 0
+    for n, d in files: ent += struct.pack('<QQII', o, len(d), so, 0) + bytes(0x28); o += len(d); so += len(n) + 1
+    return b'HFS0' + struct.pack('<III', len(files), len(strs), 0) + ent + strs + b''.join(d for _, d in files)
+
+
+def xci(path, tids):   # a cartridge dump: card header (HEAD at 0x100, root partition offset at 0x130), root HFS0 with a secure partition holding one NCA per title
+    secure = hfs0([(f'{i:032x}.cnmt.nca', nca(t)) for i, t in enumerate(tids)])
+    head = bytearray(0x200); head[0x100:0x104] = b'HEAD'; struct.pack_into('<Q', head, 0x130, 0x200)
+    path.write_bytes(bytes(head) + hfs0([('update', b''), ('secure', secure)]))
+
+
 class Scan(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.tmp)
@@ -45,6 +70,14 @@ class Scan(unittest.TestCase):
         (self.tmp / ('._' + base.name)).write_bytes(b'\0\x05\x16\x07' + b'\0' * 4092)
         self.assertEqual(nsp.scan_nsps(self.tmp)[1]['base'], base)
         self.assertEqual(self.said, [])
+
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'needs the cryptography module to make the test cartridge')
+    def test_untagged_xci_titled_from_its_ncas(self):   # Game.XCI: no ticket, no tags, upper-case extension, the update on the cartridge too (1G+1U)
+        keys = self.tmp / 'prod.keys'; keys.write_text(f'header_key = {HEADER_KEY.hex()}\n')
+        base = self.tmp / 'Game.XCI'; xci(base, [APP | 0x800, APP])
+        self.assertEqual(nsp.xci_title(base, keys), APP)
+        app, fam = nsp.scan_nsps(self.tmp, keys)
+        self.assertEqual((app, fam['base']), (APP, base))
 
 
 if __name__ == '__main__':
