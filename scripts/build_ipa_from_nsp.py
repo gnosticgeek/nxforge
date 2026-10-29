@@ -493,8 +493,9 @@ def header_key_of(keys):
 
 
 def xci_title(path, keys):
-    """An XCI's title ID from the NCA headers in its secure partition: the base game's (…000) when the cartridge also carries an update (1G+1U), else the lowest. Needs prod.keys'
-    header_key; None when it has none"""
+    """An XCI's title ID from the NCA headers in its secure partition: the base game's (…000) when the cartridge also carries an update (1G+1U), else the lowest. A cartridge with
+    several applications (Castlevania: Belmont's Curse's Midnight Edition: the game, 0100BA4026E94000, and its Digital Sound & Art Gallery, 01005F4027E94000) gives the one with the
+    largest Program NCA, the game; nx_extract takes the same one (title_opt). Needs prod.keys' header_key; None when it has none"""
     hk = header_key_of(keys)
     if hk is None: return None
     with open(path, 'rb') as f:
@@ -502,13 +503,24 @@ def xci_title(path, keys):
         if head[:4] != b'HEAD': raise ValueError('no HEAD at 0x100')
         secure = next((e for e in hfs0_entries(f, struct.unpack_from('<Q', head, 0x30)[0]) if e[0] == 'secure'), None)
         if secure is None: raise ValueError('no secure partition')
-        tids = set()
+        tids = {}   # title ID → its largest Program NCA (content type 0 at +0x205)
         for name, off, size in hfs0_entries(f, secure[1]):
             if not name.lower().endswith('.nca') or size < 0x400: continue
             f.seek(off); h = nca_header(f.read(0x400), hk)
             if h[0x200:0x203] != b'NCA': raise ValueError('an NCA header does not decrypt: header_key is wrong')
-            tids.add(struct.unpack_from('<Q', h, 0x210)[0])
+            t = struct.unpack_from('<Q', h, 0x210)[0]
+            tids[t] = max(tids.get(t, 0), size if h[0x205] == 0 else 0)
+    apps = [t for t in tids if t & 0xFFF == 0]
+    if len(apps) > 1: return max(apps, key=lambda t: (tids[t], -t))
     return min(tids, key=lambda t: (t & 0xFFF != 0, t)) if tids else None
+
+
+def title_opt(base, keys):
+    """nx_extract's --title for a cartridge base game: the application xci_title names, which nx_extract would not pick on its own when the cartridge holds several (it takes the
+    lowest title ID); [] for an NSP"""
+    if base.suffix.lower() != '.xci': return []
+    t = xci_title(base, keys)
+    return ['--title', f'{t:016x}'] if t is not None else []
 
 
 def version_of(path):
@@ -665,7 +677,7 @@ def same_build(nsp_dir, app, fam, keys, repo, env):
     for v, upd in ([ups[-1]] if ups else []) + [(0, None)]:
         PROG.set(step=f'main of {"the base game" if upd is None else "update v" + str(v)}')
         tmp = work / 'exefs.partial'; rmtree(tmp)
-        run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'exefs.log')
+        run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + title_opt(fam['base'], keys) + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'exefs.log')
         main = tmp / 'ExeFS/main'
         bid = build_id(main) if main.exists() else None
         g = gamemod.by_build(bid) if bid else None
@@ -690,7 +702,7 @@ def survey(nsp_dir, app, fam, keys, repo, py, env):
         except OSError: return None
     PROG.stage('survey: RomFS manifest', poll=listed)
     say(f'extracting the code modules and a RomFS manifest (no game files written) → {ex}')
-    run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'extract.log')
+    run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + title_opt(fam['base'], keys) + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'extract.log')
     swap_in(tmp, ex)
     need_aarch64(ex, 'v0' if upd is None else f'v{ups[-1][0] or 1}')
     PROG.stage('survey: code modules', step='reading')
@@ -1034,7 +1046,7 @@ def extract(nx, keys, ex, name, base, upd, cmp_dir, logs, g):   # the build IDs 
     def poll():
         n, b = tree_size(tmp); return {'done': b, 'note': f'{n:,} files'}
     PROG.stage(f'extract {name}', poll=poll, unit='B', total=last[1] if last else base.stat().st_size + (upd.stat().st_size if upd else 0), est=not last)
-    run([nx, keys, base, upd or '-', tmp, '--romfs-image'] + (['--allow-damaged'] if ALLOW_DAMAGED else []), log)
+    run([nx, keys, base, upd or '-', tmp, '--romfs-image'] + title_opt(base, keys) + (['--allow-damaged'] if ALLOW_DAMAGED else []), log)
     swap_in(tmp, dst)
     n, b = extracted(log) or (0, 0)
     PROG.end(f'{n:,} files, {amount(b, "B")}')

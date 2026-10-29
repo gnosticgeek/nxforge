@@ -25,9 +25,9 @@ def pfs0(path, names):   # a PFS0 holding empty files with these names (enough f
 HEADER_KEY = bytes(range(32))
 
 
-def nca(tid):   # an NCA header naming this title, encrypted as a console does: AES-128-XTS, 0x200-byte sectors, the sector number big-endian as the tweak
+def nca(tid, kind=0):   # an NCA header naming this title and content type (0 Program, 1 Meta), encrypted as a console does: AES-128-XTS, 0x200-byte sectors, the sector number big-endian as the tweak
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-    h = bytearray(0x400); h[0x200:0x204] = b'NCA3'; struct.pack_into('<Q', h, 0x210, tid)
+    h = bytearray(0x400); h[0x200:0x204] = b'NCA3'; h[0x205] = kind; struct.pack_into('<Q', h, 0x210, tid)
     out = b''
     for sec in range(2):
         e = Cipher(algorithms.AES(HEADER_KEY), modes.XTS(sec.to_bytes(16, 'big'))).encryptor()
@@ -41,8 +41,8 @@ def hfs0(files):   # an HFS0 partition holding these (name, data) files
     return b'HFS0' + struct.pack('<III', len(files), len(strs), 0) + ent + strs + b''.join(d for _, d in files)
 
 
-def xci(path, tids):   # a cartridge dump: card header (HEAD at 0x100, root partition offset at 0x130), root HFS0 with a secure partition holding one NCA per title
-    secure = hfs0([(f'{i:032x}.cnmt.nca', nca(t)) for i, t in enumerate(tids)])
+def xci(path, tids, ncas=()):   # a cartridge dump: card header (HEAD at 0x100, root partition offset at 0x130), root HFS0 with a secure partition holding one NCA per title, then ncas: (title, type, body size)
+    secure = hfs0([(f'{i:032x}.cnmt.nca', nca(t)) for i, t in enumerate(tids)] + [(f'{i:032x}.nca', nca(t, k) + bytes(n)) for i, (t, k, n) in enumerate(ncas, len(tids))])
     head = bytearray(0x200); head[0x100:0x104] = b'HEAD'; struct.pack_into('<Q', head, 0x130, 0x200)
     path.write_bytes(bytes(head) + hfs0([('update', b''), ('secure', secure)]))
 
@@ -78,6 +78,16 @@ class Scan(unittest.TestCase):
         self.assertEqual(nsp.xci_title(base, keys), APP)
         app, fam = nsp.scan_nsps(self.tmp, keys)
         self.assertEqual((app, fam['base']), (APP, base))
+
+
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'needs the cryptography module to make the test cartridge')
+    def test_cartridge_with_two_applications_gives_the_larger_program(self):   # Castlevania: Belmont's Curse's Midnight Edition: the game and its gallery, the gallery's title ID lower
+        keys = self.tmp / 'prod.keys'; keys.write_text(f'header_key = {HEADER_KEY.hex()}\n')
+        gallery, game = 0x01005F4027E94000, 0x0100BA4026E94000
+        base = self.tmp / 'Game.xci'; xci(base, [], [(gallery, 1, 0), (gallery, 0, 0x200), (game, 1, 0), (game, 2, 0x800), (game, 0, 0x400)])
+        self.assertEqual(nsp.xci_title(base, keys), game)
+        self.assertEqual(nsp.title_opt(base, keys), ['--title', f'{game:016x}'])
+        self.assertEqual(nsp.title_opt(self.tmp / 'Game.nsp', keys), [])
 
 
 if __name__ == '__main__':
