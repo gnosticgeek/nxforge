@@ -33,7 +33,7 @@ The size of the 3D picture, from 50 to 100 %. Below 100 % the size is fixed ther
 
 ### Upscaling
 
-A game that renders below the screen's resolution is scaled up to the screen. **Standard**, the default, scales smoothly; **MetalFX** uses Apple's MetalFX upscaler, which sharpens edges and text as it scales.
+A game that renders below the screen's resolution is scaled up to the screen. **Standard** scales smoothly; **MetalFX** uses Apple's MetalFX upscaler, which sharpens edges and text as it scales. Standard is the default on an iPhone or iPad, MetalFX on a Mac.
 
 ```mermaid
 flowchart LR
@@ -48,7 +48,7 @@ Breath of the Wild renders 1280x720 in handheld mode. Docked it renders its worl
 
 - **When to change it:** turn it on if the picture looks soft and the device has GPU time to spare: on a Mac, or on an iPhone in handheld mode at 30 fps. For long sessions at 60 fps on an iPhone leave it at Standard.
 - **Cost:** more GPU time each frame, which can increase heat on an iPhone. [Breath of the Wild's measurements](../dm/games/01007EF00011E000/README.md#upscaling-current) cover Mac and iPhone; the matching iPhone Standard run and MetalFX's share of the thermal cost remain unmeasured. Nothing changes while the game's picture is as large as the screen. Unsupported devices and sizes use Standard scaling.
-- **On the Mac:** choose **MetalFX** under **Upscaling** in the [settings window](#the-mac-settings-window)'s Advanced settings, or set `DM_PRESENT_UPSCALE=metalfx` in its `env.txt` (off by default). It helps in a large window or on a 4K screen.
+- **On the Mac:** MetalFX is on unless you choose **Standard** under **Upscaling** in the [settings window](#the-mac-settings-window), turn off **MetalFX upscaling** in Quick settings (Esc) while the game runs, or set `DM_PRESENT_UPSCALE=off` in its `env.txt`. Both places save the same choice. It helps in a large window, full screen on a Retina display or on a 4K screen. With the **Sharpen** filter on, MetalFX scales first and Sharpen then works on the scaled picture; with Pixel-perfect, CRT, CRT-Lottes or LCD Grid on, the picture is scaled the standard way, since those filters need the game's own pixels.
 
 ### Game language
 

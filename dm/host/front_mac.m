@@ -510,11 +510,15 @@ static void inset_to(float share) {
     g_opts = self; g_menu_toggle = qs_toggle; [self fpsCounter];
 }
 @end
-static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, anisotropic filtering, volume, controls and mods, unless the environment names them
+static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, anisotropic filtering, upscaling, anti-aliasing, volume, controls and mods, unless the environment names them
     mods_start(); controls_load();
     capture_folder_set([NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")]);
     NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
-    if (!getenv("DM_ANISO") && [d objectForKey:opt_key(@"aniso")]) mtl_aniso_set((int)[d integerForKey:opt_key(@"aniso")]);   // taken at the game's first sampler: before the guest runs
+    // Anisotropic filtering: 16x unless this game's saved choice says otherwise (the Mac has the GPU time to spare; "Game default" is saved as 0). Taken at the game's first sampler: before the guest runs
+    if (!getenv("DM_ANISO")) mtl_aniso_set([d objectForKey:opt_key(@"aniso")] ? (int)[d integerForKey:opt_key(@"aniso")] : 16);
+    // Upscaling: MetalFX unless the settings window's saved choice (launcher.DM_PRESENT_UPSCALE, which Quick settings writes too) says off; the window and env.txt set it in the environment
+    if (!getenv("DM_PRESENT_UPSCALE")) { NSString *u = [d stringForKey:@"launcher.DM_PRESENT_UPSCALE"]; mtl_present_upscale_set(u ? [u isEqualToString:@"metalfx"] : 1); }
+    if (!getenv("DM_PRESENT_AA") && [d objectForKey:opt_key(@"aa")]) mtl_present_aa_set((int)[d integerForKey:opt_key(@"aa")]);
     if ([d objectForKey:opt_key(@"volume")]) dm_audio_volume_set([d floatForKey:opt_key(@"volume")]);
     if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);
     if (getenv("DM_PRESENT_FILTER")) return;

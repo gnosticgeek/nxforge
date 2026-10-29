@@ -387,6 +387,15 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Found on:** [The Legend of Zelda: Breath of the Wild — upscaling and measurements](../../dm/games/01007EF00011E000/README.md#upscaling-current).
 - **Limit:** the scaler takes the presented frame, including any filtering and HUD drawing the game already performed. Feeding it an earlier scene target would mean replacing a draw of the game's own, and nothing general identifies which draw is a plain upscale. Scaler support is checked at runtime; unsupported devices, sizes and formats use standard scaling.
 
+- **Mac default and filters (NXForge):** a Mac app with a window turns MetalFX on unless a saved choice says Standard (`front_mac.m` `graphics_start`, `mtl_present_upscale_set`), and Quick settings switches it from the next present. Of the present filters, Sharpen runs after the scaler on the scaled picture, as FSR's RCAS follows its upscale; Pixel-perfect, CRT, CRT-Lottes and LCD Grid need the game's own pixel grid, so with them the present stays bilinear.
+
+### The present anti-aliases through FXAA
+
+- **Symptom:** a game that ships no anti-aliasing shows stair-stepped edges, made larger by any upscale to a Retina screen.
+- **Cause:** the present showed the game's picture as it was drawn.
+- **Fix:** `DM_PRESENT_AA=fxaa` (Quick settings' Anti-aliasing row on the Mac, per game; off by default): the present first draws the valid rectangle through FXAA (`fs_fxaa`, after Timothy Lottes' FXAA 3.11 console pass) into a texture of the game picture's size and format at the origin (`aa_encode`, in the present's Metal 4 command buffer, after a queue barrier on the frame's work), and that texture stands in for the game's from there: MetalFX and the present filter read it. The bytes stay as the game stored them (the sRGB swapchain's non-sRGB view, `present_raw_src`); the row order is kept, so the lower-left origin flip is still the present pass's. A new size or format waits for presents still reading the old texture, as the scaler's does. Captures and recordings draw it too.
+- **Limit:** it sees the finished frame, HUD included, so small text softens slightly; a game with its own anti-aliasing gains little.
+
 ### The NVN present crops by the vi layer crop
 
 - **Symptom:** in handheld mode the picture fills only two thirds of the screen's width and height, in the bottom-left corner (the top-left with the upper-left origin), the rest black.
