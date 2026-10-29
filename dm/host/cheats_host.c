@@ -16,7 +16,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <mach/mach.h>
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE   // the iPhone SDK has no mach_vm.h: the vm_map.h calls (from mach.h) do the same on the own task
+#define mach_vm_read_overwrite(t, a, n, to, got) vm_read_overwrite(t, (vm_address_t)(a), (vm_size_t)(n), (vm_address_t)(to), (vm_size_t *)(got))
+#define mach_vm_write vm_write
+#else
 #include <mach/mach_vm.h>
+#endif
 
 static dm_cheat_file g_file;
 static uint8_t *g_on;              // per cheat of g_file

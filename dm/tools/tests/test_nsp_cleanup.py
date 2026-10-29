@@ -8,6 +8,7 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('build_ipa_from_nsp', REPO / 'scripts/build_ipa_from_nsp.py')
+assert spec and spec.loader
 nsp = importlib.util.module_from_spec(spec); spec.loader.exec_module(nsp)
 
 DIRS = ('extract/v0/RomFS', 'extract/v1179648/RomFS', 'extract/v1507328/RomFS', 'extract/v65536.partial', 'patched_v1507328', 'patched_v1179648', 'nro_v1507328', 'nro_v1179648',

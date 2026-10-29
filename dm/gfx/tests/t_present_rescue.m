@@ -89,16 +89,17 @@ static void lifecycle(void) {
     CHECK("rescue invalidates the link before releasing the layer", link.invalidated && !g_link && !g_link_owns_layer);
     g_link_started = 0;
 }
-static void latency(void) {   // frame latency 1 in a window, 2 in fullscreen, DM_PRESENT_LATENCY in both; a new link takes the current one as link_main does
+static void latency(void) {   // frame latency 1 in a window, no link in fullscreen (NXForge), DM_PRESENT_LATENCY in both; a new link takes the current one as link_main does
     reset(); test_fullscreen = 0; g_present_latency = 0;
     SilentDisplayLink *link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency();
     g_link = link; g_link_started = 1;
     link_sync(); CHECK("a window keeps frame latency 1", link.preferredFrameLatency == 1);
-    test_fullscreen = 1; link_sync(); CHECK("entering fullscreen sets frame latency 2", link.preferredFrameLatency == 2);
-    test_fullscreen = 0; link_sync(); CHECK("leaving fullscreen sets frame latency 1 again", link.preferredFrameLatency == 1);
-    test_fullscreen = 1; link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency(); g_link = link;
-    link_sync(); CHECK("a link created in fullscreen keeps frame latency 2", link.preferredFrameLatency == 2);
-    g_present_latency = 3; link_sync(); CHECK("DM_PRESENT_LATENCY wins in fullscreen", link.preferredFrameLatency == 3);
+    // NXForge: fullscreen goes without the display link (pacing mode 0, link_sync), unless DM_PRESENT_LATENCY keeps it at that latency; upstream's latency 2 is not used then
+    test_fullscreen = 1; link_sync(); CHECK("NXForge: entering fullscreen leaves the display link (pacing mode 0)", g_link_mode == 0);
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, false);
+    test_fullscreen = 0; reset(); link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency(); g_link = link; g_link_started = 1;
+    link_sync(); CHECK("back in a window the link has frame latency 1", g_link_mode == 1 && link.preferredFrameLatency == 1);
+    test_fullscreen = 1; g_present_latency = 3; link_sync(); CHECK("DM_PRESENT_LATENCY keeps the link in fullscreen, at that latency", g_link_mode == 1 && link.preferredFrameLatency == 3);
     test_fullscreen = 0; link_sync(); CHECK("DM_PRESENT_LATENCY wins in a window", link.preferredFrameLatency == 3);
     g_present_latency = 0; test_fullscreen = 0; link_sync(); g_link = nil; g_link_started = 0;
 }
