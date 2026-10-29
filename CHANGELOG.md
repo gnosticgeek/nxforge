@@ -13,6 +13,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 - A cartridge with its update on it (1G+1U) shows as the base game in the converter's file check, not as an update with "no base game in the folder".
 - Cruis'n Blast no longer stops after a race: its name entry's China-region profanity check (`nn::ngc::CheckProfanityWordsInTextForPlatformRegionChina`, and the matching mask) went to the `ngct:u` service, which the host does not serve; the host now answers both itself (no profanity, nothing masked).
 - The Mac pipeline archive step checks free disk space before metal-tt starts and names a full disk when metal-tt fails, instead of only "applegpu-nt command failed" (Cruis'n Blast's 33,858 bases failed with 366 MB free). A failed run's temporary files are cleared from `pso/mac-work`.
+- Unity 6000.3 games whose player files carry no type trees and whose bundles hold no `Shader` (Castlevania: Belmont's Curse) split their shaders: the split stopped with "no bundle has a Shader type tree of the same hash to borrow". `unityfs.py` now has 6000.3's `Shader` layout (version 4 adds the object's local identifier) and `ComputeShader` layout (a resource type per resource), checked against AssetRipper's release dumps.
 
 ## 0.6.0 (2026-10-28)
 
