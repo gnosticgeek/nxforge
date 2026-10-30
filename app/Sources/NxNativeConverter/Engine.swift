@@ -71,16 +71,42 @@ enum Engine {
         return EngineVersion(commit: p[0], subject: p[1], date: p[2], branch: branch, dirty: dirty, version: versionOf(p[0], repo: repo))
     }
 
-    /// After a fetch: how many commits the upstream branch has that HEAD lacks.
-    static func checkUpdates(_ repo: String) throws -> Int {
-        guard git(repo, ["fetch", "--quiet", "origin"]) != nil else { throw ConverterError("git fetch failed") }
-        guard let up = git(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"]) else { throw ConverterError("this branch has no upstream branch to update from") }
-        return Int(git(repo, ["rev-list", "--count", "HEAD..\(up)"]) ?? "0") ?? 0
+    /// The branch the engine updates from: the branch's upstream while it has work main lacks; else origin's default
+    /// branch (main) once HEAD is on it, so a release branch left checked out after its merge follows main and its
+    /// release tag. The upstream is fetched by name when it has no tracking ref (a narrowed fetch refspec, from git
+    /// remote set-branches, fetches only some branches). "origin/main", or nil when there is nothing to update from.
+    static func updateTarget(_ repo: String) -> String? {
+        var up = git(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"])
+        if up == nil, let branch = git(repo, ["symbolic-ref", "--short", "HEAD"]), let remote = git(repo, ["config", "branch.\(branch).remote"]),
+           let ref = git(repo, ["config", "branch.\(branch).merge"]), ref.hasPrefix("refs/heads/") {
+            let name = "\(remote)/\(ref.dropFirst(11))"
+            if git(repo, ["fetch", "--quiet", remote, "+\(ref):refs/remotes/\(name)"]) != nil { up = name }
+        }
+        let main = git(repo, ["rev-parse", "--abbrev-ref", "origin/HEAD"]) ?? "origin/main"
+        guard git(repo, ["rev-parse", "--verify", "--quiet", main]) != nil else { return up }
+        if let u = up, u == main || git(repo, ["merge-base", "--is-ancestor", u, main]) == nil { return u }
+        return git(repo, ["merge-base", "--is-ancestor", "HEAD", main]) != nil ? main : up
     }
 
-    /// Fast-forward to the upstream branch; refuses when that would need a merge.
+    /// After a fetch: how many commits the update target has that HEAD lacks, and the target ("origin/main").
+    static func checkUpdates(_ repo: String) throws -> (count: Int, target: String) {
+        guard git(repo, ["fetch", "--quiet", "origin"]) != nil else { throw ConverterError("git fetch failed") }
+        guard let up = updateTarget(repo) else { throw ConverterError("this branch has no upstream branch to update from, and is not merged into main") }
+        return (Int(git(repo, ["rev-list", "--count", "HEAD..\(up)"]) ?? "0") ?? 0, up)
+    }
+
+    /// Fast-forward to the update target, first switching to main when that is it (a merged release branch);
+    /// refuses when that would need a merge.
     static func update(_ repo: String) throws {
-        guard git(repo, ["pull", "--ff-only", "--quiet"]) != nil else { throw ConverterError("the engine cannot fast-forward (local changes or diverged branch)") }
+        guard let up = updateTarget(repo) else { throw ConverterError("this branch has no upstream branch to update from, and is not merged into main") }
+        let branch = git(repo, ["symbolic-ref", "--short", "HEAD"]) ?? ""
+        let name = String(up.split(separator: "/", maxSplits: 1).last ?? "")
+        if git(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"]) != up, branch != name {
+            let exists = git(repo, ["rev-parse", "--verify", "--quiet", "refs/heads/\(name)"]) != nil
+            guard git(repo, exists ? ["switch", "--quiet", name] : ["switch", "--quiet", "--track", up]) != nil
+            else { throw ConverterError("the engine cannot switch to \(name) (local changes in the way)") }
+        }
+        guard git(repo, ["merge", "--ff-only", "--quiet", up]) != nil else { throw ConverterError("the engine cannot fast-forward (local changes or diverged branch)") }
     }
 
     private static var buildsFile: URL { Settings.supportDir.appending(path: "builds.json") }
@@ -120,9 +146,9 @@ enum Engine {
         return v.isEmpty ? nil : v
     }
 
-    /// The newest release's first change from the upstream branch's CHANGELOG.md, after a fetch: "0.1.1 · Quick settings sidebar …"
-    static func upstreamNote(_ repo: String) -> String? {
-        guard let up = git(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"]), let log = git(repo, ["show", "\(up):CHANGELOG.md"]) else { return nil }
+    /// The newest release's first change from the update target's CHANGELOG.md, after a fetch: "0.1.1 · Quick settings sidebar …"
+    static func upstreamNote(_ repo: String, target up: String) -> String? {
+        guard let log = git(repo, ["show", "\(up):CHANGELOG.md"]) else { return nil }
         let lines = log.split(separator: "\n").map { String($0) }
         guard let h = lines.firstIndex(where: { $0.hasPrefix("## ") }) else { return nil }
         let title = lines[h].dropFirst(3).split(separator: " (").first.map(String.init) ?? ""
