@@ -190,7 +190,8 @@ Comparison and testing:
 | `DM_FPS=30` or `60` | Pins the target frame rate |
 | `DM_NVN_BARRIER=game`, `DM_NVN_CUT` | Pass ordering and segment commits: see [docs/agents/04-graphics.md](../../docs/agents/04-graphics.md) section 7 |
 | `DM_PRESENT_HZ=N` | The frequency of presentation pacing (default 60); 0 means no frame limit and is for performance profiling only |
-| `DM_PRESENT_UPSCALE=metalfx` or `off` | How the present scales a picture smaller than its rectangle on the screen: `metalfx` through MetalFX's spatial scaler, `off` (the default) bilinearly. An option on both platforms (the iOS launcher's Upscaling; `env.txt` on the Mac); rendering at the screen's resolution stays the reference for sharpness ([reference](../../docs/reference/rendering.md#the-present-upscales-through-metalfx)) |
+| `DM_PRESENT_UPSCALE=metalfx` or `off` | How the present scales a picture smaller than its rectangle on the screen: `metalfx` through MetalFX's spatial scaler, `off` bilinearly. Off by default on iOS (the launcher's Upscaling); a Mac app with a window defaults to MetalFX and switches it live from Quick settings (`mtl_present_upscale_set`); rendering at the screen's resolution stays the reference for sharpness ([reference](../../docs/reference/rendering.md#the-present-upscales-through-metalfx)) |
+| `DM_PRESENT_AA=fxaa` or `off` | FXAA over the game's finished picture at its own size, before the upscale and the present filter (`aa_encode`; Quick settings per game on the Mac, `mtl_present_aa_set`) ([reference](../../docs/reference/rendering.md#the-present-anti-aliases-through-fxaa)) |
 
 ## Known limitations
 

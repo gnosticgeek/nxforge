@@ -2,6 +2,7 @@
 // Slow work (checks, validation, git) runs off the main thread and lands back here.
 import AppKit
 import Observation
+import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
@@ -323,6 +324,21 @@ final class AppModel {
         p.allowsMultipleSelection = false
         if let start { p.directoryURL = start.url }
         return p.runModal() == .OK ? p.url?.path : nil
+    }
+
+    /// The game folder, picked as the folder itself or as any game file in it (an .xci or .nsp).
+    func chooseGame(start: String? = nil) -> String? {
+        let p = NSOpenPanel()
+        p.canChooseDirectories = true
+        p.canChooseFiles = true
+        p.allowedContentTypes = [.folder] + gameExtensions.sorted().compactMap { UTType(filenameExtension: $0) }
+        p.allowsMultipleSelection = false
+        p.message = "Choose the game's folder, or a game file (.nsp, .xci, .nsz, .xcz) in it"
+        if let start { p.directoryURL = start.url }
+        guard p.runModal() == .OK, let u = p.url else { return nil }
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir)
+        return isDir.boolValue ? u.path : u.deletingLastPathComponent().path
     }
 
     func confirm(_ title: String, _ text: String, action: String) -> Bool {

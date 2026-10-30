@@ -430,11 +430,97 @@ def is_package(path):   # what nx_extract's OpenNsp opens: an XCI / XCZ by the c
     return h[:4] == b'PFS0' or h[0x100:] == b'HEAD'
 
 
-def title_of(path):   # the ticket name (the first 16 digits of the rights ID = title ID), else [title ID] in the file name
+def title_of(path, keys=None):   # the ticket name (the first 16 digits of the rights ID = title ID), else an XCI's own NCA headers, else [title ID] in the file name
     for n in pfs0_names(path):   # the ticket first: a file name's tag can be wrong (FFT's base NSP is tagged …0001, its ticket is …0000)
         if re.match(r'[0-9A-Fa-f]{32}\.tik$', n): return int(n[:16], 16)
+    if keys and path.suffix.lower() == '.xci':   # a cartridge dump has no ticket and is often named without tags (Game.xci)
+        try:
+            t = xci_title(path, keys)
+            if t is not None: return t
+        except (OSError, ValueError, struct.error) as e: say(f'[RED] {path.name}: title ID not readable from the cartridge ({e})')
     m = re.search(r'\[([0-9A-Fa-f]{16})\]', path.name)
     return int(m.group(1), 16) if m else None
+
+
+def hfs0_entries(f, base):   # an XCI partition (HFS0) at base: [(name, absolute offset, size)]
+    f.seek(base); h = f.read(16)
+    if h[:4] != b'HFS0': raise ValueError(f'no HFS0 partition at {base:#x}')
+    n, st = struct.unpack_from('<II', h, 4)
+    if n > 10000: raise ValueError('HFS0 header is damaged')
+    ent, strs = f.read(n * 0x40), f.read(st); data = base + 16 + n * 0x40 + st
+    out = []
+    for i in range(n):
+        off, size, no = struct.unpack_from('<QQI', ent, i * 0x40)
+        out.append((strs[no:strs.index(b'\0', no)].decode(errors='replace'), data + off, size))
+    return out
+
+
+def aes_ecb(key, data, encrypt=False):   # AES-128 ECB: CommonCrypto on macOS, else the cryptography or pycryptodome module
+    if sys.platform == 'darwin':
+        cc = ctypes.CDLL('/usr/lib/libSystem.B.dylib'); out = ctypes.create_string_buffer(len(data)); moved = ctypes.c_size_t()
+        # CCCrypt(kCCEncrypt / kCCDecrypt, kCCAlgorithmAES, kCCOptionECBMode, key, keyLength, iv, dataIn, dataInLength, dataOut, dataOutAvailable, dataOutMoved)
+        cc.CCCrypt.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p,
+                               ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+        if cc.CCCrypt(0 if encrypt else 1, 0, 2, key, len(key), None, data, len(data), out, len(data), ctypes.byref(moved)): raise ValueError('CCCrypt failed')
+        return out.raw
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        c = Cipher(algorithms.AES(key), modes.ECB()); d = c.encryptor() if encrypt else c.decryptor(); return d.update(data) + d.finalize()
+    except ImportError: pass
+    try: from Crypto.Cipher import AES
+    except ImportError: raise ValueError('no AES: pip install cryptography') from None
+    c = AES.new(key, AES.MODE_ECB); return c.encrypt(data) if encrypt else c.decrypt(data)
+
+
+def nca_header(raw, header_key):   # the first 0x400 bytes of an NCA, decrypted: AES-128-XTS in 0x200-byte sectors, Nintendo's tweak = the sector number big-endian
+    out = b''
+    for sec in range(len(raw) // 0x200):
+        tweak = int.from_bytes(aes_ecb(header_key[16:], sec.to_bytes(16, 'big'), encrypt=True), 'little')
+        blocks = raw[sec * 0x200:(sec + 1) * 0x200]; tweaks = []
+        for _ in range(0x20):
+            tweaks.append(tweak.to_bytes(16, 'little'))
+            tweak = (tweak << 1) ^ (0x87 if tweak >> 127 else 0); tweak &= (1 << 128) - 1
+        x = bytes(a ^ b for a, b in zip(blocks, b''.join(tweaks)))
+        out += bytes(a ^ b for a, b in zip(aes_ecb(header_key[:16], x), b''.join(tweaks)))
+    return out
+
+
+def header_key_of(keys):
+    for line in Path(keys).read_text(errors='replace').splitlines():
+        k, _, v = line.partition('=')
+        if k.strip().lower() == 'header_key' and len(v.strip()) == 64: return bytes.fromhex(v.strip())
+    return None
+
+
+def xci_title(path, keys):
+    """An XCI's title ID from the NCA headers in its secure partition: the base game's (…000) when the cartridge also carries an update (1G+1U), else the lowest. A cartridge with
+    several applications (Castlevania: Belmont's Curse's Midnight Edition: the game, 0100BA4026E94000, and its Digital Sound & Art Gallery, 01005F4027E94000) gives the one with the
+    largest Program NCA, the game; nx_extract takes the same one (title_opt). Needs prod.keys' header_key; None when it has none"""
+    hk = header_key_of(keys)
+    if hk is None: return None
+    with open(path, 'rb') as f:
+        f.seek(0x100); head = f.read(0x40)
+        if head[:4] != b'HEAD': raise ValueError('no HEAD at 0x100')
+        secure = next((e for e in hfs0_entries(f, struct.unpack_from('<Q', head, 0x30)[0]) if e[0] == 'secure'), None)
+        if secure is None: raise ValueError('no secure partition')
+        tids = {}   # title ID → its largest Program NCA (content type 0 at +0x205)
+        for name, off, size in hfs0_entries(f, secure[1]):
+            if not name.lower().endswith('.nca') or size < 0x400: continue
+            f.seek(off); h = nca_header(f.read(0x400), hk)
+            if h[0x200:0x203] != b'NCA': raise ValueError('an NCA header does not decrypt: header_key is wrong')
+            t = struct.unpack_from('<Q', h, 0x210)[0]
+            tids[t] = max(tids.get(t, 0), size if h[0x205] == 0 else 0)
+    apps = [t for t in tids if t & 0xFFF == 0]
+    if len(apps) > 1: return max(apps, key=lambda t: (tids[t], -t))
+    return min(tids, key=lambda t: (t & 0xFFF != 0, t)) if tids else None
+
+
+def title_opt(base, keys):
+    """nx_extract's --title for a cartridge base game: the application xci_title names, which nx_extract would not pick on its own when the cartridge holds several (it takes the
+    lowest title ID); [] for an NSP"""
+    if base.suffix.lower() != '.xci': return []
+    t = xci_title(base, keys)
+    return ['--title', f'{t:016x}'] if t is not None else []
 
 
 def version_of(path):
@@ -443,21 +529,22 @@ def version_of(path):
 
 
 COMPRESSED = {'.nsz': '.nsp', '.xcz': '.xci'}   # nsz's compressed NSP / XCI and what nsz -D makes of them
+GAME_SUFFIXES = {'.nsp', '.xci', '.nsz', '.xcz'}
 
 
-def scan_nsps(nsp_dir):
+def scan_nsps(nsp_dir, keys=None):
     """Group by game: {application title ID: {'base': path, 'updates': [(version, path)], 'dlc': [(title ID, version, path)]}}. An NSZ / XCZ is listed as it is (its ticket names
     the title as an NSP's does) and converted afterwards (decompress_nsz)"""
     fams, unknown = {}, []
-    for p in sorted([*nsp_dir.glob('*.nsp'), *nsp_dir.glob('*.xci'), *nsp_dir.glob('*.nsz'), *nsp_dir.glob('*.xcz')]):   # a base game may be a cartridge dump (.xci: Monster Hunter Rise); nx_extract reads its secure partition
+    for p in sorted(p for p in nsp_dir.iterdir() if p.suffix.lower() in GAME_SUFFIXES and p.is_file()):   # any case (Game.XCI); a base game may be a cartridge dump (.xci: Monster Hunter Rise), nx_extract reads its secure partition
         if p.name.startswith('._'): continue   # an AppleDouble file: on an exFAT / FAT drive macOS keeps a file's extended attributes (a download's quarantine flag) in `._<name>`, one beside each game file; is_package would skip it too, with a line for each
         if p.stat().st_size == 0:   # an empty file left by an incomplete download (the Zelda BotW folder holds a 0-byte DLC NSP next to the complete (1).nsp)
             say(f'skipping an empty file: {p.name}'); continue
         if not is_package(p):   # title_of falls back to the name's [title ID]: without this, any file with a game's extension and tag counted as one of its packages
             say(f'skipping {p.name}: neither an NSP (PFS0) nor an XCI (HEAD at 0x100)'); continue
-        if p.suffix in COMPRESSED and p.with_suffix(COMPRESSED[p.suffix]).exists():
-            say(f'skipping {p.name}: {p.with_suffix(COMPRESSED[p.suffix]).name} is beside it'); continue
-        tid = title_of(p)
+        if p.suffix.lower() in COMPRESSED and p.with_suffix(COMPRESSED[p.suffix.lower()]).exists():
+            say(f'skipping {p.name}: {p.with_suffix(COMPRESSED[p.suffix.lower()]).name} is beside it'); continue
+        tid = title_of(p, keys)
         if tid is None: unknown.append(p); continue
         low = tid & 0xFFF   # base …000, update …800, DLC = base + 0x1000 + index
         app = tid if low == 0 else tid & ~0xFFF if low == 0x800 else (tid & ~0xFFF) - 0x1000
@@ -505,7 +592,7 @@ def decompress_nsz(nsp_dir, app, fam, keys, env):
     and the file is moved into nsp/ only when nsz exits 0, so a partial one is never taken for a whole one; a conversion is reused while its source has the same name, size and
     modification time. nsz -D prints an NCA hash mismatch but goes on and exits 0: nx_extract's hash check catches a damaged file (ALLOW_DAMAGED)"""
     paths = [fam['base']] + [p for _, p in fam['updates']] + [p for _, _, p in fam['dlc']]
-    todo = [p for p in paths if p.suffix in COMPRESSED]
+    todo = [p for p in paths if p.suffix.lower() in COMPRESSED]
     if not todo: return fam
     nsz, keys_opt = nsz_command(env), []
     if nsz[0] != sys.executable: keys_opt = ['--keys', keys.resolve()]   # a standalone nsz looks for keys beside itself, not in cwd: it takes them by --keys (nsz_command)
@@ -513,7 +600,7 @@ def decompress_nsz(nsp_dir, app, fam, keys, env):
     PROG.plan(1); PROG.stage('decompress NSZ', done=0, total=len(todo))
     conv, made = {}, 0
     for i, p in enumerate(todo):
-        dst = out / (p.stem + COMPRESSED[p.suffix]); keyfile = dst.with_name(dst.name + '.key')
+        dst = out / (p.stem + COMPRESSED[p.suffix.lower()]); keyfile = dst.with_name(dst.name + '.key')
         st = p.stat(); key = fingerprint(p.name, st.st_size, st.st_mtime_ns)
         if not (dst.is_file() and reused(keyfile, key) is not None):
             PROG.set(done=i, step=p.name)
@@ -590,7 +677,7 @@ def same_build(nsp_dir, app, fam, keys, repo, env):
     for v, upd in ([ups[-1]] if ups else []) + [(0, None)]:
         PROG.set(step=f'main of {"the base game" if upd is None else "update v" + str(v)}')
         tmp = work / 'exefs.partial'; rmtree(tmp)
-        run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'exefs.log')
+        run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + title_opt(fam['base'], keys) + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'exefs.log')
         main = tmp / 'ExeFS/main'
         bid = build_id(main) if main.exists() else None
         g = gamemod.by_build(bid) if bid else None
@@ -615,7 +702,7 @@ def survey(nsp_dir, app, fam, keys, repo, py, env):
         except OSError: return None
     PROG.stage('survey: RomFS manifest', poll=listed)
     say(f'extracting the code modules and a RomFS manifest (no game files written) → {ex}')
-    run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'extract.log')
+    run([nx, keys, fam['base'], upd or '-', tmp, '--manifest'] + title_opt(fam['base'], keys) + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / 'extract.log')
     swap_in(tmp, ex)
     need_aarch64(ex, 'v0' if upd is None else f'v{ups[-1][0] or 1}')
     PROG.stage('survey: code modules', step='reading')
@@ -676,7 +763,7 @@ def survey(nsp_dir, app, fam, keys, repo, py, env):
         notes.append(f'{rom["exts"].get(".pak", 0)} Unreal pak(s): version 11 paks keep the shaders compressed in shader code archives (Octopath Traveler 0), decoded by booting the game on the Mac; '
                      'legacy paks (version 4, DRAGON QUEST XI S) and version 11 paks without shader code archives (OCTOPATH TRAVELER II) keep them inline in the cooked packages, which the shader split reads file by file')
     if extra: notes.append('modules besides main / sdk: {}; the provisional profile loads {} (load order main, subsdk*, sdk)'.format(", ".join(f'{n} ({mods[n]["kind"]})' for n in extra), G["modules"][0]))
-    if rom['mags']['UnityFS'] or 'Unity IL2CPP' in F['markers']: notes.append('Unity: the shaders are Shader objects in UnityFS bundles and data.unity3d, which shader_split.py reads through unityfs.py (written for Unity 2020.3\'s Switch format, also read for 2017.4, 2018.3, 2022.3 and 6000.0; check other Unity versions first)')
+    if rom['mags']['UnityFS'] or 'Unity IL2CPP' in F['markers']: notes.append('Unity: the shaders are Shader objects in UnityFS bundles and data.unity3d, which shader_split.py reads through unityfs.py (written for Unity 2020.3\'s Switch format, also read for 2017.4, 2018.3, 2022.3, 6000.0 and 6000.3; check other Unity versions first)')
     if F['glslc']: notes.append(f'main has {F["glslc"]} GLSLC compiler output magics (0x19866891): shader_split.py takes those that are whole outputs (13 Sentinels and the KTGL games compile their shaders into main; Unity\'s player has 11 of its own)')
     if rom['mags']['Trinity pack']: notes.append('Trinity packs (Game Freak, arc/data.trpfs with its index data.trpfd): the shaders are BNSH inside Oodle Mermaid streams; shader_split.py decodes them with the game\'s own OodleLZ_Decompress in the Mac host, which dm/host/hle_oodle.c finds by the library\'s name string')
     elif rom['mags']['PlatinumGames PKZ']: notes.append('PlatinumGames PKZ archives (pkzl; Bayonetta 3): DAT archives inside, compressed per entry (OodleKraken, ZStandard or None); the shaders are shader objects (VSO / PSO / CSO …) in DATs, which shader_split.py reads (pkz_entries, pg_shader), Oodle Kraken through the game\'s own streaming decoder in the Mac host (dm/host/hle_oodle.c)')
@@ -959,7 +1046,7 @@ def extract(nx, keys, ex, name, base, upd, cmp_dir, logs, g):   # the build IDs 
     def poll():
         n, b = tree_size(tmp); return {'done': b, 'note': f'{n:,} files'}
     PROG.stage(f'extract {name}', poll=poll, unit='B', total=last[1] if last else base.stat().st_size + (upd.stat().st_size if upd else 0), est=not last)
-    run([nx, keys, base, upd or '-', tmp, '--romfs-image'] + (['--allow-damaged'] if ALLOW_DAMAGED else []), log)
+    run([nx, keys, base, upd or '-', tmp, '--romfs-image'] + title_opt(base, keys) + (['--allow-damaged'] if ALLOW_DAMAGED else []), log)
     swap_in(tmp, dst)
     n, b = extracted(log) or (0, 0)
     PROG.end(f'{n:,} files, {amount(b, "B")}')
@@ -1772,12 +1859,14 @@ def build_shaders(py, repo, sh, xlate, env, logs, g, pkg_key=None, mac=False):
     t = log.read_text(errors='replace')
     if own := re.search(r'^note: (built with this Mac\'s compilers.*)$', t, re.M): say(own.group(1))
     m, c = re.search(r'shaders (\d+): ok (\d+)', t), re.search(r'shader cache: hit (\d+)', t)
+    mc = re.search(r'^Metal cache: \w+ (\d+) reused, (\d+) compiled', t, re.M)   # the shared MSL-keyed cache: a rebuild after a chain change misses the shader cache but compiles little
     note = ''
     if m:
         total, ok = int(m.group(1)), int(m.group(2))
         failed = f'; {total - ok:,} failed, reasons at the end of {log}' if ok < total else ''
         note = f'{ok:,} of {total:,} shaders ready{failed}'
-        PROG.end(f'{ok:,} of {total:,} shaders ready' + (f' ({int(c.group(1)):,} from the cache)' if c else '') + failed)
+        from_mtl = f', {int(mc.group(1)):,} of {int(mc.group(1)) + int(mc.group(2)):,} Metal libraries from the Metal cache' if mc else ''
+        PROG.end(f'{ok:,} of {total:,} shaders ready' + (f' ({int(c.group(1)):,} from the cache{from_mtl})' if c else '') + failed)
     else: PROG.end()
     shader_regressions(py, repo, sh / 'cache', chain, logs)   # before the key: a stopped build is checked again on the next run
     if key:
@@ -2224,7 +2313,7 @@ def main(args=None):
     configure_dotnet(env)
     env.setdefault('J', str(os.cpu_count() or 8))   # shader_split.py's and dmsh_build.py's workers (their default is 8)
     py = sys.executable
-    app, fam = scan_nsps(nsp_dir)
+    app, fam = scan_nsps(nsp_dir, keys)
     fam = decompress_nsz(nsp_dir, app, fam, keys, env)
     force =args.provisional or PROVISIONAL   # a provisional profile even when dm/games has one (testing the guesses)
     g, provisional, shadowed = None if force else gamemod.by_title(app), False, False

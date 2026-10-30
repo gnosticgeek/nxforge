@@ -14,9 +14,10 @@ Settings are in `~/Library/Application Support/NxNative Converter/settings.json`
 ## Build
 
 ```
-app/bundle.sh
-open "app/.build/NXForge Converter.app"
+app/install.sh
 ```
+
+builds the converter from this checkout into `~/Applications` and opens it, so Spotlight, Launchpad and the Dock find it there; run it again after pulling to update (quit the converter first). `app/bundle.sh` builds into `app/.build` instead. To work on it in Xcode, `open app/Package.swift`.
 
 The same steps run without the window, which is how it is tested:
 

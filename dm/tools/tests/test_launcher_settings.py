@@ -26,12 +26,13 @@ def build(gid, api, platform=None):
 
 
 class LauncherSettingsTests(unittest.TestCase):
-    def test_upscaling_is_opt_in_for_every_graphics_api(self):
-        for api, gid in [('nvn', BOTW), ('vulkan', '0100535012974000'), ('gl', '010014E00DB56000')]:
-            with self.subTest(api=api):
-                s = build(gid, api)['DM_PRESENT_UPSCALE']
-                self.assertEqual((s['kind'], s['section'], s['default']), ('choice', 'Game', 'off'))
-                self.assertEqual(s['options'], [['off', 'Standard'], ['metalfx', 'MetalFX']])
+    def test_upscaling_is_opt_in_on_ios_and_on_by_default_on_the_mac(self):
+        for platform, default in [(None, 'off'), ('ios', 'off'), ('mac', 'metalfx')]:
+            for api, gid in [('nvn', BOTW), ('vulkan', '0100535012974000'), ('gl', '010014E00DB56000')]:
+                with self.subTest(platform=platform, api=api):
+                    s = build(gid, api, platform)['DM_PRESENT_UPSCALE']
+                    self.assertEqual((s['kind'], s['section'], s['default']), ('choice', 'Game', default))
+                    self.assertEqual(s['options'], [['off', 'Standard'], ['metalfx', 'MetalFX']])
 
     def test_frame_buffering_by_graphics_api(self):
         for api, gid in [('nvn', BOTW), ('vulkan', '0100535012974000'), ('gl', '010014E00DB56000'), ('', BOTW)]:

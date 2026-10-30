@@ -32,7 +32,7 @@ struct ConverterApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Choose Game Folder…") {
-                    if let d = model.choose(folder: true, start: model.settings.gameDir) { model.openDropped([d.url]) }
+                    if let d = model.chooseGame(start: model.settings.gameDir) { model.openDropped([d.url]) }
                 }
                 .keyboardShortcut("o")
                 .disabled(model.run.running)

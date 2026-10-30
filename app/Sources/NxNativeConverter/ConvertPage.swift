@@ -36,7 +36,7 @@ struct SourceFilesCard: View {
     var body: some View {
         Card(title: "Source files", subtitle: "Select your game directory and prod.keys file.") {
             PathField(label: "Game folder", labelWidth: 100, symbol: "folder", value: model.settings.gameDir?.tildePath) {
-                if let d = model.choose(folder: true, start: model.settings.gameDir) { model.setGameDir(d) }
+                if let d = model.chooseGame(start: model.settings.gameDir) { model.setGameDir(d) }
             }
             .disabled(model.run.running)
             PathField(label: "Keys file", labelWidth: 100, symbol: "doc", value: model.settings.keys?.tildePath) {

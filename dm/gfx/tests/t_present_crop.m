@@ -221,6 +221,40 @@ int main(void) { @autoreleasepool {
         #undef PX
         }
         atomic_store(&g_origin_ll,0);g_fx_mode=1;
+        // MetalFX with the present filters: Sharpen follows the scaler on the scaled picture; the filters that need the game's pixel grid keep the bilinear present
+        mtl_present_filter_set(DM_PFX_SHARPEN,0.5f);
+        EXPECT("MetalFX with Sharpen: the scaler still runs",PRESENT_METALFX,present_offscreen_wait(big,crops[0],out));
+        mtl_present_filter_set(DM_PFX_CRT,0.5f);
+        EXPECT("MetalFX with CRT: the bilinear present",PRESENT_STANDARD,present_offscreen_wait(big,crops[0],out));
+        mtl_present_filter_set(DM_PFX_OFF,0.5f);
+        // FXAA in the present (DM_PRESENT_AA): flat areas keep their exact colours, a hard edge is blended, and MetalFX still runs on its output
+        g_aa=-1;setenv("DM_PRESENT_AA","FXAA",1);
+        EXPECT("DM_PRESENT_AA=FXAA",DM_PAA_FXAA,mtl_present_aa());
+        g_aa=-1;setenv("DM_PRESENT_AA","msaa",1);
+        EXPECT("DM_PRESENT_AA=msaa is refused: off",DM_PAA_OFF,mtl_present_aa());
+        unsetenv("DM_PRESENT_AA");mtl_present_aa_set(7);
+        EXPECT("an unknown anti-aliasing mode is off",DM_PAA_OFF,mtl_present_aa());
+        mtl_present_aa_set(DM_PAA_FXAA);
+        EXPECT("FXAA then MetalFX",PRESENT_METALFX,present_offscreen_wait(big,crops[0],out));
+        {   // a diagonal staircase (white where x > y) at 16x16, presented 1:1: FXAA blends some stair pixels and leaves the flat corners exact
+            g_fx_mode=0;const int S=16;
+            MTLTextureDescriptor *sd=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:S height:S mipmapped:NO];sd.storageMode=MTLStorageModeShared;sd.usage=MTLTextureUsageShaderRead;
+            id<MTLTexture> st=[g_dev newTextureWithDescriptor:sd];uint8_t sp[16*16*4];
+            for(int y=0;y<S;y++)for(int x=0;x<S;x++){uint8_t v=x>y?255:0;uint8_t q[4]={v,v,v,255};memcpy(sp+4*(y*S+x),q,4);}
+            [st replaceRegion:MTLRegionMake2D(0,0,S,S) mipmapLevel:0 withBytes:sp bytesPerRow:S*4];res_add(st);res_commit();
+            MTLTextureDescriptor *nd=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:S height:S mipmapped:NO];
+            nd.storageMode=MTLStorageModeShared;nd.usage=MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead;id<MTLTexture> same=[g_dev newTextureWithDescriptor:nd];
+            for (int on=0;on<2;on++) {
+                mtl_present_aa_set(on?DM_PAA_FXAA:DM_PAA_OFF);
+                EXPECT("staircase at the game's size: the standard present",PRESENT_STANDARD,present_offscreen_wait(st,zero,same));
+                uint8_t o[16*16*4];[same getBytes:o bytesPerRow:S*4 fromRegion:MTLRegionMake2D(0,0,S,S) mipmapLevel:0];
+                int mid=0;for(int i=0;i<S*S;i++)mid+=o[4*i+1]>8&&o[4*i+1]<247;
+                EXPECT(on?"  FXAA blends stair pixels (any)":"  without FXAA every pixel is black or white",on,mid>0);
+                EXPECT("  flat corners keep their exact colours",1,o[4*(S-1)*S+1]==0&&o[4*(S-1)+1]==255);
+            }
+            res_remove(st);
+        }
+        mtl_present_aa_set(DM_PAA_OFF);g_fx_mode=1;
         MTLTextureDescriptor *smallD=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:32 height:32 mipmapped:NO];
         smallD.storageMode=MTLStorageModePrivate;smallD.usage=MTLTextureUsageRenderTarget;
         id<MTLTexture> small=[g_dev newTextureWithDescriptor:smallD];int whole[4]={0},invalidCrop[4]={63,0,2,2};

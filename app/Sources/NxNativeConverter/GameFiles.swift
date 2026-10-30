@@ -31,7 +31,7 @@ private struct Entry {
     let size: UInt64
 }
 
-private let gameExtensions: Set<String> = ["nsp", "xci", "nsz", "xcz"]
+let gameExtensions: Set<String> = ["nsp", "xci", "nsz", "xcz"]
 
 enum GameFiles {
     static func list(in dir: URL) -> [URL] {
@@ -123,12 +123,13 @@ enum GameFiles {
             let entries = (ext == "xci" || ext == "xcz") ? try xciSecure(h) : try pfs0(h, base: 0)
             let tickets: [[UInt8]] = entries.filter { $0.name.hasSuffix(".tik") }.compactMap { try? read(h, $0.offset, Int(min($0.size, 0x400))) }
             var tid: UInt64? = tickets.lazy.compactMap { ticketRights($0) }.first.map { r in r[0..<8].reduce(0) { $0 << 8 | UInt64($1) } }
+            var metaIDs: [UInt64] = []
             var allOK = true, ncas = 0
             for e in entries where e.name.hasSuffix(".nca") || e.name.hasSuffix(".ncz") {
                 ncas += 1
                 do {
                     let n = try checkNCA(h, e, keys: keys, headerKey: headerKey, tickets: tickets, compressed: compressed || e.name.hasSuffix(".ncz"))
-                    if tid == nil && n.contentType == 1 { tid = n.programID }   // the Meta NCA names the content's title
+                    if n.contentType == 1 { metaIDs.append(n.programID) }   // the Meta NCA names the content's title
                     lines.append(CheckLine(ok: true, text: "\(short(e.name)): \(n.note)"))
                 } catch {
                     allOK = false
@@ -136,6 +137,8 @@ enum GameFiles {
                 }
             }
             if ncas == 0 { throw ConverterError("no NCA inside") }
+            // a cartridge with its update on it (1G+1U) has a Meta NCA for each: it is the base game, whichever comes first
+            if tid == nil { tid = metaIDs.min { ($0 & 0xFFF != 0 ? 1 : 0, $0) < ($1 & 0xFFF != 0 ? 1 : 0, $1) } }
             let t = tid ?? tagTitle(name)
             return (FileReport(name: name, role: t.map { role($0, name: name) } ?? "Unknown title", ok: allOK, lines: lines), t)
         } catch {

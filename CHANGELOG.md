@@ -2,6 +2,28 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.7.0 (2026-10-30)
+
+**Picture quality on the Mac**
+- MetalFX upscaling is now on by default in Mac apps and has a live switch in Quick settings (Graphics & shaders), saved together with the settings window's Upscaling choice. Sharpen now works together with MetalFX, sharpening the scaled picture. A new Anti-aliasing row (Off, FXAA; `DM_PRESENT_AA`) smooths jagged edges in games without their own anti-aliasing. Anisotropic filtering defaults to 16x on the Mac until a game's choice is saved ("Game default" keeps the game's own).
+
+**Converter**
+- `app/install.sh` builds the converter into `~/Applications` and opens it, so it opens from Spotlight, Launchpad or the Dock; run it again to update.
+- The game folder picker (and File > Choose Game Folder…) also takes a game file: pick an `.xci` or `.nsp` and its folder becomes the game folder.
+
+**Faster shader builds**
+- The Metal shader step runs its tools (spirv-cross, the Metal compiler) with `posix_spawn` instead of forking the build process: each fork held Python's lock for about 6 ms, so only about half of the compile workers ran at once. Kirby's Return to Dream Land Deluxe (47,099 shaders, M4 Pro): 25:31 → 14:20, with byte-identical libraries.
+- Compiled Metal libraries go to one cache for every game, `~/Library/Caches/NXForge/metallib` (`DMSH_MTLCACHE`), kept under 4 GB by dropping the least recently used (`DMSH_MTLCACHE_GB`). It survives a Mac app's cleanup, so rebuilding a game after an NXForge update compiles only the shaders whose Metal source changed: Kirby's rebuild took 5:21. A game's own cache from earlier builds (`shader/cache/cas/metallib`) moves into it on its next build. Two workers compiling the same source now compile it once, and the fetch variants go through the cache too.
+- This changes the translation chain version, so each game's next build translates its shaders again (the Metal compiles come from its moved cache).
+
+**Fixes**
+- Cartridge dumps (`.xci`) named without a `[title ID]` tag (`Game.xci`) build: the script read the title ID only from a ticket or the file name, and a cartridge has no ticket, so a lone untagged XCI stopped with "no NSP with a readable title ID". It now reads the title ID from the XCI's own NCA headers with prod.keys' `header_key`. Game file extensions match in any case (`Game.XCI`).
+- A cartridge with its update on it (1G+1U) shows as the base game in the converter's file check, not as an update with "no base game in the folder".
+- Cruis'n Blast no longer stops after a race: its name entry's China-region profanity check (`nn::ngc::CheckProfanityWordsInTextForPlatformRegionChina`, and the matching mask) went to the `ngct:u` service, which the host does not serve; the host now answers both itself (no profanity, nothing masked).
+- The Mac pipeline archive step checks free disk space before metal-tt starts and names a full disk when metal-tt fails, instead of only "applegpu-nt command failed" (Cruis'n Blast's 33,858 bases failed with 366 MB free). A failed run's temporary files are cleared from `pso/mac-work`.
+- A cartridge holding several applications builds the game, not the first title ID: Castlevania: Belmont's Curse's Midnight Edition holds the game (0100BA4026E94000) and its Digital Sound & Art Gallery (01005F4027E94000), and the gallery was built. The script now takes the application with the largest program and tells `nx_extract` which one (`--title`).
+- Unity 6000.3 games whose player files carry no type trees and whose bundles hold no `Shader` (Castlevania: Belmont's Curse) split their shaders: the split stopped with "no bundle has a Shader type tree of the same hash to borrow". `unityfs.py` now has 6000.3's `Shader` layout (version 4 adds the object's local identifier) and `ComputeShader` layout (a resource type per resource), checked against AssetRipper's release dumps.
+
 ## 0.6.0 (2026-10-28)
 
 Merges nxnative's `main` up to `beea17c` (245 commits since `9a56ecf`). Most of what this brings is upstream's own work; the notes below are what changes for NXForge.
