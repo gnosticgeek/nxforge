@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## Unreleased
+## 0.7.1 (2026-10-30)
 
 Merges nxnative's `main` up to `6d880d2` (102 commits since `beea17c`, 2026-10-29 and 2026-10-30). The notes below are what changes for NXForge.
 
@@ -19,6 +19,12 @@ Merges nxnative's `main` up to `6d880d2` (102 commits since `beea17c`, 2026-10-2
 - FXAA's two red-line slots moved to 140 and 141, since upstream took 122 and 123. Anisotropic filtering keeps its floor next to upstream's LOD bias.
 - Mina the Hollower keeps its SDK cut row until a build checks that the SDK-wide rules give the same.
 - This changes the translation chain version, so each game's next build translates its shaders again.
+
+**Converter**
+- Check for updates works after a release branch has merged. The engine checkout could stay on a release branch (such as `release-0.7.0`) whose upstream it could not resolve, and the check failed. While that branch has work `main` lacks, updates follow it; once it is merged they follow `main`, and Update engine switches the checkout to `main`.
+
+**Super Mario Bros. Wonder**
+- The game's bundled prewarm list (`pso_manifest.tsv`) was empty, so a fresh build compiled and loaded every pipeline and shader library during play, with 100 ms hitches in the first minutes. It now holds a 30-minute Mac session's list (1,459 shaders, 1,444 render and 18 compute pipelines), prepared in about 0.11 s before the first frame.
 
 ## 0.7.0 (2026-10-30)
 
