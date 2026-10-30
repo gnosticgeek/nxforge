@@ -15,3 +15,9 @@ CUTS = {
     (0x6dc0c, '2100c0d2', '0100a8d2', 'nnMain: second engine heap, first segment mov x1,#0x100000000 → mov x1,#0x40000000 (4 GB → 1 GB)'),
   ],
 }
+
+# How general each patch is and could be (dm/tools/docs_patches.py "Binding")
+BINDING = [
+    {'what': 'malloc StandardAllocator 16 GB → 2 GB and two engine heaps\' first segments 4 GB → 1 GB', 'now': 'build', 'goal': 'unreviewed', 'purpose': 'address space',
+     'why': "the game's own sizes at fixed offsets, from before the host's StandardAllocator cap (docs/reference/memory.md), which may make the malloc cut unnecessary as it did Pokémon Scarlet's"},
+]

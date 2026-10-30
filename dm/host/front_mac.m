@@ -3,7 +3,7 @@
 // The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN=1 starts it that way. ⌘Q quits; the left mouse button is the touchscreen.
 // Esc (or ⇧⌘G, or the Graphics menu) opens the Quick settings sidebar over the game (DmSettings): the present filter, a frame-rate counter and mods, kept per game.
 // Key map (Nintendo layout): WASD left stick, arrow keys D-pad, J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller; the sidebar's Controls section remaps it and the controllers' buttons per game (controls_load).
-// Controllers: buttons by position as on the iPhone (right A, bottom B, top X, left Y), shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
+// Controllers: face buttons as on the iPhone, by position (right A, bottom B, top X, left Y) or on a Nintendo pad by its labels (pad_apple.h) while the face buttons are not remapped, shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
 // Each controller is a player of its own (local co-op): the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (pad_slots.h);
 // DM_PAD_MERGE=1 merges every controller into player 1 instead, DM_KBD_PLAYER=own makes the keyboard player 1 on its own, with the controllers from player 2 on.
 #import <Cocoa/Cocoa.h>
@@ -20,6 +20,7 @@
 #include "haptics_apple.h"
 #include "motion_apple.h"
 #include "motion_pro_mac.h"
+#include "pad_apple.h"
 #include <signal.h>
 #include <math.h>
 
@@ -104,6 +105,7 @@ enum { ACT_STICK_UP = 16, ACT_STICK_LEFT, ACT_STICK_DOWN, ACT_STICK_RIGHT, ACT_S
 static const unsigned short g_key_default[ACT_N] = {38, 40, 32, 34, 3, 5, 12, 14, 6, 8, 36, 48, 123, 126, 124, 125, 13, 0, 1, 2, 49};
 static unsigned short g_keys[ACT_N];
 static NSString *g_pad[PAD_N];
+static int g_pad_face_set;   // the saved map moves a face button (0–3): then it holds for every pad, a Nintendo one too
 static NSString *pad_default(int i) {
     NSString *d[PAD_N] = {GCInputButtonB, GCInputButtonA, GCInputButtonY, GCInputButtonX, GCInputLeftThumbstickButton, GCInputRightThumbstickButton,
                           GCInputLeftShoulder, GCInputRightShoulder, GCInputLeftTrigger, GCInputRightTrigger, GCInputButtonMenu, GCInputButtonOptions};
@@ -113,6 +115,7 @@ static void controls_load(void) {   // main thread: the saved map over the defau
     NSDictionary *k = [NSUserDefaults.standardUserDefaults dictionaryForKey:opt_key(@"keys")], *p = [NSUserDefaults.standardUserDefaults dictionaryForKey:opt_key(@"pad")];
     for (int i = 0; i < ACT_N; i++) { NSNumber *n = k[@(i).stringValue]; g_keys[i] = n ? n.unsignedShortValue : g_key_default[i]; }
     for (int i = 0; i < PAD_N; i++) { NSString *n = p[@(i).stringValue]; g_pad[i] = [n isKindOfClass:NSString.class] ? n : pad_default(i); }
+    g_pad_face_set = 0; for (int i = 0; i < 4; i++) if (![g_pad[i] isEqualToString:pad_default(i)]) g_pad_face_set = 1;
 }
 static void on_key(NSEvent *e, int down) {
     if (!g_input_on) return;
@@ -170,8 +173,9 @@ static void pad_read(GCExtendedGamepad *g) {
     if (!g_input_on) return;
     int p = g_merge ? 0 : pad_slot_of(&g_slots, (__bridge const void *)g.controller); if (p < 0) return;
     dm_haptics_apple_controller(p, g.controller);
-    uint64_t m = 0; GCPhysicalInputProfile *pf = g.controller.physicalInputProfile;
-    for (int i = 0; i < PAD_N; i++) if (g_pad[i].length && pf.buttons[g_pad[i]].isPressed) m |= 1ull << i;   // the map (default by position: right A, bottom B, top X, left Y); a button a pad lacks: not pressed
+    uint64_t m = 0; int i0 = 0; GCPhysicalInputProfile *pf = g.controller.physicalInputProfile;
+    if (!g_pad_face_set && dm_pad_labelled(g.controller)) { m = dm_pad_face(g); i0 = 4; }   // face buttons not remapped: a Nintendo pad by its labels (pad_apple.h), any other by position
+    for (int i = i0; i < PAD_N; i++) if (g_pad[i].length && pf.buttons[g_pad[i]].isPressed) m |= 1ull << i;   // the map (default by position: right A, bottom B, top X, left Y); a button a pad lacks: not pressed
     #define K(btn, bit) if (btn.isPressed) m |= bit
     K(g.dpad.left, DM_BTN_LEFT); K(g.dpad.up, DM_BTN_UP); K(g.dpad.right, DM_BTN_RIGHT); K(g.dpad.down, DM_BTN_DOWN);
     #undef K
@@ -576,6 +580,13 @@ void front_run(void (*guest)(void)) {
         g_screen_fps = (int)(win.screen ?: NSScreen.mainScreen).maximumFramesPerSecond;
         g_win = win;
         [NSApp activateIgnoringOtherApps:YES];
+        // A host another process starts (scripts/regress.py) is not activated (its focus state stays 2), so its window opened wherever it landed in the window order, and behind
+        // another app's window macOS fires its display link about once a second: Breath of the Wild stepped up to 3 vsyncs at boot and never came back (20 fps runs).
+        // DM_WINDOW_TOP=1 orders it in front without activation and keeps it above other apps' windows; the log names every change of the window's visibility either way
+        if (getenv("DM_WINDOW_TOP") && atoi(getenv("DM_WINDOW_TOP"))) { win.level = NSFloatingWindowLevel; [win orderFrontRegardless]; LOG("front end: window kept in front (DM_WINDOW_TOP)"); }
+        [[NSNotificationCenter defaultCenter] addObserverForName:NSWindowDidChangeOcclusionStateNotification object:win queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            (void)n; static int vis = -1; int v = (win.occlusionState & NSWindowOcclusionStateVisible) != 0; if (v == vis) return; vis = v;
+            if (v) LOG("front end: window visible"); else LOG("front end: window covered (its display link fires about once a second: frame times measure nothing)"); }];
         // Main menu: AppKit runs ⌘ shortcuts only through menu items, so ⌘Q quits and ⌃⌘F toggles fullscreen from here (AppKit shows the item as Globe-F and keeps ⌃⌘F as a hidden twin)
         NSMenu *bar = [NSMenu new], *app = [NSMenu new], *wm = [[NSMenu alloc] initWithTitle:@"Window"];
         [[bar addItemWithTitle:@"" action:nil keyEquivalent:@""] setSubmenu:app];
