@@ -2,6 +2,30 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.7.1 (2026-10-30)
+
+Merges nxnative's `main` up to `6d880d2` (102 commits since `beea17c`, 2026-10-29 and 2026-10-30). The notes below are what changes for NXForge.
+
+**From upstream**
+- **Mac pipeline archives for this Mac's macOS**: the offline pipeline archive was stamped with the SDK's major version, and Metal 4 opens an archive only on the major version it was made for, so a Mac on macOS 26 building with Xcode 27's SDK made an archive it could not open and compiled every pipeline while playing (shader stutter). The Mac host's minimum macOS is now 26.6 on its compile lines (NXForge's Quick settings object too), so the app opens on macOS 26.
+- **Cloud saves**: a game's Mac and iPhone apps can share one save through an iCloud Drive folder (the settings window's Cloud saves, `DM_SAVE_SYNC`). It syncs whichever save folder the game uses, the game folder's `Saves` included.
+- **Nintendo controllers by their labels**: a Switch Pro Controller or Joy-Con maps A, B, X and Y by what is printed on them, other pads by position. In NXForge this holds while the face buttons are not remapped in Quick settings' Controls; a remap applies to every pad as before.
+- **New game profiles**: Pokémon Violet, Super Monkey Ball Banana Rumble, Mario Party Superstars, Portal 2, Bastion, Batman: Arkham Knight, Team Sonic Racing, Need for Speed: Hot Pursuit Remastered, EA SPORTS FC 27, Streets of Rage 4, Baba Is You, Subnautica and Below Zero, the SteamWorld games and Well Dweller.
+- Rendering and host fixes: sampler LOD bias, border colours Metal lacks, NVN logic operations and alpha test, same-pass feedback without per-game lists, render passes into storage-backed textures, DrawTexture, H.264 end of stream, movies held at 30 fps under the frame step, and SDK-wide address-space rules in place of most per-build SDK cuts.
+- The NSP script removes the shader libraries of older chain versions after a successful build, reads the title ID of an untagged NSP without a ticket from its meta NCA, and stops on a 32-bit program with upstream's check (NXForge's own `need_aarch64` is gone). `DM_REC` records the player's input as `DM_KEYS` steps.
+
+**Kept from NXForge on top**
+- Cartridge (`.xci`) title IDs still come from the cartridge's NCA headers first, so a cartridge with several applications still builds the game; upstream's meta NCA reader is the fallback for other packages without a ticket or tag.
+- FXAA's two red-line slots moved to 140 and 141, since upstream took 122 and 123. Anisotropic filtering keeps its floor next to upstream's LOD bias.
+- Mina the Hollower keeps its SDK cut row until a build checks that the SDK-wide rules give the same.
+- This changes the translation chain version, so each game's next build translates its shaders again.
+
+**Converter**
+- Check for updates works after a release branch has merged. The engine checkout could stay on a release branch (such as `release-0.7.0`) whose upstream it could not resolve, and the check failed. While that branch has work `main` lacks, updates follow it; once it is merged they follow `main`, and Update engine switches the checkout to `main`.
+
+**Super Mario Bros. Wonder**
+- The game's bundled prewarm list (`pso_manifest.tsv`) was empty, so a fresh build compiled and loaded every pipeline and shader library during play, with 100 ms hitches in the first minutes. It now holds a 30-minute Mac session's list (1,459 shaders, 1,444 render and 18 compute pipelines), prepared in about 0.11 s before the first frame.
+
 ## 0.7.0 (2026-10-30)
 
 **Picture quality on the Mac**

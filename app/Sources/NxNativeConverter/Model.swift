@@ -136,12 +136,20 @@ final class AppModel {
         engineMessage = (true, update ? "Updating…" : "Checking…")
         Task.detached {
             let msg: (Bool, String)
+            var target: String?
             do {
                 if update { try Engine.update(repo); msg = (true, "Updated") }
-                else { let n = try Engine.checkUpdates(repo); msg = (true, n == 0 ? "Up to date" : "\(n) update\(n == 1 ? "" : "s") available") }
+                else {
+                    let (n, up) = try Engine.checkUpdates(repo)
+                    target = up
+                    // a merged release branch updates from main: say so, since Update engine switches to it
+                    let onto = up.split(separator: "/", maxSplits: 1).last.map(String.init) ?? up
+                    let other = onto != (Engine.current(repo)?.branch ?? onto) ? " on \(onto)" : ""
+                    msg = (true, n == 0 ? "Up to date" : "\(n) update\(n == 1 ? "" : "s") available\(other)")
+                }
             } catch { msg = (false, "\(error)") }
             let ver = Engine.current(repo)
-            let note = msg.1.contains("available") ? Engine.upstreamNote(repo) : nil
+            let note = msg.1.contains("available") ? target.flatMap { Engine.upstreamNote(repo, target: $0) } : nil
             await MainActor.run { self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note }
         }
     }
