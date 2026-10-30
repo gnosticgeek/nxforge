@@ -26,7 +26,7 @@ HEADER_KEY = bytes(range(32))
 
 
 def nca(tid, kind=0):   # an NCA header naming this title and content type (0 Program, 1 Meta), encrypted as a console does: AES-128-XTS, 0x200-byte sectors, the sector number big-endian as the tweak
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes   # pyright: ignore[reportMissingImports]  (optional: the tests that need it skip without it)
     h = bytearray(0x400); h[0x200:0x204] = b'NCA3'; h[0x205] = kind; struct.pack_into('<Q', h, 0x210, tid)
     out = b''
     for sec in range(2):

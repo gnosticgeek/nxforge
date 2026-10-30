@@ -42,7 +42,7 @@ class ShaderCache(unittest.TestCase):
                        FACTS={}, MAP_ROWS={}, MAP_CONFLICT_ROWS={}, CODE_FP='source', PROFILE_ROWS=b'', PAIRS={},
                        BF_WANT=set(), BF_STATS=collections.Counter(), CAS=str(root / 'cas'), out=str(root / 'out'),
                        CHAIN='test-chain', clone=shutil.copyfile, shader_rule_source=lambda name: b'',
-                       spawn=lambda *a, **k: subprocess.run(*a, **k))
+                       spawn=lambda *a, **k: subprocess.run(*a, **k))   # noqa: PLW0108  (looked up per call, so a test that patches subprocess.run sees it)
         (root / 'out').mkdir()
         names = {'tool_fingerprint', 'shader_key', 'cache_path', 'cache_outputs', 'restore_cache', 'publish_cache', 'atomic_json', 'cache_meta_path',
                  'bf_digest', 'bf_cache_root', 'bf_cache_restore'}
