@@ -18,7 +18,7 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 | Rewriter jump-table fix (49a670a) | Superseded by upstream | Upstream follows the copy to the function start (Mario + Rabbids Kingdom Battle's GLSLC, the same code as Curse of the Moon's); the 0.6.0 merge takes theirs. Nothing to send. |
 | Filters + Quick settings sidebar | On hold for upstream | Tom holds the upstream PR until the sidebar is finished (see the next section). |
 | Cheats engine | On fork main, not sent upstream | Goes upstream after the sidebar, or alongside it. |
-| Merge upstream main | On branch `release-0.6.0` | Merges seedds/nxnative main at beea17c (245 commits since 9a56ecf), 2026-10-28: the Mac settings window before the game, about 30 new games, RomFS images, MetalFX, motion, many host fixes. 32 files conflicted; NXForge features kept on top (CHANGELOG 0.6.0 lists the choices). Host builds, host and graphics unit tests and the script tests pass; waiting on Tom's play test before the release PR merges. |
+| Merge upstream main | On branch `claude/project-thread-icgno7` | Merges seedds/nxnative main at 6d880d2 (102 commits since beea17c), 2026-10-30: cloud saves, Nintendo pad labels, Mac pipeline archive for the running macOS, about 15 new games, rendering fixes. 15 files conflicted; choices in CHANGELOG (Unreleased). Script and docs tests pass on Linux; waiting on a Mac build and Tom's play test. Previous merge: beea17c in 0.6.0. |
 
 ## Quick settings sidebar and filters
 
