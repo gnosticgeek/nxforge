@@ -196,8 +196,19 @@ final class AppModel {
         }
     }
 
-    /// Whether a recorded build is on the engine in use now.
-    func isCurrent(_ b: BuildRecord) -> Bool { b.engine.commit == engine?.commit && engine?.dirty == false }
+    /// Whether a recorded build is as good as one on the engine in use now: built on it, or on an older one where nothing the
+    /// build reads has changed since (a release that only touched notes, the converter or another game's profile). A commit the
+    /// checkout cannot compare with counts as older.
+    func isCurrent(_ b: BuildRecord) -> Bool {
+        guard let e = engine else { return false }
+        if b.engine.commit == e.commit && !e.dirty { return true }
+        guard let repo = env?.repo, let files = Engine.changedFiles(since: b.engine.commit, repo: repo, head: e) else { return false }
+        let title = VerifiedGames.titleID(ofApp: b.app)
+        return !files.contains { Engine.affects($0, titleID: title) }
+    }
+
+    /// Built on the engine in use now, commit for commit (isCurrent also takes an older engine with nothing changed for the build).
+    func isSameEngine(_ b: BuildRecord) -> Bool { b.engine.commit == engine?.commit && engine?.dirty == false }
 
     /// The recorded apps built on another engine than today's, except the ones kept as they are.
     var outdatedBuilds: [BuildRecord] {

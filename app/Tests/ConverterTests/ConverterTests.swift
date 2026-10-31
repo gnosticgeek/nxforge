@@ -94,3 +94,28 @@ import Testing
         #expect(!VerifiedGames.load(repo.path).isEmpty)
     }
 }
+
+@Suite struct OlderEngine {
+    @Test(arguments: [
+        ("dm/host/front_mac.m", true),
+        ("dm/gfx/nvn/nvn_mtl.m", true),
+        ("scripts/build_ipa_from_nsp.py", true),
+        ("dm/games/game.py", true),
+        ("dm/games/0100D2F00D5C0000/game.tsv", true),     // this game's profile
+        ("dm/games/0100F2C0115B6000/game.tsv", false),    // another game's
+        ("dm/host/README.md", false),
+        ("dm/host/tests/t_hid.c", false),
+        ("README.md", false),
+        ("app/Sources/NXForgeConverter/Model.swift", false),
+        ("docs/settings.md", false),
+        ("scripts/bench.py", false),
+        (".github/workflows/tests.yml", false),
+    ])
+    func affectsTheBuild(_ path: String, _ expected: Bool) {
+        #expect(Engine.affects(path, titleID: "0100D2F00D5C0000") == expected)
+    }
+
+    @Test func anyProfileWithoutATitleID() {
+        #expect(Engine.affects("dm/games/0100F2C0115B6000/game.tsv", titleID: nil))
+    }
+}

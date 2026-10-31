@@ -131,7 +131,9 @@ struct BuildDetail: View {
     @State private var detailsOpen = true
 
     var body: some View {
-        let current = build.engine.commit == model.engine?.commit && model.engine?.dirty == false
+        // current: built on today's engine, or on an older one where nothing this game's build reads has changed since
+        let current = model.isCurrent(build)
+        let sameEngine = model.isSameEngine(build)
         // a kept build is not nudged towards a rebuild: Open stays the blue button
         let nudge = !current && build.kept != true && model.engine != nil
         Card {
@@ -157,6 +159,10 @@ struct BuildDetail: View {
                     Text("Engine").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
                     Text(build.engine.short).help("\(build.engine.commit.prefix(7)) · \(build.engine.subject)")
                     if !current, model.engine != nil { Text("older").font(.caption).padding(.horizontal, 6).padding(.vertical, 2).background(.orange.opacity(0.25), in: .capsule) }
+                    else if !sameEngine, let now = model.engine {
+                        Text("nothing it uses changed in \(now.short)").font(.caption).foregroundStyle(.secondary)
+                            .help("The engine moved on from \(build.engine.short), but only in files this game's build does not read (notes, tests, the converter, other games' profiles), so a rebuild would make the same app")
+                    }
                     Spacer()
                 }
                 .padding(.vertical, 8)

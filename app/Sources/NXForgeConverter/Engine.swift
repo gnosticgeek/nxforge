@@ -157,6 +157,39 @@ enum Engine {
         return note.isEmpty ? title : "\(title) · \(note)"
     }
 
+    /// The engine's folders and files a Mac app build reads (scripts/build_ipa_from_nsp.py's paths): the host, the graphics layers and
+    /// their shader chain, the rewriter and extraction tools, the Mac and iOS app shells (build_ipa.sh packs both), the third-party
+    /// libraries, the build script itself and the profile code. A game's own profile (dm/games/<title ID>/) counts too; another
+    /// game's does not. Notes (*.md) and tests are read by no build. After NX2Apple's OlderTools.swift (MIT).
+    static let buildInputs = ["dm/host/", "dm/gfx/", "dm/tools/", "dm/mac/", "dm/ios/", "dm/third_party/", "dm/games/",
+                              "scripts/build_ipa_from_nsp.py"]
+
+    /// Whether a changed file (a path in the engine checkout) can change what a build of this game makes. With no title ID
+    /// (an app whose bundle ID does not name one), any game's profile counts.
+    static func affects(_ path: String, titleID: String?) -> Bool {
+        if path.hasSuffix(".md") || path.contains("/tests/") { return false }
+        guard buildInputs.contains(where: { path.hasPrefix($0) }) else { return false }
+        if path.hasPrefix("dm/games/") {
+            let parts = path.split(separator: "/")
+            if parts.count > 3, parts[2].count == 16, UInt64(parts[2], radix: 16) != nil, let t = titleID {
+                return parts[2].uppercased() == t.uppercased()
+            }
+        }
+        return true
+    }
+
+    private static var changedCache: [String: [String]] = [:]   // "<commit> <HEAD>" → files, for a clean checkout only
+    /// The files that differ between a recorded commit and the checkout as it is now (its working tree, so uncommitted changes
+    /// count); nil when git cannot tell, such as a commit the checkout does not have.
+    static func changedFiles(since commit: String, repo: String, head: EngineVersion) -> [String]? {
+        let key = "\(commit) \(head.commit)"
+        if !head.dirty, let c = changedCache[key] { return c }
+        guard let out = git(repo, ["diff", "--name-only", "--no-renames", commit, "--"]) else { return nil }
+        let files = out.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        if !head.dirty { changedCache[key] = files }
+        return files
+    }
+
     /// Drop an app from the build records (the app itself is left where it is).
     static func forget(_ app: String) {
         let all = builds().filter { $0.app != app }
