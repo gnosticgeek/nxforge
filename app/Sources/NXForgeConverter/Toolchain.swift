@@ -39,6 +39,9 @@ enum Toolchain {
         return fm.fileExists(atPath: p + "/" + scriptPath) && fm.fileExists(atPath: p + "/dm/tools/nx_extract/Program.cs")
     }
 
+    /// The name of the engine checkout's row in the checks (the Toolchain page finds it by this name)
+    static let engineCheckName = "NXForge engine"
+
     /// The repository: the setting, else the checkout this app sits in, else a few usual places.
     static func findRepo(_ s: Settings) -> String? {
         if let r = s.repo, isRepo(r) { return r }
@@ -47,7 +50,7 @@ enum Toolchain {
         while u.path != "/" { u.deleteLastPathComponent(); cands.append(u.path) }
         let home = NSHomeDirectory()
         cands += ["Developer/nxforge", "nxforge", "src/nxforge", "Documents/nxforge", "Projects/nxforge", "code/nxforge", "Developer/nxnative", "nxnative", "src/nxnative", "Documents/nxnative", "Projects/nxnative", "code/nxnative"].map { home + "/" + $0 }
-        cands.append(Settings.supportDir.appending(path: "nxnative").path)
+        cands += ["nxforge", "nxnative"].map { Settings.supportDir.appending(path: $0).path }   // the converter's own clone (named nxnative before 0.8.0)
         return cands.first(where: isRepo)
     }
 
@@ -96,8 +99,8 @@ enum Toolchain {
         v.append(Check(name: "Apple silicon Mac", why: "the game's own arm64 code runs natively", ok: false, detail: "this Mac has an Intel processor", short: "Intel", symbol: "cpu"))
         #endif
 
-        let cloneTo = Settings.supportDir.appending(path: "nxnative").path
-        v.append(Check(name: "nxnative repository", why: "the conversion script, rewriter, host and shader tools", ok: repo != nil,
+        let cloneTo = Settings.supportDir.appending(path: "nxforge").path
+        v.append(Check(name: Toolchain.engineCheckName, why: "the conversion script, rewriter, host and shader tools", ok: repo != nil,
                        detail: repo ?? "not found: choose its folder, or clone it", fix: "git clone \(forkURL) \(shq(cloneTo))",
                        short: repo?.tildePath ?? "Not found", symbol: "shippingbox"))
 

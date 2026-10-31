@@ -37,7 +37,7 @@ struct ToolchainPage: View {
                 }
                 .font(.callout).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.vertical, 9)
                 ForEach(CheckGroup.allCases, id: \.self) { g in
-                    let rows = (model.checks ?? []).filter { $0.group == g && !($0.group == .system && $0.name == "nxnative repository") }
+                    let rows = (model.checks ?? []).filter { $0.group == g && !($0.group == .system && $0.name == Toolchain.engineCheckName) }
                     if !rows.isEmpty {
                         Text(g.rawValue).font(.headline).frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 14).padding(.vertical, 7).background(.quaternary.opacity(0.5))
@@ -87,9 +87,9 @@ struct ToolchainPage: View {
                 }
                 if let m = model.engineMessage { Text(m.text).font(.callout).foregroundStyle(m.ok ? Color.secondary : Color.red) }
                 if let n = model.updateNote { Label("New: \(n)", systemImage: "sparkles").font(.callout).foregroundStyle(.blue) }
-                if let repoCheck = model.checks?.first(where: { $0.name == "nxnative repository" }), !repoCheck.ok, let fix = repoCheck.fix {
+                if let repoCheck = model.checks?.first(where: { $0.name == Toolchain.engineCheckName }), !repoCheck.ok, let fix = repoCheck.fix {
                     HStack {
-                        StatusDot(color: .red, text: "No nxnative checkout found")
+                        StatusDot(color: .red, text: "No NXForge engine checkout found")
                         Button("Clone it in Terminal") { Toolchain.runInTerminal(fix) }.buttonStyle(.glass)
                     }
                 }

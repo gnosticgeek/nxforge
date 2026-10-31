@@ -232,7 +232,7 @@ enum GameFiles {
         let bodyKey: [UInt8]
         if titleKeyed {
             guard let t = tickets.first(where: { ticketRights($0) == rights }), let base = ticketBase(t) else {
-                throw ConverterError("no ticket for this content in the file (and nxnative reads title keys only from tickets)")
+                throw ConverterError("no ticket for this content in the file (and the engine reads title keys only from tickets)")
             }
             guard t[base + 0x141] == 0 else { throw ConverterError("personalized ticket: needs a console-specific key, convert it to a common ticket first") }
             guard let kek = keys.key("titlekek_\(kgs)") else { throw ConverterError("prod.keys lacks titlekek_\(kgs) (key generation \(kgs): newer keys needed)") }

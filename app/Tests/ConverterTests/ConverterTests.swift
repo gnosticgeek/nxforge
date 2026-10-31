@@ -2,7 +2,7 @@
 // Run with `swift test --package-path app` on a Mac (CI runs them in tests.yml's converter job).
 import Foundation
 import Testing
-@testable import NxNativeConverter
+@testable import NXForgeConverter
 
 @Suite struct ReleaseNames {
     @Test(arguments: [
@@ -43,5 +43,31 @@ import Testing
         #expect(s.cleanup == .off)
         #expect(s.appearance == .system)
         #expect(s.notify == false)
+    }
+}
+
+@Suite struct SupportFolder {
+    private func temp() throws -> URL {
+        let u = FileManager.default.temporaryDirectory.appending(path: "nxc-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        return u
+    }
+
+    @Test func oldFolderMovesAndLeavesALink() throws {
+        let base = try temp(), old = base.appending(path: "NxNative Converter"), new = base.appending(path: "NXForge Converter")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: old.appending(path: "settings.json"))
+        Settings.migrateSupportDir(from: old, to: new)
+        #expect(FileManager.default.fileExists(atPath: new.appending(path: "settings.json").path))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: old.path) == new.path)
+        #expect(FileManager.default.fileExists(atPath: old.appending(path: "settings.json").path))   // through the link
+    }
+
+    @Test func existingNewFolderIsLeftAlone() throws {
+        let base = try temp(), old = base.appending(path: "NxNative Converter"), new = base.appending(path: "NXForge Converter")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+        Settings.migrateSupportDir(from: old, to: new)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: old.path)) == nil)
     }
 }

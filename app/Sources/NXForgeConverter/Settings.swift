@@ -1,4 +1,5 @@
-// Settings kept between runs in ~/Library/Application Support/NxNative Converter/settings.json (the folder keeps its pre-NXForge name, so settings carry over).
+// Settings kept between runs in ~/Library/Application Support/NXForge Converter/settings.json. Before 0.8.0 the folder was
+// "NxNative Converter"; the first start after the update moves it and leaves a link at the old name (Settings.supportDir).
 // Paths only: the keys file's location is remembered, never its content.
 import Foundation
 
@@ -61,9 +62,27 @@ struct Settings: Codable, Equatable {
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)
-    static var supportDir: URL {
+    static let supportDir: URL = {
         if let d = ProcessInfo.processInfo.environment["NXC_SUPPORT_DIR"] { return URL(fileURLWithPath: d) }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "NxNative Converter")
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = base.appending(path: "NXForge Converter")
+        migrateSupportDir(from: base.appending(path: "NxNative Converter"), to: dir)
+        return dir
+    }()
+
+    /// Moves the pre-0.8.0 folder (settings, build records, the converter's Python and any engine clone in it) to the new
+    /// name once, and leaves a symbolic link at the old name, so paths saved inside it (a venv, `repo`) still resolve.
+    /// Nothing happens when the new folder exists or the old one is missing or already a link.
+    static func migrateSupportDir(from old: URL, to new: URL) {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: new.path),
+              let attrs = try? fm.attributesOfItem(atPath: old.path), attrs[.type] as? FileAttributeType == .typeDirectory else { return }
+        do {
+            try fm.moveItem(at: old, to: new)
+            try? fm.createSymbolicLink(at: old, withDestinationURL: new)
+        } catch {
+            FileHandle.standardError.write(Data("could not move \(old.path) to \(new.path): \(error.localizedDescription)\n".utf8))
+        }
     }
 
     static func load() -> Settings {

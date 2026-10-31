@@ -1,7 +1,7 @@
-// NXForge Converter (formerly NxNative Converter): a window over scripts/build_ipa_from_nsp.py --platform mac-app.
+// NXForge Converter: a window over scripts/build_ipa_from_nsp.py --platform mac-app.
 // 1. lists what the script needs, ticked or crossed; 2. checks a game folder against prod.keys;
 // 3. converts the folder to a signed Mac app, and rebuilds it when the engine changes. The same steps run headless:
-//   NxNativeConverter --check | --validate <folder> <prod.keys> | --convert <folder> <prod.keys> [--sign <identity>]
+//   NXForgeConverter --check | --validate <folder> <prod.keys> | --convert <folder> <prod.keys> [--sign <identity>]
 //   | --rebuild <app> <prod.keys> [--sign <identity>] | --engine [<folder>] | --verify <app>
 import AppKit
 import SwiftUI
@@ -31,7 +31,7 @@ enum CLI {
 
     static func engine(_ dir: String?) -> Int32 {
         let (_, env) = Toolchain.checkAll(Settings.load())
-        guard let repo = env.repo else { print("✗ no nxnative repository"); return 1 }
+        guard let repo = env.repo else { print("✗ no NXForge engine checkout"); return 1 }
         guard let v = Engine.current(repo) else { print("✗ \(repo) is not a git checkout"); return 1 }
         print("engine \(repo) (\(v.branch)): \(v.label)")
         for (app, b) in dir.map(Engine.apps(in:)) ?? [] {
@@ -76,7 +76,7 @@ case "--rebuild" where args.count >= 3:
 case "--verify" where args.count >= 2:
     do { print("✓ \(try BuildRun.verify(args[1]))"); exit(0) } catch { print("✗ \(error)"); exit(1) }
 case let a? where a.hasPrefix("--") && !a.hasPrefix("-NS") && !a.hasPrefix("-Apple"):
-    FileHandle.standardError.write(Data("usage: NxNativeConverter [--check | --validate <folder> <prod.keys> | --convert <folder> <prod.keys> [--sign <identity>] | --rebuild <app> <prod.keys> [--sign <identity>] | --engine [<folder>] | --verify <app>]\n".utf8))
+    FileHandle.standardError.write(Data("usage: NXForgeConverter [--check | --validate <folder> <prod.keys> | --convert <folder> <prod.keys> [--sign <identity>] | --rebuild <app> <prod.keys> [--sign <identity>] | --engine [<folder>] | --verify <app>]\n".utf8))
     exit(2)
 default:
     ConverterApp.main()

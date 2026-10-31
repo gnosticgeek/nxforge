@@ -239,9 +239,9 @@ final class AppModel {
             .first { FileManager.default.isExecutableFile(atPath: $0) }
         Task.detached {
             let result: (Bool, String)
-            if let base, NxNativeConverter.run(base, ["-m", "venv", "--clear", venv]).map({ $0.ok }) == true {
+            if let base, NXForgeConverter.run(base, ["-m", "venv", "--clear", venv]).map({ $0.ok }) == true {
                 await MainActor.run { self.pythonSetup = (true, "Installing lz4, capstone, fontTools, zstd and nsz…") }
-                let pip = NxNativeConverter.run(venv + "/bin/python3", ["-m", "pip", "install", "--quiet", "--disable-pip-version-check", "lz4", "capstone", "fonttools", "nsz", "backports.zstd; python_version < '3.14'"])
+                let pip = NXForgeConverter.run(venv + "/bin/python3", ["-m", "pip", "install", "--quiet", "--disable-pip-version-check", "lz4", "capstone", "fonttools", "nsz", "backports.zstd; python_version < '3.14'"])
                 result = pip?.ok == true ? (true, "The converter's own Python is ready.") : (false, "pip could not install the modules: \(pip?.out.split(separator: "\n").last ?? "no output")")
             } else {
                 result = (false, base == nil ? "No python3 to start from: install Python 3 (brew install python)." : "Could not create \(venv).")

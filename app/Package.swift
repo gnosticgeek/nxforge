@@ -1,19 +1,19 @@
 // swift-tools-version: 6.2
-// NXForge Converter (formerly NxNative Converter): a SwiftUI app over scripts/build_ipa_from_nsp.py --platform mac-app (see README.md).
+// NXForge Converter: a SwiftUI app over scripts/build_ipa_from_nsp.py --platform mac-app (see README.md).
 import PackageDescription
 
 let package = Package(
-    name: "NxNativeConverter",
+    name: "NXForgeConverter",
     platforms: [.macOS(.v26)],
     targets: [
         .executableTarget(
-            name: "NxNativeConverter",
-            path: "Sources/NxNativeConverter",
+            name: "NXForgeConverter",
+            path: "Sources/NXForgeConverter",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "ConverterTests",
-            dependencies: ["NxNativeConverter"],
+            dependencies: ["NXForgeConverter"],
             path: "Tests/ConverterTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
