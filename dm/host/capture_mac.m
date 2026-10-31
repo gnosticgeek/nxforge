@@ -18,15 +18,16 @@ NSString *capture_folder(int video) {
     const char *g = getenv("DM_GAME_FOLDER");
     if (g && *g) return [@(g) stringByAppendingPathComponent:video ? @"Recordings" : @"Screenshots"];
     NSURL *base = [NSFileManager.defaultManager URLsForDirectory:video ? NSMoviesDirectory : NSPicturesDirectory inDomains:NSUserDomainMask].firstObject;
-    return [base.path stringByAppendingPathComponent:@"NXForge"];
+    return [(base.path ?: NSHomeDirectory()) stringByAppendingPathComponent:@"NXForge"];   // no Pictures / Movies folder: the home folder
 }
+static NSString *with_ext(NSString *s, NSString *ext) { return [s stringByAppendingPathExtension:ext] ?: s; }   // nil only for an extension it cannot add
 static NSString *capture_path(int video, const char *game, NSString *ext) {
     NSString *dir = capture_folder(video);
     [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSDateFormatter *f = [NSDateFormatter new]; f.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
     NSString *name = [[NSString stringWithFormat:@"%s %@", game, [f stringFromDate:NSDate.date]] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
-    NSString *p = [[dir stringByAppendingPathComponent:name] stringByAppendingPathExtension:ext];
-    for (int i = 2; [NSFileManager.defaultManager fileExistsAtPath:p]; i++) p = [[dir stringByAppendingPathComponent:[name stringByAppendingFormat:@" %d", i]] stringByAppendingPathExtension:ext];
+    NSString *p = with_ext([dir stringByAppendingPathComponent:name], ext);
+    for (int i = 2; [NSFileManager.defaultManager fileExistsAtPath:p]; i++) p = with_ext([dir stringByAppendingPathComponent:[name stringByAppendingFormat:@" %d", i]], ext);
     return p;
 }
 
