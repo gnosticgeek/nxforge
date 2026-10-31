@@ -51,7 +51,8 @@ static void *rec_next(void *ctx) {   // present thread: a texture to draw this f
     DmRecording *r = (__bridge DmRecording *)ctx;
     @synchronized (r) { if (r.stopping || r.inflight.count >= 3 || (r.single && r.inflight.count)) return NULL; }
     CVPixelBufferRef pb = NULL;
-    if (r.adaptor.pixelBufferPool) CVPixelBufferPoolCreatePixelBuffer(NULL, r.adaptor.pixelBufferPool, &pb);
+    CVPixelBufferPoolRef pool = r.adaptor.pixelBufferPool;   // read once: the adaptor makes it when the writer starts, and the property is nullable
+    if (pool) CVPixelBufferPoolCreatePixelBuffer(NULL, pool, &pb);
     else { NSDictionary *a = @{(id)kCVPixelBufferMetalCompatibilityKey: @YES, (id)kCVPixelBufferIOSurfacePropertiesKey: @{}};
            CVPixelBufferCreate(NULL, r.w, r.h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)a, &pb); }
     if (!pb) return NULL;
@@ -113,7 +114,7 @@ static DmRecording *rec_new(size_t w, size_t h) {
     DmRecording *r = [DmRecording new]; r.w = w; r.h = h; r.inflight = [NSMutableDictionary dictionary];
     r.q = dispatch_queue_create("nxnative.capture", DISPATCH_QUEUE_SERIAL);
     CVMetalTextureCacheRef c = NULL; id<MTLDevice> dev = MTLCreateSystemDefaultDevice();   // the device the graphics backend draws with (nvn_mtl.m takes the system default too)
-    if (CVMetalTextureCacheCreate(NULL, NULL, dev, NULL, &c)) return nil;
+    if (!dev || CVMetalTextureCacheCreate(NULL, NULL, dev, NULL, &c)) return nil;
     r.cache = c; return r;
 }
 static void rec_attach(DmRecording *r) { mtl_recorder m = {rec_next, rec_done, (__bridge void *)r}; mtl_record_set(&m); }

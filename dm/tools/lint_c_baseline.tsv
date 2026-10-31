@@ -128,7 +128,7 @@ dm/host/tests/t_fs.c	bugprone-command-processor	2
 dm/host/tests/t_fs.c	clang-analyzer-unix.Stream	1
 dm/host/tests/t_fs_case.c	clang-analyzer-core.CallAndMessage	2
 dm/host/tests/t_fs_case.c	clang-analyzer-unix.Stream	1
-dm/host/tests/t_hid.c	bugprone-suspicious-memory-comparison	2
+dm/host/tests/t_hid.c	bugprone-suspicious-memory-comparison	1
 dm/host/tests/t_hid.c	bugprone-unsafe-functions	1
 dm/host/tests/t_hid.c	clang-analyzer-unix.Errno	1
 dm/host/tests/t_movie_vpx.c	clang-analyzer-core.UndefinedBinaryOperatorResult	2

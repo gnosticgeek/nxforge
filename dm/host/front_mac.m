@@ -355,6 +355,7 @@ static NSString *mods_dir(void) {
 }
 static NSArray<NSString *> *mods_list(void) {   // the mod folders, in the order they are overlaid (quick_settings_mac.swift lists them the same way)
     NSMutableArray *r = [NSMutableArray array]; NSString *d = mods_dir();
+    if (!d) return r;   // no Application Support folder: no mods
     for (NSString *n in [NSFileManager.defaultManager contentsOfDirectoryAtPath:d error:nil] ?: @[]) {
         BOOL dir = NO;
         if (![n hasPrefix:@"."] && [NSFileManager.defaultManager fileExistsAtPath:[d stringByAppendingPathComponent:n] isDirectory:&dir] && dir) [r addObject:n];
