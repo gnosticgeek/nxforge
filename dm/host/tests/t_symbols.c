@@ -28,7 +28,6 @@ uint64_t now_ns(void) { return 0; }
 uint64_t guest_ns(void) { return 0; }
 void guest_clock_read_wait(void) {}
 void hlecount_seal(void) {}
-void cheats_patch_code(module_t *m) { (void)m; }   // cheats_host.c: loader.c applies code cheats in map_image
 int svc_nro_deactivate(module_t *m) { m->loaded = 0; return 1; }   // no memory mappings in this fixture
 void thr_svc_enter(uint64_t *r, uint64_t a) { (void)r; (void)a; }
 void thr_svc_leave(void) {}

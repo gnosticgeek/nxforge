@@ -58,7 +58,6 @@ int dm_detclock_enabled(void) { return detclock_cfg() && atomic_load(&g_gdet_on)
 void dm_guest_frame_tick(void) {
     crash_watch_frame();
     atomic_fetch_add(&g_guest_frame, 1);
-    cheats_frame();
     if (!detclock_cfg()) return;
     if (!atomic_load(&g_gdet_on)) {
         atomic_store(&g_gdet, wall_guest_ns()); atomic_store(&g_gdet_on, 1);

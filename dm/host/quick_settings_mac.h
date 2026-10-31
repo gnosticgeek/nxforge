@@ -1,7 +1,26 @@
 // Quick settings (quick_settings_mac.swift): the C side the SwiftUI sidebar sees (swiftc -import-objc-header), and the two calls front_mac.m makes into it.
 #pragma once
 #include "front.h"
-#include "cheats.h"   // the host's cheats (dm_cheats_*), listed in the Cheats section
+// The host's cheats (hle_cheats.c; dm.h has them with the rest of the engine, which needs the game profile this header goes without), listed in the Cheats section. Main thread
+int dm_cheats_found(void);
+int dm_cheats_ncheats(void);
+const char *dm_cheats_build(void);
+const char *dm_cheats_version(void);
+const char *dm_cheats_dir_path(void);
+int dm_cheats_nothers(void);
+const char *dm_cheat_name_at(int i);
+const char *dm_cheat_why_at(int i);
+const char *dm_cheat_note_at(int i);
+int dm_cheat_kind_at(int i);   // 0 a plain cheat, 1 a master code, 2 disabled, 3 a label
+int dm_cheat_on_at(int i);
+int dm_cheat_flags_at(int i);
+void dm_cheat_toggle(int i);
+void dm_cheats_reload(void);
+int dm_cheats_master(void);
+void dm_cheats_master_set(int on);
+int dm_cheats_safe(void);
+void dm_cheats_safe_restore(void);
+enum { QS_CHEAT_LABEL = 1, QS_CHEAT_SECTION_START = 2, QS_CHEAT_SECTION_END = 4, QS_CHEAT_PAIR_ON = 8, QS_CHEAT_PAIR_OFF = 16, QS_CHEAT_ONCE = 32 };   // dm.h DM_CHEAT_* (front_mac.m checks they agree)
 // The sidebar's view (an NSHostingView, retained: front_mac.m takes it with __bridge_transfer). game: the name the per-game settings keys carry (DM_GAME_NAME); mods_dir: this game's mods
 // folder; mods_run: the mods this launch overlaid, one per line, NULL when DM_ROMFS_OVERLAY came from the environment. close: Resume game / the close button; fps: the counter setting changed
 void *dm_qs_make(const char *game, const char *mods_dir, const char *mods_run, void (*close)(void), void (*fps)(void));
