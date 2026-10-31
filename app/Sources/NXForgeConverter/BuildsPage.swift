@@ -172,6 +172,16 @@ struct BuildDetail: View {
                 Divider()
                 detail("Game files", build.gameFiles ?? Engine.describeFiles(build.gameDir))
                 Divider()
+                if let v = VerifiedGames.titleID(ofApp: build.app).flatMap({ model.verified[$0] }) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("On NXForge").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+                        Text(v.summary).lineLimit(1).help(v.note)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                    .help("From docs/nxforge-games.tsv: the last time this game was played on NXForge. \(v.note)")
+                    Divider()
+                }
                 HStack {
                     Text("Location").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
                     Text(build.app.url.deletingLastPathComponent().path.tildePath).lineLimit(1).truncationMode(.middle)

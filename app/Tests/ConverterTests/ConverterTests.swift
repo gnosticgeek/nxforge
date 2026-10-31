@@ -71,3 +71,26 @@ import Testing
         #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: old.path)) == nil)
     }
 }
+
+@Suite struct PlayedOnNXForge {
+    @Test func rowsByTitleID() {
+        let text = "# comment\ntitle_id\tgame\tversion\trelease\tmac\tdate\tresult\tnote\n" +
+            "0100152000022000\tMario Kart 8 Deluxe\t4.0.1\t0.4.0\tM4 Pro\t2026-10-27\tplays\t60 fps\n" +
+            "010015100B514000\tWonder\t-\t0.7.1\tM4 Pro\t2026-10-30\tboots\tx\nbad row\n"
+        let v = VerifiedGames.parse(text)
+        #expect(v.count == 2)
+        #expect(v["0100152000022000"]?.summary == "Plays on 0.4.0 (4.0.1, M4 Pro, 2026-10-27)")
+        #expect(v["010015100B514000"]?.summary == "Boots (not yet playable) on 0.7.1 (M4 Pro, 2026-10-30)")
+    }
+
+    @Test func titleIDFromBundleID() {
+        #expect(VerifiedGames.titleID(bundleID: "org.nxforge.0100152000022000") == "0100152000022000")
+        #expect(VerifiedGames.titleID(bundleID: "org.nxforge.converter") == nil)
+    }
+
+    @Test func repositoryTableParses() throws {
+        // the engine's own table, read the way the Builds page reads it
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        #expect(!VerifiedGames.load(repo.path).isEmpty)
+    }
+}

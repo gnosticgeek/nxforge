@@ -39,6 +39,8 @@ final class AppModel {
     var validatedFor: (String, String)?
     var game: GameInfo?
     var engine: EngineVersion?
+    /// docs/nxforge-games.tsv of the engine checkout, by title ID: the Builds page's "On NXForge" row
+    var verified: [String: VerifiedGame] = [:]
     var engineMessage: (ok: Bool, text: String)?
     var engineBusy = false
     var identities: [String] = []
@@ -97,8 +99,9 @@ final class AppModel {
             let (c, e) = Toolchain.checkAll(s)
             let ids = Toolchain.signingIdentities()
             let ver = e.repo.flatMap(Engine.current)
+            let verified = VerifiedGames.load(e.repo)
             await MainActor.run {
-                self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.checking = false; self.lastChecked = Date()
+                self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date()
                 // once per launch: look for a newer engine (a fetch; quiet when offline)
                 if !self.checkedForUpdates, ver != nil { self.checkedForUpdates = true; self.engineAction(update: false) }
             }
