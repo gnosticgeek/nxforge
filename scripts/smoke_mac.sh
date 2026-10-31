@@ -47,7 +47,7 @@ step "Host unit tests ($game)" host-tests make -C "$repo/dm/host/tests" GAME="$g
 step "GPU graphics tests ($game)" gfx-tests make -C "$repo/dm/gfx/tests" GAME="$game" -j8 run
 step "Converter unit tests" converter-tests swift test --package-path "$repo/app"
 
-for b in "${builds[@]}"; do
+for b in ${builds[@]+"${builds[@]}"}; do   # bash 3.2 (macOS) with set -u: an empty array is unbound
   id="$(basename "$b" | sed -n 's/^\([0-9A-Fa-f]\{16\}\)_build$/\1/p')"
   [ -n "$id" ] || { echo "| $b | ✗ not an <id>_build folder | |" >> "$summary"; failed=1; continue; }
   step "$id runs ${seconds} s" "game-$id" python3 "$repo/scripts/bench.py" "$b" --idle "$seconds" --runs 1 --no-hud --out "$out/game-$id"
