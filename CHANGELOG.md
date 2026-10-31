@@ -2,6 +2,22 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.10.0 (2026-10-31)
+
+Five ideas from [NX2Apple](https://github.com/LNPANDY/NX2Apple) (MIT), another nxnative front end; no upstream merge.
+
+**Building**
+- **A newer Metal compiler of the tested generation builds.** Xcode updates its Metal compiler on its own (27.1's 32023.921 to 27.2's 32023.922), and the exact match against `dmsh_chain.lock` stopped every NVN game's build at the shader step. A newer compiler of the same generation now builds with a note in the log; an older one, another generation or an unreadable version still stops unless `--allow-other-metal` is given. NX2Apple's patch 0034, by LNPANDY.
+
+**In the game**
+- **The pointer hides over the game** after 3 seconds without movement, in a window and in fullscreen, and comes back on the next movement, click or scroll. It stays while Quick settings is open or the pointer is outside the game. `DM_CURSOR_HIDE=<seconds>` changes the wait, `0` keeps the pointer. NX2Apple's patch 0032, by v0lumehi (upstream PR seedds/nxnative#755).
+- **Record frame times** in Quick settings › Performance: from the next launch, each launch writes the host's per-frame timing rows to a new file in the game folder's `Frame times` (else `~/Library/Application Support/nxnative/<title ID>/frame-times`). `DM_FRAME_TIMES=1` or `0` does the same for one run.
+
+**Converter**
+- **Builds are "older" only when something they use changed.** A new engine commit marked every build older and queued it for Rebuild all, even when only notes or the converter changed. Now a build is older when a file its build reads changed since its commit: the host, graphics, tools, app shells, third-party code, the NSP script, the profile code or that game's own profile. A build on an older commit with nothing changed says "nothing it uses changed" instead.
+- **Frame times on the Builds page**: a build's newest recording summed up (frames per second, median and 99th-percentile frame time, hitches over 50 ms, frames never shown), counted as `scripts/bench.py` counts.
+- **Drop files on Convert**: a game folder, NSP / XCI / NSZ / XCZ files or `prod.keys`, in any mix, fill the Source files card.
+
 ## 0.9.0 (2026-10-31)
 
 Merges nxnative's `main` up to `2716f78` (34 commits since `6d880d2`, 2026-10-30 and 2026-10-31). The notes below are what changes for NXForge.

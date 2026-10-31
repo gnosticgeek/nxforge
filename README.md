@@ -288,7 +288,7 @@ This project is built on other people's work:
 - **deko3d** (zlib): its texture layout size algorithm is ported in `dm/gfx/nvn/nvn_tex.c`.
 - **libvpx** (VP9 movies), **stb_vorbis** (movie sound), the **Vulkan headers** and **NVIDIA FLIP** ship in `dm/third_party` with their licenses ([list](dm/third_party/README.md)).
 - **Capstone**, **lz4**, **fontTools** and **XcodeGen** are used by the build.
-- Other nxnative front ends (all MIT) gave NXForge ideas, reimplemented here: **[NX Play](https://github.com/varyform/nx-native-wrapper)** (Keep This Build), the **[NxNative Launcher](https://github.com/rennan101/nxnative_Launcher)** (quitting from the controller, Atmosphere-layout mods) and **[NX2Apple](https://github.com/LNPANDY/NX2Apple)** (issue forms).
+- Other nxnative front ends (all MIT) gave NXForge ideas, reimplemented here: **[NX Play](https://github.com/varyform/nx-native-wrapper)** (Keep This Build), the **[NxNative Launcher](https://github.com/rennan101/nxnative_Launcher)** (quitting from the controller, Atmosphere-layout mods) and **[NX2Apple](https://github.com/LNPANDY/NX2Apple)** (issue forms; in 0.10.0 the newer Metal compiler check and the pointer hiding, taken from its patches 0034 by LNPANDY and 0032 by v0lumehi, and ports of its build-input check for older builds, frame-time recording and dropped files).
 
 ### License
 
