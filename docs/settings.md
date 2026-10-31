@@ -225,6 +225,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧�
 | Anti-aliasing (FXAA) | – | Graphics & shaders › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>` |
 | Anisotropic filtering (16× by default) | – | Graphics & shaders › Anisotropic filtering | `DM_ANISO` | `DMQuickSettings.aniso.<game>` |
 | Frame-rate counter and its corner | – | Performance › Show FPS | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>` |
+| Record frame times (from the next launch) | – | Performance › Record frame times | `DM_FRAME_TIMES` (a `DM_NVN_TSV` wins) | `DMQuickSettings.frameTimes.<game>` |
 | Volume | – | Sound | – | `DMQuickSettings.volume.<game>` |
 | Screenshot and recording folder | – | Capture | – | `DMQuickSettings.captureDir.<game>` (unset: the game folder) |
 | Mods that are on | – | Mods | `DM_ROMFS_OVERLAY` replaces them | `DMQuickSettings.mods.<game>` |

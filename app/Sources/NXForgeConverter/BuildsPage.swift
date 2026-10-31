@@ -131,7 +131,9 @@ struct BuildDetail: View {
     @State private var detailsOpen = true
 
     var body: some View {
-        let current = build.engine.commit == model.engine?.commit && model.engine?.dirty == false
+        // current: built on today's engine, or on an older one where nothing this game's build reads has changed since
+        let current = model.isCurrent(build)
+        let sameEngine = model.isSameEngine(build)
         // a kept build is not nudged towards a rebuild: Open stays the blue button
         let nudge = !current && build.kept != true && model.engine != nil
         Card {
@@ -157,6 +159,10 @@ struct BuildDetail: View {
                     Text("Engine").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
                     Text(build.engine.short).help("\(build.engine.commit.prefix(7)) · \(build.engine.subject)")
                     if !current, model.engine != nil { Text("older").font(.caption).padding(.horizontal, 6).padding(.vertical, 2).background(.orange.opacity(0.25), in: .capsule) }
+                    else if !sameEngine, let now = model.engine {
+                        Text("nothing it uses changed in \(now.short)").font(.caption).foregroundStyle(.secondary)
+                            .help("The engine moved on from \(build.engine.short), but only in files this game's build does not read (notes, tests, the converter, other games' profiles), so a rebuild would make the same app")
+                    }
                     Spacer()
                 }
                 .padding(.vertical, 8)
@@ -180,6 +186,17 @@ struct BuildDetail: View {
                     }
                     .padding(.vertical, 8)
                     .help("From docs/nxforge-games.tsv: the last time this game was played on NXForge. \(v.note)")
+                    Divider()
+                }
+                if let rec = FrameTimes.latest(app: build.app, titleID: VerifiedGames.titleID(ofApp: build.app)) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Frame times").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+                        Text(rec.summary.line).lineLimit(1).truncationMode(.tail)
+                        Spacer()
+                        Button { reveal(rec.file.path) } label: { Image(systemName: "folder") }.buttonStyle(.glass)
+                    }
+                    .padding(.vertical, 6)
+                    .help("The newest recording, \(rec.file.lastPathComponent): frames per second, the median and 99th-percentile frame time, frames over \(Int(FrameTimes.Summary.hitchMs)) ms and frames never shown. Record frame times is in the game's Quick settings › Performance.")
                     Divider()
                 }
                 HStack {

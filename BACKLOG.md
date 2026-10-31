@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-31 (0.9.0).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-31 (0.10.0).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
@@ -49,7 +49,7 @@ work below.
 
 ## Ideas from other front ends
 
-From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-wrapper), the [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher) and [NX2Apple](https://github.com/LNPANDY/NX2Apple), all MIT. Done in 0.5.0: Keep this build, Quit game in Quick settings, Atmosphere-layout mods, issue forms.
+From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-wrapper), the [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher) and [NX2Apple](https://github.com/LNPANDY/NX2Apple), all MIT. Done in 0.5.0: Keep this build, Quit game in Quick settings, Atmosphere-layout mods, issue forms. A second look at NX2Apple (0.7.4) on 2026-10-31 gave the five rows done in 0.10.0.
 
 | Item | Status | Notes |
 |---|---|---|
@@ -61,6 +61,12 @@ From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-w
 | Custom cover art | Idea | The Launcher: pick any image as a game's art, kept per title ID. |
 | Nightly upstream check | On fork main (0.8.0) | NX2Apple and the Launcher run a daily job that test-merges upstream and opens a PR, or an issue naming the conflict. Would have flagged the 245-commit gap early. |
 | Per-game launch settings | On fork main (0.6.0) | Game language, frame rate, docked or handheld and render scale without a rebuild: upstream's Mac settings window does it. Otherwise a Game section in Quick settings writing the game's `env.txt`. |
+| Newer Metal compiler of the tested generation | On fork main (0.10.0) | NX2Apple patch 0034 (not upstream yet: an upstream PR candidate, issue seedds/nxnative#717). |
+| Hide the pointer over the game | On fork main (0.10.0) | NX2Apple patch 0032, upstream PR seedds/nxnative#755; drop ours when it merges. Needs a hands-on check. |
+| "Older" only when build inputs changed | On fork main (0.10.0) | Converter, after NX2Apple's OlderTools.swift. |
+| Record frame times, summed up in the converter | On fork main (0.10.0) | Quick settings › Performance; Builds page row. Needs a hands-on check. |
+| Drop files on Convert | On fork main (0.10.0) | After NX2Apple's DropFiles.swift. |
+| Cover art from a title database | Idea | NX2Apple's Artwork.swift fetches eShop banners through blawar/titledb (about 90 MB list). Builds already shows the game's icon. |
 
 ## Quality and consistency
 

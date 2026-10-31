@@ -229,6 +229,14 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
 - **Not checked:** other Mac screens (60 Hz, external, 144 / 165 Hz, where fullscreen also switches the screen's rate, `front_screen_match`), and other games in fullscreen.
 - **Kept in NXForge over upstream's latency 2 (below):** with the upstream merge in 0.6.0 both are in the code; NXForge still drops the link in fullscreen, since latency 2 settled at about 42 fps here. `DM_PRESENT_LATENCY=<n>` keeps the link in fullscreen at that latency instead, to compare (`link_sync`).
 
+### The pointer stays on a Mac game
+
+- **Symptom:** the mouse pointer stayed on the picture of a Mac game, in a window and in fullscreen, until it was moved to a screen corner.
+- **Cause:** `front_run` never hid it. macOS hides the pointer only for an app that asks, and a game window is not one.
+- **Fix:** `front_mac.m` `front_run` hides it after `DM_CURSOR_HIDE` seconds (3 by default, `0` keeps it) without movement over the game view, and shows it on the next movement, click or scroll (a local event monitor and a 0.25 s timer). It is shown whenever the window is not key, the pointer is outside the game view or the Quick settings sidebar is open.
+- **Found on:** NX2Apple's patch 0032 (by v0lumehi, upstream PR #755), no game in particular.
+- **Not checked:** not yet run on a game here.
+
 ### Frame latency 2 for the display link in fullscreen
 
 - **Symptom:** on a ProMotion built-in screen, only in fullscreen, the frame step went 1 → 2 → 3 vsyncs on frames costing 0.1–0.6 vsyncs (`3 late frames; cost 0.32 vsyncs`) and the game presented 15 frames a second; a window, or the screen set to a fixed 60 Hz, did not do it. The `DM_NVN_TSV` rows show presents shown one 120 Hz refresh late (`@pres_at_ms` − `@link_target_ms` = 8.3 ms) with a skipped tick after each (`@link_gap_ms` 33 ms), and `@link_lead_ms` about 16 ms against about 50 ms in a window.

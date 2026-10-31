@@ -94,3 +94,82 @@ import Testing
         #expect(!VerifiedGames.load(repo.path).isEmpty)
     }
 }
+
+@Suite struct OlderEngine {
+    @Test(arguments: [
+        ("dm/host/front_mac.m", true),
+        ("dm/gfx/nvn/nvn_mtl.m", true),
+        ("scripts/build_ipa_from_nsp.py", true),
+        ("dm/games/game.py", true),
+        ("dm/games/0100D2F00D5C0000/game.tsv", true),     // this game's profile
+        ("dm/games/0100F2C0115B6000/game.tsv", false),    // another game's
+        ("dm/host/README.md", false),
+        ("dm/host/tests/t_hid.c", false),
+        ("README.md", false),
+        ("app/Sources/NXForgeConverter/Model.swift", false),
+        ("docs/settings.md", false),
+        ("scripts/bench.py", false),
+        (".github/workflows/tests.yml", false),
+    ])
+    func affectsTheBuild(_ path: String, _ expected: Bool) {
+        #expect(Engine.affects(path, titleID: "0100D2F00D5C0000") == expected)
+    }
+
+    @Test func anyProfileWithoutATitleID() {
+        #expect(Engine.affects("dm/games/0100F2C0115B6000/game.tsv", titleID: nil))
+    }
+}
+
+@Suite struct FrameTimeRecordings {
+    @Test func parseAndSum() {
+        var text = "# kind: nvn-per-frame\nframe\tname\tvalue\n"
+        for n in 0..<100 {
+            let ms = n == 50 ? 80.0 : 16.7
+            text += "\(n)\t@t_s\t\(Double(n) * 0.0167)\n\(n)\t@frame_ms\t\(ms)\n\(n)\t@presented_ms\t\(n == 60 ? -1 : 16.7)\n"
+        }
+        text += "100\t@t_s\t1.6"   // a row the host is still writing: no frame time, skipped
+        let frames = FrameTimes.parse(text)
+        #expect(frames.count == 100)
+        let s = FrameTimes.Summary(frames)
+        #expect(s?.hitches == 1)
+        #expect(s?.dropped == 1)
+        #expect(s?.frameP50 == 16.7)
+        #expect(s?.frameMax == 80)
+        #expect(s?.line.contains("1 hitch ·") == true)
+    }
+
+    @Test func percentileAsBench() {
+        #expect(FrameTimes.percentile([1, 2, 3, 4], 50) == 2)
+        #expect(FrameTimes.percentile([1, 2, 3, 4], 99) == 4)
+        #expect(FrameTimes.percentile([], 50) == nil)
+    }
+
+    @Test func noFramesNoSummary() {
+        #expect(FrameTimes.Summary(FrameTimes.parse("frame\tname\tvalue\n")) == nil)
+    }
+}
+
+@Suite struct DroppedFiles {
+    let dirs: Set<String> = ["/g/Kirby", "/g/Other"]
+    func sort(_ p: [String]) -> DropFiles.Sorted { DropFiles.sort(p) { dirs.contains($0) } }
+
+    @Test func folderIsTheGameFolder() {
+        #expect(sort(["/g/Kirby"]) == DropFiles.Sorted(gameDir: "/g/Kirby", keys: nil))
+    }
+
+    @Test func gameFilesBringTheirFolder() {
+        #expect(sort(["/g/Kirby/base.nsp", "/g/Kirby/update.NSZ"]).gameDir == "/g/Kirby")
+        #expect(sort(["/g/Kirby/game.xci"]).gameDir == "/g/Kirby")
+    }
+
+    @Test func keysAndAMix() {
+        let s = sort(["/k/title.keys", "/k/prod.keys", "/g/Kirby/base.nsp"])
+        #expect(s.keys == "/k/prod.keys")
+        #expect(s.gameDir == "/g/Kirby")
+        #expect(sort(["/g/Kirby/base.nsp", "/g/Other"]).gameDir == "/g/Other")   // a folder wins
+    }
+
+    @Test func nothingUsable() {
+        #expect(!sort(["/x/readme.txt", "/x/icon.png"]).usable)
+    }
+}
