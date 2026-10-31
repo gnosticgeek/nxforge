@@ -60,6 +60,21 @@ Game too big to install? Build again with `--romfs separate`, and run the comman
 
 Controls, saves and settings: [Playing](docs/playing.md). Known issues are in each [game's note](dm/games/README.md#games); there are no amiibo and no online features.
 
+## Played on NXForge
+
+The games below were played on a Mac with an NXForge release, newest play per game. [Games](#games) lists everything the engine supports; this table says what was checked on NXForge itself. After playing a game, add or update its row in [docs/nxforge-games.tsv](docs/nxforge-games.tsv) and run `python3 dm/tools/nxforge_games.py`. The converter's Builds page shows the same row for a game you built.
+
+<!-- nxforge-games: written by dm/tools/nxforge_games.py from docs/nxforge-games.tsv; change the table, then run it -->
+| Game | Version | Result | NXForge | Mac | Played | Notes |
+|---|---|---|---|---|---|---|
+| Bloodstained: Curse of the Moon | 1.1.1 | ✅ plays | pre-0.1.0 | M4 Pro | 2026-10-25 | 60 fps; cheats (infinite HP, lives, weapon points) and rumble |
+| Kirby's Return to Dream Land Deluxe | 1.0.0 | ✅ plays | 0.3.0 | M4 Pro | 2026-10-27 | 3D intro, title and gameplay at 60 fps; pipeline hitches in the first minute of a first launch |
+| [Mario Kart 8 Deluxe](dm/games/0100152000022000/README.md) | 4.0.1 | ✅ plays | 0.4.0 | M4 Pro | 2026-10-27 | 60 fps with the Booster Course DLC (3.0.1 is 32-bit and cannot run) |
+| [Mario vs. Donkey Kong](dm/games/0100B99019412000/README.md) | 1.0.1 | ✅ plays | pre-0.1.0 | M4 Pro | 2026-10-25 | Level 1-1 at 60 fps windowed and full screen; rumble on an 8BitDo SN30 Pro |
+| [Mina the Hollower](dm/games/0100DCD01F306000/README.md) | 1.0.5 | 🟡 boots | 0.3.0 | M4 Pro | 2026-10-27 | Intro and menus with input; gameplay still in bring-up |
+| [Super Mario Bros. Wonder](dm/games/010015100B514000/README.md) | – | ✅ plays | 0.7.1 | M4 Pro | 2026-10-30 | A 30-minute session recorded the prewarm list; frame dips still being looked into |
+<!-- end of nxforge-games -->
+
 ## Games
 
 Games tested on Mac or iPhone. See the [per-game notes](dm/games/README.md#games) for tested platforms, progress and known issues:

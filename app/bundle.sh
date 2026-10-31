@@ -8,7 +8,7 @@ swift build -c release --package-path "$here"
 app="$out/NXForge Converter.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$here/.build/release/NxNativeConverter" "$app/Contents/MacOS/"
+cp "$here/.build/release/NXForgeConverter" "$app/Contents/MacOS/"
 # the icon, drawn by make_icon.swift at every size macOS asks for
 icons="$(mktemp -d)/AppIcon.iconset"; mkdir -p "$icons"
 swift "$here/make_icon.swift" "$icons/icon_512x512@2x.png"
@@ -27,7 +27,7 @@ cat > "$app/Contents/Info.plist" <<EOF
   <key>CFBundleName</key><string>NXForge Converter</string>
   <key>CFBundleDisplayName</key><string>NXForge Converter</string>
   <key>CFBundleIdentifier</key><string>org.nxforge.converter</string>
-  <key>CFBundleExecutable</key><string>NxNativeConverter</string>
+  <key>CFBundleExecutable</key><string>NXForgeConverter</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>

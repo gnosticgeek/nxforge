@@ -2,7 +2,10 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-28.
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-31 (0.8.0).
+
+Keep this file current: every release PR updates the rows its changes touch and the
+"Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
 
 Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 **Idea**, **Research**.
@@ -13,12 +16,12 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 |---|---|---|
 | Full-screen 60 fps fix | Upstream PR open ([#194](https://github.com/seedds/nxnative/pull/194)), on fork main | Branch `claude/project-thread-ly6qu8` (e20c2a5). No display link while full screen on 120 Hz ProMotion; verified 3 runs on an M4 Pro. Overlaps upstream #198 (silent display-link fallback). Review fixes go on the fork branch. |
 | NXForge Converter app | Upstream PR open ([#209](https://github.com/seedds/nxnative/pull/209)), on fork main | Branch `mac-converter-app` (SwiftUI), merged into fork main 2026-10-26 and renamed NXForge Converter there (`org.nxforge.converter`; settings folder and executable name unchanged). The upstream PR keeps the NxNative name. |
-| Swift rewrite of the Converter | Next | SwiftUI app (macOS 26+, Liquid Glass) built to the four UI mockups: Convert, Builds, Toolchain, Settings. Full Mario build passes from the window. Replaces the Rust app on #209 once Tom signs off on the look. |
+| Swift rewrite of the Converter | On fork main | SwiftUI app (macOS 26+, Liquid Glass): Convert, Builds, Toolchain, Settings, in `app/` since 0.2.0. #209 upstream still carries the earlier version under the NxNative name. |
 | Rumble fix | Mostly superseded by upstream | Fork PR #1 (merge 5bc2563). Vibration handles before the controller connects, plus a plain Core Haptics player fallback for controllers that refuse advanced players (8BitDo SN30 Pro). Verified in MvDK and Curse of the Moon. PR body drafted (`nxnative-pr/rumble-pr.md` in project files). Since the 0.6.0 merge upstream's plain-player fallback (#363) and startup handles (#246) replace ours; only the permission before a controller connects is still NXForge's, a small PR candidate. |
 | Rewriter jump-table fix (49a670a) | Superseded by upstream | Upstream follows the copy to the function start (Mario + Rabbids Kingdom Battle's GLSLC, the same code as Curse of the Moon's); the 0.6.0 merge takes theirs. Nothing to send. |
 | Filters + Quick settings sidebar | On hold for upstream | Tom holds the upstream PR until the sidebar is finished (see the next section). |
 | Cheats engine | On fork main, not sent upstream | Goes upstream after the sidebar, or alongside it. |
-| Merge upstream main | On branch `claude/project-thread-icgno7` | Merges seedds/nxnative main at 6d880d2 (102 commits since beea17c), 2026-10-30: cloud saves, Nintendo pad labels, Mac pipeline archive for the running macOS, about 15 new games, rendering fixes. 15 files conflicted; choices in CHANGELOG (Unreleased). Script and docs tests pass on Linux; waiting on a Mac build and Tom's play test. Previous merge: beea17c in 0.6.0. |
+| Merge upstream main | On fork main (0.7.1) | Last merge: seedds/nxnative main at 6d880d2 (102 commits since beea17c), fork PR #26, released in 0.7.1. Choices are in CHANGELOG 0.7.1. The nightly upstream check (`.github/workflows/upstream-check.yml`, 0.8.0) now flags the next gap and its conflicts. |
 
 ## Quick settings sidebar and filters
 
@@ -51,8 +54,22 @@ From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-w
 | Console mode: a controller-driven library | Idea | NX Play and the Launcher: a full-screen carousel of built games with key art, driven by a controller (A plays, B backs out), last played first. NXForge's Builds page plus controller navigation like the sidebar's. |
 | Game metadata from the control data | Idea | NX Play reads `control.nacp` (title, publisher, display version, supported languages). Lets Builds show the real title and version, and a language picker list only the game's languages. |
 | Custom cover art | Idea | The Launcher: pick any image as a game's art, kept per title ID. |
-| Nightly upstream check | Idea | NX2Apple and the Launcher run a daily job that test-merges upstream and opens a PR, or an issue naming the conflict. Would have flagged the 245-commit gap early. |
-| Per-game launch settings | Comes with the upstream merge | Game language, frame rate, docked or handheld and render scale without a rebuild: upstream's Mac settings window does it. Otherwise a Game section in Quick settings writing the game's `env.txt`. |
+| Nightly upstream check | On fork main (0.8.0) | NX2Apple and the Launcher run a daily job that test-merges upstream and opens a PR, or an issue naming the conflict. Would have flagged the 245-commit gap early. |
+| Per-game launch settings | On fork main (0.6.0) | Game language, frame rate, docked or handheld and render scale without a rebuild: upstream's Mac settings window does it. Otherwise a Game section in Quick settings writing the game's `env.txt`. |
+
+## Quality and consistency
+
+From the list of ten on 2026-10-31, all in 0.8.0.
+
+| Item | Status | Notes |
+|---|---|---|
+| Converter in CI | On fork main (0.8.0) | `converter` job in tests.yml: build, `swift test`, bundle, `--check`. |
+| Releases from tags and a release check | On fork main (0.8.0) | `release.yml`, `scripts/release_check.py`. |
+| Mac smoke test and hands-on list | On fork main (0.8.0) | `scripts/smoke_mac.sh`, `docs/release-checklist.md`. Run before each tag. |
+| Nightly upstream check | On fork main (0.8.0) | `upstream-check.yml`; one issue labelled `upstream`. |
+| Settings table and test | On fork main (0.8.0) | docs/settings.md, Quick settings on the Mac. |
+| Played on NXForge | On fork main (0.8.0) | `docs/nxforge-games.tsv` → README and the converter's Builds page. Add a row after each play test. |
+| Frame times per release | On fork main (0.8.0) | `scripts/perf_release.py`, `docs/perf/`. More games with `bench.tsv` routes would make it sharper. |
 
 ## Save states and rewind
 
@@ -106,8 +123,8 @@ Verified on Curse of the Moon 1.1.1.
 | Item | Status | Notes |
 |---|---|---|
 | Per-game 60 fps profiles | Idea | Build-matched mods exist for ACNH 3.0.3, Persona 5 Royal 1.0.2 (drop-in cheats, try first), Pokémon Z-A 2.0.2, Pokémon Sword 1.3.2. Most need the exefs loader. |
-| Forced anisotropic filtering override | Idea | |
-| MetalFX spatial upscaling | Research | Test upstream #33 against #160 on the M4 Pro before building anything. |
+| Forced anisotropic filtering override | On fork main | `DM_ANISO` floor since 0.1.0 (fork PR #4), 16x by default on the Mac since 0.7.0. |
+| MetalFX spatial upscaling | On fork main | On by default in Mac apps since 0.7.0, live switch in Quick settings, works together with Sharpen. FXAA (`DM_PRESENT_AA`) came with it. |
 | General resolution scaling | Research | Hard; per-game resolution mods are the near-term route. |
 | 120 fps frame interpolation on ProMotion displays | Research | Tom's ask: take 60 fps games to 120 fps by generating an in-between frame, turned on automatically when the game's screen runs at 120 Hz (ProMotion MacBook Pro, Studio Display XDR) and off on 60 Hz screens, with a sidebar switch to override. Basis: MetalFX frame interpolation, which needs motion vectors and depth the game doesn't hand to Metal, so most games would need an optical-flow fallback that estimates motion from two finished frames. Open questions: added latency (one frame held back), artefacts on HUD and text, GPU cost on battery, and pacing alongside the full-screen display-link fix (#194). Detect the refresh rate from the screen's `maximumFramesPerSecond` and re-check when the window moves screens. |
 | EDR / HDR inverse tone-map | Idea | |
@@ -123,7 +140,7 @@ Verified on Curse of the Moon 1.1.1.
 
 | Item | Status | Notes |
 |---|---|---|
-| Rebrand as NXForge | On fork main | Fork PR #6, then the converter and capture folders (`~/Pictures/NXForge`, `~/Movies/NXForge`) in the merge-everything PR. Left: Tom renames the GitHub repository to nxforge. |
+| Rebrand as NXForge | On fork main | Fork PR #6, then the converter and capture folders (`~/Pictures/NXForge`, `~/Movies/NXForge`) in the merge-everything PR. The repository is gnosticgeek/nxforge since 2026-10-26. The converter's last old names went in 0.8.0. |
 | Longer MvDK prewarm list | Next | The current list was recorded on level 1-1 only. |
 | Test MvDK past level 1-1 | Next | The game note's Mac route only covers 1-1. |
-| 49 Mac host compiler warnings | Idea | Clean up in a separate PR. |
+| Mac host compiler warnings | On fork main (0.8.0) | 52 warnings in 10 kinds; 3 kinds fixed and CI now fails on a new one (`dm/tools/host_warnings.py`). The 7 left are upstream's, all in `nvn_mtl.m` (Metal 4 encoder types in about 45 places, ignored ARC qualifiers on cache getters): an upstream PR candidate. |

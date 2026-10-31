@@ -121,9 +121,10 @@ final class QuickSettings: ObservableObject {
     func setAniso(_ n: Int) {   // saved for the next launch (Metal's samplers are made once): the engine only logs it when the game has made its first one
         aniso = n; if env["DM_ANISO"] == nil { UserDefaults.standard.set(n, forKey: optKey("aniso")); mtl_aniso_set(Int32(n)) }
     }
-    func setUpscale(_ on: Bool) {   // at once, from the next frame, and saved where the settings window keeps it
-        guard !upscaleFixed else { return }
-        upscale = on; mtl_present_upscale_set(on ? 1 : 0); UserDefaults.standard.set(on ? "metalfx" : "off", forKey: "launcher.DM_PRESENT_UPSCALE")
+    func setUpscale(_ on: Bool) {   // at once, from the next frame, and saved where the settings window keeps it, by its rule: the Mac default
+        guard !upscaleFixed else { return }   // (MetalFX) is not stored, so a later build's default still reaches this game (docs/settings.md, Tested defaults)
+        upscale = on; mtl_present_upscale_set(on ? 1 : 0)
+        if on { UserDefaults.standard.removeObject(forKey: "launcher.DM_PRESENT_UPSCALE") } else { UserDefaults.standard.set("off", forKey: "launcher.DM_PRESENT_UPSCALE") }
     }
     func setAA(_ n: Int) {
         aa = n; mtl_present_aa_set(Int32(n)); if env["DM_PRESENT_AA"] == nil { UserDefaults.standard.set(n, forKey: optKey("aa")) }

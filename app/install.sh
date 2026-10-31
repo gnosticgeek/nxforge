@@ -5,7 +5,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 dest="${1:-$HOME/Applications}"
 mkdir -p "$dest"
-if pgrep -xq NxNativeConverter; then
+if pgrep -xq NXForgeConverter || pgrep -xq NxNativeConverter; then   # the second: the executable's name before 0.8.0
   echo "NXForge Converter is open: quit it first (a build in it would be cut off)" >&2
   exit 1
 fi

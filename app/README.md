@@ -9,7 +9,7 @@ A native Mac app (SwiftUI, macOS 26 or later) over `scripts/build_ipa_from_nsp.p
 
 Small things: drop a game folder (or a file in it) on the window or the Dock icon to convert it; a first build needs about twice the game files' size plus 10 GB, so Convert shows the free space and warns when it is short; the Dock icon shows the build's progress; **Build** in the menu bar has Build Mac App (⌘B), Rebuild (⌘R), Rebuild All on Older Engines and Stop Build (⌘.), and ⌘O chooses a game folder. On Builds, apps on an older engine carry an "older" badge, **Rebuild all** rebuilds them one after another (a failure stops the rest), and a right-click opens, shows, rebuilds, removes from the list or moves an app to the Trash. At launch the converter fetches the engine's branch, and when it has updates shows the newest release's first change from its CHANGELOG. On Toolchain, **Set up** makes the converter's own Python (a venv in Application Support with lz4, capstone, fontTools, zstd and nsz) so it depends on no other copy; it needs the network once, for pip. The app's icon is drawn by `make_icon.swift`, and its version is the engine's release tag.
 
-Settings are in `~/Library/Application Support/NxNative Converter/settings.json`. The repository is found from the setting, then the checkout the app was built in, then `~/Developer/nxforge`, `~/nxforge`, `~/Developer/nxnative`, `~/nxnative` and similar. Python is the setting, then `~/Library/Application Support/NxNative Converter/venv`, then the checkout's `.venv`, then each `python3` on `PATH`, the first with the modules winning.
+Settings are in `~/Library/Application Support/NXForge Converter/settings.json` (before 0.8.0 the folder was `NxNative Converter`; the first start moves it and leaves a link at the old name). The repository is found from the setting, then the checkout the app was built in, then `~/Developer/nxforge`, `~/nxforge`, `~/Developer/nxnative`, `~/nxnative` and similar. Python is the setting, then `~/Library/Application Support/NxNative Converter/venv`, then the checkout's `.venv`, then each `python3` on `PATH`, the first with the modules winning.
 
 ## Build
 
@@ -22,12 +22,14 @@ builds the converter from this checkout into `~/Applications` and opens it, so S
 The same steps run without the window, which is how it is tested:
 
 ```
-app/.build/release/NxNativeConverter --check
-app/.build/release/NxNativeConverter --validate "<game folder>" "<prod.keys>"
-app/.build/release/NxNativeConverter --convert "<game folder>" "<prod.keys>" [--sign "<identity>"]
-app/.build/release/NxNativeConverter --rebuild "<game folder>/<game>.app" "<prod.keys>" [--sign "<identity>"]
-app/.build/release/NxNativeConverter --engine "<game folder>"
-app/.build/release/NxNativeConverter --verify "<game>.app"
+app/.build/release/NXForgeConverter --check
+app/.build/release/NXForgeConverter --validate "<game folder>" "<prod.keys>"
+app/.build/release/NXForgeConverter --convert "<game folder>" "<prod.keys>" [--sign "<identity>"]
+app/.build/release/NXForgeConverter --rebuild "<game folder>/<game>.app" "<prod.keys>" [--sign "<identity>"]
+app/.build/release/NXForgeConverter --engine "<game folder>"
+app/.build/release/NXForgeConverter --verify "<game>.app"
 ```
+
+The unit tests (release names, title IDs, the settings file) run with `swift test --package-path app`; CI runs them, builds the bundle and starts `--check` in the `converter` job of `.github/workflows/tests.yml`.
 
 For checking the window: `NXC_SNAPSHOT=<file.png>` saves a picture of it a few seconds after it opens, writes its window number to `<file.png>.wid` for `screencapture -l`, and quits (`NXC_PAGE=builds`, `toolchain` or `settings` for another page; `NXC_AUTOBUILD=1` builds the chosen folder first). `NXC_SUPPORT_DIR=<folder>` keeps settings and build records there instead, to test beside a copy in use.

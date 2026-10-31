@@ -1,0 +1,45 @@
+# Publishes the GitHub release for a vX.Y.Z tag (UPSTREAM.md, Versions): checks the tag against CHANGELOG.md and
+# BACKLOG.md with scripts/release_check.py, then creates the release "NXForge X.Y.Z" with that version's CHANGELOG
+# entry as its notes. A release that already exists is left as it is. Run it by hand (workflow_dispatch) for a tag
+# that was pushed before this workflow existed.
+name: release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The tag to publish, vX.Y.Z'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    name: GitHub release from CHANGELOG.md
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          persist-credentials: false
+      - name: Check the tag against CHANGELOG.md and BACKLOG.md
+        run: python3 scripts/release_check.py check "$TAG"
+      - name: Publish the release
+        run: |
+          version="${TAG#v}"
+          python3 scripts/release_check.py notes "$version" > "$RUNNER_TEMP/notes.md"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::$TAG already has a release; left as it is"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "NXForge $version" --notes-file "$RUNNER_TEMP/notes.md"
+          fi

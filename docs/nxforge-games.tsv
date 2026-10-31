@@ -1,0 +1,19 @@
+# Games played on NXForge: what someone actually played on a Mac, with which NXForge release, and how it went. README.md's "Played on NXForge"
+# table (dm/tools/nxforge_games.py writes it) and the converter's Builds page (Verified on NXForge) read this file. One row per game, the newest
+# play replacing the older one. Add a row after playing a game, then run `python3 dm/tools/nxforge_games.py`.
+# Columns, separated by tabs:
+#   title_id  the base game's title ID (16 hex digits)
+#   game      its name
+#   version   the game version played (the update's display version), or - when not noted
+#   release   the NXForge release it was built on (0.4.0), or pre-0.1.0
+#   mac       the Mac it was played on, short (M4 Pro)
+#   date      YYYY-MM-DD
+#   result    plays (start to gameplay without a blocking problem), boots (reaches menus or an intro, not yet playable), or broken
+#   note      what was played and what was seen, short
+title_id	game	version	release	mac	date	result	note
+0100B99019412000	Mario vs. Donkey Kong	1.0.1	pre-0.1.0	M4 Pro	2026-10-25	plays	Level 1-1 at 60 fps windowed and full screen; rumble on an 8BitDo SN30 Pro
+01004B800AF5A000	Bloodstained: Curse of the Moon	1.1.1	pre-0.1.0	M4 Pro	2026-10-25	plays	60 fps; cheats (infinite HP, lives, weapon points) and rumble
+01006B601380E000	Kirby's Return to Dream Land Deluxe	1.0.0	0.3.0	M4 Pro	2026-10-27	plays	3D intro, title and gameplay at 60 fps; pipeline hitches in the first minute of a first launch
+0100DCD01F306000	Mina the Hollower	1.0.5	0.3.0	M4 Pro	2026-10-27	boots	Intro and menus with input; gameplay still in bring-up
+0100152000022000	Mario Kart 8 Deluxe	4.0.1	0.4.0	M4 Pro	2026-10-27	plays	60 fps with the Booster Course DLC (3.0.1 is 32-bit and cannot run)
+010015100B514000	Super Mario Bros. Wonder	-	0.7.1	M4 Pro	2026-10-30	plays	A 30-minute session recorded the prewarm list; frame dips still being looked into

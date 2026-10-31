@@ -7,6 +7,7 @@ The screen before the game starts shows the settings the game supports. A settin
 - [Controls](#controls): [Touch feedback](#touch-feedback), [Game rumble](#game-rumble), [Rumble strength](#rumble-strength), [Rumble cutoff](#rumble-cutoff)
 - [Performance](#performance): [Frame buffering](#frame-buffering), [Metal 4 pipelines](#metal-4-pipelines), [Pipeline prebuild](#pipeline-prebuild), [Encode thread](#encode-thread), [Hold frames when late](#hold-frames-when-late), [Performance HUD](#performance-hud), [Reset to tested defaults](#reset-to-tested-defaults)
 - [The Mac settings window](#the-mac-settings-window): [Display mode](#display-mode)
+- [Quick settings on the Mac](#quick-settings-on-the-mac)
 - [Settings in a file](#settings-in-a-file)
 
 ## Tested defaults
@@ -205,6 +206,32 @@ When the game starts, it brings the save from iCloud Drive in if that one is the
 A save that is replaced, on the device or in iCloud Drive, is kept first, beside the save in a folder named after it with `-backups` (on the iPhone `save-backups` in the Files app, under the app's name; on the Mac `~/Library/Application Support/nxnative/<title ID>/save-backups`): `<date> local` holds this device's save, `<date> cloud` the one that was in iCloud Drive. The newest 10 of each kind stay, and older ones are removed; other folders you put there are left alone.
 
 iCloud Drive takes a moment to carry a file from one device to the other. Quit the game on one device and give it a few seconds before you start it on the other. Without a connection the game plays on with the save it has and sends it later. The game log says what came in and what went out (lines starting with `save sync:`).
+
+## Quick settings on the Mac
+
+A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧⌘G, the Graphics menu, or Home or − / + on a controller). Its changes apply at once, except anisotropic filtering, which applies from the next launch. Like the settings window, a setting that an `env.txt` or the launch environment fixes is not saved. Every setting a Mac app has, and where it is changed and kept:
+
+| Setting | Settings window | Quick settings | `env.txt` / environment | Saved in the app's preferences as |
+|---|---|---|---|---|
+| Frame rate, Render scale, Dynamic resolution, Console mode, Game language | Game | – | `DM_FPS_TARGET`, `DM_RENDER_SCALE`, `DM_DYNAMIC_RESOLUTION`, `DM_OPMODE`, `DM_LANG` | `launcher.<variable>` |
+| Display mode | Game | – (⌃⌘F while playing) | `DM_FULLSCREEN` | `launcher.DM_FULLSCREEN` |
+| Upscaling (MetalFX) | Game › Upscaling | Graphics & shaders › MetalFX upscaling | `DM_PRESENT_UPSCALE` | `launcher.DM_PRESENT_UPSCALE`, shared by both; MetalFX, the Mac default, is not stored |
+| Game rumble, Rumble strength, Rumble cutoff | Controls | – | `DM_RUMBLE`, `DM_RUMBLE_GAIN`, `DM_RUMBLE_MIN` | `launcher.<variable>` |
+| Performance rows (Frame buffering, Metal 4 pipelines, …) | Advanced settings › Performance | – | as in [Settings in a file](#settings-in-a-file) | `launcher.<variable>` |
+| Cloud saves folder | Cloud saves | – | `DM_SAVE_SYNC` | `cloudSaves.folder` |
+| Picture filter and its strength | – | Graphics & shaders › Filter | `DM_PRESENT_FILTER`, `DM_PRESENT_FILTER_STRENGTH` | `DMPresentFilter.mode.<game>`, `DMPresentFilter.strength.<game>` |
+| Scanlines (CRT and LCD Grid filters) | – | Graphics & shaders › Scanlines | `DM_PRESENT_SCANLINE` | `DMPresentFilter.scanline.<game>` |
+| Anti-aliasing (FXAA) | – | Graphics & shaders › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>` |
+| Anisotropic filtering (16× by default) | – | Graphics & shaders › Anisotropic filtering | `DM_ANISO` | `DMQuickSettings.aniso.<game>` |
+| Frame-rate counter and its corner | – | Performance › Show FPS | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>` |
+| Volume | – | Sound | – | `DMQuickSettings.volume.<game>` |
+| Screenshot and recording folder | – | Capture | – | `DMQuickSettings.captureDir.<game>` (unset: the game folder) |
+| Mods that are on | – | Mods | `DM_ROMFS_OVERLAY` replaces them | `DMQuickSettings.mods.<game>` |
+| Cheats that are on | – | Cheats | `DM_CHEATS_ON` | `DMQuickSettings.cheats.<game>` |
+| Keys and buttons | – | Controls | – | `DMQuickSettings.keys.<game>`, `DMQuickSettings.pad.<game>` (the maps), `DMQuickSettings.keyNames.<game>`, `DMQuickSettings.padNames.<game>` (their labels) |
+| Show this window at launch | the window's switch | – | `DM_LAUNCHER=0` skips it | `window.show` |
+
+`<game>` is the game's profile name; each game app has preferences of its own (`org.nxforge.<title ID>`). `dm/tools/tests/test_settings_table.py` checks that every key Quick settings saves is in this table.
 
 ## Settings in a file
 

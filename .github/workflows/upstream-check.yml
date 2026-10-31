@@ -1,0 +1,78 @@
+# Nightly check of upstream nxnative (seedds/nxnative, main): how many commits NXForge's main is behind, and whether a merge would conflict.
+# It keeps one open issue labelled "upstream" up to date with the count, the newest upstream commits and the files a test merge conflicts in,
+# and closes it once main has caught up. Nothing is pushed: the merge itself is a thread of work with a Mac build (UPSTREAM.md).
+name: upstream-check
+
+on:
+  schedule:
+    - cron: '17 5 * * *'   # 05:17 UTC every day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-check
+
+jobs:
+  check:
+    name: Test merge of upstream main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      UPSTREAM: https://github.com/seedds/nxnative.git
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch upstream and try the merge
+        id: merge
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch --quiet upstream main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          base=$(git merge-base HEAD upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          {
+            echo "NXForge \`main\` ($(git rev-parse --short HEAD)) is **$behind commit(s)** behind [seedds/nxnative](https://github.com/seedds/nxnative) \`main\` ($(git rev-parse --short upstream/main)); the last merge base is \`$(git rev-parse --short "$base")\` ($(git log -1 --format=%cs "$base"))."
+            echo
+          } > body.md
+          if [ "$behind" = 0 ]; then exit 0; fi
+          git config user.name "upstream-check"; git config user.email "upstream-check@users.noreply.github.com"
+          if git merge --no-commit --no-ff upstream/main > merge.log 2>&1; then
+            echo "A test merge applies **without conflicts**." >> body.md
+          else
+            conflicts=$(git diff --name-only --diff-filter=U)
+            echo "A test merge **conflicts in $(echo "$conflicts" | grep -c .) file(s)**:" >> body.md
+            echo >> body.md
+            echo "$conflicts" | sed 's/^/- `/; s/$/`/' >> body.md
+          fi
+          git merge --abort 2>/dev/null || true
+          {
+            echo
+            echo "<details><summary>Upstream commits not in NXForge (newest 30)</summary>"
+            echo
+            git log --format='- [`%h`](https://github.com/seedds/nxnative/commit/%H) %s (%cs)' -30 HEAD..upstream/main
+            echo
+            echo "</details>"
+            echo
+            echo "_Updated by the nightly [upstream-check]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/upstream-check.yml) run of $(date -u '+%Y-%m-%d %H:%M UTC'). The merge itself goes on a branch of its own with a Mac build ([UPSTREAM.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/UPSTREAM.md))._"
+          } >> body.md
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Open, update or close the issue
+        run: |
+          gh label create upstream --color 5319e7 --description "Merging upstream nxnative" 2>/dev/null || true
+          issue=$(gh issue list --label upstream --state open --json number --jq '.[0].number // empty')
+          behind="${{ steps.merge.outputs.behind }}"
+          if [ "$behind" = 0 ]; then
+            [ -n "$issue" ] && gh issue close "$issue" --comment "$(cat body.md)" || true
+          elif [ -n "$issue" ]; then
+            gh issue edit "$issue" --title "Upstream nxnative: $behind new commit(s)" --body-file body.md
+          else
+            gh issue create --label upstream --title "Upstream nxnative: $behind new commit(s)" --body-file body.md
+          fi

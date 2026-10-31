@@ -87,7 +87,7 @@ final class BuildRun {
         do {
             let lock = try FolderLock(job.gameDir)
             defer { lock.release() }
-            guard let repo = job.env.repo else { throw ConverterError("no nxnative repository") }
+            guard let repo = job.env.repo else { throw ConverterError("no NXForge engine checkout") }
             guard let engine = Engine.current(repo) else { throw ConverterError("cannot read the engine's git commit") }
             var backup: String?
             if let app = job.rebuild {
@@ -231,7 +231,7 @@ final class BuildRun {
 
     /// The app must be a bundle with an executable launcher and a valid signature.
     nonisolated static func verify(_ app: String) throws -> String {
-        let exe = app + "/Contents/MacOS/nxnative"
+        let exe = app + "/Contents/MacOS/nxnative"   // the game app's executable keeps the engine's upstream name (dm/mac/pack_app.py)
         guard FileManager.default.isExecutableFile(atPath: exe) else { throw ConverterError("\(app) has no executable launcher") }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
@@ -264,7 +264,7 @@ struct FolderLock {
     let path: String
 
     init(_ dir: String) throws {
-        path = dir + "/.nxnative-converter.lock"
+        path = dir + "/.nxforge-converter.lock"
         if let pid = try? String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), let n = Int32(pid), kill(n, 0) == 0 {
             throw ConverterError("another build of this folder is running (process \(n)); wait for it to finish")
         }

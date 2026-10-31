@@ -6,6 +6,8 @@ NXForge is a downstream of [nxnative](https://github.com/seedds/nxnative) (seedd
 
 - `main` merges nxnative's `main` regularly (a merge commit, never a rebase or squash, so every upstream commit keeps its author and hash). Resolve conflicts in favour of upstream unless an NXForge feature depends on the local change.
 - Keep the diff against upstream small. The rebrand touches only user-facing text, the bundle ID prefix and these policy files. Internal names stay as they are: source and module names, the `dm/` layout, `DM_*` environment variables, the launcher's `Contents/MacOS/nxnative`, the `~/Library/Application Support/nxnative` and `~/Library/Logs/nxnative` folders (moving them would strand existing saves), and the `NxNative.xcworkspace` default.
+- The NXForge Converter (`app/`) is NXForge's own, not a part of nxnative's tree, so it uses NXForge names throughout: its target and executable (`NXForgeConverter`), its settings folder (`~/Library/Application Support/NXForge Converter`, moved from `NxNative Converter` in 0.8.0) and its strings.
+- The nightly `upstream-check` workflow (`.github/workflows/upstream-check.yml`) test-merges nxnative's `main` and keeps one open issue labelled `upstream` with how many commits `main` is behind and which files a merge would conflict in. It never pushes; the merge is still done on a branch with a Mac build and a play test.
 - Add Mac-only features in new files where possible (as `quick_settings_mac.swift`, `capture_mac.m` and `cheats_host.c` are), with small hooks into shared files, so upstream merges stay easy.
 
 ## Upstream: sending fixes back
@@ -20,6 +22,8 @@ NXForge is a downstream of [nxnative](https://github.com/seedds/nxnative) (seedd
 - NXForge releases are tags `vX.Y.Z` on `main`, following [semantic versioning](https://semver.org): the minor number for new features or an upstream merge that changes behaviour, the patch number for fixes. Before 1.0 a minor release may change how things work.
 - Each release has an entry in [CHANGELOG.md](CHANGELOG.md) and a GitHub release with the same notes. The NXForge Converter shows the engine as the release it is: `0.2.0` at the tag, `0.2.0+3` three commits after it, `pre-0.1.0` before the first release (the commit is in its tooltip).
 - The version is NXForge's own and says nothing about nxnative's; the changelog names the upstream merge each release includes.
+- How a release is made: work for it collects on one release branch and goes in as one PR (no PR per change). That PR adds the version's CHANGELOG entry (`## X.Y.Z (YYYY-MM-DD)`, newest first) and updates [BACKLOG.md](BACKLOG.md): the rows its changes touch and the "Last updated" date. `python3 scripts/release_check.py check X.Y.Z` checks both before the tag; CI lints them on every PR (`dm/tools/tests/test_release_check.py`).
+- After the PR merges, tag the merge commit and push the tag: `git tag vX.Y.Z <merge commit> && git push origin vX.Y.Z`. The `release` workflow (`.github/workflows/release.yml`) then publishes the GitHub release, titled "NXForge X.Y.Z", with the CHANGELOG entry as its notes. Before tagging, run the Mac checks GitHub's runners cannot: `scripts/smoke_mac.sh` (and `scripts/bench.py` for a release that touches speed).
 
 ## Reporting problems
 
