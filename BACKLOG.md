@@ -143,4 +143,4 @@ Verified on Curse of the Moon 1.1.1.
 | Rebrand as NXForge | On fork main | Fork PR #6, then the converter and capture folders (`~/Pictures/NXForge`, `~/Movies/NXForge`) in the merge-everything PR. The repository is gnosticgeek/nxforge since 2026-10-26. The converter's last old names went in 0.8.0. |
 | Longer MvDK prewarm list | Next | The current list was recorded on level 1-1 only. |
 | Test MvDK past level 1-1 | Next | The game note's Mac route only covers 1-1. |
-| Mac host compiler warnings | On fork main (0.8.0) | 52 warnings in 10 kinds; NXForge fixed 4 kinds and CI now fails on a new one (`dm/tools/host_warnings.py`). The 6 left are upstream's Metal 4 encoder types in `nvn_mtl.m` (about 45 places): an upstream PR candidate. |
+| Mac host compiler warnings | On fork main (0.8.0) | 52 warnings in 10 kinds; 3 kinds fixed and CI now fails on a new one (`dm/tools/host_warnings.py`). The 7 left are upstream's, all in `nvn_mtl.m` (Metal 4 encoder types in about 45 places, ignored ARC qualifiers on cache getters): an upstream PR candidate. |
