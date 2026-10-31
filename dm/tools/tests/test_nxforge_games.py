@@ -1,5 +1,4 @@
-"""docs/nxforge-games.tsv (games played on NXForge) is well formed and README.md's "Played on NXForge" table is what it gives
-(dm/tools/nxforge_games.py --check)."""
+"""docs/nxforge-games.tsv (games played on NXForge) is well formed (dm/tools/nxforge_games.py --check)."""
 from pathlib import Path
 import subprocess
 import sys
@@ -13,7 +12,7 @@ HEADER = '\t'.join(ng.COLUMNS) + '\n'
 
 
 class NXForgeGames(unittest.TestCase):
-    def test_readme_is_current(self):
+    def test_table_is_well_formed(self):
         r = subprocess.run([sys.executable, str(REPO / 'dm/tools/nxforge_games.py'), '--check'], cwd=REPO, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
