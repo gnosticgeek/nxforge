@@ -148,3 +148,28 @@ import Testing
         #expect(FrameTimes.Summary(FrameTimes.parse("frame\tname\tvalue\n")) == nil)
     }
 }
+
+@Suite struct DroppedFiles {
+    let dirs: Set<String> = ["/g/Kirby", "/g/Other"]
+    func sort(_ p: [String]) -> DropFiles.Sorted { DropFiles.sort(p) { dirs.contains($0) } }
+
+    @Test func folderIsTheGameFolder() {
+        #expect(sort(["/g/Kirby"]) == DropFiles.Sorted(gameDir: "/g/Kirby", keys: nil))
+    }
+
+    @Test func gameFilesBringTheirFolder() {
+        #expect(sort(["/g/Kirby/base.nsp", "/g/Kirby/update.NSZ"]).gameDir == "/g/Kirby")
+        #expect(sort(["/g/Kirby/game.xci"]).gameDir == "/g/Kirby")
+    }
+
+    @Test func keysAndAMix() {
+        let s = sort(["/k/title.keys", "/k/prod.keys", "/g/Kirby/base.nsp"])
+        #expect(s.keys == "/k/prod.keys")
+        #expect(s.gameDir == "/g/Kirby")
+        #expect(sort(["/g/Kirby/base.nsp", "/g/Other"]).gameDir == "/g/Other")   // a folder wins
+    }
+
+    @Test func nothingUsable() {
+        #expect(!sort(["/x/readme.txt", "/x/icon.png"]).usable)
+    }
+}

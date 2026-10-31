@@ -124,6 +124,16 @@ final class AppModel {
         game = settings.gameDir.map(GameInfo.read)
     }
 
+    /// Files dropped on the Convert page (DropFiles): the game folder first, since it brings the prod.keys beside it, then a dropped keys
+    /// file over that. False when the drop held nothing usable, or a build is running.
+    @discardableResult func drop(_ urls: [URL]) -> Bool {
+        let d = DropFiles.sort(urls)
+        guard d.usable, !run.running else { return false }
+        if let dir = d.gameDir { setGameDir(dir) }
+        if let k = d.keys { settings.keys = k; validate() }
+        return true
+    }
+
     func setGameDir(_ dir: String) {
         // prod.keys beside the game files is the usual layout; else the default keys file, else the one chosen before
         let beside = dir + "/prod.keys"

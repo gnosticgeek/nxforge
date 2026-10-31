@@ -16,16 +16,27 @@ func mmss(_ s: Int) -> String { "\(s / 60):\(String(format: "%02d", s % 60))" }
 
 struct ConvertPage: View {
     @Bindable var model: AppModel
+    @State private var dropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PageHeader(title: "Convert game", subtitle: "Create a native Mac app from your game files.")
+            PageHeader(title: "Convert game", subtitle: "Create a native Mac app from your game files, or drop them here.")
             HStack(alignment: .top, spacing: 16) {
                 SourceFilesCard(model: model)
                 MacAppCard(model: model)
             }
             .fixedSize(horizontal: false, vertical: true)
             ActivityCard(model: model)
+        }
+        // a game folder, game files and prod.keys, in any mix (DropFiles)
+        .dropDestination(for: URL.self) { urls, _ in model.drop(urls) } isTargeted: { dropTargeted = $0 && !model.run.running }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
+                    .background(Color.accentColor.opacity(0.06), in: .rect(cornerRadius: 16))
+                    .overlay { Label("Drop a game folder, game files or prod.keys", systemImage: "square.and.arrow.down").font(.title2.weight(.semibold)).foregroundStyle(Color.accentColor) }
+                    .allowsHitTesting(false)
+            }
         }
     }
 }
