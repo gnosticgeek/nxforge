@@ -2,6 +2,29 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.9.0 (2026-10-31)
+
+Merges nxnative's `main` up to `2716f78` (34 commits since `6d880d2`, 2026-10-30 and 2026-10-31). The notes below are what changes for NXForge.
+
+**From upstream**
+- **Cheats**: nxnative's cheat engine (`hle_cheats.c`) replaces NXForge's. It runs Atmosphère `.txt` cheat files with Atmosphère 1.12.1's opcodes, never writes over the rewriter's changes, keeps the switches beside the file (`<build ID>.enabled`), and starts every cheat off after a run that ended without a clean exit. The Mac window gets a Cheats menu and a Cheats panel (⇧⌘C) with sections, search, values and imports. `scripts/cheat_anchor.py` carries a cheat file across game updates.
+- **New game profiles**: Metroid Prime Remastered, Hyrule Warriors: Definitive Edition, DRAGON QUEST III HD-2D Remake and Atelier Ryza.
+- Rendering and host fixes: NVN attachment capacity and combined depth/stencil pairing, buffer offsets that guest ring allocators write, cube textures bound as 2D, Echoes of Wisdom's archive depth (and seven other profiles'), lock acquires made `ldaxr` by the rewriter (BotW ran a job twice), `hid::IsVibrationDeviceMounted`, `nv::GetGraphicsMemoryInfo` on SDK 10 and older, and AudioOut on the big host stack.
+- Faster rewriter scans (in parallel), Unreal engine-region and console-variable rules in place of per-game rows, and the host's own Metal shaders compiled during the build instead of at run time.
+- The NSP script takes `--work-dir` for the build folder.
+- CI: clang-tidy for C and Objective-C, and coverage of the host, texture and tool tests, both as ratchets.
+
+**Kept from NXForge on top**
+- The Quick settings sidebar's Cheats section now lists the engine's rows, the same ones as the Cheats menu, with a switch each, Refresh, Open cheats folder and Restore saved cheats in safe mode. Cheats no longer save their switches in the app's preferences.
+- The cheats folder is unchanged: `~/Library/Application Support/nxnative/<title ID>/cheats/`.
+- NXForge's Markdown cheat files (`<build ID>.md`) are no longer read. `python3 dm/tools/cheats_md.py txt <file.md>` converts one into the `.txt` beside it ([docs/cheats.md](docs/cheats.md)). `DM_CHEATS_ON` now takes names separated by commas, as upstream's does; `all` is gone.
+- The present filters, FXAA and Sharpen moved into upstream's `dm/gfx/msl/present.metal`, so they are compiled during the build like the rest of the host's shaders.
+- `IsVibrationPermitted` still answers from the rumble setting before a controller connects.
+- This changes the translation chain version, so each game's next build translates its shaders again.
+
+**Sent upstream**
+- Four fixes as their own pull requests: the China-region profanity check ([#789](https://github.com/seedds/nxnative/pull/789)), the free-space check before metal-tt ([#790](https://github.com/seedds/nxnative/pull/790)), Unity 6000.3 shader layouts ([#791](https://github.com/seedds/nxnative/pull/791)) and bench.py's offline pipeline archive ([#792](https://github.com/seedds/nxnative/pull/792)).
+
 ## 0.8.0 (2026-10-31)
 
 Quality and consistency: checks that catch problems before a release, one place for each kind of fact, and the converter's last old names; no upstream merge.

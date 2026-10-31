@@ -63,21 +63,6 @@ static void script_set(uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int
     shake_note();
 }
 uint64_t dm_input_samples(void) { return (uint64_t)atomic_load(&g_sampling); }
-// Player 1's held buttons for cheats (cheats_host.c, dmnt's key masks): the NpadButton bits, and the stick directions past half a tilt as bits 16..23 (left stick left, up, right, down, then the right stick's)
-uint64_t dm_input_held(void) {
-    uint64_t b = (atomic_load(&g_btn) | atomic_load(&g_pad_btn[0])) & 0xFFFF, k = atomic_load(&g_axes), q = atomic_load(&g_pad_axes[0]);
-    for (int s = 0; s < 2; s++) {
-        int32_t x = (int16_t)(k >> (32 * s)), y = (int16_t)(k >> (32 * s + 16)), px = (int16_t)(q >> (32 * s)), py = (int16_t)(q >> (32 * s + 16));
-        if (abs(px) > abs(x)) x = px;
-        if (abs(py) > abs(y)) y = py;
-        const int32_t h = DM_STICK_MAX / 2;
-        if (x < -h) b |= 1ull << (16 + 4 * s);
-        if (y > h) b |= 1ull << (17 + 4 * s);
-        if (x > h) b |= 1ull << (18 + 4 * s);
-        if (y < -h) b |= 1ull << (19 + 4 * s);
-    }
-    return b;
-}
 // DM_KEYS scripted input (for tests): "seconds:key[+key][~hold seconds][*count/interval seconds],...", e.g. "8:A,12:A,15:Down~0.5,16:A+B,40:A*80/2" (A every 2 s from 40 s on, 80 times). Key names A B X Y LS RS L R ZL ZR (plus the sticks LLeft LUp LRight LDown and RLeft RUp RRight RDown) Plus Minus Left Up Right Down, left stick LLeft LUp LRight LDown,
 //   L<x>/<y> and R<x>/<y> = a stick tilted part way (each -1 to 1, y up: a cursor that a full tilt sweeps past its target), T<x>x<y> = a touch at normalized picture coordinates (origin top left) for the hold time, and Shake = the controller shaken for the hold time (at least one whole shake);
 //   held 0.15 s by default, at most KEY_STEPS steps (counted after repeats are expanded). Goes through player 1's scripted path (script_set), ORed with keyboard / touch and player 1's controller, none overrides another. Times are counted from host start.
@@ -456,6 +441,31 @@ static void fill(NpadState *s, uint32_t id, uint32_t style) {
     s->buttons = b;
     s->attributes = ATTR_CONNECTED | (id == NPAD_HANDHELD ? ATTR_WIRED | ATTR_LEFT_CONN | ATTR_LEFT_WIRED | ATTR_RIGHT_CONN | ATTR_RIGHT_WIRED : ATTR_LEFT_CONN | ATTR_RIGHT_CONN);
 }
+// The cheat VM's key mask (hle_cheats.c "all keys of the mask held"): the OR of every player's controller buttons
+// (the keyboard / touch source's bits included) plus the eight stick-direction pseudo buttons of the merged axes —
+// one flat bitset, not exactly any one npad read (fill() publishes per-npad states with attributes, merges and
+// latches), and nothing here consumes a latch or bumps the sampling: the game's own reads keep them both. Mask bits:
+// the buttons 0..15 in NpadButton order and the sticks' directions 16..23; SL / SR (bits 24 / 25) can never fire, no
+// input source of this host reports them
+uint64_t dm_cheats_keys(void) {
+    uint64_t b = 0; int32_t a[4] = {0};
+    b |= atomic_load(&g_btn);
+    for (int p = 0; p < DM_PLAYERS; p++) {
+        b |= atomic_load(&g_pad_btn[p]);
+        uint64_t v = atomic_load(&g_pad_axes[p]); for (int i = 0; i < 4; i++) a[i] = pick(a[i], ax(v, i));
+    }
+    uint64_t k = atomic_load(&g_axes); for (int i = 0; i < 4; i++) a[i] = pick(a[i], ax(k, i));
+    b &= 0xffffull;
+    if (a[0] < -STICK_THRESH) b |= 1u << 16;
+    if (a[1] > STICK_THRESH) b |= 1u << 17;
+    if (a[0] > STICK_THRESH) b |= 1u << 18;
+    if (a[1] < -STICK_THRESH) b |= 1u << 19;
+    if (a[2] < -STICK_THRESH) b |= 1u << 20;
+    if (a[3] > STICK_THRESH) b |= 1u << 21;
+    if (a[2] > STICK_THRESH) b |= 1u << 22;
+    if (a[3] < -STICK_THRESH) b |= 1u << 23;
+    return b;
+}
 // GetNpadStates(out, n, id): newest first, n entries: the current state repeated with consecutive sampling numbers. The host keeps no history, but on hardware the
 // 16-entry history is always full, and games read all of it whatever count comes back: Super Mario Odyssey (main+0x93fc20) polls every controller slot each frame, which advances
 // the shared sampling number by about 16 per frame, and with only entry 0 written neither stick did anything in play (the camera did not turn at its first hint) while buttons
@@ -825,6 +835,11 @@ HLE_FORCE("_ZN2nn3hid41IsFirmwareUpdateAvailableForSixAxisSensorERKNS0_19SixAxis
 // GetActual returns the sanitized guest value accepted by the host, before output-device adaptation.
 HLE_FORCE("_ZN2nn3hid22GetVibrationDeviceInfoEPNS0_19VibrationDeviceInfoERKNS0_21VibrationDeviceHandleE", "vibration: linear resonant actuator, left or right", void, h_hid_VibInfo, uint32_t *info, const uint32_t *h) {
     int on = h && vib_targets(*h); info[0] = on ? 1 : 0; info[1] = on ? 1 + (*h >> 16 & 1) : 0;
+}
+// The SDK's own call reaches the hid service (a null read in hid::detail::IsVibrationDeviceMounted; Super Mario Odyssey asks for each handle of a controller).
+// On Horizon a device is mounted when the npad's connected controller has that style and an actuator on that side: here, when the channel has an output, as GetVibrationDeviceInfo reports it
+HLE_FORCE("_ZN2nn3hid24IsVibrationDeviceMountedERKNS0_21VibrationDeviceHandleE", "vibration: device mounted when the channel has an output", unsigned, h_hid_VibMounted, const uint32_t *h) {
+    return h && vib_targets(*h);
 }
 HLE_FORCE("_ZN2nn3hid23GetActualVibrationValueEPNS0_14VibrationValueERKNS0_21VibrationDeviceHandleE", "vibration: last accepted channel value", void, h_hid_VibActual, dm_vibration *v, const uint32_t *h) {
     uint32_t targets = h ? vib_targets(*h) : 0;

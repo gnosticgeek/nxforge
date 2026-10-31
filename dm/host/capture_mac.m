@@ -18,15 +18,16 @@ NSString *capture_folder(int video) {
     const char *g = getenv("DM_GAME_FOLDER");
     if (g && *g) return [@(g) stringByAppendingPathComponent:video ? @"Recordings" : @"Screenshots"];
     NSURL *base = [NSFileManager.defaultManager URLsForDirectory:video ? NSMoviesDirectory : NSPicturesDirectory inDomains:NSUserDomainMask].firstObject;
-    return [base.path stringByAppendingPathComponent:@"NXForge"];
+    return [(base.path ?: NSHomeDirectory()) stringByAppendingPathComponent:@"NXForge"];   // no Pictures / Movies folder: the home folder
 }
+static NSString *with_ext(NSString *s, NSString *ext) { return [s stringByAppendingPathExtension:ext] ?: s; }   // nil only for an extension it cannot add
 static NSString *capture_path(int video, const char *game, NSString *ext) {
-    NSString *dir = capture_folder(video);
+    NSString *dir = capture_folder(video) ?: NSHomeDirectory();   // never nil, which clang-tidy cannot see through capture_folder
     [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSDateFormatter *f = [NSDateFormatter new]; f.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
     NSString *name = [[NSString stringWithFormat:@"%s %@", game, [f stringFromDate:NSDate.date]] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
-    NSString *p = [[dir stringByAppendingPathComponent:name] stringByAppendingPathExtension:ext];
-    for (int i = 2; [NSFileManager.defaultManager fileExistsAtPath:p]; i++) p = [[dir stringByAppendingPathComponent:[name stringByAppendingFormat:@" %d", i]] stringByAppendingPathExtension:ext];
+    NSString *p = with_ext([dir stringByAppendingPathComponent:name], ext);
+    for (int i = 2; [NSFileManager.defaultManager fileExistsAtPath:p]; i++) p = with_ext([dir stringByAppendingPathComponent:[name stringByAppendingFormat:@" %d", i]], ext);
     return p;
 }
 
@@ -51,7 +52,8 @@ static void *rec_next(void *ctx) {   // present thread: a texture to draw this f
     DmRecording *r = (__bridge DmRecording *)ctx;
     @synchronized (r) { if (r.stopping || r.inflight.count >= 3 || (r.single && r.inflight.count)) return NULL; }
     CVPixelBufferRef pb = NULL;
-    if (r.adaptor.pixelBufferPool) CVPixelBufferPoolCreatePixelBuffer(NULL, r.adaptor.pixelBufferPool, &pb);
+    CVPixelBufferPoolRef pool = r.adaptor.pixelBufferPool;   // read once: the adaptor makes it when the writer starts, and the property is nullable
+    if (pool) CVPixelBufferPoolCreatePixelBuffer(NULL, pool, &pb);
     else { NSDictionary *a = @{(id)kCVPixelBufferMetalCompatibilityKey: @YES, (id)kCVPixelBufferIOSurfacePropertiesKey: @{}};
            CVPixelBufferCreate(NULL, r.w, r.h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)a, &pb); }
     if (!pb) return NULL;
@@ -113,7 +115,7 @@ static DmRecording *rec_new(size_t w, size_t h) {
     DmRecording *r = [DmRecording new]; r.w = w; r.h = h; r.inflight = [NSMutableDictionary dictionary];
     r.q = dispatch_queue_create("nxnative.capture", DISPATCH_QUEUE_SERIAL);
     CVMetalTextureCacheRef c = NULL; id<MTLDevice> dev = MTLCreateSystemDefaultDevice();   // the device the graphics backend draws with (nvn_mtl.m takes the system default too)
-    if (CVMetalTextureCacheCreate(NULL, NULL, dev, NULL, &c)) return nil;
+    if (!dev || CVMetalTextureCacheCreate(NULL, NULL, dev, NULL, &c)) return nil;
     r.cache = c; return r;
 }
 static void rec_attach(DmRecording *r) { mtl_recorder m = {rec_next, rec_done, (__bridge void *)r}; mtl_record_set(&m); }

@@ -6,7 +6,7 @@ import re
 import unittest
 
 REPO = Path(__file__).resolve().parents[3]
-SOURCES = ['dm/host/front_mac.m', 'dm/host/quick_settings_mac.swift', 'dm/host/cheats_host.c']
+SOURCES = ['dm/host/front_mac.m', 'dm/host/quick_settings_mac.swift']
 NOT_SETTINGS = {'DMQuickSettings.section'}   # which sidebar section is open: remembered, not a setting
 
 

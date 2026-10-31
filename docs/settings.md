@@ -8,6 +8,7 @@ The screen before the game starts shows the settings the game supports. A settin
 - [Performance](#performance): [Frame buffering](#frame-buffering), [Metal 4 pipelines](#metal-4-pipelines), [Pipeline prebuild](#pipeline-prebuild), [Encode thread](#encode-thread), [Hold frames when late](#hold-frames-when-late), [Performance HUD](#performance-hud), [Reset to tested defaults](#reset-to-tested-defaults)
 - [The Mac settings window](#the-mac-settings-window): [Display mode](#display-mode)
 - [Quick settings on the Mac](#quick-settings-on-the-mac)
+- [TV](#tv)
 - [Settings in a file](#settings-in-a-file)
 
 ## Tested defaults
@@ -138,7 +139,7 @@ At start, before the game's first frame, the app prepares what it already knows:
 
 ### Pipeline prebuild
 
-Builds a stand-in for every pair of shaders the game has (15,767 for Breath of the Wild) and puts them into the pipeline archive, so that a scene you have never seen has a stand-in for each of its draws instead of a stutter. It runs before the game's first frame, behind a **Preparing pipelines** screen: the first start waits a few minutes for it, once, and so does the first start after a game update or an app update that brings new shaders. Every other start skips it. It needs Metal 4 pipelines.
+Builds a stand-in for every pair of shaders the game has (15,767 for Breath of the Wild) and puts them into the pipeline archive, so that a scene you have never seen has a stand-in for each of its draws instead of a stutter. It runs before the game's first frame, behind a **Preparing pipelines** screen: the first start waits a few minutes for it, once, and so does the first start after a game update or an app update that brings new shaders. Every other start skips it. It needs Metal 4 pipelines, and its row shows only while that option is on.
 
 Built in the background while playing instead, the stand-ins took an iPhone 17 Pro Max's GPU from about 13 to 15–18 ms a frame in Breath of the Wild, so the app does the work up front.
 
@@ -227,11 +228,15 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧�
 | Volume | – | Sound | – | `DMQuickSettings.volume.<game>` |
 | Screenshot and recording folder | – | Capture | – | `DMQuickSettings.captureDir.<game>` (unset: the game folder) |
 | Mods that are on | – | Mods | `DM_ROMFS_OVERLAY` replaces them | `DMQuickSettings.mods.<game>` |
-| Cheats that are on | – | Cheats | `DM_CHEATS_ON` | `DMQuickSettings.cheats.<game>` |
+| Cheats that are on | – | Cheats (and the Cheats menu) | `DM_CHEATS_ON` | not in the preferences: `<build ID>.enabled` beside the cheat file |
 | Keys and buttons | – | Controls | – | `DMQuickSettings.keys.<game>`, `DMQuickSettings.pad.<game>` (the maps), `DMQuickSettings.keyNames.<game>`, `DMQuickSettings.padNames.<game>` (their labels) |
 | Show this window at launch | the window's switch | – | `DM_LAUNCHER=0` skips it | `window.show` |
 
 `<game>` is the game's profile name; each game app has preferences of its own (`org.nxforge.<title ID>`). `dm/tools/tests/test_settings_table.py` checks that every key Quick settings saves is in this table.
+
+## TV
+
+Connect a TV or monitor by cable, or start Screen Mirroring to an Apple TV or AirPlay TV. The game fills it in 16:9 at up to 1080p and switches to **Docked**; the iPhone or iPad keeps the controls. Disconnect to bring the game back to the device in its earlier mode. AirPlay adds some delay; a cable has almost none.
 
 ## Settings in a file
 

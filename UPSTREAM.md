@@ -8,7 +8,7 @@ NXForge is a downstream of [nxnative](https://github.com/seedds/nxnative) (seedd
 - Keep the diff against upstream small. The rebrand touches only user-facing text, the bundle ID prefix and these policy files. Internal names stay as they are: source and module names, the `dm/` layout, `DM_*` environment variables, the launcher's `Contents/MacOS/nxnative`, the `~/Library/Application Support/nxnative` and `~/Library/Logs/nxnative` folders (moving them would strand existing saves), and the `NxNative.xcworkspace` default.
 - The NXForge Converter (`app/`) is NXForge's own, not a part of nxnative's tree, so it uses NXForge names throughout: its target and executable (`NXForgeConverter`), its settings folder (`~/Library/Application Support/NXForge Converter`, moved from `NxNative Converter` in 0.8.0) and its strings.
 - The nightly `upstream-check` workflow (`.github/workflows/upstream-check.yml`) test-merges nxnative's `main` and keeps one open issue labelled `upstream` with how many commits `main` is behind and which files a merge would conflict in. It never pushes; the merge is still done on a branch with a Mac build and a play test.
-- Add Mac-only features in new files where possible (as `quick_settings_mac.swift`, `capture_mac.m` and `cheats_host.c` are), with small hooks into shared files, so upstream merges stay easy.
+- Add Mac-only features in new files where possible (as `quick_settings_mac.swift` and `capture_mac.m` are), with small hooks into shared files, so upstream merges stay easy.
 
 ## Upstream: sending fixes back
 

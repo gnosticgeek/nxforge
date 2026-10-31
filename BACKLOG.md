@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-31 (0.8.0).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-31 (0.9.0).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
@@ -14,14 +14,19 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 
 | Item | Status | Notes |
 |---|---|---|
-| Full-screen 60 fps fix | Upstream PR open ([#194](https://github.com/seedds/nxnative/pull/194)), on fork main | Branch `claude/project-thread-ly6qu8` (e20c2a5). No display link while full screen on 120 Hz ProMotion; verified 3 runs on an M4 Pro. Overlaps upstream #198 (silent display-link fallback). Review fixes go on the fork branch. |
-| NXForge Converter app | Upstream PR open ([#209](https://github.com/seedds/nxnative/pull/209)), on fork main | Branch `mac-converter-app` (SwiftUI), merged into fork main 2026-10-26 and renamed NXForge Converter there (`org.nxforge.converter`; settings folder and executable name unchanged). The upstream PR keeps the NxNative name. |
-| Swift rewrite of the Converter | On fork main | SwiftUI app (macOS 26+, Liquid Glass): Convert, Builds, Toolchain, Settings, in `app/` since 0.2.0. #209 upstream still carries the earlier version under the NxNative name. |
+| Full-screen 60 fps fix | Closed upstream, on fork main | [#194](https://github.com/seedds/nxnative/pull/194) was closed on 2026-10-28: upstream keeps the display link in fullscreen with frame latency 2 (f748a055). NXForge still presents without the display link in fullscreen. |
+| NXForge Converter app | Declined upstream, on fork main | [#209](https://github.com/seedds/nxnative/pull/209) was closed on 2026-10-28: upstream wants front ends in their own repositories (CONTRIBUTING.md, "Graphical front ends"). The converter stays in `app/`. |
+| Swift rewrite of the Converter | On fork main | SwiftUI app (macOS 26+, Liquid Glass): Convert, Builds, Toolchain, Settings, in `app/` since 0.2.0. |
 | Rumble fix | Mostly superseded by upstream | Fork PR #1 (merge 5bc2563). Vibration handles before the controller connects, plus a plain Core Haptics player fallback for controllers that refuse advanced players (8BitDo SN30 Pro). Verified in MvDK and Curse of the Moon. PR body drafted (`nxnative-pr/rumble-pr.md` in project files). Since the 0.6.0 merge upstream's plain-player fallback (#363) and startup handles (#246) replace ours; only the permission before a controller connects is still NXForge's, a small PR candidate. |
 | Rewriter jump-table fix (49a670a) | Superseded by upstream | Upstream follows the copy to the function start (Mario + Rabbids Kingdom Battle's GLSLC, the same code as Curse of the Moon's); the 0.6.0 merge takes theirs. Nothing to send. |
 | Filters + Quick settings sidebar | On hold for upstream | Tom holds the upstream PR until the sidebar is finished (see the next section). |
-| Cheats engine | On fork main, not sent upstream | Goes upstream after the sidebar, or alongside it. |
-| Merge upstream main | On fork main (0.7.1) | Last merge: seedds/nxnative main at 6d880d2 (102 commits since beea17c), fork PR #26, released in 0.7.1. Choices are in CHANGELOG 0.7.1. The nightly upstream check (`.github/workflows/upstream-check.yml`, 0.8.0) now flags the next gap and its conflicts. |
+| Cheats engine | Replaced by upstream's (0.9.0) | Upstream's `hle_cheats.c` (PR #406) took over from NXForge's Markdown engine; the sidebar's Cheats section now shows upstream's rows, and `dm/tools/cheats_md.py txt` converts old Markdown files. |
+| Merge upstream main | On branch `release-0.9.0` | Last merge: seedds/nxnative main at 2716f78 (34 commits since 6d880d2), released in 0.9.0. Choices are in CHANGELOG 0.9.0. |
+| China-region profanity check (Cruis'n Blast) | Upstream PR open ([#789](https://github.com/seedds/nxnative/pull/789)), on fork main | Branch `contrib/ngc-china-profanity`, from c86bc9b. |
+| pso_offline free-space check | Upstream PR open ([#790](https://github.com/seedds/nxnative/pull/790)), on fork main | Branch `contrib/pso-offline-free-space`, from fde1e63. |
+| Unity 6000.3 shader layouts | Upstream PR open ([#791](https://github.com/seedds/nxnative/pull/791)), on fork main | Branch `contrib/unity-6000-3-shaders`, from f6388f2. |
+| bench.py offline pipeline archive | Upstream PR open ([#792](https://github.com/seedds/nxnative/pull/792)), on fork main | Branch `contrib/bench-pso-bundle`, from 2309513. |
+| Next upstream candidates | Next | Anisotropic filtering floor, untagged and multi-application XCI dumps, the shader build speed-up with a shared Metal cache, the rumble permission before a controller connects. The present filters and MetalFX defaults need an issue first (over about 1,000 lines). |
 
 ## Quick settings sidebar and filters
 
@@ -106,17 +111,18 @@ really has to be serialised.
 
 ## Cheats and mods
 
-Cheats engine merged via fork PR #2: dmnt codes in Markdown keyed by title ID
-and main build ID, Atmosphere `.txt` also read, sidebar switch per cheat.
-Verified on Curse of the Moon 1.1.1.
+Since 0.9.0 the cheats are upstream's engine (`hle_cheats.c`: Atmosphère `.txt`
+files, the Cheats menu and panel), with a switch per cheat in the sidebar too
+([docs/cheats.md](docs/cheats.md)). NXForge's own Markdown engine (0.4.0 to 0.8.0)
+was verified on Curse of the Moon 1.1.1.
 
 | Item | Status | Notes |
 |---|---|---|
 | More cheats per game | Next | Port and verify more codes; Curse of the Moon has infinite HP, infinite lives and 99 weapon points. |
 | Merge several matching cheat files | Idea | |
-| GitHub cheat source ("Get cheats") | Idea | Fetch Markdown cheat files by title and build ID from a GitHub repo. |
-| exefs / IPS / pchtxt mod loader | Next | Build on the cheats engine's load-time code writes. Unlocks most 60 fps and resolution mods. |
-| iOS cheats | Research | Code patches only work on Mac (iOS code pages are signed); data cheats might work. |
+| GitHub cheat source ("Get cheats") | Idea | Fetch `.txt` cheat files by title and build ID from a GitHub repo. |
+| exefs / IPS / pchtxt mod loader | Next | Upstream's engine writes code through main's writable alias and checks the rewriter's `main.changed.tsv`; a loader could do the same. Unlocks most 60 fps and resolution mods. |
+| iOS cheats | From upstream | Upstream's engine runs data cheats on the iPhone; code writes need the writable alias, which the iPhone has not. |
 
 ## Performance and graphics
 
