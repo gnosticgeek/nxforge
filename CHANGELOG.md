@@ -2,6 +2,28 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.8.0 (2026-10-31)
+
+Quality and consistency: checks that catch problems before a release, one place for each kind of fact, and the converter's last old names; no upstream merge.
+
+**Converter**
+- **NXForge names throughout**: the Toolchain page's engine row is "NXForge engine" ("No NXForge engine checkout found" when it is missing), the executable is `NXForgeConverter`, and a game folder's build lock is `.nxforge-converter.lock`. Settings, build records and the converter's own Python move to `~/Library/Application Support/NXForge Converter` on the first start, with a link left at the old `NxNative Converter` name so saved paths still work. A new clone of the engine goes to its `nxforge` folder; an existing `nxnative` one is still found.
+- **On NXForge** in a build's details on the Builds page: the last time that game was played on NXForge, with the release, version, Mac and result, from the engine's `docs/nxforge-games.tsv`.
+- Unit tests (`swift test --package-path app`), and CI now builds, tests and bundles the converter and starts its `--check`.
+
+**In the game**
+- Turning MetalFX on in Quick settings no longer stores it as a choice. It is the Mac default, and the settings window stores only choices that differ from the default, so a later build's default reaches the game again.
+
+**Project**
+- **Played on NXForge**: a table in README.md of the games played on a Mac with an NXForge release (version, release, Mac, date, result), written from `docs/nxforge-games.tsv` by `dm/tools/nxforge_games.py`.
+- **Releases from tags**: pushing a `vX.Y.Z` tag publishes the GitHub release with its CHANGELOG entry (`.github/workflows/release.yml`), after `scripts/release_check.py` checks the entry and that BACKLOG.md was updated; CHANGELOG headings are linted on every PR. UPSTREAM.md's Versions section lists the steps.
+- **Nightly upstream check**: `.github/workflows/upstream-check.yml` test-merges nxnative's `main` every night and keeps one issue labelled `upstream` current with how far behind `main` is and which files would conflict.
+- **Mac smoke test**: `scripts/smoke_mac.sh` runs the host and GPU tests, the converter's tests and a minute of each game build given, then prints the hands-on list in `docs/release-checklist.md`. `scripts/bench.py --idle <seconds>` runs a game without a route.
+- **Frame times per release**: `scripts/perf_release.py` stores each release's measurements in `docs/perf/<release>.tsv` and compares two releases ([docs/performance.md](docs/performance.md)).
+- **Mac host warnings**: CI fails on a new Mac host compiler warning (`dm/tools/host_warnings.py`, a ratchet like the Python lint's).
+- **Settings in one table**: docs/settings.md's new "Quick settings on the Mac" lists every Mac setting, where it is changed and the preference it is kept in; a test keeps it in step with the code.
+- BACKLOG.md is up to date again, and each release PR updates it.
+
 ## 0.7.1 (2026-10-30)
 
 Merges nxnative's `main` up to `6d880d2` (102 commits since `beea17c`, 2026-10-29 and 2026-10-30). The notes below are what changes for NXForge.

@@ -57,6 +57,20 @@ From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-w
 | Nightly upstream check | On fork main (0.8.0) | NX2Apple and the Launcher run a daily job that test-merges upstream and opens a PR, or an issue naming the conflict. Would have flagged the 245-commit gap early. |
 | Per-game launch settings | On fork main (0.6.0) | Game language, frame rate, docked or handheld and render scale without a rebuild: upstream's Mac settings window does it. Otherwise a Game section in Quick settings writing the game's `env.txt`. |
 
+## Quality and consistency
+
+From the list of ten on 2026-10-31, all in 0.8.0.
+
+| Item | Status | Notes |
+|---|---|---|
+| Converter in CI | On fork main (0.8.0) | `converter` job in tests.yml: build, `swift test`, bundle, `--check`. |
+| Releases from tags and a release check | On fork main (0.8.0) | `release.yml`, `scripts/release_check.py`. |
+| Mac smoke test and hands-on list | On fork main (0.8.0) | `scripts/smoke_mac.sh`, `docs/release-checklist.md`. Run before each tag. |
+| Nightly upstream check | On fork main (0.8.0) | `upstream-check.yml`; one issue labelled `upstream`. |
+| Settings table and test | On fork main (0.8.0) | docs/settings.md, Quick settings on the Mac. |
+| Played on NXForge | On fork main (0.8.0) | `docs/nxforge-games.tsv` → README and the converter's Builds page. Add a row after each play test. |
+| Frame times per release | On fork main (0.8.0) | `scripts/perf_release.py`, `docs/perf/`. More games with `bench.tsv` routes would make it sharper. |
+
 ## Save states and rewind
 
 **Research.** Not feasible the simple way. Emulators save state by
