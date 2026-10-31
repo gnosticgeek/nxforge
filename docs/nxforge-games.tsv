@@ -1,6 +1,6 @@
-# Games played on NXForge: what someone actually played on a Mac, with which NXForge release, and how it went. README.md's "Played on NXForge"
-# table (dm/tools/nxforge_games.py writes it) and the converter's Builds page (Verified on NXForge) read this file. One row per game, the newest
-# play replacing the older one. Add a row after playing a game, then run `python3 dm/tools/nxforge_games.py`.
+# Games played on NXForge: what someone actually played on a Mac, with which NXForge release, and how it went. The converter's Builds page
+# (Verified on NXForge) reads this file. One row per game, the newest play replacing the older one. Add a row after playing a game, then run
+# `python3 dm/tools/nxforge_games.py` to check it.
 # Columns, separated by tabs:
 #   title_id  the base game's title ID (16 hex digits)
 #   game      its name

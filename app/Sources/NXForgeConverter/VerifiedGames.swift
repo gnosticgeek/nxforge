@@ -1,5 +1,5 @@
-// Games played on NXForge (docs/nxforge-games.tsv in the engine checkout, the same table README.md's "Played on NXForge" is written from):
-// the Builds page shows a built game's row, so the converter and the README say the same about it.
+// Games played on NXForge (docs/nxforge-games.tsv in the engine checkout):
+// the Builds page shows a built game's row.
 import Foundation
 
 struct VerifiedGame: Hashable {

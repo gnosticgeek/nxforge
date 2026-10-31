@@ -73,7 +73,7 @@ From the list of ten on 2026-10-31, all in 0.8.0.
 | Mac smoke test and hands-on list | On fork main (0.8.0) | `scripts/smoke_mac.sh`, `docs/release-checklist.md`. Run before each tag. |
 | Nightly upstream check | On fork main (0.8.0) | `upstream-check.yml`; one issue labelled `upstream`. |
 | Settings table and test | On fork main (0.8.0) | docs/settings.md, Quick settings on the Mac. |
-| Played on NXForge | On fork main (0.8.0) | `docs/nxforge-games.tsv` → README and the converter's Builds page. Add a row after each play test. |
+| Played on NXForge | On fork main (0.8.0) | `docs/nxforge-games.tsv` → the converter's Builds page (dropped from the README). Add a row after each play test. |
 | Frame times per release | On fork main (0.8.0) | `scripts/perf_release.py`, `docs/perf/`. More games with `bench.tsv` routes would make it sharper. |
 
 ## Save states and rewind

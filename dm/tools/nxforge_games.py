@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-# Writes README.md's "Played on NXForge" table from docs/nxforge-games.tsv (the games someone played on a Mac, with the NXForge release, the Mac,
-# the date and the result), between its two marker comments. --check fails when the README is not what the table gives, or a row is malformed
-# (dm/tools/tests/test_nxforge_games.py runs it in CI). The converter reads the same file (app/Sources/NXForgeConverter/VerifiedGames.swift).
+# Checks docs/nxforge-games.tsv (the games someone played on a Mac, with the NXForge release, the Mac, the date and the result): fails when a row
+# is malformed (dm/tools/tests/test_nxforge_games.py runs it in CI). The converter's Builds page reads the file
+# (app/Sources/NXForgeConverter/VerifiedGames.swift).
 import argparse, pathlib, re, sys
 from datetime import date
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 TABLE = REPO / 'docs/nxforge-games.tsv'
-README = REPO / 'README.md'
-START = '<!-- nxforge-games: written by dm/tools/nxforge_games.py from docs/nxforge-games.tsv; change the table, then run it -->'
-END = '<!-- end of nxforge-games -->'
 COLUMNS = ['title_id', 'game', 'version', 'release', 'mac', 'date', 'result', 'note']
 RESULTS = {'plays': '✅ plays', 'boots': '🟡 boots', 'broken': '❌ broken'}
 
@@ -37,36 +34,14 @@ def rows(text):
     return out, problems
 
 
-def table(rs):
-    lines = [START, '| Game | Version | Result | NXForge | Mac | Played | Notes |', '|---|---|---|---|---|---|---|']
-    for r in sorted(rs, key=lambda r: r['game'].lower()):
-        game = f'[{r["game"]}](dm/games/{r["title_id"]}/README.md)' if (REPO / 'dm/games' / r['title_id'] / 'README.md').is_file() else r['game']
-        lines.append(f'| {game} | {"–" if r["version"] == "-" else r["version"]} | {RESULTS[r["result"]]} | {r["release"]} | {r["mac"]} | {r["date"]} | {r["note"]} |')
-    lines.append(END)
-    return '\n'.join(lines)
-
-
-def render(readme, rs):
-    if START not in readme or END not in readme: raise SystemExit(f'README.md lacks the markers {START!r} … {END!r}')
-    a, rest = readme.split(START, 1)
-    _, b = rest.split(END, 1)
-    return a + table(rs) + b
-
-
 def main(argv=None):
-    ap = argparse.ArgumentParser(description='Write README.md\'s "Played on NXForge" table from docs/nxforge-games.tsv.')
-    ap.add_argument('--check', action='store_true', help='fail when README.md is out of date or the table has a problem; change nothing')
-    a = ap.parse_args(argv)
+    ap = argparse.ArgumentParser(description='Check docs/nxforge-games.tsv, the games played on NXForge.')
+    ap.add_argument('--check', action='store_true', help='kept for CI; checking is all this does')
+    ap.parse_args(argv)
     rs, problems = rows(TABLE.read_text(encoding='utf-8'))
     for p in problems: print(f'✗ {p}')
     if problems: return 1
-    readme = README.read_text(encoding='utf-8')
-    new = render(readme, rs)
-    if a.check:
-        if new != readme: print('✗ README.md\'s "Played on NXForge" table is out of date: run python3 dm/tools/nxforge_games.py'); return 1
-        print(f'✓ {len(rs)} game(s)'); return 0
-    if new != readme: README.write_text(new, encoding='utf-8')
-    print(f'README.md: {len(rs)} game(s) played on NXForge'); return 0
+    print(f'✓ {len(rs)} game(s)'); return 0
 
 
 if __name__ == '__main__':
