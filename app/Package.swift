@@ -11,5 +11,11 @@ let package = Package(
             path: "Sources/NxNativeConverter",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .testTarget(
+            name: "ConverterTests",
+            dependencies: ["NxNativeConverter"],
+            path: "Tests/ConverterTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

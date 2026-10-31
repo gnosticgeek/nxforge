@@ -30,4 +30,6 @@ app/.build/release/NxNativeConverter --engine "<game folder>"
 app/.build/release/NxNativeConverter --verify "<game>.app"
 ```
 
+The unit tests (release names, title IDs, the settings file) run with `swift test --package-path app`; CI runs them, builds the bundle and starts `--check` in the `converter` job of `.github/workflows/tests.yml`.
+
 For checking the window: `NXC_SNAPSHOT=<file.png>` saves a picture of it a few seconds after it opens, writes its window number to `<file.png>.wid` for `screencapture -l`, and quits (`NXC_PAGE=builds`, `toolchain` or `settings` for another page; `NXC_AUTOBUILD=1` builds the chosen folder first). `NXC_SUPPORT_DIR=<folder>` keeps settings and build records there instead, to test beside a copy in use.
