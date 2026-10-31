@@ -22,7 +22,7 @@ NSString *capture_folder(int video) {
 }
 static NSString *with_ext(NSString *s, NSString *ext) { return [s stringByAppendingPathExtension:ext] ?: s; }   // nil only for an extension it cannot add
 static NSString *capture_path(int video, const char *game, NSString *ext) {
-    NSString *dir = capture_folder(video);
+    NSString *dir = capture_folder(video) ?: NSHomeDirectory();   // never nil, which clang-tidy cannot see through capture_folder
     [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSDateFormatter *f = [NSDateFormatter new]; f.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
     NSString *name = [[NSString stringWithFormat:@"%s %@", game, [f stringFromDate:NSDate.date]] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
