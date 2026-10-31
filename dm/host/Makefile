@@ -37,7 +37,7 @@ QS_OBJ=gen/quick_settings_mac.o
 $(QS_OBJ): quick_settings_mac.swift quick_settings_mac.h front.h ../mac/min_os.mk
 	@mkdir -p gen
 	swiftc -O -target arm64-apple-macos$(MACOS_MIN) -parse-as-library -module-name dmquick -import-objc-header quick_settings_mac.h -c quick_settings_mac.swift -o $@
-SWIFT_LD=-L$(shell xcrun --show-sdk-path)/usr/lib/swift -L$(dir $(shell xcrun -f swiftc))../lib/swift/macosx -Xlinker -rpath -Xlinker /usr/lib/swift
+SWIFT_LD=-L$(shell xcrun --show-sdk-path)/usr/lib/swift -L$(dir $(shell xcrun -f swiftc))../lib/swift/macosx -Wl,-rpath,/usr/lib/swift
 # The host's own Metal shaders (dm/gfx/msl/*.metal) compiled for MSL_SDK into gen/msl-<sdk>/host_msl_gen.h (dm/gfx/tools/host_msl.py; dm/gfx/nvn/host_msl.m loads them), so the host
 # compiles no MSL at run time. The iOS build (dm/ios/tools/gen_build.py) makes it with MSL_SDK=iphoneos, for the app's deployment target (MSL_MIN_iphoneos, as project.yml)
 MSL_SDK ?= macosx
