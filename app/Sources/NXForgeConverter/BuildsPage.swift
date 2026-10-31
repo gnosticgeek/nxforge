@@ -188,6 +188,17 @@ struct BuildDetail: View {
                     .help("From docs/nxforge-games.tsv: the last time this game was played on NXForge. \(v.note)")
                     Divider()
                 }
+                if let rec = FrameTimes.latest(app: build.app, titleID: VerifiedGames.titleID(ofApp: build.app)) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Frame times").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+                        Text(rec.summary.line).lineLimit(1).truncationMode(.tail)
+                        Spacer()
+                        Button { reveal(rec.file.path) } label: { Image(systemName: "folder") }.buttonStyle(.glass)
+                    }
+                    .padding(.vertical, 6)
+                    .help("The newest recording, \(rec.file.lastPathComponent): frames per second, the median and 99th-percentile frame time, frames over \(Int(FrameTimes.Summary.hitchMs)) ms and frames never shown. Record frame times is in the game's Quick settings › Performance.")
+                    Divider()
+                }
                 HStack {
                     Text("Location").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
                     Text(build.app.url.deletingLastPathComponent().path.tildePath).lineLimit(1).truncationMode(.middle)

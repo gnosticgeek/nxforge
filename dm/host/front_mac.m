@@ -398,6 +398,23 @@ static void mods_start(void) {   // main thread, before the guest runs (the game
 @end
 static DmSettings *g_opts;
 static void qs_close(void) { if (g_menu_open) [g_opts toggle:nil]; }
+// Record frame times (Quick settings › Performance, from the next launch; after NX2Apple's FrameTimes.swift, MIT): the host's per-frame timing rows (hle_nvn.c DM_NVN_TSV,
+// timing rows only) go to a new file per launch in the game folder's "Frame times" (DM_GAME_FOLDER), else <DM_ROOT>/frame-times (Application Support/nxnative/<title ID>),
+// named like the captures. DM_FRAME_TIMES=1 / 0 turns it on or off for one run without saving; a DM_NVN_TSV the environment sets wins over both. scripts/bench.py's
+// percentiles, and the NXForge Converter's Builds page sums the newest recording up the same way
+static void frame_times_begin(void) {
+    if (getenv("DM_NVN_TSV")) return;
+    const char *e = getenv("DM_FRAME_TIMES");
+    if (!(e ? atoi(e) != 0 : [NSUserDefaults.standardUserDefaults boolForKey:opt_key(@"frameTimes")])) return;
+    const char *g = getenv("DM_GAME_FOLDER"), *root = getenv("DM_ROOT");
+    NSString *dir = g && *g ? [@(g) stringByAppendingPathComponent:@"Frame times"] : root && *root ? [@(root) stringByAppendingPathComponent:@"frame-times"] : nil;
+    if (!dir || ![NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil]) { LOG("[RED] front end: no folder for frame times (DM_GAME_FOLDER and DM_ROOT unset or not writable)"); return; }
+    NSDateFormatter *f = [NSDateFormatter new]; f.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
+    NSString *name = [[NSString stringWithFormat:@"%s %@.tsv", DM_GAME_NAME, [f stringFromDate:NSDate.date]] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
+    NSString *path = [dir stringByAppendingPathComponent:name];
+    setenv("DM_NVN_TSV", path.fileSystemRepresentation, 1); setenv("DM_NVN_TSV_CALLS", "0", 0);
+    LOG("front end: recording frame times to %s", path.fileSystemRepresentation);
+}
 static void qs_toggle(void) { [g_opts toggle:nil]; }
 static void qs_fps(void) { [g_opts fpsCounter]; }
 static void toast(NSString *msg) { dm_qs_toast((__bridge void *)g_win.contentView, msg.UTF8String); }
@@ -1410,6 +1427,7 @@ void front_run(void (*guest)(void)) {
     (void)activity;   // held for the process's life, never read
     if (!getenv("DM_WINDOW")) { guest(); return; }
     @autoreleasepool {
+        frame_times_begin();   // before the first present opens DM_NVN_TSV
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
         NSRect r = NSMakeRect(0, 0, 1280, 720);

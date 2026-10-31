@@ -27,7 +27,7 @@ private let keyDefaults = ["J", "K", "U", "I", "F", "G", "Q", "E", "Z", "C", "Re
 private let padDefaults = ["Right button", "Bottom button", "Top button", "Left button", "Left stick press", "Right stick press", "Left shoulder", "Right shoulder",
                            "Left trigger", "Right trigger", "Menu", "Options"]
 // What the controller and keyboard selection can be on (dm_qs_nav), in the order the sidebar shows it
-enum Nav: Hashable { case header(Int), filter, strength, scanlines, upscale, aa, aniso, fps, corner, volume, shot, record, mod(String), modsOpen, modsRefresh, showFolder, changeFolder, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume, quit }
+enum Nav: Hashable { case header(Int), filter, strength, scanlines, upscale, aa, aniso, fps, corner, frameTimes, frameTimesFolder, volume, shot, record, mod(String), modsOpen, modsRefresh, showFolder, changeFolder, cheat(Int), cheatsOpen, cheatsRefresh, key(Int), pad(Int), resetControls, resume, quit }
 private let sectionOrder = [0, 1, 5, 6, 2, 3, 7]
 struct Cheat: Identifiable {
     let id: Int, name: String, why: String, note: String, kind: Int32, on: Bool, flags: Int32
@@ -49,6 +49,7 @@ final class QuickSettings: ObservableObject {
     @Published var scanline = 0
     @Published var fps = false
     @Published var corner = 0
+    @Published var frameTimes = false   // record from the next launch
     @Published var mods: [String] = []
     @Published var wanted: [String] = []
     @Published var cheats: [Cheat] = []
@@ -84,6 +85,7 @@ final class QuickSettings: ObservableObject {
         let d = UserDefaults.standard
         if let e = env["DM_SHOW_FPS"] { fps = (Int(e) ?? 0) != 0 } else { fps = d.bool(forKey: optKey("fps")) }
         corner = min(max(d.integer(forKey: optKey("fpsPos")), 0), 3)
+        if let e = env["DM_FRAME_TIMES"] { frameTimes = (Int(e) ?? 0) != 0 } else { frameTimes = d.bool(forKey: optKey("frameTimes")) }
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
         volume = Double(dm_audio_volume()); recording = front_qs_recording() != 0
         assigning = Int(front_qs_assigning())
@@ -143,6 +145,23 @@ final class QuickSettings: ObservableObject {
     }
     func setFps(_ on: Bool) { fps = on; if env["DM_SHOW_FPS"] == nil { UserDefaults.standard.set(on, forKey: optKey("fps")) }; fpsChanged() }
     func setCorner(_ c: Int) { corner = c; UserDefaults.standard.set(c, forKey: optKey("fpsPos")); fpsChanged() }
+    /// The file this launch records to (front_mac.m frame_times_begin), nil when it records nothing
+    var frameTimesNow: String? { env["DM_NVN_TSV"].flatMap { $0.isEmpty ? nil : $0 } }
+    /// Where Record frame times writes: the game folder's Frame times, else <DM_ROOT>/frame-times (as frame_times_begin)
+    var frameTimesDir: String? {
+        if let g = env["DM_GAME_FOLDER"], !g.isEmpty { return (g as NSString).appendingPathComponent("Frame times") }
+        if let r = env["DM_ROOT"], !r.isEmpty { return (r as NSString).appendingPathComponent("frame-times") }
+        return nil
+    }
+    func setFrameTimes(_ on: Bool) {
+        frameTimes = on; if env["DM_FRAME_TIMES"] == nil { UserDefaults.standard.set(on, forKey: optKey("frameTimes")) }
+        if let v = NSApp.keyWindow?.contentView { dm_qs_toast(Unmanaged.passUnretained(v).toOpaque(), on ? "Frame times record from the next launch" : "Frame times stop from the next launch") }
+    }
+    func showFrameTimes() {
+        guard let dir = frameTimesNow.map({ ($0 as NSString).deletingLastPathComponent }) ?? frameTimesDir else { return }
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(URL(fileURLWithPath: dir))
+    }
     func setMod(_ n: String, _ on: Bool) {
         wanted.removeAll { $0 == n }; if on { wanted.append(n) }
         UserDefaults.standard.set(wanted, forKey: optKey("mods"))
@@ -171,7 +190,7 @@ final class QuickSettings: ObservableObject {
             r.append(.header(i)); guard open == i else { continue }
             switch i {
             case 0: r += [.filter, .strength, .scanlines, .upscale, .aa, .aniso]
-            case 1: r += [.fps, .corner]
+            case 1: r += [.fps, .corner, .frameTimes, .frameTimesFolder]
             case 5: r += [.volume]
             case 6: r += [.shot, .record, .showFolder, .changeFolder]
             case 2: r += mods.map { .mod($0) } + [.modsOpen, .modsRefresh]
@@ -212,6 +231,7 @@ final class QuickSettings: ObservableObject {
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[min(max(i + d, 0), anisoSteps.count - 1)]) }
         case .fps: setFps(d > 0)
         case .corner: if fps { setCorner((corner + d + 4) % 4) }
+        case .frameTimes: setFrameTimes(d > 0)
         case .volume: setVolume(min(max(volume + 0.05 * Double(d), 0), 1))
         case .mod(let name): setMod(name, d > 0)
         case .cheat(let id): if let c = cheats.first(where: { $0.id == id }), c.kind == 0 { setCheat(c, d > 0) }
@@ -228,6 +248,8 @@ final class QuickSettings: ObservableObject {
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[(i + 1) % anisoSteps.count]) }
         case .fps: setFps(!fps)
         case .corner: if fps { setCorner((corner + 1) % 4) }
+        case .frameTimes: setFrameTimes(!frameTimes)
+        case .frameTimesFolder: showFrameTimes()
         case .shot: front_qs_screenshot()
         case .showFolder: showCaptureFolder()
         case .changeFolder: chooseCaptureFolder()
@@ -308,7 +330,7 @@ struct QuickSettingsView: View {
             ScrollViewReader { proxy in ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     section(0, "Graphics & shaders", "display", summary: m.filter == 0 ? "Off" : filterNames[m.filter]) { graphics }
-                    section(1, "Performance", "chart.bar.fill", summary: m.fps ? "FPS on" : "FPS off") { performance }
+                    section(1, "Performance", "chart.bar.fill", summary: (m.fps ? "FPS on" : "FPS off") + (m.frameTimesNow != nil ? " · recording" : "")) { performance }
                     section(5, "Sound", "speaker.wave.2.fill", summary: "\(Int((m.volume * 100).rounded()))%") { sound }
                     section(6, "Capture", "camera", summary: m.recording ? "Recording" : "", badge: m.recording) { capture }
                     section(2, "Mods", "puzzlepiece.extension", summary: m.modsOn == 0 ? "None enabled" : "\(m.modsOn) enabled", badge: m.modsOn > 0) { mods }
@@ -413,6 +435,13 @@ struct QuickSettingsView: View {
                     ForEach(0..<4) { Text(cornerNames[$0]).tag($0) }
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(!m.fps)
             }.nav(m, .corner)
+            Row(title: "Record frame times") { Toggle("Record frame times", isOn: Binding(get: { m.frameTimes }, set: { m.setFrameTimes($0) })).toggleStyle(.switch).labelsHidden() }.nav(m, .frameTimes)
+            Group {
+                if let now = m.frameTimesNow { Label("Recording this launch: \((now as NSString).lastPathComponent)", systemImage: "record.circle").foregroundStyle(.red) }
+                else { Text("Each launch writes a file of frame times; the NXForge Converter's Builds page sums the newest one up. Applies when the game next starts.").foregroundStyle(.tertiary) }
+            }.font(.caption).fixedSize(horizontal: false, vertical: true)
+            Button { m.showFrameTimes() } label: { Label("Show frame times", systemImage: "folder").frame(maxWidth: .infinity) }.nav(m, .frameTimesFolder)
+                .modifier(GlassButton(prominent: false)).controlSize(.large)
         }
     }
     private var mods: some View {

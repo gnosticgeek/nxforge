@@ -119,3 +119,32 @@ import Testing
         #expect(Engine.affects("dm/games/0100F2C0115B6000/game.tsv", titleID: nil))
     }
 }
+
+@Suite struct FrameTimeRecordings {
+    @Test func parseAndSum() {
+        var text = "# kind: nvn-per-frame\nframe\tname\tvalue\n"
+        for n in 0..<100 {
+            let ms = n == 50 ? 80.0 : 16.7
+            text += "\(n)\t@t_s\t\(Double(n) * 0.0167)\n\(n)\t@frame_ms\t\(ms)\n\(n)\t@presented_ms\t\(n == 60 ? -1 : 16.7)\n"
+        }
+        text += "100\t@t_s\t1.6"   // a row the host is still writing: no frame time, skipped
+        let frames = FrameTimes.parse(text)
+        #expect(frames.count == 100)
+        let s = FrameTimes.Summary(frames)
+        #expect(s?.hitches == 1)
+        #expect(s?.dropped == 1)
+        #expect(s?.frameP50 == 16.7)
+        #expect(s?.frameMax == 80)
+        #expect(s?.line.contains("1 hitch ·") == true)
+    }
+
+    @Test func percentileAsBench() {
+        #expect(FrameTimes.percentile([1, 2, 3, 4], 50) == 2)
+        #expect(FrameTimes.percentile([1, 2, 3, 4], 99) == 4)
+        #expect(FrameTimes.percentile([], 50) == nil)
+    }
+
+    @Test func noFramesNoSummary() {
+        #expect(FrameTimes.Summary(FrameTimes.parse("frame\tname\tvalue\n")) == nil)
+    }
+}
