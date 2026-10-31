@@ -24,7 +24,8 @@ def rel(path):
         except ValueError: pass
     s = p.as_posix()
     i = s.find('dm/')   # make -C dm/host prints paths relative to that folder, CI's checkout is absolute
-    return s[i:] if i >= 0 else ('dm/host/' + s if not s.startswith('/') else s)
+    s = s[i:] if i >= 0 else ('dm/host/' + s if not s.startswith('/') else s)
+    return os.path.normpath(s)   # dm/host/../gfx/nvn/x.m → dm/gfx/nvn/x.m
 
 
 def parse(text):

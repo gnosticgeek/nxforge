@@ -555,6 +555,7 @@ __attribute__((constructor)) static void prefs_from_old_id(void) {
 void front_run(void (*guest)(void)) {
     // A game: tell macOS its work is latency-critical, so the system does not trade its frame time for power while the frame rate is capped
     static id activity; activity = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"game"];
+    (void)activity;   // held for the process's life, never read
     if (!getenv("DM_WINDOW")) { guest(); return; }
     @autoreleasepool {
         [NSApplication sharedApplication];
