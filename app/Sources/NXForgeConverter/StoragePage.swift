@@ -130,7 +130,7 @@ struct StoragePage: View {
     var reclaimable: Int64 { items.filter(\.deletable).reduce(0) { $0 + $1.bytes } }
 
     func volumeCard(_ v: VolumeInfo) -> some View {
-        Card(padding: 14) {
+        Card(padding: 14, fillHeight: true) {
             Label(v.name, systemImage: "internaldrive").font(.headline)
             ProgressView(value: Double(max(v.total - v.free, 0)), total: Double(max(v.total, 1)))
                 .tint(v.free < Disk.warnBelow ? .orange : .accentColor)
@@ -139,7 +139,7 @@ struct StoragePage: View {
     }
 
     var reclaimCard: some View {
-        Card(padding: 14) {
+        Card(padding: 14, fillHeight: true) {
             Label("Can be deleted", systemImage: "trash").font(.headline)
             Text(scanning && items.isEmpty ? "…" : Disk.gb(reclaimable)).font(.title.weight(.semibold)).monospacedDigit()
             Text("Build caches, older app copies and the shader cache").foregroundStyle(.secondary).lineLimit(1)
