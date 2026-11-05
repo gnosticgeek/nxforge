@@ -83,6 +83,10 @@ final class BuildRun {
 
     nonisolated private static func perform(_ job: Job, run r: BuildRun?) -> Result<String, ConverterError> {
         guard let r else { return .failure(ConverterError("cancelled")) }
+        // NXForge: while a build runs, macOS must not nap the app or let the Mac idle-sleep, and the build keeps user-initiated priority
+        // (performance cores) when the window is in the background; without this a hidden converter's build can drift onto the efficiency cores
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "Building a game app")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
         let say: (String) -> Void = { m in DispatchQueue.main.async { r.log.append(m); r.onChange?() } }
         do {
             let lock = try FolderLock(job.gameDir)
@@ -157,6 +161,7 @@ final class BuildRun {
         if env["DOTNET_ROOT"] == nil, let d = job.env.dotnetRoot { env["DOTNET_ROOT"] = d }
         p.environment = env
         p.standardInput = FileHandle.nullDevice
+        p.qualityOfService = .userInitiated   // inherited by the script's compilers (metal, metal-tt, the translator): the scheduler keeps them on the performance cores first
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err

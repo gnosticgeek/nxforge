@@ -1511,7 +1511,10 @@ for key in keys:
     if hit: cache_hits.add(key)
     else: jobs[key], c1s[key] = job_for(key, name, rec_of(key)[1], w)
 misses = [key for key in keys if key not in cache_hits]
-chunks = [misses[i::NJ] for i in range(NJ)]
+# NXForge: more, smaller translator runs than workers (a shared queue): with one run per worker, the runs that land on the efficiency cores finished last and held up the
+# step's end. Each run keeps at least XLATE_MIN shaders, so the translator's start-up stays a small part of it
+XLATE_MIN = 64
+chunks = [misses[i::n] for n in [max(1, min(4 * NJ, len(misses) // XLATE_MIN))] for i in range(n)]
 def xl(ch):
     jp = os.path.join(w, f'job_{abs(hash(ch[0]))}.json'); json.dump([jobs[k] for k in ch], open(jp, 'w'))
     return spawn([XLATE, jp, w], capture_output=True, text=True)
@@ -1532,8 +1535,33 @@ def fin(key):
     result = (key,) + finish(key, w, jobs[key], c1s[key])
     if result[1] == 'ok': publish_cache(key, digests[key], rule_fps[key], CODE_FP)
     return result
-with cf.ThreadPoolExecutor(NJ) as ex:   # two phases: paired vertex shaders read their pixel shaders' MSL (vs_pad), so they go last
-    res = list(ex.map(fin, [k for k in keys if k not in PAIRS])) + list(ex.map(fin, [k for k in keys if k in PAIRS]))
+def finish_all(keys):
+    """fin() of every key on NJ threads, in the order of keys. A paired vertex shader reads its pixel shaders' MSL (vs_pad), so it starts once those of them built here
+    are finished. NXForge: it waits for those alone, not for every unpaired shader (a barrier that left the cores idle at the step's end), and the shaders to compile
+    go first, so the slow ones are not at the end of the queue behind cache hits"""
+    paired = [k for k in keys if k in PAIRS]; unpaired = [k for k in keys if k not in PAIRS]
+    futs, lock, left, done = {}, threading.Lock(), [len(paired)], threading.Event()
+    if not paired: done.set()
+    with cf.ThreadPoolExecutor(NJ) as ex:
+        def submit(k):
+            f = futs[k] = ex.submit(fin, k)
+            if k in PAIRS: f.add_done_callback(paired_done)
+        def paired_done(_):
+            with lock:
+                left[0] -= 1
+                if not left[0]: done.set()
+        for k in sorted(unpaired, key=lambda k: k in cache_hits): submit(k)   # stable: misses first, each group in key order
+        for k in paired:
+            deps = [futs[p] for p in PAIRS[k] if p in futs]
+            if not deps: submit(k); continue
+            count = [len(deps)]
+            def dep_done(_, k=k, count=count):
+                with lock: count[0] -= 1; ready = not count[0]
+                if ready: submit(k)
+            for d in deps: d.add_done_callback(dep_done)
+        done.wait()
+    return [futs[k].result() for k in unpaired + paired]   # the order of the two phases before (outputs and _b_build.json unchanged)
+res = finish_all(keys)
 # Passthrough geometry as mesh shaders (dmsh_mesh.py): <vertex key>_<geometry key>_m3 for each pair in the profile's geo_mesh.tsv whose two libraries exist; the host
 # draws a lean triangle-list geometry draw with it when its pair has one, and through the compute path otherwise (nvn_geometry.inc geo_mesh_draw)
 MESH_STATS = collections.Counter()

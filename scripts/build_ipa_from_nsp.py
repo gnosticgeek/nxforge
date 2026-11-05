@@ -2640,6 +2640,17 @@ def build_shaders(py, repo, sh, xlate, env, logs, g, pkg_key=None, mac=False, se
 TMP = 'tmp.noindex'
 
 
+def exclude_from_backup(work):
+    """NXForge: the build folder out of Time Machine (tmutil addexclusion: a sticky exclusion, an attribute on the folder, no administrator rights). It holds tens of GB that
+    each build rewrites (extract/, the shader caches and libraries, the pipeline archive batches) and that the next build makes again from the game files, so backing it up
+    costs disk and I/O while a build runs and saves nothing. The Metal cache is in ~/Library/Caches, which Time Machine already leaves out"""
+    if sys.platform != 'darwin' or not shutil.which('tmutil'): return
+    try:
+        if subprocess.run(['tmutil', 'isexcluded', str(work)], capture_output=True, text=True, timeout=10).stdout.lstrip().startswith('[Excluded]'): return
+        subprocess.run(['tmutil', 'addexclusion', str(work)], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError): pass   # not worth stopping a build over
+
+
 def shader_cache_note(log):
     """What dmsh_build.py's log says of its two caches, for the step's last line. "From the cache" counts the per-shader cache, whose keys hold the chain version, so a chain change reads 0 there
     even when the Metal cache, keyed by the MSL, compiles almost nothing: without its count that line reads as if every library had been compiled again"""
@@ -2975,7 +2986,8 @@ def mac_app(py, repo, out, app, work, game, patched, host, font, msl, aoc, gfx, 
     settings = work / 'app/launcher.json'; settings.parent.mkdir(parents=True, exist_ok=True)
     run([py, repo / 'dm/games/settings.py', g.id, patched, control or game / 'control.nacp', settings], logs / 'mac_settings.log', env=dict(env, GFXAPI=gfx, SETTINGS_PLATFORM='mac', DM_LANG=lang))
     cmd = [py, repo / 'dm/mac/pack_app.py', out, '--host', host, '--patched', patched, '--romfs', rfs.source(game), '--msl', lib, '--tables', g.table('shader_map.tsv').parent,
-           '--font', font, '--title-id', f'{app:016X}', '--name', name, '--bundle-id', bundle_id, '--lang', lang, '--sign', sign or '-']
+           '--font', font, '--title-id', f'{app:016X}', '--name', name, '--bundle-id', bundle_id, '--lang', lang, '--sign', sign or '-',
+           '--data-cache', work / 'app/data']   # NXForge: the signed game data bundle, kept for the next build (pack_app.py DATA)
     split_pairs = work / 'shader/pso_pairs.tsv'   # the split's copy of pso_pairs.tsv, for a profile without the table (as mac_run's DM_PSO_PAIRS)
     for opt, v in (('--version', version), ('--category', g.get('app_category')), ('--marker', g.get('romfs_marker')), ('--aoc', aoc), ('--icon', icon),
                    ('--pso', pso), ('--pso-pairs', split_pairs if gfx == 'nvn' and not g.table('pso_pairs.tsv').is_file() and split_pairs.is_file() else None),
@@ -3260,6 +3272,7 @@ def main(args=None):
         except ValueError as e: raise BuildError(str(e)) from e
     say('Mac app: the Mac shaders and the Mac host, packed into a Mac app; no iOS shaders, Xcode project or IPA' if mac_pack else 'Mac-only build for development: the Mac shaders and the Mac host, no iOS shaders, Xcode project or IPA' if mac else f'Xcode project: {project}' if prepare_xcode else f'output IPA: {out_ipa}')
     say(f'work folder (extracted game files in extract/, {"kept for the next build" if keep else "deleted after the IPA is built"}): {work}')
+    exclude_from_backup(work)
     xlate = repo / 'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate'
     # DM_GAME picks the profile; DM_ROOT / WORK point at <id>_build: the tools' default paths and temporary directories all stay inside it
     env.update(DM_GAME=g.id, DM_ROOT=str(work), WORK=str(work / TMP))

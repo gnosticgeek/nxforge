@@ -9,6 +9,11 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 - **The shared Metal cache holds a large game.** Its limit is now 12 GB (`DMSH_MTLCACHE_GB`, was 4), and a build never removes a library it used itself. Ocarina of Time's 7 GB of libraries pruned themselves at 4 GB, so the next translator change compiled 12,000 of them again.
 - **`--plan`** (`--platform mac-app`) says which stages a build would reuse and which it would redo, with how long each took last time, and builds nothing. `pso_offline.py --check` and `pack_app.py --check` answer the same for the pipeline archive and the app.
 
+- **Signing reads the game data once.** The Mac app's RomFS image, shader libraries and pipeline archive now sit in a signed resource bundle of their own (`Contents/PlugIns/GameData.bundle`, with links in `Contents/Resources` where they were). The build keeps it in `<id>_build/app/data` and clones it into each new app while its inputs are unchanged, so a rebuild signs a few MB instead of hashing the whole game. Measured on Ocarina of Time (35 GB, M4 Pro): signing the app went from 157 s to under a tenth of a second once the data bundle is signed, which costs the 150 s once, when the game data changes. A game of several programs keeps the old layout.
+- **The shader step's end is shorter.** The translator runs in more, smaller groups that the workers take from one queue. Paired vertex shaders start as soon as their own pixel shaders are done, instead of waiting for every other shader, and the shaders to compile go before cache hits.
+- **The converter keeps a build at full speed in the background.** The build runs at user-initiated priority (performance cores first), and the converter holds off App Nap and idle sleep until it ends.
+- The build folder is excluded from Time Machine (`tmutil addexclusion`), since every build rewrites it from the game files.
+
 ## 0.11.0 (2026-11-04)
 
 Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.
