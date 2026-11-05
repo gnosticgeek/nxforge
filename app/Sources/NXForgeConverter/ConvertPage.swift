@@ -8,14 +8,15 @@ let stageNames: [(String, String)] = [
     ("shader split", "Split shaders"), ("Mac shaders", "Compile Metal shaders"), ("Mac host", "Build Mac host"), ("Mac app", "Package Mac app"),
 ]
 
-/// Stages only some builds have: a Switch 2 game's (a NUP is unpacked, a dump packed) and an NVN game's pipeline archive.
+/// Names for the stages only some builds have: a Switch 2 game's (a NUP is unpacked, a dump packed), an NVN game's pipeline archive, DLC, NSZ files, provisional checks.
 let otherStageNames: [(String, String)] = [
-    ("unpack DLC", "Unpack DLC"), ("pack DLC", "Pack DLC"), ("unpack", "Unpack game files"), ("pack", "Pack game files"),
-    ("Pipeline archive", "Build pipeline archive"), ("Pipeline prebuild", "Prebuild pipelines"),
+    ("Pipeline archive", "Build pipeline archive"), ("Pipeline prebuild", "Prebuild pipelines"), ("unpack DLC", "Unpack DLC"), ("pack DLC", "Pack DLC"),
+    ("extract DLC", "Extract DLC"), ("unpack", "Unpack game files"), ("pack", "Pack game files"), ("decompress NSZ", "Decompress NSZ files"),
+    ("build ID lookup", "Read build IDs"), ("heap check", "Check memory layout"), ("address regions", "Map address regions"),
 ]
 
 func friendly(_ name: String) -> String {
-    (stageNames + otherStageNames).first { name.hasPrefix($0.0) }?.1 ?? name.prefix(1).uppercased() + name.dropFirst()
+    (otherStageNames + stageNames).first { name.hasPrefix($0.0) }?.1 ?? name.prefix(1).uppercased() + name.dropFirst()
 }
 
 func mmss(_ s: Int) -> String { "\(s / 60):\(String(format: "%02d", s % 60))" }
@@ -101,6 +102,22 @@ struct SourceFilesCard: View {
                         ForEach(f.lines.filter { !$0.ok }, id: \.self) { l in
                             Text(l.text).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 6)
                         }
+                    }
+                }
+            }
+
+            ForEach(model.missingForGame) { c in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("This game needs \(c.name)").font(.headline)
+                        Text(model.needs[c.name].map { "\($0)." } ?? c.why).font(.callout).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if c.name == "nsz" && model.env?.python == nil {
+                        Button("Set up Python") { model.setUpPython() }.buttonStyle(.glassProminent).disabled(model.pythonSetup?.running == true)
+                    } else if let fix = c.fix {
+                        Button("Install") { model.runFix(fix) }.buttonStyle(.glassProminent).help(fix)
                     }
                 }
             }
@@ -191,7 +208,7 @@ struct MacAppCard: View {
                         Label(model.run.planning ? "Checking…" : "Building…", systemImage: model.run.planning ? "list.bullet.clipboard" : "hammer.fill").font(.title3.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 30)
                     }
                     .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(true)
-                    Button("Stop") { model.run.cancel() }.buttonStyle(.glass).controlSize(.extraLarge)
+                    Button("Stop") { model.stopBuild() }.buttonStyle(.glass).controlSize(.extraLarge)
                 }
             } else {
                 Button { model.build() } label: {
@@ -199,7 +216,7 @@ struct MacAppCard: View {
                 }
                 .buttonStyle(.glassProminent).controlSize(.extraLarge)
                 .disabled(!model.ready)
-                .help(model.ready ? "" : !model.allOK ? "Some toolchain checks failed: see Toolchain" : model.needsKeys ? "Choose a game folder and keys that validate" : "Choose a .nup or a dump folder that reads")
+                .help(model.ready ? "" : !model.missingForGame.isEmpty ? "This game needs \(model.missingForGame.map(\.name).joined(separator: ", ")): install it above" : !model.allOK ? "Some toolchain checks failed: see Toolchain" : model.needsKeys ? "Choose a game folder and keys that validate" : "Choose a .nup or a dump folder that reads")
                 if model.buildCache != nil {
                     Button { model.build(rebuild: latestApp?.0, plan: true) } label: {
                         Label("Preview build", systemImage: "list.bullet.clipboard").frame(maxWidth: .infinity)
@@ -217,13 +234,16 @@ struct MacAppCard: View {
                     Text("Preview failed: \(e.description)").font(.callout).foregroundStyle(.red).textSelection(.enabled).lineLimit(4)
                 }
             }
-            if let d = disk {
+            if let d = model.run.running ? nil : model.diskNeed {
                 HStack(spacing: 6) {
                     Image(systemName: d.short ? "exclamationmark.triangle.fill" : "internaldrive").foregroundStyle(d.short ? .orange : .secondary)
                     Text(d.text).font(.callout).foregroundStyle(d.short ? .orange : .secondary)
                 }
-                .help(model.source == nil ? "A first build extracts the game and compiles its shaders: allow about twice the game files' size plus 10 GB. A rebuild reuses most of that."
-                      : "A Switch 2 game's first build unpacks its files into one image, compiles its shaders and makes a pipeline archive: allow about twice the game files' size plus 20 GB (Ocarina of Time, a 26 GB .nup, peaked near 76 GB). The build folder goes beside the .nup, so choose a .nup on a drive with room.")
+                .help(model.source == nil ? "A first build extracts the game and compiles its shaders: allow about twice the game files' size plus 10 GB. A rebuild needs room for a second copy of the app while it builds, and the shared Metal cache can grow to 12 GB. While a build runs, the converter stops it if free space drops below \(Disk.gb(Disk.stopBelow))."
+                      : "A Switch 2 game's first build unpacks its files into one image, compiles its shaders and makes a pipeline archive: allow about twice the game files' size plus 20 GB (Ocarina of Time, a 26 GB .nup, peaked near 76 GB). The build folder goes beside the .nup, so choose a .nup on a drive with room. While a build runs, the converter stops it if free space drops below \(Disk.gb(Disk.stopBelow)).")
+                if d.short {
+                    Button { model.page = .storage } label: { Label("Free up space…", systemImage: "internaldrive") }.buttonStyle(.glass)
+                }
             }
 
             Divider()
@@ -238,8 +258,9 @@ struct MacAppCard: View {
                             .foregroundStyle(.secondary).help(b?.engine.subject ?? "")
                     }
                 }
+                if b?.launched != true { FirstLaunchNote() }
                 HStack {
-                    Button { NSWorkspace.shared.open(app.url) } label: { Label("Open app", systemImage: "play.fill").frame(maxWidth: .infinity) }
+                    Button { model.openApp(app) } label: { Label("Open app", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     Button { reveal(app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
                 }
                 .buttonStyle(.glass).controlSize(.large)
@@ -256,23 +277,6 @@ struct MacAppCard: View {
         }
     }
 
-    /// Free space where the build and the app go, against what a build needs: a first build (no build cache yet)
-    /// about twice the game files plus 10 GB, as the README says; with a cache, a few GB for the new app's own files.
-    /// A Switch 2 game (SourceInfo) needs more: Source.firstBuildBytes, and 10 GB for a rebuild, which can redo the pipeline archive.
-    var disk: (text: String, short: Bool)? {
-        guard let dir = model.gameFolder, !model.run.running else { return nil }
-        let fm = FileManager.default
-        let nsp = GameFiles.list(in: dir.url).reduce(Int64(0)) { $0 + ((try? fm.attributesOfItem(atPath: $1.path)[.size] as? Int64) ?? 0) }
-        let cached = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).contains { $0.hasSuffix("_build") }
-        let need: Int64
-        if let s = model.source { need = cached ? Int64(10) << 30 : Source.firstBuildBytes(s) }
-        else { need = cached ? Int64(2) << 30 : nsp * 2 + (Int64(10) << 30) }
-        guard let free = try? dir.url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage else { return nil }
-        let gb = { (b: Int64) in String(format: "%.0f GB", Double(b) / 1e9) }
-        if free < need { return ("Only \(gb(free)) free: \(cached ? "a rebuild" : "a first build") needs about \(gb(need))", true) }
-        return ("\(gb(free)) free · \(cached ? "a rebuild" : "a first build") needs about \(gb(need))", false)
-    }
-
     /// The newest game app in the game or output folder, with its recorded build.
     var latestApp: (String, BuildRecord?)? {
         let dirs = Set([model.gameFolder, model.settings.outDir].compactMap { $0 })
@@ -284,6 +288,8 @@ struct MacAppCard: View {
 
 struct ActivityCard: View {
     let model: AppModel
+    /// the stage table and the log, behind "Show details"; opens by itself when a build fails
+    @AppStorage("activityDetails") private var details = false
 
     var body: some View {
         let run = model.run
@@ -295,57 +301,93 @@ struct ActivityCard: View {
                 }
                 Spacer()
                 state
-                Button { copyToClipboard(model.logText) } label: { Label("Copy log", systemImage: "doc.on.clipboard") }
-                    .buttonStyle(.glass).disabled(run.log.isEmpty && run.done.isEmpty)
             }
-            InsetTable {
-                if run.done.isEmpty && !run.running {
-                    ForEach(Array(stageNames.enumerated()), id: \.offset) { i, s in
-                        if i > 0 { Divider() }
-                        row(i + 1, state: nil, name: s.1, time: "–", status: "Not run", color: .secondary)
-                    }
-                } else {
-                    ForEach(run.done) { s in
-                        if s.k != run.done.first?.k { Divider() }
-                        row(s.k, state: s.ok, name: friendly(s.name), time: mmss(s.seconds), status: !s.ok ? "Failed" : s.redo ? "Would redo" : s.reused ? "Reused" : "Complete",
-                            color: !s.ok ? .red : s.redo ? .orange : s.reused ? .secondary : .green)
-                    }
-                    if run.running {
-                        if !run.done.isEmpty { Divider() }
-                        HStack(spacing: 12) {
-                            number(run.stage.k)
-                            ProgressView().controlSize(.small).frame(width: 18)
-                            Text(friendly(run.stage.name))
-                            if !run.stage.step.isEmpty { Text("· \(run.stage.step)").foregroundStyle(.secondary).lineLimit(1) }
-                            Spacer()
-                            Text(run.stage.detail).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                            if let f = run.stage.fraction { ProgressView(value: f).frame(width: 180) } else { ProgressView().progressViewStyle(.linear).frame(width: 180) }
-                        }
-                        .padding(.vertical, 6).padding(.horizontal, 10)
-                    }
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                summary(now: ctx.date)
+            }
+            DisclosureGroup(isExpanded: $details) {
+                VStack(alignment: .leading, spacing: 12) {
+                    stages
+                    LogView(lines: run.done.map(\.line) + run.log, running: run.running, file: run.logFile) { copyToClipboard(model.logText) }
                 }
+                .padding(.top, 8)
+            } label: {
+                Text(details ? "Hide details" : "Show details: every step and the log").font(.headline)
+                    .contentShape(.rect).onTapGesture { withAnimation { details.toggle() } }
             }
-            HStack(spacing: 8) {
-                if let s = run.done.first(where: { $0.name.hasPrefix("Mac shaders") }), let n = BuildRun.shaderCount(s) {
-                    StatusDot(color: .green, text: "\(n) shaders ready")
-                } else {
-                    Image(systemName: "folder").foregroundStyle(.blue)
-                    Text(model.settings.outDir == nil ? "Output saved beside your game files." : "Output saved to your selected folder.").foregroundStyle(.secondary)
+        }
+        .onChange(of: run.result?.isFailure) { _, failed in if failed == true { details = true } }
+    }
+
+    /// The bar and the time left: what most people need. While idle, the steps a build of this game takes and how long.
+    @ViewBuilder func summary(now: Date) -> some View {
+        let run = model.run
+        let o = run.overall(now: now)
+        if run.running {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(run.stage.name.isEmpty ? "Starting…" : friendly(run.stage.name)).font(.title3.weight(.semibold))
+                    Text(run.stage.step.isEmpty ? "Step \(max(run.stage.k, 1)) of \(max(run.stage.n, 1))" : "Step \(run.stage.k) of \(run.stage.n) · \(run.stage.step)")
+                        .foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                if !run.done.isEmpty && !run.running, run.result != nil {
-                    Text("Total time: \(mmss(run.done.map(\.seconds).reduce(0, +)))").font(.callout).foregroundStyle(.secondary)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(o.remaining.map(timeLeft) ?? "Estimating time left…").font(.title3.weight(.semibold)).monospacedDigit()
+                    Text(o.remaining.map { "Done around \(now.addingTimeInterval($0).formatted(date: .omitted, time: .shortened))" } ?? "First build of this kind: no history yet")
+                        .foregroundStyle(.secondary)
                 }
             }
-            if !run.log.isEmpty {
-                DisclosureGroup("Log (\(run.log.count) lines)") {
-                    ScrollView {
-                        Text(run.log.joined(separator: "\n")).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 200)
-                }
-                .foregroundStyle(.secondary)
+            TimelineBar(segments: o.segments, height: 16)
+            HStack(spacing: 8) {
+                Text("\(Int(o.fraction * 100))%").monospacedDigit().fontWeight(.semibold)
+                Text("· \(mmss(Int(o.elapsed))) elapsed").foregroundStyle(.secondary).monospacedDigit()
+                Spacer()
+                liveness(now: now)
             }
+            .font(.callout)
+            if let w = model.diskWarning {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text(w).foregroundStyle(.orange).font(.callout)
+                    Spacer()
+                    Button("Storage…") { model.page = .storage }.buttonStyle(.glass)
+                }
+            }
+        } else if !run.done.isEmpty {
+            TimelineBar(segments: o.segments, height: 16)
+            HStack {
+                Text(run.result?.isFailure == true ? "Stopped at step \(run.done.count) of \(run.done.last?.n ?? run.done.count)" : "\(run.done.count) steps")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("Total time: \(mmss(run.done.map(\.seconds).reduce(0, +)))").foregroundStyle(.secondary)
+            }
+            .font(.callout)
+        } else {
+            let plan = Estimates.plan(model.expected)
+            if plan.isEmpty {
+                Text(model.settings.gameDir == nil ? "Choose a game to see its build steps." : "A first build takes 20 to 60 minutes, depending on the game. The bar shows the time left once it starts.")
+                    .foregroundStyle(.secondary)
+            } else {
+                let total = plan.map(\.seconds).reduce(0, +)
+                HStack {
+                    Text("A full build of this game takes about \(duration(total))").foregroundStyle(.secondary)
+                    Spacer()
+                    Text("Unchanged steps are reused, so a rebuild is usually quicker").font(.callout).foregroundStyle(.tertiary)
+                }
+                TimelineBar(segments: plan.enumerated().map { Segment(id: $0.offset, name: $0.element.name, state: .pending, seconds: $0.element.seconds) }, height: 12)
+            }
+        }
+    }
+
+    /// The newest log line, or, after a quiet minute, a word that the step is still working.
+    @ViewBuilder func liveness(now: Date) -> some View {
+        let run = model.run
+        let quiet = run.lastActivity.map { now.timeIntervalSince($0) } ?? 0
+        if quiet > 60 {
+            Label("No output for \(duration(quiet)): long steps are quiet, it is still working", systemImage: "hourglass")
+                .foregroundStyle(.secondary).lineLimit(1)
+        } else if let line = run.log.last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+            Text(line).font(.caption.monospaced()).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
         }
     }
 
@@ -362,10 +404,54 @@ struct ActivityCard: View {
         } else if let r = run.result {
             switch r {
             case .success: StatusDot(color: .green, text: "\(run.done.filter(\.ok).count) of \(run.done.last?.n ?? 7) complete")
-            case .failure: StatusDot(color: .red, text: "Build failed")
+            case .failure(let e): StatusDot(color: e.description == "stopped" ? .orange : .red, text: e.description == "stopped" ? "Stopped" : e.description.hasPrefix("Stopped: not enough space") ? "Stopped: disk almost full" : "Build failed")
             }
         } else {
             StatusDot(color: model.ready ? .green : .gray, text: model.ready ? "Ready to build" : "Not ready")
+        }
+    }
+
+    /// Every step with its time and result, and the running one with its count, time in the step and the script's ETA.
+    @ViewBuilder var stages: some View {
+        let run = model.run
+        InsetTable {
+            if run.done.isEmpty && !run.running {
+                let plan = Estimates.plan(model.expected)
+                if plan.isEmpty {
+                    ForEach(Array(stageNames.enumerated()), id: \.offset) { i, s in
+                        if i > 0 { Divider() }
+                        row(i + 1, state: nil, name: s.1, time: "–", status: "Not run", color: .secondary)
+                    }
+                } else {
+                    ForEach(Array(plan.enumerated()), id: \.offset) { i, s in
+                        if i > 0 { Divider() }
+                        row(i + 1, state: nil, name: friendly(s.name), time: "~" + mmss(Int(s.seconds)), status: "Not run", color: .secondary)
+                    }
+                }
+            } else {
+                ForEach(run.done) { s in
+                    if s.k != run.done.first?.k { Divider() }
+                    row(s.k, state: s.ok, name: friendly(s.name), time: mmss(s.seconds), status: !s.ok ? "Failed" : s.redo ? "Would redo" : s.reused ? "Reused" : "Complete",
+                        color: !s.ok ? .red : s.redo ? .orange : s.reused ? .secondary : .green)
+                }
+                if run.running && run.done.last?.k != run.stage.k {
+                    if !run.done.isEmpty { Divider() }
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        HStack(spacing: 12) {
+                            number(run.stage.k)
+                            ProgressView().controlSize(.small).frame(width: 18)
+                            Text(friendly(run.stage.name))
+                            if !run.stage.step.isEmpty { Text("· \(run.stage.step)").foregroundStyle(.secondary).lineLimit(1) }
+                            Spacer()
+                            Text(([run.stage.detail] + [run.stage.eta.map { "ETA \(mmss(Int($0)))" }].compactMap { $0 }).filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            if let f = run.stage.fraction { ProgressView(value: f).frame(width: 140) } else { ProgressView().progressViewStyle(.linear).frame(width: 140) }
+                            Text(run.stageStartedAt.map { mmss(Int(ctx.date.timeIntervalSince($0))) } ?? "").foregroundStyle(.secondary).monospacedDigit().frame(width: 50, alignment: .trailing)
+                        }
+                        .padding(.vertical, 6).padding(.horizontal, 10)
+                    }
+                }
+            }
         }
     }
 
@@ -380,7 +466,7 @@ struct ActivityCard: View {
             StatusIcon(ok: state, size: 17)
             Text(name)
             Spacer()
-            Text(time).foregroundStyle(.secondary).monospacedDigit().frame(width: 50, alignment: .trailing)
+            Text(time).foregroundStyle(.secondary).monospacedDigit().frame(width: 60, alignment: .trailing)
             Text(status).foregroundStyle(color).frame(width: 80, alignment: .trailing)
         }
         .padding(.vertical, 5).padding(.horizontal, 10)
@@ -430,4 +516,16 @@ struct BuildFailure: View {
         return BuildDiagnosis.summary(d, error: error, log: run.log, failedStep: failed, game: game, engine: model.engine?.label,
                                       xcode: model.checks?.first { $0.name == "Xcode" }?.detail, keysPath: model.settings.keys)
     }
+}
+
+/// Under a freshly built app: its first launch is slow, so a quiet minute does not look like a hang.
+struct FirstLaunchNote: View {
+    var body: some View {
+        Label("The first launch prepares the game's shaders and can take a minute or more before anything shows. Later launches are quicker.", systemImage: "hourglass")
+            .font(.callout).foregroundStyle(.secondary)
+    }
+}
+
+extension Result {
+    var isFailure: Bool { if case .failure = self { true } else { false } }
 }

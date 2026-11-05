@@ -131,7 +131,7 @@ struct BuildRow: View {
         .background(selected ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 12))
         .contentShape(.rect)
         .contextMenu {
-            Button("Open") { NSWorkspace.shared.open(build.app.url) }
+            Button("Open") { model.openApp(build.app) }
             Button("Show in Finder") { reveal(build.app) }
             Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the current engine")") { model.rebuildAsked(build) }
                 .disabled(model.run.running || !model.allOK)
@@ -170,14 +170,15 @@ struct BuildDetail: View {
                 }
             }
             HStack {
-                Button { NSWorkspace.shared.open(build.app.url) } label: { Label("Open app", systemImage: "play.fill").font(.title3).frame(maxWidth: .infinity) }
+                Button { model.openApp(build.app) } label: { Label("Open app", systemImage: "play.fill").font(.title3).frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: !nudge))   // on an older engine Rebuild is the blue one, unless the build is kept
                 Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.glass)
             }
             .controlSize(.extraLarge)
+            if build.launched != true { FirstLaunchNote() }
             VStack(spacing: 0) {
-                detail("Built", build.date.map(relativeDay) ?? build.builtAt)
+                detail("Built", (build.date.map(relativeDay) ?? build.builtAt) + (build.seconds.map { " · took \(duration(Double($0)))" } ?? ""))
                 Divider()
                 HStack {
                     Text("Engine").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
@@ -238,9 +239,31 @@ struct BuildDetail: View {
             .disabled(!model.allOK || model.run.running)
             DisclosureGroup(isExpanded: $detailsOpen) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack { StatusIcon(ok: build.steps.map { $0 > 0 }); Text(build.steps.map { "\($0) steps completed" } ?? "Steps not recorded") }
+                    if let stages = build.stages, !stages.isEmpty {
+                        // the build's own timeline: each step's share of the time, reused ones faint
+                        TimelineBar(segments: stages.enumerated().map { i, st in
+                            Segment(id: i, name: st.name, state: !st.ok ? .failed : st.reused ? .reused : .done, seconds: Double(st.seconds))
+                        }, height: 12)
+                        ForEach(Array(stages.enumerated()), id: \.offset) { _, st in
+                            HStack {
+                                StatusIcon(ok: st.ok, size: 15)
+                                Text(friendly(st.name))
+                                Spacer()
+                                Text(st.reused ? "reused" : mmss(st.seconds)).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                            .font(.callout)
+                        }
+                    } else {
+                        HStack { StatusIcon(ok: build.steps.map { $0 > 0 }); Text(build.steps.map { "\($0) steps completed" } ?? "Steps not recorded") }
+                    }
                     HStack { StatusIcon(ok: build.shaders == nil ? nil : true); Text(build.shaders.map { "\($0) Metal shaders ready" } ?? "Metal shaders ready") }
                     Text(build.engine.subject).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    if let log = build.log, FileManager.default.fileExists(atPath: log) {
+                        HStack {
+                            Button { NSWorkspace.shared.open(log.url) } label: { Label("Open build log", systemImage: "doc.text") }.buttonStyle(.glass)
+                            Button { reveal(log) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.glass)
+                        }
+                    }
                 }
                 .padding(.top, 6)
             } label: { Text("Build details").font(.headline) }

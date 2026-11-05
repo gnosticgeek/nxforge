@@ -84,6 +84,9 @@ struct SettingsPage: View {
                         .buttonStyle(.glass).disabled(model.buildCache == nil)
                     Button("Clear cache…") { clearCache() }.buttonStyle(.glass).disabled(model.buildCache == nil || model.run.running)
                 }
+                setting("All games", "Every game's build cache, older app copies and the shared shader cache, with their sizes.") {
+                    Button { model.page = .storage } label: { Label("Manage storage…", systemImage: "internaldrive") }.buttonStyle(.glass)
+                }
             }
             Group {
                 HStack {
