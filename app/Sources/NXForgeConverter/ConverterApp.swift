@@ -79,7 +79,10 @@ struct ConverterApp: App {
             while model.run.running { try? await Task.sleep(for: .milliseconds(300)) }
             try? await Task.sleep(for: .seconds(1))
         }
-        guard let w = NSApp.windows.first(where: { $0.isVisible }), let view = w.contentView?.superview ?? w.contentView else { exit(1) }
+        // the window can be ordered out for a moment when the app starts behind another one: bring it back rather than give up
+        guard let w = NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first(where: { $0.contentView != nil }) else { exit(1) }
+        if !w.isVisible { NSApp.unhide(nil); w.orderFrontRegardless(); try? await Task.sleep(for: .seconds(1)) }
+        guard let view = w.contentView?.superview ?? w.contentView else { exit(1) }
         // the window's number for `screencapture -l`, which shows the glass the way the screen does; the picture below is the fallback
         try? String(w.windowNumber).write(toFile: out + ".wid", atomically: true, encoding: .utf8)
         try? await Task.sleep(for: .seconds(4))

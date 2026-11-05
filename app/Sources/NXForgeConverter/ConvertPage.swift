@@ -130,6 +130,7 @@ struct SourceFilesCard: View {
                 }
                 Spacer()
                 EngineStatus(model: model)
+                    .layoutPriority(1)   // the version and its state get their full width before the gap shrinks
                     .help(model.updateNote.map { "New: \($0)" } ?? "")
                 if model.updatesAvailable {
                     Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.glassProminent)
