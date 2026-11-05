@@ -2,6 +2,17 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.12.0 (unreleased)
+
+A clearer in-game Quick settings sidebar; no upstream merge.
+
+**In the game**
+- **Pages instead of fold-out sections.** Quick settings has six pages in tabs (Graphics, FPS, Capture, Mods, Cheats, Controls). L and R on a controller, or Tab and Shift-Tab on the keyboard, turn the page, and the last page shown is remembered per game.
+- **A quick bar on every page**: Screenshot, Record, the FPS counter and the volume. The Sound section is gone; its slider lives here.
+- **A button legend** at the bottom says what works on the selected item ("A Change · ◀▶ Adjust · B Close · L R Page"), in the controller's own button glyphs, or as keys while the keyboard drives it. Opened from a controller, the sidebar starts with the page's first item selected.
+- **One "needs a restart" signal.** Anisotropic filtering, Record frame times and mods carry a Next launch tag, orange while the choice differs from the running game. The footer counts those changes and offers **Restart game** (pressed twice), which quits and starts the game again through the app's launcher.
+- **Simpler Graphics page.** The filter is now just a CRT switch, with Strength and Line size shown only while it is on; the page is split into Look and Image quality. Sharpen, Pixel-perfect, CRT-Lottes and LCD Grid left Quick settings and the Graphics menu (a saved choice of one starts as off); `DM_PRESENT_FILTER` still reaches them. A dot marks each setting changed from its default, and Graphics and FPS have a Reset button. Record frame times moved under FPS › Advanced.
+
 ## 0.10.0 (2026-10-31)
 
 Five ideas from [NX2Apple](https://github.com/LNPANDY/NX2Apple) (MIT), another nxnative front end; no upstream merge.

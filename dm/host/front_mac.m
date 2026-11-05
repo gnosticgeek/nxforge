@@ -28,6 +28,9 @@ _Static_assert(QS_CHEAT_LABEL == DM_CHEAT_LABEL && QS_CHEAT_SECTION_START == DM_
 #include "pad_apple.h"
 #include <signal.h>
 #include <math.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 static CAMetalLayer *g_layer;
@@ -36,6 +39,7 @@ static int g_w, g_a, g_s, g_d;
 static int g_input_on = 1;   // main thread: the game window is key, so its keyboard, mouse and controllers reach the game (input_release / input_resume)
 static int g_menu_open;   // main thread: the Quick settings sidebar is up (the window's focus notifications leave the game out of focus meanwhile)
 static void (*g_menu_toggle)(void);   // opens or closes it (DmSettings toggle:), for the controller's Home button
+static int g_open_by_pad;   // the sidebar is being opened from a controller: it starts with a selection and the controller's button glyphs
 static NSString *opt_key(NSString *what);
 
 void *front_metal_layer(void) { return (__bridge void *)g_layer; }
@@ -189,9 +193,16 @@ static void pad_read(GCExtendedGamepad *g) {
     dm_pad_set_player(p, m, pad_axis(g.leftThumbstick.xAxis.value), pad_axis(g.leftThumbstick.yAxis.value), pad_axis(g.rightThumbstick.xAxis.value), pad_axis(g.rightThumbstick.yAxis.value));
 }
 // The sidebar with a controller (after RetroReplay's pause menu): the D-pad or left stick moves the selection, left / right change its value, A (the right face button) activates it,
-// B (the bottom one), + or Home close the sidebar, L / R jump between sections; a held direction repeats. quick_settings_mac.swift dm_qs_nav keeps the selection
+// B (the bottom one), + or Home close the sidebar, L / R turn the page; a held direction repeats. quick_settings_mac.swift dm_qs_nav keeps the selection
 enum { NAV_UP = 1, NAV_DOWN, NAV_LEFT, NAV_RIGHT, NAV_OK, NAV_BACK, NAV_PREV, NAV_NEXT };
 static uint32_t g_nav_prev; static NSTimer *g_nav_rep;
+// The sidebar's button legend shows this controller's own glyphs (its elements' SF Symbols: an Xbox pad's B where a Nintendo pad has A) for the buttons pad_nav reads
+static void pad_glyphs(GCExtendedGamepad *g) {
+    static const void *last;   // only compared: a new controller (or the first) sends its glyphs
+    if (last == (__bridge const void *)g) { dm_qs_input(1, NULL, NULL, NULL, NULL); return; }
+    last = (__bridge const void *)g;
+    dm_qs_input(1, g.buttonB.sfSymbolsName.UTF8String, g.buttonA.sfSymbolsName.UTF8String, g.leftShoulder.sfSymbolsName.UTF8String, g.rightShoulder.sfSymbolsName.UTF8String);
+}
 static void pad_nav(GCExtendedGamepad *g) {
     float x = g.leftThumbstick.xAxis.value, y = g.leftThumbstick.yAxis.value; uint32_t now = 0;
     if (g.dpad.up.isPressed || y > 0.6f) now |= 1u << NAV_UP;
@@ -203,6 +214,7 @@ static void pad_nav(GCExtendedGamepad *g) {
     if (g.leftShoulder.isPressed) now |= 1u << NAV_PREV;
     if (g.rightShoulder.isPressed) now |= 1u << NAV_NEXT;
     uint32_t pressed = now & ~g_nav_prev, dirs = (1u << NAV_UP) | (1u << NAV_DOWN) | (1u << NAV_LEFT) | (1u << NAV_RIGHT); g_nav_prev = now;
+    if (pressed && g_menu_open) pad_glyphs(g);
     for (int c = NAV_UP; c <= NAV_NEXT && g_menu_open; c++) if (pressed & (1u << c)) dm_qs_nav(c);
     if (!(now & dirs) || !g_menu_open) { [g_nav_rep invalidate]; g_nav_rep = nil; }
     else if (pressed & dirs) {
@@ -225,7 +237,7 @@ static void pad_event(GCExtendedGamepad *g, GCControllerElement *el) {
     if (g_menu_open) { pad_nav(g); return; }
     // The controller opens the sidebar: Home, or − and + pressed together (a game sees those two for a moment)
     static BOOL held; BOOL now = g.buttonHome.isPressed || (g.buttonMenu.isPressed && g.buttonOptions.isPressed);
-    if (now && !held && g_menu_toggle) { held = YES; g_nav_prev = ~0u; g_menu_toggle(); return; }   // every button counts as held, so the opening press does not also act in the sidebar
+    if (now && !held && g_menu_toggle) { held = YES; g_nav_prev = ~0u; g_open_by_pad = 1; g_menu_toggle(); g_open_by_pad = 0; if (g_menu_open) pad_glyphs(g); return; }   // every button counts as held, so the opening press does not also act in the sidebar
     held = now;
     pad_read(g);
 }
@@ -432,6 +444,15 @@ void front_qs_record(void) {
     if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
 }
 int front_qs_recording(void) { return capture_recording(); }
+// Restart game (Quick settings, for the settings that apply at the next launch): the app's launcher (dm/mac/launcher.c) names a file in DM_LAUNCHER_RESTART; the host makes it
+// and quits as ⌘Q does, and the launcher, finding the file, starts the host again with the same environment. A bare dmhost has no launcher and no restart
+int front_qs_can_restart(void) { const char *e = getenv("DM_LAUNCHER_RESTART"); return e && *e; }
+void front_qs_restart(void) {
+    if (!front_qs_can_restart()) return;
+    int fd = open(getenv("DM_LAUNCHER_RESTART"), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { LOG("[RED] front end: Restart game: cannot write %s: %s", getenv("DM_LAUNCHER_RESTART"), strerror(errno)); toast(@"Restart did not work: quit and open the game again"); return; }
+    close(fd); LOG("front end: Restart game (Quick settings)"); [NSApp terminate:nil];
+}
 // Where captures go, for the Capture section: the folder chosen for this game (saved), or none for the default
 const char *front_qs_capture_folder(int video) { return capture_folder(video).fileSystemRepresentation; }
 int front_qs_capture_custom(void) { return [NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")].length > 0; }
@@ -495,7 +516,7 @@ static void inset_to(float share) {
         }
         NSView *gv = g_win.contentView; CGFloat w = MIN(460, gv.bounds.size.width);
         self.view.frame = NSMakeRect(gv.bounds.size.width - w, 0, w, gv.bounds.size.height);
-        dm_qs_opened(); dm_qs_refresh();
+        dm_qs_opened(g_open_by_pad); dm_qs_refresh();
         [gv addSubview:self.view]; g_menu_open = 1;
         inset_to(w < gv.bounds.size.width ? (float)(w / gv.bounds.size.width) : 0);   // a sidebar as wide as the window covers the game instead
         input_release(); dm_focus_set(2);   // as when the window loses focus: nothing stays held, and a game that pauses for the HOME menu pauses
@@ -524,6 +545,7 @@ static void inset_to(float share) {
     NSMenu *gm = [[NSMenu alloc] initWithTitle:@"Graphics"]; self.items = [NSMutableArray array];
     [[bar addItemWithTitle:@"Graphics" action:nil keyEquivalent:@""] setSubmenu:gm];
     for (int i = 0; i < DM_PFX_N; i++) {
+        if (i != DM_PFX_OFF && i != DM_PFX_CRT) continue;   // the player picks off or CRT; the others stay for DM_PRESENT_FILTER
         NSMenuItem *it = [gm addItemWithTitle:[NSString stringWithFormat:@"Filter: %@", g_pfx_title[i]] action:@selector(pickItem:) keyEquivalent:@""];
         it.target = self; it.tag = i; [self.items addObject:it];
     }
@@ -550,7 +572,8 @@ static void graphics_start(void) {   // main thread, before the guest runs: the 
     if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);
     if (getenv("DM_PRESENT_FILTER")) return;
     if (![d objectForKey:pfx_key(@"mode")]) return;
-    int m = (int)[d integerForKey:pfx_key(@"mode")]; float k = [d objectForKey:pfx_key(@"strength")] ? [d floatForKey:pfx_key(@"strength")] : 0.5f;
+    int m = (int)[d integerForKey:pfx_key(@"mode")]; if (m != DM_PFX_CRT) m = DM_PFX_OFF;   // a choice saved before Sharpen, Pixel-perfect, CRT-Lottes and LCD Grid left the menus: off
+    float k = [d objectForKey:pfx_key(@"strength")] ? [d floatForKey:pfx_key(@"strength")] : 0.5f;
     mtl_present_filter_set(m, k); LOG("front end: present filter from the saved choice for this game (Quick settings)");
 }
 
@@ -1510,9 +1533,10 @@ void front_run(void (*guest)(void)) {
             if (assign_key(e)) return nil;   // a key being assigned in the Controls section
             if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
             if (g_menu_open) {   // the arrow keys, Return and Space move through the sidebar as a controller does; other keys go to its controls
-                int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK : 0;
+                int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK
+                        : e.keyCode == 48 ? (e.modifierFlags & NSEventModifierFlagShift ? NAV_PREV : NAV_NEXT) : 0;   // Tab / Shift-Tab: the next / previous page
                 if (!nav) return e;
-                if (e.type == NSEventTypeKeyDown) dm_qs_nav(nav);
+                if (e.type == NSEventTypeKeyDown) { dm_qs_input(0, NULL, NULL, NULL, NULL); dm_qs_nav(nav); }
                 return nil;
             }
             if (!e.isARepeat) on_key(e, e.type == NSEventTypeKeyDown);

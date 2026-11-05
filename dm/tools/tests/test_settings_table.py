@@ -7,7 +7,7 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[3]
 SOURCES = ['dm/host/front_mac.m', 'dm/host/quick_settings_mac.swift']
-NOT_SETTINGS = {'DMQuickSettings.section'}   # which sidebar section is open: remembered, not a setting
+NOT_SETTINGS = {'DMQuickSettings.page'}   # which sidebar page is showing: remembered, not a setting
 
 
 def saved_keys():

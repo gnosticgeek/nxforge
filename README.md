@@ -1,6 +1,6 @@
 # NXForge
 
-NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It tracks nxnative closely and adds Mac features on top: a Quick settings sidebar with picture filters, cheats, mods, screenshots and recordings, and controller rumble fixes. Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
+NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It tracks nxnative closely and adds Mac features on top: a Quick settings sidebar with a CRT filter, cheats, mods, screenshots and recordings, and controller rumble fixes. Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
 
 Play your own Nintendo Switch games natively on Mac, iPhone and iPad. Bring your game (its NSP files) and your `prod.keys`; one script turns them into an IPA that you sideload.
 
@@ -52,7 +52,7 @@ python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys
 
 The IPA appears in the game's folder. The first build takes 30–60 minutes and needs free disk space of about twice the game's size plus 10 GB; building again is much faster.
 
-To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game to open from Finder, with a settings window before the game (frame rate, render scale, docked or handheld, language, MetalFX upscaling, rumble) and its save in a `Saves` folder beside it. In the game, Esc opens Quick settings: picture filters, anisotropic filtering, the frame-rate counter, volume, controls, mods, cheats, screenshots and recordings ([A Mac app](docs/development.md#a-mac-app)). All options: [The packing script in detail](docs/development.md#the-packing-script-in-detail).
+To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game to open from Finder, with a settings window before the game (frame rate, render scale, docked or handheld, language, MetalFX upscaling, rumble) and its save in a `Saves` folder beside it. In the game, Esc opens Quick settings: a CRT filter, anisotropic filtering, the frame-rate counter, volume, controls, mods, cheats, screenshots and recordings ([A Mac app](docs/development.md#a-mac-app)). All options: [The packing script in detail](docs/development.md#the-packing-script-in-detail).
 
 ### Install
 

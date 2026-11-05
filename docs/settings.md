@@ -50,7 +50,7 @@ Breath of the Wild renders 1280x720 in handheld mode. Docked it renders its worl
 
 - **When to change it:** turn it on if the picture looks soft and the device has GPU time to spare: on a Mac, or on an iPhone in handheld mode at 30 fps. For long sessions at 60 fps on an iPhone leave it at Standard.
 - **Cost:** more GPU time each frame, which can increase heat on an iPhone. [Breath of the Wild's measurements](../dm/games/01007EF00011E000/README.md#upscaling-current) cover Mac and iPhone; the matching iPhone Standard run and MetalFX's share of the thermal cost remain unmeasured. Nothing changes while the game's picture is as large as the screen. Unsupported devices and sizes use Standard scaling.
-- **On the Mac:** MetalFX is on unless you choose **Standard** under **Upscaling** in the [settings window](#the-mac-settings-window), turn off **MetalFX upscaling** in Quick settings (Esc) while the game runs, or set `DM_PRESENT_UPSCALE=off` in its `env.txt`. Both places save the same choice. It helps in a large window, full screen on a Retina display or on a 4K screen. With the **Sharpen** filter on, MetalFX scales first and Sharpen then works on the scaled picture; with Pixel-perfect, CRT, CRT-Lottes or LCD Grid on, the picture is scaled the standard way, since those filters need the game's own pixels.
+- **On the Mac:** MetalFX is on unless you choose **Standard** under **Upscaling** in the [settings window](#the-mac-settings-window), turn off **MetalFX upscaling** in Quick settings (Esc) while the game runs, or set `DM_PRESENT_UPSCALE=off` in its `env.txt`. Both places save the same choice. It helps in a large window, full screen on a Retina display or on a 4K screen. With the **CRT** filter on, the picture is scaled the standard way, since the filter needs the game's own pixels. (Of the filters only `DM_PRESENT_FILTER` reaches, Sharpen works on the MetalFX-scaled picture; Pixel-perfect, CRT-Lottes and LCD Grid scale the standard way too.)
 
 ### Game language
 
@@ -210,23 +210,23 @@ iCloud Drive takes a moment to carry a file from one device to the other. Quit t
 
 ## Quick settings on the Mac
 
-A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧⌘G, the Graphics menu, or Home or − / + on a controller). Its changes apply at once, except anisotropic filtering, which applies from the next launch. Like the settings window, a setting that an `env.txt` or the launch environment fixes is not saved. Every setting a Mac app has, and where it is changed and kept:
+A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧⌘G, the Graphics menu, or Home or − / + on a controller). At the top are Screenshot, Record, the FPS counter and the volume; under them are six pages (Graphics, FPS, Capture, Mods, Cheats, Controls), which L and R on a controller or Tab and Shift-Tab on the keyboard turn, and at the bottom a legend shows which buttons or keys work on the selected item. Its changes apply at once, except anisotropic filtering, recording frame times and mods, which apply from the next launch: those rows carry a **Next launch** tag, orange while the choice differs from the running game, and the footer counts them and offers **Restart game** (pressed twice), which quits and starts the game again. A dot before a setting marks one changed from its default, and Graphics and FPS each have a Reset button. Like the settings window, a setting that an `env.txt` or the launch environment fixes is not saved. Every setting a Mac app has, and where it is changed and kept:
 
 | Setting | Settings window | Quick settings | `env.txt` / environment | Saved in the app's preferences as |
 |---|---|---|---|---|
 | Frame rate, Render scale, Dynamic resolution, Console mode, Game language | Game | – | `DM_FPS_TARGET`, `DM_RENDER_SCALE`, `DM_DYNAMIC_RESOLUTION`, `DM_OPMODE`, `DM_LANG` | `launcher.<variable>` |
 | Display mode | Game | – (⌃⌘F while playing) | `DM_FULLSCREEN` | `launcher.DM_FULLSCREEN` |
-| Upscaling (MetalFX) | Game › Upscaling | Graphics & shaders › MetalFX upscaling | `DM_PRESENT_UPSCALE` | `launcher.DM_PRESENT_UPSCALE`, shared by both; MetalFX, the Mac default, is not stored |
+| Upscaling (MetalFX) | Game › Upscaling | Graphics › MetalFX upscaling | `DM_PRESENT_UPSCALE` | `launcher.DM_PRESENT_UPSCALE`, shared by both; MetalFX, the Mac default, is not stored |
 | Game rumble, Rumble strength, Rumble cutoff | Controls | – | `DM_RUMBLE`, `DM_RUMBLE_GAIN`, `DM_RUMBLE_MIN` | `launcher.<variable>` |
 | Performance rows (Frame buffering, Metal 4 pipelines, …) | Advanced settings › Performance | – | as in [Settings in a file](#settings-in-a-file) | `launcher.<variable>` |
 | Cloud saves folder | Cloud saves | – | `DM_SAVE_SYNC` | `cloudSaves.folder` |
-| Picture filter and its strength | – | Graphics & shaders › Filter | `DM_PRESENT_FILTER`, `DM_PRESENT_FILTER_STRENGTH` | `DMPresentFilter.mode.<game>`, `DMPresentFilter.strength.<game>` |
-| Scanlines (CRT and LCD Grid filters) | – | Graphics & shaders › Scanlines | `DM_PRESENT_SCANLINE` | `DMPresentFilter.scanline.<game>` |
-| Anti-aliasing (FXAA) | – | Graphics & shaders › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>` |
-| Anisotropic filtering (16× by default) | – | Graphics & shaders › Anisotropic filtering | `DM_ANISO` | `DMQuickSettings.aniso.<game>` |
-| Frame-rate counter and its corner | – | Performance › Show FPS | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>` |
-| Record frame times (from the next launch) | – | Performance › Record frame times | `DM_FRAME_TIMES` (a `DM_NVN_TSV` wins) | `DMQuickSettings.frameTimes.<game>` |
-| Volume | – | Sound | – | `DMQuickSettings.volume.<game>` |
+| Picture filter and its strength (Quick settings and the Graphics menu offer off and CRT; the environment also takes the engine's other filters) | – | Graphics › CRT filter, Strength | `DM_PRESENT_FILTER`, `DM_PRESENT_FILTER_STRENGTH` | `DMPresentFilter.mode.<game>`, `DMPresentFilter.strength.<game>` |
+| CRT line size | – | Graphics › Line size | `DM_PRESENT_SCANLINE` | `DMPresentFilter.scanline.<game>` |
+| Anti-aliasing (FXAA) | – | Graphics › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>` |
+| Anisotropic filtering (16× by default) | – | Graphics › Anisotropic filtering | `DM_ANISO` | `DMQuickSettings.aniso.<game>` |
+| Frame-rate counter and its corner | – | FPS › Show FPS (and FPS at the top) | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>` |
+| Record frame times (from the next launch) | – | FPS › Record frame times | `DM_FRAME_TIMES` (a `DM_NVN_TSV` wins) | `DMQuickSettings.frameTimes.<game>` |
+| Volume | – | the slider at the top | – | `DMQuickSettings.volume.<game>` |
 | Screenshot and recording folder | – | Capture | – | `DMQuickSettings.captureDir.<game>` (unset: the game folder) |
 | Mods that are on | – | Mods | `DM_ROMFS_OVERLAY` replaces them | `DMQuickSettings.mods.<game>` |
 | Cheats that are on | – | Cheats (and the Cheats menu) | `DM_CHEATS_ON` | not in the preferences: `<build ID>.enabled` beside the cheat file |
