@@ -212,8 +212,8 @@ int front_web_touch(void) { return g_touch; }
 
 static NSString *json(NSString *s) {   // a JavaScript string literal
     NSData *d = [NSJSONSerialization dataWithJSONObject:@[s ?: @""] options:0 error:nil];
-    NSString *a = [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding];
-    return [a substringWithRange:NSMakeRange(1, a.length - 2)];
+    NSString *a = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
+    return a.length >= 2 ? [a substringWithRange:NSMakeRange(1, a.length - 2)] : @"\"\"";
 }
 static NSString *mime(NSString *ext) {
     NSDictionary *m = @{@"html": @"text/html", @"htm": @"text/html", @"css": @"text/css", @"js": @"text/javascript", @"json": @"application/json", @"png": @"image/png",
@@ -282,12 +282,15 @@ static NSString *mime(NSString *ext) {
 
 // The document's files; anything else is not served
 - (void)serve:(id<WKURLSchemeTask>)t {
-    NSURL *u = t.request.URL; NSString *rel = [u.path stringByStandardizingPath];
+    NSURL *u = t.request.URL;
+    if (!u) { [t didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorBadURL userInfo:nil]]; return; }
+    NSString *rel = [u.path stringByStandardizingPath];
     while ([rel hasPrefix:@"/"]) rel = [rel substringFromIndex:1];
     NSString *f = [_dir stringByAppendingPathComponent:rel]; NSData *d = nil;
     if ([rel isEqualToString:@"__dm_font/nintendo_ext.ttf"]) {   // the Nintendo extension font (button icons): the host's stand-in, as the shared font service gives it (hle_sdk16.c)
         const char *e = getenv("DM_SHARED_FONT_EXT"), *fd = getenv("DM_FONT_DIR");
-        f = e ? @(e) : fd ? [@(fd) stringByAppendingPathComponent:@"nintendo_ext.ttf"] : @"";
+        NSString *ef = e ? @(e) : nil, *fdf = fd ? @(fd) : nil;
+        f = ef ?: [fdf stringByAppendingPathComponent:@"nintendo_ext.ttf"] ?: @"";
         d = [NSData dataWithContentsOfFile:f];
     } else if (rel.length && ![rel containsString:@".."] && [f hasPrefix:_dir]) {
         d = [NSData dataWithContentsOfFile:f];
@@ -372,7 +375,9 @@ int front_web_open(const char *dir, const char *path, const char *callback, int 
         front_web_attach(box);
         [box place];
         NSString *q = [p stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLFragmentAllowedCharacterSet];
-        [box.web loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:[@"dmweb://doc/" stringByAppendingString:q]]]];
+        NSURL *url = q ? [NSURL URLWithString:[@"dmweb://doc/" stringByAppendingString:q]] : nil;
+        if (url) [box.web loadRequest:[NSURLRequest requestWithURL:url]];
+        else LOG("[RED] web: %s is not a page address", p.UTF8String);
         if (!hidden) { box.shown = YES; g_touch = 1; [box setHiddenState:NO]; [box startInput]; }
     });
     return 0;
