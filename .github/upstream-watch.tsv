@@ -3,3 +3,7 @@
 # Every seedds/nxnative pull request that matches and was updated in the last 14 days is listed in one issue labelled "upstream-watch", with where NXForge holds it.
 0400486024DEC000	The Legend of Zelda: Ocarina of Time (Switch 2)	claude/project-thread-27ja4m
 "Ocarina of Time"	The Legend of Zelda: Ocarina of Time (Switch 2)	claude/project-thread-27ja4m
+# Pull requests NXForge leaves out on purpose: "skip", the number, and why (shown in the issue instead of "not in NXForge", and not counted).
+skip	1311	Ocarina's play reports already complete offline (hle_offline.c, from #1299); this is a whole prepo:u service on new CMIF and transfer memory, not taken upstream yet
+skip	1357	NXForge compiles again with -fbracket-depth=2048 only when Metal asks for it (dmsh_pch.py), so the shader chain stays the same
+skip	1365	upstream's charter for agent work (docs only); NXForge keeps its own CLAUDE.md and BACKLOG.md
