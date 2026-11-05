@@ -20,6 +20,19 @@ enum Page: String, CaseIterable, Identifiable {
 
 enum BuildSort: String, CaseIterable { case newest = "Newest first", oldest = "Oldest first", name = "Name" }
 
+/// Which console a build's game is for: Switch 2 title IDs start 04 (0400486024DEC000), Switch ones 01.
+enum Console: String, CaseIterable {
+    case switch2 = "Switch 2", switch1 = "Switch"
+
+    static func of(_ b: BuildRecord) -> Console {
+        if let t = VerifiedGames.titleID(ofApp: b.app) { return t.hasPrefix("04") ? .switch2 : .switch1 }
+        return Source.isNupFile(b.gameDir) || b.gameFiles == "NUP container" ? .switch2 : .switch1
+    }
+}
+
+/// The Builds page's console filter
+enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2", switch1 = "Switch" }
+
 @MainActor @Observable
 final class AppModel {
     var page: Page = .convert
@@ -51,6 +64,7 @@ final class AppModel {
     var revision = 0
     var buildSearch = ""
     var buildSort: BuildSort = .newest
+    var buildConsole: ConsoleFilter = .all
     var selectedBuild: String?
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
     var rebuildQueue: [BuildRecord] = []

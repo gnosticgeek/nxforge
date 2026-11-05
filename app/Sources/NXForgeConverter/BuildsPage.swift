@@ -10,6 +10,11 @@ struct BuildsPage: View {
         var b = Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) }
         let q = model.buildSearch.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty { b = b.filter { name($0).lowercased().contains(q) || $0.engine.short.contains(q) } }
+        switch model.buildConsole {
+        case .all: break
+        case .switch2: b = b.filter { Console.of($0) == .switch2 }
+        case .switch1: b = b.filter { Console.of($0) == .switch1 }
+        }
         switch model.buildSort {
         case .newest: b.sort { $0.builtAt > $1.builtAt }
         case .oldest: b.sort { $0.builtAt < $1.builtAt }
@@ -36,6 +41,11 @@ struct BuildsPage: View {
                         .disabled(model.run.running || !model.allOK)
                         .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
                     }
+                    Picker("Console", selection: $model.buildConsole) {
+                        ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("Show the Switch 2 games, the Switch games, or both")
                     Picker("Sort", selection: $model.buildSort) {
                         ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue) }
                     }
@@ -49,14 +59,25 @@ struct BuildsPage: View {
                     }
                 }
                 if list.isEmpty {
-                    Card { Text(model.buildSearch.isEmpty ? "Nothing built yet. Convert a game to see it here." : "No builds match “\(model.buildSearch)”.").foregroundStyle(.secondary) }
+                    Card {
+                        Text(!model.buildSearch.isEmpty ? "No builds match “\(model.buildSearch)”." : model.buildConsole != .all ? "No \(model.buildConsole.rawValue) games built yet." : "Nothing built yet. Convert a game to see it here.")
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     HStack(alignment: .top, spacing: 16) {
                         Card(padding: 8) {
-                            VStack(spacing: 4) {
-                                ForEach(list) { b in
-                                    BuildRow(model: model, build: b, name: name(b), selected: b.app == selected?.app)
-                                        .onTapGesture { model.selectedBuild = b.app }
+                            // Switch 2 games first, then Switch games, each under its own heading when both are listed
+                            let groups = Console.allCases.map { c in (c, list.filter { Console.of($0) == c }) }.filter { !$0.1.isEmpty }
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(groups, id: \.0) { c, items in
+                                    if groups.count > 1 {
+                                        Text("\(c.rawValue) · \(items.count)").font(.headline).foregroundStyle(.secondary)
+                                            .padding(.horizontal, 10).padding(.top, c == groups.first?.0 ? 4 : 12)
+                                    }
+                                    ForEach(items) { b in
+                                        BuildRow(model: model, build: b, name: name(b), selected: b.app == selected?.app)
+                                            .onTapGesture { model.selectedBuild = b.app }
+                                    }
                                 }
                             }
                         }
@@ -98,7 +119,7 @@ struct BuildRow: View {
                         .background(.orange.opacity(selected ? 0.55 : 0.25), in: .capsule)
                         .help("Built on \(build.engine.short); the engine is now \(model.engine?.short ?? "")")
                 } else {
-                    Text("Apple Silicon").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                    Text(Console.of(build).rawValue).foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
                 }
             }
         }
