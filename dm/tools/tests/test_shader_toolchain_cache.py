@@ -443,12 +443,20 @@ class SharedMetalCache(unittest.TestCase):
             self.cache.compile('mac', self.source(f'{text}.metal', text * 5000), str(self.root / f'{text}.metallib'))
             self.store._run('UPDATE entry SET mtime=? WHERE name=?', 1000 + i, self.cache.path('mac', (text * 5000).encode()))
         self.cache.compile('mac', str(self.root / 'used.metal'), str(self.root / 'reuse.metallib'))   # a use refreshes it
+        self.cache.used.pop(self.cache.path('mac', (b'old' * 5000)))   # as if an earlier build had compiled it
         size = len(b'LIB ' + b'old' * 5000)
         line = self.cache.prune(2.5 * size / 2**30)
         self.assertFalse(self.store.has(self.cache.path('mac', b'old' * 5000)))
         self.assertTrue(self.store.has(self.cache.path('mac', b'used' * 5000)))
         self.assertTrue(self.store.has(self.cache.path('mac', b'new' * 5000)))
         self.assertIn('1 unused the longest removed', line)
+
+    def test_prune_keeps_every_library_this_build_used(self):   # NXForge: Ocarina of Time's libraries outgrew the limit and pruned themselves
+        for text in ('one', 'two', 'six'):
+            self.cache.compile('mac', self.source(f'{text}.metal', text * 5000), str(self.root / f'{text}.metallib'))
+        line = self.cache.prune(len(b'LIB ' + b'one' * 5000) / 2**30)   # room for one
+        for text in ('one', 'two', 'six'): self.assertTrue(self.store.has(self.cache.path('mac', (text * 5000).encode())))
+        self.assertNotIn('removed', line)
 
     def test_adopt_moves_the_old_shared_folder_with_every_target(self):
         old = self.root / 'NXForge/metallib'
