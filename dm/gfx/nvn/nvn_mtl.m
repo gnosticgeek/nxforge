@@ -2523,6 +2523,27 @@ static _Atomic uint64_t g_upb_new_ns, g_upb_prot_ns, g_upb_gpu_ns, g_upb_cpu_ns,
 void mtl_upload_breakdown(uint64_t *new_ns, uint64_t *prot_ns, uint64_t *gpu_ns, uint64_t *cpu_ns, uint64_t *cpu_bytes) {
     *new_ns = atomic_load(&g_upb_new_ns); *prot_ns = atomic_load(&g_upb_prot_ns); *gpu_ns = atomic_load(&g_upb_gpu_ns); *cpu_ns = atomic_load(&g_upb_cpu_ns); *cpu_bytes = atomic_load(&g_upb_cpu_bytes);
 }
+// NXForge: a texture in a large pool is read for its GPU deswizzle from a copy in the upload slot's own shared block, not through a zero-copy buffer over the pool (up_big_src).
+// Each such buffer is wired when the residency set takes it and unwired when the batch retires it: Mario Kart World's first race frame uploads 43 textures (131 MB) from its
+// 2,427 MB graphics pool, and that frame spent 100-210 ms in residency commits (mostly kernel time) against 7 ms or so to copy 131 MB. The blocks (UP_SRC_BLOCK each, one per upload
+// slot) are made once, stay resident, and are reused once up_begin has waited for the slot's previous batch, as the staging blocks are. A texture larger than a block, or one
+// that does not fit in what the batch has left after a flush, still goes through up_big_src. DM_NVN_UP_SRC_COPY=0 turns the copy off
+#define UP_SRC_BLOCK (64u << 20)
+static __strong id<MTLBuffer> g_up_src_blk[3]; static size_t g_up_src_off; static unsigned g_up_src_seq;   // g_up_src_seq: the batch (g_up_seq) the offset belongs to
+static uint64_t g_up_src_n, g_up_src_bytes;
+static int up_src_on(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_UP_SRC_COPY"); v = !(e && !strcmp(e, "0")); } return v; }
+static id<MTLBuffer> up_src_copy(const void *src, uint64_t len, uint64_t *off) {   // inside an open upload batch (up_begin)
+    if (!up_src_on() || !g_up_cb || !len || len > UP_SRC_BLOCK) return nil;
+    unsigned slot = (g_up_seq - 1) % 3;
+    if (g_up_src_seq != g_up_seq) { g_up_src_seq = g_up_seq; g_up_src_off = 0; }   // a new batch on this slot: its previous one has finished (up_begin waited)
+    size_t at = (g_up_src_off + 255u) & ~(size_t)255u;
+    if (at + len > UP_SRC_BLOCK) return nil;
+    __strong id<MTLBuffer> *sb = &g_up_src_blk[slot];
+    if (!*sb) { *sb = [g_dev newBufferWithLength:UP_SRC_BLOCK options:MTLResourceStorageModeShared]; if (!*sb) return nil; (*sb).label = @"upload source copies"; res_add(*sb); res_commit(); }
+    memcpy((uint8_t *)(*sb).contents + at, src, (size_t)len);
+    g_up_src_off = at + (size_t)len; *off = at; g_up_src_n++; g_up_src_bytes += len;
+    return *sb;
+}
 static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture> reuse, MTLTextureUsage keep) {
     uint64_t ub0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     MTLTextureDescriptor *d = tex_desc(t, 1);
@@ -2557,7 +2578,12 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
     void *mb; uint64_t mo;
     // A texture in a large pool (BIG_MIN) is read through a buffer of its own, held by the upload batch: a one-time read must not leave its chunk wired for good
     id<MTLBuffer> upsrc = nil;
-    if (!rb_shift && !sparse && g_nvn_deswz_gpu && g_nbig) { up_begin(); upsrc = up_big_src((uint64_t)t->mem, t->L.size, &mo); if (upsrc) mb = (__bridge void *)upsrc; }
+    int src_copy = 0;
+    if (!rb_shift && !sparse && g_nvn_deswz_gpu && g_nbig) { up_begin();
+        pthread_mutex_lock(&g_mu); int in_big = big_of((uint64_t)t->mem) >= 0; pthread_mutex_unlock(&g_mu);
+        if (in_big && (upsrc = up_src_copy(t->mem, t->L.size, &mo))) src_copy = 1;
+        else upsrc = up_big_src((uint64_t)t->mem, t->L.size, &mo);
+        if (upsrc) mb = (__bridge void *)upsrc; }
     int use_gpu = !rb_shift && !sparse && g_nvn_deswz_gpu && (upsrc || mtl_addr((uint64_t)t->mem, t->L.size, &mb, &mo));   // a sparse pool's texture is gathered through its page table on the CPU
     if (g_nvn_deswz_gpu && !use_gpu && !sparse && !rb_shift) { RED_ONCE(40, "swizzled texture storage is not in a memory pool; falling back to the CPU");
         uint64_t k = atomic_fetch_add(&g_upb_cpu_n[0], 1);   // NXForge: which ones (the red line comes once): storage, pool and size of the first few, then a count every 1,000
@@ -2585,7 +2611,10 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
         }
         size_t stg_off;
         id<MTLBuffer> stg = up_alloc(total ? total : 16, &stg_off);
-        if (upsrc) { uint64_t mo2; id<MTLBuffer> u2 = up_big_src((uint64_t)t->mem, t->L.size, &mo2); if (u2) { upsrc = u2; mb = (__bridge void *)u2; mo = mo2; } }   // up_alloc may have flushed the batch that held the first one
+        if (upsrc && (!src_copy || g_up_src_seq != g_up_seq)) {   // up_alloc may have flushed the batch that held the first one (a copy then goes into the new batch's slot)
+            uint64_t mo2; id<MTLBuffer> u2 = src_copy ? up_src_copy(t->mem, t->L.size, &mo2) : nil;
+            if (!u2) u2 = up_big_src((uint64_t)t->mem, t->L.size, &mo2);
+            if (u2) { upsrc = u2; mb = (__bridge void *)u2; mo = mo2; } }
         size_t off = 0; int enc_ok = g_up_ce != nil, nb0 = g_nup_blits;
         for (unsigned l = 0; enc_ok && l < d.mipmapLevelCount; l++) {
             uint32_t w = MAX(t->d.width >> l, 1u), h = MAX(t->d.height >> l, 1u), z = t->d.target == 2 ? MAX(t->d.depth >> l, 1u) : 1;
