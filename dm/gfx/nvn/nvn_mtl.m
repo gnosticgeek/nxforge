@@ -8292,13 +8292,13 @@ static uint64_t pool_gpu(int samp, int dtt, int dpf, int base, __unsafe_unretain
         if (!known) { g_stat_pool_nopatch[3]++; break; }
         if (nid >= 8192) { g_stat_pool_nopatch[0]++; break; }
         uint64_t *e = (uint64_t *)((uint8_t *)p->buf.contents + DMSH_POOL_HEAD), dummy = e[nn];
-        int gone = 0, transient = 0; size_t nch = 0; id<MTLBuffer> b = nil; uint64_t *be = NULL;
+        int gone = 0, transient = 0; id<MTLBuffer> b = nil; uint64_t *be = NULL;
         for (size_t k = 0; k < nid; k++) {
             int i = ids[k] - base; if (i < 0 || i >= nn) continue;
             uint64_t r = pool_entry(samp, dtt, ids[k], &gone, &transient); r = r ? r : dummy;
             if (r == (be ? be[i] : e[i])) continue;
             if (!b) { b = [g_dev newBufferWithLength:p->buf.length options:MTLResourceStorageModeShared]; memcpy(b.contents, p->buf.contents, p->buf.length); be = (uint64_t *)((uint8_t *)b.contents + DMSH_POOL_HEAD); }
-            be[i] = r; nch++;
+            be[i] = r;
         }
         uint64_t sub = transient || p->sub ? g_sub_serial : 0;
         if (!b) { p->reg = rg; p->ser = sg; p->sub = sub; g_stat_pool_kept++; *out = p->buf; return p->gpu; }
