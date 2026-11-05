@@ -6728,6 +6728,7 @@ static id<MTLRenderPipelineState> arch_capture(MTL4RenderPipelineDescriptor *d, 
     ep_leave(ep);
     return ps;
 }
+static void arch_exit_flush(void);   // below, after arch_flush
 static void pso4_init(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
