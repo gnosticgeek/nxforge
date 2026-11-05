@@ -124,19 +124,18 @@ struct SourceFilesCard: View {
 
             Divider()
             HStack {
-                VStack(alignment: .leading, spacing: 1) {
+                // the version and its state sit under the heading, where they have the card's width (beside it they were cut off)
+                VStack(alignment: .leading, spacing: 3) {
                     Text("Engine").font(.headline)
-                    Text("NXForge engine version").font(.callout).foregroundStyle(.secondary)
+                    EngineStatus(model: model)
+                        .help(model.updateNote.map { "New: \($0)" } ?? "")
                 }
-                Spacer()
-                EngineStatus(model: model)
-                    .layoutPriority(1)   // the version and its state get their full width before the gap shrinks
-                    .help(model.updateNote.map { "New: \($0)" } ?? "")
+                Spacer(minLength: 12)
                 if model.updatesAvailable {
                     Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.glassProminent)
-                        .disabled(model.run.running || model.engine?.dirty == true || model.engineBusy)
+                        .disabled(model.run.running || model.engine?.dirty == true || model.engineBusy).fixedSize()
                 } else {
-                    Button("Check for updates…") { model.engineAction(update: false) }.buttonStyle(.glass).disabled(model.run.running || model.engineBusy || model.engine == nil)
+                    Button("Check for updates…") { model.engineAction(update: false) }.buttonStyle(.glass).disabled(model.run.running || model.engineBusy || model.engine == nil).fixedSize()
                 }
             }
         }
