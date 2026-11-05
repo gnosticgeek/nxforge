@@ -176,6 +176,30 @@ class PackReuse(unittest.TestCase):
         self.assertTrue(any('--sign' in c for c in self.commands))
         self.assertTrue(self.key.is_file())
 
+    def test_game_data_bundle_is_signed_once_and_kept(self):
+        """NXForge: the RomFS, shader libraries and pipeline archive go into Contents/PlugIns/GameData.bundle, signed on its own and linked from Contents/Resources; with --data-cache
+        a repack whose game data is unchanged clones the kept bundle and signs only the app"""
+        self.args.data_cache = str(self.tmp / 'build/app/data')
+        def signed(): return [c[-1] for c in self.commands if '--sign' in c]
+        out = self.pack()
+        self.assertIn('step: signing the game data', out)
+        app = Path(self.args.out)
+        data = app / 'Contents/PlugIns' / pack_app.DATA / 'Contents'
+        self.assertEqual(plistlib.loads((data / 'Info.plist').read_bytes())['CFBundlePackageType'], 'BNDL')
+        for n in ('msl', 'romfs', 'pso'):
+            link = app / 'Contents/Resources' / n
+            self.assertTrue(link.is_symlink()); self.assertEqual(os.readlink(link), f'../PlugIns/{pack_app.DATA}/Contents/Resources/{n}')
+        self.assertEqual((app / 'Contents/Resources/pso/gpu.mtl4a').read_bytes(), b'archive')
+        self.assertEqual(signed()[0], str(self.tmp / 'build/app/data' / (pack_app.DATA + '.partial')))   # the data first, in the cache, then the host and the app
+        (self.tmp / 'dmhost').write_bytes(b'new host')
+        out = self.pack()
+        self.assertIn('step: game data (signed before, reused)', out)
+        self.assertNotIn(pack_app.DATA, ' '.join(signed()))
+        self.assertEqual((app / 'Contents/Resources/romfs/marker').read_bytes(), b'game')
+        (self.tmp / 'pso/gpu.mtl4a').write_bytes(b'new archive')
+        self.assertIn('step: signing the game data', self.pack())
+        self.assertEqual((app / 'Contents/Resources/pso/gpu.mtl4a').read_bytes(), b'new archive')
+
     def test_retargeted_input_symlink_repacks(self):
         msl = self.tmp / 'msl'
         for name in ('left.metallib', 'right.metallib'): (msl / name).write_bytes(b'same library')
