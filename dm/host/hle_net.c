@@ -130,12 +130,18 @@ int dm_sk_poll(void *fds, uint64_t n, int ms) {   // also hle_offline.c's plain 
         static int once; if (!once++) LOG("socket: Poll of %llu descriptors with one the host never made (fd %d, events %#x; %d ms): nothing ready at the timeout", (unsigned long long)n, p[i].fd, p[i].events, ms);
     }
     if (!any) { pthread_mutex_unlock(&g_efd_mu); for (uint64_t i = 0; i < n; i++) p[i].revents = 0; return sk_idle(ms); }
-    int ready;
-    for (int64_t left = ms;;) {
+    int ready; struct timespec t0; clock_gettime(CLOCK_MONOTONIC, &t0);
+    for (;;) {
         ready = 0;
         for (uint64_t i = 0; i < n; i++) { int k = p[i].fd >= 0 ? efd_slot(p[i].fd) : -1; p[i].revents = (int16_t)(k >= 0 ? efd_ready(k, p[i].events) : 0); ready += p[i].revents != 0; }
-        if (ready || !left || !efd_wait(left)) break;   // ready, a zero timeout, or a slice passed with no change
-        if (left > 0) left = left > 100 ? left - 100 : 0;
+        if (ready || !ms) break;   // ready, or a zero timeout
+        int64_t left = -1;   // an endless wait (< 0): one slice, as sk_idle
+        if (ms > 0) {   // a timeout: the time left of it, whatever woke the wait before (another counter's change, or the slice's end)
+            struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+            left = ms - ((int64_t)(t.tv_sec - t0.tv_sec) * 1000 + (t.tv_nsec - t0.tv_nsec) / 1000000);
+            if (left <= 0) break;
+        }
+        if (!efd_wait(left) && ms < 0) break;   // the endless wait's slice passed with no change
     }
     pthread_mutex_unlock(&g_efd_mu);
     return ready;
