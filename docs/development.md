@@ -261,6 +261,8 @@ For a Mac app, it reads the name, title ID and game version from `Info.plist`, l
 
 `scripts/clean_metal_cache.py` (`-h`, `--dry-run`) frees the internal disk of the build folders Metal's pipeline archive compiler leaves in `getconf DARWIN_USER_CACHE_DIR`/`com.apple.gpuarchiver`, up to about 127 MB for each archive flush of a Mac run, which the host cannot remove itself ([Metal's build folders left by pipeline archive flushes](reference/shaders.md#metals-build-folders-left-by-pipeline-archive-flushes)). It removes only folders idle for an hour and older than every running `dmhost`; `scripts/regress.py` runs it too.
 
+`scripts/nxforge.py` (`-h`) is the converter's functions on the command line (status, builds and `--plan`, background jobs, engine updates, a disk report and a cleanup with a safe set for scheduled jobs), and `scripts/nxforge_mcp.py` offers them as an MCP server: [automation.md](automation.md).
+
 `.github/workflows/fuzz.yml` fuzzes the Python parsers of files a player
 supplies, nightly and by hand (never on pull requests): the RomFS image reader
 (`romfs.py`), the control data (`nacp.py`), the NSO loader, the shader

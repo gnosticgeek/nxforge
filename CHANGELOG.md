@@ -17,6 +17,9 @@ Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-3
 - Mario Kart World's sky panels are gone: task and mesh draws read their storage buffers from the right table (c0 0x670 / 0x770) instead of a dummy buffer.
 - 120 fps for a profile with `fps_max 120` (Fire Emblem Fortune's Weave first).
 
+**Automation**
+- **`scripts/nxforge.py`, a command line for the converter's functions, and `scripts/nxforge_mcp.py`, the same as an MCP server** ([docs/automation.md](docs/automation.md)): status, builds and rebuilds (with `--plan`), background build jobs, engine updates, a tool check, a disk report, and a cleanup by category. `clean --safe` is the set an hourly job can run: idle Metal build folders, build folders' temporary files, the shared Metal cache trimmed to 12 GB, older app backups (the newest per game stays) and logs over 30 days old; it never touches game files, keys, apps outside `app-backups/` or saves, and waits while a build runs.
+
 **Kept in NXForge**
 - Fullscreen still goes without the display link (the 30 fps fix); `DM_PRESENT_LATENCY=1|2` keeps the link there to compare.
 - A controller's Home button still opens Quick settings. nxnative's new hold-Home-to-quit prompt is off unless `DM_HOME_QUIT=1`.
