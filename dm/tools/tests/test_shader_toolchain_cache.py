@@ -409,13 +409,15 @@ class MetalPrefill(unittest.TestCase):
 
 
 class SharedMetalCache(unittest.TestCase):
+    """NXForge: one Metal compile cache for every game (dmsh_mtlcache.SHARED), a shader_cache.Store of its own"""
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name); self.compiles = 0
         def compile_current(msl, air, lib):
             self.compiles += 1; Path(lib).write_bytes(b'LIB ' + Path(msl).read_bytes())
+        self.store = shader_cache.Store(self.root / 'metallib.db'); self.addCleanup(self.store.close)
         with mock.patch.object(dmsh_mtlcache, 'compiler_id', return_value='tested compiler and SDK'):
-            self.cache = dmsh_mtlcache.Cache(str(self.root / 'shared'), {'mac': ('macosx', 'flags', compile_current)}, str(self.root))
+            self.cache = dmsh_mtlcache.Cache(self.store, {'mac': ('macosx', 'flags', compile_current)}, str(self.root))
 
     def source(self, name, text):
         p = self.root / name; p.write_text(text); return str(p)
@@ -430,29 +432,32 @@ class SharedMetalCache(unittest.TestCase):
     def test_library_pruned_by_another_build_is_compiled_again(self):
         msl = self.source('a.metal', 'MSL')
         self.cache.compile('mac', msl, str(self.root / 'first.metallib'))
-        os.unlink(self.cache.path('mac', b'MSL'))
+        other = shader_cache.Store(self.root / 'metallib.db')   # another build's connection to the same file
+        other._run('DELETE FROM entry WHERE name=?', self.cache.path('mac', b'MSL')); other.close()
         self.cache.compile('mac', msl, str(self.root / 'again.metallib'))
         self.assertEqual(self.compiles, 2)
         self.assertEqual((self.root / 'again.metallib').read_bytes(), b'LIB MSL')
 
-    def test_prune_deletes_the_libraries_unused_the_longest(self):
+    def test_prune_removes_the_libraries_unused_the_longest(self):
         for i, text in enumerate(('old', 'used', 'new')):
             self.cache.compile('mac', self.source(f'{text}.metal', text * 5000), str(self.root / f'{text}.metallib'))
-            os.utime(self.cache.path('mac', (text * 5000).encode()), (1000 + i, 1000 + i))
+            self.store._run('UPDATE entry SET mtime=? WHERE name=?', 1000 + i, self.cache.path('mac', (text * 5000).encode()))
         self.cache.compile('mac', str(self.root / 'used.metal'), str(self.root / 'reuse.metallib'))   # a use refreshes it
-        size = os.stat(self.cache.path('mac', b'old' * 5000)).st_blocks * 512
-        self.cache.prune(2.5 * size / 2**30)
-        self.assertFalse(os.path.exists(self.cache.path('mac', b'old' * 5000)))
-        self.assertTrue(os.path.exists(self.cache.path('mac', b'used' * 5000)))
+        size = len(b'LIB ' + b'old' * 5000)
+        line = self.cache.prune(2.5 * size / 2**30)
+        self.assertFalse(self.store.has(self.cache.path('mac', b'old' * 5000)))
+        self.assertTrue(self.store.has(self.cache.path('mac', b'used' * 5000)))
+        self.assertTrue(self.store.has(self.cache.path('mac', b'new' * 5000)))
+        self.assertIn('1 unused the longest removed', line)
 
-    def test_adopt_moves_an_old_game_cache_with_every_target(self):
-        old = self.root / 'game/cas/metallib'
+    def test_adopt_moves_the_old_shared_folder_with_every_target(self):
+        old = self.root / 'NXForge/metallib'
         for target in ('mac', 'ios'):
             (old / target / 'ab').mkdir(parents=True); (old / target / 'ab' / 'abcd.metallib').write_bytes(target.encode())
-        (old / 'filled.json').write_text('{}')
-        self.assertEqual(self.cache.adopt(str(old)), 2)
+        self.assertEqual(self.cache.adopt_folder(str(old)), 2)
         self.assertFalse(old.exists())
-        self.assertEqual((self.root / 'shared/ios/ab/abcd.metallib').read_bytes(), b'ios')
+        self.assertEqual(self.store.get('metallib/ios/abcd.metallib'), b'ios')
+        self.assertEqual(self.cache.adopt_folder(str(old)), 0)
 
 
 if __name__ == '__main__':
