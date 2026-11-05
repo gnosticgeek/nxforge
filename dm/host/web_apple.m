@@ -304,6 +304,7 @@ static NSString *mime(NSString *ext) {
     NSHTTPURLResponse *r = [[NSHTTPURLResponse alloc] initWithURL:u statusCode:d ? 200 : 404 HTTPVersion:@"HTTP/1.1"
                                                      headerFields:@{@"Content-Type": mime(f.pathExtension), @"Content-Length": [NSString stringWithFormat:@"%lu", (unsigned long)d.length]}];
     if (!d) LOG("[RED] web: the page asked for %s, which its document does not have", u.absoluteString.UTF8String);
+    if (!r) { [t didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorBadServerResponse userInfo:nil]]; return; }
     [t didReceiveResponse:r]; [t didReceiveData:d ?: [NSData data]]; [t didFinish];
 }
 
@@ -403,7 +404,7 @@ void front_web_shot(const char *path) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!g_box) { LOG("webshot: no page"); return; }
         [g_box.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *im, NSError *e) {
-            NSBitmapImageRep *r = im ? [[NSBitmapImageRep alloc] initWithData:im.TIFFRepresentation] : nil;
+            NSData *tiff = im.TIFFRepresentation; NSBitmapImageRep *r = tiff ? [[NSBitmapImageRep alloc] initWithData:tiff] : nil;
             NSData *d = [r representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
             if (![d writeToFile:p atomically:YES]) LOG("[RED] webshot: nothing written to %s (%s)", p.UTF8String, e.localizedDescription.UTF8String ?: "-");
         }];
