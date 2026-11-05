@@ -4,6 +4,9 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 ## Unreleased
 
+**Converter**
+- **Switch 2 games build from the app.** Choose a game's `.nup` file (or a folder holding one, or a dump folder) on Convert: no keys are asked for, and the converter lists the container's base game, updates and DLC, says whether NXForge has a profile for the game, and stops before the build when the game's code needs `zbic` and it is not installed. The disk check allows for a Switch 2 build's size (about twice the game plus 20 GB), and **Preview build** runs `--plan`. The converter's own Python now installs `zbic`. The command line takes `--convert <game>.nup` without keys.
+
 **Building**
 - **Rebuilds redo only what changed.** After a shader fix, the pipeline archive compiles only the bases whose shaders changed, in a new group beside the groups it keeps, instead of every group a changed shader sits in. Ocarina of Time's 31 groups (30,515 bases) took 26 minutes after each translator fix; a fix that touches a few hundred shaders now takes one group.
 - **The shared Metal cache holds a large game.** Its limit is now 12 GB (`DMSH_MTLCACHE_GB`, was 4), and a build never removes a library it used itself. Ocarina of Time's 7 GB of libraries pruned themselves at 4 GB, so the next translator change compiled 12,000 of them again.

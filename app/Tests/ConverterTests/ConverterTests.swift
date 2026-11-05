@@ -172,4 +172,58 @@ import Testing
     @Test func nothingUsable() {
         #expect(!sort(["/x/readme.txt", "/x/icon.png"]).usable)
     }
+
+    @Test func aNupIsTheGameItself() {
+        #expect(sort(["/g/Zelda/Ocarina [0400486024DEC000][v131072].NUP"]).gameDir == "/g/Zelda/Ocarina [0400486024DEC000][v131072].NUP")
+        #expect(sort(["/g/Kirby/base.nsp", "/g/Zelda/oot.nup"]).gameDir == "/g/Zelda/oot.nup")
+        #expect(sort(["/g/Zelda/oot.nup", "/g/Other"]).gameDir == "/g/Other")   // a folder wins
+    }
+}
+
+@Suite struct Switch2Sources {
+    private func temp() throws -> String {
+        let u = FileManager.default.temporaryDirectory.appending(path: "nxc-src-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        return u.path
+    }
+    private func touch(_ p: String) throws {
+        try FileManager.default.createDirectory(atPath: p.url.deletingLastPathComponent().path, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: p.url)
+    }
+
+    @Test func kindsFromTheFileSystem() throws {
+        let d = try temp()
+        #expect(Source.kind(of: d) == .packages)   // nothing yet: the keys check says what is missing
+        try touch(d + "/game.nup")
+        #expect(Source.kind(of: d) == .nup)
+        #expect(Source.kind(of: d + "/game.nup") == .nup)
+        #expect(Source.folder(of: d + "/game.nup") == d)
+        #expect(!Source.needsKeys(d + "/game.nup"))
+        try touch(d + "/base.nsp")
+        #expect(Source.kind(of: d) == .packages)   // packages win, as in the script
+        let dump = try temp()
+        try touch(dump + "/updates/131072/exefs/main.npdm")
+        #expect(Source.kind(of: dump) == .dump)
+        #expect(Source.folder(of: dump) == dump)
+    }
+
+    @Test func helperOutputDecodes() throws {
+        let json = #"{"kind": "nup", "source": "/g/oot.nup", "folder": "/g", "title_id": "0400486024DEC000", "name": "", "base": true, "updates": [131072], "dlc": 0, "romfs_bytes": 28000000000, "file_bytes": 25600000000, "zbic": true, "zbic_installed": false, "profile": "The Legend of Zelda: Ocarina of Time", "notes": []}"#
+        let i = try JSONDecoder().decode(SourceInfo.self, from: Data(json.utf8))
+        #expect(i.describe == "Base game + update")
+        let v = Source.validation(i)
+        #expect(!v.ok)   // ZBIC code without zbic
+        #expect(v.files.map(\.name) == ["Base game", "Update v131072"])
+        var ok = i; ok.zbicInstalled = true; ok.profile = nil
+        let w = Source.validation(ok)
+        #expect(w.ok)   // no profile is a warning, not a stop
+        #expect(w.summary.contains { $0.warn && $0.text.contains("no NXForge profile") })
+        #expect(Source.firstBuildBytes(i) == 28000000000 * 2 + (Int64(20) << 30))
+    }
+
+    @Test func planSummaryIsPicked() {
+        #expect(BuildRun.planMessage(#"{"ev": "say", "msg": "plan (--plan: nothing was built or changed):\n  reused: rewrite"}"#)?.hasSuffix("reused: rewrite") == true)
+        #expect(BuildRun.planMessage(#"{"ev": "say", "msg": "a NUP: oot.nup"}"#) == nil)
+        #expect(BuildRun.planMessage("not json") == nil)
+    }
 }

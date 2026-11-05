@@ -1,5 +1,6 @@
-// Game files dropped on the Convert page (after NX2Apple's DropFiles.swift, MIT): a game folder, NSP / XCI / NSZ / XCZ files and a
-// keys file, in any mix. A folder is the game folder; game files make their folder the game folder; a .keys file is the keys file.
+// Game files dropped on the Convert page (after NX2Apple's DropFiles.swift, MIT): a game folder, NSP / XCI / NSZ / XCZ files, a .nup
+// file and a keys file, in any mix. A folder is the game folder; a .nup is the game itself; game files make their folder the game
+// folder; a .keys file is the keys file.
 import Foundation
 
 enum DropFiles {
@@ -9,12 +10,13 @@ enum DropFiles {
         var usable: Bool { gameDir != nil || keys != nil }
     }
 
-    /// What a drop sets. `isDir` says whether a path is a folder (the file system, or a stand-in in the tests). A folder wins over the
-    /// folder of dropped game files; of several keys files prod.keys wins.
+    /// What a drop sets. `isDir` says whether a path is a folder (the file system, or a stand-in in the tests). A folder wins over a
+    /// .nup, which wins over the folder of dropped game files; of several keys files prod.keys wins.
     static func sort(_ paths: [String], isDir: (String) -> Bool) -> Sorted {
         var out = Sorted()
         let url = { (p: String) in URL(fileURLWithPath: p) }
         out.gameDir = paths.first(where: isDir)
+            ?? paths.first { !isDir($0) && url($0).pathExtension.lowercased() == "nup" }
             ?? paths.first { gameExtensions.contains(url($0).pathExtension.lowercased()) }.map { url($0).deletingLastPathComponent().path }
         let keys = paths.filter { !isDir($0) && url($0).pathExtension.lowercased() == "keys" }
         out.keys = keys.first { url($0).lastPathComponent.lowercased() == "prod.keys" } ?? keys.first
