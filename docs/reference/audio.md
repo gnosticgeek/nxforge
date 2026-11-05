@@ -169,7 +169,14 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
 - **Cause:** in SDK 20 the getters the host used (`GetExecutionMode`, `GetRenderingDevice`, `GetCommandBufferWorkBufferSize`) are inlined away, `GenerateCommand` takes and returns a `Span<std::byte>` (the generated list comes back in x0 / x1), the device and mode are words at +0x48 / +0x4c, the command buffer is at +0xf8 / +0x100, and `UpdateImpl` locks the mutex at +0x2d0 instead of +0x1f0. The DeviceSink command became ID 0x14 (SDK 20 inserted a command before it) with the same layout.
 - **Fix:** `render_once` picks the layout by whether the Span version of `GenerateCommand` exists (`hle_audren.c`).
 - **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md).
-- **Note:** the render thread's call takes another route in this SDK too: see [The render thread's route through the public `ExecuteAudioRendererRendering` (SDK 20)](#the-render-threads-route-through-the-public-executeaudiorendererrendering-sdk-20); the update lock at +0x2d0 is in [The renderer's update lock (`update_lock`)](#the-renderers-update-lock-update_lock).
+- **Note:** the render thread's call takes another route in this SDK too: see [The render thread's route through the public `ExecuteAudioRendererRendering` (SDK 20)](#the-render-threads-route-through-the-public-executeaudiorendererrendering-sdk-20); the update lock at +0x2d0 is in [The renderer's update lock (`update_lock`)](#the-renderers-update-lock-update_lock), and SDK 22 moved it ([The update lock read off `UpdateImpl` (SDK 22)](#the-update-lock-read-off-updateimpl-sdk-22)).
+
+### The update lock read off `UpdateImpl` (SDK 22)
+
+- **Symptom:** `CRASH sig=11 addr=0x20` at `nn::audio::server::AddressInfo::GetReference` (`sdk+0x249874`) on the render thread, under `CommandGenerator::GenerateDataSourceCommand` and `render_once`, minutes into a movie. The `AddressInfo` the crash register points at is all zeros, though the function had just read a non-null memory pool pointer from it.
+- **Cause:** the Span layout took the lock at a fixed +0x2d0. SDK 22.2.8's `UpdateImpl` (`sdk+0x238530`) locks the `SdkMutexType` at +0x2d8 (`add x19, x0, #0x2d8; …; mov x0, x19; bl SdkMutexType::Lock`). Locked at +0x2d0, the render excluded nothing and wrote a lock word into the field before the mutex. The game's `RequestUpdate` then rewrote a voice while its commands were being generated. `Update` itself reads the system tick first and calls `UpdateImpl`, so `update_lock` found no lock there.
+- **Fix:** for the Span layout `update_lock` reads the offset off `UpdateImpl` (`hle_audren.c`) and keeps +0x2d0 only when it finds no `SdkMutexType::Lock`. The start-up line names it: `update lock SdkMutexType at +0x2d8`.
+- **Found on:** The Legend of Zelda: Ocarina of Time (Switch 2, `0400486024DEC000`, update v131072; its profile is in pull request #1299): the second run through its opening movie crashed; the run after the fix played the opening through and Kokiri Forest ran with sound.
 
 ### SDK 21 DSP command header without a magic
 
@@ -305,12 +312,29 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
 - **Fix:** `ListAudioIns` reports none, both opens fail, and the calls that need an open AudioIn answer without touching the game's object (`hle_audio.c`). `AcquireAudioDeviceNotificationForInput` binds an event that is never signaled and returns 0x499 when acquired again, as the SDK does with a flag of its own (SDK 13.3.0 `sdk+0x56300`: `+0x851`, the output's `+0x852`; `hle_audren.c`).
 - **Found on:** [Absolum](../../dm/games/0100A83022A22000/README.md) (SDK 18.3.2, FNA on .NET NativeAOT with SDL3; one boot each); [Portal 2](../../dm/games/0100ABD01785C000/README.md) (SDK 13.3.0: its audio thread at start, `main+0x19f37c`).
 
+### No virtual audio input devices (SDK 22)
+
+- **Symptom:** at boot, `[RED] sf: the game connects to service auddmg:u itself, which the host does not serve`, then `game called nn::diag abort: Result 0xa99` in the sdk (`nn::audio::detail::ListVirtualInputDevices`).
+- **Cause:** SDK 22's virtual input devices (the Switch 2's microphone routing) are listed through the `auddmg:u` service, which the SDK's own client connects to ([services the game connects to itself](../../dm/host/hle_sf.c)). `nn::audio::ListVirtualInputDevices` had no hook, so the SDK's code ran and aborted on the refused connection.
+- **Fix:** `hle_audio.c` answers `ListVirtualInputDevices` with no devices, as `ListAudioIns` ([above](#no-audio-input-devices)): the host has no microphone.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), which lists them at boot.
+
 ### `OpenAudioOut` without a release event (SDK 22)
 
 - **Symptom:** `game called nn::diag abort: Result 0xe15, call site sdk+0x1f8704`, i.e. inside `nn::audio::CreateAudioOutManagerByHipc+0xb4`, before any audio device opened.
 - **Cause:** SDK 22 calls **`nn::audio::OpenAudioOut(AudioOut*, const char*, const AudioOutParameter&)`** (`sdk+0x1f7914`, `nn::audio::OpenAudioOut(AudioOut*, const char*, const AudioOutParameter&)`'s failure path) — the overload without the `SystemEvent` the host implemented (`_ZN2nn5audio12OpenAudioOutEPNS0_8AudioOutEPKcRKNS0_17AudioOutParameterEPNS_2os11SystemEventE`). With no hook the SDK's own IPC path ran and the audout service is not there.
 - **Fix:** `hle_audio.c` gained the 4-argument hook, which opens through the same `au_open_at` and leaves the release event NULL (`au_open_at(g, NULL, name, param, __builtin_return_address(0))`), so the output polls its released buffers. The log then reads `OpenAudioOut … , no release event (the game polls)`.
 - **Found on:** [Well Dweller](../../dm/games/0100217023F6C000/README.md) (SDK 22.2.0); the game's first `AudioOut` is the "DeviceOut" form, the second its 48 kHz music output.
+
+### SDK 21's OutputStream on a virtual output device
+
+- **Symptom:** `[RED] sf: the game connects to service auddmg:u itself, which the host does not serve`, then `game called nn::diag abort: Result 0xa99` under `nn::audio::GetDefaultVirtualOutputDevice` (`sdk+0x221520`, `audio::detail::GetVirtualOutputDeviceProperties`).
+- **Cause:** SDK 21 has a second output interface beside AudioOut: `GetDefaultVirtualOutputDevice` names a virtual device, `OpenOutputStream` opens a stream on it with a `StreamFormat` {sample format, channels, sample rate} (5, float), a capacity in frames and, in one overload, a system event; the game writes a period at a time with `WriteOutputStream` once `GetOutputStreamFreeFrameCount` covers it, waiting on the event with a short timeout between writes. States as games read them: 0 not open (the SDK's own answer for a null stream), 1 stopped, 2 started: a game's close path stops a stream in state 2 and purges and closes one in state 1, so a wrong answer leaves it open for good. `GetOutputStreamStatistics` returns a 24-byte struct through x8. Every call reaches the service.
+- **Fix:** `hle_audio.c` opens one AudioOut per stream, its release event the stream's: each write becomes a 16-bit interleaved block (float clamped and scaled), the free count is the capacity less the frames still queued, `Purge` drops the queued blocks, `SetOutputStreamGain` is the AudioOut's volume (no fade), `StartOutputStreams` starts several, and the statistics report nothing. Input streams answer as AudioIn does: no device, and an open fails. The default virtual device is `AudioVirtualOutput`, a name of the host's.
+- **The frames are interleaved:** `WriteOutputStream` takes L, R, L, R, although the game's code that zeroes an unfilled tail (`main+0xad1684`) steps by a period per channel. Read as planar, each 10 ms block's first half played as left and its second half as right, each at half speed: all sound an octave low (voices very deep) with a jump at every block (crackling). In `DM_AUDIO_DUMP` that shows as a spectrum mirrored about 12 kHz (33-39 % of the energy above 20 kHz where 0.00 % belongs) and channels whose samples alternate between two signals (lag-1 autocorrelation 0.18, lag-2 0.99). `t_output_stream` checks the order.
+- **A larger statistics result ends the game:** Star Fox keeps its 24 bytes at `sp` with its stack canary right behind them (`main+0xbce9b90`), so a 32-byte result ended in `__stack_chk_fail` on the audio thread (`CRASH sig=4`, `lr=main+0xbce9f98`).
+- **Focus:** Star Fox closes its stream when its window loses focus and opens a new one when it regains it; 14 rounds went by with the sound intact.
+- **Found on:** Xenoblade Chronicles 2, Nintendo Switch 2 Edition (`0400E95004038001`) (SDK 21.4.4, one or two 2-channel streams at 48 kHz, 10 ms periods, 40 ms capacity; the second when the active device is `AudioExternalOutput`); [Star Fox](../../dm/games/0400E88025B1A000/README.md) (Wwise 2024.1, SDK 21.4.4).
 
 ## Codecs
 
@@ -324,6 +348,13 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
   - the multi-stream C interface, including the SDK 12+ overload with an option argument, goes to the `sdk`'s software `OpusMultiStreamDecoder` C interface, with a host-held state per game object as for the single-stream decoder. `GetHardwareOpusMultiStreamDecoderProcessingTime` reports 0.
   - the two-argument `GetHardwareOpusDecoderWorkBufferSize` is hooked beside the three-argument one.
 - **Found on:** [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md) (SDK 9.6: only the `HardwareOpusMultiStreamDecoder` class and the four-argument size); [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md) (1.4.3, the single-stream C interface); [Big Brain Academy: Brain vs. Brain](../../dm/games/0100620012D6E000/README.md) (SDK 11.4.3, the two-argument size); [Unicorn Overlord](../../dm/games/010069401ADB8000/README.md) (SDK 16.2.4, the multi-stream C interface; one boot).
+
+### SDK 21's hardware Opus decoder manager
+
+- **Symptom:** `game called nn::diag abort: Result 0xe15` under `nn::codec::GetHardwareOpusDecoderManagerWorkBufferSize` (`sdk+0x323180`), the game's sound setup.
+- **Cause:** SDK 21's asynchronous interface to the hardware decoder: a manager (`HardwareOpusDecoderManagerType`, with a system event, a decoder count and an I/O buffer count) owns decoders (`InitializeHardwareOpusDecoder` with a manager). The game enqueues one packet per call (`EnqueueOpusDataToHardwareOpusDecoder`, Nintendo's 8-byte header and the packet, as `DecodeOpusInterleaved` takes it; it expects all of it consumed), calls `ExecuteHardwareOpusDecoderDecoding` once per audio frame, dequeues finished frames (`DequeuePcmInterleavedDataFromHardwareOpusDecoder`) as many as the completed count, and reads the waiting / executing / completed counts and the free I/O buffers. It tells an initialized manager by the struct's first word.
+- **Fix:** `hle_codec.c` keeps the manager in host state (its pointer in that first word) and decodes with the `sdk`'s software `OpusDecoder`: Enqueue queues the packet and takes an I/O buffer, Execute decodes every waiting packet on the caller's thread and signals the event, Dequeue hands back a frame and its buffer. So a request is never "executing". A packet the decoder refuses completes as 20 ms of silence, with a red line. `ResetHardwareOpusDecoder` and `FinalizeHardwareOpusDecoder` serve both interfaces.
+- **Found on:** Xenoblade Chronicles 2, Nintendo Switch 2 Edition (`0400E95004038001`) (SDK 21.4.4: a mono manager of 128 decoders and 255 I/O buffers, a stereo one of 72 and 160, 48 kHz, 20 ms frames); [Star Fox](../../dm/games/0400E88025B1A000/README.md) (the same figures).
 
 ## Timing and catch-up
 
