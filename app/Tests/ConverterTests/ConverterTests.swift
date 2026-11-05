@@ -172,4 +172,168 @@ import Testing
     @Test func nothingUsable() {
         #expect(!sort(["/x/readme.txt", "/x/icon.png"]).usable)
     }
+
+    @Test func aNupIsTheGameItself() {
+        #expect(sort(["/g/Zelda/Ocarina [0400486024DEC000][v131072].NUP"]).gameDir == "/g/Zelda/Ocarina [0400486024DEC000][v131072].NUP")
+        #expect(sort(["/g/Kirby/base.nsp", "/g/Zelda/oot.nup"]).gameDir == "/g/Zelda/oot.nup")
+        #expect(sort(["/g/Zelda/oot.nup", "/g/Other"]).gameDir == "/g/Other")   // a folder wins
+    }
+}
+
+@Suite struct Switch2Sources {
+    private func temp() throws -> String {
+        let u = FileManager.default.temporaryDirectory.appending(path: "nxc-src-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        return u.path
+    }
+    private func touch(_ p: String) throws {
+        try FileManager.default.createDirectory(atPath: p.url.deletingLastPathComponent().path, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: p.url)
+    }
+
+    @Test func kindsFromTheFileSystem() throws {
+        let d = try temp()
+        #expect(Source.kind(of: d) == .packages)   // nothing yet: the keys check says what is missing
+        try touch(d + "/game.nup")
+        #expect(Source.kind(of: d) == .nup)
+        #expect(Source.kind(of: d + "/game.nup") == .nup)
+        #expect(Source.folder(of: d + "/game.nup") == d)
+        #expect(!Source.needsKeys(d + "/game.nup"))
+        try touch(d + "/base.nsp")
+        #expect(Source.kind(of: d) == .packages)   // packages win, as in the script
+        let dump = try temp()
+        try touch(dump + "/updates/131072/exefs/main.npdm")
+        #expect(Source.kind(of: dump) == .dump)
+        #expect(Source.folder(of: dump) == dump)
+    }
+
+    @Test func helperOutputDecodes() throws {
+        let json = #"{"kind": "nup", "source": "/g/oot.nup", "folder": "/g", "title_id": "0400486024DEC000", "name": "", "base": true, "updates": [131072], "dlc": 0, "romfs_bytes": 28000000000, "file_bytes": 25600000000, "zbic": true, "zbic_installed": false, "profile": "The Legend of Zelda: Ocarina of Time", "notes": []}"#
+        let i = try JSONDecoder().decode(SourceInfo.self, from: Data(json.utf8))
+        #expect(i.describe == "Base game + update")
+        let v = Source.validation(i)
+        #expect(!v.ok)   // ZBIC code without zbic
+        #expect(v.files.map(\.name) == ["Base game", "Update v131072"])
+        var ok = i; ok.zbicInstalled = true; ok.profile = nil
+        let w = Source.validation(ok)
+        #expect(w.ok)   // no profile is a warning, not a stop
+        #expect(w.summary.contains { $0.warn && $0.text.contains("no NXForge profile") })
+        #expect(Source.firstBuildBytes(i) == 28000000000 * 2 + (Int64(20) << 30))
+    }
+
+    @Test func planSummaryIsPicked() {
+        #expect(BuildRun.planMessage(#"{"ev": "say", "msg": "plan (--plan: nothing was built or changed):\n  reused: rewrite"}"#)?.hasSuffix("reused: rewrite") == true)
+        #expect(BuildRun.planMessage(#"{"ev": "say", "msg": "a NUP: oot.nup"}"#) == nil)
+        #expect(BuildRun.planMessage("not json") == nil)
+    }
+}
+
+@Suite struct FailureDiagnosis {
+    @Test(arguments: [
+        ("[RED] less than 12 GB free on the volume of /Volumes/Games/x_build", Diagnosis.Code.diskFull),
+        ("[RED] BuildError: Mario Kart 8 Deluxe 3.0.1 is a 32-bit ARM program (main.npdm: the 64-bit instruction flag is clear): x", .thirtyTwoBit),
+        ("[RED] the Metal compiler does not run (error: cannot execute tool 'metal' due to missing Metal Toolchain)", .metalToolchain),
+        ("[RED] the shader translator does not run (no runtime): it needs the .NET 10 runtime for this Mac", .dotnet),
+        ("[RED] spirv-cross is missing or not executable: /opt/homebrew/bin/spirv-cross", .missingTool),
+        ("[RED] no base game NSP found in /Games/Mario (title ID 010015100B514000)", .gameFiles),
+        ("[RED] patch_nso.py exit code 1 on main (full output: x.log)", .rewriter),
+        ("[RED] dmsh_build.py exit code 2 (full output: x.log)", .shaders),
+        ("another build of this folder is running (process 412); wait for it to finish", .folderBusy),
+        ("signature check failed: code object is not signed at all", .signing),
+        ("stopped", .stopped),
+        ("[RED] something nobody has seen before", .unknown),
+    ])
+    func errorGivesCode(_ error: String, _ code: Diagnosis.Code) {
+        #expect(BuildDiagnosis.diagnose(error: error, log: []).code == code)
+    }
+
+    @Test func logTailWhenTheErrorSaysNothing() {
+        let d = BuildDiagnosis.diagnose(error: "the script exited with 1", log: ["step 3", "Killed: 9"])
+        #expect(d.code == .memory)
+    }
+
+    @Test func redactsKeysPathsAndHome() {
+        let text = "header_key = 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n" +
+            "reading /Users/tom/keys/prod.keys for /Users/tom/Games/0100152000022000_build\n" +
+            "key 00112233445566778899aabbccddeeff"
+        let r = BuildDiagnosis.redact(text, keysPath: "/Users/tom/keys/prod.keys", home: "/Users/tom")
+        #expect(!r.contains("0123456789abcdef0123456789abcdef"))
+        #expect(!r.contains("00112233445566778899aabbccddeeff"))
+        #expect(!r.contains("/Users/tom"))
+        #expect(r.contains("[prod.keys]"))
+        #expect(r.contains("~/Games/0100152000022000_build"))   // title IDs stay
+    }
+}
+
+@Suite struct SaveSnapshotTests {
+    private func temp() throws -> String {
+        let p = FileManager.default.temporaryDirectory.appending(path: "nxc-saves-\(UUID().uuidString)").path
+        try FileManager.default.createDirectory(atPath: p, withIntermediateDirectories: true)
+        return p
+    }
+    private func write(_ s: String, _ path: String) throws {
+        try FileManager.default.createDirectory(atPath: path.url.deletingLastPathComponent().path, withIntermediateDirectories: true)
+        try Data(s.utf8).write(to: path.url)
+    }
+    private func read(_ path: String) -> String? { FileManager.default.contents(atPath: path).map { String(decoding: $0, as: UTF8.self) } }
+
+    @Test func gameFolderSaveFirstThenLibrary() throws {
+        let base = try temp(), home = base + "/home", app = base + "/Games/Mario.app"
+        try FileManager.default.createDirectory(atPath: app, withIntermediateDirectories: true)
+        let id = "010015100B514000"
+        #expect(SaveSnapshots.location(app: app, titleID: id, home: home).save == base + "/Games/Saves/save")
+        try write("lib", "\(home)/Library/Application Support/nxnative/\(id)/save/a")
+        #expect(SaveSnapshots.location(app: app, titleID: id, home: home).save.hasPrefix(home + "/Library/"))
+        try write("here", base + "/Games/Saves/save/a")
+        #expect(SaveSnapshots.location(app: app, titleID: id, home: home).save == base + "/Games/Saves/save")
+    }
+
+    @Test func snapshotAndRestoreRoundTrip() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "010015100B514000")
+        try write("one", loc.save + "/slot0/data.bin")
+        try write("dev", loc.device + "/settings")
+        let s = try #require(try SaveSnapshots.snapshot(loc, reason: .manual))
+        #expect(s.files == 2)
+        try write("two", loc.save + "/slot0/data.bin")
+        try write("new", loc.save + "/slot1/data.bin")
+        let safety = try SaveSnapshots.restore(s, to: loc)
+        #expect(read(loc.save + "/slot0/data.bin") == "one")
+        #expect(!FileManager.default.fileExists(atPath: loc.save + "/slot1"))
+        #expect(read(loc.device + "/settings") == "dev")
+        #expect(safety?.reason == .beforeRestore)
+        #expect(SaveSnapshots.list(loc).count == 2)
+        // nothing left over beside the save
+        #expect(try FileManager.default.contentsOfDirectory(atPath: loc.folder).sorted() == ["save", "save-snapshots", "save_device"])
+    }
+
+    @Test func damagedSnapshotIsRefused() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "010015100B514000")
+        try write("one", loc.save + "/a")
+        let s = try #require(try SaveSnapshots.snapshot(loc, reason: .manual))
+        try write("tampered", s.path + "/data/save/a")
+        try write("current", loc.save + "/a")
+        #expect(throws: ConverterError.self) { try SaveSnapshots.restore(s, to: loc) }
+        #expect(read(loc.save + "/a") == "current")
+    }
+
+    @Test func linksAreRefused() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "010015100B514000")
+        try write("one", loc.save + "/a")
+        try FileManager.default.createSymbolicLink(atPath: loc.save + "/link", withDestinationPath: "/etc")
+        #expect(throws: ConverterError.self) { try SaveSnapshots.snapshot(loc, reason: .manual) }
+    }
+
+    @Test func automaticSnapshotsArePruned() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "010015100B514000")
+        try write("one", loc.save + "/a")
+        try SaveSnapshots.snapshot(loc, reason: .manual)
+        for _ in 0..<(SaveSnapshots.keepAutomatic + 2) { try SaveSnapshots.snapshot(loc, reason: .beforeRebuild) }
+        let all = SaveSnapshots.list(loc)
+        #expect(all.filter { $0.reason == .manual }.count == 1)
+        #expect(all.filter { $0.reason != .manual }.count == SaveSnapshots.keepAutomatic)
+    }
 }

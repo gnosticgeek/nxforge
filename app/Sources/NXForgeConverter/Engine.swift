@@ -242,8 +242,9 @@ enum Engine {
         }.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
     }
 
-    /// "Base game + update", "Base game + 2 DLC" from the folder's file names.
+    /// "Base game + update", "Base game + 2 DLC" from the folder's file names ("Switch 2 NUP container" for a .nup chosen itself).
     static func describeFiles(_ dir: String) -> String {
+        if Source.isNupFile(dir) { return "NUP container" }
         let names = GameFiles.list(in: dir.url).map(\.lastPathComponent)
         let tails = names.compactMap { n -> String? in
             guard let r = n.range(of: #"\[[0-9A-Fa-f]{16}\]"#, options: .regularExpression) else { return nil }

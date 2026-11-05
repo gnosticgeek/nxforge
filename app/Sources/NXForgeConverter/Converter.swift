@@ -4,8 +4,10 @@ import Foundation
 import Observation
 
 struct Job {
+    /// the game as chosen: a folder, or a .nup file (Source)
     var gameDir: String
-    var keys: String
+    /// nil for a game that needs no keys (a NUP or a dump folder)
+    var keys: String?
     var sign: String?
     var env: ToolEnv
     /// Rebuild this app in place: it is moved to app-backups/ first and put back if the build fails.
@@ -18,6 +20,13 @@ struct Job {
     var reuseCache = true
     /// what a successful build deletes from <id>_build (--cleanup)
     var cleanup: Cleanup = .off
+    /// "Base game + update" for the build record; nil = read from the folder's file names
+    var gameFiles: String?
+    /// --plan: say what a build would reuse and redo, and build nothing
+    var plan = false
+
+    /// the folder holding the game's files, where <id>_build, the lock and the app go
+    var folder: String { Source.folder(of: gameDir) }
 }
 
 struct Stage: Hashable {
@@ -36,6 +45,8 @@ struct StageDone: Hashable, Identifiable {
     let summary: String
 
     var reused: Bool { summary.contains("reused") }
+    /// a --plan run's stage that a build would do again
+    var redo: Bool { summary.contains("would be redone") }
     var line: String {
         "[\(k)/\(n)] \(name) (\(seconds / 60):\(String(format: "%02d", seconds % 60)))" + (summary.isEmpty ? "" : ": \(summary)")
     }
@@ -50,12 +61,14 @@ final class BuildRun {
     var app: String?
     var backup: String?
     var result: Result<String, ConverterError>?
+    /// the run is a --plan (Preview build): its result is the plan, and nothing was built
+    var planning = false
     private var process: Process?
     /// called on the main thread after each change (the command line prints from it)
     var onChange: (() -> Void)?
 
     func start(_ job: Job) {
-        running = true; stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil
+        running = true; stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil; planning = job.plan
         Thread.detachNewThread { [weak self] in
             let r = Self.perform(job, run: self)
             DispatchQueue.main.async {
@@ -71,7 +84,7 @@ final class BuildRun {
     /// Back to the state before any build (after a successful one has been handed to Builds).
     func reset() {
         guard !running else { return }
-        stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil
+        stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil; planning = false
     }
 
     /// Ask the script to stop as Ctrl-C would (it ends the stage and exits with 130).
@@ -85,24 +98,35 @@ final class BuildRun {
         guard let r else { return .failure(ConverterError("cancelled")) }
         let say: (String) -> Void = { m in DispatchQueue.main.async { r.log.append(m); r.onChange?() } }
         do {
-            let lock = try FolderLock(job.gameDir)
+            let lock = try FolderLock(job.folder)
             defer { lock.release() }
             guard let repo = job.env.repo else { throw ConverterError("no NXForge engine checkout") }
             guard let engine = Engine.current(repo) else { throw ConverterError("cannot read the engine's git commit") }
+            if job.plan {   // nothing is moved, built or recorded
+                guard let src = try? String(contentsOfFile: repo + "/" + scriptPath, encoding: .utf8), src.contains("'--plan'") else {
+                    throw ConverterError("this engine has no --plan: update the engine to preview a build")
+                }
+                return .success(try build(job, repo: repo, run: r))
+            }
             var backup: String?
             if let app = job.rebuild {
+                // a new engine may change how the game reads its save: keep a checked copy first (best effort; the build goes on without one)
+                if let id = VerifiedGames.titleID(ofApp: app) {
+                    do { if let s = try SaveSnapshots.snapshot(SaveSnapshots.location(app: app, titleID: id), reason: .beforeRebuild) { say("save snapshot \(s.id) made before the rebuild") } }
+                    catch { say("warning: no save snapshot before the rebuild: \(error)") }
+                }
                 let old = Engine.builds().first { $0.app == app }?.engine
                 let b = try Engine.backUp(app, engine: old)
                 backup = b
                 say("old app moved to \(b)")
                 DispatchQueue.main.async { r.backup = b }
             }
-            if !job.reuseCache { forgetStageKeys(job.gameDir); say("cached build steps cleared: every step runs again") }
+            if !job.reuseCache { forgetStageKeys(job.folder); say("cached build steps cleared: every step runs again") }
             do {
                 let app = try build(job, repo: repo, run: r)
                 let (steps, shaders) = DispatchQueue.main.sync { (r.done.filter(\.ok).count, r.done.first { $0.name.hasPrefix("Mac shaders") }.flatMap(shaderCount)) }
                 Engine.record(BuildRecord(app: app, gameDir: job.gameDir, engine: engine, repo: repo, builtAt: Engine.now(), steps: steps, shaders: shaders,
-                                          gameFiles: Engine.describeFiles(job.gameDir)))
+                                          gameFiles: job.gameFiles ?? Engine.describeFiles(job.gameDir)))
                 let msg = try verify(app)
                 if let b = backup, !job.keepBackup, (try? FileManager.default.trashItem(at: b.url, resultingItemURL: nil)) != nil {
                     say("old app moved to the Trash")
@@ -141,11 +165,14 @@ final class BuildRun {
         return s.summary[..<r.lowerBound].components(separatedBy: " of ").last
     }
 
+    /// The app's path, or with job.plan the script's plan.
     nonisolated private static func build(_ job: Job, repo: String, run r: BuildRun) throws -> String {
         guard let py = job.env.python else { throw ConverterError("no Python with the script's modules") }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: py)
-        var args = ["-u", repo + "/" + scriptPath, job.gameDir, "-k", job.keys, "--platform", "mac-app", "--progress", "json"]
+        var args = ["-u", repo + "/" + scriptPath, job.gameDir, "--platform", "mac-app", "--progress", "json"]
+        if let k = job.keys { args += ["-k", k] }
+        if job.plan { args.append("--plan") }
         if let id = job.sign { args += ["--mac-sign", id] }
         if let o = job.rebuild ?? job.out { args += ["-o", o] }
         if job.cleanup != .off { args += ["--cleanup", job.cleanup.rawValue] }
@@ -169,9 +196,10 @@ final class BuildRun {
             for l in Lines(err.fileHandleForReading) { errLines.append(l); DispatchQueue.main.async { r.log.append(l) } }
             errDone.signal()
         }
-        var appPath: String?
+        var appPath: String?, plan: String?
         for line in Lines(out.fileHandleForReading) {
             if let a = event(line, run: r) { appPath = a }
+            if job.plan, let m = planMessage(line) { plan = m }
         }
         p.waitUntilExit()
         errDone.wait()
@@ -183,9 +211,17 @@ final class BuildRun {
             let red = DispatchQueue.main.sync { r.log.last { $0.contains("[RED]") } } ?? errLines.last
             throw ConverterError(red ?? "the script exited with \(p.terminationStatus)")
         }
+        if job.plan { return plan ?? "the script printed no plan" }
         guard let appPath else { throw ConverterError("the script finished but named no app") }
         DispatchQueue.main.async { r.app = appPath }
         return appPath
+    }
+
+    /// The --plan summary ("plan (--plan: nothing was built or changed):" and its lines) from a say event.
+    nonisolated static func planMessage(_ line: String) -> String? {
+        guard let v = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], v["ev"] as? String == "say",
+              let msg = v["msg"] as? String, msg.hasPrefix("plan (") else { return nil }
+        return msg
     }
 
     /// One stdout line of the script; returns the app's path from its "done: <path>.app (…)" message.

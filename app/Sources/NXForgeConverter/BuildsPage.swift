@@ -10,6 +10,11 @@ struct BuildsPage: View {
         var b = Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) }
         let q = model.buildSearch.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty { b = b.filter { name($0).lowercased().contains(q) || $0.engine.short.contains(q) } }
+        switch model.buildConsole {
+        case .all: break
+        case .switch2: b = b.filter { Console.of($0) == .switch2 }
+        case .switch1: b = b.filter { Console.of($0) == .switch1 }
+        }
         switch model.buildSort {
         case .newest: b.sort { $0.builtAt > $1.builtAt }
         case .oldest: b.sort { $0.builtAt < $1.builtAt }
@@ -36,6 +41,11 @@ struct BuildsPage: View {
                         .disabled(model.run.running || !model.allOK)
                         .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
                     }
+                    Picker("Console", selection: $model.buildConsole) {
+                        ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("Show the Switch 2 games, the Switch games, or both")
                     Picker("Sort", selection: $model.buildSort) {
                         ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue) }
                     }
@@ -49,21 +59,35 @@ struct BuildsPage: View {
                     }
                 }
                 if list.isEmpty {
-                    Card { Text(model.buildSearch.isEmpty ? "Nothing built yet. Convert a game to see it here." : "No builds match “\(model.buildSearch)”.").foregroundStyle(.secondary) }
+                    Card {
+                        Text(!model.buildSearch.isEmpty ? "No builds match “\(model.buildSearch)”." : model.buildConsole != .all ? "No \(model.buildConsole.rawValue) games built yet." : "Nothing built yet. Convert a game to see it here.")
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     HStack(alignment: .top, spacing: 16) {
                         Card(padding: 8) {
-                            VStack(spacing: 4) {
-                                ForEach(list) { b in
-                                    BuildRow(model: model, build: b, name: name(b), selected: b.app == selected?.app)
-                                        .onTapGesture { model.selectedBuild = b.app }
+                            // Switch 2 games first, then Switch games, each under its own heading when both are listed
+                            let groups = Console.allCases.map { c in (c, list.filter { Console.of($0) == c }) }.filter { !$0.1.isEmpty }
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(groups, id: \.0) { c, items in
+                                    if groups.count > 1 {
+                                        Text("\(c.rawValue) · \(items.count)").font(.headline).foregroundStyle(.secondary)
+                                            .padding(.horizontal, 10).padding(.top, c == groups.first?.0 ? 4 : 12)
+                                    }
+                                    ForEach(items) { b in
+                                        BuildRow(model: model, build: b, name: name(b), selected: b.app == selected?.app)
+                                            .onTapGesture { model.selectedBuild = b.app }
+                                    }
                                 }
                             }
                         }
                         .frame(maxWidth: .infinity)
                         if let s = selected { BuildDetail(model: model, build: s, name: name(s)).frame(maxWidth: .infinity) }
                     }
-                    if let s = selected { PreviousBuilds(model: model, build: s) }
+                    if let s = selected {
+                        PreviousBuilds(model: model, build: s)
+                        SaveSnapshotsCard(model: model, build: s)
+                    }
                 }
             }
             .padding(24)
@@ -82,7 +106,7 @@ struct BuildRow: View {
             AppIcon(path: build.app, size: 84)
             VStack(alignment: .leading, spacing: 4) {
                 Text(name).font(.title3.weight(.semibold)).lineLimit(2)
-                Text(build.date.map(relativeDay) ?? build.builtAt).foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                Text("\(Console.of(build).rawValue) · \(build.date.map(relativeDay) ?? build.builtAt)").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
@@ -285,6 +309,13 @@ struct PreviousBuilds: View {
         guard model.confirm("Restore this version?", "The current app moves to app-backups and this copy takes its place.", action: "Restore") else { return }
         let current = Engine.builds().first { $0.app == build.app }?.engine
         do {
+            // an older app may read the save differently: keep a checked copy of it first
+            if let id = VerifiedGames.titleID(ofApp: build.app) {
+                do { try SaveSnapshots.snapshot(SaveSnapshots.location(app: build.app, titleID: id), reason: .beforeAppRestore) }
+                catch {
+                    guard model.confirm("No save snapshot", "The save could not be copied (\(error)). Restore the older app anyway?", action: "Restore") else { return }
+                }
+            }
             _ = try Engine.backUp(build.app, engine: current)
             try FileManager.default.moveItem(atPath: b.path, toPath: build.app)
             // the record now describes the restored copy: its engine is the one its backup name carries
@@ -305,5 +336,101 @@ struct GlassButton: ViewModifier {
     let prominent: Bool
     func body(content: Content) -> some View {
         if prominent { content.buttonStyle(.glassProminent) } else { content.buttonStyle(.glass) }
+    }
+}
+
+/// The game's save snapshots: make one, put one back, show or remove one (SaveSnapshots).
+struct SaveSnapshotsCard: View {
+    let model: AppModel
+    let build: BuildRecord
+    @State private var message: (ok: Bool, text: String)?
+    @State private var busy = false
+    @State private var tick = 0
+
+    var body: some View {
+        let _ = (model.revision, tick)
+        if let id = VerifiedGames.titleID(ofApp: build.app) {
+            let loc = SaveSnapshots.location(app: build.app, titleID: id)
+            let snaps = SaveSnapshots.list(loc)
+            Card(title: "Save snapshots", subtitle: "Checked copies of this game's save, to go back to if a build or a session goes wrong.") {
+                HStack(spacing: 8) {
+                    Image(systemName: "externaldrive").foregroundStyle(.secondary)
+                    Text(SaveSnapshots.hasSave(loc) ? "Save: \(loc.save.tildePath)" : "No save yet (it will be at \(loc.save.tildePath))")
+                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    if FileManager.default.fileExists(atPath: loc.save) {
+                        Button { reveal(loc.save) } label: { Image(systemName: "folder") }.buttonStyle(.glass).help("Show the save in Finder")
+                    }
+                    Button { make(loc) } label: { Label("Snapshot now", systemImage: "camera") }
+                        .buttonStyle(.glassProminent).disabled(busy || !SaveSnapshots.hasSave(loc))
+                        .help("Copies the save beside it, in save-snapshots, and checks every file of the copy")
+                }
+                if let m = message {
+                    HStack(spacing: 6) {
+                        StatusIcon(ok: m.ok, size: 15)
+                        Text(m.text).font(.callout).foregroundStyle(m.ok ? Color.secondary : Color.red).textSelection(.enabled)
+                    }
+                }
+                if snaps.isEmpty {
+                    Text("None yet. A rebuild and Restore this version make one on their own; so does every restore, of the save it replaces.").foregroundStyle(.secondary)
+                } else {
+                    InsetTable {
+                        HStack {
+                            Text("Made").frame(width: 170, alignment: .leading)
+                            Text("Why").frame(width: 200, alignment: .leading)
+                            Text("Size").frame(width: 120, alignment: .leading)
+                            Spacer()
+                        }
+                        .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6).background(.quaternary.opacity(0.4))
+                        ForEach(snaps) { s in
+                            Divider()
+                            HStack {
+                                Text(relativeDay(s.created)).frame(width: 170, alignment: .leading).help(s.id)
+                                Text(s.reason.label).frame(width: 200, alignment: .leading)
+                                Text("\(s.files) files · \(ByteCountFormatter.string(fromByteCount: s.bytes, countStyle: .file))").frame(width: 120, alignment: .leading)
+                                Spacer()
+                                Button("Restore") { restore(s, loc) }.buttonStyle(.glass).disabled(busy)
+                                Menu {
+                                    Button("Show in Finder") { reveal(s.path) }
+                                    Divider()
+                                    Button("Move to Trash") { try? SaveSnapshots.trash(s); tick += 1 }
+                                } label: { Image(systemName: "ellipsis") }
+                                .menuStyle(.button).buttonStyle(.glass).fixedSize()
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                        }
+                    }
+                    Text("Automatic snapshots: the newest \(SaveSnapshots.keepAutomatic) stay. With Cloud saves on, start the game on this Mac after a restore so the restored save is the one that syncs.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func make(_ loc: SaveLocation) {
+        guard !SaveSnapshots.isRunning(app: build.app) || model.confirm("The game is running", "A save the game writes while it is copied is refused. Quit the game first for a clean copy.", action: "Try anyway") else { return }
+        work { try SaveSnapshots.snapshot(loc, reason: .manual).map { "Snapshot made and checked: \($0.files) files" } ?? "No save to copy yet" }
+    }
+
+    private func restore(_ s: SaveSnapshot, _ loc: SaveLocation) {
+        if SaveSnapshots.isRunning(app: build.app) {
+            _ = model.confirm("Quit the game first", "The game is running: it would write over the restored save. Quit it, then restore.", action: "OK")
+            return
+        }
+        guard model.confirm("Restore this snapshot?", "The save from \(relativeDay(s.created)) replaces the current one. The current save is kept as a snapshot first.", action: "Restore") else { return }
+        work {
+            let safety = try SaveSnapshots.restore(s, to: loc)
+            return "Save restored from \(relativeDay(s.created))" + (safety.map { "; the one it replaced is snapshot \($0.id)" } ?? "")
+        }
+    }
+
+    /// Run off the main thread (hashing a large save takes a while), then show the result.
+    private func work(_ f: @escaping @Sendable () throws -> String) {
+        busy = true; message = nil
+        Task.detached {
+            let r: (Bool, String)
+            do { r = (true, try f()) } catch { r = (false, "\(error)") }
+            await MainActor.run { message = r; busy = false; tick += 1 }
+        }
     }
 }

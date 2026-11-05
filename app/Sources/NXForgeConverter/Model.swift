@@ -20,6 +20,19 @@ enum Page: String, CaseIterable, Identifiable {
 
 enum BuildSort: String, CaseIterable { case newest = "Newest first", oldest = "Oldest first", name = "Name" }
 
+/// Which console a build's game is for: Switch 2 title IDs start 04 (0400486024DEC000), Switch ones 01.
+enum Console: String, CaseIterable {
+    case switch2 = "Switch 2", switch1 = "Switch"
+
+    static func of(_ b: BuildRecord) -> Console {
+        if let t = VerifiedGames.titleID(ofApp: b.app) { return t.hasPrefix("04") ? .switch2 : .switch1 }
+        return Source.isNupFile(b.gameDir) || b.gameFiles == "NUP container" ? .switch2 : .switch1
+    }
+}
+
+/// The Builds page's console filter
+enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2", switch1 = "Switch" }
+
 @MainActor @Observable
 final class AppModel {
     var page: Page = .convert
@@ -36,7 +49,9 @@ final class AppModel {
     var lastChecked: Date?
     var validation: Validation?
     var validating = false
-    var validatedFor: (String, String)?
+    var validatedFor: (String, String?)?
+    /// the chosen game when it needs no keys (a NUP or a dump folder), as the engine read it
+    var source: SourceInfo?
     var game: GameInfo?
     var engine: EngineVersion?
     /// docs/nxforge-games.tsv of the engine checkout, by title ID: the Builds page's "On NXForge" row
@@ -49,6 +64,7 @@ final class AppModel {
     var revision = 0
     var buildSearch = ""
     var buildSort: BuildSort = .newest
+    var buildConsole: ConsoleFilter = .all
     var selectedBuild: String?
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
     var rebuildQueue: [BuildRecord] = []
@@ -73,15 +89,19 @@ final class AppModel {
         }
         applyAppearance()
         recheck()
-        if settings.gameDir != nil && settings.keys != nil { validate() }
+        if settings.gameDir != nil { validate() }
     }
 
     var allOK: Bool { checks?.allSatisfy { $0.ok || $0.optional } ?? false }
     var passed: Int { checks?.filter(\.ok).count ?? 0 }
     var valid: Bool {
         guard let v = validation, let f = validatedFor else { return false }
-        return v.ok && f.0 == settings.gameDir && f.1 == settings.keys
+        return v.ok && f.0 == settings.gameDir && (!needsKeys || f.1 == settings.keys)
     }
+    /// whether the chosen game is read with prod.keys: false for a NUP or a dump folder
+    var needsKeys: Bool { settings.gameDir.map(Source.needsKeys) ?? true }
+    /// the folder holding the chosen game's files: the game folder, or the folder of the chosen .nup
+    var gameFolder: String? { settings.gameDir.map(Source.folder) }
     var ready: Bool { allOK && valid && !run.running }
 
     func applyAppearance() {
@@ -102,6 +122,8 @@ final class AppModel {
             let verified = VerifiedGames.load(e.repo)
             await MainActor.run {
                 self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date()
+                // a NUP or a dump is read by the engine's Python: check it again now that it is known (zbic may just have been installed)
+                if !self.needsKeys { self.validate() }
                 // once per launch: look for a newer engine (a fetch; quiet when offline)
                 if !self.checkedForUpdates, ver != nil { self.checkedForUpdates = true; self.engineAction(update: false) }
             }
@@ -109,19 +131,27 @@ final class AppModel {
     }
 
     func validate() {
-        guard let dir = settings.gameDir, let keys = settings.keys else { return }
+        guard let dir = settings.gameDir else { return }
+        let keys = settings.keys
+        if Source.needsKeys(dir) && keys == nil { validation = nil; source = nil; refreshGame(); return }
         validating = true
         validation = nil
+        source = nil
         validatedFor = (dir, keys)
         refreshGame()
+        let env = self.env
         Task.detached {
-            let v = GameFiles.validate(dir: dir.url, keysURL: keys.url)
-            await MainActor.run { self.validation = v; self.validating = false }
+            let (v, info) = Source.validate(dir, keys: keys, env: env)
+            await MainActor.run {
+                guard self.validatedFor?.0 == dir else { return }   // another game was chosen meanwhile
+                self.validation = v; self.source = info; self.validating = false
+                self.refreshGame()
+            }
         }
     }
 
     func refreshGame() {
-        game = settings.gameDir.map(GameInfo.read)
+        game = settings.gameDir.map { GameInfo.read($0, source: source) }
     }
 
     /// Files dropped on the Convert page (DropFiles): the game folder first, since it brings the prod.keys beside it, then a dropped keys
@@ -136,7 +166,7 @@ final class AppModel {
 
     func setGameDir(_ dir: String) {
         // prod.keys beside the game files is the usual layout; else the default keys file, else the one chosen before
-        let beside = dir + "/prod.keys"
+        let beside = Source.folder(of: dir) + "/prod.keys"
         if FileManager.default.fileExists(atPath: beside) { settings.keys = beside }
         else if let d = settings.defaultKeys, FileManager.default.fileExists(atPath: d) { settings.keys = d }
         settings.gameDir = dir
@@ -170,14 +200,18 @@ final class AppModel {
     var updatesAvailable: Bool { engineMessage.map { $0.ok && $0.text.contains("available") } ?? false }
 
     /// The folder new apps go to: the setting, else beside the game files.
-    var outputFolder: String? { settings.outDir ?? settings.gameDir }
+    var outputFolder: String? { settings.outDir ?? gameFolder }
 
-    func build(rebuild: String? = nil) {
-        guard let env, let dir = settings.gameDir, let keys = settings.keys else { return }
+    /// Build the chosen game, or with plan only say what a build would reuse and redo (--plan).
+    func build(rebuild: String? = nil, plan: Bool = false) {
+        guard let env, let dir = settings.gameDir, let folder = gameFolder else { return }
+        let keys = needsKeys ? settings.keys : nil
+        if needsKeys && keys == nil { return }
         let name = game?.name ?? ""
-        let out = settings.outDir.flatMap { $0 == dir || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
-        run.start(Job(gameDir: dir, keys: keys, sign: settings.signIdentity, env: env, rebuild: rebuild, out: out,
-                      keepBackup: settings.keepBackups, reuseCache: settings.reuseCache, cleanup: settings.cleanup))
+        let out = settings.outDir.flatMap { $0 == folder || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
+        run.start(Job(gameDir: dir, keys: keys, sign: settings.signIdentity, env: env, rebuild: plan ? nil : rebuild, out: plan ? (rebuild ?? out) : out,
+                      keepBackup: settings.keepBackups, reuseCache: plan || settings.reuseCache, cleanup: settings.cleanup,
+                      gameFiles: source?.describe, plan: plan))
     }
 
     /// Keep a build as it is, or stop keeping it.
@@ -241,15 +275,14 @@ final class AppModel {
         guard !run.running else { return }
         let builds = Engine.builds()
         if page == .builds, let b = builds.first(where: { $0.app == selectedBuild }) ?? builds.max(by: { $0.builtAt < $1.builtAt }) { rebuildAsked(b); return }
-        if let dir = settings.gameDir, let a = Engine.apps(in: settings.outDir ?? dir).first ?? Engine.apps(in: dir).first, ready { build(rebuild: a.app) }
+        if let dir = gameFolder, let a = Engine.apps(in: settings.outDir ?? dir).first ?? Engine.apps(in: dir).first, ready { build(rebuild: a.app) }
     }
 
     /// A folder (or a game file in it) dropped on the window or the Dock icon becomes the game folder.
     func openDropped(_ urls: [URL]) {
         guard !run.running, let u = urls.first else { return }
-        var isDir: ObjCBool = false
-        FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir)
-        setGameDir(isDir.boolValue ? u.path : u.deletingLastPathComponent().path)
+        // a .nup is the game itself; another file stands for its folder
+        setGameDir(Source.isDir(u.path) || Source.isNupFile(u.path) ? u.path : u.deletingLastPathComponent().path)
         page = .convert
     }
 
@@ -264,8 +297,8 @@ final class AppModel {
         Task.detached {
             let result: (Bool, String)
             if let base, NXForgeConverter.run(base, ["-m", "venv", "--clear", venv]).map({ $0.ok }) == true {
-                await MainActor.run { self.pythonSetup = (true, "Installing lz4, capstone, fontTools, zstd and nsz…") }
-                let pip = NXForgeConverter.run(venv + "/bin/python3", ["-m", "pip", "install", "--quiet", "--disable-pip-version-check", "lz4", "capstone", "fonttools", "nsz", "backports.zstd; python_version < '3.14'"])
+                await MainActor.run { self.pythonSetup = (true, "Installing lz4, capstone, fontTools, zstd, nsz and zbic…") }
+                let pip = NXForgeConverter.run(venv + "/bin/python3", ["-m", "pip", "install", "--quiet", "--disable-pip-version-check", "lz4", "capstone", "fonttools", "nsz", "zbic==1.0.1.post1", "backports.zstd; python_version < '3.14'"])
                 result = pip?.ok == true ? (true, "The converter's own Python is ready.") : (false, "pip could not install the modules: \(pip?.out.split(separator: "\n").last ?? "no output")")
             } else {
                 result = (false, base == nil ? "No python3 to start from: install Python 3 (brew install python)." : "Could not create \(venv).")
@@ -282,6 +315,7 @@ final class AppModel {
     var ownPython: Bool { env?.python?.hasPrefix(Settings.supportDir.path) == true }
 
     private func buildEnded(_ r: Result<String, ConverterError>) {
+        if run.planning { return }   // a preview: it stays on Convert, with its plan
         let name = game?.name ?? "The game"
         if settings.notify, Bundle.main.bundleIdentifier != nil {
             let c = UNMutableNotificationContent()
@@ -311,6 +345,7 @@ final class AppModel {
         settings.keys = settings.defaultKeys
         validation = nil
         validatedFor = nil
+        source = nil
         game = nil
         run.reset()
         page = .builds
@@ -323,7 +358,7 @@ final class AppModel {
 
     /// The game's build cache, <game folder>/<title ID>_build.
     var buildCache: String? {
-        guard let dir = settings.gameDir else { return nil }
+        guard let dir = gameFolder else { return nil }
         return ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).first { $0.hasSuffix("_build") }.map { "\(dir)/\($0)" }
     }
 
@@ -358,19 +393,18 @@ final class AppModel {
         return p.runModal() == .OK ? p.url?.path : nil
     }
 
-    /// The game folder, picked as the folder itself or as any game file in it (an .xci or .nsp).
+    /// The game: a folder (of NSP / XCI files, or a Switch 2 dump), any game file in a folder (an .xci or .nsp: its folder), or a
+    /// Switch 2 game's .nup file itself.
     func chooseGame(start: String? = nil) -> String? {
         let p = NSOpenPanel()
         p.canChooseDirectories = true
         p.canChooseFiles = true
-        p.allowedContentTypes = [.folder] + gameExtensions.sorted().compactMap { UTType(filenameExtension: $0) }
+        p.allowedContentTypes = [.folder] + (gameExtensions.sorted() + ["nup"]).compactMap { UTType(filenameExtension: $0) }
         p.allowsMultipleSelection = false
-        p.message = "Choose the game's folder, or a game file (.nsp, .xci, .nsz, .xcz) in it"
-        if let start { p.directoryURL = start.url }
+        p.message = "Choose the game's folder or a game file (.nsp, .xci, .nsz, .xcz), or a Switch 2 game's .nup file or dump folder"
+        if let start { p.directoryURL = Source.folder(of: start).url }
         guard p.runModal() == .OK, let u = p.url else { return nil }
-        var isDir: ObjCBool = false
-        FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir)
-        return isDir.boolValue ? u.path : u.deletingLastPathComponent().path
+        return Source.isDir(u.path) || Source.isNupFile(u.path) ? u.path : u.deletingLastPathComponent().path
     }
 
     func confirm(_ title: String, _ text: String, action: String) -> Bool {
