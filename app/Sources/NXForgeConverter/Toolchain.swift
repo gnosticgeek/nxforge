@@ -173,7 +173,7 @@ enum Toolchain {
             if miss.isEmpty { break }
         }
         let venv = shq(Settings.supportDir.appending(path: "venv").path)
-        let venvFix = "python3 -m venv \(venv) && \(venv)/bin/pip install lz4 capstone fonttools nsz \"backports.zstd; python_version < '3.14'\""
+        let venvFix = "python3 -m venv \(venv) && \(venv)/bin/pip install lz4 capstone fonttools nsz zbic \"backports.zstd; python_version < '3.14'\""
         var python: String?
         if let b = best, b.miss.isEmpty {
             python = b.py
@@ -199,6 +199,10 @@ enum Toolchain {
         let nsz = python.flatMap { run($0, ["-I", "-c", "import nsz"], env: env) }?.ok == true
         v.append(Check(name: "nsz", why: "only compressed .nsz / .xcz files", ok: nsz, optional: true, detail: nsz ? "installed" : "not installed in that Python",
                        fix: python.map { "\(shq($0)) -m pip install nsz" }, group: .optional, short: "Compressed game files", symbol: "doc.zipper"))
+        let zbic = python.flatMap { run($0, ["-I", "-c", "import zbic"], env: env) }?.ok == true
+        v.append(Check(name: "zbic", why: "only games built with system 22 or later, whose code is ZBIC-compressed (e.g. Ocarina of Time on Switch 2)", ok: zbic, optional: true,
+                       detail: zbic ? "installed" : "not installed in that Python",
+                       fix: python.map { "\(shq($0)) -m pip install zbic==1.0.1.post1" }, group: .optional, short: "Newer Switch 2 game code", symbol: "doc.zipper"))
 
         return (v, ToolEnv(repo: repo, python: python, path: path, dotnetRoot: dotnetRoot))
     }
