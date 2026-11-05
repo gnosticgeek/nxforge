@@ -6553,7 +6553,9 @@ static NSArray<id<MTL4Archive>> *g_arch4, *g_arch4p; static NSString *g_arch_dir
 // With more than PSO_ARCH_COMPACT files of bases with a vertex layout, the bases the prewarm takes from them are captured again from the original shader functions, so the flush
 // after the prewarm writes them into one file; the old files are then removed (open archives stay usable for the rest of the run). Bases the
 // prewarm did not take (pso_user.tsv never named them) go with them and are built again when drawn. The prebuild's files (p<seq>) are left as they are
-enum { PSO_ARCH_COMPACT = 8 };
+enum { PSO_ARCH_COMPACT = 24 };   // NXForge: 8 upstream. With flushes ARCH_FLUSH_GAP apart a 2-minute Mario Kart World run still writes 2-3 files and a long session 6-10, so 8 compacted
+                                  // nearly every start; each extra file costs a base lookup about 0.06 ms only when it misses. DM_PSO_ARCH_COMPACT=<n> sets it (tests)
+static int arch_compact_limit(void) { const char *e = getenv("DM_PSO_ARCH_COMPACT"); int n = e ? atoi(e) : 0; return n > 0 ? n : PSO_ARCH_COMPACT; }
 static int g_compact_enabled;   // immutable after pso4_init; unlike g_compact_files, never cleared by the archive queue
 static NSArray<NSString *> *g_compact_files; static _Atomic int g_compacted, g_compact_taken;   // g_compact_taken: a flush period holds the recaptured bases (arch_flush)
 // NXForge: the recapture after the first frame. Recaptured in the prepare step, every base cost a compile through the Metal cache (60-80 ms against 0.06 ms from the archive), and
@@ -6759,7 +6761,7 @@ static void pso4_init(void) {
                 else MLOG("[RED] pipeline archive file %s not usable (%s): its bases are built again", p.UTF8String, ae ? ae.localizedDescription.UTF8String : "not a pipeline archive");
                 g_arch_seq = MAX(g_arch_seq, [n substringFromIndex:pf].intValue + 1);
             }
-            if (runf.count > PSO_ARCH_COMPACT && arch_compact_allowed()) { g_compact_enabled = 1; g_compact_files = runf; }
+            if ((int)runf.count > arch_compact_limit() && arch_compact_allowed()) { g_compact_enabled = 1; g_compact_files = runf; }
             MLOG("pipeline archive %s: %lu files (%lu of bases without a vertex layout), %.1f MB, opened in %.1f ms", g_arch_dir.UTF8String, (unsigned long)(arch.count + archp.count - (g_arch_bundle != nil)),
                  (unsigned long)archp.count - (g_arch_bundle != nil), bytes / 1048576.0, (bp_now() - t0) / 1e6);
         }
@@ -6822,7 +6824,7 @@ static void arch_flush_wait(void) { arch_flush(); if (g_arch_pending) dispatch_g
 // A base was compiled: flush 10 s later (one flush for a burst of them). NXForge: after the first such flush of a run the next comes no sooner than ARCH_FLUSH_GAP after the one
 // before, and the run's last captures are written at exit (arch_exit_flush). A flush 10 s after every burst wrote 38-49 files in a 15-minute Mario Kart World session, each file
 // is one more lookup for every base, and more than PSO_ARCH_COMPACT of them compacted the archive again at every start
-enum { ARCH_FLUSH_GAP = 120 };
+enum { ARCH_FLUSH_GAP = 300 };
 static _Atomic uint64_t g_arch_last_flush;   // bp_now() of the last flush a burst asked for (0: none yet this run)
 static void arch_note_new(void) {
     if (!g_arch_q || atomic_exchange(&g_arch_sched, 1)) return;
