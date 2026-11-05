@@ -21,6 +21,13 @@ Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-3
 - A cartridge with several applications (Belmont's Curse and its Art Gallery) still packs the largest program, now by passing it to nx_extract's new `--app` (the old `--title <id>` option is gone).
 - The FXAA warnings moved to `RED_ONCE` slots 153 and 154. The shader chain is now `907b404e076d`, so every NVN game's shaders rebuild once.
 
+**From Mario Kart World's logs** (NXForge)
+- **Starts no longer wait for the shader archive's compaction.** Every play session left 40-120 small pipeline archive files, so every start compacted the archive again, recompiling each base before the first frame: Mario Kart World waited 16-25 s at "Preparing shaders". The prepare step now takes the bases from the archive (0.5-0.9 s on an M4 Pro, measured), and the compaction's recapture runs after the first frame in parallel at utility QoS. While playing, the archive is written at most every 300 s instead of 10 s after every new pipeline, with a last write at exit, and it compacts past 24 files instead of 8 (`DM_PSO_ARCH_COMPACT=<n>`).
+- **Long frames say where the time went.** Each `[longframe]` line adds the upload sub-steps (texture making, write protection, GPU deswizzle encoding, CPU route), submit wall / CPU / kernel / off-CPU time, residency commits, write-protection faults and `mprotect`, the present and drawable wait, the game's own fence waits and the acquire wait. Mario Kart World's first race frame (about 500 ms) is mostly residency commits of its 131 MB of new textures (100-210 ms), deswizzle encoding (80-150 ms) and the game waiting for the GPU (100-130 ms).
+- **GPU memory by kind**: next to each memory line, the GPU allocation split into the game's pool buffers (its own pages, no copy), packaged textures, other host textures and the rest.
+- **A full movie decoder queue is not an error.** `nn::codec` answers a packet with "not now" (3603) when 12 pictures wait for a buffer and the player sends it again, so it is logged once per decoder and counted at end of stream instead of as a red line. Mario Kart World's menu movie loses no packet (its streams end after exactly 300, 600, … pictures).
+- The CPU texture uploads (storage not in a pool buffer) name their first few textures.
+
 ## 0.10.0 (2026-10-31)
 
 Five ideas from [NX2Apple](https://github.com/LNPANDY/NX2Apple) (MIT), another nxnative front end; no upstream merge.
