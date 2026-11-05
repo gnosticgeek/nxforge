@@ -23,6 +23,7 @@ SCOPE = {
     'backup_days': {'type': 'number', 'description': 'app-backups: only backups older than this many days (default 3)'},
     'backup_keep': {'type': 'integer', 'description': 'app-backups: newest backups kept per game (default 1)'},
     'log_days': {'type': 'number', 'description': 'old-logs: age in days (default 30)'},
+    'idle_hours': {'type': 'number', 'description': 'build-unused, build-cache: only build folders unchanged for this many hours (default 24)'},
     'metal_cache_gb': {'type': 'number', 'description': f'metal-cache: trim to this size (default {nx.MTLCACHE_GB:g})'},
 }
 
@@ -49,7 +50,7 @@ TOOLS = [
 
 
 def scope_ctx(a):
-    return nx.context(game=a.get('game'), backup_days=a.get('backup_days'), backup_keep=a.get('backup_keep'), log_days=a.get('log_days'), mtlcache_gb=a.get('metal_cache_gb'))
+    return nx.context(game=a.get('game'), backup_days=a.get('backup_days'), backup_keep=a.get('backup_keep'), log_days=a.get('log_days'), idle_hours=a.get('idle_hours'), mtlcache_gb=a.get('metal_cache_gb'))
 
 
 def cats_of(a, default_all=False):
@@ -65,7 +66,7 @@ def call(name, a):
     if name == 'nxforge_disk_report':
         ctx = scope_ctx(a)
         res = {'categories': nx.find(ctx, cats_of(a, a.get('all', False))), 'overview': nx.overview(ctx), 'free_bytes': nx.free_bytes()}
-        for r in res['categories'].values(): [i.pop('files', None) for i in r['items']]
+        for r in res['categories'].values(): [(i.pop('files', None), i.pop('dirs', None)) for i in r['items']]
         res['would_free_bytes'] = sum(r.get('bytes', 0) for r in res['categories'].values())
         return res
     if name == 'nxforge_clean':

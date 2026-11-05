@@ -102,14 +102,19 @@ def git(repo, *a, timeout=60):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def release_name(desc):
+    """git describe → the app's release name: v0.2.0-2-g4ad5093 → 0.2.0+2, v0.2.0-0-g… → 0.2.0; anything else as it is"""
+    m = re.fullmatch(r'v?(\d+\.\d+\.\d+)-(\d+)-g[0-9a-f]+', desc or '')
+    return (m[1] + (f'+{m[2]}' if m[2] != '0' else '')) if m else desc
+
+
 def engine(repo):
     if not repo: return None
     log = git(repo, 'log', '-1', '--format=%H%x1f%s%x1f%cs')
     if not log: return None
     commit, subject, date = (log.split('\x1f') + ['', ''])[:3]
     desc = git(repo, 'describe', '--tags', '--match', 'v[0-9]*.[0-9]*.[0-9]*', '--long', commit)
-    version = None
-    if desc and (m := re.fullmatch(r'v(\d+\.\d+\.\d+)-(\d+)-g[0-9a-f]+', desc)): version = m[1] + (f'+{m[2]}' if m[2] != '0' else '')
+    version = release_name(desc) if desc else None
     return {'repo': repo, 'commit': commit, 'subject': subject, 'date': date, 'branch': git(repo, 'rev-parse', '--abbrev-ref', 'HEAD') or '',
             'dirty': bool(git(repo, 'status', '--porcelain', '--untracked-files=no')), 'version': version or commit[:7]}
 
@@ -214,7 +219,7 @@ def find_gpuarchiver(ctx):
     starts = [now - g['seconds'] for g in ctx['running']['games']]
     limit = min([now - 3600] + [s - 60 for s in starts])
     items, kept = [], 0
-    for f in sorted(d.glob('gpuarchiver-*')):
+    for f in sorted(d.glob('gpuarchiver-*')):   # one item per folder here, collapsed into one below
         if f.is_symlink() or not f.is_dir(): continue
         t, b = f.lstat().st_mtime, 0
         for root, ds, fs in os.walk(f):
@@ -223,7 +228,8 @@ def find_gpuarchiver(ctx):
                 except OSError: continue
                 t = max(t, st.st_mtime); b += st.st_blocks * 512
         if t >= limit: kept += 1; continue
-        items.append({'path': str(f), 'bytes': b + f.lstat().st_blocks * 512, 'why': 'idle Metal build folder'})
+        items.append({'path': str(f), 'bytes': b + f.lstat().st_blocks * 512})
+    if items: items = [{'path': str(d), 'bytes': sum(i['bytes'] for i in items), 'why': f'{len(items)} idle Metal build folders (gpuarchiver-*)', 'dirs': [i['path'] for i in items]}]
     return items, [f'{kept} gpuarchiver folders kept (changed in the last hour or since a running game started)'] if kept else []
 
 
@@ -320,9 +326,31 @@ def recorded_version(ctx, b):
     return max(cands)[1] if cands else None
 
 
+def last_change(b):
+    """The newest mtime among a build folder and its entries one level down (a build writes its keys, logs and stage folders there)"""
+    t = b.stat().st_mtime
+    for p in b.iterdir():
+        try:
+            t = max(t, p.lstat().st_mtime)
+            if p.is_dir() and not p.is_symlink(): t = max([t] + [c.lstat().st_mtime for c in p.iterdir()])
+        except OSError: pass
+    return t
+
+
+def idle_builds(ctx, notes):
+    """The build folders unchanged for ctx['idle_hours'] (default 24): one built or worked on today is someone's current work"""
+    h = ctx.get('idle_hours', 24)
+    out = []
+    for b in ctx['build_dirs']:
+        age = (time.time() - last_change(b)) / 3600
+        if age < h: notes.append(f'{b} kept: changed {age:.1f} hours ago (--idle-hours {h:g})')
+        else: out.append(b)
+    return out
+
+
 def find_build_unused(ctx):
     items, notes = [], []
-    for b in ctx['build_dirs']:
+    for b in idle_builds(ctx, notes):
         v = recorded_version(ctx, b)
         if not v: notes.append(f'{b}: packed version unknown, nothing taken'); continue
         for p in sorted(b.iterdir()):
@@ -334,11 +362,13 @@ def find_build_unused(ctx):
 
 
 def find_build_cache(ctx):
-    items = []
-    for b in ctx['build_dirs']:
+    items, notes = [], []
+    for b in idle_builds(ctx, notes):
         for p in sorted(b.iterdir()):
             if p.name not in ('logs', 'profile', 'run'): items.append({'path': str(p), 'bytes': size_of(p), 'why': f'build cache of {b.name}'})
-    return items, ['the next build of these games extracts them and compiles every shader again; it needs the NSPs and prod.keys'] if items else []
+    if items: notes += ['the next build of these games extracts them and compiles every shader again; it needs the game files (and prod.keys for NSPs)',
+                        "a Mac app's game files are APFS clones of extract/: while the app is there, deleting extract/ frees little of its size"]
+    return items, notes
 
 
 def checkouts(ctx):
@@ -408,6 +438,18 @@ def overview(ctx):
         games.append({'folder': str(d), 'entries': entries, 'bytes': sum(e['bytes'] for e in entries)})
     caches = [{'path': str(p), 'bytes': size_of(p)} for p in (HOME / 'Library/Caches/NXForge', gpuarchiver_dir(), HOME / 'Library/Logs/nxnative',
                                                                HOME / 'Library/Application Support/nxnative') if p and p.exists()]
+    known = {g['folder'] for g in games}
+    other = []
+    for r in [HOME / n for n in SCAN]:
+        try: subs = sorted(r.iterdir()) if r.is_dir() else []
+        except OSError: continue
+        for p in subs:
+            if p.suffix == '.app' and str(p.parent) not in known: other.append({'path': str(p), 'bytes': size_of(p), 'kind': 'app'})
+            elif p.is_dir() and not p.is_symlink() and p.suffix != '.app' and str(p) not in known:
+                try: apps = [c for c in p.iterdir() if c.suffix == '.app']
+                except OSError: continue
+                if apps: other.append({'path': str(p), 'bytes': size_of(p), 'kind': 'game folder', 'apps': [str(a) for a in apps]})
+    games += [{'folder': o['path'], 'entries': [o], 'bytes': o['bytes'], 'unrecorded': True} for o in other]
     builds = [{'path': str(b), 'bytes': size_of(b), 'entries': {p.name: size_of(p) for p in sorted(b.iterdir())}} for b in ctx['build_dirs']]
     return {'games': games, 'build_folders': builds, 'caches': caches, 'checkouts': [{'path': str(c), 'bytes': size_of(c)} for c in checkouts(ctx)]}
 
@@ -430,6 +472,9 @@ def delete(item, ctx):
         r = subprocess.run([sys.executable, '-I', '-c', code, f'{ctx["repo"]}/dm/tools', item['path'], str(item['db_limit'])], capture_output=True, text=True, timeout=1800)
         if r.returncode: raise OSError(f'trim failed: {(r.stderr or r.stdout).strip()[-300:]}')
         return
+    if 'dirs' in item:   # many folders inside one cache folder
+        for f in item['dirs']: shutil.rmtree(f, ignore_errors=not Path(f).exists())
+        return
     if 'files' in item:   # a trim of many files
         for f in item['files']:
             try: os.unlink(f)
@@ -444,13 +489,17 @@ def guard(item, ctx):
     """Last check before a delete: never an app that is recorded or installed, a game file, keys, or anything outside NXForge's places"""
     p = Path(item['path']).expanduser()
     rp = str(p.resolve())
-    if 'db_limit' in item: return   # a trim inside the cache file
+    if 'db_limit' in item or 'files' in item: return   # a trim inside the cache
+    if 'dirs' in item:
+        if any(Path(f).parent != p or not Path(f).name.startswith('gpuarchiver-') for f in item['dirs']): raise Refused('not a gpuarchiver folder')
+        return
     if rp in ctx['protected']: raise Refused(f'{p} is a recorded build')
     if p.suffix == '.app' and p.parent.name != 'app-backups': raise Refused(f'{p} is an app outside app-backups/')
     if p.suffix.lower() in ('.nsp', '.nsz', '.xci', '.xcz', '.keys') or p.name in ('prod.keys', 'title.keys'): raise Refused(f'{p} is a game or keys file')
-    if rp in ('/', str(HOME)) or len(p.parts) < 4: raise Refused(f'{p} is too high up')
-    for app in ('/Applications', str(HOME / 'Applications'), str(HOME / 'Documents')):
-        if rp == app: raise Refused(f'{p} is {app}')
+    home = str(HOME.resolve())
+    if rp in ('/', home) or len(Path(rp).parts) < 4: raise Refused(f'{p} is too high up')
+    for top in ('/Applications', HOME / 'Applications', HOME / 'Documents', HOME / 'Downloads', HOME / 'Desktop', HOME / 'Library'):
+        if rp == str(Path(top).resolve()): raise Refused(f'{p} is {top}')
 
 
 def lock():
@@ -487,9 +536,10 @@ def clean(cats, dry_run=False, ctx=None, worktree=None):
                     it['deleted'] = True; log_line(f'deleted {it["path"]} ({gb(it["bytes"])} GB, {c}: {it["why"]})')
                 except (OSError, Refused) as e:
                     it['deleted'] = False; res['errors'].append(f'{it["path"]}: {e}'); log_line(f'[RED] not deleted {it["path"]}: {e}')
-        for r in res['categories'].values(): r.pop('files', None); [i.pop('files', None) for i in r['items']]
+        for r in res['categories'].values(): [(i.pop('files', None), i.pop('dirs', None)) for i in r['items']]
         res['bytes'] = sum(r.get('bytes', 0) for r in res['categories'].values())
         res['free_after'] = free_bytes()
+        if not dry_run: res['freed_bytes'] = max(res['free_after'] - res['free_before'], 0)   # what the volume got back: less than the sizes when clones share blocks
         return res
     finally:
         if held: held.close()
@@ -662,7 +712,7 @@ def builds_list():
         app = Path(r.get('app', '')).expanduser()
         bdir = app.parent / 'app-backups'
         bks = sorted(str(p) for p in bdir.glob(f'{app.stem} (*).app')) if bdir.is_dir() else []
-        out.append({'app': str(app), 'exists': app.exists(), 'game_dir': r.get('game_dir'), 'built_at': r.get('built_at'), 'engine': (r.get('engine') or {}).get('version')
+        out.append({'app': str(app), 'exists': app.exists(), 'game_dir': r.get('game_dir'), 'built_at': r.get('built_at'), 'engine': release_name((r.get('engine') or {}).get('version'))
                     or (r.get('engine') or {}).get('commit', '')[:7], 'kept': bool(r.get('kept')), 'backups': bks})
     return out
 
@@ -713,7 +763,7 @@ def human(cmd, res):
             print(f'{c}: {verb} {gb(r.get("bytes", 0))} GB{" (safe)" if CATEGORIES[c][1] else ""}')
             for i in r['items']: print(f'  {gb(i["bytes"]):>8} GB  {i["path"]}  ({i["why"]}){"" if i.get("deleted", True) else "  NOT DELETED"}')
             for n in r['notes']: print(f'  - {n}')
-        print(f'total: {verb} {gb(res["bytes"])} GB; free now {gb(res.get("free_after", free_bytes()))} GB')
+        print(f'total: {verb} {gb(res["bytes"])} GB' + (f' (the volume got {gb(res["freed_bytes"])} GB back)' if 'freed_bytes' in res else '') + f'; free now {gb(res.get("free_after", free_bytes()))} GB')
         for e in res.get('errors', []): print(f'[RED] {e}')
     elif cmd == 'update':
         print(f'{res["repo"]}: {res["behind"]} commits on {res["target"]}{" (applied)" if res["applied"] else ""}')
@@ -739,6 +789,7 @@ def main(argv=None):
         p.add_argument('--backup-keep', type=int, default=1, help='app-backups: newest backups kept per game (default 1)')
         p.add_argument('--log-days', type=float, default=30, help='old-logs: age in days (default 30)')
         p.add_argument('--game', help='only this game: its folder, its <id>_build folder or its title ID (build-* and app-backups categories)')
+        p.add_argument('--idle-hours', type=float, default=24, help='build-unused, build-cache: only build folders unchanged for this many hours (default 24)')
         p.add_argument('--metal-cache-gb', type=float, help=f'metal-cache: trim to this size (default {MTLCACHE_GB:g}, DMSH_MTLCACHE_GB)')
         if name == 'clean':
             p.add_argument('--dry-run', action='store_true', help='list what would go, delete nothing')
@@ -772,11 +823,11 @@ def main(argv=None):
             elif a.safe or a.cmd == 'disk': cats = SAFE
             elif a.worktree: cats = []
             else: ap.error('clean needs --safe, --only <categories> or --worktree <path>')
-            ctx = context(game=a.game, backup_days=a.backup_days, backup_keep=a.backup_keep, log_days=a.log_days, mtlcache_gb=a.metal_cache_gb)
+            ctx = context(game=a.game, idle_hours=a.idle_hours, backup_days=a.backup_days, backup_keep=a.backup_keep, log_days=a.log_days, mtlcache_gb=a.metal_cache_gb)
             if a.cmd == 'disk':
                 res = {'dry_run': True, 'categories': find(ctx, cats), 'overview': overview(ctx)}
                 res['bytes'] = sum(r.get('bytes', 0) for r in res['categories'].values()); res['free_after'] = free_bytes()
-                for r in res['categories'].values(): [i.pop('files', None) for i in r['items']]
+                for r in res['categories'].values(): [(i.pop('files', None), i.pop('dirs', None)) for i in r['items']]
             else: res = clean(cats, a.dry_run, ctx, a.worktree)
         elif a.cmd == 'build':
             kw = {k: getattr(a, k) for k in ('plan', 'rebuild', 'out', 'keys', 'cleanup', 'sign')}

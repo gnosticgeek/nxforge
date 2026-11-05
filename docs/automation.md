@@ -32,13 +32,13 @@ Exit codes: 0 on success (also when there is nothing to delete), 1 on an error o
 | `app-backups` | yes | Apps a rebuild moved to `app-backups/`: all but the newest one per game (`--backup-keep`, default 1), and only ones older than `--backup-days` (default 3) |
 | `old-logs` | yes | Files in `~/Library/Logs/nxnative` older than `--log-days` (default 30) |
 | `build-unused` | no | Each build folder's rewritten modules of versions other than the last packed one (`patched_<v>`, `nro_<v>`) and the game's survey folder. Other versions' `extract/` folders stay: which ones a build needs only the build knows (`--cleanup unused` on a build removes them) |
-| `build-cache` | no | Each build folder except `logs/`, `profile/` and `run/`: the next build extracts the game and compiles every shader again (30 minutes or more) and needs the game files and `prod.keys` |
+| `build-cache` | no | Each build folder except `logs/`, `profile/` and `run/` (only folders unchanged for `--idle-hours`, default 24, as for `build-unused`): the next build extracts the game and compiles every shader again (30 minutes or more) and needs the game files and `prod.keys` |
 | `swift-build` | no | The converter app's Swift build folder (`app/.build`) in each checkout of the engine; the next `app/install.sh` rebuilds it |
 | `worktrees` | no | Reported only, with whether each is removable; `clean --worktree <path>` removes one |
 
 `clean --safe` is the set an hourly job can run without asking: `python3 scripts/nxforge.py clean --safe` (dry run: add `--dry-run`). What it never touches, whatever the category: NSPs, `.nup` files, dumps, `prod.keys`, any `.app` outside `app-backups/` (installed or recorded), saves (`~/Library/Application Support/nxnative`, `Saves/`), profiles, `logs/` of a build folder, and the engine's checkout. The build-folder, Metal cache and Swift categories are skipped while a build runs (the script, `dmsh_build.py`, `pso_offline.py`, `pack_app.py`, `nx_extract` or `metal-pack`), and a second cleanup waits for none: it is refused while one runs (a lock in the support folder). Each deletion is logged to `cli-clean.log` in the support folder.
 
-Space freed on APFS can be less than a size shown: a Mac app's game files are clones of `extract/<version>`, and a clone frees nothing while the other copy is there.
+After a cleanup that deletes, `freed_bytes` (and the last line) is what the volume got back. It can be less than the sizes shown: a Mac app's game files are clones of `extract/<version>`, and a clone frees nothing while the other copy is there.
 
 ## MCP server
 

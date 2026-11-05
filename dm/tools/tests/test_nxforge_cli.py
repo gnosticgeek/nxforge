@@ -79,12 +79,28 @@ class CleanTest(Fake):
         self.assertTrue(res['categories']['app-backups']['items'])
 
     def test_build_unused_and_cache(self):
-        res = nx.clean(['build-unused', 'build-cache'], dry_run=True, ctx=nx.context(game='0100C1F0141AA000'))
+        res = nx.clean(['build-unused', 'build-cache'], dry_run=True, ctx=nx.context(game='0100C1F0141AA000', idle_hours=0))
         self.assertEqual(self.paths(res, 'build-unused'), {self.build / 'patched_v131072', self.build / 'patched_v131072.key'})
         cache = self.paths(res, 'build-cache')
         self.assertIn(self.build / 'extract', cache)
         self.assertFalse({self.build / n for n in ('logs', 'profile', 'run')} & cache)
         self.assertFalse(any(self.loose in p.parents for p in cache))   # --game: only that game
+
+    def test_recent_build_folders_stay(self):
+        res = nx.clean(['build-unused', 'build-cache'], dry_run=True)   # every build folder here changed just now
+        self.assertFalse(res['categories']['build-cache']['items'])
+        self.assertTrue(any('kept: changed' in n for n in res['categories']['build-cache']['notes']))
+
+    def test_gpuarchiver_one_item(self):
+        idle = [write(self.home / f'gpu/gpuarchiver-{i}/r', age=2 * 3600).parent for i in range(3)]
+        for d in idle: t = time.time() - 2 * 3600; os.utime(d, (t, t))
+        fresh = write(self.home / 'gpu/gpuarchiver-new/r').parent
+        res = nx.clean(['gpuarchiver'])
+        self.assertEqual(len(res['categories']['gpuarchiver']['items']), 1)
+        self.assertFalse(any(d.exists() for d in idle)); self.assertTrue(fresh.exists()); self.assertFalse(res['errors'])
+
+    def test_release_name(self):
+        self.assertEqual(nx.release_name('v0.2.0-2-g4ad5093'), '0.2.0+2'); self.assertEqual(nx.release_name('v0.11.0-0-gabc1234'), '0.11.0')
 
     def test_guard(self):
         ctx = nx.context()
