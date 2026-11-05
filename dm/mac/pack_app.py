@@ -169,7 +169,7 @@ def sign(app, identity, codesign):   # the inner host first, then the bundle (it
     strip_detritus(app)   # codesign sets an attribute on what it signs, which is a "._name" file again on exFAT: the signature still verifies without it, and a later --force would refuse it
 
 
-_DIGESTS = {}   # (path, size, mtime) → SHA-256: the app key and the data key read the same multi-GB files
+_DIGESTS = {}   # (path, size, mtime) → SHA-256 within one pack(), cleared at its start: the app key and the data key read the same multi-GB files
 
 
 def digest(path):
@@ -301,6 +301,7 @@ def swap_by_moves(tmp, out):
 
 
 def pack(a):
+    _DIGESTS.clear()   # a file may change between packs without its size or time changing
     out = Path(a.out).resolve()
     if out.suffix != '.app': raise SystemExit(f'the output must end in .app: {out}')
     key_file = out.with_name(out.name + '.key')
