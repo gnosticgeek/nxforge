@@ -62,6 +62,8 @@
 #define DMSH_KIND_SAMP_ID "samp_id"      // a sampler ID that is a constant in the shader (reg = the ID)
 #define DMSH_KIND_TEX_UBO "tex_ubo"      // bindless: the texture handle is in uniform slot reg at byte off
 #define DMSH_KIND_SAMP_UBO "samp_ubo"    // bindless: the sampler handle is in uniform slot reg at byte off
+#define DMSH_KIND_IMG_UBO "img_ubo"      // bindless: the image handle is in uniform slot reg at byte off
+#define DMSH_KIND_TBUF_UBO "tbuf_ubo"    // bindless: the handle of a buffer texture is in uniform slot reg at byte off
 #define DMSH_KIND_TEX_C2A "tex_c2a"      // an array of c2 handles the shader indexes at run time: element k = the texture whose c2 word lies at off + 8 k
 #define DMSH_KIND_SAMP_C2A "samp_c2a"    // the same for samplers
 #define DMSH_KIND_TEX_POOL "tex_pool"    // the game's texture pool, indexed by the handle's texture ID (a handle traced to no slot; dmsh_build.py pool_arrays): elem = the element type
@@ -73,14 +75,14 @@
 // Raw global memory: the translator reserves that table as a storage buffer under this constant buffer slot, which no game has (Ryujinx GlobalToStorage.GmemMapCbSlot), finds the pool
 // holding an address by a binary search over the table's starts and accesses the address plus the pool's delta through a physical storage buffer pointer
 #define DMSH_GMEM_MAP_CB_SLOT 0xFF
-#define DMSH_GMEM_MAP_ENTRIES 4096       // entries of the table (GlobalToStorage.GmemMapLog2 = 12), sorted by start: entry 0 is empty (start 0, end 0) and unused entries start at ~0
-#define DMSH_GMEM_MAP_ENTRY 32           // bytes of an entry: start, end (exclusive) and delta (the pool's Metal GPU address minus its guest address), 64 bits each, then 8 bytes of padding
-// Where such a store or atomic lands is known only when the GPU runs it, so each one also puts its guest page (address >> 12) in a write log, reserved under the same slot at offset 1
-// (Ryujinx GlobalToStorage.GmemLogCbOffset, GmemLogLog2): 32-bit words, word 0 set when a page found no free slot, then a hash set of 1 << DMSH_GMEM_LOG_LOG2 pages (0 = empty).
-// The host learns the pages from it
+// The table is sorted by start: entry 0 is empty (start 0, end 0) and unused entries start at ~0. The host gives it a power of two entries, as many as its pools need and at least
+// DMSH_GMEM_MAP_ENTRIES, and writes that count into entry 0's delta (low word, GlobalToStorage.GmemMapCountWord), which the shader's binary search takes
+#define DMSH_GMEM_MAP_ENTRIES 4096       // the least count of entries
+#define DMSH_GMEM_MAP_ENTRY 32           // bytes of an entry: start, end (exclusive), delta (Metal GPU address minus guest address), then a 32-bit lookup hint and padding
+#define DMSH_GMEM_HINT_SHIFT 21         // one hint per 2 MiB guest address chunk, in word 6 of entry (chunk & (DMSH_GMEM_MAP_ENTRIES - 1)). Hint: chunk in high 20 bits, entry index (below DMSH_GMEM_MAP_ENTRIES) in low 12 bits
+// The write log is a bitmap of the entries in the pool table bound to the shader, as long as that table (its entry count / 32 words). Bit i in word i / 32 records a store or atomic through entry i.
 #define DMSH_KIND_GMEM_LOG "gmem_log"    // that write log: the host gives each draw or dispatch its own, cleared (nvn_mtl.m gml_take)
 #define DMSH_GMEM_LOG_CB_OFFSET 1
-#define DMSH_GMEM_LOG_LOG2 10
 
 // A pool binding points at a buffer the host keeps (nvn_mtl.m pool_gpu): a 32-bit bound n (the highest index the shader may read), then from DMSH_POOL_HEAD one 8-byte resource ID per ID
 #define DMSH_POOL_HEAD 8                 // bytes before element 0 of a pool buffer

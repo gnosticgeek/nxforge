@@ -32,6 +32,7 @@ namespace Ryujinx.Graphics.Shader.Instructions
             alu(0x111, InstName.F2i, AF2i64);
             alu(0x112, InstName.I2f, AI2f64);
             alu(0x045, InstName.I2f, AI2fp);
+            alu(0x043, InstName.F2i, AF2ip);
             alu(0x107, InstName.F2f, AFrnd);
             alu(0x104, InstName.F2f, AF2f);
             alu(0x03e, InstName.F2f, AF2fp);
@@ -69,12 +70,14 @@ namespace Ryujinx.Graphics.Shader.Instructions
             alu(0x0be, InstName.Flo, ABrev, uniform: true);
             alu(0x01a, InstName.Bfe, ASgxt);
             alu(0x09a, InstName.Bfe, ASgxt, uniform: true);
+            alu(0x01b, InstName.Bfe, ABmsk);
 
             x(0x882, InstName.Mov, AUMov, N, uniform: true);
             x(0x883, InstName.P2r, AUp2ur, N, uniform: true);
             x(0xc82, InstName.Mov, AUMov, N, uniform: true);
             x(0x805, InstName.Cs2r, ACs2r, N);
             x(0x919, InstName.S2r, AS2r, N);
+            x(0x925, InstName.Pixld, APixelCovered, N);
             x(0x9c3, InstName.S2r, AS2r, N, uniform: true);
             x(0x3c2, InstName.Mov, AR2ur, N);
             x(0xab9, InstName.Ldc, AUldc, N, uniform: true);
@@ -171,13 +174,21 @@ namespace Ryujinx.Graphics.Shader.Instructions
             ASet(context, x, res);
         }
 
+        // .FTZ (bit 80 of FSET and FSETP, after the comparison's 76..80, Mesa NAK's layout). Without it a sum of weights that NVIDIA flushes to zero passes a "!= 0" guard and its reciprocal
+        // overflows: Mario Kart World's deferred lighting (635061c90d75a8d1) normalises its four depth-weighted half-resolution samples by 1 / sum only where sum != 0, and the NaN came out
+        // of a min(x, 1.0) as a fully lit dot. The arithmetic's own .FTZ stays dropped: Metal has no denormal mode, and a flush on every FADD, FMUL and FFMA would cost far more than it can show
+        private static Operand AFtz(EmitterContext context, AmpereOp x, Operand v)
+        {
+            return x.Bit(80) ? FlushDenormal(context, v) : v;
+        }
+
         // FSET Rd, a, b: 1.0 where (a cmp b) bop P (87..90) holds, else 0.0
         public static void AFset(EmitterContext context)
         {
             AmpereOp x = new(context.CurrOp);
             (ASrc a, ASrc b) = ASecond(context, x);
 
-            Operand res = GetFPComparison(context, (FComp)x.Bits(76, 80), AFloat(context, a), AFloat(context, b));
+            Operand res = GetFPComparison(context, (FComp)x.Bits(76, 80), AFtz(context, x, AFloat(context, a)), AFtz(context, x, AFloat(context, b)));
             res = GetPredLogicalOp(context, (BoolOp)x.Bits(74, 76), res, APred(context, x, 87, 90));
 
             ASet(context, x, context.ConditionalSelect(res, ConstF(1), Const(0)));
@@ -189,7 +200,7 @@ namespace Ryujinx.Graphics.Shader.Instructions
             AmpereOp x = new(context.CurrOp);
             (ASrc a, ASrc b) = ASecond(context, x);
 
-            Operand cmp = GetFPComparison(context, (FComp)x.Bits(76, 80), AFloat(context, a), AFloat(context, b));
+            Operand cmp = GetFPComparison(context, (FComp)x.Bits(76, 80), AFtz(context, x, AFloat(context, a)), AFtz(context, x, AFloat(context, b)));
             Operand p = APred(context, x, 87, 90);
             BoolOp bop = (BoolOp)x.Bits(74, 76);
 
@@ -354,6 +365,42 @@ namespace Ryujinx.Graphics.Shader.Instructions
             Operand src = AGet(context, AOne(context, x, neg: false, abs: false));
 
             ASet(context, x, x.Bit(74) ? context.IConvertS32ToFP32(src) : context.IConvertU32ToFP32(src));
+        }
+
+        // F2IP.U8.F32.NTZ Rd, a, b, RZ (sm_86's float to integer convert and pack): a and b each rounded to an integer by F2I's mode (78..79: nearest even, floor, ceiling,
+        // truncation) and saturated to 0..255, NaN to 0, b in byte 0 and a in byte 1, the upper half zero; a = RZ leaves b alone in byte 0. The other fields follow F2I's:
+        // unsigned (72 clear), 8 bits (75..77 clear); 74 is set in every one met, the form NVIDIA prints .NTZ. The Legend of Zelda: Ocarina of Time's colour converters
+        // (99951da6e5cd38f5 +0x530 and nine others) quantize a block of BT.709 Y and CbCr values times 255 to the nearest, then join two results into four bytes with
+        // PRMT 0x5410 and store them: the pixels' bytes come out in x order only with b low. Its foliage mesh shaders (740e2b04db624fb1 +0x370 and seven others) convert one
+        // colour channel times 255 at a time with a = RZ and truncation (.TRUNC, 78..79 = 3), then shift the result by 16 or 24 into an RGBA8 word: b is in byte 0 there too.
+        // Any other encoding (a second form, C not RZ, other bits from 72 on) is refused rather than guessed
+        public static void AF2ip(EmitterContext context)
+        {
+            AmpereOp x = new(context.CurrOp);
+
+            if (x.Form != 1 || x.Bits(40, 64) != 0 || x.Rc != RegisterConsts.RegisterZeroIndex || (x.Field(72, 96) & ~(3ul << 6)) != 1 << 2)
+            {
+                throw AFail(context, "F2IP other than .U8.F32.NTZ of two registers with RZ");
+            }
+
+            int round = x.Bits(78, 80);
+
+            Operand Byte(int reg)
+            {
+                Operand f = AGpr(reg);
+                Operand r = round switch
+                {
+                    0 => context.FPRound(f),
+                    1 => context.FPFloor(f),
+                    2 => context.FPCeiling(f),
+                    _ => context.FPTruncate(f),
+                };
+                Operand v = context.FPMinimum(context.FPMaximum(r, ConstF(0f)), ConstF(255f));
+
+                return context.ConditionalSelect(context.IsNan(f), Const(0), context.FP32ConvertToU32(v));
+            }
+
+            ASet(context, x, x.Ra == RegisterConsts.RegisterZeroIndex ? Byte(x.Rb) : context.BitwiseOr(context.ShiftLeft(Byte(x.Ra), Const(8)), Byte(x.Rb)));
         }
 
         // FRND: a float rounded to an integer value (78..80: nearest even, floor, ceiling, truncation)
@@ -1300,6 +1347,52 @@ namespace Ryujinx.Graphics.Shader.Instructions
             ASet(context, x, res, u);
         }
 
+        // BMSK Rd, a, b: a mask of b bits from bit a (Star Fox's 58046f286de779e1: BMSK R5, R4, R5, then R9 << R4, the two ANDed and handed to an atomic, a bit field written into a word).
+        // The semantics are PTX's bmsk: .W (75, as SGXT's; only the clamping form has been seen) takes both operands modulo 32; else a >= 32 gives 0 and b >= 32 reaches bit 31
+        public static void ABmsk(EmitterContext context)
+        {
+            AmpereOp x = new(context.CurrOp);
+            bool u = AUniform(context);
+            (ASrc sa, ASrc sb) = ASecond(context, x, u, neg: false, abs: false);
+
+            Operand a = AGet(context, sa), b = AGet(context, sb);
+            Operand a1 = context.BitwiseAnd(a, Const(31)), b1 = context.BitwiseAnd(b, Const(31)), sum = context.IAdd(a1, b1);
+            Operand mask0 = context.ShiftLeft(Const(-1), a1);
+            Operand reachesTop = context.ICompareGreaterOrEqualUnsigned(sum, Const(32));
+
+            if (!x.Bit(75))
+            {
+                Operand aOver = context.ICompareGreaterOrEqualUnsigned(a, Const(32));
+
+                mask0 = context.ConditionalSelect(aOver, Const(0), mask0);
+                reachesTop = context.BitwiseOr(reachesTop, context.BitwiseOr(aOver, context.ICompareGreaterOrEqualUnsigned(b, Const(32))));
+            }
+
+            // the bits above the field: none when it reaches the top, all when it is empty (a1 + b1 < 32 in the shift, so it is defined)
+            Operand above = context.ConditionalSelect(context.ICompareEqual(b1, Const(0)), Const(-1), context.ShiftLeft(Const(-1), context.BitwiseAnd(sum, Const(31))));
+
+            above = context.ConditionalSelect(reachesTop, Const(0), above);
+
+            ASet(context, x, context.BitwiseAnd(mask0, context.BitwiseNot(above)), u);
+        }
+
+        // 0x925 Rd (78..80 = 1, no predicate result): 1 for a covered pixel, 0 for a helper invocation. No table at hand names it (PIXLD.COVERED, perhaps). What it reads comes from the two shaders
+        // that use it, Star Fox's quad efficiency views 46040940ce0fd49b and 826168691af2e211, which add it up over the quad through SHFL and FSWZADD: one takes sum - 1 as the index of a
+        // 4-entry palette, so a shaded pixel's sum is at least 1; the other draws 0.03125 + 0.15625 sum in red. Any other form stays refused
+        public static void APixelCovered(EmitterContext context)
+        {
+            AmpereOp x = new(context.CurrOp);
+
+            if (x.Bits(78, 81) != 1 || x.Bits(81, 84) != 7 || x.Bits(24, 32) != 0 || x.Bits(32, 48) != 0 || context.TranslatorContext.Definitions.Stage != ShaderStage.Fragment)
+            {
+                throw AFail(context, $"0x925 form {x.Bits(78, 81)} outside a covered pixel's read in a pixel shader");
+            }
+
+            Operand helper = context.Load(StorageKind.Input, IoVariable.HelperInvocation);
+
+            ASet(context, x, context.ConditionalSelect(helper, Const(0), Const(1)), false);
+        }
+
         // ---- predicates ----
 
         // R2P PR, Ra, mask: predicates from one byte of Ra (76..78), the mask an immediate (0x804) or a register (0x204)
@@ -1395,7 +1488,8 @@ namespace Ryujinx.Graphics.Shader.Instructions
             return res;
         }
 
-        // VOTE / VOTEU Rd, Pd, P: Pd = the vote (72..74: all, any, equal) of P (87..90); Rd (a uniform register for VOTEU) the ballot
+        // VOTE Rd, Pd, P / VOTEU URd, UPd, P: Pd (81..84) = the vote (72..74: all, any, equal) of P (87..90), Rd the ballot; VOTEU writes the uniform register and the
+        // uniform predicate. P and the guard are lane predicates in both.
         public static void AVote(EmitterContext context)
         {
             AmpereOp x = new(context.CurrOp);
@@ -1406,7 +1500,7 @@ namespace Ryujinx.Graphics.Shader.Instructions
 
             if (vote != null)
             {
-                ASetPred(context, x.Bits(81, 84), vote);
+                ASetPred(context, x.Bits(81, 84), vote, toUniform);
             }
 
             int rd = ARd(x, toUniform);

@@ -41,6 +41,7 @@ dm/gfx/nvn/nvn_mtl.m:warm_|prepare|prebuild|front_progress	present:pipeline_prep
 dm/gfx/nvn/nvn_mtl.m:pso_arch|arch_|pso_bundle	present:pipeline_archive	the pipeline archive
 dm/gfx/nvn/nvn_mtl.m:^tf_|xfb	shader:transform_feedback	transform feedback
 dm/gfx/nvn/nvn_mtl.m:^geo_|^gs_	shader:stage:gs	geometry shaders
+dm/gfx/nvn/nvn_geometry.inc:^mtk_	nvn:nvnCommandBufferDrawMeshTasks*	native task and mesh pipelines
 dm/gfx/nvn/nvn_mtl.m:^lo_|^lop_	nvn:nvnColorStateSetLogicOp	logic operations
 dm/gfx/nvn/nvn_mtl.m:prog_swrites|swrite_note	nvn:nvnCommandBufferBarrier	ordering barriers and shader writes in a draw pass
 dm/gfx/nvn/nvn_mtl.m:^at_|^atest_	nvn:nvnColorStateSetAlphaTest	the alpha test
@@ -102,6 +103,10 @@ dm/tools/nso_*.py	*:*	the rewriter: every game's code
 dm/tools/sdk_patches.py	*:*	the SDK modules' patches (by build ID)
 dm/tools/romfs_image.py	*:*	RomFS image packing: every game's files
 dm/tools/romfs.py	*:*	RomFS image input: every game's build tools
+dm/gfx/nvn/msl_image.h	*:*	reads each shader from the one-file library: every NVN game
+dm/tools/shader_lib.py	*:*	the shader libraries as one file: every NVN game build and regress chain
+dm/tools/shader_cache.py	*:*	the compile cache as one file: every NVN game build and regress chain
+dm/tools/tree_tar.py	*:*	one tar in place of Xcode's derived data and quiet work folders: every game build
 dm/tools/nro_collect.py	*:*	NRO discovery from game resources during packing
 dm/tools/nx_extract/*	*:*	NSP extraction: every game's resource inputs
 dm/mac/launcher.c	*:*	Mac app resource discovery and host launch

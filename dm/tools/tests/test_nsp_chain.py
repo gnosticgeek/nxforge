@@ -29,6 +29,22 @@ class Base(unittest.TestCase):
             cm.__enter__(); self.addCleanup(cm.__exit__, None, None, None)
 
 
+class Temporaries(unittest.TestCase):
+    def test_spotlight_leaves_the_build_folders_temporaries_out(self):   # by the folder's name: a .metadata_never_index file in it did not stop the indexing
+        self.assertTrue(nsp.TMP.endswith('.noindex'))
+        self.assertNotIn("WORK=str(work / 'tmp')", SCRIPT.read_text())
+
+
+class CacheNote(unittest.TestCase):
+    def test_the_metal_cache_is_counted_beside_the_per_shader_cache(self):   # a chain change read "0 from the cache" while the Metal cache gave back 95% of the libraries
+        log = 'shader cache: hit 0, rebuilt 42851\nMetal cache: mac 98356 reused, 8 compiled; mac_tensor 3 reused, 0 compiled, 2 filled from earlier builds\n'
+        self.assertEqual(nsp.shader_cache_note(log), ' (0 from the cache; Metal libraries: 98,359 reused, 8 compiled)')
+
+    def test_a_log_without_either_says_nothing(self):
+        self.assertEqual(nsp.shader_cache_note('shaders 1: ok 1\n'), '')
+        self.assertEqual(nsp.shader_cache_note('shader cache: hit 3, rebuilt 0\n'), ' (3 from the cache)')
+
+
 class Header(Base):
     def setUp(self):   # a repository whose chain tools are the real ones (linked) and whose header is its own
         super().setUp()
@@ -133,6 +149,24 @@ class TableTools(unittest.TestCase):
                 r = subprocess.run([sys.executable, REPO / 'dm/gfx/tools' / tool, lib, lib.parent / table], capture_output=True, text=True)
                 self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual((lib.parent / 'c1_full.tsv').read_text().splitlines()[1:], [key])   # the shader itself is still checked
+
+
+class TableDifference(unittest.TestCase):   # the row the build error names when a split table differs from the profile's (GitHub issue #1263)
+    HEAD = b'# header\n'
+
+    def test_changed_row(self):
+        got = nsp.table_difference('shader_map.tsv', self.HEAD + b'a\nvs\t1\n', b'# another header\na\nms\t0\n')
+        self.assertEqual(got, 'shader_map.tsv: 1 row(s) only in the profile, 1 only in the split\n  profile: vs\t1\n  split:   ms\t0')
+
+    def test_inserted_row_is_the_only_one_named(self):
+        got = nsp.table_difference('t.tsv', self.HEAD + b'a\nb\nc\n', self.HEAD + b'new\na\nb\nc\n')
+        self.assertEqual(got, 't.tsv: 0 row(s) only in the profile, 1 only in the split\n  split:   new')
+
+    def test_repeated_row_counts(self):
+        self.assertIn('1 row(s) only in the profile', nsp.table_difference('t.tsv', b'a\na\n', b'a\n'))
+
+    def test_order_only(self):
+        self.assertEqual(nsp.table_difference('t.tsv', b'a\nb\n', b'b\na\n'), 't.tsv: the same rows in another order')
 
 
 if __name__ == '__main__':

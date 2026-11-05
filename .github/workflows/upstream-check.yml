@@ -1,6 +1,8 @@
 # Nightly check of upstream nxnative (seedds/nxnative, main): how many commits NXForge's main is behind, and whether a merge would conflict.
 # It keeps one open issue labelled "upstream" up to date with the count, the newest upstream commits and the files a test merge conflicts in,
-# and closes it once main has caught up. Nothing is pushed: the merge itself is a thread of work with a Mac build (UPSTREAM.md).
+# and closes it once main has caught up (with issues turned off for the repository, each run's summary holds the report instead). Nothing is pushed: the merge itself is a thread of work with a Mac build (UPSTREAM.md).
+# A second job watches the games in .github/upstream-watch.tsv: upstream pull requests about them (open or updated in the last 14 days), and which NXForge branches already hold each one,
+# in one open issue labelled "upstream-watch". A game being brought up upstream gets its fixes in pull requests first, often several a day, long before they reach main.
 name: upstream-check
 
 on:
@@ -66,6 +68,8 @@ jobs:
           cat body.md >> "$GITHUB_STEP_SUMMARY"
       - name: Open, update or close the issue
         run: |
+          # With issues turned off for the repository, the run's summary is the report (above), and a warning says how to get the issue
+          if [ "$(gh api "repos/$GH_REPO" --jq .has_issues)" != true ]; then echo "::warning::Issues are turned off for $GH_REPO (Settings, General, Features), so the report is only in this run's summary"; exit 0; fi
           gh label create upstream --color 5319e7 --description "Merging upstream nxnative" 2>/dev/null || true
           issue=$(gh issue list --label upstream --state open --json number --jq '.[0].number // empty')
           behind="${{ steps.merge.outputs.behind }}"
@@ -76,3 +80,104 @@ jobs:
           else
             gh issue create --label upstream --title "Upstream nxnative: $behind new commit(s)" --body-file body.md
           fi
+
+  watch:
+    name: Upstream pull requests for watched games
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      UPSTREAM: https://github.com/seedds/nxnative.git
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # every branch, to say which ones hold a pull request
+          persist-credentials: false
+      - name: Find the pull requests and where they are in NXForge
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch --quiet upstream main
+          since=$(date -u -d '14 days ago' +%F)
+          : > prs.tsv
+          declare -A skip   # pull requests left out on purpose: "skip", the number, the reason
+          while IFS=$'\t' read -r kind num why; do [ "$kind" = skip ] && skip[$num]=$why; done < <(grep -v '^#' .github/upstream-watch.tsv)
+          # Upstream's pull requests updated since then: number, state, updated, title, title and body (tabs and newlines made spaces). The pulls API first: search/issues
+          # with this job's token returned upstream's issues and none of its pull requests. Search is the fallback (it is what works where the pulls API is refused).
+          clean='gsub("[\\t\\r\\n|]"; " ")'
+          if ! gh api -X GET repos/seedds/nxnative/pulls -f state=all -f sort=updated -f direction=desc -f per_page=100 --paginate \
+               --jq ".[] | select(.updated_at >= \"$since\") | [.number, .state, .updated_at[:10], (.title | $clean), ((.title + \" \" + (.body // \"\")) | $clean)] | @tsv" > recent.tsv 2>/dev/null; then
+            : > recent.tsv
+            grep -v -e '^#' -e '^skip' .github/upstream-watch.tsv | cut -f1 | while read -r term; do
+              [ -n "$term" ] || continue
+              gh api -X GET search/issues -f q="repo:seedds/nxnative is:pr $term updated:>=$since" -f per_page=100 \
+                --jq ".items[] | select(.pull_request) | [.number, .state, .updated_at[:10], (.title | $clean), ((.title + \" \" + (.body // \"\")) | $clean)] | @tsv" >> recent.tsv || true
+            done
+          fi
+          echo "$(wc -l < recent.tsv) upstream pull requests updated since $since"
+          # Each term (quotes dropped, any case) in a pull request's title or body. Empty fields become "-", because read collapses adjacent tabs.
+          grep -v -e '^#' -e '^skip' .github/upstream-watch.tsv | while IFS=$'\t' read -r term game branch; do
+            [ -n "$term" ] || continue
+            t=${term//\"/}
+            awk -F'\t' -v t="$t" -v g="$game" -v b="${branch:--}" 'index(tolower($5), tolower(t)) { print $1 "\t" $2 "\t" $3 "\t" g "\t" b "\t" $4 }' recent.tsv >> prs.tsv
+          done
+          sort -t$'\t' -k1,1nr -u prs.tsv > prs.sorted
+          {
+            echo "Upstream [seedds/nxnative](https://github.com/seedds/nxnative) pull requests about the games in [\`.github/upstream-watch.tsv\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/.github/upstream-watch.tsv), open or updated since $since."
+            echo "**Not in NXForge** means neither the game's branch nor main holds the pull request's changes yet: merge it before the next build of that game."
+            echo "**Newer commits** means some of its commits are in (an earlier version of it, or a pull request it is stacked on) and the rest are not: merge it again, or what it adds."
+            echo "**Left out** pull requests are listed with \`skip\` in that file, with the reason; they are not counted."
+            echo "**Partly** means its changes conflict with every branch checked, so some of it is in (merged by hand, or landed upstream reworded) or the code has moved: look before the next build."
+            echo
+            echo "| PR | Game | State | Updated | In NXForge | Title |"
+            echo "|---|---|---|---|---|---|"
+          } > watch.md
+          missing=0
+          while IFS=$'\t' read -r num state updated game branch title; do
+            [ -n "$num" ] || continue
+            where="**not in NXForge**"
+            if [ -n "${skip[$num]:-}" ]; then where="left out: ${skip[$num]}"
+            elif git fetch --quiet upstream "pull/$num/head:refs/upr/$num" 2>/dev/null; then
+              # 1. A branch holds the head commit itself (merged as is).
+              br=$(git branch -r --contains "refs/upr/$num" 2>/dev/null | sed 's#^ *origin/##' | grep -v -e '^HEAD' -e ' -> ' | head -3)
+              if [ -n "$br" ]; then
+                where=$(echo "$br" | sed 's/.*/`&`/' | paste -sd, - | sed 's/,/, /g')
+              else
+                # 2. Upstream lands pull requests as new commits, so compare changes: the pull request's own changes (from where it left upstream main),
+                #    merged into the branch, change nothing. A clean merge that does change something means it is not in; a conflict means partly, or moved.
+                base=$(git merge-base "refs/upr/$num" upstream/main)
+                clean=0; conflicts=0
+                for b in $([ "$branch" != - ] && echo "$branch") main; do
+                  git rev-parse --verify --quiet "origin/$b" >/dev/null || continue
+                  if tree=$(git merge-tree --write-tree --no-messages --merge-base="$base" "origin/$b" "refs/upr/$num" 2>/dev/null); then
+                    if [ "$(echo "$tree" | head -1)" = "$(git rev-parse "origin/$b^{tree}")" ]; then where="changes in \`$b\`"; break; fi
+                    clean=1
+                  else conflicts=1; fi
+                  # Some of its commits are in the branch: an earlier head of it, or another pull request it is stacked on. The rest is not.
+                  mb=$(git merge-base "origin/$b" "refs/upr/$num")
+                  if ! git merge-base --is-ancestor "$mb" upstream/main; then where="**newer commits** (some of its commits are in \`$b\`, the rest not)"; break; fi
+                done
+                [ "$where" = "**not in NXForge**" ] && [ $clean = 0 ] && [ $conflicts = 1 ] && where="**partly** (conflicts)"
+              fi
+            fi
+            case "$where" in \*\**) [ "$state" = open ] && missing=$((missing + 1));; esac
+            echo "| [#$num](https://github.com/seedds/nxnative/pull/$num) | $game | $state | $updated | $where | $(echo "$title" | cut -c1-150) |" >> watch.md
+          done < prs.sorted
+          echo "missing=$missing" >> "$GITHUB_ENV"
+          {
+            echo
+            echo "_Closed pull requests are not counted: upstream closes the ones it lands by hand as well as the ones it drops._"
+            echo "_Updated by the nightly [upstream-check]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/upstream-check.yml) run of $(date -u '+%Y-%m-%d %H:%M UTC')._"
+          } >> watch.md
+          cat watch.md >> "$GITHUB_STEP_SUMMARY"; cat watch.md   # in the log too, where the API reads it
+      - name: Open or update the issue
+        run: |
+          if [ "$(gh api "repos/$GH_REPO" --jq .has_issues)" != true ]; then
+            [ "$missing" = 0 ] || echo "::warning::$missing upstream pull request(s) for watched games are not in NXForge: see this run's summary (issues are turned off for $GH_REPO, so there is no issue)"
+            exit 0
+          fi
+          gh label create upstream-watch --color 0e8a16 --description "Upstream fixes for games NXForge watches" 2>/dev/null || true
+          issue=$(gh issue list --label upstream-watch --state open --json number --jq '.[0].number // empty')
+          title="Watched games: $missing upstream pull request(s) not in NXForge"
+          if [ -n "$issue" ]; then gh issue edit "$issue" --title "$title" --body-file watch.md
+          else gh issue create --label upstream-watch --title "$title" --body-file watch.md; fi

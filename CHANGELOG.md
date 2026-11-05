@@ -4,6 +4,17 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 ## Unreleased
 
+**Games**
+- **The Legend of Zelda: Ocarina of Time (Switch 2, `0400486024DEC000`) builds from its .nup and plays.** Upstream's open bring-up pull requests are merged ahead of upstream: #1299 (profile, title screen, Kokiri Forest), #1300, #1312, #1331, #1343, #1345, #1353, #1359 (the washed-out glow), #1360 (the GPU hang about 10 minutes in, combined by hand with #1299's pool table hints), #1368, #1376, #1377, #1379, and the Mac-side fixes #1304, #1305, #1308, #1320, #1332, #1354, #1355, #1356, #1373 and #1382. The alias region is 8 GB (an abort 5-15 minutes outdoors, from upstream f3ac5ead). 7 of its 42,854 shaders still do not translate (Ampere 0x3a9 ATOMG.CAS and 0x481).
+
+**Upstream**
+- **Watched games.** The nightly `upstream-check` workflow also lists upstream pull requests about the games in `.github/upstream-watch.tsv` (Ocarina of Time for now) that no NXForge branch holds yet, looking at their changes, since upstream lands pull requests as new commits. With issues turned off for the repository, the report is the run's summary; both jobs had failed every night on that.
+
+**Building**
+- **Rebuilds redo only what changed.** After a shader fix, the pipeline archive compiles only the bases whose shaders changed, in a new group beside the groups it keeps, instead of every group a changed shader sits in. Ocarina of Time's 31 groups (30,515 bases) took 26 minutes after each translator fix; a fix that touches a few hundred shaders now takes one group.
+- **The shared Metal cache holds a large game.** Its limit is now 12 GB (`DMSH_MTLCACHE_GB`, was 4), and a build never removes a library it used itself. Ocarina of Time's 7 GB of libraries pruned themselves at 4 GB, so the next translator change compiled 12,000 of them again.
+- **`--plan`** (`--platform mac-app`) says which stages a build would reuse and which it would redo, with how long each took last time, and builds nothing. `pso_offline.py --check` and `pack_app.py --check` answer the same for the pipeline archive and the app.
+
 ## 0.11.0 (2026-11-04)
 
 Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.

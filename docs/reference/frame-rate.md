@@ -164,7 +164,7 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
 - **Cause:** the game's choice: it may step by its target whatever the frames really take ([A target frame rate the game steps by](#a-target-frame-rate-the-game-steps-by): 60.0 / target a frame). A target of 120 advances the game half a step per frame, so its speed is frames a second / 120. Whole-vsync frame steps cannot take 120 at all: their stubs hand the game whole 1/60 s vsyncs.
 - **Fix:** `fps_max 120` in a profile lets `DM_FPS_TARGET` take 120 (the launcher's **Frame rate** offers it on the Mac only, through the option condition in `settings.tsv`). `fps_high` in `hle_nvn.c` then runs the frame step's controller ([nvn_fstep.h](../../dm/gfx/nvn/nvn_fstep.h)) with no state page, counted in ticks of 1/120 s: hold 1 is 120 fps, hold 2 is 60, and `hle_fpslock.c` writes the target from the hold (`nvn_fps_high_now`), so what the game steps by stays what the screen shows. `nvn_fstep.per_vsync` keeps the waits between trials the same real time. The cap is 60 on a screen below 120 Hz, while a movie plays and under the thermal cap. The display link follows the screen (`mtl_link_mode_set`, `DM_PRESENT_LINK` overrides), and on a screen whose rate is not a multiple of 120 it counts virtual ticks ([Virtual 60 Hz ticks](#virtual-60-hz-ticks-on-screens-that-are-not-a-multiple-of-60)): 144 ticks a second would run a game that steps by its target 1.2 times too fast. `fps_hold off` does not apply at 120, since a frame shown late without the target falling is slow motion. A vsync count such as `rhi.SyncInterval` stays 1 at 120.
 - **Check:** `t_fstep` (kmin 1, kmax 2: frames that fit hold 120, late ones step to 60 and stop there, a cap of 60, the return), `t_link_ticks` (the real acquire at each hold on 120 and 60 Hz links, a game without `fps_max`), `t_fpslock` (the target and Unreal's limit following the hold, the interval staying 1, a game without `fps_max` at 60), `test_settings.py` (the option). Before adding `fps_max 120` to a profile, measure the game's speed at 120 against 60 over the same inputs (below): a game whose logic counts frames runs at double speed. Not run: a real screen at 60 or 144 Hz, or an iPhone.
-- **Found on:** [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md).
+- **Found on:** [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md). Also on, with its speed measured: [Mario & Luigi: Brothership](../../dm/games/01006D0017F7A000/README.md), through Unreal's `t.MaxFPS` and `rhi.SyncInterval` ([found by name](#unreals-frame-limit-and-present-interval-found-by-name)), with no host change.
 
 ### Unreal's frame limit and present interval, found by name
 
@@ -347,6 +347,26 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
 - **Found on:** [issue #822](https://github.com/seedds/nxnative/issues/822), Lollipop Chainsaw RePOP (`0100DD301A686000`, [PR #684](https://github.com/seedds/nxnative/pull/684)'s profile), macOS 27, `--platform mac-app`.
 
 ## CPU cost and pacing
+
+### A full-frame shader overflows the raw write log
+
+- **Symptom:** `[RED] raw global memory: a write log ran out of slots` while the AV1 title movie plays at about 21 fps. A relaxed GPU timestamp may put part of the movie dispatches' time before the compute encoder's reported start.
+- **Cause:** the movie shaders write through loaded pointers across full image planes. The page log repeatedly probes occupied slots with atomic compare-and-swap, and every raw pointer access searches the pool table. A Metal System Trace shows sustained compute activity through the apparent idle interval.
+- **Fix:** [Raw global memory uses tagged lookup hints and a pool bitmap](shaders.md#global-memory-at-an-address-loaded-from-memory). The bitmap fits every entry, and the GPU only issues the atomic OR when its bit is still clear.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md).
+
+### A bindless pool table rebuilt for every registration
+
+- **Symptom:** a 3D scene whose `NVN submit+present` time is most of the frame while the GPU time is far lower; in a `sample` of the process the submitting thread spends most of its time in `pool_gpu` → `pool_entry` → `tex_by_id`, much of it in `newTextureViewWithPixelFormat`. The `pool for handles traced to no slot` line counts tens of thousands of builds, and the memory line shows a ghost table with millions of puts (`finalized textures still referenced 512 (small table, … put in total)`).
+- **Cause:** two loops fed each other.
+  - The table of a texture pool that shaders index with handles (`pool_gpu`) was built whole, every ID resolved, whenever `g_reg_gen` or `g_ser_gen` had moved since the last build. The game's other threads register descriptors for later frames while the replay draws, so nearly every draw that read the 33,025-entry pool rebuilt it.
+  - A third of those IDs held descriptors whose texture object the game had finalized, each at the storage of a live texture. Their textures resolved through the 512-entry ghost ring, so a walk put each through it and evicted another. Every put and eviction is a storage note (`g_ser_gen`), and their views lasted one submission and were never cached (the serial is not live).
+- **Fix:**
+  - Texture and sampler registrations (`reg_bump`) and noted storage changes (`ser_note`) are logged by generation. When every generation since a table was built is in those logs, `pool_gpu` resolves only the IDs they name: the table is kept when none changes, otherwise copied and patched, so draws already encoded keep reading their own. Any other bump (a memory pool, a storage takeover, a texture upgrade), a sparse texture, a resized pool or a ring overrun still builds it whole.
+  - A finalized serial whose storage the sharing table holds resolves to that shared texture without a ghost entry (`tex_mtl_`), and a retired ID's view of such a texture lasts across submissions; `alias_sweep` drops those views once the texture leaves the sharing table, so they pin nothing past it.
+  - The `pool for handles traced to no slot` line counts the builds by cause and the tables patched or kept.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md): in Kokiri Forest on an Apple M5 the frame went from a 46–49 ms median (submit 45 ms, GPU 14–18 ms) to 16–21 ms (submit 5–8 ms); the GPU is now the limit. Whole builds fell from about 94,000 to about 1,000 in a 90 s run, ghost puts from about 10,000 a frame to none. Resident memory holds at 13–14.3 GB over 160 s (11.8–11.9 GB before, with 22,000 objects waiting in the deferred-release queue that are now about 100). Not yet rerun on other games: no prepared Mac builds were on the machine for `regress.py`.
+- **Check:** `make -C dm/gfx/tests run` (`t_upgrade_alias` checks that a finalized serial sees an upgraded shared texture).
 
 ### Arena buffer ownership on allocation
 
