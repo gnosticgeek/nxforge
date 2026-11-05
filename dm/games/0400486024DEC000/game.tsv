@@ -21,8 +21,12 @@ zip_store	.bwav:.webm:.zs:.metallib
 
 # ---- Memory ----
 # The NPDM declares 48 MiB of system resources. Startup requests a 6.20 GiB heap.
-mem_reserve	0x300000000
-mem_alias	0x98000000
+# The alias region holds the game's streaming allocator (main+0x7ed630): in Kokiri Forest it keeps about 5,100 address regions with 3.0-3.3 GB mapped, spread up to
+# +4.95 GB (DM_REGIONS). With 2.38 GB (0x98000000) VammManager::AllocateAddressRegion failed after 5-15 minutes outdoors and the game aborted (nn::diag abort,
+# Result 0, sdk+0x16cb54). 8 GB leaves room for its fragmentation; the reserve grows by the same 5.6 GB so the heap keeps its size
+# (from upstream f3ac5ead, the Ocarina integration under seedds/nxnative PR #1386)
+mem_reserve	0x468000000
+mem_alias	0x200000000
 mem_stack	0x10000000
 app_pool	0x240000000
 sys_resource	0x3000000
