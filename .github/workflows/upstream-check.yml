@@ -156,7 +156,7 @@ jobs:
             echo "_Closed pull requests are not counted: upstream closes the ones it lands by hand as well as the ones it drops._"
             echo "_Updated by the nightly [upstream-check]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/upstream-check.yml) run of $(date -u '+%Y-%m-%d %H:%M UTC')._"
           } >> watch.md
-          cat watch.md >> "$GITHUB_STEP_SUMMARY"
+          cat watch.md >> "$GITHUB_STEP_SUMMARY"; cat watch.md   # in the log too, where the API reads it
       - name: Open or update the issue
         run: |
           if [ "$(gh api "repos/$GH_REPO" --jq .has_issues)" != true ]; then
