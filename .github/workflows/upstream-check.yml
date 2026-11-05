@@ -1,6 +1,6 @@
 # Nightly check of upstream nxnative (seedds/nxnative, main): how many commits NXForge's main is behind, and whether a merge would conflict.
 # It keeps one open issue labelled "upstream" up to date with the count, the newest upstream commits and the files a test merge conflicts in,
-# and closes it once main has caught up. Nothing is pushed: the merge itself is a thread of work with a Mac build (UPSTREAM.md).
+# and closes it once main has caught up (with issues turned off for the repository, each run's summary holds the report instead). Nothing is pushed: the merge itself is a thread of work with a Mac build (UPSTREAM.md).
 # A second job watches the games in .github/upstream-watch.tsv: upstream pull requests about them (open or updated in the last 14 days), and which NXForge branches already hold each one,
 # in one open issue labelled "upstream-watch". A game being brought up upstream gets its fixes in pull requests first, often several a day, long before they reach main.
 name: upstream-check
@@ -68,6 +68,8 @@ jobs:
           cat body.md >> "$GITHUB_STEP_SUMMARY"
       - name: Open, update or close the issue
         run: |
+          # With issues turned off for the repository, the run's summary is the report (above), and a warning says how to get the issue
+          if [ "$(gh api "repos/$GH_REPO" --jq .has_issues)" != true ]; then echo "::warning::Issues are turned off for $GH_REPO (Settings, General, Features), so the report is only in this run's summary"; exit 0; fi
           gh label create upstream --color 5319e7 --description "Merging upstream nxnative" 2>/dev/null || true
           issue=$(gh issue list --label upstream --state open --json number --jq '.[0].number // empty')
           behind="${{ steps.merge.outputs.behind }}"
@@ -157,6 +159,10 @@ jobs:
           cat watch.md >> "$GITHUB_STEP_SUMMARY"
       - name: Open or update the issue
         run: |
+          if [ "$(gh api "repos/$GH_REPO" --jq .has_issues)" != true ]; then
+            [ "$missing" = 0 ] || echo "::warning::$missing upstream pull request(s) for watched games are not in NXForge: see this run's summary (issues are turned off for $GH_REPO, so there is no issue)"
+            exit 0
+          fi
           gh label create upstream-watch --color 0e8a16 --description "Upstream fixes for games NXForge watches" 2>/dev/null || true
           issue=$(gh issue list --label upstream-watch --state open --json number --jq '.[0].number // empty')
           title="Watched games: $missing upstream pull request(s) not in NXForge"
