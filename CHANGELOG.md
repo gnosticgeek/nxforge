@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+**Converter**
+- **Switch 2 games build from the app.** Choose a game's `.nup` file (or a folder holding one, or a dump folder) on Convert: no keys are asked for, and the converter lists the container's base game, updates and DLC, says whether NXForge has a profile for the game, and stops before the build when the game's code needs `zbic` and it is not installed. The disk check allows for a Switch 2 build's size (about twice the game plus 20 GB), and **Preview build** runs `--plan` on an engine that has it. The converter's own Python now installs `zbic`. The command line takes `--convert <game>.nup` without keys.
+
 ## 0.11.0 (2026-11-04)
 
 Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.

@@ -37,6 +37,11 @@ cat > "$app/Contents/Info.plist" <<EOF
     <key>CFBundleTypeRole</key><string>Viewer</string>
     <key>LSHandlerRank</key><string>Alternate</string>
     <key>LSItemContentTypes</key><array><string>public.folder</string></array>
+  </dict><dict>
+    <key>CFBundleTypeName</key><string>Switch 2 game (NUP container)</string>
+    <key>CFBundleTypeRole</key><string>Viewer</string>
+    <key>LSHandlerRank</key><string>Alternate</string>
+    <key>CFBundleTypeExtensions</key><array><string>nup</string></array>
   </dict></array>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>

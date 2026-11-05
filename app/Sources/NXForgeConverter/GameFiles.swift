@@ -7,6 +7,8 @@ import Foundation
 struct CheckLine: Hashable {
     let ok: Bool
     let text: String
+    /// a warning: shown in orange, and it does not stop the build
+    var warn = false
 }
 
 struct FileReport: Identifiable, Hashable {
