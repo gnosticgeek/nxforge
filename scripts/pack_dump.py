@@ -102,6 +102,10 @@ def pack_version(src, app, out, say=print):   # one version's folder (base/ or u
     pack(src / 'romfs', out / 'RomFS.img', say)
 
 
+def version_reusable(src, out):   # whether pack_version keeps out/RomFS.img as it is (the NSP script's --plan)
+    return (src / 'romfs').is_dir() and romfs_image.up_to_date(src / 'romfs', out / 'RomFS.img')
+
+
 def pack_dlc(app, dlc, aoc, say=print):   # {DLC title ID: its RomFS folder} → aoc/<index>.img; images of DLC no longer in the folder go
     want = {f'{tid - app - 0x1000}.img': roms for tid, roms in dlc.items()}
     if aoc.is_dir():

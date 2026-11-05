@@ -270,6 +270,14 @@ class Pack(Base):
         pack_nup.pack_dlc(n, app, dlc, self.out() / 'aoc', say=lambda s: None)
         self.assertIn('dlc', romfs_image.read_index(self.out() / 'aoc/1.img'))
 
+    def test_plan_reads_the_packers_own_reuse_check(self):   # --plan said "reused" while the image was packed again (#1354 changed romfs_image.py, which the stamp hashes)
+        n = self.open(); app, base, vers, _ = pack_nup.scan(n); out = self.out() / f'v{VER}'
+        self.assertFalse(pack_nup.version_reusable(n, vers[VER], base, out))   # nothing packed yet
+        pack_nup.pack_version(n, vers[VER], base, app, out, say=lambda s: None)
+        self.assertTrue(pack_nup.version_reusable(n, vers[VER], base, out))
+        with mock.patch.object(pack_nup, 'image_digest', lambda n, d: 'other packer code'):
+            self.assertFalse(pack_nup.version_reusable(n, vers[VER], base, out))   # what a packer change does to the stamp
+
     def test_standalone_update_needs_its_own_romfs(self):
         write_nup(self.path, [(1, TID, VER, version(), b''),
                               (1, TID, VER + 1, {'exefs': version()['exefs']}, b'')], update_flags=pack_nup.STANDALONE)

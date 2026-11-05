@@ -250,10 +250,14 @@ def entries(n, d):   # romfs_image.entries for a folder of the container: [name,
     return ents
 
 
+def image_digest(n, d):   # what an image of the container's RomFS folder d is stamped with: both packers' code (a change to either packs it again) and the TOC hash, which covers every name and file hash
+    return hashlib.sha256(Path(romfs_image.__file__).read_bytes() + Path(__file__).read_bytes() + n.toc_sha + struct.pack('<I', d)).hexdigest()
+
+
 def pack(n, d, img, say=print):   # the RomFS folder d of the container → img, kept while the container tree and the packers are the same
     img.parent.mkdir(parents=True, exist_ok=True)
     ents, dst = entries(n, d), os.fspath(img)
-    digest = hashlib.sha256(Path(romfs_image.__file__).read_bytes() + Path(__file__).read_bytes() + n.toc_sha + struct.pack('<I', d)).hexdigest()   # the TOC hash covers every name and file hash
+    digest = image_digest(n, d)
     if romfs_image.reusable(dst, digest): return len(ents)
     say(f'packing {n.path.name} folder {d} → {img}')
     part = dst + '.part'
@@ -308,6 +312,10 @@ def pack_version(n, k, base, app, out, say=print):   # one version (the base pac
     exefs(n, k, out / 'ExeFS')
     pack(n, d, out / 'RomFS.img', say)
     control(k, out, app_package(n) if base is None else None)
+
+
+def version_reusable(n, k, base, out):   # whether pack_version keeps out/RomFS.img as it is (the NSP script's --plan; the ExeFS and control data are cheap either way)
+    return romfs_image.reusable(os.fspath(out / 'RomFS.img'), image_digest(n, romfs_of(k, base)))
 
 
 def pack_dlc(n, app, dlc, aoc, say=print):   # {DLC title ID: package} → aoc/<index>.img; images of DLC no longer in the container go

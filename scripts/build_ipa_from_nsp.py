@@ -3283,7 +3283,10 @@ def main(args=None):
         b, u = picks[ver]
         if PLAN is not None and (nup or dump):   # pack_version keeps an unpacked version while it is unchanged
             d = ex / ver
-            if (d / 'RomFS.img').is_file() and (d / 'ExeFS').is_dir(): dirs[ver] = d; PLAN.append(('unpack', 'reused', '')); continue
+            if (d / 'RomFS.img').is_file() and (d / 'ExeFS').is_dir():
+                # the packers' own check: an image stamped by other packer code or another container is packed again, beside the old one until it is done (its size again on disk)
+                if pack_nup.version_reusable(fam['nup'], u or b, b, d) if nup else pack_dump.version_reusable(u or b, d): dirs[ver] = d; PLAN.append(('unpack', 'reused', '')); continue
+                plan_redo('unpack', f'the RomFS image ({amount((d / "RomFS.img").stat().st_size, "B")}) is packed again: the packers or the game files changed since it was made, and it needs that much free space beside the old one')
             plan_redo('unpack', 'the game files are not unpacked yet')
         dirs[ver] = extract_nup(ex, ver, u or b, b, app, fam['nup']) if nup else extract_dump(ex, ver, u or b, app) if dump else extract(nx, keys, ex, ver, b, u, None, logs, g, app)
         if not nup and not dump: extract_html(nx, keys, dirs[ver], b, u, logs, app)
