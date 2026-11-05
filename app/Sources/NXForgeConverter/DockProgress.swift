@@ -1,4 +1,5 @@
-// The build's progress on the Dock icon: a bar under the app icon while a build runs, the step as a badge.
+// The build's progress on the Dock icon: a bar under the app icon while a build runs (the share of the expected time),
+// the minutes left as a badge (the step when nothing is known yet).
 import AppKit
 
 @MainActor
@@ -28,8 +29,11 @@ enum DockProgress {
         }
         if tile == nil { tile = Tile(frame: NSRect(origin: .zero, size: dock.size)); dock.contentView = tile }
         let n = max(run.stage.n, 1)
-        tile?.fraction = min(1, (Double(max(run.stage.k - 1, 0)) + (run.stage.fraction ?? 0)) / Double(n))
-        dock.badgeLabel = run.stage.k > 0 ? "\(run.stage.k)/\(n)" : nil
+        let o = run.overall()
+        tile?.fraction = o.fraction
+        // the minutes left when history gives an estimate, else the step
+        dock.badgeLabel = o.remaining.map { $0 < 60 ? "<1m" : $0 < 3600 ? "\(Int(($0 / 60).rounded()))m" : "\(Int($0 / 3600))h\(Int($0.truncatingRemainder(dividingBy: 3600) / 60))m" }
+            ?? (run.stage.k > 0 ? "\(run.stage.k)/\(n)" : nil)
         dock.display()
     }
 }

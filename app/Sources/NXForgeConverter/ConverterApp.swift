@@ -10,7 +10,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
     }
-    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+    /// Closing the window while a build runs leaves the build going (the Dock icon shows its progress and a notification
+    /// says when it ends); otherwise the app quits with its window.
+    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool {
+        MainActor.assumeIsolated { AppModel.shared?.run.running != true }
+    }
+    /// Quitting while a build runs asks first, then stops the build cleanly (its finished steps are kept) before quitting.
+    func applicationShouldTerminate(_ app: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            guard let model = AppModel.shared, model.run.running else { return .terminateNow }
+            let kept = model.run.done.filter(\.ok).count
+            guard model.confirm("Quit and stop the build?", "\(kept > 0 ? "The \(kept) finished step\(kept == 1 ? " is" : "s are") kept, so building again carries on from there." : "Nothing has finished yet.") To keep building, close the window instead: the build goes on and the Dock icon shows its progress.", action: "Stop and Quit") else { return .terminateCancel }
+            model.run.cancel()
+            Task { @MainActor in
+                for _ in 0..<100 where model.run.running { try? await Task.sleep(for: .milliseconds(200)) }   // up to 20 s for the script to end its stage
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
+    }
     /// A game folder dropped on the Dock icon (Info.plist lists folders as a document type)
     func application(_ app: NSApplication, open urls: [URL]) {
         MainActor.assumeIsolated { AppModel.shared?.openDropped(urls) }
@@ -42,7 +60,7 @@ struct ConverterApp: App {
                 Button("Rebuild") { model.rebuildCurrent() }.keyboardShortcut("r").disabled(model.run.running || !model.allOK)
                 Button("Rebuild All on Older Engines") { model.rebuildAll() }.disabled(model.run.running || !model.allOK || model.outdatedBuilds.isEmpty)
                 Divider()
-                Button("Stop Build") { model.run.cancel() }.keyboardShortcut(".").disabled(!model.run.running)
+                Button("Stop Build…") { model.stopBuild() }.keyboardShortcut(".").disabled(!model.run.running)
             }
         }
     }

@@ -9,8 +9,14 @@ struct ToolchainPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(title: "Toolchain", subtitle: "Everything needed to build native Mac apps.") {
+                let fixable = model.fixable
+                if !fixable.isEmpty {
+                    Button { model.fixAll() } label: { Label("Fix all (\(fixable.count))", systemImage: "wrench.adjustable").font(.title3) }
+                        .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(model.checking || model.pythonSetup?.running == true)
+                        .help("Sets up the converter's own Python if it needs one, and runs every other fix in one Terminal window. The checks run again when you come back.")
+                }
                 Button { model.recheck() } label: { Label("Run checks", systemImage: "arrow.clockwise").font(.title3) }
-                    .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(model.checking)
+                    .modifier(GlassButton(prominent: model.fixable.isEmpty)).controlSize(.extraLarge).disabled(model.checking)
             }
 
             Card(padding: 14) {
@@ -90,7 +96,7 @@ struct ToolchainPage: View {
                 if let repoCheck = model.checks?.first(where: { $0.name == Toolchain.engineCheckName }), !repoCheck.ok, let fix = repoCheck.fix {
                     HStack {
                         StatusDot(color: .red, text: "No NXForge engine checkout found")
-                        Button("Clone it in Terminal") { Toolchain.runInTerminal(fix) }.buttonStyle(.glass)
+                        Button("Clone it in Terminal") { model.runFix(fix) }.buttonStyle(.glass)
                     }
                 }
                 Divider()
@@ -106,6 +112,13 @@ struct ToolchainPage: View {
                         }
                         advancedRow("DOTNET_ROOT", model.env?.dotnetRoot ?? "None")
                         advancedRow("Tool search path", model.env?.path ?? "")
+                        HStack {
+                            Text("Run by hand").frame(width: 120, alignment: .leading).foregroundStyle(.secondary)
+                            Text("The PATH, DOTNET_ROOT, Python and command the converter uses, to build the chosen game from Terminal").font(.callout).foregroundStyle(.secondary)
+                            Spacer()
+                            Button { copyToClipboard(model.environmentLine) } label: { Label("Copy environment", systemImage: "terminal") }.buttonStyle(.glass)
+                                .help(model.environmentLine)
+                        }
                     }
                     .padding(.top, 8)
                 } label: { Text("Advanced configuration").font(.headline) }
@@ -120,8 +133,8 @@ struct ToolchainPage: View {
 
     var summary: String {
         guard let c = model.checks else { return "Looking for the tools…" }
-        let missing = c.filter { !$0.ok && !$0.optional }.map(\.name)
-        return missing.isEmpty ? "All required tools are available." : "Missing: \(missing.joined(separator: ", "))."
+        let missing = c.filter { !$0.ok && (!$0.optional || model.needs[$0.name] != nil) }.map(\.name)
+        return missing.isEmpty ? "All required tools are available\(model.needs.isEmpty ? "" : ", and those this game needs")." : "Missing: \(missing.joined(separator: ", "))."
     }
 
     func row(_ c: Check) -> some View {
@@ -143,6 +156,10 @@ struct ToolchainPage: View {
                             .disabled(model.pythonSetup?.running == true)
                             .help("Make the converter's own Python in Application Support, so it no longer uses \(model.env?.python ?? "another copy")")
                     }
+                } else if c.optional, let why = model.needs[c.name] {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text("Needed for this game").foregroundStyle(.orange).help(why)
+                    if let fix = c.fix { Button("Install") { model.runFix(fix) }.buttonStyle(.glassProminent).controlSize(.small).help(fix) }
                 } else {
                     Image(systemName: c.optional ? "minus" : "xmark").foregroundStyle(c.optional ? Color.secondary : .red).fontWeight(.semibold)
                     Text(c.optional ? "Not installed" : "Missing").foregroundStyle(c.optional ? Color.secondary : .red)
@@ -150,7 +167,7 @@ struct ToolchainPage: View {
                         Button("Set up") { model.setUpPython() }.buttonStyle(.glassProminent).controlSize(.small)
                             .disabled(model.pythonSetup?.running == true).help("Make the converter's own Python with the modules the script needs")
                     } else if let fix = c.fix {
-                        Button("Fix") { Toolchain.runInTerminal(fix) }.buttonStyle(.glass).controlSize(.small).help(fix)
+                        Button("Fix") { model.runFix(fix) }.buttonStyle(.glass).controlSize(.small).help(fix)
                     }
                 }
             }

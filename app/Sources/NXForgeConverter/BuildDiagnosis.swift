@@ -26,7 +26,7 @@ enum BuildDiagnosis {
              title: "The build was stopped", fix: "Build again when you are ready; the steps that finished are reused."),
         Rule(code: .diskFull, phrases: ["gb free on the volume", "no space left on device", "disk full", "not enough space", "enospc"],
              title: "Not enough free disk space",
-             fix: "Free space on the game folder's drive (a first build needs about twice the game files plus 10 GB), or set After a build to Unused in Settings, then build again. Finished steps are reused."),
+             fix: "Free space on the game folder's drive (a first build needs about twice the game files plus 10 GB): Storage lists every game's build cache and older app copies with their sizes. Then build again; finished steps are reused.", page: .storage),
         Rule(code: .thirtyTwoBit, phrases: ["32-bit arm program"],
              title: "This version of the game is a 32-bit program, which NXForge cannot run",
              fix: "Add a newer update of the game to the folder: some games became 64-bit in a later version (Mario Kart 8 Deluxe from 4.0.0)."),
