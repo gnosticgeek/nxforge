@@ -9,7 +9,7 @@
 # Environment IOSOUT=dir: the same MSL also goes through dm/ios/tools/ios_metal.compile to produce an iphoneos metallib + reflection (chain_metal records the iOS compile convention)
 # Final summary: success / failure counts and the distribution of reasons; distribution of driver segment read offsets (those outside the range the replay layer can fill are listed separately);
 # a [RED] line per shader that built but lost something (shader_regressions.report_losses), which does not change the exit status
-import atexit, inspect, os, re, sys, json, mmap, struct, hashlib, shutil, subprocess, tempfile, collections, threading, concurrent.futures as cf
+import atexit, heapq, inspect, os, re, sys, json, mmap, struct, hashlib, shutil, subprocess, tempfile, collections, threading, concurrent.futures as cf
 import dmsh_geometry, dmsh_atomic, dmsh_wide, dmsh_meshstage, dmsh_abi as abi   # abi: the driver segment layout and the binding kinds the host shares (dm/gfx/nvn/dmsh_abi.h)
 DM_ROOT = os.environ.get('DM_ROOT') or os.path.expanduser('~/dm-work')   # Workspace root (game files, build outputs and run artifacts are all under it)
 HOME = os.path.expanduser('~')
@@ -1511,7 +1511,10 @@ for key in keys:
     if hit: cache_hits.add(key)
     else: jobs[key], c1s[key] = job_for(key, name, rec_of(key)[1], w)
 misses = [key for key in keys if key not in cache_hits]
-chunks = [misses[i::NJ] for i in range(NJ)]
+# NXForge: more, smaller translator runs than workers (a shared queue): with one run per worker, the runs that land on the efficiency cores finished last and held up the
+# step's end. Each run keeps at least XLATE_MIN shaders, so the translator's start-up stays a small part of it
+XLATE_MIN = 64
+chunks = [misses[i::n] for n in [max(1, min(4 * NJ, len(misses) // XLATE_MIN))] for i in range(n)]
 def xl(ch):
     jp = os.path.join(w, f'job_{abs(hash(ch[0]))}.json'); json.dump([jobs[k] for k in ch], open(jp, 'w'))
     return spawn([XLATE, jp, w], capture_output=True, text=True)
@@ -1532,8 +1535,43 @@ def fin(key):
     result = (key,) + finish(key, w, jobs[key], c1s[key])
     if result[1] == 'ok': publish_cache(key, digests[key], rule_fps[key], CODE_FP)
     return result
-with cf.ThreadPoolExecutor(NJ) as ex:   # two phases: paired vertex shaders read their pixel shaders' MSL (vs_pad), so they go last
-    res = list(ex.map(fin, [k for k in keys if k not in PAIRS])) + list(ex.map(fin, [k for k in keys if k in PAIRS]))
+def finish_all(keys):
+    """fin() of every key on NJ threads; the results in the order of the two phases this replaced (unpaired shaders in key order, then paired ones). A paired vertex shader
+    reads its pixel shaders' MSL (vs_pad), so it starts once those of them built here are finished. NXForge: it waits for those alone, not for every unpaired shader (a barrier
+    that left the cores idle at the step's end), and runs as soon as it is ready; shaders to compile go before cache hits, and the pixel shaders of pairs before the others,
+    so the cheap cache hits, not the slow compiles, are what is left at the end"""
+    paired = [k for k in keys if k in PAIRS]; unpaired = [k for k in keys if k not in PAIRS]
+    wanted = {p for k in paired for p in PAIRS[k]}
+    rank = {k: (k in cache_hits, k not in PAIRS, k not in wanted, i) for i, k in enumerate(keys)}
+    heap = [rank[k] + (k,) for k in unpaired]; heapq.heapify(heap)
+    waiting = {k: {p for p in PAIRS[k] if p in rank and p not in PAIRS} for k in paired}
+    for k in [k for k, d in waiting.items() if not d]: del waiting[k]; heapq.heappush(heap, rank[k] + (k,))
+    needs = collections.defaultdict(list)
+    for k, d in waiting.items():
+        for p in d: needs[p].append(k)
+    results, cond, left, error = {}, threading.Condition(), [len(keys)], []
+    def worker():
+        while True:
+            with cond:
+                while not heap and left[0] and not error: cond.wait()
+                if not heap or error: return
+                k = heapq.heappop(heap)[-1]
+            try: r = fin(k)
+            except BaseException as e:
+                with cond: error.append(e); cond.notify_all()
+                return
+            with cond:
+                results[k] = r; left[0] -= 1
+                for v in needs.pop(k, ()):
+                    waiting[v].discard(k)
+                    if not waiting[v]: del waiting[v]; heapq.heappush(heap, rank[v] + (v,))
+                cond.notify_all()
+    threads = [threading.Thread(target=worker, daemon=True) for _ in range(max(1, min(NJ, len(keys))))]
+    for t in threads: t.start()
+    for t in threads: t.join()
+    if error: raise error[0]
+    return [results[k] for k in unpaired + paired]
+res = finish_all(keys)
 # Passthrough geometry as mesh shaders (dmsh_mesh.py): <vertex key>_<geometry key>_m3 for each pair in the profile's geo_mesh.tsv whose two libraries exist; the host
 # draws a lean triangle-list geometry draw with it when its pair has one, and through the compute path otherwise (nvn_geometry.inc geo_mesh_draw)
 MESH_STATS = collections.Counter()
