@@ -56,13 +56,16 @@ struct VolumeInfo: Identifiable, Hashable {
 }
 
 enum Storage {
-    /// Whether a build folder's logs (every stage writes one) changed in the last ten minutes.
+    /// Whether anything in a build folder, down to three levels, changed in the last ten minutes. The logs alone are not
+    /// enough: a long stage (extracting a Switch 2 game's RomFS) writes its output for many minutes between log lines.
     static func recentlyWritten(_ build: String) -> Bool {
-        let fm = FileManager.default
-        let logs = build + "/logs"
-        let names = (try? fm.contentsOfDirectory(atPath: logs)) ?? []
-        let newest = ([logs] + names.map { "\(logs)/\($0)" }).compactMap { (try? fm.attributesOfItem(atPath: $0))?[.modificationDate] as? Date }.max()
-        return newest.map { Date().timeIntervalSince($0) < 600 } ?? false
+        let since = Date().addingTimeInterval(-600)
+        guard let e = FileManager.default.enumerator(at: URL(fileURLWithPath: build), includingPropertiesForKeys: [.contentModificationDateKey]) else { return false }
+        for case let u as URL in e {
+            if e.level >= 3 { e.skipDescendants() }
+            if let d = try? u.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, d > since { return true }
+        }
+        return false
     }
 
     /// Every item, measured (slow: run it off the main thread).
