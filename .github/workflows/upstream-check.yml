@@ -102,11 +102,24 @@ jobs:
           : > prs.tsv
           declare -A skip   # pull requests left out on purpose: "skip", the number, the reason
           while IFS=$'\t' read -r kind num why; do [ "$kind" = skip ] && skip[$num]=$why; done < <(grep -v '^#' .github/upstream-watch.tsv)
-          # One search per term. Empty fields become "-", because read collapses adjacent tabs.
+          # Upstream's pull requests updated since then: number, state, updated, title, title and body (tabs and newlines made spaces). The pulls API first: search/issues
+          # with this job's token returned upstream's issues and none of its pull requests. Search is the fallback (it is what works where the pulls API is refused).
+          clean='gsub("[\\t\\r\\n|]"; " ")'
+          if ! gh api -X GET repos/seedds/nxnative/pulls -f state=all -f sort=updated -f direction=desc -f per_page=100 --paginate \
+               --jq ".[] | select(.updated_at >= \"$since\") | [.number, .state, .updated_at[:10], (.title | $clean), ((.title + \" \" + (.body // \"\")) | $clean)] | @tsv" > recent.tsv 2>/dev/null; then
+            : > recent.tsv
+            grep -v -e '^#' -e '^skip' .github/upstream-watch.tsv | cut -f1 | while read -r term; do
+              [ -n "$term" ] || continue
+              gh api -X GET search/issues -f q="repo:seedds/nxnative is:pr $term updated:>=$since" -f per_page=100 \
+                --jq ".items[] | select(.pull_request) | [.number, .state, .updated_at[:10], (.title | $clean), ((.title + \" \" + (.body // \"\")) | $clean)] | @tsv" >> recent.tsv || true
+            done
+          fi
+          echo "$(wc -l < recent.tsv) upstream pull requests updated since $since"
+          # Each term (quotes dropped, any case) in a pull request's title or body. Empty fields become "-", because read collapses adjacent tabs.
           grep -v -e '^#' -e '^skip' .github/upstream-watch.tsv | while IFS=$'\t' read -r term game branch; do
             [ -n "$term" ] || continue
-            gh api -X GET search/issues -f q="repo:seedds/nxnative is:pr $term updated:>=$since" -f per_page=100 \
-              --jq ".items[] | [.number, .state, .updated_at[:10], \"$game\", \"${branch:--}\", (.title | gsub(\"[\\t|]\"; \" \"))] | @tsv" >> prs.tsv || true
+            t=${term//\"/}
+            awk -F'\t' -v t="$t" -v g="$game" -v b="${branch:--}" 'index(tolower($5), tolower(t)) { print $1 "\t" $2 "\t" $3 "\t" g "\t" b "\t" $4 }' recent.tsv >> prs.tsv
           done
           sort -t$'\t' -k1,1nr -u prs.tsv > prs.sorted
           {
