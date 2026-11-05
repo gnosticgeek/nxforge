@@ -754,12 +754,13 @@ class Script(unittest.TestCase):
             ran.append([str(c) for c in cmd])
             if str(cmd[1]).endswith('dm/games/settings.py'):   # the launcher settings, before the packer
                 self.settings_env = env; Path(cmd[-1]).write_text('{}'); return
-            if not on_line:   # pso_offline.py: its archive, or none when every eligible pair has function constants
+            if str(cmd[1]).endswith('pso_offline.py'):   # pso_offline.py (which reports its batches through on_line): its archive, or none when every eligible pair has function constants
                 o = Path(cmd[cmd.index('--out') + 1]); o.mkdir(parents=True, exist_ok=True)
                 if kw.get('pso_fail'):   # metal-tt failed
                     self.assertFalse(fatal); (o / 'applegpu_g14s.mtl4a.partial').write_bytes(b'half'); return 1
                 if not kw.get('no_bases'): (o / f'{cmd[cmd.index("--gpu") + 1]}.mtl4a').write_bytes(b'arch')
                 return
+            assert on_line   # the packer reports its steps
             (out / 'Contents/MacOS').mkdir(parents=True); (out / 'Contents/MacOS/dmhost').write_bytes(b'x')
             on_line('step: launcher and host (clones of the game files)')
             on_line(f'app: {out}')

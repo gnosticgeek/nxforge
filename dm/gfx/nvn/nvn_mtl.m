@@ -268,6 +268,8 @@ static _Atomic unsigned g_image_heap_n, g_big_n;   // g_big_n: large pools in ch
 static inline MTL4VisibilityOptions resource_vis(void) { return MTL4VisibilityOptionDevice | (g_image_heap_n || g_big_n ? MTL4VisibilityOptionResourceAlias : 0); }
 // Residency churn by call site (the power line every 300 frames, mtl_res_stats): each commit with changes is a kernel call whose cost grows with what was added or removed
 enum { RS_SITES = 16 }; static struct { int line; uint64_t n, bytes; } g_rs_site[RS_SITES]; static uint64_t g_rs_rm, g_rs_commits, g_rs_commit_ns;
+static _Atomic uint64_t g_rs_commit_total_ns;   // cumulative residency-set commit time, never reset (the long-frame line takes its difference per frame)
+uint64_t mtl_res_commit_ns(void) { return atomic_load(&g_rs_commit_total_ns); }
 #define res_add(r) res_add_at((r), __LINE__)
 // Both run on guest threads too (pool_res from mtl_addr, uploads), whose implicit autorelease pools never drain; containsObject: / removeObject: on a weak NSHashTable leave the object
 // autoreleased in the calling thread's pool (measured in a standalone test: the object outlived its last strong reference until the thread ended), so each has a pool of its own
@@ -315,7 +317,7 @@ static void res_check(id r, const char *what, int reg) {
 }
 static void res_commit(void) {
     pthread_mutex_lock(&g_res_mu);
-    if (g_res_dirty) { uint64_t t0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); [g_res commit]; g_res_dirty = 0; g_rs_commits++; g_rs_commit_ns += clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t0; }
+    if (g_res_dirty) { uint64_t t0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); [g_res commit]; g_res_dirty = 0; g_rs_commits++; uint64_t d_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t0; g_rs_commit_ns += d_; atomic_fetch_add(&g_rs_commit_total_ns, d_); }
     pthread_mutex_unlock(&g_res_mu);
 }
 // What the residency set holds: totals by kind and the largest objects. At the first GPU out-of-memory error (the error names none of them), and for DM_CTL "restop" (hle_hid.c). The set holds
@@ -2780,7 +2782,14 @@ static id<MTLBuffer> up_big_src(uint64_t addr, uint64_t len, uint64_t *off) {
     res_add(buf); [g_up_keep addObject:buf]; *off = (uint64_t)addr - a;
     return buf;
 }
+// NXForge: where texture-upload time on the submit thread goes, cumulative (the long-frame line takes per-frame differences): making the texture, write protection,
+// GPU deswizzle encoding, and the CPU route (bytes, time) with the reason it was taken. Mario Kart World's race loads put 100-180 MB of first uploads into one frame (70-140 ms)
+static _Atomic uint64_t g_upb_new_ns, g_upb_prot_ns, g_upb_gpu_ns, g_upb_cpu_ns, g_upb_cpu_bytes, g_upb_cpu_n[3];   // g_upb_cpu_n: not in a pool, sparse, RGB565 family
+void mtl_upload_breakdown(uint64_t *new_ns, uint64_t *prot_ns, uint64_t *gpu_ns, uint64_t *cpu_ns, uint64_t *cpu_bytes) {
+    *new_ns = atomic_load(&g_upb_new_ns); *prot_ns = atomic_load(&g_upb_prot_ns); *gpu_ns = atomic_load(&g_upb_gpu_ns); *cpu_ns = atomic_load(&g_upb_cpu_ns); *cpu_bytes = atomic_load(&g_upb_cpu_bytes);
+}
 static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture> reuse, MTLTextureUsage keep) {
+    uint64_t ub0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     MTLTextureDescriptor *d = tex_desc(t, 1);
     if (!d) return nil;
     d.usage |= keep & (MTLTextureUsageRenderTarget | MTLTextureUsagePixelFormatView);
@@ -2796,10 +2805,12 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
              (unsigned long long)(mt.allocatedSize >> 20), t->pool && nvn_sparse_pool(t->pool) ? ", in a sparse virtual pool" : t->pool && (t->pool->flags & NVN_MEMORY_POOL_FLAGS_VIRTUAL) ? ", in a virtual pool" : ""); }
     if (g_allocprof > 0) { static int n; if (n++ < 30 || n % 500 == 0) MLOG("new texture (%s) #%d ser=%llu %ux%ux%u format %#x target %d levels %u storage %p", __func__, n, (unsigned long long)t->serial, t->d.width, t->d.height, t->d.depth, t->d.format, t->d.target, t->d.levels, (void *)t->mem); }
     res_add(mt);   // Both first upload and re-upload register residency here (Metal 4 does not make resources resident automatically; a missed registration = GPU address page fault)
+    uint64_t ub1 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); atomic_fetch_add(&g_upb_new_ns, ub1 - ub0);
     int sparse = t->pool && nvn_sparse_pool(t->pool);
     if (stamp) {   // no stamp: a one-time upload of content the CPU will not change (tex_init_fill), with no write tracking
         *stamp = nvn_dirty_now();
         if (sparse) nvn_sparse_protect(t->pool, (uint64_t)(uintptr_t)t->mem, t->L.size); else nvn_dirty_protect(t->mem, t->L.size); }
+    uint64_t ub2 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); atomic_fetch_add(&g_upb_prot_ns, ub2 - ub1);
     int bw, bh, bpb = nvn_fmt_bpb(t->d.format, &bw, &bh);
     unsigned layers = (t->d.target == 4 || t->d.target == 9) ? t->d.depth : t->d.target == 8 ? 6 : t->d.target == 3 ? t->d.height : 1;   // a cube array's depth counts layer-faces (tex_desc)
     size_t total = 0;
@@ -2813,7 +2824,11 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
     id<MTLBuffer> upsrc = nil;
     if (!rb_shift && !sparse && g_nvn_deswz_gpu && g_nbig) { up_begin(); upsrc = up_big_src((uint64_t)t->mem, t->L.size, &mo); if (upsrc) mb = (__bridge void *)upsrc; }
     int use_gpu = !rb_shift && !sparse && g_nvn_deswz_gpu && (upsrc || mtl_addr((uint64_t)t->mem, t->L.size, &mb, &mo));   // a sparse pool's texture is gathered through its page table on the CPU
-    if (g_nvn_deswz_gpu && !use_gpu && !sparse && !rb_shift) RED_ONCE(40, "swizzled texture storage is not in a memory pool; falling back to the CPU");
+    if (g_nvn_deswz_gpu && !use_gpu && !sparse && !rb_shift) { RED_ONCE(40, "swizzled texture storage is not in a memory pool; falling back to the CPU");
+        uint64_t k = atomic_fetch_add(&g_upb_cpu_n[0], 1);   // NXForge: which ones (the red line comes once): storage, pool and size of the first few, then a count every 1,000
+        if (k < 8 || (k + 1) % 1000 == 0) MLOG("CPU texture upload #%llu (storage not in a pool buffer): ser=%llu %ux%u format %#x target %d levels %u, %llu KB at %p, pool %p flags %#x",
+            (unsigned long long)k + 1, (unsigned long long)t->serial, t->d.width, t->d.height, t->d.format, t->d.target, t->d.levels, (unsigned long long)(t->L.size >> 10), t->mem, (void *)t->pool, t->pool ? t->pool->flags : 0); }
+    else if (!use_gpu) atomic_fetch_add(&g_upb_cpu_n[sparse ? 1 : 2], 1);
     if (use_gpu) {
         // The GPU reads the memory pool at execution time, which is closer to a real Switch than a snapshot at CPU upload time; the dirty-page stamp is still taken before encoding, and later writes still trigger a re-upload.
         up_begin();
@@ -2827,7 +2842,7 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
                     if(nvn_deswz_gpu_direct_m4(g_up_ce,g_up_ct,params,poff,(__bridge id<MTLBuffer>)mb,mo,&t->d,l,view)){ok=0;break;}
                     g_direct_dispatches++;
                 }
-                if(ok){[g_up_texs addObject:mt];g_direct_uploads++;if(!g_cb)up_flush();return mt;}
+                if(ok){[g_up_texs addObject:mt];g_direct_uploads++;if(!g_cb)up_flush();atomic_fetch_add(&g_upb_gpu_ns, clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - ub2);return mt;}
                 // Any encoded writes must finish before fallback copies replace
                 // them; both versions read the same source and write all texels.
                 [g_up_ce barrierAfterEncoderStages:MTLStageDispatch beforeEncoderStages:MTLStageDispatch visibilityOptions:MTL4VisibilityOptionDevice];
@@ -2850,6 +2865,7 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
         if (enc_ok) {
             [g_up_texs addObject:mt];
             if (!g_cb) up_flush();
+            atomic_fetch_add(&g_upb_gpu_ns, clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - ub2);
             return mt;
         }
         g_nup_blits = nb0;   // Roll back the copies already recorded for this texture: the already-encoded deswizzle only writes the staging area and is harmless; this texture takes the CPU path below instead
@@ -2883,6 +2899,7 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
     }
     free(part);
     up_flush();
+    { uint64_t ue = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); atomic_fetch_add(&g_upb_cpu_ns, ue - ub2); atomic_fetch_add(&g_upb_cpu_bytes, total); }   // includes a failed GPU encode before it
     return mt;
 }
 // ---------- Placement sparse textures ----------
@@ -3720,6 +3737,20 @@ void mtl_mem_stat(unsigned long long frame, unsigned long long rss_mb) {
     snprintf(avail, sizeof avail, "%llu MB", (unsigned long long)(os_proc_available_memory() >> 20));
 #endif
     MLOG("memory up to frame %llu: resident %llu MB, GPU allocated %llu MB, deferred-release queue %lu, residency set %lu, serial objects %u, memory pools %d (resident %d; peak %d / tracking table capacity %d; freed but alive %lu, %llu MB), shared textures %u (%u of them unreferenced; evicted with pools %llu, on storage takeover %llu in total), texture re-uploads %llu in total, per-frame arena blocks created %llu in total, finalized textures still referenced %u (small table, %llu put in total); headroom to the system memory limit %s", frame, rss_mb, gpu, nd, nr, ns, live, pres, peak, cap, dead_n, dead_mb, ashared, aorph, (unsigned long long)g_alias_evicted, (unsigned long long)g_alias_taken, (unsigned long long)g_pkg_reuploads, (unsigned long long)g_arena_made, nghost, (unsigned long long)ghost_puts, avail);
+    // NXForge: what the GPU allocation is made of. The game's memory pools are wrapped without a copy (their buffers count in GPU allocated, but the pages are the game's own,
+    // already in resident), host textures are the host's own copies (packaged uploads, render targets, views' parents). Mario Kart World went 7 → 12 GB over 15 minutes;
+    // this line says whether that is the game filling its 9 GB application pool or host textures that are never let go
+    @autoreleasepool {
+        unsigned long long pool_mb = 0, tex_b = 0, pkg_b = 0; unsigned ntex = 0, npkg = 0;
+        pthread_mutex_lock(&g_mu); for (int i = 0; i < g_npool; i++) if (g_pools[i].buf) pool_mb += g_pools[i].buf.length; pthread_mutex_unlock(&g_mu); pool_mb >>= 20;
+        pthread_mutex_lock(&g_smu);
+        for (uint32_t i = 0; i < g_by_serial.cap; i++) { if (!g_by_serial.vals[i]) continue; __unsafe_unretained id o = (__bridge id)g_by_serial.vals[i];
+            if ([o isKindOfClass:[NvPkg class]]) { NvPkg *pk = o; if (pk->tex) { pkg_b += pk->tex.allocatedSize; npkg++; } if (pk->spare) pkg_b += pk->spare.allocatedSize; }
+            else if ([o conformsToProtocol:@protocol(MTLTexture)]) { tex_b += ((id<MTLTexture>)o).allocatedSize; ntex++; } }
+        pthread_mutex_unlock(&g_smu);
+        MLOG("GPU allocated by kind up to frame %llu: game pool buffers %llu MB (no copy: the game's own pages), packaged textures %u / %llu MB (with spares), other host textures %u / %llu MB, the rest %lld MB (sparse heaps, staging, arenas, pipelines)",
+             frame, pool_mb, npkg, pkg_b >> 20, ntex, tex_b >> 20, (long long)gpu - (long long)pool_mb - (long long)(pkg_b >> 20) - (long long)(tex_b >> 20));
+    }
     { void mtl_vc_stats(unsigned *, uint64_t *, uint64_t *), mtl_tb2_stats(uint64_t *, uint64_t *, uint64_t *, uint64_t *, uint64_t *); uint64_t mtl_tex_mis_count(void); unsigned vn; uint64_t vh, vm, tb, tm, tf, tc, tcb;
       mtl_vc_stats(&vn, &vh, &vm); mtl_tb2_stats(&tb, &tm, &tf, &tc, &tcb);
       MLOG("texture views by texture (vc_get): %u textures hold cached views; %llu views reused, %llu made in total; texture buffers bound as 2D rows for wrapped 1D fetches %llu times, %llu made, %llu failed, %llu copied into aligned rows (%llu MB) "
@@ -6905,9 +6936,16 @@ static NSArray<id<MTL4Archive>> *g_arch4, *g_arch4p; static NSString *g_arch_dir
 // With more than PSO_ARCH_COMPACT files of bases with a vertex layout, the bases the prewarm takes from them are captured again from the original shader functions, so the flush
 // after the prewarm writes them into one file; the old files are then removed (open archives stay usable for the rest of the run). Bases the
 // prewarm did not take (pso_user.tsv never named them) go with them and are built again when drawn. The prebuild's files (p<seq>) are left as they are
-enum { PSO_ARCH_COMPACT = 8 };
+enum { PSO_ARCH_COMPACT = 24 };   // NXForge: 8 upstream. With flushes ARCH_FLUSH_GAP apart a 2-minute Mario Kart World run still writes 2-3 files and a long session 6-10, so 8 compacted
+                                  // nearly every start; each extra file costs a base lookup about 0.06 ms only when it misses. DM_PSO_ARCH_COMPACT=<n> sets it (tests)
+static int arch_compact_limit(void) { const char *e = getenv("DM_PSO_ARCH_COMPACT"); int n = e ? atoi(e) : 0; return n > 0 ? n : PSO_ARCH_COMPACT; }
 static int g_compact_enabled;   // immutable after pso4_init; unlike g_compact_files, never cleared by the archive queue
 static NSArray<NSString *> *g_compact_files; static _Atomic int g_compacted, g_compact_taken;   // g_compact_taken: a flush period holds the recaptured bases (arch_flush)
+// NXForge: the recapture after the first frame. Recaptured in the prepare step, every base cost a compile through the Metal cache (60-80 ms against 0.06 ms from the archive), and
+// with a flush every 10 s while playing each run left more than PSO_ARCH_COMPACT files, so every start compacted again: Mario Kart World waited 16-25 s before its first frame (9,900
+// lines, 3,658 bases from the archive, 3 compiled). In the prepare step the bases now come from the archive as without compaction and are queued here; once the prepare step is
+// over a utility-QoS worker recaptures them into the flush period that the compaction writes (flushes wait for it as they waited for the prewarm)
+static NSMutableArray *g_compact_todo; static os_unfair_lock g_compact_todo_lock = OS_UNFAIR_LOCK_INIT; static _Atomic int g_compact_running;
 // Keep the crash-recovery guard if a compaction still fails in Metal. Markers name the OS build and capture method: a marker from the old archive-import path must not
 // disable the safer original-function capture. A failed flush of this method disables compaction on this OS build until it changes; ordinary archive reads remain available.
 static NSString *arch_compact_marker(void) { return [g_arch_dir stringByAppendingPathComponent:@"compacting"]; }
@@ -7075,6 +7113,7 @@ static id<MTLRenderPipelineState> arch_capture(MTL4RenderPipelineDescriptor *d, 
     ep_leave(ep);
     return ps;
 }
+static void arch_exit_flush(void);   // below, after arch_flush
 static void pso4_init(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -7105,7 +7144,7 @@ static void pso4_init(void) {
                 else MLOG("[RED] pipeline archive file %s not usable (%s): its bases are built again", p.UTF8String, ae ? ae.localizedDescription.UTF8String : "not a pipeline archive");
                 g_arch_seq = MAX(g_arch_seq, [n substringFromIndex:pf].intValue + 1);
             }
-            if (runf.count > PSO_ARCH_COMPACT && arch_compact_allowed()) { g_compact_enabled = 1; g_compact_files = runf; }
+            if ((int)runf.count > arch_compact_limit() && arch_compact_allowed()) { g_compact_enabled = 1; g_compact_files = runf; }
             MLOG("pipeline archive %s: %lu files (%lu of bases without a vertex layout), %.1f MB, opened in %.1f ms", g_arch_dir.UTF8String, (unsigned long)(arch.count + archp.count - (g_arch_bundle != nil)),
                  (unsigned long)archp.count - (g_arch_bundle != nil), bytes / 1048576.0, (bp_now() - t0) / 1e6);
         }
@@ -7114,6 +7153,7 @@ static void pso4_init(void) {
         if (!g_comp4) MLOG("[RED] no Metal 4 compiler (%s): render pipelines are built through the MTLDevice", ce.localizedDescription.UTF8String);
         else if (g_arch_dir) {
             g_ep = ep_new(); g_arch_cap = g_ep != nil;
+            if (g_arch_cap) atexit(arch_exit_flush);
             if (!g_ep) MLOG("[RED] pipeline archive: Metal made no pipeline serializer: nothing is captured into %s", g_arch_dir.UTF8String);
         }
     });
@@ -7146,7 +7186,7 @@ static void arch_write(ArchEpoch *ep) {
 // does not return holds back only its own period's file
 static void arch_flush(void) {
     // Keep all recaptured bases in one serialization, even when a prewarm lasts beyond the timer.
-    if (!g_arch_cap || (g_compact_enabled && atomic_load(&g_warm_running))) return;
+    if (!g_arch_cap || (g_compact_enabled && (atomic_load(&g_warm_running) || atomic_load(&g_compact_running)))) return;
     os_unfair_lock_lock(&g_ep_lock); int any = atomic_load(&g_ep->n) || atomic_load(&g_ep->active); os_unfair_lock_unlock(&g_ep_lock);
     if (!any) return;   // nothing captured or under way: the period goes on
     ArchEpoch *ne = ep_new();
@@ -7164,9 +7204,22 @@ static void arch_flush(void) {
 }
 // A flush, then every period handed over is written (not on g_arch_q, which writes them)
 static void arch_flush_wait(void) { arch_flush(); if (g_arch_pending) dispatch_group_wait(g_arch_pending, DISPATCH_TIME_FOREVER); }
-static void arch_note_new(void) {   // a base was compiled: flush 10 s later (one flush for a burst of them)
+// A base was compiled: flush 10 s later (one flush for a burst of them). NXForge: after the first such flush of a run the next comes no sooner than ARCH_FLUSH_GAP after the one
+// before, and the run's last captures are written at exit (arch_exit_flush). A flush 10 s after every burst wrote 38-49 files in a 15-minute Mario Kart World session, each file
+// is one more lookup for every base, and more than PSO_ARCH_COMPACT of them compacted the archive again at every start
+enum { ARCH_FLUSH_GAP = 300 };
+static _Atomic uint64_t g_arch_last_flush;   // bp_now() of the last flush a burst asked for (0: none yet this run)
+static void arch_note_new(void) {
     if (!g_arch_q || atomic_exchange(&g_arch_sched, 1)) return;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * (int64_t)NSEC_PER_SEC), g_arch_q, ^{ atomic_store(&g_arch_sched, 0); arch_flush(); });
+    uint64_t last = atomic_load(&g_arch_last_flush), now = bp_now(), gap = (uint64_t)ARCH_FLUSH_GAP * NSEC_PER_SEC;
+    int64_t wait = 10 * (int64_t)NSEC_PER_SEC; if (last && now < last + gap && (int64_t)(last + gap - now) > wait) wait = (int64_t)(last + gap - now);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, wait), g_arch_q, ^{ atomic_store(&g_arch_sched, 0); atomic_store(&g_arch_last_flush, bp_now()); arch_flush(); });
+}
+// At exit (exit(0) from the window's close, ⌘Q, the guest's end): a last flush, waited for at most 3 s, so the captures of the last ARCH_FLUSH_GAP are kept
+static void arch_exit_flush(void) {
+    if (!g_arch_cap || atomic_load(&g_compact_running)) return;   // a recapture still under way: its period is not complete, the old files stay and the next start compacts again
+    arch_flush();
+    if (g_arch_pending) dispatch_group_wait(g_arch_pending, dispatch_time(DISPATCH_TIME_NOW, 3 * (int64_t)NSEC_PER_SEC));
 }
 static void arch_compact_finish(void) {   // after the period that holds the recaptured bases is written (arch_write): the old files go once their bases are in the new one
     if (!g_compact_files || !g_compacted) return;
@@ -7269,8 +7322,12 @@ static id<MTLRenderPipelineState> pso_build_ex(MTLRenderPipelineDescriptor *d, N
         if (base && from_run && g_compact_enabled && atomic_load(&g_warm_running)) {
             // Metal can crash in materializeAirNTFromOnlineForSlice when serializing archive imports mixed with fresh bases (#342).
             // Work around that framework bug by capturing the original shader functions, without lookupArchives. The normal compiler cache still applies.
-            id<MTLRenderPipelineState> cb = arch_capture(b, nil, vd);
-            if (cb) { base = cb; g_compacted++; }
+            if (prepare_on()) {   // NXForge: before the first frame the archive's base is taken and the recapture waits for the first frame (g_compact_todo)
+                os_unfair_lock_lock(&g_compact_todo_lock); if (!g_compact_todo) g_compact_todo = [NSMutableArray array]; [g_compact_todo addObject:@[[b copy], @(vd)]]; os_unfair_lock_unlock(&g_compact_todo_lock);
+            } else {
+                id<MTLRenderPipelineState> cb = arch_capture(b, nil, vd);
+                if (cb) { base = cb; g_compacted++; }
+            }
         }
         if (!base) {
             if (g_arch4.count + g_arch4p.count) { g_pt_miss_n++; g_pt_miss_ns += t1 - t0; }
@@ -7941,8 +7998,21 @@ static void warm_finish(void) {
     // All warm tasks have joined. WarmItems retain published shaders until the submit thread claims them.
     // Drop negative results too: demand loading keeps its existing retry behavior, independent of the warm dictionary.
     g_warm_dict = nil; g_warm_loads = nil;
+    os_unfair_lock_lock(&g_compact_todo_lock); NSArray *todo = g_compact_todo; g_compact_todo = nil; os_unfair_lock_unlock(&g_compact_todo_lock);
+    if (todo.count) atomic_store(&g_compact_running, 1);   // before the prewarm ends: no flush may split the recaptured bases
     atomic_store(&g_warm_running, 0);
-    arch_flush();   // the period of the recaptured bases (compaction finishes once it is written), after the prewarm stops recapturing them
+    if (todo.count) {   // NXForge: the prepare step's recapture, after the first frame on a utility-QoS worker (g_compact_todo); its period is flushed when the last one is done
+        uint64_t t0 = bp_now();
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ @autoreleasepool {
+            // in parallel at utility QoS (the game's threads come first): one worker took longer than a 2-minute run for Mario Kart World's 5,300 bases, and a recapture
+            // unfinished at exit leaves the old files for the next start
+            __block _Atomic int n = 0;
+            dispatch_apply(todo.count, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^(size_t i) { @autoreleasepool { NSArray *it = todo[i]; if (arch_capture(it[0], nil, [it[1] intValue])) { g_compacted++; atomic_fetch_add(&n, 1); } } });
+            MLOG("pipeline archive: %d of %lu bases recaptured for the compaction after the first frame, in %.1f s", atomic_load(&n), (unsigned long)todo.count, (bp_now() - t0) / 1e9);
+            atomic_store(&g_compact_running, 0);
+            arch_flush();
+        } });
+    } else arch_flush();   // the period of the recaptured bases (compaction finishes once it is written), after the prewarm stops recapturing them
     @autoreleasepool { pso_prebuild_bg(); }   // then, once, the bases every shader pair's hybrid draws need
 }
 // Wait for the background warm-up to finish (at most timeout_ms): returns how many milliseconds were actually waited, 0 if it is not running. On first install the system shader cache is fully cold; if warm-up is slower than the player entering a run,

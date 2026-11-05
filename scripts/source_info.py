@@ -8,6 +8,7 @@
 # Usage: source_info.py <game.nup | folder>
 import json, os, struct, sys
 from pathlib import Path
+from typing import Any
 
 here = Path(__file__).resolve().parent
 repo = here.parent
@@ -65,7 +66,8 @@ def from_nup(path):
         main = n.child(k.exefs, b'main') if k.exefs != pack_nup.NO_DIR else None
         zb = False
         if main is not None:   # Nup.head reads only the first bytes; an older pack_nup without it reads the module
-            zb = zbic_flag(n.head(main, 0x10) if hasattr(n, 'head') else n.read(main)[:0x10])
+            head = getattr(n, 'head', None)
+            zb = zbic_flag(head(main, 0x10) if head else n.read(main)[:0x10])
         meta = pack_nup.app_package(n).meta() if base is None else base.meta()
         meta.update(k.meta())
         name = nacp_name(meta.get(pack_nup.T_NACP))
@@ -85,8 +87,10 @@ def tree_bytes(d):
 def from_dump(folder):
     try: app, vers, dlc = pack_dump.scan(folder)
     except pack_dump.Error as e: raise Fail(str(e)) from None
-    base = pack_dump.base_of(folder) if hasattr(pack_dump, 'base_of') else folder / 'base' if (folder / 'base/exefs/main.npdm').is_file() else None   # base_of: the newer layout where the folder may be the version itself
+    base_of = getattr(pack_dump, 'base_of', None)   # the newer layout, where the folder may be the version itself
+    base = base_of(folder) if base_of else folder / 'base' if (folder / 'base/exefs/main.npdm').is_file() else None
     v = vers[max(vers)] if vers else base
+    if v is None: raise Fail(f'{folder.name}: no base game and no update')
     romfs = v / 'romfs' if (v / 'romfs').is_dir() else base / 'romfs' if base else None
     main = v / 'exefs/main'
     zb = False
@@ -100,7 +104,7 @@ def info(path):
     path = path.expanduser().resolve()
     if not path.exists(): raise Fail(f'no such file or folder: {path}')
     try:
-        nup = nup_of(path)
+        nup = nup_of(path); out: dict[str, Any]
         if nup: out = from_nup(nup)
         elif path.is_dir() and not packages_in(path) and pack_dump.is_dump(path): out = from_dump(path)
         elif path.is_dir() and packages_in(path): raise Fail('a folder of game packages (.nsp, .xci): it is checked with prod.keys')

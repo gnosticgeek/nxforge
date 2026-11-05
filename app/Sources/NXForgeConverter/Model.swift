@@ -6,12 +6,13 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
-    case convert = "Convert", builds = "Builds", toolchain = "Toolchain", settings = "Settings"
+    case convert = "Convert", builds = "Builds", storage = "Storage", toolchain = "Toolchain", settings = "Settings"
     var id: String { rawValue }
     var symbol: String {
         switch self {
         case .convert: "macwindow.badge.plus"
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
+        case .storage: "internaldrive"
         case .toolchain: "wrench.and.screwdriver"
         case .settings: "gearshape"
         }
@@ -74,6 +75,18 @@ final class AppModel {
     /// the newest release's first change, when the engine's branch has updates
     var updateNote: String?
     private var checkedForUpdates = false
+    /// the optional tools this game needs (GameNeeds), by check name, with why
+    var needs: [String: String] = [:]
+    /// free space against what a build of the chosen folder needs (Disk.need), measured off the main thread
+    var diskNeed: Disk.Need?
+    /// how long each stage of this game's build should take (Estimates), for the timeline before and during a build
+    var expected: [String: Double] = [:]
+    /// a warning while a build runs: free space is getting low
+    var diskWarning: String?
+    /// a fix ran in Terminal: check the tools again when the converter is the active app again
+    var fixPending = false
+    private var diskWatch: Task<Void, Never>?
+    private var activeObserver: NSObjectProtocol?
     /// the window's model, for the Dock (a folder dropped on its icon) and the menu commands
     nonisolated(unsafe) static weak var shared: AppModel?
 
@@ -90,9 +103,20 @@ final class AppModel {
         applyAppearance()
         recheck()
         if settings.gameDir != nil { validate() }
+        // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
+        activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.fixPending, !self.checking else { return }
+                self.fixPending = false
+                self.recheck()
+            }
+        }
     }
 
-    var allOK: Bool { checks?.allSatisfy { $0.ok || $0.optional } ?? false }
+    /// Every required check passes, and so do the optional ones this game needs.
+    var allOK: Bool { checks?.allSatisfy { $0.ok || ($0.optional && needs[$0.name] == nil) } ?? false }
+    /// The optional tools this game needs that are not installed.
+    var missingForGame: [Check] { (checks ?? []).filter { !$0.ok && $0.optional && needs[$0.name] != nil } }
     var passed: Int { checks?.filter(\.ok).count ?? 0 }
     var valid: Bool {
         guard let v = validation, let f = validatedFor else { return false }
@@ -121,9 +145,11 @@ final class AppModel {
             let ver = e.repo.flatMap(Engine.current)
             let verified = VerifiedGames.load(e.repo)
             await MainActor.run {
+                let repoChanged = self.env?.repo != e.repo
                 self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date()
                 // a NUP or a dump is read by the engine's Python: check it again now that it is known (zbic may just have been installed)
                 if !self.needsKeys { self.validate() }
+                if repoChanged { self.measure() }   // the game's profile (GameNeeds) is in the engine checkout
                 // once per launch: look for a newer engine (a fetch; quiet when offline)
                 if !self.checkedForUpdates, ver != nil { self.checkedForUpdates = true; self.engineAction(update: false) }
             }
@@ -146,8 +172,10 @@ final class AppModel {
                 guard self.validatedFor?.0 == dir else { return }   // another game was chosen meanwhile
                 self.validation = v; self.source = info; self.validating = false
                 self.refreshGame()
+                if info != nil { self.measure() }   // a Switch 2 game's size and needs come from what it read
             }
         }
+        measure()
     }
 
     func refreshGame() {
@@ -164,6 +192,22 @@ final class AppModel {
         return true
     }
 
+    /// What this game's build needs (tools, disk space, time), worked out off the main thread.
+    func measure() {
+        guard let dir = gameFolder else { needs = [:]; diskNeed = nil; expected = [:]; return }
+        let repo = env?.repo, out = settings.outDir, src = source
+        let app = Engine.apps(in: out ?? dir).first?.app ?? Engine.apps(in: dir).first?.app
+        let builds = Engine.builds()
+        Task.detached {
+            let n = GameNeeds.detect(dir: dir, repo: repo)
+            let bytes = src.map { max($0.fileBytes, $0.romfsBytes) } ?? Estimates.gameBytes(dir)
+            let e = Estimates.expected(gameDir: dir, gameBytes: bytes, builds: builds)
+            await MainActor.run { if self.gameFolder == dir { self.needs = n; self.expected = e } }
+            let d = Disk.need(gameDir: dir, outDir: out, app: app, firstBuild: src.map(Source.firstBuildBytes), gameBytes: bytes)
+            await MainActor.run { if self.gameFolder == dir { self.diskNeed = d } }
+        }
+    }
+
     func setGameDir(_ dir: String) {
         // prod.keys beside the game files is the usual layout; else the default keys file, else the one chosen before
         let beside = Source.folder(of: dir) + "/prod.keys"
@@ -171,6 +215,7 @@ final class AppModel {
         else if let d = settings.defaultKeys, FileManager.default.fileExists(atPath: d) { settings.keys = d }
         settings.gameDir = dir
         validate()
+        if settings.keys == nil { measure() }   // validate measures only with keys chosen
     }
 
     func engineAction(update: Bool) {
@@ -207,11 +252,94 @@ final class AppModel {
         guard let env, let dir = settings.gameDir, let folder = gameFolder else { return }
         let keys = needsKeys ? settings.keys : nil
         if needsKeys && keys == nil { return }
+        if !plan, let d = diskNeed, d.short, rebuildQueue.isEmpty,
+           !confirm("Build with too little free space?", "\(d.text). The converter stops the build if free space drops below \(Disk.gb(Disk.stopBelow)); the steps it finished are kept for the next try. Storage lists what can be deleted.", action: "Build Anyway") { return }
         let name = game?.name ?? ""
         let out = settings.outDir.flatMap { $0 == folder || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
+        let bytes = gameBytes
+        let exp = settings.reuseCache ? expected : Estimates.expected(gameDir: folder, gameBytes: bytes, builds: Engine.builds())
         run.start(Job(gameDir: dir, keys: keys, sign: settings.signIdentity, env: env, rebuild: plan ? nil : rebuild, out: plan ? (rebuild ?? out) : out,
                       keepBackup: settings.keepBackups, reuseCache: plan || settings.reuseCache, cleanup: settings.cleanup,
-                      gameFiles: source?.describe, plan: plan))
+                      gameFiles: source?.describe, plan: plan, gameBytes: bytes), expected: exp)
+        if !plan { watchDisk(Disk.watched(gameDir: folder, outDir: settings.outDir)) }
+    }
+
+    /// The game's size in bytes: a Switch 2 game's files as source_info.py read them, else the packages in the folder.
+    var gameBytes: Int64 { source.map { max($0.fileBytes, $0.romfsBytes) } ?? gameFolder.map(Estimates.gameBytes) ?? 0 }
+
+    /// While the build runs, every 15 s: warn when a volume it writes to gets low, and stop it before one fills up (the stage in
+    /// progress is lost; the finished ones are reused by the next build).
+    private func watchDisk(_ paths: [String]) {
+        diskWatch?.cancel()
+        diskWarning = nil
+        diskWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.run.running else { return }
+                let low = await Task.detached { Disk.lowest(paths) }.value
+                guard self.run.running else { return }
+                if let low, low.free < Disk.stopBelow {
+                    let name = Disk.volumeName(low.path)
+                    self.diskWarning = nil
+                    self.run.stop(because: "Stopped: not enough space, only \(Disk.gb(low.free)) left on \(name). Free up space (Storage lists what can go), then build again: the finished steps are reused.")
+                    return
+                }
+                self.diskWarning = low.flatMap { $0.free < Disk.warnBelow ? "Free space is low: \(Disk.gb($0.free)) left on \(Disk.volumeName($0.path)). The build stops by itself below \(Disk.gb(Disk.stopBelow))." : nil }
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
+    }
+
+    /// Stop, after saying what is kept: the finished stages are reused when the game is built again.
+    func stopBuild() {
+        guard run.running else { return }
+        let kept = run.done.filter { $0.ok }.count
+        let now = friendly(run.stage.name)
+        let text = kept > 0
+            ? "The \(kept) finished step\(kept == 1 ? " is" : "s are") kept, so building again carries on from \(now.isEmpty ? "where it stopped" : "“\(now)”"), which starts over."
+            : "Nothing has finished yet, so the next build starts from the beginning."
+        if confirm("Stop the build?", text, action: "Stop Build") { run.cancel() }
+    }
+
+    /// Open a built app, noting that its first (slow) launch is done.
+    func openApp(_ app: String) {
+        NSWorkspace.shared.open(app.url)
+        Engine.setLaunched(app)
+        revision += 1
+    }
+
+    /// Run a fix in Terminal; the tools are checked again when the converter comes back to the front.
+    func runFix(_ cmd: String) {
+        fixPending = true
+        Toolchain.runInTerminal(cmd)
+    }
+
+    /// The failing checks that have a fix (required ones, and optional ones this game needs).
+    var fixable: [Check] { (checks ?? []).filter { !$0.ok && (!$0.optional || needs[$0.name] != nil) && ($0.fix != nil || $0.name == "Python modules" || $0.name == "nsz") } }
+
+    /// Fix everything fixable at once: the converter's own Python in the app (it brings nsz and zbic), the rest in one
+    /// Terminal window, one command after another.
+    func fixAll() {
+        let all = fixable
+        let python = all.contains { $0.name == "Python modules" }
+        if python { setUpPython() }
+        let skip: Set<String> = python ? ["Python modules", "nsz", "zbic"] : []   // the converter's own Python brings those
+        let cmds = all.filter { !skip.contains($0.name) }.compactMap(\.fix)
+        guard !cmds.isEmpty else { return }
+        runFix(cmds.map { "echo '→ \($0.replacingOccurrences(of: "'", with: ""))'; \($0)" }.joined(separator: "; ") + "; echo; echo 'Done: switch back to NXForge Converter to check again.'")
+    }
+
+    /// A Terminal line that builds this game the way the converter does: the same PATH, DOTNET_ROOT and Python.
+    var environmentLine: String {
+        var parts = ["export PATH=\(shq(env?.path ?? ""))"]
+        if let d = env?.dotnetRoot { parts.append("export DOTNET_ROOT=\(shq(d))") }
+        if let repo = env?.repo {
+            parts.append("cd \(shq(repo))")
+            var cmd = "\(shq(env?.python ?? "python3")) -u \(scriptPath)"
+            if let dir = settings.gameDir { cmd += " \(shq(dir))" } else { cmd += " <game folder>" }
+            if let k = settings.keys { cmd += " -k \(shq(k))" }
+            parts.append(cmd + " --platform mac-app")
+        }
+        return parts.joined(separator: "\n")
     }
 
     /// Keep a build as it is, or stop keeping it.
@@ -315,22 +443,25 @@ final class AppModel {
     var ownPython: Bool { env?.python?.hasPrefix(Settings.supportDir.path) == true }
 
     private func buildEnded(_ r: Result<String, ConverterError>) {
+        diskWatch?.cancel(); diskWatch = nil; diskWarning = nil
         if run.planning { return }   // a preview: it stays on Convert, with its plan
         let name = game?.name ?? "The game"
         if settings.notify, Bundle.main.bundleIdentifier != nil {
             let c = UNMutableNotificationContent()
+            let took = run.startedAt.map { " in \(duration(Date().timeIntervalSince($0)))" } ?? ""
             switch r {
-            case .success: c.title = "\(name) is ready"; c.body = "The Mac app was built and signed."
-            case .failure(let e): c.title = "Build failed"; c.body = e.description
+            case .success: c.title = "\(name) is ready"; c.body = "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."
+            case .failure(let e): c.title = e.description.hasPrefix("Stopped: only") ? "Build stopped: disk almost full" : "Build failed"; c.body = e.description
             }
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
-        if settings.openAfterBuild, case .success = r, let app = run.app { NSWorkspace.shared.open(app.url) }
+        if settings.openAfterBuild, case .success = r, let app = run.app { openApp(app) }
         if case .success = r {
             finishConvert()
             if let next = rebuildQueue.first { rebuildQueue.removeFirst(); rebuild(next) }
             else if queueMessage == "" { queueMessage = nil }
         } else if !rebuildQueue.isEmpty || queueMessage == "" {
+            measure()
             queueMessage = "Rebuild all stopped at \(game?.name ?? "a game"): its build failed."
             rebuildQueue = []
         }
@@ -347,6 +478,7 @@ final class AppModel {
         validatedFor = nil
         source = nil
         game = nil
+        needs = [:]; diskNeed = nil; expected = [:]
         run.reset()
         page = .builds
     }

@@ -25,8 +25,8 @@ fails into the release PR. A row that has never been tried in a running game say
 
 - [ ] The game opens from the settings window and reaches gameplay; progress is still there after quitting and reopening (saves in the game folder's `Saves`).
 - [ ] Full screen holds 60 fps on the built-in display.
-- [ ] Quick settings (Esc or Home) opens, and a controller moves through it; Quit game, pressed twice, ends the game.
-- [ ] A filter (Sharpen, CRT-Lottes, LCD Grid, scanlines) changes the picture, and MetalFX and FXAA switch on and off.
+- [ ] Quick settings (Esc or Home) opens; a controller moves through it, L / R turn the pages and the legend shows its buttons; a Next launch change shows Restart game, which (pressed twice) restarts the game; Quit, pressed twice, ends it.
+- [ ] The CRT filter (strength, line size) changes the picture, and MetalFX and FXAA switch on and off.
 - [ ] Volume in Quick settings changes the sound.
 - [ ] A screenshot (⇧⌘S) and a short recording (⇧⌘R) land in the game folder and open.
 - [ ] A remapped key or button works, and Reset puts it back.

@@ -53,6 +53,7 @@ typedef struct {
     vpx_image_t *held[CV_HOLD + CV_BURST]; int64_t held_ts[CV_HOLD + CV_BURST]; uint8_t held_eos[CV_HOLD + CV_BURST]; int nheld;
     int eos_pending;
     int clk_on; int64_t clk_ts0, clk_last; double clk_t0; uint64_t skipped;   // AV1's movie clock (cv_skip_late): a picture's timestamp against the host clock
+    uint64_t refused;   // packets refused with a full queue (3603), for the end-of-stream line
 } cv_dec;
 
 static cv_dec *g_cv[16];
@@ -139,7 +140,7 @@ static void drain(cv_dec *d, int took) {
             if (b->pool && b->pidx < b->pool->count) { pool_native_write(b->pool, b->pidx, im); if (b->pool->img[b->pidx]) vpx_img_free(b->pool->img[b->pidx]); b->pool->img[b->pidx] = im; } else vpx_img_free(im);
             if (!d->pictures++) LOG("[codec] %s decoder %u: first picture %ux%u into buffer %u", k_cv_name[d->codec], d->id, b->w, b->h, i);
         } else { b->w = b->h = 0; b->ts = 0; b->eos = 1; d->eos_pending = 0; }
-        if (b->eos) LOG("[codec] %s decoder %u: end of stream after %llu pictures", k_cv_name[d->codec], d->id, (unsigned long long)d->pictures);
+        if (b->eos) LOG("[codec] %s decoder %u: end of stream after %llu pictures (%llu packets refused and sent again so far)", k_cv_name[d->codec], d->id, (unsigned long long)d->pictures, (unsigned long long)d->refused);
         b->filled = 1; b->filled_gen = b->gen;
         spt_fire(d, i);
     }
@@ -371,7 +372,10 @@ static vpx_image_t *av1_to_i420(const mav1_picture *p) {   // the decoder's NV12
 static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t size, int64_t ts, bool eos) {
     cv_dec *d = cv_of(t); if (!d) return CV_R(2004);
     pthread_mutex_lock(&d->mu);
-    if (d->nheld >= CV_HOLD) { static int n; if (n++ < 4) LOG("[RED] nn::codec %s: a packet refused with %d pictures waiting for a released buffer", k_cv_name[d->codec], d->nheld); if (d->event) hle_clear_system_event(d->event); pthread_mutex_unlock(&d->mu); return CV_BUSY; }
+    // A full queue answers 3603, the SDK's "not now": the player waits for the submission-ready event and sends the same packet again. Mario Kart World's menu movie (one picture in its
+    // pool) decodes ahead until the queue is full at every start and loses nothing: its streams end after exactly 300, 600, … pictures and libvpx reports no corrupt frame. So this is
+    // back-pressure, counted and named once per decoder rather than a red line (NXForge). A player that drops refused packets shows as libvpx errors after the refusal
+    if (d->nheld >= CV_HOLD) { if (!d->refused++) LOG("[codec] %s decoder %u: a packet refused with %d pictures waiting for a released buffer (3603, the player sends it again; counted at end of stream)", k_cv_name[d->codec], d->id, d->nheld); if (d->event) hle_clear_system_event(d->event); pthread_mutex_unlock(&d->mu); return CV_BUSY; }
     int got = 0;
     if (d->codec == CV_H264 && d->avc) {   // VideoToolbox reorders: pictures leave in presentation order, all of them at the end of the stream
         if (size && mavc_decode(d->avc, data, (int)size, ts / 1000) < 0) { static int n; if (n++ < 4) LOG("[RED] nn::codec H.264: VideoToolbox could not decode a packet"); }

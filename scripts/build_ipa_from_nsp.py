@@ -2947,7 +2947,12 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
         elif rc == 0: PROG.end('reused (inputs unchanged)')
         else: plan_redo('Pipeline archive', f'the check failed (see {logs / "pso_offline_mac_check.log"})', stop=False)
         return out if out.is_dir() else None
-    if run(cmd, logs / 'pso_offline_mac.log', env=env, fatal=False):   # an optimization: the app builds the bases on its first start without it
+    def pso_line(ln):   # pso_offline.py's "batch n/N: ready" and "merging" lines move the stage's count on (a long stage that would otherwise show no sign of life)
+        m = re.search(r'batch (\d+)/(\d+): ready', ln)
+        if m: PROG.set(step='compiling the batches', done=int(m[1]), total=int(m[2]), unit='batches')
+        elif ': merging ' in ln: PROG.set(step='merging the batches')
+        elif ': metal-tt, ' in ln: PROG.set(step='compiling (one batch)')
+    if run(cmd, logs / 'pso_offline_mac.log', env=env, fatal=False, on_line=pso_line):   # an optimization: the app builds the bases on its first start without it
         shutil.rmtree(out, ignore_errors=True)
         PROG.end('failed, the app is packed without one', warn=True)
         say(f'[RED] pipeline archive: pso_offline.py failed (see {logs / "pso_offline_mac.log"}); the app is packed without one and builds its pipeline bases on its first start (--gpu none skips this step)')

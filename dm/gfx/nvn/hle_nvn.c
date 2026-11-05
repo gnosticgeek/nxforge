@@ -1527,7 +1527,10 @@ __attribute__((weak)) int dm_thermal_now(void) { return -1; }   // Default (Mac)
 __attribute__((weak)) int dm_low_power_now(void) { return 0; }   // Low Power Mode (iOS front_ios.m); off on the Mac
 // Per-frame ring for the long-frame log (GPU time only arrives 8 frames late, so store first and judge later)
 #define LFN 16
-typedef struct { uint64_t f; double fr, nv, t_s, make_ms, up_mb, up_ms; unsigned pso, lib, up, rup, hy; } lf_rec;   // hy: draws with a hybrid (pulling) pipeline
+typedef struct { uint64_t f; double fr, nv, t_s, make_ms, up_mb, up_ms; unsigned pso, lib, up, rup, hy;   // hy: draws with a hybrid (pulling) pipeline
+    double sw, sc, sk, dw, rc, mp, sy, aw, pq, un, upr, ug, uc, ucmb; unsigned fa; } lf_rec;   // un..ucmb: the uploads' texture making, write protection, GPU encode, CPU route ms and MB   // where the rest of submit+present went (NXForge): submit wall / CPU / kernel, drawable wait, residency commits, mprotect, guest SyncWait, acquire pacing and present-queue waits, write-protection faults
+uint64_t mtl_res_commit_ns(void);   // nvn_mtl.m: cumulative residency-set commit time
+void mtl_upload_breakdown(uint64_t *new_ns, uint64_t *prot_ns, uint64_t *gpu_ns, uint64_t *cpu_ns, uint64_t *cpu_bytes);   // nvn_mtl.m: cumulative
 static lf_rec g_lf[LFN];
 __attribute__((weak)) void dm_longframe_note(const char *what) { LOG("[longframe] %s", what); }   // Default (graphics unit tests); the strong definition in the host's diag.c adds scene context and writes perf.txt
 extern void mtl_create_ns(uint64_t *lib_ns, uint64_t *pso_ns); extern void mtl_hybrid_stats(uint64_t *draws, uint64_t *made, uint64_t *none); extern uint64_t mtl_upload_bytes(void); extern void mtl_pkg_stats(uint64_t *uploads, uint64_t *reuploads);
@@ -2029,7 +2032,8 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
     if (prev_in) {
         double fr = (t0 - prev_in) / 1e6, wk = (t0 - prev_out) / 1e6, nv = atomic_exchange(&g_nvn_ns, 0) / 1e6;
         tpush(0, fr); tpush(1, wk); tpush(2, nv);
-        trow(f, "@frame_ms", fr); trow(f, "@work_ms", wk); trow(f, "@nvn_ms", nv); trow(f, "@sync_ms", atomic_exchange(&g_sync_ns, 0) / 1e6); trow(f, "@itv", (double)present_itv(o));
+        double sync_ms = atomic_exchange(&g_sync_ns, 0) / 1e6;
+        trow(f, "@frame_ms", fr); trow(f, "@work_ms", wk); trow(f, "@nvn_ms", nv); trow(f, "@sync_ms", sync_ms); trow(f, "@itv", (double)present_itv(o));
         // Slow-frame attribution (taken only when DM_NVN_TSV is on): this frame's present-thread CPU time (−1 if the thread changed), CPU of all threads in the process, acquire wait accumulated per frame, present call time (same base as the GPU / on-screen present times: ms since process start)
         trow(f, "@wait_ms", g_acq_wait_ns / 1e6); trow(f, "@pq_wait_ms", g_pq_wait_ns / 1e6);
         if (frame_rec()) {
@@ -2052,10 +2056,11 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
         static uint64_t pdo; uint64_t do_ = mtl_ds_omit(); trow(f, "@ds_omit", (double)(do_ - pdo)); pdo = do_;
         trow(f, "@use_call", (double)(uc_ - puc)); trow(f, "@use_skip", (double)(us_ - pus)); puc = uc_; pus = us_;
         static uint64_t pfa, pre_; uint64_t fa_, pr_, up_, re_; nvn_dirty_stats(&fa_, &pr_); mtl_pkg_stats(&up_, &re_);
-        trow(f, "@faults", (double)(fa_ - pfa)); trow(f, "@reuploads", (double)(re_ - pre_)); pfa = fa_; pre_ = re_;
+        trow(f, "@faults", (double)(fa_ - pfa)); trow(f, "@reuploads", (double)(re_ - pre_)); unsigned faults_f = (unsigned)(fa_ - pfa); pfa = fa_; pre_ = re_;
         static uint64_t pmc, pmp, pmn; uint64_t mc_, mpg_, mn_; nvn_dirty_mp_stats(&mc_, &mpg_, &mn_);
-        trow(f, "@mprotect_calls", (double)(mc_ - pmc)); trow(f, "@mprotect_pages", (double)(mpg_ - pmp)); trow(f, "@mprotect_ms", (mn_ - pmn) / 1e6); pmc = mc_; pmp = mpg_; pmn = mn_;
+        double mprot_ms = (mn_ - pmn) / 1e6; trow(f, "@mprotect_calls", (double)(mc_ - pmc)); trow(f, "@mprotect_pages", (double)(mpg_ - pmp)); trow(f, "@mprotect_ms", mprot_ms); pmc = mc_; pmp = mpg_; pmn = mn_;
         double up_ms = mtl_upload_ns_take() / 1e6; trow(f, "@upload_ms", up_ms);
+        double draw_ms = mtl_drawable_ns_take() / 1e6, sub_wall_ms = atomic_exchange(&g_sub_wall_ns, 0) / 1e6, sub_cpu_ms = atomic_exchange(&g_sub_cpu_ns, 0) / 1e6;
         trow(f, "@upload_gpu_ms", mtl_upload_gpu_ns_take() / 1e6);
         // Accounting: number of synchronous creations on the submit thread this frame + a timestamp on the same clock as UIMSG (offline, frames are split into front end / loading / in-run by the loading screen intervals)
         static uint64_t plib, ppso; uint64_t lib_, pso_; mtl_create_stats(&lib_, &pso_);
@@ -2065,11 +2070,16 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
             lf_rec *r = &g_lf[f % LFN]; r->f = f; r->fr = fr; r->nv = nv; r->t_s = (now_ns() - g_t0_ns) / 1e9; r->pso = (unsigned)(pso_ - ppso); r->lib = (unsigned)(lib_ - plib);
             r->make_ms = ((lns - plns) + (pns - ppns)) / 1e6; r->up = (unsigned)(up - pup); r->rup = (unsigned)(rup - prup); r->up_mb = (ub - pub) / 1048576.0; r->up_ms = up_ms;
             r->hy = (unsigned)(hy - phy); plns = lns; ppns = pns; pup = up; prup = rup; pub = ub; phy = hy;
+            static uint64_t prc, psk; uint64_t rc = mtl_res_commit_ns(), sk = atomic_load(&g_cum_sub_sys_ns);
+            r->sw = sub_wall_ms; r->sc = sub_cpu_ms; r->sk = psk ? (sk - psk) / 1e6 : 0; r->dw = draw_ms; r->rc = prc ? (rc - prc) / 1e6 : 0; r->mp = mprot_ms; r->fa = faults_f;
+            r->sy = sync_ms; r->aw = g_acq_wait_ns / 1e6; r->pq = g_pq_wait_ns / 1e6; prc = rc; psk = sk;
+            static uint64_t pun, ppr, pug, puc, pucb; uint64_t un, pr2, ug, uc, ucb; mtl_upload_breakdown(&un, &pr2, &ug, &uc, &ucb);
+            r->un = (un - pun) / 1e6; r->upr = (pr2 - ppr) / 1e6; r->ug = (ug - pug) / 1e6; r->uc = (uc - puc) / 1e6; r->ucmb = (ucb - pucb) / 1048576.0; pun = un; ppr = pr2; pug = ug; puc = uc; pucb = ucb;
         }
         plib = lib_; ppso = pso_;
         trow(f, "@t_s", (now_ns() - g_t0_ns) / 1e9);
-        trow(f, "@drawable_ms", mtl_drawable_ns_take() / 1e6);
-        trow(f, "@sub_wall_ms", atomic_exchange(&g_sub_wall_ns, 0) / 1e6); trow(f, "@sub_cpu_ms", atomic_exchange(&g_sub_cpu_ns, 0) / 1e6); trow(f, "@sub_instr", (double)atomic_exchange(&g_sub_instr, 0));
+        trow(f, "@drawable_ms", draw_ms);
+        trow(f, "@sub_wall_ms", sub_wall_ms); trow(f, "@sub_cpu_ms", sub_cpu_ms); trow(f, "@sub_instr", (double)atomic_exchange(&g_sub_instr, 0));
     } else atomic_store(&g_nvn_ns, 0);
     g_acq_wait_ns = g_pq_wait_ns = 0;
     if (f >= 8) { double g = mtl_gpu_ms(f - 8); if (g >= 0) { tpush(3, g); trow(f - 8, "@gpu_ms", g); g_hr[g_hn++ % HRN] = g; }   // GPU time is taken 8 frames late (already completed)
@@ -2079,9 +2089,15 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
           // "Long" is relative to recent conditions: when running steadily at 30 fps (menus / windowless host) or under sustained overload, every frame is > 20 ms; those are not long frames and must not flood the log - a frame has to be 40% above the sliding mean of the last 16 frames to count
           static double ef = 16.7, eg = 8; int lf = r->fr > 20.0 && r->fr > 1.4 * ef, lg = g > 16.7 && g > 1.3 * eg;
           if (r->f == f - 8) { ef += ((r->fr < 3 * ef ? r->fr : 3 * ef) - ef) / 16; eg += ((g < 3 * eg ? g : 3 * eg) - eg) / 16; }
-          if (on && r->f == f - 8 && f - 8 > 0 && (lf || lg)) { char b[512];
-              snprintf(b, sizeof b, "frame %llu (%.2f s) whole frame %.1f ms, submit+present %.1f ms, GPU %.1f ms; new pipelines %u + shader libraries %u, %.1f ms in all; texture uploads %u first + %u re-uploads, %.1f MB / %.1f ms; draws with a hybrid pipeline %u",
+          if (on && r->f == f - 8 && f - 8 > 0 && (lf || lg)) { char b[1024];
+              int o_ = snprintf(b, sizeof b, "frame %llu (%.2f s) whole frame %.1f ms, submit+present %.1f ms, GPU %.1f ms; new pipelines %u + shader libraries %u, %.1f ms in all; texture uploads %u first + %u re-uploads, %.1f MB / %.1f ms; draws with a hybrid pipeline %u",
                        (unsigned long long)r->f, r->t_s, r->fr, r->nv, g, r->pso, r->lib, r->make_ms, r->up, r->rup, r->up_mb, r->up_ms, r->hy);
+              // NXForge: where the rest went. Submit off the CPU (wall − CPU) is a lock, a kernel wait or preemption; "other" is submit CPU not covered by uploads, pipelines, residency commits or mprotect.
+              // The guest's own SyncWait and the acquire's pacing wait are outside submit+present but inside the whole frame
+              double other = r->sc - r->up_ms - r->make_ms - r->rc - r->mp; if (other < 0) other = 0;
+              if (o_ > 0 && o_ < (int)sizeof b)
+                  snprintf(b + o_, sizeof b - o_, "; uploads: textures made %.1f ms, write protection %.1f, GPU deswizzle encoded %.1f, CPU route %.1f MB / %.1f ms; submit %.1f ms wall / %.1f CPU (kernel %.1f), off CPU %.1f; residency commits %.1f ms; write-protection faults %u, mprotect %.1f ms; other submit CPU %.1f ms; present %.1f ms (drawable wait %.1f); guest fence waits %.1f ms; acquire wait %.1f + present queue %.1f ms",
+                           r->un, r->upr, r->ug, r->ucmb, r->uc, r->sw, r->sc, r->sk, r->sw > r->sc ? r->sw - r->sc : 0, r->rc, r->fa, r->mp, other, r->nv > r->sw ? r->nv - r->sw : 0, r->dw, r->sy, r->aw, r->pq);
               // Visibility: during the time a long frame "comes out late", what stays on screen is the previous frame; if the previous frame was a loading screen (or this frame itself is one), all the player sees is the loading screen staying a bit longer, with no motion interrupted
               dm_longframe_note(b); } }
         uint64_t g0, g1; if (frame_rec() && mtl_gpu_span(f - 8, &g0, &g1)) { trow(f - 8, "@gpu_beg_ms", (g0 - g_t0_ns) / 1e6); trow(f - 8, "@gpu_end_ms", (g1 - g_t0_ns) / 1e6); } }
