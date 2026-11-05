@@ -103,7 +103,7 @@ struct BuildRow: View {
             AppIcon(path: build.app, size: 84)
             VStack(alignment: .leading, spacing: 4) {
                 Text(name).font(.title3.weight(.semibold)).lineLimit(2)
-                Text(build.date.map(relativeDay) ?? build.builtAt).foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                Text("\(Console.of(build).rawValue) · \(build.date.map(relativeDay) ?? build.builtAt)").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
@@ -119,7 +119,7 @@ struct BuildRow: View {
                         .background(.orange.opacity(selected ? 0.55 : 0.25), in: .capsule)
                         .help("Built on \(build.engine.short); the engine is now \(model.engine?.short ?? "")")
                 } else {
-                    Text(Console.of(build).rawValue).foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                    Text("Apple Silicon").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
                 }
             }
         }
