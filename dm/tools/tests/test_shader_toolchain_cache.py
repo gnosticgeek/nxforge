@@ -249,10 +249,14 @@ class ShaderCache(unittest.TestCase):
             self.ns['publish_cache'](key, key + '-digest', 'rule', 'source')
             return key, 'ok', '', refl
 
-        phase = next(n for n in self.tree.body if isinstance(n, ast.With) and any(
-            isinstance(s, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'res' for t in s.targets) for s in n.body))
+        # the finish phase: finish_all (the scheduler) and the res = finish_all(keys) that runs it
+        phase = [n for n in self.tree.body if (isinstance(n, ast.FunctionDef) and n.name == 'finish_all')
+                 or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'res' for t in n.targets))]
+        self.assertEqual(len(phase), 2)
+        import collections, heapq, threading
+        self.ns.setdefault('cache_hits', set()); self.ns.update(collections=collections, heapq=heapq, threading=threading)
         self.ns.update(cf=cf, NJ=1, keys=keys, fin=finish_key)
-        exec(compile(ast.Module(body=[phase], type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), self.ns)
+        exec(compile(ast.Module(body=phase, type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), self.ns)
         self.assertEqual(built, [pixel, vertex])
         self.assertIn('dm_pad7 [[user(locn7)]]', (out / (vertex + '_b.metal')).read_text())
         expected = {p.name: json.loads(p.read_text()) if p.suffix == '.json' else p.read_bytes() for p in out.iterdir()}
