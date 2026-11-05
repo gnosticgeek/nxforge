@@ -19,6 +19,7 @@ struct RootView: View {
                 switch model.page {
                 case .convert: ScrollView { ConvertPage(model: model).padding(24) }
                 case .builds: BuildsPage(model: model)
+                case .storage: StoragePage(model: model)
                 case .toolchain: ScrollView { ToolchainPage(model: model).padding(24) }
                 case .settings: SettingsPage(model: model)
                 }

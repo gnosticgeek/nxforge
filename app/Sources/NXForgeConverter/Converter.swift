@@ -18,6 +18,8 @@ struct Job {
     var reuseCache = true
     /// what a successful build deletes from <id>_build (--cleanup)
     var cleanup: Cleanup = .off
+    /// the game files' size, recorded so other games' first builds can be estimated from this one
+    var gameBytes: Int64 = 0
 }
 
 struct Stage: Hashable {
@@ -25,6 +27,8 @@ struct Stage: Hashable {
     var name = "", step = ""
     var fraction: Double?
     var detail = ""
+    /// the script's seconds left for this stage (the rate of its last minute); nil while unknown
+    var eta: Double?
 }
 
 struct StageDone: Hashable, Identifiable {
@@ -50,19 +54,35 @@ final class BuildRun {
     var app: String?
     var backup: String?
     var result: Result<String, ConverterError>?
+    /// when the build and the running stage started, and when the script last said anything (a stage that has been quiet
+    /// for minutes is still working: the window says so instead of looking frozen)
+    var startedAt: Date?
+    var stageStartedAt: Date?
+    var lastActivity: Date?
+    /// seconds each stage should take (Estimates.expected), for the time left
+    var expected: [String: Double] = [:]
+    /// why the converter stopped the build itself (free space ran low), shown instead of "stopped"
+    var stopNote: String?
+    /// the converter's own log of the build in <id>_build/logs, once it ends
+    var logFile: String?
     private var process: Process?
+    /// keeps the Mac from idle sleep (and the app from App Nap) while a build runs
+    private var activity: NSObjectProtocol?
     /// called on the main thread after each change (the command line prints from it)
     var onChange: (() -> Void)?
 
-    func start(_ job: Job) {
-        running = true; stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil
+    func start(_ job: Job, expected: [String: Double] = [:]) {
+        running = true; stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil; stopNote = nil; logFile = nil
+        startedAt = Date(); stageStartedAt = nil; lastActivity = Date(); self.expected = expected
+        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "Building a Mac app")
         Thread.detachNewThread { [weak self] in
             let r = Self.perform(job, run: self)
             DispatchQueue.main.async {
                 guard let self else { return }
+                if let a = self.activity { ProcessInfo.processInfo.endActivity(a); self.activity = nil }
                 self.running = false
                 self.process = nil
-                self.result = r
+                if case .failure(let e) = r, e.description == "stopped", let note = self.stopNote { self.result = .failure(ConverterError(note)) } else { self.result = r }
                 self.onChange?()
             }
         }
@@ -71,11 +91,18 @@ final class BuildRun {
     /// Back to the state before any build (after a successful one has been handed to Builds).
     func reset() {
         guard !running else { return }
-        stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil
+        stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil; stopNote = nil; logFile = nil; startedAt = nil; stageStartedAt = nil
     }
 
     /// Ask the script to stop as Ctrl-C would (it ends the stage and exits with 130).
     func cancel() { process?.interrupt() }
+
+    /// Stop the build for a reason of the converter's own (low disk space): the failure then says why.
+    func stop(because note: String) {
+        guard running, stopNote == nil else { return }
+        stopNote = note
+        cancel()
+    }
 
     private func main(_ f: @escaping @MainActor (BuildRun) -> Void) {
         DispatchQueue.main.async { f(self); self.onChange?() }
@@ -100,9 +127,15 @@ final class BuildRun {
             if !job.reuseCache { forgetStageKeys(job.gameDir); say("cached build steps cleared: every step runs again") }
             do {
                 let app = try build(job, repo: repo, run: r)
-                let (steps, shaders) = DispatchQueue.main.sync { (r.done.filter(\.ok).count, r.done.first { $0.name.hasPrefix("Mac shaders") }.flatMap(shaderCount)) }
+                let (steps, shaders, stages, seconds) = DispatchQueue.main.sync {
+                    (r.done.filter(\.ok).count, r.done.first { $0.name.hasPrefix("Mac shaders") }.flatMap(shaderCount),
+                     r.done.map { StageRecord(name: $0.name, seconds: $0.seconds, reused: $0.reused, ok: $0.ok) },
+                     r.startedAt.map { Int(Date().timeIntervalSince($0)) })
+                }
+                let logFile = writeLog(job.gameDir, run: r)
                 Engine.record(BuildRecord(app: app, gameDir: job.gameDir, engine: engine, repo: repo, builtAt: Engine.now(), steps: steps, shaders: shaders,
-                                          gameFiles: Engine.describeFiles(job.gameDir)))
+                                          gameFiles: Engine.describeFiles(job.gameDir), stages: stages, seconds: seconds, log: logFile,
+                                          gameBytes: job.gameBytes > 0 ? job.gameBytes : nil))
                 let msg = try verify(app)
                 if let b = backup, !job.keepBackup, (try? FileManager.default.trashItem(at: b.url, resultingItemURL: nil)) != nil {
                     say("old app moved to the Trash")
@@ -110,6 +143,7 @@ final class BuildRun {
                 }
                 return .success(msg)
             } catch {
+                _ = writeLog(job.gameDir, run: r)
                 // keep a working game: put the old app back unless the failed build left something in its place
                 if let b = backup, let app = job.rebuild, !FileManager.default.fileExists(atPath: app), (try? FileManager.default.moveItem(atPath: b, toPath: app)) != nil {
                     say("build failed: the old app is back at \(app)")
@@ -122,6 +156,21 @@ final class BuildRun {
         } catch {
             return .failure(ConverterError("\(error)"))
         }
+    }
+
+    /// The build's stages and messages to <id>_build/logs/converter-<time>.log (beside the tools' own logs), for the Builds page
+    /// and for a failed build's report; nil when there is no build folder to put it in.
+    nonisolated private static func writeLog(_ dir: String, run r: BuildRun) -> String? {
+        let fm = FileManager.default
+        guard let b = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).first(where: { $0.hasSuffix("_build") }) else { return nil }
+        let logs = "\(dir)/\(b)/logs"
+        try? fm.createDirectory(atPath: logs, withIntermediateDirectories: true)
+        let stamp = Engine.now().replacingOccurrences(of: ":", with: "").replacingOccurrences(of: " ", with: "-")
+        let path = "\(logs)/converter-\(stamp).log"
+        let text = DispatchQueue.main.sync { (r.done.map(\.line) + [""] + r.log).joined(separator: "\n") + "\n" }
+        guard (try? text.write(toFile: path, atomically: true, encoding: .utf8)) != nil else { return nil }
+        DispatchQueue.main.async { r.logFile = path }
+        return path
     }
 
     /// The stage keys (sha256 of each stage's inputs, <id>_build/**/*.key) that let the script reuse a stage.
@@ -166,7 +215,7 @@ final class BuildRun {
         let errDone = DispatchSemaphore(value: 0)
         var errLines: [String] = []
         Thread.detachNewThread {
-            for l in Lines(err.fileHandleForReading) { errLines.append(l); DispatchQueue.main.async { r.log.append(l) } }
+            for l in Lines(err.fileHandleForReading) { errLines.append(l); DispatchQueue.main.async { r.log.append(l); r.lastActivity = Date() } }
             errDone.signal()
         }
         var appPath: String?
@@ -191,7 +240,7 @@ final class BuildRun {
     /// One stdout line of the script; returns the app's path from its "done: <path>.app (…)" message.
     nonisolated private static func event(_ line: String, run r: BuildRun) -> String? {
         guard let v = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], let ev = v["ev"] as? String else {
-            DispatchQueue.main.async { r.log.append(line); r.onChange?() }
+            DispatchQueue.main.async { r.log.append(line); r.lastActivity = Date(); r.onChange?() }
             return nil
         }
         let str = { (k: String) in v[k] as? String ?? "" }
@@ -201,11 +250,14 @@ final class BuildRun {
             app = String(msg[i.upperBound..<j.upperBound])
         }
         DispatchQueue.main.async {
+            r.lastActivity = Date()
             switch ev {
             case "stage":
                 r.stage = Stage(k: Int(num("k") ?? 0), n: Int(num("n") ?? 0), name: str("name"), step: str("step"))
+                r.stageStartedAt = Date()
             case "step":
                 r.stage.step = str("step")
+                r.stage.eta = nil
             case "progress":
                 r.stage.step = str("step")
                 r.stage.fraction = num("frac")
@@ -214,11 +266,12 @@ final class BuildRun {
                     let est = (v["est"] as? Bool) == true ? "~" : ""
                     d = str("unit") == "B" ? String(format: "%.1f/%@%.1f GB", done / 1e9, est, total / 1e9) : "\(Int(done))/\(est)\(Int(total)) \(str("unit"))"
                 }
-                if let eta = num("eta") { d += String(format: " · ETA %d:%02d", Int(eta) / 60, Int(eta) % 60) }
+                r.stage.eta = num("eta")
                 r.stage.detail = d
             case "stage_end":
                 r.done.append(StageDone(k: r.stage.k, n: r.stage.n, name: r.stage.name, ok: (v["ok"] as? Bool) ?? true, seconds: Int(num("elapsed") ?? 0), summary: str("summary")))
                 r.stage.fraction = 1
+                r.stage.eta = nil
             case "say":
                 r.log += str("msg").split(separator: "\n").map(String.init)
             default:

@@ -173,3 +173,67 @@ import Testing
         #expect(!sort(["/x/readme.txt", "/x/icon.png"]).usable)
     }
 }
+
+@Suite struct BuildTimeline {
+    @Test func stageKeysDropTheVersion() {
+        #expect(stageKey("extract v131072") == "extract")
+        #expect(stageKey("Mac shaders") == "Mac shaders")
+    }
+
+    @Test func stagesSortInBuildOrder() {
+        #expect(stageRank("extract DLC")! > stageRank("extract v0")!)
+        #expect(stageRank("Pipeline archive")! < stageRank("Mac app")!)
+        #expect(stageRank("shader split")! < stageRank("Mac shaders")!)
+        #expect(stageRank("something new") == nil)
+    }
+
+    @Test func otherGamesScaleBySize() {
+        let e = EngineVersion(commit: "c", subject: "s", date: "d", branch: "main", dirty: false)
+        let b = BuildRecord(app: "/x/A.app", gameDir: "/x", engine: e, repo: "/r", builtAt: "2026-11-05 20:00",
+                            stages: [StageRecord(name: "Mac shaders", seconds: 600, reused: false, ok: true),
+                                     StageRecord(name: "rewrite", seconds: 30, reused: true, ok: true)],
+                            gameBytes: 1_000_000_000)
+        let exp = Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 2_000_000_000, builds: [b])
+        #expect(exp["Mac shaders"] == 1200)
+        #expect(exp["rewrite"] == nil)   // a reused stage says nothing about how long the work takes
+    }
+
+    @Test func timeLeftWords() {
+        #expect(timeLeft(30) == "Less than a minute left")
+        #expect(timeLeft(23 * 60) == "About 23 min left")
+        #expect(timeLeft(70 * 60) == "About 1 h 10 min left")
+    }
+
+    @MainActor @Test func overallUsesHistoryForTheRest() {
+        let r = BuildRun()
+        r.running = true
+        r.startedAt = Date(timeIntervalSinceNow: -60)
+        r.expected = ["extract": 60, "Mac shaders": 600, "Mac app": 120]
+        r.stage = Stage(k: 2, n: 4, name: "Mac shaders", step: "", fraction: 0.5, detail: "", eta: 300)
+        r.stageStartedAt = Date(timeIntervalSinceNow: -30)
+        let o = r.overall()
+        #expect(o.remaining == 420)   // the script's 300 s for this stage, then Mac app's 120 s
+        #expect(o.segments.map(\.name).last == "Mac app")
+    }
+}
+
+@Suite struct GameNeedsTests {
+    @Test func titleIDFromFileNames() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "needs-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        FileManager.default.createFile(atPath: dir.appending(path: "Game [0400486024DEC800][v131072].nsz").path, contents: Data())
+        #expect(GameNeeds.titleID(dir.path) == "0400486024DEC000")
+        let needs = GameNeeds.detect(dir: dir.path, repo: nil)
+        #expect(needs["zbic"] != nil)
+        #expect(needs["nsz"] != nil)
+    }
+}
+
+@Suite struct LogLevels {
+    @Test func classify() {
+        #expect(LogLevel("[RED] pipeline archive: pso_offline.py failed") == .error)
+        #expect(LogLevel("warning: unused variable") == .warning)
+        #expect(LogLevel("pso_offline: batch 3/31: ready") == .info)
+    }
+}

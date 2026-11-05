@@ -9,6 +9,18 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 - **The shared Metal cache holds a large game.** Its limit is now 12 GB (`DMSH_MTLCACHE_GB`, was 4), and a build never removes a library it used itself. Ocarina of Time's 7 GB of libraries pruned themselves at 4 GB, so the next translator change compiled 12,000 of them again.
 - **`--plan`** (`--platform mac-app`) says which stages a build would reuse and which it would redo, with how long each took last time, and builds nothing. `pso_offline.py --check` and `pack_app.py --check` answer the same for the pipeline archive and the app.
 
+**Converter**
+- **One progress bar with the time left.** The build shows as a timeline: a piece per step, sized by how long it takes, with "About 23 min left" and when it should be done. The estimate comes from this game's last build (`<id>_build/logs/stage_times.json`), or other games' builds scaled by size, and the script's own rate for the step it is in. The Dock badge shows the minutes left. Every step and the log are behind Show details.
+- **The pipeline archive shows its batches** (12 of 31) instead of one quiet 26 minute step, and any step that has been quiet for a minute says it is still working.
+- **Disk space is watched during the build.** Below 12 GB free on a volume the build writes to, the window warns; below 3 GB it stops the build cleanly, so building again carries on from the steps that finished. The estimate before a build now counts a rebuild's second copy of the app and the shared Metal cache.
+- **Long builds are harder to lose.** Quitting asks first, Stop says what is kept, closing the window lets the build carry on, and the Mac does not idle-sleep during a build.
+- **Tools a game needs are required for that game**: zbic for Switch 2 games and code built with system 22 or later, nsz for compressed files, glslang for OpenGL games, each with an Install button on Convert. The converter's own Python now includes zbic.
+- **Fix all** on Toolchain runs every fix in one Terminal window, and the checks run again when you come back. **Copy environment** gives the PATH, DOTNET_ROOT and command to run the build by hand.
+- **Build reports**: each build keeps its step times and log (`<id>_build/logs/converter-<time>.log`), shown in Builds with the build's timeline.
+- **Storage page**: every game's build cache, older app copies, apps and the shared shader cache, with sizes, free space per disk and Delete for what can be made again.
+- **Log viewer**: All, Warnings and Errors filters, search, follow the newest line, and Open log file.
+- A new app says that its first launch prepares shaders and is slow, until it has been opened once.
+
 ## 0.11.0 (2026-11-04)
 
 Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.
