@@ -4,9 +4,6 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 ## Unreleased
 
-**Converter**
-- **Switch 2 games build from the app.** Choose a game's `.nup` file (or a folder holding one, or a dump folder) on Convert: no keys are asked for, and the converter lists the container's base game, updates and DLC, says whether NXForge has a profile for the game, and stops before the build when the game's code needs `zbic` and it is not installed. The disk check allows for a Switch 2 build's size (about twice the game plus 20 GB), and **Preview build** runs `--plan` on an engine that has it. The converter's own Python now installs `zbic`. The command line takes `--convert <game>.nup` without keys.
-
 ## 0.11.0 (2026-11-04)
 
 Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.
@@ -25,6 +22,12 @@ Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-3
 - A controller's Home button still opens Quick settings. nxnative's new hold-Home-to-quit prompt is off unless `DM_HOME_QUIT=1`.
 - A cartridge with several applications (Belmont's Curse and its Art Gallery) still packs the largest program, now by passing it to nx_extract's new `--app` (the old `--title <id>` option is gone).
 - The FXAA warnings moved to `RED_ONCE` slots 153 and 154. The shader chain is now `907b404e076d`, so every NVN game's shaders rebuild once.
+
+**Converter**
+- **Switch 2 games build from the app.** Choose a game's `.nup` file (or a folder holding one, or a dump folder) on Convert: no keys are asked for, and the converter lists the container's base game, updates and DLC, says whether NXForge has a profile for the game, and stops before the build when the game's code needs `zbic` and it is not installed. The disk check allows for a Switch 2 build's size (about twice the game plus 20 GB), and **Preview build** runs `--plan` on an engine that has it. The converter's own Python now installs `zbic`. The command line takes `--convert <game>.nup` without keys.
+- **Failed builds say what went wrong and what to do next.** The Convert page names the cause (not enough disk space, a 32-bit game version, keys, game files, the Metal toolchain, Xcode, .NET, Python modules, a missing tool, memory, file access, the rewriter, shaders, signing) with the next step, a button to the page that fixes it, and **Copy error summary**: the diagnosis, the failed step, the Mac, Xcode and engine versions and the log's red lines, with key values, the keys file's path and the home folder taken out. `--convert` and `--rebuild` print the same line. After LumaNX's `Worker/diagnostics.py`.
+- **Save snapshots** on the Builds page: a copy of the game's save (and its device save) checked file by file with SHA-256, kept beside it in `save-snapshots/`. Restore checks the snapshot again, keeps the current save as a snapshot, and swaps each save folder in with one rename (`renamex_np` `RENAME_SWAP`), so a save is never half restored; it refuses while the game is running. A rebuild and Restore this version make a snapshot first; the newest 10 automatic ones stay. After LumaNX's `Worker/recovery.py`.
+- The failure explanations and save snapshots are two ideas from [LumaNX](https://github.com/Xc1Ym/LumaNX) (MIT), another nxnative front end, reimplemented in the converter.
 
 ## 0.10.0 (2026-10-31)
 

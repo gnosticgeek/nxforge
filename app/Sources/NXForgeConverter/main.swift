@@ -59,7 +59,11 @@ enum CLI {
         while run.result == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
         switch run.result! {
         case .success(let m): print("✓ \(m)"); return 0
-        case .failure(let e): print("✗ \(e)"); return 1
+        case .failure(let e):
+            print("✗ \(e)")
+            let d = BuildDiagnosis.diagnose(error: e.description, log: run.log)
+            if d.code != .unknown { print("  \(d.title). \(d.fix)") }
+            return 1
         }
     }
 }

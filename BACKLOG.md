@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-10-31 (0.10.0).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-05 (Unreleased: LumaNX ideas).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
@@ -49,10 +49,13 @@ work below.
 
 ## Ideas from other front ends
 
-From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-wrapper), the [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher) and [NX2Apple](https://github.com/LNPANDY/NX2Apple), all MIT. Done in 0.5.0: Keep this build, Quit game in Quick settings, Atmosphere-layout mods, issue forms. A second look at NX2Apple (0.7.4) on 2026-10-31 gave the five rows done in 0.10.0.
+From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-wrapper), the [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher) and [NX2Apple](https://github.com/LNPANDY/NX2Apple), all MIT. Done in 0.5.0: Keep this build, Quit game in Quick settings, Atmosphere-layout mods, issue forms. A second look at NX2Apple (0.7.4) on 2026-10-31 gave the five rows done in 0.10.0. [LumaNX](https://github.com/Xc1Ym/LumaNX) (MIT, reviewed 2026-11-05) gave the two rows marked Unreleased.
 
 | Item | Status | Notes |
 |---|---|---|
+| Failure explanations and Copy error summary | On fork main (Unreleased) | LumaNX `Worker/diagnostics.py`: the cause, the next step and a redacted summary on Convert (`BuildDiagnosis.swift`). |
+| Save snapshots with a checked restore | On fork main (Unreleased) | LumaNX `Worker/recovery.py`: SHA-256 checked copies in `save-snapshots/`, restore by `RENAME_SWAP`, automatic before a rebuild and Restore this version (`SaveSnapshots.swift`). Needs a hands-on restore in a real game. |
+| Self-contained converter download | Idea | LumaNX bundles Python, spirv-cross, zstd and a prebuilt NSP reader so only Xcode is needed, in a DMG with a check that nothing links to Homebrew (`scripts/bundle_runtime.py`, `runtime_audit.py`). Only if NXForge is for other people. |
 | Save backup to a private Git repository | Idea | NX Play: while a game plays, copy its save into `<slug>-<title ID>/` of a clone you choose each time it saves, commit and push, once more on quit. NXForge could do it from the launcher (`dm/mac/launcher.c`) or the converter, watching `Saves/save` in the game folder. |
 | Copy saves between the Mac and an iPhone or iPad | Idea | NX Play and the Launcher: `xcrun devicectl device copy from/to --domain-type appDataContainer`, comparing both sides file by file first and keeping the replaced save. Needs an IPA build path in the converter. |
 | Install on a device and Build IPA from the converter | Idea | NX Play, NX2Apple, Launcher. The script already builds IPAs; the converter only makes Mac apps. |
