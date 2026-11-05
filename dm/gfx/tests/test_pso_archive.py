@@ -17,7 +17,7 @@ class ArchiveRestartTests(unittest.TestCase):
                     env.pop(name, None)
                 if constants:
                     env['DM_TEST_ARCHIVE_CONSTANTS'] = '1'
-                for phase, files in (('seed', 9), ('replay', 1), ('verify', 1)):
+                for phase, files in (('seed', 25), ('replay', 1), ('verify', 1)):   # seed: PSO_ARCH_COMPACT (24) + 1 files
                     result = subprocess.run([executable, '--compact-' + phase, folder],
                                             env=env, capture_output=True, text=True, timeout=60)
                     self.assertEqual(result.returncode, 0, phase + '\n' + result.stdout + result.stderr)
