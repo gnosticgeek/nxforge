@@ -125,7 +125,7 @@ jobs:
           {
             echo "Upstream [seedds/nxnative](https://github.com/seedds/nxnative) pull requests about the games in [\`.github/upstream-watch.tsv\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/.github/upstream-watch.tsv), open or updated since $since."
             echo "**Not in NXForge** means neither the game's branch nor main holds the pull request's changes yet: merge it before the next build of that game."
-            echo "**Newer commits** means an earlier version is in, and the pull request has moved on since: merge it again."
+            echo "**Newer commits** means some of its commits are in (an earlier version of it, or a pull request it is stacked on) and the rest are not: merge it again, or what it adds."
             echo "**Left out** pull requests are listed with \`skip\` in that file, with the reason; they are not counted."
             echo "**Partly** means its changes conflict with every branch checked, so some of it is in (merged by hand, or landed upstream reworded) or the code has moved: look before the next build."
             echo
@@ -153,9 +153,9 @@ jobs:
                     if [ "$(echo "$tree" | head -1)" = "$(git rev-parse "origin/$b^{tree}")" ]; then where="changes in \`$b\`"; break; fi
                     clean=1
                   else conflicts=1; fi
-                  # An earlier head of the pull request is in the branch: it has had commits since.
+                  # Some of its commits are in the branch: an earlier head of it, or another pull request it is stacked on. The rest is not.
                   mb=$(git merge-base "origin/$b" "refs/upr/$num")
-                  if ! git merge-base --is-ancestor "$mb" upstream/main; then where="**newer commits** (an earlier head is in \`$b\`)"; break; fi
+                  if ! git merge-base --is-ancestor "$mb" upstream/main; then where="**newer commits** (some of its commits are in \`$b\`, the rest not)"; break; fi
                 done
                 [ "$where" = "**not in NXForge**" ] && [ $clean = 0 ] && [ $conflicts = 1 ] && where="**partly** (conflicts)"
               fi
