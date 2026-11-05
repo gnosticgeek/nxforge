@@ -17,7 +17,9 @@ STAMPS = 'metallib/filled.json'   # the earlier builds' folders already read
 # (shader_cache.py) the shared cache is one such file too, beside the game's own; a use refreshes an entry's mtime and prune() keeps it under DMSH_MTLCACHE_GB by removing the entries unused the longest.
 SHARED = os.environ.get('DMSH_MTLCACHE') or os.path.expanduser('~/Library/Caches/NXForge/metallib.db')
 LEGACY = os.path.expanduser('~/Library/Caches/NXForge/metallib')   # the shared cache as a folder (NXForge 0.6 to 0.11), moved into SHARED by adopt_folder()
-LIMIT_GB = float(os.environ.get('DMSH_MTLCACHE_GB') or 4)   # Kirby's Return to Dream Land Deluxe: 32,278 libraries in 0.9 GB
+# Kirby's Return to Dream Land Deluxe: 32,278 libraries in 0.9 GB; The Legend of Zelda: Ocarina of Time (Switch 2): about 43,000 in about 7 GB, which a 4 GB limit pruned after every build,
+# so the next chain change compiled 12,000 of them again. prune() also never goes below what this build used
+LIMIT_GB = float(os.environ.get('DMSH_MTLCACHE_GB') or 12)
 
 FORMAT = b'dmsh_mtlcache 2'   # earlier prefill could misclassify an unsampled library from another compiler
 OUTPUT = re.compile(r'[0-9a-f]{16}_b\.metal')   # a shader's MSL in dmsh_build.py's outputs: <key>_b.metal
@@ -50,6 +52,7 @@ class Cache:
         self.store, self.targets, self.work = store, targets, work
         self.ident = {t: hashlib.sha256(FORMAT + b'\0' + rec.encode() + b'\0' + compiler_id(sdk).encode()).digest() for t, (sdk, rec, _) in targets.items()}
         self.stats, self.lock, self.busy = collections.Counter(), threading.Lock(), {}
+        self.used = {}   # NXForge: entry → bytes, every library this build took from the cache or put in it (prune keeps them all)
 
     def path(self, target, src):
         d = hashlib.sha256(self.ident[target] + b'\0' + src).hexdigest()
@@ -72,11 +75,16 @@ class Cache:
         p = self.path(target, open(msl, 'rb').read())
         with self.lock: mine = self.busy.setdefault(p, threading.Lock())
         with mine:   # NXForge: a source another thread is compiling waits for that compile (about half of a game's libraries share their MSL with another)
-            if self.store.to_file(p, lib): self.store.touch(p); self.count((target, 'reused')); return
+            if self.store.to_file(p, lib): self.store.touch(p); self.count((target, 'reused')); self.mark(p, lib); return
             tmp = f'{lib}.tmp-{os.getpid()}-{threading.get_ident()}'
             self._compile(target, msl, tmp)
             os.replace(tmp, lib)
-            self.store.put_file(p, lib); self.count((target, 'compiled'))
+            self.store.put_file(p, lib); self.count((target, 'compiled')); self.mark(p, lib)
+
+    def mark(self, entry, lib):
+        try: size = os.path.getsize(lib)
+        except OSError: return
+        with self.lock: self.used[entry] = size
 
     def adopt_folder(self, old=LEGACY):
         """NXForge: the libraries of the shared cache as a folder (old/<target>/<2 hex>/<digest>.metallib) into the store, and the folder removed; returns the number taken"""
@@ -95,7 +103,10 @@ class Cache:
         return n
 
     def prune(self, limit_gb=LIMIT_GB):
-        """NXForge: removes the metallib/ entries unused the longest until the libraries are under limit_gb. Returns the line to print"""
+        """NXForge: removes the metallib/ entries unused the longest until the libraries are under limit_gb, or under what this build used when that is more
+        (the entries it used are the newest, so none of them goes). Returns the line to print"""
+        with self.lock: mine = sum(self.used.values())
+        limit_gb = max(limit_gb, mine / 2**30)
         n, total, gone = self.store.prune_oldest('metallib/', int(limit_gb * 2**30))
         return f'Metal cache: {n - gone:,} libraries, {total / 2**30:.1f} GB in {self.store.path}' + (f' ({gone:,} unused the longest removed, limit {limit_gb:g} GB, DMSH_MTLCACHE_GB)' if gone else '')
 
@@ -104,7 +115,7 @@ class Cache:
         library, so an output stays a clone as compile's are). Raises CalledProcessError as the compile does, and what split raises"""
         p = self.path(target, open(msl, 'rb').read()); q = p[:-len('.metallib')] + '_x.metallib'
         if self.store.has(p) and self.store.has(q):
-            self.store.to_file(p, a); self.store.to_file(q, b); self.count((target, 'reused')); return
+            self.store.to_file(p, a); self.store.to_file(q, b); self.count((target, 'reused')); self.mark(p, a); self.mark(q, b); return
         whole = f'{a}.tmp-{os.getpid()}-{threading.get_ident()}'
         self._compile(target, msl, whole)
         try:
@@ -114,7 +125,7 @@ class Cache:
             with open(whole, 'wb') as f: f.write(data)
             os.replace(whole, lib)
         with self.store.batch(): self.store.put_file(q, b); self.store.put_file(p, a)
-        self.count((target, 'compiled'))
+        self.count((target, 'compiled')); self.mark(p, a); self.mark(q, b)
 
     def _check(self, target, d, stems, mac_dir):
         """None if folder d was built with the current convention and compiler, else why not"""

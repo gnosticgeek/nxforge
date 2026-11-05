@@ -2,6 +2,13 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+**Building**
+- **Rebuilds redo only what changed.** After a shader fix, the pipeline archive compiles only the bases whose shaders changed, in a new group beside the groups it keeps, instead of every group a changed shader sits in. Ocarina of Time's 31 groups (30,515 bases) took 26 minutes after each translator fix; a fix that touches a few hundred shaders now takes one group.
+- **The shared Metal cache holds a large game.** Its limit is now 12 GB (`DMSH_MTLCACHE_GB`, was 4), and a build never removes a library it used itself. Ocarina of Time's 7 GB of libraries pruned themselves at 4 GB, so the next translator change compiled 12,000 of them again.
+- **`--plan`** (`--platform mac-app`) says which stages a build would reuse and which it would redo, with how long each took last time, and builds nothing. `pso_offline.py --check` and `pack_app.py --check` answer the same for the pipeline archive and the app.
+
 ## 0.11.0 (2026-11-04)
 
 Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.

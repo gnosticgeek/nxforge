@@ -287,15 +287,19 @@ def pack(a):
         codesign = Path(codesign).resolve()
         minos = min_os(a.host)
         sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'tools/romfs.py'] + swift_sources()
-        inputs = {'options': vars(a), 'files': [(str(p), p.stat().st_mode, digest(p), os.readlink(p) if p.is_symlink() else None) for p in files + sources],
+        inputs = {'options': {k: v for k, v in vars(a).items() if k != 'check'}, 'files': [(str(p), p.stat().st_mode, digest(p), os.readlink(p) if p.is_symlink() else None) for p in files + sources],
                   'trees': [(p, inventory(Path(p))) for p in (a.romfs, a.aoc, a.html, *(str(x[1]) for x in programs), *(str(x[3]) for x in programs)) if p and Path(p).exists()],
                   'tools': [[str(c), c.stat().st_mode, c.stat().st_size, c.stat().st_mtime_ns, c.stat().st_ctime_ns, run([c, '--version']).strip()] for c in (clang, swiftc)] + [
                             str(sdk), run(['xcrun', '--sdk', 'macosx', '--show-sdk-version']).strip(),
                             str(codesign), codesign.stat().st_mode, digest(codesign), minos]}
         key = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
-        if out.is_dir() and isinstance(previous, dict) and previous.get('inputs') == key and previous.get('app') == inventory(out):
+        same = out.is_dir() and isinstance(previous, dict) and previous.get('inputs') == key and previous.get('app') == inventory(out)
+        if getattr(a, 'check', False):   # NXForge: what a run would do, nothing written
+            print(f'app: {out}, ' + ('would be reused' if same else 'would be packed again'), flush=True)
+            return 0 if same else 3
+        if same:
             print(f'app: {out}, reused (inputs unchanged)', flush=True)
-            return
+            return 0
     except BaseException:
         key_file.unlink(missing_ok=True)
         raise
@@ -386,8 +390,9 @@ def parse(argv):
     ap.add_argument('--version'); ap.add_argument('--bundle-id'); ap.add_argument('--category'); ap.add_argument('--lang'); ap.add_argument('--marker', help='the profile\'s romfs_marker')
     ap.add_argument('--icon', help='the game icon (icon.jpg from the control data)')
     ap.add_argument('--sign', default='-', help='codesign identity (default: - = ad-hoc)')
+    ap.add_argument('--check', action='store_true', help='say whether the app would be reused or packed again, and change nothing: exit 0 when reused, 3 otherwise')
     return ap.parse_args(argv)
 
 
 if __name__ == '__main__':
-    pack(parse(sys.argv[1:]))
+    sys.exit(pack(parse(sys.argv[1:])) or 0)

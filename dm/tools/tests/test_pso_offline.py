@@ -451,19 +451,63 @@ class Build(unittest.TestCase):
         with mock.patch.object(po, 'plan', return_value=(bases, [], {})), mock.patch.object(self, 'fake_run', runner):
             self.main('--batch-size', '1', '--os-min', '27.0')
         groups = self.work / 'batches.applegpu_g18p'
-        self.assertEqual(sorted(d.name for d in groups.iterdir()), ['00001', '00002', '00003', '00004'])
+        self.assertEqual(sorted(d.name for d in groups.iterdir() if d.is_dir()), ['00001', '00002', '00003', '00004'])
         with mock.patch.object(po, 'plan', return_value=(bases[:2], [], {})), mock.patch.object(self, 'fake_run', runner):
             self.main('--batch-size', '1', '--os-min', '27.0')
-        self.assertEqual(sorted(d.name for d in groups.iterdir()), ['00001', '00002'])
+        self.assertEqual(sorted(d.name for d in groups.iterdir() if d.is_dir()), ['00001', '00002'])
 
-    def test_only_changed_batch_is_recompiled(self):
+    def test_only_changed_bases_are_recompiled(self):   # NXForge: a changed base goes into a new batch; its old batch is kept while most of it is still wanted
         bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(5)]
         runner, observed = self.batched_runner()
         with mock.patch.object(self, 'fake_run', runner), mock.patch.object(po, 'plan', return_value=(bases, [], {})):
             self.main('--batch-size','2','--os-min','27.0')
             observed.clear(); bases[0] = ('v_bp','changed','f_b','main0')
             self.main('--batch-size','2','--os-min','27.0')
-        self.assertEqual(observed, [('compile',['changed','vertex1']),('merge',3)])
+        self.assertEqual(observed, [('compile',['changed']),('merge',4)])
+        groups = self.work / 'batches.applegpu_g18p'
+        state = json.loads((groups / 'assign.json').read_text())
+        self.assertEqual(sorted(state['batches']), ['1', '2', '3', '4'])
+        self.assertEqual(len(state['batches']['4']['members']), 1)
+
+    def test_changed_bases_scattered_over_every_batch(self):   # a translator fix that touches one shader in each batch: one new batch, not every batch again
+        bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(8)]
+        runner, observed = self.batched_runner()
+        with mock.patch.object(self, 'fake_run', runner), mock.patch.object(po, 'plan', return_value=(bases, [], {})):
+            self.main('--batch-size','4','--os-min','27.0')
+            observed.clear(); bases[0] = ('v_bp','new0','f_b','main0'); bases[4] = ('v_bp','new4','f_b','main0')
+            self.main('--batch-size','4','--os-min','27.0')
+        self.assertEqual(observed, [('compile',['new0','new4']),('merge',3)])
+
+    def test_a_mostly_dead_batch_is_dissolved_and_many_dead_entries_regroup(self):
+        bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(8)]
+        runner, observed = self.batched_runner()
+        with mock.patch.object(self, 'fake_run', runner), mock.patch.object(po, 'plan', return_value=(bases, [], {})):
+            self.main('--batch-size','4','--os-min','27.0')
+            observed.clear()
+            for i in range(3): bases[i] = ('v_bp', f'new{i}', 'f_b', 'main0')   # 3 of batch 1's 4 bases: it is dissolved, its live base joins the new ones
+            self.main('--batch-size','4','--os-min','27.0')
+        self.assertEqual(observed, [('compile',['new0','new1','new2','vertex3']),('merge',2)])
+        root = self.work / 'batches.applegpu_g18p'
+        self.assertFalse((root / '00001').exists())
+        kept, todo, dead = po.plan_batches(root, [f'k{i}' for i in range(8)], 'other context', 4)
+        self.assertEqual((kept, len(todo), dead), ({}, 8, 0))   # another compiler or platform: everything again
+
+    def test_check_says_what_would_compile_and_changes_nothing(self):
+        bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(5)]
+        runner, observed = self.batched_runner()
+        with mock.patch.object(self, 'fake_run', runner), mock.patch.object(po, 'plan', return_value=(bases, [], {})):
+            self.main('--batch-size','2','--os-min','27.0')
+            archive = (self.out / 'applegpu_g18p.mtl4a').read_bytes(); observed.clear()
+            out = io.StringIO()
+            with mock.patch.object(po.subprocess, 'run', runner), mock.patch.dict(os.environ, DM_GAMES_DIR=str(self.prof.parent)), contextlib.redirect_stdout(out):
+                self.assertEqual(po.main(['--game', '0100000000001000', '--msl', str(self.lib), '--out', str(self.out), '--work', str(self.work), '--batch-size', '2', '--os-min', '27.0', '--check']), 0)
+            self.assertIn('would be reused', out.getvalue())
+            bases[3] = ('v_bp','changed','f_b','main0'); out = io.StringIO()
+            with mock.patch.object(po.subprocess, 'run', runner), mock.patch.dict(os.environ, DM_GAMES_DIR=str(self.prof.parent)), contextlib.redirect_stdout(out):
+                self.assertEqual(po.main(['--game', '0100000000001000', '--msl', str(self.lib), '--out', str(self.out), '--work', str(self.work), '--batch-size', '2', '--os-min', '27.0', '--check']), 3)
+            self.assertIn('would compile 1 of 5 bases', out.getvalue())
+        self.assertEqual(observed, [])
+        self.assertEqual((self.out / 'applegpu_g18p.mtl4a').read_bytes(), archive)
 
     def test_low_disk_space_stops_before_metal_tt(self):   # Cruis'n Blast: a full volume made metal-tt fail with only "applegpu-nt command failed"
         self.work.mkdir(parents=True); (self.work / 'translate-0001').write_bytes(b'x'); (self.work / 'a.airp').write_bytes(b'x')

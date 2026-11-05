@@ -1,4 +1,4 @@
-"""NSP script: --cleanup after a successful build (cleanup). 'unused' deletes other versions' extracted files and rewritten modules, *.partial folders, tmp/ and the survey;
+"""NSP script: --cleanup after a successful build (cleanup). 'unused' deletes other versions' extracted files and rewritten modules, *.partial folders, tmp/ (tmp.noindex/ now) and the survey;
 'all' deletes everything in <id>_build but logs/, profile/ and run/. Neither touches the NSPs, the keys or the built app. No game files needed."""
 import importlib.util
 from pathlib import Path
@@ -12,7 +12,7 @@ assert spec and spec.loader
 nsp = importlib.util.module_from_spec(spec); spec.loader.exec_module(nsp)
 
 DIRS = ('extract/v0/RomFS', 'extract/v1179648/RomFS', 'extract/v1507328/RomFS', 'extract/v65536.partial', 'patched_v1507328', 'patched_v1179648', 'nro_v1507328', 'nro_v1179648',
-        'patched_v1507328.partial', 'logs', 'profile/X', 'run/save', 'shader/cache', 'tools', 'tmp', 'nsp', 'aoc/1')
+        'patched_v1507328.partial', 'logs', 'profile/X', 'run/save', 'shader/cache', 'tools', 'tmp', 'tmp.noindex', 'nsp', 'aoc/1')
 FILES = ('patched_v1507328.key', 'patched_v1179648.key', 'shader/pkg.key')
 
 
