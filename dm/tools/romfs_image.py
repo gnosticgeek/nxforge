@@ -102,11 +102,6 @@ def copy_file(path, out):
     return n
 
 
-def up_to_date(src, dst):   # whether pack(src, dst, reuse=True) would keep dst as it is (the NSP script's --plan)
-    src, dst = os.fspath(src), os.fspath(dst)
-    return reusable(dst, source_digest(src, entries(src)))
-
-
 def pack(src, dst, reuse=False):
     src, dst = os.fspath(src), os.fspath(dst)
     ents = entries(src)
