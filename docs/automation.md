@@ -4,6 +4,8 @@
 
 They read the converter's own state, so the app and the command line agree: `settings.json` and `builds.json` in `~/Library/Application Support/NXForge Converter` (`NXC_SUPPORT_DIR` moves it, as for the app), the engine checkout named by the `repo` setting, the game folders of the recorded builds, and the `<title ID>_build` folders in them, beside them, and at the top of `~/Documents`, `~/Downloads` and `~/Desktop` (a Switch 2 dump's build folder can sit there). A build started here is recorded in `builds.json` as one from the app is, and a rebuild moves the old app to `app-backups/` first.
 
+`scripts/install_cli.sh` installs both as the commands `nxforge` and `nxforge-mcp` in `~/.local/bin`, from copies in the support folder's `cli/`, so a scheduled job does not depend on which branch a checkout is on; run it again from an updated checkout to update them.
+
 ## Commands
 
 Every command takes `--json` (before the command) for one JSON document on standard output.
