@@ -58,7 +58,21 @@ class Choice(Tmp):
         with mock.patch.object(dmsh_pch, 'make', return_value=('/p.pch', None)), mock.patch.object(subprocess, 'run', side_effect=[self.result(1), self.result()]) as run:
             dmsh_pch.compile(['metal', '-c'], 'a.metal', 'a.air')
         self.assertEqual(run.call_args_list[1].args[0], ['metal', '-c', '-x', 'metal', '-', '-o', 'a.air'])
-        self.assertTrue(run.call_args_list[1].kwargs.get('check'))
+
+    def test_a_plain_failure_raises(self):
+        with mock.patch.object(dmsh_pch, 'make', return_value=(None, 'off')), mock.patch.object(subprocess, 'run', return_value=self.result(1, b'error')), mock.patch('builtins.print'):
+            with self.assertRaises(subprocess.CalledProcessError): dmsh_pch.compile(['metal', '-c'], 'a.metal', 'a.air')
+
+    def test_too_many_nested_brackets_compiles_again_deeper(self):   # NXForge (seedds/nxnative#1347)
+        deep = self.result(1, b'<stdin>:9:1: fatal error: bracket nesting level exceeded maximum of 256')
+        with mock.patch.object(dmsh_pch, 'make', return_value=('/p.pch', None)), mock.patch.object(subprocess, 'run', side_effect=[deep, deep, self.result()]) as run:
+            dmsh_pch.compile(['metal', '-c'], 'a.metal', 'a.air')
+        self.assertEqual(run.call_args_list[2].args[0], ['metal', '-c', '-fbracket-depth=2048', '-x', 'metal', '-', '-o', 'a.air'])
+
+    def test_other_failures_do_not_compile_deeper(self):
+        with mock.patch.object(dmsh_pch, 'make', return_value=(None, 'off')), mock.patch.object(subprocess, 'run', return_value=self.result(1, b'error: use of undeclared identifier')) as run, mock.patch('builtins.print'):
+            with self.assertRaises(subprocess.CalledProcessError): dmsh_pch.compile(['metal', '-c'], 'a.metal', 'a.air')
+        self.assertEqual(run.call_count, 1)
 
     def test_a_header_that_cannot_be_used_is_said_once_and_compiles_stay_plain(self):
         with mock.patch.object(dmsh_pch, 'make', return_value=(None, 'a test shader compiled with it differs')) as make, mock.patch.object(subprocess, 'run', return_value=self.result()) as run, mock.patch('builtins.print') as say:

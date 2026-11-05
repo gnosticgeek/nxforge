@@ -55,6 +55,12 @@ def header(metal):   # the path of the convention's header, None when it is not 
         return _headers[tuple(metal)]
 
 
+# Metal's front end stops at 256 nested brackets: Ocarina of Time's agl_resource compute shaders 1f78730053feb036 and e172bd7ec218ab8e nest deeper
+# ("bracket nesting level exceeded maximum of 256"). A compile that fails so runs again with BRACKET_DEPTH; every other compile keeps its command, so its library is unchanged
+BRACKETS = b'bracket nesting level exceeded'
+BRACKET_DEPTH = '-fbracket-depth=2048'
+
+
 def _run(metal, msl, air, **kw):
     # The source on standard input, so no file name reaches the compiler: clang names a source's static initializer after its file (_GLOBAL__sub_I_<name>, which any function constant brings),
     # so the same text under two names gave two libraries, and shaders sharing a source (3,936 of Breath of the Wild's 10,560 pixel shaders, in their _bl) took the bytes of whichever compiled first
@@ -69,5 +75,10 @@ def compile(metal, msl, air):
         if not r.returncode:
             sys.stderr.buffer.write(r.stderr); sys.stderr.flush()
             return
-    try: _run(metal, msl, air, check=True)
-    except subprocess.CalledProcessError: print(f'{msl}: does not compile (the messages above say <stdin>)', file=sys.stderr, flush=True); raise
+    r = _run(metal, msl, air, capture_output=True)
+    if r.returncode and BRACKETS in r.stderr:   # NXForge: a deeper limit for the few that need it, so no other library changes (seedds/nxnative#1347)
+        r = _run([*metal, BRACKET_DEPTH], msl, air, capture_output=True)
+    sys.stderr.buffer.write(r.stderr); sys.stderr.flush()
+    if r.returncode:
+        print(f'{msl}: does not compile (the messages above say <stdin>)', file=sys.stderr, flush=True)
+        raise subprocess.CalledProcessError(r.returncode, r.args, r.stdout, r.stderr)
