@@ -63,7 +63,9 @@ def from_nup(path):
         try: romfs = n.tree_bytes(pack_nup.romfs_of(k, base))
         except pack_nup.Error as e: romfs = 0; notes.append(str(e))
         main = n.child(k.exefs, b'main') if k.exefs != pack_nup.NO_DIR else None
-        zb = zbic_flag(n.head(main, 0x10)) if main is not None else False
+        zb = False
+        if main is not None:   # Nup.head reads only the first bytes; an older pack_nup without it reads the module
+            zb = zbic_flag(n.head(main, 0x10) if hasattr(n, 'head') else n.read(main)[:0x10])
         meta = pack_nup.app_package(n).meta() if base is None else base.meta()
         meta.update(k.meta())
         name = nacp_name(meta.get(pack_nup.T_NACP))
@@ -83,7 +85,7 @@ def tree_bytes(d):
 def from_dump(folder):
     try: app, vers, dlc = pack_dump.scan(folder)
     except pack_dump.Error as e: raise Fail(str(e)) from None
-    base = pack_dump.base_of(folder)
+    base = pack_dump.base_of(folder) if hasattr(pack_dump, 'base_of') else folder / 'base' if (folder / 'base/exefs/main.npdm').is_file() else None   # base_of: the newer layout where the folder may be the version itself
     v = vers[max(vers)] if vers else base
     romfs = v / 'romfs' if (v / 'romfs').is_dir() else base / 'romfs' if base else None
     main = v / 'exefs/main'
