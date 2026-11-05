@@ -250,7 +250,7 @@ class ShaderCache(unittest.TestCase):
             return key, 'ok', '', refl
 
         # the finish phase: finish_all (the scheduler) and the res = finish_all(keys) that runs it
-        phase = [n for n in self.tree.body if (isinstance(n, ast.FunctionDef) and n.name == 'finish_all')
+        phase: list[ast.stmt] = [n for n in self.tree.body if (isinstance(n, ast.FunctionDef) and n.name == 'finish_all')
                  or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'res' for t in n.targets))]
         self.assertEqual(len(phase), 2)
         import collections, heapq, threading
