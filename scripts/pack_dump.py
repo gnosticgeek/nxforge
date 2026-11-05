@@ -16,7 +16,7 @@
 # A dump has no control data, so there is no control.nacp or icon.jpg beside them, as there is after nx_extract.
 # The title ID is the program ID in main.npdm. A repeat run keeps code modules that are the same and an image whose source tree, packer and image are unchanged (romfs_image.py --reuse).
 # Usage: pack_dump.py <dump folder> [--version N] [--work-dir DIR]   (exit 1 on error)
-import argparse, filecmp, shutil, struct, subprocess, sys
+import argparse, filecmp, os, shutil, struct, subprocess, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dm/tools'))
 import romfs_image
@@ -100,6 +100,12 @@ def pack_version(src, app, out, say=print):   # one version's folder (base/ or u
     if (pid := program_id(src / 'exefs/main.npdm')) != app: raise Error(f'{src}: program ID {pid:016X}, the base is {app:016X}')
     exefs(src / 'exefs', out / 'ExeFS')
     pack(src / 'romfs', out / 'RomFS.img', say)
+
+
+def version_reusable(src, out):   # whether pack_version keeps out/RomFS.img as it is (the NSP script's --plan)
+    if not (src / 'romfs').is_dir(): return False
+    roms = os.fspath(src / 'romfs')
+    return romfs_image.reusable(os.fspath(out / 'RomFS.img'), romfs_image.source_digest(roms, romfs_image.entries(roms)))
 
 
 def pack_dlc(app, dlc, aoc, say=print):   # {DLC title ID: its RomFS folder} → aoc/<index>.img; images of DLC no longer in the folder go

@@ -37,6 +37,7 @@ import ast, collections, contextlib, ctypes, errno, getpass, hashlib, importlib.
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "dm/tools"))
 import romfs as rfs
+import romfs_image   # the RomFS image the packers write, and the stamp that keeps one (--plan)
 import nso   # the code module loader: nso.Error is a damaged module (its file cut short or not what its header says)
 import tree_tar   # one file in place of a build's folders of many small files
 import shader_lib   # the shader libraries as one file, read in place
@@ -1421,6 +1422,14 @@ def scan_nup(path, want=None):   # a NUP as scan_nsps gives a folder of NSPs, wi
     except (pack_nup.Error, OSError) as e: raise BuildError(str(e)) from e
     if want is not None and want != app: raise BuildError(f'no game {want:016X} (--title-id / TITLE_ID) in {path}, which holds {app:016X}')
     return app, {'base': base, 'updates': sorted(vers.items()), 'dlc': [(tid, None, k) for tid, k in sorted(dlc.items())], 'nup': n}
+
+
+def nup_version_reusable(n, k, base, out):
+    """Whether pack_nup.pack_version keeps out/RomFS.img as it is (--plan): the digest pack_nup.pack stamps an image with, made here because it hashes romfs_image.py and pack_nup.py
+    themselves, so a helper added to either would pack every NUP game's image again (test_nsp_nup checks the two agree)"""
+    d = pack_nup.romfs_of(k, base)
+    digest = hashlib.sha256(Path(romfs_image.__file__).read_bytes() + Path(pack_nup.__file__).read_bytes() + n.toc_sha + struct.pack('<I', d)).hexdigest()
+    return romfs_image.reusable(os.fspath(out / 'RomFS.img'), digest)
 
 
 def extract_nup(ex, name, k, base, app, n):   # one version of a NUP (k: its base or an update package) into the layout extract makes; the code modules and the image are kept while unchanged
@@ -3288,7 +3297,10 @@ def main(args=None):
         b, u = picks[ver]
         if PLAN is not None and (nup or dump):   # pack_version keeps an unpacked version while it is unchanged
             d = ex / ver
-            if (d / 'RomFS.img').is_file() and (d / 'ExeFS').is_dir(): dirs[ver] = d; PLAN.append(('unpack', 'reused', '')); continue
+            if (d / 'RomFS.img').is_file() and (d / 'ExeFS').is_dir():
+                # the packers' own check: an image stamped by other packer code or another container is packed again, beside the old one until it is done (its size again on disk)
+                if nup_version_reusable(fam['nup'], u or b, b, d) if nup else pack_dump.version_reusable(u or b, d): dirs[ver] = d; PLAN.append(('unpack', 'reused', '')); continue
+                plan_redo('unpack', f'the RomFS image ({amount((d / "RomFS.img").stat().st_size, "B")}) is packed again: the packers or the game files changed since it was made, and it needs that much free space beside the old one')
             plan_redo('unpack', 'the game files are not unpacked yet')
         dirs[ver] = extract_nup(ex, ver, u or b, b, app, fam['nup']) if nup else extract_dump(ex, ver, u or b, app) if dump else extract(nx, keys, ex, ver, b, u, None, logs, g, app)
         if not nup and not dump: extract_html(nx, keys, dirs[ver], b, u, logs, app)
