@@ -11,7 +11,7 @@ import unittest
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(REPO / 'scripts'))
-import source_info
+import source_info  # pyright: ignore[reportMissingImports]  # scripts/ is on sys.path above
 import test_nsp_nup as t
 
 
