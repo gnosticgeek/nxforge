@@ -3359,9 +3359,9 @@ def main(args=None):
     if nd := captured_nros(patched): env = dict(env, DM_NRO_DIR=str(nd))
     chain_header(py, repo, env, logs)   # before any host is built
     if PLAN is not None and mac_pack:   # the Mac host reads none of the shader stages: checked even when the plan stops before it
-        def later_host():
-            n = len(PLAN); build_mac_host(repo, work / 'tools/dmhost', env, logs, g)
-            if len(PLAN) == n: PLAN.append(('Mac host', 'reused', ''))
+        def later_host(plan=PLAN):
+            n = len(plan); build_mac_host(repo, work / 'tools/dmhost', env, logs, g)
+            if len(plan) == n: plan.append(('Mac host', 'reused', ''))
         PLAN_LATER.append(later_host)
     if provisional or derived:   # the keys that need the rewritten modules, then (provisional) the heap check (both only change keys the host is built with, not the rewrite or the shader steps)
         provisional_prep(py, repo, env, logs, g)

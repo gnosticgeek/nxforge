@@ -384,11 +384,11 @@ def pack(a):
         step('shader libraries'); (res / 'msl').mkdir(); copy_msl(msl, msls, res / 'msl' / (a.msl_name or msl.name), clone['msl'])
         if pso: step('pipeline archive'); (res / 'pso').mkdir(); copy(pso, res / 'pso', clone['pso'])
         step('game files'); copy([romfs], res / ('romfs.img' if romfs.is_file() else 'romfs'), clone['romfs'])
-    elif kept: step('game data (signed before, reused)'); copy([cache / DATA], plugins / DATA, clone_data)
-    elif cache:
+    elif cache is not None and kept: step('game data (signed before, reused)'); copy([cache / DATA], plugins / DATA, clone_data)
+    elif cache is not None:
         part = cache / (DATA + '.partial'); shutil.rmtree(part, ignore_errors=True); (cache / 'key').unlink(missing_ok=True)
         make_data(a, part, msl, msls, pso, romfs, clone, codesign)
-        shutil.rmtree(cache / DATA, ignore_errors=True); part.rename(cache / DATA); (cache / 'key').write_text(dkey + '\n')
+        shutil.rmtree(cache / DATA, ignore_errors=True); part.rename(cache / DATA); (cache / 'key').write_text(f'{dkey}\n')
         step('game data into the app'); copy([cache / DATA], plugins / DATA, clone_data)
     else: make_data(a, plugins / DATA, msl, msls, pso, romfs, clone, codesign)
     data_res = f'../PlugIns/{DATA}/Contents/Resources'
