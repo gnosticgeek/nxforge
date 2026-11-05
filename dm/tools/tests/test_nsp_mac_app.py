@@ -636,7 +636,7 @@ class App(unittest.TestCase):
     def test_missing_data(self):
         broken = self.tmp / 'Broken.app'; shutil.rmtree(broken, ignore_errors=True)
         subprocess.run(['/bin/cp', '-R', self.app, broken], check=True)
-        shutil.rmtree(broken / 'Contents/Resources/romfs')
+        romfs = broken / 'Contents/Resources/romfs'; romfs.unlink() if romfs.is_symlink() else shutil.rmtree(romfs)   # a link into the data bundle (pack_app.py DATA)
         (self.tmp / 'home/alert.txt').unlink(missing_ok=True)
         p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(self.tmp / 'home'), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'), capture_output=True, text=True, timeout=30)
         self.assertEqual(p.returncode, 1)
@@ -661,7 +661,7 @@ class App(unittest.TestCase):
         title = 'Game "Test" \\ Edition'
         plist = broken / 'Contents/Info.plist'
         info = plistlib.loads(plist.read_bytes()); info['CFBundleName'] = title; plist.write_bytes(plistlib.dumps(info))
-        shutil.rmtree(broken / 'Contents/Resources/romfs')
+        romfs = broken / 'Contents/Resources/romfs'; romfs.unlink() if romfs.is_symlink() else shutil.rmtree(romfs)   # a link into the data bundle (pack_app.py DATA)
         home = self.tmp / 'home'
         (home / 'alert.scpt').unlink(missing_ok=True)
         p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(home), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'),
