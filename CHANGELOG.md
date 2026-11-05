@@ -2,11 +2,26 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.12.0 (unreleased)
+## 0.11.0 (2026-11-04)
 
-A clearer in-game Quick settings sidebar; no upstream merge.
+Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.
 
-**In the game**
+**From upstream**
+- **Switch 2 games**: Donkey Kong Bananza, Splatoon Raiders, Fire Emblem Fortune's Weave, Pokémon Pokopia, Hyrule Warriors: Age of Imprisonment, Mario Kart World and Mario Tennis Fever play on the Mac. They are built from one `.nup` file or a dump folder, not from NSPs, and need no `prod.keys` (README › Switch 2 games). Switch 2 (Ampere) shaders translate natively, and textures untile in the Switch 2's order.
+- **New game profiles** include Mario & Luigi: Brothership, Super Mario 3D All-Stars (one app of several programs), DAVE THE DIVER, Princess Peach: Showtime!, Skyward Sword HD, Super Mario RPG, SUPER ROBOT WARS Y, Castlevania: Belmont's Curse, TRIANGLE STRATEGY, Hollow Knight and DRAGON QUEST I & II HD-2D Remake.
+- AV1 movies through dav1d where VideoToolbox has none; the Shift + arrow keys are the right stick; game file extensions in any letter case; merged packages (base game, update and DLC in one file); `LSSupportsGameMode` off, since macOS's Game Mode held the GPU at its lowest clock.
+- Frame latency 2 now only on variable-refresh screens in fullscreen, and `DM_PRESENT_LATENCY` is clamped to 1 or 2 (all the display link takes).
+- The tested Metal compiler is Xcode 27.2's (32023.922.4).
+- Mario Kart World's sky panels are gone: task and mesh draws read their storage buffers from the right table (c0 0x670 / 0x770) instead of a dummy buffer.
+- 120 fps for a profile with `fps_max 120` (Fire Emblem Fortune's Weave first).
+
+**Kept in NXForge**
+- Fullscreen still goes without the display link (the 30 fps fix); `DM_PRESENT_LATENCY=1|2` keeps the link there to compare.
+- A controller's Home button still opens Quick settings. nxnative's new hold-Home-to-quit prompt is off unless `DM_HOME_QUIT=1`.
+- A cartridge with several applications (Belmont's Curse and its Art Gallery) still packs the largest program, now by passing it to nx_extract's new `--app` (the old `--title <id>` option is gone).
+- The FXAA warnings moved to `RED_ONCE` slots 153 and 154. The shader chain is now `907b404e076d`, so every NVN game's shaders rebuild once.
+
+**Quick settings (in the game)**
 - **Pages instead of fold-out sections.** Quick settings has six pages in tabs (Graphics, FPS, Capture, Mods, Cheats, Controls). L and R on a controller, or Tab and Shift-Tab on the keyboard, turn the page, and the last page shown is remembered per game.
 - **A quick bar on every page**: Screenshot, Record, the FPS counter and the volume. The Sound section is gone; its slider lives here.
 - **A button legend** at the bottom says what works on the selected item ("A Change · ◀▶ Adjust · B Close · L R Page"), in the controller's own button glyphs, or as keys while the keyboard drives it. Opened from a controller, the sidebar starts with the page's first item selected.

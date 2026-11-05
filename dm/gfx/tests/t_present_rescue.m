@@ -3,7 +3,8 @@
 #import <QuartzCore/CAMetalLayer.h>
 @interface SilentDisplayLink : NSObject
 @property CAFrameRateRange preferredFrameRateRange;
-@property float preferredFrameLatency;
+@property(nonatomic) float preferredFrameLatency;
+@property(nonatomic) NSUInteger latencyWrites;
 @property (weak) id<CAMetalDisplayLinkDelegate> delegate;
 @property BOOL paused;
 @property BOOL invalidated;
@@ -12,6 +13,11 @@
 - (void)invalidate;
 @end
 @implementation SilentDisplayLink
+@synthesize preferredFrameLatency = _preferredFrameLatency;
+- (void)setPreferredFrameLatency:(float)value {
+    self.latencyWrites++;
+    _preferredFrameLatency = value < 1 ? 1 : value > 2 ? 2 : value;   // CAMetalDisplayLink accepts only 1 or 2
+}
 - (instancetype)initWithMetalLayer:(CAMetalLayer *)layer { (void)layer; return [super init]; }
 - (void)addToRunLoop:(NSRunLoop *)loop forMode:(NSRunLoopMode)mode { (void)mode; [loop addPort:[NSMachPort port] forMode:NSDefaultRunLoopMode]; }
 - (void)invalidate { self.invalidated = YES; }
@@ -22,6 +28,7 @@
 static uint64_t test_now;
 int test_focus = 1;
 int test_fullscreen;
+int test_variable_refresh;
 uint64_t test_focus_since;
 void *front_metal_layer(void) { return NULL; }
 module_t *module_of(const void *p) { (void)p; return NULL; }
@@ -89,8 +96,8 @@ static void lifecycle(void) {
     CHECK("rescue invalidates the link before releasing the layer", link.invalidated && !g_link && !g_link_owns_layer);
     g_link_started = 0;
 }
-static void latency(void) {   // frame latency 1 in a window, no link in fullscreen (NXForge), DM_PRESENT_LATENCY in both; a new link takes the current one as link_main does
-    reset(); test_fullscreen = 0; g_present_latency = 0;
+static void latency(void) {   // frame latency 1 in a window, no link in fullscreen (NXForge), DM_PRESENT_LATENCY (1 or 2) in both; a new link takes the current one as link_main does
+    reset(); test_fullscreen = 0; test_variable_refresh = 1; g_present_latency = 0;
     SilentDisplayLink *link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency();
     g_link = link; g_link_started = 1;
     link_sync(); CHECK("a window keeps frame latency 1", link.preferredFrameLatency == 1);
@@ -99,9 +106,24 @@ static void latency(void) {   // frame latency 1 in a window, no link in fullscr
     CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, false);
     test_fullscreen = 0; reset(); link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency(); g_link = link; g_link_started = 1;
     link_sync(); CHECK("back in a window the link has frame latency 1", g_link_mode == 1 && link.preferredFrameLatency == 1);
-    test_fullscreen = 1; g_present_latency = 3; link_sync(); CHECK("DM_PRESENT_LATENCY keeps the link in fullscreen, at that latency", g_link_mode == 1 && link.preferredFrameLatency == 3);
-    test_fullscreen = 0; link_sync(); CHECK("DM_PRESENT_LATENCY wins in a window", link.preferredFrameLatency == 3);
-    g_present_latency = 0; test_fullscreen = 0; link_sync(); g_link = nil; g_link_started = 0;
+    test_fullscreen = 1; g_present_latency = 2; link_sync(); CHECK("DM_PRESENT_LATENCY keeps the link in fullscreen, at that latency", g_link_mode == 1 && link.preferredFrameLatency == 2);
+    test_fullscreen = 0; link_sync(); CHECK("DM_PRESENT_LATENCY wins in a window", link.preferredFrameLatency == 2);
+    for (int lat = 1; lat <= 2; lat++) for (int variable = 0; variable <= 1; variable++) for (int full = 0; full <= 1; full++) {
+        g_present_latency = lat; test_variable_refresh = variable; test_fullscreen = full; link_sync();
+        CHECK("DM_PRESENT_LATENCY wins for every screen and window mode", link.preferredFrameLatency == lat);
+    }
+    for (int variable = 0; variable <= 1; variable++) for (int fullscreen = 0; fullscreen <= 1; fullscreen++) {
+        test_variable_refresh = variable; test_fullscreen = fullscreen;
+        const int requests[] = {3, INT_MAX};
+        for (unsigned i = 0; i < sizeof requests / sizeof requests[0]; i++) {
+            g_present_latency = requests[i];
+            CHECK("an oversized override requests supported latency 2", link_latency() == 2);
+            link_sync(); NSUInteger writes = link.latencyWrites;
+            for (int frame = 0; frame < 10; frame++) link_sync();
+            CHECK("a clamped override does not rewrite the link every frame", link.latencyWrites == writes);
+        }
+    }
+    g_present_latency = 0; test_fullscreen = test_variable_refresh = 0; link_sync(); g_link = nil; g_link_started = 0;
 }
 static void metal_lifecycle(void) {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
