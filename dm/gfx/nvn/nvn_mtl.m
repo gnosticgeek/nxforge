@@ -7579,8 +7579,11 @@ static void warm_finish(void) {
     if (todo.count) {   // NXForge: the prepare step's recapture, after the first frame on a utility-QoS worker (g_compact_todo); its period is flushed when the last one is done
         uint64_t t0 = bp_now();
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ @autoreleasepool {
-            int n = 0; for (NSArray *it in todo) { @autoreleasepool { if (arch_capture(it[0], nil, [it[1] intValue])) { g_compacted++; n++; } } }
-            MLOG("pipeline archive: %d of %lu bases recaptured for the compaction after the first frame, in %.1f s", n, (unsigned long)todo.count, (bp_now() - t0) / 1e9);
+            // in parallel at utility QoS (the game's threads come first): one worker took longer than a 2-minute run for Mario Kart World's 5,300 bases, and a recapture
+            // unfinished at exit leaves the old files for the next start
+            __block _Atomic int n = 0;
+            dispatch_apply(todo.count, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^(size_t i) { @autoreleasepool { NSArray *it = todo[i]; if (arch_capture(it[0], nil, [it[1] intValue])) { g_compacted++; atomic_fetch_add(&n, 1); } } });
+            MLOG("pipeline archive: %d of %lu bases recaptured for the compaction after the first frame, in %.1f s", atomic_load(&n), (unsigned long)todo.count, (bp_now() - t0) / 1e9);
             atomic_store(&g_compact_running, 0);
             arch_flush();
         } });
