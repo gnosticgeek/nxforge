@@ -1,0 +1,5 @@
+# Games whose upstream fixes NXForge tracks closely (the "watch" job in workflows/upstream-check.yml). One line per search term, tab separated:
+# the term (a title ID, or a quoted name as upstream pull request titles write it), the game's name, and the NXForge branch its work is on (optional; main is always checked).
+# Every seedds/nxnative pull request that matches and was updated in the last 14 days is listed in one issue labelled "upstream-watch", with where NXForge holds it.
+0400486024DEC000	The Legend of Zelda: Ocarina of Time (Switch 2)	claude/project-thread-27ja4m
+"Ocarina of Time"	The Legend of Zelda: Ocarina of Time (Switch 2)	claude/project-thread-27ja4m
