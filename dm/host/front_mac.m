@@ -660,9 +660,9 @@ int front_qs_recording(void) { return capture_recording(); }
 // and quits as ⌘Q does, and the launcher, finding the file, starts the host again with the same environment. A bare dmhost has no launcher and no restart
 int front_qs_can_restart(void) { const char *e = getenv("DM_LAUNCHER_RESTART"); return e && *e; }
 void front_qs_restart(void) {
-    if (!front_qs_can_restart()) return;
-    int fd = open(getenv("DM_LAUNCHER_RESTART"), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) { LOG("[RED] front end: Restart game: cannot write %s: %s", getenv("DM_LAUNCHER_RESTART"), strerror(errno)); toast(@"Restart did not work: quit and open the game again"); return; }
+    const char *rf = getenv("DM_LAUNCHER_RESTART"); if (!rf || !*rf) return;
+    int fd = open(rf, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { LOG("[RED] front end: Restart game: cannot write %s: %s", rf, strerror(errno)); toast(@"Restart did not work: quit and open the game again"); return; }
     close(fd); LOG("front end: Restart game (Quick settings)"); [NSApp terminate:nil];
 }
 // Where captures go, for the Capture section: the folder chosen for this game (saved), or none for the default
