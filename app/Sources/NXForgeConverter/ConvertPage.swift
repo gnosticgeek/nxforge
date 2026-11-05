@@ -189,15 +189,7 @@ struct MacAppCard: View {
             }
 
             Divider()
-            if case .failure(let e)? = model.run.result {
-                HStack(alignment: .top, spacing: 10) {
-                    StatusDot(color: .red).padding(.top, 5)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Build failed").font(.headline)
-                        Text(e.description).font(.callout).foregroundStyle(.red).textSelection(.enabled).lineLimit(4)
-                    }
-                }
-            }
+            if case .failure(let e)? = model.run.result { BuildFailure(model: model, error: e.description) }
             if let (app, b) = latestApp {
                 let current = b.map { $0.engine.commit == model.engine?.commit && model.engine?.dirty == false } ?? false
                 HStack(alignment: .top, spacing: 10) {
@@ -346,5 +338,50 @@ struct ActivityCard: View {
             Text(status).foregroundStyle(color).frame(width: 80, alignment: .trailing)
         }
         .padding(.vertical, 5).padding(.horizontal, 10)
+    }
+}
+
+/// A failed build: what it means and what to do next (BuildDiagnosis), the script's own error, and a summary to paste into a report.
+struct BuildFailure: View {
+    let model: AppModel
+    let error: String
+    @State private var copied = false
+
+    var body: some View {
+        let run = model.run
+        let d = BuildDiagnosis.diagnose(error: error, log: run.log)
+        HStack(alignment: .top, spacing: 10) {
+            StatusDot(color: d.code == .stopped ? .orange : .red).padding(.top, 5)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(d.title).font(.headline)
+                Text(d.fix).font(.callout).fixedSize(horizontal: false, vertical: true)
+                if d.code != .stopped {
+                    Text(error).font(.caption.monospaced()).foregroundStyle(.red).textSelection(.enabled).lineLimit(4)
+                }
+                HStack {
+                    if let p = d.page, p != .convert {
+                        Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.glassProminent)
+                    }
+                    if d.code != .stopped {
+                        Button {
+                            copyToClipboard(summary(d)); copied = true
+                        } label: { Label(copied ? "Copied" : "Copy error summary", systemImage: copied ? "checkmark" : "doc.on.clipboard") }
+                        .buttonStyle(.glass)
+                        .help("The diagnosis, the failed step, your Mac, Xcode and engine versions, and the log's red lines, with key values, your keys file and your home folder taken out")
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+        .onChange(of: error) { copied = false }
+    }
+
+    func summary(_ d: Diagnosis) -> String {
+        let run = model.run
+        let failed = run.done.last { !$0.ok }.map(\.line) ?? (run.stage.name.isEmpty ? nil : "[\(run.stage.k)/\(run.stage.n)] \(run.stage.name)")
+        let title = model.settings.gameDir.flatMap { dir in Engine.apps(in: dir).first.flatMap { VerifiedGames.titleID(ofApp: $0.app) } }
+        let game = model.game.map { g in title.map { "\(g.name) (\($0))" } ?? g.name }
+        return BuildDiagnosis.summary(d, error: error, log: run.log, failedStep: failed, game: game, engine: model.engine?.label,
+                                      xcode: model.checks?.first { $0.name == "Xcode" }?.detail, keysPath: model.settings.keys)
     }
 }

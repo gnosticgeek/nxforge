@@ -2,6 +2,14 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+Two ideas from [LumaNX](https://github.com/Xc1Ym/LumaNX) (MIT), another nxnative front end, reimplemented in the converter.
+
+**Converter**
+- **Failed builds say what went wrong and what to do next.** The Convert page names the cause (not enough disk space, a 32-bit game version, keys, game files, the Metal toolchain, Xcode, .NET, Python modules, a missing tool, memory, file access, the rewriter, shaders, signing) with the next step, a button to the page that fixes it, and **Copy error summary**: the diagnosis, the failed step, the Mac, Xcode and engine versions and the log's red lines, with key values, the keys file's path and the home folder taken out. `--convert` and `--rebuild` print the same line. After LumaNX's `Worker/diagnostics.py`.
+- **Save snapshots** on the Builds page: a copy of the game's save (and its device save) checked file by file with SHA-256, kept beside it in `save-snapshots/`. Restore checks the snapshot again, keeps the current save as a snapshot, and swaps each save folder in with one rename (`renamex_np` `RENAME_SWAP`), so a save is never half restored; it refuses while the game is running. A rebuild and Restore this version make a snapshot first; the newest 10 automatic ones stay. After LumaNX's `Worker/recovery.py`.
+
 ## 0.10.0 (2026-10-31)
 
 Five ideas from [NX2Apple](https://github.com/LNPANDY/NX2Apple) (MIT), another nxnative front end; no upstream merge.

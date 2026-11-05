@@ -91,6 +91,11 @@ final class BuildRun {
             guard let engine = Engine.current(repo) else { throw ConverterError("cannot read the engine's git commit") }
             var backup: String?
             if let app = job.rebuild {
+                // a new engine may change how the game reads its save: keep a checked copy first (best effort; the build goes on without one)
+                if let id = VerifiedGames.titleID(ofApp: app) {
+                    do { if let s = try SaveSnapshots.snapshot(SaveSnapshots.location(app: app, titleID: id), reason: .beforeRebuild) { say("save snapshot \(s.id) made before the rebuild") } }
+                    catch { say("warning: no save snapshot before the rebuild: \(error)") }
+                }
                 let old = Engine.builds().first { $0.app == app }?.engine
                 let b = try Engine.backUp(app, engine: old)
                 backup = b
