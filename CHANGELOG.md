@@ -29,6 +29,13 @@ Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-3
 - **Save snapshots** on the Builds page: a copy of the game's save (and its device save) checked file by file with SHA-256, kept beside it in `save-snapshots/`. Restore checks the snapshot again, keeps the current save as a snapshot, and swaps each save folder in with one rename (`renamex_np` `RENAME_SWAP`), so a save is never half restored; it refuses while the game is running. A rebuild and Restore this version make a snapshot first; the newest 10 automatic ones stay. After LumaNX's `Worker/recovery.py`.
 - The failure explanations and save snapshots are two ideas from [LumaNX](https://github.com/Xc1Ym/LumaNX) (MIT), another nxnative front end, reimplemented in the converter.
 
+**Quick settings (in the game)**
+- **Pages instead of fold-out sections.** Quick settings has six pages in tabs (Graphics, FPS, Capture, Mods, Cheats, Controls). L and R on a controller, or Tab and Shift-Tab on the keyboard, turn the page, and the last page shown is remembered per game.
+- **A quick bar on every page**: Screenshot, Record, the FPS counter and the volume. The Sound section is gone; its slider lives here.
+- **A button legend** at the bottom says what works on the selected item ("A Change · ◀▶ Adjust · B Close · L R Page"), in the controller's own button glyphs, or as keys while the keyboard drives it. Opened from a controller, the sidebar starts with the page's first item selected.
+- **One "needs a restart" signal.** Anisotropic filtering, Record frame times and mods carry a Next launch tag, orange while the choice differs from the running game. The footer counts those changes and offers **Restart game** (pressed twice), which quits and starts the game again through the app's launcher.
+- **Simpler Graphics page.** The filter is now just a CRT switch, with Strength and Line size shown only while it is on; the page is split into Look and Image quality. Sharpen, Pixel-perfect, CRT-Lottes and LCD Grid left Quick settings and the Graphics menu (a saved choice of one starts as off); `DM_PRESENT_FILTER` still reaches them. A dot marks each setting changed from its default, and Graphics and FPS have a Reset button. Record frame times moved under FPS › Advanced.
+
 ## 0.10.0 (2026-10-31)
 
 Five ideas from [NX2Apple](https://github.com/LNPANDY/NX2Apple) (MIT), another nxnative front end; no upstream merge.

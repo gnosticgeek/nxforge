@@ -10,7 +10,7 @@ The engine keeps the switches beside the file (`<build ID>.enabled`), so the Qui
 
 ## In the game
 
-- **Quick settings sidebar** (Esc): the Cheats section has a switch per cheat, a Refresh button that reads the file again, and a button that opens the folder. When the last run ended without a clean exit while cheats were on, every cheat starts off, and the section offers to restore the saved switches.
+- **Quick settings sidebar** (Esc): the Cheats page has a switch per cheat, a Refresh button that reads the file again, and a button that opens the folder. When the last run ended without a clean exit while cheats were on, every cheat starts off, and the section offers to restore the saved switches.
 - **Cheats menu and panel** (⇧⌘C): everything the sidebar has, plus sections, search, the master switch, values for cheats that take one, a dry run, and the import of cheat files.
 
 ## Markdown files from 0.4.0 to 0.8.0
