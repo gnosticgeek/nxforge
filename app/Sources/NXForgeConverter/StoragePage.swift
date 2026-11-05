@@ -58,7 +58,8 @@ enum Storage {
     static func scan(currentGame: String?) -> (items: [StorageItem], volumes: [VolumeInfo]) {
         let fm = FileManager.default
         var dirs: [String] = []
-        for d in [currentGame].compactMap({ $0 }) + Engine.builds().map(\.gameDir) where !dirs.contains(d) && fm.fileExists(atPath: d) { dirs.append(d) }
+        // a Switch 2 game's record names its .nup: its build folder is beside it
+        for d in ([currentGame].compactMap({ $0 }) + Engine.builds().map(\.gameDir)).map(Source.folder) where !dirs.contains(d) && fm.fileExists(atPath: d) { dirs.append(d) }
         var items: [StorageItem] = []
         var appDirs = Set<String>()
         for d in dirs {
