@@ -178,6 +178,20 @@ final class AppModel {
         measure()
     }
 
+    func refreshGame() {
+        game = settings.gameDir.map { GameInfo.read($0, source: source) }
+    }
+
+    /// Files dropped on the Convert page (DropFiles): the game folder first, since it brings the prod.keys beside it, then a dropped keys
+    /// file over that. False when the drop held nothing usable, or a build is running.
+    @discardableResult func drop(_ urls: [URL]) -> Bool {
+        let d = DropFiles.sort(urls)
+        guard d.usable, !run.running else { return false }
+        if let dir = d.gameDir { setGameDir(dir) }
+        if let k = d.keys { settings.keys = k; validate() }
+        return true
+    }
+
     /// What this game's build needs (tools, disk space, time), worked out off the main thread.
     func measure() {
         guard let dir = gameFolder else { needs = [:]; diskNeed = nil; expected = [:]; return }
