@@ -75,7 +75,7 @@ int main(void) {
         pso_key_norm(&k, 0);
         pso_skey stable, parsed; char hex[sizeof stable * 2 + 1];
         pso_skey_from(&k, ms, fs, 0, NULL, &stable); pso_skey_hex(&stable, hex);
-        assert(pso_mesh_skey_parse(hex, &parsed) == 0 && !memcmp(&parsed, &stable, sizeof stable));
+        char again[sizeof hex]; assert(pso_mesh_skey_parse(hex, &parsed) == 0); pso_skey_hex(&parsed, again); assert(!strcmp(again, hex));   // by its encoding: the key has padding bytes
         stable.k.attr_hi[0].fmt = 7; pso_skey_hex(&stable, hex);
         assert(pso_mesh_skey_parse(hex, &parsed) == 0 && !parsed.k.attr_hi[0].fmt);
         stable.k.attr_hi[0].fmt = 0;
