@@ -30,10 +30,18 @@ def clone(src, dst):
     os.replace(tmp, dst)
 
 
+def run(cmd, **kw):
+    """subprocess.run, started with posix_spawn rather than fork + exec. A fork copies the page tables of the whole build process (several hundred MB) and holds the GIL while it does:
+    about 6 ms, three or four times a shader, which kept dmsh_build.py at 100% of one core and half its Metal compiles waiting (Kirby, 47,099 shaders). Python spawns only for an executable
+    given with its folder and close_fds=False (macOS has no POSIX_SPAWN_CLOSEFROM); every descriptor Python opens is close-on-exec, so the child still gets only its standard streams"""
+    exe = cmd[0] if os.path.dirname(cmd[0]) else shutil.which(cmd[0]) or cmd[0]
+    return subprocess.run(cmd, executable=exe, close_fds=False, **kw)
+
+
 def compiler_id(sdk):
-    def run(*a): return subprocess.run(['xcrun', '-sdk', sdk, *a], capture_output=True, text=True).stdout
-    tools = ''.join(run(t, '--version') for t in ('metal', 'metallib'))
-    return re.sub(r'(?m)^InstalledDir:.*\n?', '', tools) + run('--show-sdk-version') + run('--show-sdk-build-version')   # the install path changes with each toolchain mount
+    def ask(*a): return run(['xcrun', '-sdk', sdk, *a], capture_output=True, text=True).stdout
+    tools = ''.join(ask(t, '--version') for t in ('metal', 'metallib'))
+    return re.sub(r'(?m)^InstalledDir:.*\n?', '', tools) + ask('--show-sdk-version') + ask('--show-sdk-build-version')   # the install path changes with each toolchain mount
 
 
 class Cache:
