@@ -11,6 +11,8 @@ struct StorageItem: Identifiable, Hashable {
     let game: String
     let path: String
     let bytes: Int64
+    /// written to in the last ten minutes: a build may be using it (one started from Terminal is invisible to the converter)
+    var busy = false
 
     var title: String {
         switch kind {
@@ -54,6 +56,15 @@ struct VolumeInfo: Identifiable, Hashable {
 }
 
 enum Storage {
+    /// Whether a build folder's logs (every stage writes one) changed in the last ten minutes.
+    static func recentlyWritten(_ build: String) -> Bool {
+        let fm = FileManager.default
+        let logs = build + "/logs"
+        let names = (try? fm.contentsOfDirectory(atPath: logs)) ?? []
+        let newest = ([logs] + names.map { "\(logs)/\($0)" }).compactMap { (try? fm.attributesOfItem(atPath: $0))?[.modificationDate] as? Date }.max()
+        return newest.map { Date().timeIntervalSince($0) < 600 } ?? false
+    }
+
     /// Every item, measured (slow: run it off the main thread).
     static func scan(currentGame: String?) -> (items: [StorageItem], volumes: [VolumeInfo]) {
         let fm = FileManager.default
@@ -65,7 +76,7 @@ enum Storage {
         for d in dirs {
             let game = GameInfo.read(d).name
             for b in ((try? fm.contentsOfDirectory(atPath: d)) ?? []).filter({ $0.hasSuffix("_build") }) {
-                items.append(StorageItem(kind: .cache, game: game, path: "\(d)/\(b)", bytes: Disk.size("\(d)/\(b)")))
+                items.append(StorageItem(kind: .cache, game: game, path: "\(d)/\(b)", bytes: Disk.size("\(d)/\(b)"), busy: recentlyWritten("\(d)/\(b)")))
             }
             let files = GameFiles.list(in: d.url)
             if !files.isEmpty { items.append(StorageItem(kind: .gameFiles, game: game, path: d, bytes: files.reduce(0) { $0 + Disk.size($1.path) })) }
@@ -166,8 +177,8 @@ struct StoragePage: View {
                     ProgressView().controlSize(.small).frame(width: 70)
                 } else {
                     Button("Delete…") { delete(i) }.buttonStyle(.glass)
-                        .disabled(deleting != nil || (model.run.running && i.kind != .backups))
-                        .help(model.run.running && i.kind != .backups ? "Not while a build runs: it uses this" : "Delete permanently")
+                        .disabled(deleting != nil || i.busy || (model.run.running && i.kind != .backups))
+                        .help(i.busy ? "In use: a build wrote to it in the last ten minutes" : model.run.running && i.kind != .backups ? "Not while a build runs: it uses this" : "Delete permanently")
                         .frame(width: 70)
                 }
             } else {
