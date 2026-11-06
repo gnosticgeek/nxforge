@@ -25,6 +25,7 @@ static uint8_t *test_section(const struct mach_header_64 *mh, const char *seg, c
 struct dm_flags g_flag;
 uint64_t unimpl_stubs[MAX_STUB];
 uint64_t now_ns(void) { return 0; }
+void mtl_present_screen(uint32_t w, uint32_t h) { (void)w; (void)h; }   // a taller screen's picture shape (loader.c dm_fps_state_apply; nvn_mtl.m): no present here
 uint64_t guest_ns(void) { return 0; }
 uint64_t guest_ticks(void) { return 0; }
 void guest_clock_read_wait(void) {}
