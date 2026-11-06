@@ -139,6 +139,10 @@ class Plan(unittest.TestCase):
         self.assertNotIn('compute_pipeline_descriptors', po.script(self.d, [('v_bp', 'main0', 'f_b', 'main0')])['pipeline_descriptors'])   # none: the key as before
         self.assertEqual(po.library_digest(self.d, kernels), po.library_digest(self.d, kernels))
         self.assertNotEqual(po.library_digest(self.d, kernels), po.library_digest(self.d, kernels[:1]))
+        # the batched build keys every entry: a kernel (2-tuple) gets its own key, never a render base's (0.13.0 Ocarina build: "expected 4, got 2" in base_key)
+        kk = [po.base_key(self.d, k) for k in kernels]
+        self.assertEqual(len(set(kk)), 2)
+        self.assertNotIn(po.base_key(self.d, ('cs_b', 'main0')), {po.base_key(self.d, ('cs_b', 'main0', 'cs_b', 'main0'))})
 
     def test_script(self):
         j = po.script(self.d, [('v_bp', 'main0', 'f_b', 'main0'), ('w_bp', 'main0_z', 'f_b', 'main0')])
@@ -491,6 +495,13 @@ class Build(unittest.TestCase):
         state = json.loads((groups / 'assign.json').read_text())
         self.assertEqual(sorted(state['batches']), ['1', '2', '3', '4'])
         self.assertEqual(len(state['batches']['4']['members']), 1)
+
+    def test_batches_take_compute_kernels(self):   # upstream #1522 puts 2-tuple kernels in the same list as the 4-tuple bases the batches group
+        bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(3)] + [('c_b', 'main0')]
+        runner, observed = self.batched_runner()
+        with mock.patch.object(self, 'fake_run', runner), mock.patch.object(po, 'plan', return_value=(bases, [], {})):
+            self.main('--batch-size','2','--os-min','27.0')
+        self.assertTrue(observed)
 
     def test_changed_bases_scattered_over_every_batch(self):   # a translator fix that touches one shader in each batch: one new batch, not every batch again
         bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(8)]
