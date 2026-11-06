@@ -44,11 +44,12 @@ typedef struct {
     uint32_t magic, id; pthread_mutex_t mu; vpx_codec_ctx_t vpx; int vpx_ok; void *event; uint64_t submits, pictures;
     int codec; uint16_t w, h; mavc *avc; uint8_t *csd; size_t csd_n;   // H.264: VideoToolbox and the parameter sets Initialize gave
     mav1 *av1;   // AV1: VideoToolbox, or dav1d where the chip has no AV1 decoder (hle_movie_av1.c)
-    struct { cv_pool *pool; uint32_t pidx; int reg, filled; uint32_t gen, filled_gen; uint16_t w, h; int64_t ts; uint8_t eos; } buf[CV_BUFS];
+    struct { cv_pool *pool; uint32_t pidx; int reg, filled; uint32_t gen, filled_gen; uint16_t w, h; int64_t ts; uint8_t eos, early; } buf[CV_BUFS];   // early: its first handle (generation 0, the "free" one) signalled a sync point event (cv_dec_props)
     uint32_t fifo[8], fhead, fcount;          // acquirable indices
     uint32_t pend[CV_BUFS], phead, pcount;    // released, waiting for a picture
     vpx_image_t *held[CV_HOLD]; int64_t held_ts[CV_HOLD]; uint8_t held_eos[CV_HOLD]; int nheld;
     int eos_pending;
+    int started; uint64_t late_free;   // Start was called; late "free" signals read as pictures (cv_dec_props)
 } cv_dec;
 
 static cv_dec *g_cv[16];
@@ -281,7 +282,7 @@ static Result cv_dec_fin(void *t) {
 static Result cv_dec_reg(void *t, uint32_t i, void *pool, uint32_t pidx) {
     cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) { LOG("[RED] nn::codec::Register…DecoderBuffer index %u", i); return CV_R(2004); }
     pthread_mutex_lock(&d->mu);
-    d->buf[i].pool = pool_of(pool); d->buf[i].pidx = pidx; d->buf[i].reg = 1; d->buf[i].filled = 0; d->buf[i].gen = 0; d->buf[i].filled_gen = 0;
+    d->buf[i].pool = pool_of(pool); d->buf[i].pidx = pidx; d->buf[i].reg = 1; d->buf[i].filled = 0; d->buf[i].gen = 0; d->buf[i].filled_gen = 0; d->buf[i].early = 0;
     if (d->fcount < 8) { d->fifo[(d->fhead + d->fcount) % 8] = i; d->fcount++; } else LOG("[RED] nn::codec: acquirable queue full at register %u", i);
     pthread_mutex_unlock(&d->mu);
     return 0;
@@ -295,7 +296,7 @@ static void cv_drop_index(uint32_t *q, uint32_t *head, uint32_t *count, uint32_t
 static Result cv_dec_unreg(void *t, uint32_t i) {   // the buffer leaves the decoder: no longer acquirable, filled or waited for
     cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) return CV_R(2004);
     pthread_mutex_lock(&d->mu);
-    d->buf[i].reg = 0; d->buf[i].filled = 0; d->buf[i].pool = NULL; d->buf[i].gen++;
+    d->buf[i].reg = 0; d->buf[i].filled = 0; d->buf[i].pool = NULL; d->buf[i].gen++; d->buf[i].early = 0;
     cv_drop_index(d->fifo, &d->fhead, &d->fcount, 8, i); cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);
     pthread_mutex_unlock(&d->mu);
     return 0;
@@ -315,6 +316,7 @@ static Result cv_dec_reset(void *t) {   // Stop / Flush: pictures not yet given 
 static Result cv_dec_start(void *t) {
     cv_dec *d = cv_of(t); if (!d) return CV_R(2004);
     pthread_mutex_lock(&d->mu);
+    d->started = 1;
     if (d->event && d->nheld < CV_READY) hle_signal_system_event(d->event);
     pthread_mutex_unlock(&d->mu);
     return 0;
@@ -385,7 +387,8 @@ static Result cv_dec_acq(uint32_t *idx, cv_sync *sync, void *t) {
 static void cv_dec_rel(void *t, uint32_t i, cv_sync sync) {
     (void)sync; cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS || !d->buf[i].reg) { LOG("[RED] nn::codec::Release…DecoderOutputBuffer index %u", i); return; }
     pthread_mutex_lock(&d->mu);
-    d->buf[i].gen++; d->buf[i].filled = 0;
+    d->buf[i].gen++; d->buf[i].filled = 0; d->buf[i].early = 0;
+    cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);   // cv_dec_props may have queued it already
     if (d->pcount < CV_BUFS) { d->pend[(d->phead + d->pcount) % CV_BUFS] = i; d->pcount++; }
     if (d->fcount < 8) { d->fifo[(d->fhead + d->fcount) % 8] = i; d->fcount++; } else LOG("[RED] nn::codec: acquirable queue full at release %u", i);
     drain(d, 0);
@@ -395,6 +398,28 @@ static Result cv_dec_props(uint16_t *w, uint16_t *h, uint16_t *cw, uint16_t *ch,
     cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) return CV_R(2004);
     pthread_mutex_lock(&d->mu);
     int ok = d->buf[i].filled;
+    // Mario Kart World's VP9 player (base game, main+0x19e60c0) registers a buffer, acquires it and arms a sync point event on that first handle, which the host signals at once
+    // ("free"). Its worker's callback (main+0x19e6f40) recycles the buffer while the player is not started, but once Start has run (player state 3, main+0x70f154) it reads every
+    // signal as a picture and aborts on any result from the properties (main+0x19e8110). When the worker took that first signal only after Start, the game aborted with 0x1c286f
+    // (3604) after a race (2026-11-06, the 2560x1440 one-picture decode, about 1 time in 5). So a properties call on a buffer that was never released, whose first handle
+    // signalled an event, after Start, is that late "free" signal: the buffer goes to the decoder as a release would put it, and takes a waiting picture if there is one;
+    // with none it reads as an empty picture of the stream's size (blank), and the next picture waits for the game's release of the buffer as usual
+    if (!ok && d->buf[i].reg && d->buf[i].early && !d->buf[i].gen && d->started) {
+        d->buf[i].early = 0;
+        cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);
+        if (d->pcount < CV_BUFS) { d->pend[(d->phead + d->pcount) % CV_BUFS] = i; d->pcount++; }
+        drain(d, 0);
+        ok = d->buf[i].filled;
+        if (!ok) {
+            cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);
+            d->buf[i].w = d->w; d->buf[i].h = d->h; d->buf[i].ts = 0; d->buf[i].eos = 0;
+        }
+        if (d->late_free++ < 4) LOG("[codec] %s decoder %u: buffer %u's first (free) signal was read as a picture after Start: %s", k_cv_name[d->codec], d->id, i,
+                                    ok ? "it took the waiting picture" : "no picture waiting, an empty one given");
+        *w = *cw = d->buf[i].w; *h = *ch = d->buf[i].h; *ts = d->buf[i].ts; *eos = d->buf[i].eos != 0;
+        pthread_mutex_unlock(&d->mu);
+        return 0;
+    }
     if (ok) { *w = *cw = d->buf[i].w; *h = *ch = d->buf[i].h; *ts = d->buf[i].ts; *eos = d->buf[i].eos != 0; }
     pthread_mutex_unlock(&d->mu);
     return ok ? 0 : CV_NONE;
@@ -528,6 +553,12 @@ static bool sync_reached(const cv_sync *s) {
     pthread_mutex_unlock(&g_cv_mu);
     return r;
 }
+static void cv_mark_early(const cv_sync *s) {   // a sync point event armed on a buffer's first handle (signalled at once): see cv_dec_props
+    pthread_mutex_lock(&g_cv_mu);
+    cv_dec *d = s->dec && s->dec <= 16 ? g_cv[s->dec - 1] : NULL;
+    if (d && s->idx < CV_BUFS) { pthread_mutex_lock(&d->mu); if (d->buf[s->idx].reg && !d->buf[s->idx].gen) d->buf[s->idx].early = 1; pthread_mutex_unlock(&d->mu); }
+    pthread_mutex_unlock(&g_cv_mu);
+}
 HLE_FORCE("_ZN2nn2gs17TryWaitNativeSyncERKNS0_16NativeSyncHandleE", "decoder sync handles are the host's (hle_codec_video.c)", bool, h_gs_trywait, const cv_sync *s) {
     return sync_reached(s);
 }
@@ -544,6 +575,7 @@ HLE_FORCE("_ZN2nn6syncpt3sdk21RequestSyncPointEventEPNS1_18SyncPointEventTypeERK
     spt_unarm(e); hle_clear_system_event(e);
     SPT(e)->want = *s; SPT(e)->armed = 1;
     pthread_mutex_lock(&g_spt_mu); int k = 0; while (k < 64 && g_spt[k]) k++; if (k < 64) g_spt[k] = e; pthread_mutex_unlock(&g_spt_mu);
+    if (s->magic == CV_SYNC && !s->gen) cv_mark_early(s);
     if (k == 64) { LOG("[RED] nn::syncpt: more than 64 armed events: signalled at once"); hle_signal_system_event(e); return 0; }
     if (sync_reached(s)) { spt_unarm(e); hle_signal_system_event(e); }
     return 0;
