@@ -12626,7 +12626,7 @@ static int prefetch_cps_on(void) { static int v = -1; if (v < 0) { const char *e
 // The pipeline the prefetch built for this compute shader. A build still queued (behind the hundreds a scene load queues: 500 in Ocarina of Time's title, on three serial queues)
 // is taken over and built here, as pso_pend_take does for a draw; only a build that is running is waited for. nil when the prefetch has none
 static id cps_prefetched(NSString *key) {
-    os_unfair_lock_lock(&g_cps_pf_lock); CpsPf *e = g_cps_pf ? g_cps_pf[key] : nil; int build = e && !e->ps && !e->started; if (build) e->taken = 1; os_unfair_lock_unlock(&g_cps_pf_lock);
+    os_unfair_lock_lock(&g_cps_pf_lock); CpsPf *e = g_cps_pf && key ? g_cps_pf[key] : nil; int build = e && !e->ps && !e->started; if (build) e->taken = 1; os_unfair_lock_unlock(&g_cps_pf_lock);
     if (!e) return nil;
     if (build) { NSError *er = nil; id ps = e->shader && e->shader->fn ? cps_make(e->shader, &er) : nil; e->ps = ps; return ps; }
     if (!e->ps) { uint64_t t0 = bp_now(); dispatch_group_wait(e->group, DISPATCH_TIME_FOREVER); g_cps_pf_waited++; g_cps_pf_wait_ns += bp_now() - t0; }
