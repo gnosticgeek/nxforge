@@ -65,7 +65,7 @@ float dm_audio_volume(void);
 // Audio tap (hle_audio.c; the video recorder): the 48 kHz 16-bit PCM of the first output playing, as it goes to the sound card before the host volume, ch channels interleaved. fn runs on the
 // real-time audio thread: it must not block or allocate. NULL stops
 void dm_audio_tap_set(void (*fn)(void *ctx, const int16_t *pcm, uint32_t frames, int ch), void *ctx);
-// The shape of the picture the game presents (nvn_mtl.m present_now: the valid rectangle of the presented texture, w x h), called when its width / height changes: the front end
+// The shape of the picture the game presents (nvn_mtl.m present_now, present_shape: the layer's, not the crop's, w x h), called when its width / height changes: the front end
 // lays the picture out in that shape instead of 16:9, so a profile with screen_aspect under DM_SCREEN_ASPECT (1920x1344) fills a 1.43:1 screen and touches map onto the picture
 // as drawn. Before the first call the picture is 16:9. Called from the present thread; the front end switches to its main thread and does not block
 void front_picture_shape(int w, int h);
