@@ -14,3 +14,6 @@ skip	1396	opt-in counting and DM_NVN_FB_DPOOL=1 experiment, nothing changes by d
 skip	1404	the same two problems as #1394 (pools wired for raw global memory) and #1393 (retired textures made again) by another route; NXForge takes those two
 skip	1405	experimental, off by default (DMSH_RAW_LOAD_QUADS=1 when building the shader chain)
 skip	1407	PRAGMATA bring-up (62 commits, another game); its host fixes come in when they land upstream on their own
+skip	1427	raw pool table words follow the pools at commit, written against main's page-hash log; NXForge has #1360's growing table and entry-bitmap log, so the two re-point tables differently (take it once one of them lands upstream)
+skip	1438	renames the build folder's shader directory to shader.noindex: existing <id>_build folders would lose their shader cache (about 27 GB for Ocarina of Time); take it when it lands upstream
+skip	1447	its GPU-written ranges (2a18e3ec) replace #1390's, which NXForge has; DM_TEX_RELEASE is opt-in and the game page waits for #1299's profile to land
