@@ -7,3 +7,4 @@
 skip	1311	Ocarina's play reports already complete offline (hle_offline.c, from #1299); this is a whole prepo:u service on new CMIF and transfer memory, not taken upstream yet
 skip	1357	NXForge compiles again with -fbracket-depth=2048 only when Metal asks for it (dmsh_pch.py), so the shader chain stays the same
 skip	1365	upstream's charter for agent work (docs only); NXForge keeps its own CLAUDE.md and BACKLOG.md
+skip	1388	the same NDSR record-table fix as #1353 (merged; Ocarina's split reads all 24 agl_ndsr_vr.pck shaders), read entry by entry instead of word by word
