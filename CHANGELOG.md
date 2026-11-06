@@ -2,6 +2,35 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased (0.13.0)
+
+A performance release. Merges nxnative's `main` up to `04df08d` (11 commits since `88c7e03`) and upstream pull requests that are still open, picked for build and run-time speed. The shader chain changes, so every NVN game's shaders rebuild once.
+
+**From upstream `main`**
+- Raw global memory lookups start from the entry they chose last (#1464): about 2 ms less GPU a frame in Ocarina of Time's Kokiri Forest.
+- The HMMA title-movie network keeps its matrices in SIMD-group registers (#1456): 26.7 to 18.9 ms of compute a frame on an M4.
+- A storage takeover asks the live texture objects in one lookup (#1439): Ocarina of Time's long frames in Kokiri Forest fall from 332 to 212.
+- A shader build keeps finished shaders in `cas.db` and writes the image from there, so a build folder holds a few hundred files instead of tens of thousands.
+- Minecraft Dungeons II and ŌKAMI HD play on the Mac.
+
+**Build speed** (open upstream pull requests)
+- Faster cold Metal shader builds (#1520): `metal` and `metallib` are launched directly, a fragment shader's body is compiled once instead of once per integer entry, and the fetch variant comes out of the same compile.
+- Compute pipelines go into the bundled pipeline archive and load from it in about 0.3 ms instead of compiling at their first dispatch (#1522).
+- The shader folder is `shader.noindex` (#1438), so Spotlight no longer indexes a shader build. An existing `shader/` folder is moved there on the next build, and the Mac app is packed again once.
+- The shader split decompresses zstd in-process (#1463) and no longer hangs at 88 % on Ocarina of Time.
+
+**Run-time speed** (open upstream pull requests)
+- Ocarina of Time has a pipeline prewarm list (#1493), so a first start prepares its pipelines instead of showing a black title for minutes.
+- Memory: pools that hold shader code are no longer made resident (#1484, 334 MB in Ocarina of Time); a pool's render targets share one placement heap (#1453); a pool table is rebuilt only where a change reaches it (#1489).
+- Shared-memory byte stores use atomic AND and OR instead of a compare-and-swap loop (#1503).
+- Submit thread: guest thread wakes after the lock is released (#1466), a cached texture class check (#1467), fewer feedback-snapshot lookups (#1469), argument tables copied when only uniform buffers changed (#1472), no retain per texture lookup (#1473).
+- A long render pass starts on the GPU while it is still translated (#1468, `DM_NVN_PASS_SPLIT`, default 256 draws, `0` turns it off).
+- Bound render targets stay alive across command submissions (#1502, a crash fix).
+
+**Kept in NXForge**
+- The LDSM subgroup barriers stay, and now also fence the compute form of LDSM that upstream's HMMA rework lowers in `TensorPass`.
+- NXForge's shared Metal library cache, its `posix_spawn` launches and its smaller translator runs stay. NXForge's own finish scheduler (0.11.0) gives way to upstream's batch pipeline, which translates the next batch while it finishes this one.
+
 ## 0.12.0 (2026-11-06)
 
 Merges nxnative's `main` up to `88c7e03` (25 commits since `865cc35`, 2026-11-04 to 2026-11-06), resolved on the Ocarina of Time branch (`claude/project-thread-27ja4m`). That branch built and passed its tests on the Mac, then ran a 10-minute Kokiri Forest check. The notes below are what changes for NXForge.
