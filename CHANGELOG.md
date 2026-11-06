@@ -26,6 +26,7 @@ A performance release. Merges nxnative's `main` up to `04df08d` (11 commits sinc
 - Submit thread: guest thread wakes after the lock is released (#1466), a cached texture class check (#1467), fewer feedback-snapshot lookups (#1469), argument tables copied when only uniform buffers changed (#1472), no retain per texture lookup (#1473).
 - A long render pass starts on the GPU while it is still translated (#1468, `DM_NVN_PASS_SPLIT`, default 256 draws, `0` turns it off).
 - Bound render targets stay alive across command submissions (#1502, a crash fix).
+- NXForge: dirty-page tracking rejects an address outside every memory pool before it walks them (each file read and write fault walked up to about 5,000 pools in Mario Kart World), and an OpenGL partial clear reuses its depth / stencil state instead of making one each time.
 
 **Fixes**
 - Mario Kart World no longer aborts after a race (0x1c286f): the VP9 player's first "free" signal, when its worker takes it after Start, now reads as a picture instead of an error.
