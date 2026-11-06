@@ -39,3 +39,7 @@ shader_note	0400486024DEC000 shaders
 # agl wraps its depth clears in render conditions, as on Donkey Kong Bananza and Splatoon Raiders: in Kokiri Forest the main opaque pass tests EQUAL against a copy of the prepass depth
 # that a conditional clear (skipped on the console) wiped first, so no lit geometry landed and the full-screen sky showed through everywhere (a white scene)
 render_cond	on
+# Pool tables (shaders reading textures through handles cover every registered ID, about 33,000) made a texture again for each ID whose texture the game had finalized: at the
+# house-to-forest change 1,500 textures and 2.5 GB held only by retired IDs, as much again in deferred release, 16 GB GPU allocated and out of GPU memory. Retired IDs get the dummy
+# (upstream #1393, set for this game in f3ac5ead)
+pool_skip_retired	on
