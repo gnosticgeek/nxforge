@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-05 (Unreleased: LumaNX ideas).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-06 (0.12.0: upstream main up to 88c7e03, Ocarina of Time from upstream).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
@@ -21,7 +21,7 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 | Rewriter jump-table fix (49a670a) | Superseded by upstream | Upstream follows the copy to the function start (Mario + Rabbids Kingdom Battle's GLSLC, the same code as Curse of the Moon's); the 0.6.0 merge takes theirs. Nothing to send. |
 | Filters + Quick settings sidebar | On hold for upstream | Tom holds the upstream PR until the sidebar is finished (see the next section). |
 | Cheats engine | Replaced by upstream's (0.9.0) | Upstream's `hle_cheats.c` (PR #406) took over from NXForge's Markdown engine; the sidebar's Cheats section now shows upstream's rows, and `dm/tools/cheats_md.py txt` converts old Markdown files. |
-| Merge upstream main | On branch `release-0.9.0` | Last merge: seedds/nxnative main at 2716f78 (34 commits since 6d880d2), released in 0.9.0. Choices are in CHANGELOG 0.9.0. |
+| Merge upstream main | On fork main (0.12.0) | Last merge: seedds/nxnative main at 88c7e03 (25 commits since 865cc35), released in 0.12.0. Choices are in CHANGELOG 0.12.0. Upstream has landed more since (#1464, the HMMA title-movie speed-up): next rebase. |
 | China-region profanity check (Cruis'n Blast) | Upstream PR open ([#789](https://github.com/seedds/nxnative/pull/789)), on fork main | Branch `contrib/ngc-china-profanity`, from c86bc9b. |
 | pso_offline free-space check | Upstream PR open ([#790](https://github.com/seedds/nxnative/pull/790)), on fork main | Branch `contrib/pso-offline-free-space`, from fde1e63. |
 | Unity 6000.3 shader layouts | Upstream PR open ([#791](https://github.com/seedds/nxnative/pull/791)), on fork main | Branch `contrib/unity-6000-3-shaders`, from f6388f2. |
@@ -53,8 +53,8 @@ From a review on 2026-10-28 of [NX Play](https://github.com/varyform/nx-native-w
 
 | Item | Status | Notes |
 |---|---|---|
-| Failure explanations and Copy error summary | On fork main (Unreleased) | LumaNX `Worker/diagnostics.py`: the cause, the next step and a redacted summary on Convert (`BuildDiagnosis.swift`). |
-| Save snapshots with a checked restore | On fork main (Unreleased) | LumaNX `Worker/recovery.py`: SHA-256 checked copies in `save-snapshots/`, restore by `RENAME_SWAP`, automatic before a rebuild and Restore this version (`SaveSnapshots.swift`). Needs a hands-on restore in a real game. |
+| Failure explanations and Copy error summary | On fork main (0.11.0) | LumaNX `Worker/diagnostics.py`: the cause, the next step and a redacted summary on Convert (`BuildDiagnosis.swift`). |
+| Save snapshots with a checked restore | On fork main (0.11.0) | LumaNX `Worker/recovery.py`: SHA-256 checked copies in `save-snapshots/`, restore by `RENAME_SWAP`, automatic before a rebuild and Restore this version (`SaveSnapshots.swift`). Needs a hands-on restore in a real game. |
 | Self-contained converter download | Idea | LumaNX bundles Python, spirv-cross, zstd and a prebuilt NSP reader so only Xcode is needed, in a DMG with a check that nothing links to Homebrew (`scripts/bundle_runtime.py`, `runtime_audit.py`). Only if NXForge is for other people. |
 | Save backup to a private Git repository | Idea | NX Play: while a game plays, copy its save into `<slug>-<title ID>/` of a clone you choose each time it saves, commit and push, once more on quit. NXForge could do it from the launcher (`dm/mac/launcher.c`) or the converter, watching `Saves/save` in the game folder. |
 | Copy saves between the Mac and an iPhone or iPad | Idea | NX Play and the Launcher: `xcrun devicectl device copy from/to --domain-type appDataContainer`, comparing both sides file by file first and keeping the replaced save. Needs an IPA build path in the converter. |

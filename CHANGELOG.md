@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## Unreleased
+## 0.12.0 (2026-11-06)
 
 Merges nxnative's `main` up to `88c7e03` (25 commits since `865cc35`, 2026-11-04 to 2026-11-06), resolved on the Ocarina of Time branch (`claude/project-thread-27ja4m`). That branch built and passed its tests on the Mac, then ran a 10-minute Kokiri Forest check. The notes below are what changes for NXForge.
 
@@ -16,6 +16,9 @@ Merges nxnative's `main` up to `88c7e03` (25 commits since `865cc35`, 2026-11-04
 - Upstream pull requests that are still open stay merged: #1414 (ATOMG.CAS), the LDSM barrier and the rest that `.github/upstream-watch.tsv` does not skip. NXForge's own GPU watchdog (`DM_NVN_GPU_WATCHDOG`) and the stop when macOS revokes GPU access are kept as well.
 - The FXAA warnings move to `RED_ONCE` slots 156 and 157, because upstream took 153 and 154.
 - The shader chain is now `053e94e1fda9`, so every NVN game's shaders rebuild once.
+
+**Fixes**
+- `shader_split.py`: a damaged NARC or NDSR pack is a red line, not a crash (found by the nightly fuzz job).
 
 ## 0.11.0 (2026-11-05)
 
