@@ -37,8 +37,9 @@ int main(void){@autoreleasepool{
     uint64_t done=g_done;gw_commit(done+1000);
     CHECK("a running submission's wide write is seen by the next",gw_live(base+0x41000,base+0x41010));
     CHECK("and not elsewhere",!gw_live(ub,ub+0x100));
-    // The starting pages of these ranges hash to the same slot as an unrelated uniform page.
-    const uint64_t a = 0x7200000000ull, b = 0x720452f000ull, uniform = 0x7208a5e000ull;
+    // The starting pages of these ranges hash to the same slot as an unrelated uniform page: found from gw_slot, so the case holds for any table size (GW_N)
+    const uint64_t a = 0x7200000000ull; uint64_t b = 0, uniform = 0;
+    for (uint64_t pg = (a >> 12) + 0x100; pg < (a >> 12) + (1ull << 28) && !uniform; pg++) if (gw_slot(pg) == gw_slot(a >> 12)) { if (!b) b = pg << 12; else if ((pg << 12) >= b + 0x200000) uniform = pg << 12; }
     CHECK("the three pages collide", gw_slot(a >> 12) == gw_slot(b >> 12) && gw_slot(a >> 12) == gw_slot(uniform >> 12));
     pend_reset();
     sbw_note(a + 16, 0x80000, SBW_GPU);
