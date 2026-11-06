@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 static int memory_mprotect(void *addr, size_t size, int prot);
+static void *memory_mmap(void *addr, size_t size, int prot, int flags, int fd, off_t offset);
 static _Noreturn void memory_abort(void);
 static int memory_getpagesize(void) {
 #ifdef TEST_PAGE_16K
@@ -21,10 +22,12 @@ static int memory_getpagesize(void) {
 }
 #define getpagesize memory_getpagesize
 #define mprotect memory_mprotect
+#define mmap memory_mmap
 #define abort memory_abort
 #include "../hle_svc.c"
 #undef abort
 #undef mprotect
+#undef mmap
 #undef getpagesize
 
 static module_t test_modules[2];
@@ -36,6 +39,7 @@ int svc_thread(int num, uint64_t *regs) { (void)num; (void)regs; return 0; }
 void dm_backtrace(uint64_t fp) { (void)fp; }
 void guest_clock_read_wait(void) {}
 uint64_t guest_ns(void) { return 0; }
+uint64_t guest_ticks(void) { return 0; }
 uint64_t dm_entropy64(void) { return 0; }
 int thr_limit_used(void) { return 0; }
 int dm_ue_heap_owns(uint64_t a, uint64_t n) { (void)a; (void)n; return 0; } // No Unreal allocator is installed in this fixture.
@@ -76,7 +80,7 @@ void dm_guest_write_prepare(void *addr, size_t size) {
     }
 }
 
-static int fail_protect;
+static int fail_protect, fail_mmap;
 static uint64_t *failure_regs, failure_input[3];
 static int64_t failure_mapped;
 static size_t failure_heap;
@@ -88,6 +92,10 @@ static int memory_mprotect(void *addr, size_t size, int prot) {
     atomic_fetch_add(&protects, 1);
     if (fail_protect) { errno = EACCES; return -1; }
     return mprotect(addr, size, prot);
+}
+static void *memory_mmap(void *addr, size_t size, int prot, int flags, int fd, off_t offset) {
+    if (fail_mmap) { errno = ENOMEM; return MAP_FAILED; }
+    return mmap(addr, size, prot, flags, fd, offset);
 }
 static _Noreturn void memory_abort(void) {
     // Only the production fatal path reaches this wrapper; assertion failures
@@ -131,7 +139,9 @@ static void fatal(unsigned svc, uint64_t x0, uint64_t x1, uint64_t x2) {
         uint64_t r[31] = {x0, x1, x2}; failure_regs = r;
         memcpy(failure_input, r, sizeof failure_input);
         failure_mapped = g_alias_mapped; failure_heap = g_heap_cur;
-        failure_nmap = g_nmap; failure_prepares = prepares; fail_protect = 1;
+        // Releases first replace the mapping, then fall back to mprotect. Both
+        // must fail to exercise the fatal path without publishing metadata.
+        failure_nmap = g_nmap; failure_prepares = prepares; fail_protect = fail_mmap = 1;
         svc_dispatch(svc, r, 0); _exit(79);
     }
     int status; assert(waitpid(pid, &status, 0) == pid);
@@ -432,6 +442,40 @@ static void failures(void) {
     fatal(1, 0, 0x200000, 0);
     assert(!resize(0x200000)); fatal(1, 0, 0, 0); assert(!resize(0));
 }
+static void release_fallback(void) {
+    size_t pg = memory_getpagesize();
+    assert(!pages(1, alias, pg));
+    memset((void *)alias, 0x53, pg);
+    fail_mmap = 1;
+    assert(!pages(0, alias, pg));
+    assert(!g_alias_mapped);
+    expect(alias, (uintptr_t)g_as, heap - (uintptr_t)g_as, 0, 0, 0);
+    fail_mmap = 0;
+    // The fallback retained the old backing: recommit must still clear it.
+    assert(!pages(1, alias, pg));
+    for (size_t i = 0; i < pg; ++i) assert(((uint8_t *)alias)[i] == 0);
+    assert(!pages(0, alias, pg));
+    assert(!resize(0x200000));
+    fail_mmap = 1;
+    assert(!resize(0) && !g_heap_cur);
+    fail_mmap = 0;
+}
+// A heap given back reads 0 when it grows again: a fresh mapping in anonymous memory, and SetHeapSize's zeroing with the guest in files (DM_GUEST_FILE), where the pages keep their bytes
+// The rule that puts the guest in files: the switch when it is set, otherwise a pool over a known room to the memory limit
+static void file_rule(void) {
+    const uint64_t G = 1ull << 30, pool9 = 9 * G, pool3 = 0xCD500000;
+    assert(guest_file_wanted(NULL, pool9, 8 * G) && guest_file_wanted("", pool9, 6 * G));   // Mario Kart World's pool on an 8 and a 6 GiB limit
+    assert(!guest_file_wanted(NULL, pool9, 12 * G) && !guest_file_wanted(NULL, pool3, 6 * G));   // it fits an iPad's 12 GiB; a Switch game's pool fits 6
+    assert(!guest_file_wanted(NULL, pool9, 0));   // no limit known: the Mac
+    assert(!guest_file_wanted("0", pool9, 8 * G) && guest_file_wanted("1", pool3, 12 * G) && guest_file_wanted("1", pool3, 0));
+}
+static void heap_regrow(void) {
+    assert(!resize(4 * 1024 * 1024));
+    memset((void *)(heap + 3 * 1024 * 1024), 0x5a, P);
+    assert(!resize(2 * 1024 * 1024) && !resize(4 * 1024 * 1024));
+    for (size_t i = 0; i < P; ++i) assert(((uint8_t *)heap)[3 * 1024 * 1024 + i] == 0);
+    assert(!resize(0));
+}
 // Exercise the real host helper through SDK-shaped test entry points. Its stack
 // allocation must reach MapMemory as guest backing and outlive SDK copyback.
 #include "../hle_guestthread.c"
@@ -488,7 +532,7 @@ int main(int argc, char **argv) {
     for (unsigned i = 0; i < 8; ++i) assert(!pthread_create(&threads[i], NULL, init_worker, &addresses[i]));
     for (unsigned i = 0; i < 8; ++i) { assert(!pthread_join(threads[i], NULL)); assert(addresses[i] == addresses[0]); }
     alias = addresses[0]; stack = info(I_StackAddr); heap = info(I_HeapAddr);
-    lazy_commit(); alias_lifecycle(); ownership(); module_sources(); module_back_patch(); failures(); concurrency(); fragmented_queries();
+    lazy_commit(); alias_lifecycle(); ownership(); module_sources(); module_back_patch(); failures(); release_fallback(); file_rule(); heap_regrow(); concurrency(); fragmented_queries();
     guest_helper();
     if (!DM_GAME_MEM_MAP_LIMIT) metadata_limit();
 #ifdef TEST_REAL_DIRTY
@@ -508,6 +552,6 @@ int main(int argc, char **argv) {
     assert(image_bytes() == 0x10000000);
     g_nmod = 0;
     free(g_alias_bits); free(g_alias_exposed); assert(!munmap(g_as, RESERVE));
-    printf("memory SVCs passed (map limit=%d, host page=%d)\n", DM_GAME_MEM_MAP_LIMIT, memory_getpagesize());
+    printf("memory SVCs passed (map limit=%d, host page=%d, guest files %d)\n", DM_GAME_MEM_MAP_LIMIT, memory_getpagesize(), g_gf_n);
     return 0;
 }

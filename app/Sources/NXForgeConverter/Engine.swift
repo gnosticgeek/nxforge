@@ -33,12 +33,23 @@ struct BuildRecord: Codable, Hashable, Identifiable {
     /// Keep this build: one that plays well, which Rebuild all and the "older" badge leave alone (an explicit rebuild still
     /// replaces it, and its new record starts unkept). nil in records made before it.
     var kept: Bool?
+    /// each stage with how long it took (nil in records made before 0.12)
+    var stages: [StageRecord]?
+    /// the whole build, in seconds
+    var seconds: Int?
+    /// the converter's log of the build (<id>_build/logs/converter-<time>.log)
+    var log: String?
+    /// the game files' size, which scales this build's stage times into an estimate for another game
+    var gameBytes: Int64?
+    /// opened from the converter at least once (the first launch prepares shaders, so it is slow)
+    var launched: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case app, engine, repo, steps, shaders, kept
+        case app, engine, repo, steps, shaders, kept, stages, seconds, log, launched
         case gameDir = "game_dir"
         case builtAt = "built_at"
         case gameFiles = "game_files"
+        case gameBytes = "game_bytes"
     }
 
     var date: Date? {
@@ -46,6 +57,14 @@ struct BuildRecord: Codable, Hashable, Identifiable {
         f.dateFormat = "yyyy-MM-dd HH:mm"
         return f.date(from: builtAt)
     }
+}
+
+/// One stage of a recorded build.
+struct StageRecord: Codable, Hashable {
+    var name: String
+    var seconds: Int
+    var reused: Bool
+    var ok: Bool
 }
 
 /// An app moved aside by a rebuild: app-backups/<name> (<engine>, <yyyy-MM-dd-HH-mm>).app
@@ -198,6 +217,13 @@ enum Engine {
         if let d = try? enc.encode(all) { try? d.write(to: buildsFile) }
     }
 
+    /// Note that an app has been opened (its first, slow launch is behind it).
+    static func setLaunched(_ app: String) {
+        guard var b = builds().first(where: { $0.app == app }), b.launched != true else { return }
+        b.launched = true
+        record(b)
+    }
+
     /// Keep a build (or stop keeping it): Rebuild all then passes it by.
     static func setKept(_ app: String, _ on: Bool) {
         guard var b = builds().first(where: { $0.app == app }) else { return }
@@ -242,8 +268,9 @@ enum Engine {
         }.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
     }
 
-    /// "Base game + update", "Base game + 2 DLC" from the folder's file names.
+    /// "Base game + update", "Base game + 2 DLC" from the folder's file names ("Switch 2 NUP container" for a .nup chosen itself).
     static func describeFiles(_ dir: String) -> String {
+        if Source.isNupFile(dir) { return "NUP container" }
         let names = GameFiles.list(in: dir.url).map(\.lastPathComponent)
         let tails = names.compactMap { n -> String? in
             guard let r = n.range(of: #"\[[0-9A-Fa-f]{16}\]"#, options: .regularExpression) else { return nil }

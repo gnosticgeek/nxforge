@@ -4,6 +4,7 @@ Exercise the builder's real key/restore functions without game files or Xcode.
 import ast
 import collections
 import concurrent.futures
+import concurrent.futures as cf
 import hashlib
 import importlib.util
 import json
@@ -25,6 +26,7 @@ TOOLS = REPO / 'dm/gfx/tools'
 sys.path.insert(0, str(TOOLS))
 import dmsh_chain  # noqa: E402
 import dmsh_mtlcache  # noqa: E402
+import shader_cache  # noqa: E402
 
 spec = importlib.util.spec_from_file_location('nsp_toolchain_cache', REPO / 'scripts/build_ipa_from_nsp.py')
 assert spec and spec.loader
@@ -40,13 +42,14 @@ class ShaderCache(unittest.TestCase):
                        XC=['--msl'], MAC_RECORD='mac flags', IOSOUT=None, TARGETS={'mac'},
                        ios_metal=types.SimpleNamespace(RECORD='ios flags'), METAL_FP='tested Metal and SDK',
                        FACTS={}, MAP_ROWS={}, MAP_CONFLICT_ROWS={}, CODE_FP='source', PROFILE_ROWS=b'', PAIRS={},
-                       BF_WANT=set(), BF_STATS=collections.Counter(), CAS=str(root / 'cas'), out=str(root / 'out'),
+                       DUAL_WANT=set(), BF_WANT=set(), BF_STATS=collections.Counter(), STORE=shader_cache.Store(root / 'cas.db'), out=str(root / 'out'),
                        CHAIN='test-chain', clone=shutil.copyfile, shader_rule_source=lambda name: b'',
                        spawn=lambda *a, **k: subprocess.run(*a, **k))   # noqa: PLW0108  (looked up per call, so a test that patches subprocess.run sees it)
         (root / 'out').mkdir()
         names = {'tool_fingerprint', 'shader_key', 'cache_path', 'cache_outputs', 'restore_cache', 'publish_cache', 'atomic_json', 'cache_meta_path',
-                 'bf_digest', 'bf_cache_root', 'bf_cache_restore'}
+                 'bf_digest', 'bf_cache_root', 'bf_cache_restore', 'vs_pad'}
         tree = ast.parse((TOOLS / 'dmsh_build.py').read_text())
+        self.tree = tree
         nodes: list[ast.stmt] = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names]
         self.assertEqual({n.name for n in nodes if isinstance(n, ast.FunctionDef)}, names)
         exec(compile(ast.Module(body=nodes, type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), self.ns)
@@ -66,19 +69,55 @@ class ShaderCache(unittest.TestCase):
                 self.ns['METAL_FP'] = 'override Metal and SDK'
                 old = self.digest()
                 for target in ('mac', 'ios') if ios else ('mac',):
-                    d = Path(self.ns['cache_path'](old)) / target; d.mkdir(parents=True, exist_ok=True)
-                    (d / 'key_b.metallib').write_bytes(b'untested compiled library')
-                    (d / 'key_b.json').write_text('{}')
-                    if target == 'mac': (d / 'key_b.metal').write_text('MSL')
+                    d = self.ns['cache_path'](old) + '/' + target
+                    self.ns['STORE'].put(d + '/key_b.metallib', b'untested compiled library')
+                    self.ns['STORE'].put(d + '/key_b.json', b'{}')
+                    if target == 'mac': self.ns['STORE'].put(d + '/key_b.metal', b'MSL')
                 self.assertTrue(self.ns['restore_cache']('key', old))
                 self.ns['METAL_FP'] = 'tested Metal and SDK'
                 self.assertFalse(self.ns['restore_cache']('key', self.digest()))
 
+    def test_dual_source_membership_change_rejects_cached_library(self):
+        for ios in (False, True):
+            for listed in (False, True):
+                with self.subTest(ios=ios, listed=listed):
+                    self.ns['STORE'] = shader_cache.Store(Path(self.tmp.name) / f'cas-{ios}-{listed}.db')
+                    self.ns['IOSOUT'] = str(Path(self.tmp.name) / 'ios') if ios else None
+                    self.ns['TARGETS'] = {'mac', 'ios'} if ios else {'mac'}
+                    self.ns['DUAL_WANT'] = {'key'} if listed else set()
+                    old = self.digest()
+                    reflection = {'stage': 'ps', 'entry_d': 'main0_d' if listed else None}
+                    for directory in (self.ns['out'], self.ns['IOSOUT']) if ios else (self.ns['out'],):
+                        assert directory is not None
+                        output = Path(directory); output.mkdir(exist_ok=True)
+                        (output / 'key_b.metal').write_text('synthetic MSL')
+                        (output / 'key_b.metallib').write_bytes(b'dual' if listed else b'ordinary')
+                        (output / 'key_b.json').write_text(json.dumps(reflection))
+                    self.ns['publish_cache']('key', old, 'rule', 'source')
+                    self.assertTrue(self.ns['restore_cache']('key', old))
+                    self.assertEqual(json.loads((Path(self.ns['out']) / 'key_b.json').read_text())['entry_d'],
+                                     reflection['entry_d'])
+                    self.ns['DUAL_WANT'] = set() if listed else {'key'}
+                    self.assertFalse(self.ns['restore_cache']('key', self.digest()),
+                                     'a membership change must not restore the opposite entry-point variant')
+
+    def test_unrelated_dual_source_changes_preserve_shader_key(self):
+        original = self.digest()
+        self.ns['DUAL_WANT'] = {'another-pixel'}
+        self.assertEqual(self.digest(), original)
+        self.ns['DUAL_WANT'] = {'key'}
+        listed = self.digest()
+        self.assertNotEqual(listed, original)
+        self.ns['DUAL_WANT'] = {'another-pixel', 'key'}
+        self.assertEqual(self.digest(), listed)
+        self.ns['DUAL_WANT'] = set()
+        self.assertEqual(self.digest(), original)
+
     def test_fetch_variants_do_not_restore_override_libraries(self):
         self.ns['METAL_FP'] = 'override Metal and SDK'
         old = self.ns['bf_digest']('same fetch MSL', 'key')
-        d = Path(self.ns['bf_cache_root'](old)); d.mkdir(parents=True)
-        (d / 'metal').write_text('same fetch MSL'); (d / 'mac.metallib').write_bytes(b'untested variant')
+        d = self.ns['bf_cache_root'](old)
+        self.ns['STORE'].put(d + '/metal', b'same fetch MSL'); self.ns['STORE'].put(d + '/mac.metallib', b'untested variant')
         self.ns['METAL_FP'] = 'tested Metal and SDK'
         current = self.ns['bf_digest']('same fetch MSL', 'key')
         self.assertFalse(self.ns['bf_cache_restore']('key', current, {}, str(Path(self.tmp.name) / 'fetch.metal')))
@@ -106,27 +145,127 @@ class ShaderCache(unittest.TestCase):
         self.ns['TARGETS'] = {'mac', 'ios'}
         self.assertFalse(self.ns['restore_cache']('key', 'digest'))
 
+    def test_an_entry_pruned_during_a_restore_is_a_miss(self):   # another build sharing the cache removed it after the look at its names
+        root = self.ns['cache_path']('digest')
+        for name, data in (('key_b.json', b'{}'), ('key_b.metal', b'MSL'), ('key_b.metallib', b'library')): self.ns['STORE'].put(f'{root}/mac/{name}', data)
+        real = self.ns['STORE'].get
+        self.ns['STORE'].get = lambda name: None if name.endswith('key_b.json') else real(name)
+        self.addCleanup(lambda: setattr(self.ns['STORE'], 'get', real))
+        self.assertFalse(self.ns['restore_cache']('key', 'digest'))
+
     def test_cache_without_analysis_source_is_a_miss(self):
         self.ns.update(TARGETS={'ios'}, IOSOUT=str(Path(self.tmp.name) / 'ios'))
-        root = Path(self.ns['cache_path']('digest'))
-        for label in ('mac', 'ios'):
-            (root / label).mkdir(parents=True)
-            (root / label / 'key_b.json').write_text('{}')
-        (root / 'ios/key_b.metallib').write_bytes(b'library')
+        root = self.ns['cache_path']('digest')
+        for label in ('mac', 'ios'): self.ns['STORE'].put(f'{root}/{label}/key_b.json', b'{}')
+        self.ns['STORE'].put(f'{root}/ios/key_b.metallib', b'library')
         self.assertFalse(self.ns['restore_cache']('key', 'digest'))
 
     def test_dual_target_cache_restores_only_requested_ios_libraries(self):
-        root = Path(self.ns['cache_path']('digest'))
+        root = self.ns['cache_path']('digest')
         for label in ('mac', 'ios'):
-            (root / label).mkdir(parents=True)
-            (root / label / 'key_b.json').write_text('{}')
-            (root / label / 'key_b.metallib').write_bytes(label.encode())
-        (root / 'mac/key_b.metal').write_text('MSL')
+            self.ns['STORE'].put(f'{root}/{label}/key_b.json', b'{}')
+            self.ns['STORE'].put(f'{root}/{label}/key_b.metallib', label.encode())
+        self.ns['STORE'].put(f'{root}/mac/key_b.metal', b'MSL')
         self.ns.update(TARGETS={'ios'}, IOSOUT=str(Path(self.tmp.name) / 'ios'))
         Path(self.ns['IOSOUT']).mkdir()
         self.assertTrue(self.ns['restore_cache']('key', 'digest'))
         self.assertEqual((Path(self.ns['out']) / 'key_b.metal').read_text(), 'MSL')
         self.assertFalse((Path(self.ns['out']) / 'key_b.metallib').exists())
+
+    def selected_keys(self, want, locations, pairs):
+        functions: list[ast.stmt] = [n for n in self.tree.body if isinstance(n, ast.FunctionDef) and n.name == 'build_keys']
+        self.assertEqual(len(functions), 1, 'the partial build needs its paired-pixel dependency selection')
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), self.ns)
+        return self.ns['build_keys'](want, locations, pairs)
+
+    def test_package_records_are_read_from_the_file_at_their_offsets(self):
+        # record_index keeps no package in memory (GitHub issue #1036); record k is still the bytes from its marker to the next one, the last to the end
+        node = next(n for n in self.tree.body if isinstance(n, ast.FunctionDef) and n.name == 'record_index')
+        ns: dict[str, Any] = dict(os=os, re=re, mmap=__import__('mmap'))
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), ns)
+        recs = [b'BTCDBTCD' + b'\x01' * 40, b'BTCDBTCD' + b'\x02' * 7, b'BTCDBTCD' + b'\x03' * 100]
+        path = Path(self.tmp.name) / 'pkg.bin'
+        for data, want in ((b'header' + b''.join(recs), recs), (b'', [])):
+            path.write_bytes(data)
+            fd, offs = ns['record_index'](str(path))
+            try: self.assertEqual([os.pread(fd, offs[k + 1] - offs[k], offs[k]) for k in range(len(offs) - 1)], want)
+            finally: os.close(fd)
+
+    def test_partial_selection_adds_known_pairs_and_full_selection_keeps_every_shader(self):
+        locations = {'vertex': None, 'pixel': None, 'other': None}
+        pairs = {'vertex': {'pixel', 'not-in-package'}}
+        self.assertEqual(self.selected_keys({'vertex'}, locations, pairs), ['pixel', 'vertex'])
+        self.assertEqual(self.selected_keys(set(), locations, pairs), ['other', 'pixel', 'vertex'])
+
+    def test_partial_cleanup_removes_dependency_outputs_before_rebuilding(self):
+        vertex, pixel, other = '1' * 16, '2' * 16, '3' * 16
+        locations, pairs = dict.fromkeys((vertex, pixel, other)), {vertex: {pixel}}
+        self.selected_keys({vertex}, locations, pairs)
+        out = Path(self.ns['out'])
+        for key in locations: (out / (key + '_b.metal')).write_text('stale source')
+        (out / (pixel + '_bf.metallib')).write_bytes(b'stale dependency variant')
+        # Execute the real selection and cleanup block, stopping before temporary jobs or tools start.
+        start = next(i for i, n in enumerate(self.tree.body) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'keys' for t in n.targets))
+        end = next(i for i, n in enumerate(self.tree.body) if i > start and isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'w' for t in n.targets))
+        self.ns.update(want={vertex}, loc=locations, PAIRS=pairs, INPUTS='inputs')
+        exec(compile(ast.Module(body=self.tree.body[start:end], type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), self.ns)
+        self.assertEqual(self.ns['want'], {vertex, pixel})
+        self.assertFalse((out / (vertex + '_b.metal')).exists())
+        self.assertFalse((out / (pixel + '_b.metal')).exists())
+        self.assertFalse((out / (pixel + '_bf.metallib')).exists())
+        self.assertEqual((out / (other + '_b.metal')).read_text(), 'stale source')
+
+    def test_missing_paired_pixel_source_cannot_publish_a_vertex_cache_entry(self):
+        out = Path(self.ns['out'])
+        self.ns['PAIRS'] = {'vertex': {'available-pixel', 'missing-pixel'}}
+        (out / 'available-pixel_b.metal').write_text('one dependency is present')
+        (out / 'vertex_b.metal').write_text('un-padded vertex')
+        (out / 'vertex_b.metallib').write_bytes(b'un-padded library')
+        (out / 'vertex_b.json').write_text(json.dumps({'stage': 'vs', 'vs_pad': []}))
+        self.ns['publish_cache']('vertex', 'digest', 'rule', 'source')
+        self.assertFalse(self.ns['STORE'].has(self.ns['cache_meta_path']('vertex')))
+        self.assertFalse(self.ns['restore_cache']('vertex', 'digest'))
+
+    def test_vertex_only_request_retains_padding_on_subsequent_full_cache_reuse(self):
+        vertex, pixel = '1' * 16, '2' * 16   # lexical order puts the vertex first; the real phase ordering must put its pixel first.
+        locations, pairs = dict.fromkeys((vertex, pixel)), {vertex: {pixel}}
+        keys = self.selected_keys({vertex}, locations, pairs)
+        self.ns['PAIRS'] = pairs
+        out, built = Path(self.ns['out']), []
+        vertex_source = ('struct main0_out\n{\n    float4 value [[user(locn0)]];\n};\n'
+                         'vertex main0_out main0()\n{\n    main0_out out = {};\n    return out;\n}\n')
+        pixel_source = 'struct main0_in\n{\n    float4 value [[user(locn7)]];\n};\n'
+
+        def finish_key(key):
+            built.append(key)
+            if key == pixel: src, refl = pixel_source, {'stage': 'ps'}
+            else:
+                src, padded = self.ns['vs_pad'](key, vertex_source)
+                refl = {'stage': 'vs', 'vs_pad': padded}
+            (out / (key + '_b.metal')).write_text(src)
+            # Substitute only the Metal compiler; selection, padding, publication and restoration are the real builder functions.
+            (out / (key + '_b.metallib')).write_bytes(b'compiled:' + src.encode())
+            (out / (key + '_b.json')).write_text(json.dumps(refl))
+            self.ns['publish_cache'](key, key + '-digest', 'rule', 'source')
+            return key, 'ok', '', refl
+
+        # the finish phase: finish_all (the scheduler) and the res = finish_all(keys) that runs it
+        phase: list[ast.stmt] = [n for n in self.tree.body if (isinstance(n, ast.FunctionDef) and n.name == 'finish_all')
+                 or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'res' for t in n.targets))]
+        self.assertEqual(len(phase), 2)
+        import collections, heapq, threading
+        self.ns.setdefault('cache_hits', set()); self.ns.update(collections=collections, heapq=heapq, threading=threading)
+        self.ns.update(cf=cf, NJ=1, keys=keys, fin=finish_key)
+        exec(compile(ast.Module(body=phase, type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), self.ns)
+        self.assertEqual(built, [pixel, vertex])
+        self.assertIn('dm_pad7 [[user(locn7)]]', (out / (vertex + '_b.metal')).read_text())
+        expected = {p.name: json.loads(p.read_text()) if p.suffix == '.json' else p.read_bytes() for p in out.iterdir()}
+        for path in out.iterdir(): path.unlink()
+        # A later full build restores the vertex before the pixel, as the cache lookup loop does.
+        for key in self.selected_keys(set(), locations, pairs):
+            self.assertTrue(self.ns['restore_cache'](key, key + '-digest'))
+        self.assertEqual({p.name: json.loads(p.read_text()) if p.suffix == '.json' else p.read_bytes() for p in out.iterdir()}, expected)
+        self.assertEqual(json.loads((out / (vertex + '_b.json')).read_text())['vs_pad'], [7])
 
 
 class TargetSelection(unittest.TestCase):
@@ -203,7 +342,7 @@ class MetalPrefill(unittest.TestCase):
         self.root = Path(self.tmp.name); self.old = self.root / 'b-old'; self.old.mkdir()
         def compile_current(msl, air, lib): Path(lib).write_bytes(b'TESTED ' + Path(msl).read_bytes())
         with mock.patch.object(dmsh_mtlcache, 'compiler_id', return_value='tested compiler and SDK'):
-            self.cache = dmsh_mtlcache.Cache(str(self.root / 'cas'), {'mac': ('macosx', 'flags', compile_current)}, str(self.root))
+            self.cache = dmsh_mtlcache.Cache(shader_cache.Store(self.root / 'cas.db'), {'mac': ('macosx', 'flags', compile_current)}, str(self.root))
 
     def earlier_libraries(self, third_identity):
         for i in range(3):
@@ -220,7 +359,7 @@ class MetalPrefill(unittest.TestCase):
     def test_every_prefilled_library_requires_matching_compiler_identity(self):
         for identity in (None, 'other compiler'):
             with self.subTest(identity=identity):
-                if (self.root / 'cas').exists(): shutil.rmtree(self.root / 'cas')
+                self.cache.store = shader_cache.Store(self.root / f'cas-{identity}.db')
                 self.earlier_libraries(identity)
                 self.cache.fill(str(self.old))
                 result = self.root / 'result.metallib'
@@ -244,20 +383,45 @@ class MetalPrefill(unittest.TestCase):
         src = b'MSL'; msl = self.root / 'shader.metal'; msl.write_bytes(src)
         old_ident = hashlib.sha256(b'dmsh_mtlcache 1\0flags\0tested compiler and SDK').digest()
         digest = hashlib.sha256(old_ident + b'\0' + src).hexdigest()
-        old_path = self.root / 'cas/mac' / digest[:2] / (digest + '.metallib')
-        old_path.parent.mkdir(parents=True); old_path.write_bytes(b'WRONG OVERRIDE LIBRARY')
+        self.cache.store.put(f'metallib/mac/{digest}.metallib', b'WRONG OVERRIDE LIBRARY')
         result = self.root / 'result.metallib'; self.cache.compile('mac', str(msl), str(result))
         self.assertEqual(result.read_bytes(), b'TESTED MSL')
 
+    def test_a_library_cut_from_another_source_does_not_prefill(self):   # its .metal is the plain source, and its library came from the compile unit (dmsh_side.py)
+        self.earlier_libraries(self.cache.ident['mac'].hex())
+        (self.old / f'{2:016x}_b.metallib').write_bytes(b'CUT FROM ANOTHER SOURCE'); (self.old / f'{2:016x}_bx.metallib').write_bytes(b'SIDE')
+        notes = self.cache.fill(str(self.old))
+        self.assertEqual(self.cache.stats['mac', 'filled'], 2, notes)
+
+    def test_compile_split_keeps_both_pieces(self):
+        msl = self.root / 'unit.metal'; msl.write_bytes(b'UNIT'); a, b = self.root / 'a.metallib', self.root / 'b.metallib'
+        split = lambda lib: (lib[:6], lib[6:])
+        self.cache.compile_split('mac', str(msl), str(a), str(b), split)
+        self.assertEqual((a.read_bytes(), b.read_bytes()), (b'TESTED', b' UNIT'))
+        self.assertEqual(self.cache.stats['mac', 'compiled'], 1)
+        a.unlink(); b.unlink()
+        self.cache.compile_split('mac', str(msl), str(a), str(b), lambda lib: self.fail('a second compile'))
+        self.assertEqual((a.read_bytes(), b.read_bytes()), (b'TESTED', b' UNIT'))
+        self.assertEqual(self.cache.stats['mac', 'reused'], 1)
+
+    def test_compile_split_failure_leaves_nothing(self):
+        msl = self.root / 'unit.metal'; msl.write_bytes(b'UNIT'); a, b = self.root / 'a.metallib', self.root / 'b.metallib'
+        def refuse(lib): raise ValueError('not a library')
+        with self.assertRaises(ValueError): self.cache.compile_split('mac', str(msl), str(a), str(b), refuse)
+        self.assertEqual(sorted(p.name for p in self.root.glob('a.metallib*')), [])
+        self.assertFalse(b.exists()); self.assertEqual(self.cache.stats['mac', 'compiled'], 0)
+
 
 class SharedMetalCache(unittest.TestCase):
+    """NXForge: one Metal compile cache for every game (dmsh_mtlcache.SHARED), a shader_cache.Store of its own"""
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name); self.compiles = 0
         def compile_current(msl, air, lib):
             self.compiles += 1; Path(lib).write_bytes(b'LIB ' + Path(msl).read_bytes())
+        self.store = shader_cache.Store(self.root / 'metallib.db'); self.addCleanup(self.store.close)
         with mock.patch.object(dmsh_mtlcache, 'compiler_id', return_value='tested compiler and SDK'):
-            self.cache = dmsh_mtlcache.Cache(str(self.root / 'shared'), {'mac': ('macosx', 'flags', compile_current)}, str(self.root))
+            self.cache = dmsh_mtlcache.Cache(self.store, {'mac': ('macosx', 'flags', compile_current)}, str(self.root))
 
     def source(self, name, text):
         p = self.root / name; p.write_text(text); return str(p)
@@ -272,29 +436,40 @@ class SharedMetalCache(unittest.TestCase):
     def test_library_pruned_by_another_build_is_compiled_again(self):
         msl = self.source('a.metal', 'MSL')
         self.cache.compile('mac', msl, str(self.root / 'first.metallib'))
-        os.unlink(self.cache.path('mac', b'MSL'))
+        other = shader_cache.Store(self.root / 'metallib.db')   # another build's connection to the same file
+        other._run('DELETE FROM entry WHERE name=?', self.cache.path('mac', b'MSL')); other.close()
         self.cache.compile('mac', msl, str(self.root / 'again.metallib'))
         self.assertEqual(self.compiles, 2)
         self.assertEqual((self.root / 'again.metallib').read_bytes(), b'LIB MSL')
 
-    def test_prune_deletes_the_libraries_unused_the_longest(self):
+    def test_prune_removes_the_libraries_unused_the_longest(self):
         for i, text in enumerate(('old', 'used', 'new')):
             self.cache.compile('mac', self.source(f'{text}.metal', text * 5000), str(self.root / f'{text}.metallib'))
-            os.utime(self.cache.path('mac', (text * 5000).encode()), (1000 + i, 1000 + i))
+            self.store._run('UPDATE entry SET mtime=? WHERE name=?', 1000 + i, self.cache.path('mac', (text * 5000).encode()))
         self.cache.compile('mac', str(self.root / 'used.metal'), str(self.root / 'reuse.metallib'))   # a use refreshes it
-        size = os.stat(self.cache.path('mac', b'old' * 5000)).st_blocks * 512
-        self.cache.prune(2.5 * size / 2**30)
-        self.assertFalse(os.path.exists(self.cache.path('mac', b'old' * 5000)))
-        self.assertTrue(os.path.exists(self.cache.path('mac', b'used' * 5000)))
+        self.cache.used.pop(self.cache.path('mac', (b'old' * 5000)))   # as if an earlier build had compiled it
+        size = len(b'LIB ' + b'old' * 5000)
+        line = self.cache.prune(2.5 * size / 2**30)
+        self.assertFalse(self.store.has(self.cache.path('mac', b'old' * 5000)))
+        self.assertTrue(self.store.has(self.cache.path('mac', b'used' * 5000)))
+        self.assertTrue(self.store.has(self.cache.path('mac', b'new' * 5000)))
+        self.assertIn('1 unused the longest removed', line)
 
-    def test_adopt_moves_an_old_game_cache_with_every_target(self):
-        old = self.root / 'game/cas/metallib'
+    def test_prune_keeps_every_library_this_build_used(self):   # NXForge: Ocarina of Time's libraries outgrew the limit and pruned themselves
+        for text in ('one', 'two', 'six'):
+            self.cache.compile('mac', self.source(f'{text}.metal', text * 5000), str(self.root / f'{text}.metallib'))
+        line = self.cache.prune(len(b'LIB ' + b'one' * 5000) / 2**30)   # room for one
+        for text in ('one', 'two', 'six'): self.assertTrue(self.store.has(self.cache.path('mac', (text * 5000).encode())))
+        self.assertNotIn('removed', line)
+
+    def test_adopt_moves_the_old_shared_folder_with_every_target(self):
+        old = self.root / 'NXForge/metallib'
         for target in ('mac', 'ios'):
             (old / target / 'ab').mkdir(parents=True); (old / target / 'ab' / 'abcd.metallib').write_bytes(target.encode())
-        (old / 'filled.json').write_text('{}')
-        self.assertEqual(self.cache.adopt(str(old)), 2)
+        self.assertEqual(self.cache.adopt_folder(str(old)), 2)
         self.assertFalse(old.exists())
-        self.assertEqual((self.root / 'shared/ios/ab/abcd.metallib').read_bytes(), b'ios')
+        self.assertEqual(self.store.get('metallib/ios/abcd.metallib'), b'ios')
+        self.assertEqual(self.cache.adopt_folder(str(old)), 0)
 
 
 if __name__ == '__main__':

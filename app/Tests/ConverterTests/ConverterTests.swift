@@ -172,6 +172,60 @@ import Testing
     @Test func nothingUsable() {
         #expect(!sort(["/x/readme.txt", "/x/icon.png"]).usable)
     }
+
+    @Test func aNupIsTheGameItself() {
+        #expect(sort(["/g/Zelda/Ocarina [0400486024DEC000][v131072].NUP"]).gameDir == "/g/Zelda/Ocarina [0400486024DEC000][v131072].NUP")
+        #expect(sort(["/g/Kirby/base.nsp", "/g/Zelda/oot.nup"]).gameDir == "/g/Zelda/oot.nup")
+        #expect(sort(["/g/Zelda/oot.nup", "/g/Other"]).gameDir == "/g/Other")   // a folder wins
+    }
+}
+
+@Suite struct Switch2Sources {
+    private func temp() throws -> String {
+        let u = FileManager.default.temporaryDirectory.appending(path: "nxc-src-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        return u.path
+    }
+    private func touch(_ p: String) throws {
+        try FileManager.default.createDirectory(atPath: p.url.deletingLastPathComponent().path, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: p.url)
+    }
+
+    @Test func kindsFromTheFileSystem() throws {
+        let d = try temp()
+        #expect(Source.kind(of: d) == .packages)   // nothing yet: the keys check says what is missing
+        try touch(d + "/game.nup")
+        #expect(Source.kind(of: d) == .nup)
+        #expect(Source.kind(of: d + "/game.nup") == .nup)
+        #expect(Source.folder(of: d + "/game.nup") == d)
+        #expect(!Source.needsKeys(d + "/game.nup"))
+        try touch(d + "/base.nsp")
+        #expect(Source.kind(of: d) == .packages)   // packages win, as in the script
+        let dump = try temp()
+        try touch(dump + "/updates/131072/exefs/main.npdm")
+        #expect(Source.kind(of: dump) == .dump)
+        #expect(Source.folder(of: dump) == dump)
+    }
+
+    @Test func helperOutputDecodes() throws {
+        let json = #"{"kind": "nup", "source": "/g/oot.nup", "folder": "/g", "title_id": "0400486024DEC000", "name": "", "base": true, "updates": [131072], "dlc": 0, "romfs_bytes": 28000000000, "file_bytes": 25600000000, "zbic": true, "zbic_installed": false, "profile": "The Legend of Zelda: Ocarina of Time", "notes": []}"#
+        let i = try JSONDecoder().decode(SourceInfo.self, from: Data(json.utf8))
+        #expect(i.describe == "Base game + update")
+        let v = Source.validation(i)
+        #expect(!v.ok)   // ZBIC code without zbic
+        #expect(v.files.map(\.name) == ["Base game", "Update v131072"])
+        var ok = i; ok.zbicInstalled = true; ok.profile = nil
+        let w = Source.validation(ok)
+        #expect(w.ok)   // no profile is a warning, not a stop
+        #expect(w.summary.contains { $0.warn && $0.text.contains("no NXForge profile") })
+        #expect(Source.firstBuildBytes(i) == 28000000000 * 2 + (Int64(20) << 30))
+    }
+
+    @Test func planSummaryIsPicked() {
+        #expect(BuildRun.planMessage(#"{"ev": "say", "msg": "plan (--plan: nothing was built or changed):\n  reused: rewrite"}"#)?.hasSuffix("reused: rewrite") == true)
+        #expect(BuildRun.planMessage(#"{"ev": "say", "msg": "a NUP: oot.nup"}"#) == nil)
+        #expect(BuildRun.planMessage("not json") == nil)
+    }
 }
 
 @Suite struct FailureDiagnosis {
@@ -281,5 +335,69 @@ import Testing
         let all = SaveSnapshots.list(loc)
         #expect(all.filter { $0.reason == .manual }.count == 1)
         #expect(all.filter { $0.reason != .manual }.count == SaveSnapshots.keepAutomatic)
+    }
+}
+
+@Suite struct BuildTimeline {
+    @Test func stageKeysDropTheVersion() {
+        #expect(stageKey("extract v131072") == "extract")
+        #expect(stageKey("Mac shaders") == "Mac shaders")
+    }
+
+    @Test func stagesSortInBuildOrder() {
+        #expect(stageRank("extract DLC")! > stageRank("extract v0")!)
+        #expect(stageRank("Pipeline archive")! < stageRank("Mac app")!)
+        #expect(stageRank("shader split")! < stageRank("Mac shaders")!)
+        #expect(stageRank("something new") == nil)
+    }
+
+    @Test func otherGamesScaleBySize() {
+        let e = EngineVersion(commit: "c", subject: "s", date: "d", branch: "main", dirty: false)
+        let b = BuildRecord(app: "/x/A.app", gameDir: "/x", engine: e, repo: "/r", builtAt: "2026-11-05 20:00",
+                            stages: [StageRecord(name: "Mac shaders", seconds: 600, reused: false, ok: true),
+                                     StageRecord(name: "rewrite", seconds: 30, reused: true, ok: true)],
+                            gameBytes: 1_000_000_000)
+        let exp = Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 2_000_000_000, builds: [b])
+        #expect(exp["Mac shaders"] == 1200)
+        #expect(exp["rewrite"] == nil)   // a reused stage says nothing about how long the work takes
+    }
+
+    @Test func timeLeftWords() {
+        #expect(timeLeft(30) == "Less than a minute left")
+        #expect(timeLeft(23 * 60) == "About 23 min left")
+        #expect(timeLeft(70 * 60) == "About 1 h 10 min left")
+    }
+
+    @MainActor @Test func overallUsesHistoryForTheRest() {
+        let r = BuildRun()
+        r.running = true
+        r.startedAt = Date(timeIntervalSinceNow: -60)
+        r.expected = ["extract": 60, "Mac shaders": 600, "Mac app": 120]
+        r.stage = Stage(k: 2, n: 4, name: "Mac shaders", step: "", fraction: 0.5, detail: "", eta: 300)
+        r.stageStartedAt = Date(timeIntervalSinceNow: -30)
+        let o = r.overall()
+        #expect(o.remaining == 420)   // the script's 300 s for this stage, then Mac app's 120 s
+        #expect(o.segments.map(\.name).last == "Mac app")
+    }
+}
+
+@Suite struct GameNeedsTests {
+    @Test func titleIDFromFileNames() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "needs-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        FileManager.default.createFile(atPath: dir.appending(path: "Game [0400486024DEC800][v131072].nsz").path, contents: Data())
+        #expect(GameNeeds.titleID(dir.path) == "0400486024DEC000")
+        let needs = GameNeeds.detect(dir: dir.path, repo: nil)
+        #expect(needs["zbic"] != nil)
+        #expect(needs["nsz"] != nil)
+    }
+}
+
+@Suite struct LogLevels {
+    @Test func classify() {
+        #expect(LogLevel("[RED] pipeline archive: pso_offline.py failed") == .error)
+        #expect(LogLevel("warning: unused variable") == .warning)
+        #expect(LogLevel("pso_offline: batch 3/31: ready") == .info)
     }
 }

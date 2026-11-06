@@ -26,15 +26,22 @@ enum { QS_CHEAT_LABEL = 1, QS_CHEAT_SECTION_START = 2, QS_CHEAT_SECTION_END = 4,
 void *dm_qs_make(const char *game, const char *mods_dir, const char *mods_run, void (*close)(void), void (*fps)(void));
 // Read the settings again (the Graphics menu may have changed the filter while the sidebar was closed); main thread
 void dm_qs_refresh(void);
-// The sidebar has just opened: Quit game starts unarmed again, so a press left armed before it closed needs its second press anew; main thread
-void dm_qs_opened(void);
+// The sidebar has just opened (pad: from a controller, which starts with a selection on the page): Quit and Restart start unarmed again, so a press left armed before it
+// closed needs its second press anew; main thread
+void dm_qs_opened(int pad);
+// What drives the sidebar now, for its button legend: the keyboard (pad 0) or a controller (1), with that controller's SF Symbols for its choose, close, previous and next page
+// buttons (NULL: as before); main thread
+void dm_qs_input(int pad, const char *ok, const char *back, const char *prev, const char *next);
 // The front end's side (front_mac.m), for the sidebar's Capture section: a screenshot, starting or stopping the recording, and whether one is running. Main thread
 void front_qs_screenshot(void);
 void front_qs_record(void);
 int front_qs_recording(void);
+// Restart game: whether this launch can (the app's launcher started it), and doing it (the host quits as ⌘Q does and the launcher starts it again). Main thread
+int front_qs_can_restart(void);
+void front_qs_restart(void);
 // A short message over the top of the game picture for a moment (quick_settings_mac.swift): parent is the game view; main thread
 void dm_qs_toast(void *parent, const char *msg);
-// Controller and keyboard navigation (front_mac.m sends it while the sidebar is up): 1 up, 2 down, 3 left, 4 right (change the value), 5 activate, 6 close, 7 / 8 the previous / next section
+// Controller and keyboard navigation (front_mac.m sends it while the sidebar is up): 1 up, 2 down, 3 left, 4 right (change the value, or move along a row), 5 activate, 6 close, 7 / 8 the previous / next page
 void dm_qs_nav(int cmd);
 // The Controls section's map (front_mac.m): assign the next key (pad 0, actions 0–20) or controller button (pad 1, 0–11) to an action (-1 cancels); what is waiting (-1, or action * 2 + pad);
 // read the saved map again after the sidebar reset it

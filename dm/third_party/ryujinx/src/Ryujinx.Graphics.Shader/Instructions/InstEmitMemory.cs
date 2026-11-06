@@ -2,6 +2,7 @@ using Ryujinx.Graphics.Shader.Decoders;
 using Ryujinx.Graphics.Shader.IntermediateRepresentation;
 using Ryujinx.Graphics.Shader.Translation;
 using System.Numerics;
+using static Ryujinx.Graphics.Shader.Instructions.InstEmitAluHelper;
 using static Ryujinx.Graphics.Shader.Instructions.InstEmitHelper;
 using static Ryujinx.Graphics.Shader.IntermediateRepresentation.OperandHelper;
 
@@ -166,7 +167,8 @@ namespace Ryujinx.Graphics.Shader.Instructions
             EmitStore(context, StorageKind.SharedMemory, op.LsSize, GetSrcReg(context, op.SrcA), op.Dest, Imm24ToSInt(op.Imm24));
         }
 
-        private static Operand EmitLoadConstant(EmitterContext context, Operand slot, Operand offset)
+        // banks: the banks a run-time slot can be, when the caller knows them (Ampere's LDC .IS, ARuntimeBanks); else the accessor's bound banks
+        private static Operand EmitLoadConstant(EmitterContext context, Operand slot, Operand offset, uint? banks = null)
         {
             Operand vecIndex = context.ShiftRightU32(offset, Const(2));
             Operand elemIndex = context.BitwiseAnd(offset, Const(3));
@@ -180,7 +182,7 @@ namespace Ryujinx.Graphics.Shader.Instructions
             {
                 Operand value = Const(0);
 
-                uint cbUseMask = context.TranslatorContext.GpuAccessor.QueryConstantBufferUse();
+                uint cbUseMask = banks ?? context.TranslatorContext.GpuAccessor.QueryConstantBufferUse();
 
                 while (cbUseMask != 0)
                 {
@@ -197,6 +199,23 @@ namespace Ryujinx.Graphics.Shader.Instructions
 
                 return value;
             }
+        }
+
+        // nxnative: a float add (RED / ATOMG .ADD.F32.FTZ.RN) has no atomic in the IR, so it retries a compare-and-swap of the word. Ocarina of Time's agl analysis shaders sum the
+        // scene's sky, probes and shadows this way; dropped, every sum stayed 0.
+        private static Operand EmitAtomicAddF32(EmitterContext context, StorageKind storageKind, Operand e0, Operand e1, Operand value)
+        {
+            Operand lblLoopHead = Label();
+
+            context.MarkLabel(lblLoopHead);
+
+            Operand oldValue = context.Load(storageKind, e0, e1);
+            Operand newValue = FlushDenormal(context, context.FPAdd(FlushDenormal(context, oldValue), FlushDenormal(context, value)));
+            Operand casResult = context.AtomicCompareAndSwap(storageKind, e0, e1, oldValue, newValue);
+
+            context.BranchIfTrue(lblLoopHead, context.ICompareNotEqual(casResult, oldValue));
+
+            return oldValue;
         }
 
         private static Operand EmitAtomicOp(
@@ -216,6 +235,10 @@ namespace Ryujinx.Graphics.Shader.Instructions
                     if (type is AtomSize.S32 or AtomSize.U32)
                     {
                         res = context.AtomicAdd(storageKind, e0, e1, value);
+                    }
+                    else if (type == AtomSize.F32FtzRn)
+                    {
+                        res = EmitAtomicAddF32(context, storageKind, e0, e1, value);
                     }
                     else
                     {

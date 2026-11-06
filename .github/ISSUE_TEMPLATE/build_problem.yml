@@ -25,7 +25,7 @@ body:
   - type: textarea
     id: what
     attributes:
-      label: What happened
+      label: What the build did
       description: The stage it stopped at and the message it showed, or what the converter did that it should not.
     validations:
       required: true

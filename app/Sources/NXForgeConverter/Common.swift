@@ -19,6 +19,7 @@ struct RootView: View {
                 switch model.page {
                 case .convert: ScrollView { ConvertPage(model: model).padding(24) }
                 case .builds: BuildsPage(model: model)
+                case .storage: StoragePage(model: model)
                 case .toolchain: ScrollView { ToolchainPage(model: model).padding(24) }
                 case .settings: SettingsPage(model: model)
                 }
@@ -102,6 +103,8 @@ struct Card<Content: View>: View {
     var title = ""
     var subtitle = ""
     var padding: CGFloat = 18
+    /// Fill the height offered (for cards side by side in a row of equal heights)
+    var fillHeight = false
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -115,7 +118,7 @@ struct Card<Content: View>: View {
             content
         }
         .padding(padding)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
         .background(.background.secondary.opacity(0.7), in: .rect(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.separator.opacity(0.7)))
     }

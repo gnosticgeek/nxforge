@@ -2,13 +2,70 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## Unreleased
+## 0.11.0 (2026-11-05)
 
-Two ideas from [LumaNX](https://github.com/Xc1Ym/LumaNX) (MIT), another nxnative front end, reimplemented in the converter.
+Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.
+
+**From upstream**
+- **Switch 2 games**: Donkey Kong Bananza, Splatoon Raiders, Fire Emblem Fortune's Weave, Pokémon Pokopia, Hyrule Warriors: Age of Imprisonment, Mario Kart World and Mario Tennis Fever play on the Mac. They are built from one `.nup` file or a dump folder, not from NSPs, and need no `prod.keys` (README › Switch 2 games). Switch 2 (Ampere) shaders translate natively, and textures untile in the Switch 2's order.
+- **New game profiles** include Mario & Luigi: Brothership, Super Mario 3D All-Stars (one app of several programs), DAVE THE DIVER, Princess Peach: Showtime!, Skyward Sword HD, Super Mario RPG, SUPER ROBOT WARS Y, Castlevania: Belmont's Curse, TRIANGLE STRATEGY, Hollow Knight and DRAGON QUEST I & II HD-2D Remake.
+- AV1 movies through dav1d where VideoToolbox has none; the Shift + arrow keys are the right stick; game file extensions in any letter case; merged packages (base game, update and DLC in one file); `LSSupportsGameMode` off, since macOS's Game Mode held the GPU at its lowest clock.
+- Frame latency 2 now only on variable-refresh screens in fullscreen, and `DM_PRESENT_LATENCY` is clamped to 1 or 2 (all the display link takes).
+- The tested Metal compiler is Xcode 27.2's (32023.922.4).
+- Mario Kart World's sky panels are gone: task and mesh draws read their storage buffers from the right table (c0 0x670 / 0x770) instead of a dummy buffer.
+- 120 fps for a profile with `fps_max 120` (Fire Emblem Fortune's Weave first).
+
+**Games** (NXForge, ahead of upstream)
+- **The Legend of Zelda: Ocarina of Time (Switch 2, `0400486024DEC000`) builds from its .nup and plays.** Upstream's open bring-up pull requests are merged ahead of upstream: #1299 (profile, title screen, Kokiri Forest), #1300, #1312, #1331, #1343, #1345, #1353, #1359 (the washed-out glow), #1360 (the GPU hang about 10 minutes in, combined by hand with #1299's pool table hints), #1368, #1376, #1377, #1379, and the Mac-side fixes #1304, #1305, #1308, #1320, #1332, #1354, #1355, #1356, #1373 and #1382. The alias region is 8 GB (an abort 5-15 minutes outdoors, from upstream f3ac5ead). 7 of its 42,854 shaders still do not translate (Ampere 0x3a9 ATOMG.CAS and 0x481).
+
+**Automation**
+- **`scripts/nxforge.py`, a command line for the converter's functions, and `scripts/nxforge_mcp.py`, the same as an MCP server** ([docs/automation.md](docs/automation.md)): status, builds and rebuilds (with `--plan`), background build jobs, engine updates, a tool check, a disk report, and a cleanup by category. `clean --safe` is the set an hourly job can run: idle Metal build folders, build folders' temporary files, the shared Metal cache trimmed to 12 GB, older app backups (the newest per game stays) and logs over 30 days old; it never touches game files, keys, apps outside `app-backups/` or saves, and waits while a build runs.
+- **Watched games.** The nightly `upstream-check` workflow also lists upstream pull requests about the games in `.github/upstream-watch.tsv` (Ocarina of Time for now) that no NXForge branch holds yet, looking at their changes, since upstream lands pull requests as new commits. With issues turned off for the repository, the report is the run's summary; both jobs had failed every night on that.
+
+**Kept in NXForge**
+- Fullscreen still goes without the display link (the 30 fps fix); `DM_PRESENT_LATENCY=1|2` keeps the link there to compare.
+- A controller's Home button still opens Quick settings. nxnative's new hold-Home-to-quit prompt is off unless `DM_HOME_QUIT=1`.
+- A cartridge with several applications (Belmont's Curse and its Art Gallery) still packs the largest program, now by passing it to nx_extract's new `--app` (the old `--title <id>` option is gone).
+- The FXAA warnings moved to `RED_ONCE` slots 153 and 154. The shader chain is now `907b404e076d`, so every NVN game's shaders rebuild once.
+
+**Building**
+- **Rebuilds redo only what changed.** After a shader fix, the pipeline archive compiles only the bases whose shaders changed, in a new group beside the groups it keeps, instead of every group a changed shader sits in. Ocarina of Time's 31 groups (30,515 bases) took 26 minutes after each translator fix; a fix that touches a few hundred shaders now takes one group.
+- **The shared Metal cache holds a large game.** Its limit is now 12 GB (`DMSH_MTLCACHE_GB`, was 4), and a build never removes a library it used itself. Ocarina of Time's 7 GB of libraries pruned themselves at 4 GB, so the next translator change compiled 12,000 of them again.
+- **`--plan`** (`--platform mac-app`) says which stages a build would reuse and which it would redo, with how long each took last time, and builds nothing. `pso_offline.py --check` and `pack_app.py --check` answer the same for the pipeline archive and the app.
+- **Signing reads the game data once.** The Mac app's RomFS image, shader libraries and pipeline archive now sit in a signed resource bundle of their own (`Contents/PlugIns/GameData.bundle`, with links in `Contents/Resources` where they were). The build keeps it in `<id>_build/app/data` and clones it into each new app while its inputs are unchanged, so a rebuild signs a few MB instead of hashing the whole game. Measured on Ocarina of Time (35 GB, M4 Pro): signing the app went from 157 s to under a tenth of a second once the data bundle is signed, which costs the 150 s once, when the game data changes. A game of several programs keeps the old layout.
+- **The shader step's end is shorter.** The translator runs in more, smaller groups that the workers take from one queue. Paired vertex shaders start as soon as their own pixel shaders are done, instead of waiting for every other shader, and the shaders to compile go before cache hits. The change is to `dmsh_build.py`, so the shader chain is now `d4f0ef1fcb82` and each NVN game's next build translates its shaders again (the Metal libraries come from the cache).
+- **The converter keeps a build at full speed in the background.** The build runs at user-initiated priority (performance cores first), and the converter holds off App Nap and idle sleep until it ends.
+- The build folder is excluded from Time Machine (`tmutil addexclusion`), since every build rewrites it from the game files.
 
 **Converter**
+- **Switch 2 games build from the app.** Choose a game's `.nup` file (or a folder holding one, or a dump folder) on Convert: no keys are asked for, and the converter lists the container's base game, updates and DLC, says whether NXForge has a profile for the game, and stops before the build when the game's code needs `zbic` and it is not installed. The disk check allows for a Switch 2 build's size (about twice the game plus 20 GB), and **Preview build** runs `--plan` on an engine that has it. The converter's own Python now installs `zbic`. The command line takes `--convert <game>.nup` without keys.
 - **Failed builds say what went wrong and what to do next.** The Convert page names the cause (not enough disk space, a 32-bit game version, keys, game files, the Metal toolchain, Xcode, .NET, Python modules, a missing tool, memory, file access, the rewriter, shaders, signing) with the next step, a button to the page that fixes it, and **Copy error summary**: the diagnosis, the failed step, the Mac, Xcode and engine versions and the log's red lines, with key values, the keys file's path and the home folder taken out. `--convert` and `--rebuild` print the same line. After LumaNX's `Worker/diagnostics.py`.
 - **Save snapshots** on the Builds page: a copy of the game's save (and its device save) checked file by file with SHA-256, kept beside it in `save-snapshots/`. Restore checks the snapshot again, keeps the current save as a snapshot, and swaps each save folder in with one rename (`renamex_np` `RENAME_SWAP`), so a save is never half restored; it refuses while the game is running. A rebuild and Restore this version make a snapshot first; the newest 10 automatic ones stay. After LumaNX's `Worker/recovery.py`.
+- The failure explanations and save snapshots are two ideas from [LumaNX](https://github.com/Xc1Ym/LumaNX) (MIT), another nxnative front end, reimplemented in the converter.
+- **One progress bar with the time left.** The build shows as a timeline: a piece per step, sized by how long it takes, with "About 23 min left" and when it should be done. The estimate comes from this game's last build (`<id>_build/logs/stage_times.json`), or other games' builds scaled by size, and the script's own rate for the step it is in. The Dock badge shows the minutes left. Every step and the log are behind Show details.
+- **The pipeline archive shows its batches** (12 of 31) instead of one quiet 26 minute step, and any step that has been quiet for a minute says it is still working.
+- **Disk space is watched during the build.** Below 12 GB free on a volume the build writes to, the window warns; below 3 GB it stops the build cleanly, so building again carries on from the steps that finished. The estimate before a build now counts a rebuild's second copy of the app and the shared Metal cache.
+- **Long builds are harder to lose.** Quitting asks first, Stop says what is kept, closing the window lets the build carry on, and the Mac does not idle-sleep during a build.
+- **Tools a game needs are required for that game**: zbic for Switch 2 games and code built with system 22 or later, nsz for compressed files, glslang for OpenGL games, each with an Install button on Convert. The converter's own Python now includes zbic.
+- **Fix all** on Toolchain runs every fix in one Terminal window, and the checks run again when you come back. **Copy environment** gives the PATH, DOTNET_ROOT and command to run the build by hand.
+- **Build reports**: each build keeps its step times and log (`<id>_build/logs/converter-<time>.log`), shown in Builds with the build's timeline.
+- **Storage page**: every game's build cache, older app copies, apps and the shared shader cache, with sizes, free space per disk and Delete for what can be made again.
+- **Log viewer**: All, Warnings and Errors filters, search, follow the newest line, and Open log file.
+- A new app says that its first launch prepares shaders and is slow, until it has been opened once.
+
+**Quick settings (in the game)**
+- **Pages instead of fold-out sections.** Quick settings has six pages in tabs (Graphics, FPS, Capture, Mods, Cheats, Controls). L and R on a controller, or Tab and Shift-Tab on the keyboard, turn the page, and the last page shown is remembered per game.
+- **A quick bar on every page**: Screenshot, Record, the FPS counter and the volume. The Sound section is gone; its slider lives here.
+- **A button legend** at the bottom says what works on the selected item ("A Change · ◀▶ Adjust · B Close · L R Page"), in the controller's own button glyphs, or as keys while the keyboard drives it. Opened from a controller, the sidebar starts with the page's first item selected.
+- **One "needs a restart" signal.** Anisotropic filtering, Record frame times and mods carry a Next launch tag, orange while the choice differs from the running game. The footer counts those changes and offers **Restart game** (pressed twice), which quits and starts the game again through the app's launcher.
+- **Simpler Graphics page.** The filter is now just a CRT switch, with Strength and Line size shown only while it is on; the page is split into Look and Image quality. Sharpen, Pixel-perfect, CRT-Lottes and LCD Grid left Quick settings and the Graphics menu (a saved choice of one starts as off); `DM_PRESENT_FILTER` still reaches them. A dot marks each setting changed from its default, and Graphics and FPS have a Reset button. Record frame times moved under FPS › Advanced.
+
+**From Mario Kart World's logs** (NXForge)
+- **Starts no longer wait for the shader archive's compaction.** Every play session left 40-120 small pipeline archive files, so every start compacted the archive again, recompiling each base before the first frame: Mario Kart World waited 16-25 s at "Preparing shaders". The prepare step now takes the bases from the archive (0.5-0.9 s on an M4 Pro, measured), and the compaction's recapture runs after the first frame in parallel at utility QoS. While playing, the archive is written at most every 300 s instead of 10 s after every new pipeline, with a last write at exit, and it compacts past 24 files instead of 8 (`DM_PSO_ARCH_COMPACT=<n>`).
+- **Long frames say where the time went.** Each `[longframe]` line adds the upload sub-steps (texture making, write protection, GPU deswizzle encoding, CPU route), submit wall / CPU / kernel / off-CPU time, residency commits, write-protection faults and `mprotect`, the present and drawable wait, the game's own fence waits and the acquire wait. Mario Kart World's first race frame (about 500 ms) is mostly residency commits of its 131 MB of new textures (100-210 ms), deswizzle encoding (80-150 ms) and the game waiting for the GPU (100-130 ms).
+- **GPU memory by kind**: next to each memory line, the GPU allocation split into the game's pool buffers (its own pages, no copy), packaged textures, other host textures and the rest.
+- **A full movie decoder queue is not an error.** `nn::codec` answers a packet with "not now" (3603) when 12 pictures wait for a buffer and the player sends it again, so it is logged once per decoder and counted at end of stream instead of as a red line. Mario Kart World's menu movie loses no packet (its streams end after exactly 300, 600, … pictures).
+- The CPU texture uploads (storage not in a pool buffer) name their first few textures.
 
 ## 0.10.0 (2026-10-31)
 

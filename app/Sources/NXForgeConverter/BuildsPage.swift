@@ -10,6 +10,11 @@ struct BuildsPage: View {
         var b = Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) }
         let q = model.buildSearch.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty { b = b.filter { name($0).lowercased().contains(q) || $0.engine.short.contains(q) } }
+        switch model.buildConsole {
+        case .all: break
+        case .switch2: b = b.filter { Console.of($0) == .switch2 }
+        case .switch1: b = b.filter { Console.of($0) == .switch1 }
+        }
         switch model.buildSort {
         case .newest: b.sort { $0.builtAt > $1.builtAt }
         case .oldest: b.sort { $0.builtAt < $1.builtAt }
@@ -36,6 +41,11 @@ struct BuildsPage: View {
                         .disabled(model.run.running || !model.allOK)
                         .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
                     }
+                    Picker("Console", selection: $model.buildConsole) {
+                        ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("Show the Switch 2 games, the Switch games, or both")
                     Picker("Sort", selection: $model.buildSort) {
                         ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue) }
                     }
@@ -49,14 +59,25 @@ struct BuildsPage: View {
                     }
                 }
                 if list.isEmpty {
-                    Card { Text(model.buildSearch.isEmpty ? "Nothing built yet. Convert a game to see it here." : "No builds match “\(model.buildSearch)”.").foregroundStyle(.secondary) }
+                    Card {
+                        Text(!model.buildSearch.isEmpty ? "No builds match “\(model.buildSearch)”." : model.buildConsole != .all ? "No \(model.buildConsole.rawValue) games built yet." : "Nothing built yet. Convert a game to see it here.")
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     HStack(alignment: .top, spacing: 16) {
                         Card(padding: 8) {
-                            VStack(spacing: 4) {
-                                ForEach(list) { b in
-                                    BuildRow(model: model, build: b, name: name(b), selected: b.app == selected?.app)
-                                        .onTapGesture { model.selectedBuild = b.app }
+                            // Switch 2 games first, then Switch games, each under its own heading when both are listed
+                            let groups = Console.allCases.map { c in (c, list.filter { Console.of($0) == c }) }.filter { !$0.1.isEmpty }
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(groups, id: \.0) { c, items in
+                                    if groups.count > 1 {
+                                        Text("\(c.rawValue) · \(items.count)").font(.headline).foregroundStyle(.secondary)
+                                            .padding(.horizontal, 10).padding(.top, c == groups.first?.0 ? 4 : 12)
+                                    }
+                                    ForEach(items) { b in
+                                        BuildRow(model: model, build: b, name: name(b), selected: b.app == selected?.app)
+                                            .onTapGesture { model.selectedBuild = b.app }
+                                    }
                                 }
                             }
                         }
@@ -85,7 +106,7 @@ struct BuildRow: View {
             AppIcon(path: build.app, size: 84)
             VStack(alignment: .leading, spacing: 4) {
                 Text(name).font(.title3.weight(.semibold)).lineLimit(2)
-                Text(build.date.map(relativeDay) ?? build.builtAt).foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+                Text("\(Console.of(build).rawValue) · \(build.date.map(relativeDay) ?? build.builtAt)").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
@@ -110,7 +131,7 @@ struct BuildRow: View {
         .background(selected ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 12))
         .contentShape(.rect)
         .contextMenu {
-            Button("Open") { NSWorkspace.shared.open(build.app.url) }
+            Button("Open") { model.openApp(build.app) }
             Button("Show in Finder") { reveal(build.app) }
             Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the current engine")") { model.rebuildAsked(build) }
                 .disabled(model.run.running || !model.allOK)
@@ -149,14 +170,15 @@ struct BuildDetail: View {
                 }
             }
             HStack {
-                Button { NSWorkspace.shared.open(build.app.url) } label: { Label("Open app", systemImage: "play.fill").font(.title3).frame(maxWidth: .infinity) }
+                Button { model.openApp(build.app) } label: { Label("Open app", systemImage: "play.fill").font(.title3).frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: !nudge))   // on an older engine Rebuild is the blue one, unless the build is kept
                 Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.glass)
             }
             .controlSize(.extraLarge)
+            if build.launched != true { FirstLaunchNote() }
             VStack(spacing: 0) {
-                detail("Built", build.date.map(relativeDay) ?? build.builtAt)
+                detail("Built", (build.date.map(relativeDay) ?? build.builtAt) + (build.seconds.map { " · took \(duration(Double($0)))" } ?? ""))
                 Divider()
                 HStack {
                     Text("Engine").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
@@ -217,9 +239,31 @@ struct BuildDetail: View {
             .disabled(!model.allOK || model.run.running)
             DisclosureGroup(isExpanded: $detailsOpen) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack { StatusIcon(ok: build.steps.map { $0 > 0 }); Text(build.steps.map { "\($0) steps completed" } ?? "Steps not recorded") }
+                    if let stages = build.stages, !stages.isEmpty {
+                        // the build's own timeline: each step's share of the time, reused ones faint
+                        TimelineBar(segments: stages.enumerated().map { i, st in
+                            Segment(id: i, name: st.name, state: !st.ok ? .failed : st.reused ? .reused : .done, seconds: Double(st.seconds))
+                        }, height: 12)
+                        ForEach(Array(stages.enumerated()), id: \.offset) { _, st in
+                            HStack {
+                                StatusIcon(ok: st.ok, size: 15)
+                                Text(friendly(st.name))
+                                Spacer()
+                                Text(st.reused ? "reused" : mmss(st.seconds)).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                            .font(.callout)
+                        }
+                    } else {
+                        HStack { StatusIcon(ok: build.steps.map { $0 > 0 }); Text(build.steps.map { "\($0) steps completed" } ?? "Steps not recorded") }
+                    }
                     HStack { StatusIcon(ok: build.shaders == nil ? nil : true); Text(build.shaders.map { "\($0) Metal shaders ready" } ?? "Metal shaders ready") }
                     Text(build.engine.subject).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    if let log = build.log, FileManager.default.fileExists(atPath: log) {
+                        HStack {
+                            Button { NSWorkspace.shared.open(log.url) } label: { Label("Open build log", systemImage: "doc.text") }.buttonStyle(.glass)
+                            Button { reveal(log) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.glass)
+                        }
+                    }
                 }
                 .padding(.top, 6)
             } label: { Text("Build details").font(.headline) }
