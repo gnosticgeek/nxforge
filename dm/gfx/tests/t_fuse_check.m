@@ -33,7 +33,8 @@ static void check_color(int blue, const prog_t *pg, tex_t t[4]) {
     EXPECT(blue ? "negative control: blue merged result vs red plain result, really compared as different attachments" : "physical c3 → logical c0, really compared as the same red attachment",
            1, blue ? g_fzc_diff - diff : g_fzc_same - same);
     EXPECT("exactly one comparison recorded for this case, none missed or duplicated", 1, g_fzc_same - same + g_fzc_diff - diff);
-    EXPECT("the later pass's logical target is kept afterwards", 1, R.rt.n == 1 && R.rt.color[0] == &t[3]);
+    // the queue keeps its own copy of the bound description at the end of a submission (rt_preserve_bound, PR #1502), so compare the description, not the address
+    EXPECT("the later pass's logical target is kept afterwards", 1, R.rt.n == 1 && R.rt.color[0] && !memcmp(R.rt.color[0], &t[3], sizeof t[3]));
     EXPECT("snapshot released", 0, g_nfzs);
 }
 
