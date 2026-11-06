@@ -31,6 +31,9 @@ typedef struct { uintptr_t base, end, mem; _Atomic uint8_t *state; _Atomic uint6
 static _Atomic(range_t *) g_blk[NBLK];
 static inline range_t *rg(int i) { return &atomic_load_explicit(&g_blk[i >> BLK_SHIFT], memory_order_acquire)[i & (BLK - 1)]; }
 static _Atomic int g_nr;
+// NXForge: the lowest base and highest end any range has had (they only widen, under g_slot_mu, before the range goes live). A host write or fault outside them is no pool's:
+// prep_write runs before every file read (h_fs_ReadFile) and on_fault on every write fault, and both scanned all g_nr ranges (Mario Kart World registers about 5,000 pools)
+static _Atomic uintptr_t g_lo = UINTPTR_MAX, g_hi;
 static uintptr_t g_pg, g_shift;
 static _Atomic uint64_t g_now = 1;
 static _Atomic uint64_t g_faults, g_preps;
@@ -96,6 +99,7 @@ static int on_fault(void *addr, int is_write, void *uc) {
     (void)uc;
     if (!is_write) return 0;
     uintptr_t a = (uintptr_t)addr; int ours = 0, n = atomic_load(&g_nr);
+    if (a < atomic_load(&g_lo) || a >= atomic_load(&g_hi)) return 0;
     for (int i = 0; i < n; i++)   // Every range sharing the page must be released: releasing only one leaves the other range's state at "protected", and later writes no longer fault and are missed
         { range_t *r = rg(i); if (live_at(i) && a >= r->base && a < r->end) ours |= release_page(r, (a - r->base) >> g_shift, &g_faults); }
     return ours;
@@ -118,7 +122,7 @@ static void release_pages(range_t *r, uintptr_t p, uintptr_t q, _Atomic uint64_t
 }
 static void prep_write(void *addr, size_t len) {
     uintptr_t a = (uintptr_t)addr, e = a + len; int n = atomic_load(&g_nr);
-    if (!len) return;
+    if (!len || e <= atomic_load(&g_lo) || a >= atomic_load(&g_hi)) return;
     for (int i = 0; i < n; i++) {
         range_t *r = rg(i);
         if (!live_at(i) || e <= r->base || a >= r->end) continue;
@@ -164,6 +168,8 @@ void nvn_dirty_add_range(const void *mem, size_t size) {
         _Atomic uint8_t *sp = atomic_load(&r->sparse); if (sp) memset((void *)sp, 0, np);
     }
     r->base = base; r->end = end; r->mem = (uintptr_t)mem; r->state = state; r->gen = gen;
+    if (base < atomic_load(&g_lo)) atomic_store(&g_lo, base);
+    if (end > atomic_load(&g_hi)) atomic_store(&g_hi, end);
     if (slot == n) atomic_store(&g_nr, n + 1);
     atomic_store_explicit(&r->live, 1, memory_order_release);
     pthread_mutex_unlock(&g_slot_mu);
