@@ -25,20 +25,5 @@ int main(void) {
         uint32_t b = 99; uint64_t w = 0, h = 0;
         CHECK(h_vi_BufMaxRes(&b, NULL) == RES_OK && b == c[i].buf && layer(&w, &h) && w == c[i].lw && h == c[i].lh, c[i].what);
     }
-    // DM_DISPLAY_MAX caps the buffer and the layer: never raises them, and a value it does not know leaves the display's own
-    struct { const char *cap; int mode, w, h; uint32_t buf; uint64_t lw, lh; const char *what; } d[] = {
-        {"1080p", 1, 2560, 1440, 1, 1920, 1080, "DM_DISPLAY_MAX=1080p docked on a 1440p screen: 1080p"},
-        {"1080P", 1, 5120, 2880, 1, 1920, 1080, "DM_DISPLAY_MAX=1080P (any case) on a 5K screen: 1080p"},
-        {"720p", 0, 5120, 2880, 0, 1280, 720, "DM_DISPLAY_MAX=720p handheld: 720p"},
-        {"4k", 1, 2560, 1440, 2, 2560, 1440, "DM_DISPLAY_MAX=4k on a 1440p screen: still 1440p"},
-        {"1440p", 1, 1600, 1000, 0, 1280, 720, "DM_DISPLAY_MAX=1440p on a screen below 1080p: still 720p"},
-        {"900p", 1, 2560, 1440, 2, 2560, 1440, "DM_DISPLAY_MAX=900p (not a size it knows): the display's own"},
-    };
-    for (unsigned i = 0; i < sizeof d / sizeof *d; i++) {
-        setenv("DM_DISPLAY_MAX", d[i].cap, 1); g_mode = d[i].mode; g_ounce = 1; g_w = d[i].w; g_h = d[i].h;
-        uint32_t b = 99; uint64_t w = 0, h = 0;
-        CHECK(h_vi_BufMaxRes(&b, NULL) == RES_OK && b == d[i].buf && layer(&w, &h) && w == d[i].lw && h == d[i].lh, d[i].what);
-    }
-    unsetenv("DM_DISPLAY_MAX");
     printf("== vi display %d checks, %d failed ==\n", checks, fails); return fails != 0;
 }

@@ -2,8 +2,6 @@
 // Host: returns host static objects; when hooking up Metal, the native window corresponds to the front end's CAMetalLayer (front_metal_layer()).
 #include "../host/hle.h"
 #include <stdatomic.h>
-#include <stdlib.h>
-#include <strings.h>
 
 static struct { uint32_t magic; } g_display = {0x50534944}, g_layer = {0x5259414c};
 static struct { uint32_t magic; void *layer; } g_native = {0x4e49574e, 0};
@@ -80,7 +78,7 @@ HLE_FORCE("_ZN2nn2vi32GetDefaultDisplayPanelIdentifierEPNS0_15PanelIdentifierE",
 // buffer (QueryDisplayBufferMaxResolution below: its 1080p screen handheld, docked up to 4K by the TV). Star Fox makes its output that size (the window manager stores it at
 // main+0xba66a78; its output is the smaller of it and the largest buffer, main+0xb448874), so the Switch 1 answer held it at 1920x1080 on a 4K screen, where its data's scale
 // (render.resolution_scale_console 0.5) gives a 1920x1080 scene for a 3840x2160 output
-static uint32_t buf_max(int *dw, int *dh), display_cap(void);
+static uint32_t buf_max(int *dw, int *dh);
 static const int k_buf_max[4][2] = {{1280, 720}, {1920, 1080}, {2560, 1440}, {3840, 2160}};
 HLE_FORCE("_ZN2nn2vi12ListDisplaysEPNS0_11DisplayInfoEi", "list displays; the host has one, \"Default\", with the largest picture it shows now as its largest layer", int, h_vi_ListDisp, void *out, int n) {
     if (n <= 0 || !out) return 0;
@@ -116,20 +114,8 @@ __attribute__((weak)) int front_display_pixels(int *w, int *h) { (void)w; (void)
 HLE_FORCE("_ZN2nn2vi31QueryDisplayBufferMaxResolutionEPNS0_19BufferMaxResolutionEPKNS0_7DisplayE", "largest display buffer: the Switch 2's screen handheld, the host display's docked",
           Result, h_vi_BufMaxRes, uint32_t *out, const void *disp) {
     (void)disp; int w, h; uint32_t r = buf_max(&w, &h);
-    static atomic_int once; if (!atomic_exchange(&once, 1)) LOG("vi::QueryDisplayBufferMaxResolution: %dx%d (%s, display %dx%d%s)", k_buf_max[r][0], k_buf_max[r][1], dm_opmode() == 1 ? "docked" : "handheld", w, h,
-                                                                  display_cap() < 3 ? ", DM_DISPLAY_MAX" : "");
+    static atomic_int once; if (!atomic_exchange(&once, 1)) LOG("vi::QueryDisplayBufferMaxResolution: %dx%d (%s, display %dx%d)", k_buf_max[r][0], k_buf_max[r][1], dm_opmode() == 1 ? "docked" : "handheld", w, h);
     if (out) *out = r; return RES_OK;
-}
-// DM_DISPLAY_MAX=720p|1080p|1440p|4k (player): the largest display buffer is at most this, as the console on a TV of that size. Docked on a Mac screen of 1440p or more a game
-// sizes its window to the buffer: Ocarina of Time makes a 2560x1440 window and renders up to 2048x1152 in it, where 1080p gives a 1920x1080 window and up to 1536x864, 44 % fewer pixels
-// for the same picture (the present scales it to the window). Unset or anything else: the display's own. Read at each query; games ask at start
-static uint32_t display_cap(void) {
-    static const char *const k[4] = {"720p", "1080p", "1440p", "4k"};
-    const char *e = getenv("DM_DISPLAY_MAX");
-    if (!e || !*e) return 3;
-    for (uint32_t i = 0; i < 4; i++) if (!strcasecmp(e, k[i])) return i;
-    static atomic_int warned; if (!atomic_exchange(&warned, 1)) LOG("[RED] DM_DISPLAY_MAX=%s: not 720p, 1080p, 1440p or 4k; the display's own size", e);
-    return 3;
 }
 static uint32_t buf_max(int *dw, int *dh) {   // the index into k_buf_max, and the display's pixels (0 x 0 when not known)
     uint32_t r = 1; int w = 0, h = 0;
@@ -137,7 +123,6 @@ static uint32_t buf_max(int *dw, int *dh) {   // the index into k_buf_max, and t
         if (w < h) { int t = w; w = h; h = t; }
         r = 0; for (uint32_t i = 0; i < 4; i++) if (w >= k_buf_max[i][0] && h >= k_buf_max[i][1]) r = i;
     }
-    uint32_t cap = display_cap(); if (r > cap) r = cap;
     *dw = w; *dh = h; return r;
 }
 // The extended swap interval asks for a presentation rate between whole vsync intervals (VRR); without VRR the swap interval NVN sets stays in effect
