@@ -391,7 +391,10 @@ static vpx_image_t *av1_to_i420(const mav1_picture *p) {   // the decoder's NV12
     }
     return c;
 }
-// One packet: decoded at once; its pictures wait for released buffers (end of stream marks the last one, or comes as a buffer of its own)
+// One packet: decoded at once; its pictures wait for released buffers (end of stream marks the last one, or comes as a buffer of its own).
+// A refusal (CV_BUSY, nn::codec 3603) is the decoder's defined answer, not a fault: NintendoSDK_movie's detail::SubmitDecoderInputBuffer turns exactly that result into its
+// own retry code 0x7a, which VideoDecoder::DecodeAsync hands back to the player, and aborts on any other failure (Ocarina of Time's subsdk0 +0x10fd20, +0x103840). So it is
+// logged plainly; a picture the host has to drop prints its own [RED] line (cv_hold)
 static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t size, int64_t ts, bool eos) {
     cv_dec *d = cv_of(t); if (!d) return CV_R(2004);
     pthread_mutex_lock(&d->mu);
