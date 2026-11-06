@@ -29,6 +29,7 @@ A performance release. Merges nxnative's `main` up to `04df08d` (11 commits sinc
 - NXForge: dirty-page tracking rejects an address outside every memory pool before it walks them (each file read and write fault walked up to about 5,000 pools in Mario Kart World), and an OpenGL partial clear reuses its depth / stencil state instead of making one each time.
 
 **Fixes**
+- `vk_shaders.py` closes its children's standard input, so a Vulkan game's shader build can no longer hang on a `spirv-cross` waiting for input (from xinerqu/ns2ios-shell).
 - Mario Kart World no longer aborts after a race (0x1c286f): the VP9 player's first "free" signal, when its worker takes it after Start, now reads as a picture instead of an error.
 
 **Kept in NXForge**
