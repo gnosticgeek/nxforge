@@ -27,6 +27,9 @@ A performance release. Merges nxnative's `main` up to `04df08d` (11 commits sinc
 - A long render pass starts on the GPU while it is still translated (#1468, `DM_NVN_PASS_SPLIT`, default 256 draws, `0` turns it off).
 - Bound render targets stay alive across command submissions (#1502, a crash fix).
 
+**Fixes**
+- Mario Kart World no longer aborts after a race (0x1c286f): the VP9 player's first "free" signal, when its worker takes it after Start, now reads as a picture instead of an error.
+
 **Kept in NXForge**
 - The LDSM subgroup barriers stay, and now also fence the compute form of LDSM that upstream's HMMA rework lowers in `TensorPass`.
 - NXForge's shared Metal library cache, its `posix_spawn` launches and its smaller translator runs stay. NXForge's own finish scheduler (0.11.0) gives way to upstream's batch pipeline, which translates the next batch while it finishes this one.
