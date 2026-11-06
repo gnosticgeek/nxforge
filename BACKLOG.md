@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-06 (0.12.0: upstream main up to 88c7e03, Ocarina of Time from upstream).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-06 (0.13.0: upstream main up to 04df08d plus open speed pull requests).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
@@ -21,7 +21,7 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 | Rewriter jump-table fix (49a670a) | Superseded by upstream | Upstream follows the copy to the function start (Mario + Rabbids Kingdom Battle's GLSLC, the same code as Curse of the Moon's); the 0.6.0 merge takes theirs. Nothing to send. |
 | Filters + Quick settings sidebar | On hold for upstream | Tom holds the upstream PR until the sidebar is finished (see the next section). |
 | Cheats engine | Replaced by upstream's (0.9.0) | Upstream's `hle_cheats.c` (PR #406) took over from NXForge's Markdown engine; the sidebar's Cheats section now shows upstream's rows, and `dm/tools/cheats_md.py txt` converts old Markdown files. |
-| Merge upstream main | On fork main (0.12.0) | Last merge: seedds/nxnative main at 88c7e03 (25 commits since 865cc35), released in 0.12.0. Choices are in CHANGELOG 0.12.0. Upstream has landed more since (#1464, the HMMA title-movie speed-up): next rebase. |
+| Merge upstream main | On fork main (0.13.0) | Last merge: seedds/nxnative main at 04df08d (11 commits since 88c7e03, including #1464 and the HMMA title-movie speed-up), plus 16 open upstream pull requests for build and run-time speed, released in 0.13.0. Choices are in CHANGELOG 0.13.0. |
 | China-region profanity check (Cruis'n Blast) | Upstream PR open ([#789](https://github.com/seedds/nxnative/pull/789)), on fork main | Branch `contrib/ngc-china-profanity`, from c86bc9b. |
 | pso_offline free-space check | Upstream PR open ([#790](https://github.com/seedds/nxnative/pull/790)), on fork main | Branch `contrib/pso-offline-free-space`, from fde1e63. |
 | Unity 6000.3 shader layouts | Upstream PR open ([#791](https://github.com/seedds/nxnative/pull/791)), on fork main | Branch `contrib/unity-6000-3-shaders`, from f6388f2. |
@@ -147,6 +147,9 @@ was verified on Curse of the Moon 1.1.1.
 | Race-load hitch from first texture uploads | Research | Mario Kart World's first race frame takes about 500 ms: residency commits of 131 MB of new textures, deswizzle encoding, the game's fence wait (`[longframe]` breakdown, 0.11.0). Copying the source out of the large pool did not help. Next idea: textures placed in resident heaps made ahead, so the commit does not allocate. |
 | Memory over a long session | Research | Mario Kart World goes from about 7 to 12 GB in 15 minutes on a 24 GB Mac. The memory lines' GPU split (0.11.0) shows pool buffers 4.1 → 5.2 GB and packaged textures 1.0 → 3.1 GB in the first 2 minutes. Check for a plateau over a long session, and whether host copies of textures whose storage the game reused are released. |
 | Mac thermal and Low Power Mode awareness | Idea | `dm_thermal_now` / `dm_low_power_now` return -1 on Mac. |
+| Lower peak disk use of a shader build | Next (0.14.0) | Since 0.13.0 (upstream `cas.db`) an Ocarina of Time build from scratch peaks at about 52 GB: 24 GB extracted game, 13 GB `cas.db` beside the 11 GB image written from it, about 4 GB pipeline archive, and the shared Metal cache grows past its 12 GB cap during the build. Drop `cas.db` once the image is written, prune the shared cache during the build, and check free space before a build starts. |
+| Smaller run-time costs found in 0.13.0 review | Next (0.14.0) | NEON for `md_rgba`, a last-hit check for the OpenGL pipeline and depth / stencil lookups, a slab for `defer_take` (profile first). Measure before and after on Mario Kart World, an OpenGL game and Ocarina of Time. Not taken: unretained pipelines in `nvn_rec.h` (the pipeline cache replaces entries, so it is unsafe) and a thread-lock redesign. |
+| Ideas from other nxnative forks (0.13.0 survey) | Idea (0.14.0) | Shader tables generated without timestamps, so unchanged ones are reused on a rebuild, and the game language following the Mac's (devinhurry); opt-in Mac energy saving (skip identical presents, pause the display link when idle or hidden) and an opt-in per-step shader stage cache (AnkMister); a skipped draw instead of a crash when geometry scratch runs out, and a single-mip alias fix for Naruto's black silhouettes (widmonstertony); unwiring unused pools (TVPort); a memory-pressure trim (mianmuhammadse); a sampler pinned per bind for Super Mario Odyssey's white bloom flashes (TVPort 6ae1b1f1); output integer types learnt from a refused pipeline for Kirby and the Forgotten Land (xinerqu 3074f9dd); the Mario Kart World encode thread on (pahorema, A/B first). Hold for the next shader chain change: an image-atomic return fix (Octopath Traveler 0) and the geometry viewport index. Later, behind a switch: devinhurry's pass reuse. |
 
 ## Input
 

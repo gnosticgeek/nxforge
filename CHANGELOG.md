@@ -10,7 +10,7 @@ A performance release. Merges nxnative's `main` up to `04df08d` (11 commits sinc
 - Raw global memory lookups start from the entry they chose last (#1464): about 2 ms less GPU a frame in Ocarina of Time's Kokiri Forest.
 - The HMMA title-movie network keeps its matrices in SIMD-group registers (#1456): 26.7 to 18.9 ms of compute a frame on an M4.
 - A storage takeover asks the live texture objects in one lookup (#1439): Ocarina of Time's long frames in Kokiri Forest fall from 332 to 212.
-- A shader build keeps finished shaders in `cas.db` and writes the image from there, so a build folder holds a few hundred files instead of tens of thousands.
+- A shader build keeps finished shaders in `cas.db` and writes the image from there, so a build folder holds a few hundred files instead of tens of thousands. It needs more free disk at its peak, though: `cas.db` and the image it writes sit side by side, so a first Ocarina of Time build peaks at about 52 GB (24 GB extracted game, 13 GB `cas.db`, 11 GB image, about 4 GB pipeline archive). Leave that much free before a game's first 0.13.0 build.
 - Minecraft Dungeons II and ŌKAMI HD play on the Mac.
 
 **Build speed** (open upstream pull requests)
