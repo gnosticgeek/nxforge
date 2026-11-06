@@ -8,3 +8,9 @@ skip	1311	Ocarina's play reports already complete offline (hle_offline.c, from #
 skip	1357	NXForge compiles again with -fbracket-depth=2048 only when Metal asks for it (dmsh_pch.py), so the shader chain stays the same
 skip	1365	upstream's charter for agent work (docs only); NXForge keeps its own CLAUDE.md and BACKLOG.md
 skip	1388	the same NDSR record-table fix as #1353 (merged; Ocarina's split reads all 24 agl_ndsr_vr.pck shaders), read entry by entry instead of word by word
+skip	1386	WIP stacked on f3ac5ead, an integration commit whose parts NXForge merged one by one (#1393 pool_skip_retired, #1394 pool table marks, the 8 GB alias region); its texture dedupe is opt-in (DM_NVN_TEX_DEDUPE)
+skip	1387	a second Ocarina of Time profile (vinifloriano/oot); NXForge builds the game from #1299's profile and the pull requests on it
+skip	1396	opt-in counting and DM_NVN_FB_DPOOL=1 experiment, nothing changes by default
+skip	1404	the same two problems as #1394 (pools wired for raw global memory) and #1393 (retired textures made again) by another route; NXForge takes those two
+skip	1405	experimental, off by default (DMSH_RAW_LOAD_QUADS=1 when building the shader chain)
+skip	1407	PRAGMATA bring-up (62 commits, another game); its host fixes come in when they land upstream on their own
