@@ -282,6 +282,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under 
 | Frame rate | `DM_FPS_TARGET` | `30`, `60`, `120` (Mac, games with `fps_max 120`) |
 | Render scale | `DM_RENDER_SCALE` | `0.5` to `1.0` |
 | Console mode | `DM_OPMODE` | `1` docked, `0` handheld |
+| Largest display (Switch 2 games) | `DM_DISPLAY_MAX` | `720p`, `1080p`, `1440p`, `4k`: at most this, docked; unset follows the screen. `1080p` on a 1440p or larger screen renders fewer pixels for the same picture |
 | Game language | `DM_LANG` | a language code, such as `ja` |
 | Display mode (Mac) | `DM_FULLSCREEN` | `1` fullscreen, `0` a window |
 | Cloud saves folder (Mac) | `DM_SAVE_SYNC` | a folder; `icloud`: iCloud Drive › nxnative Saves; `0`: off |
