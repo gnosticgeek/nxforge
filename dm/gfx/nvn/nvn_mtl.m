@@ -2284,19 +2284,6 @@ static void held_add(const void *o, int d) {
 }
 static int serial_table_holds(const void *o) { uintptr_t k = (uintptr_t)o; return nvn_hm_get(&g_by_serial_held, &k) != NULL; }
 static nvn_hmap g_pkg_share = {.klen = sizeof(alias_key)};   // see NvPkgRef
-// How many entries of g_by_serial hold each object (key: its address), kept by every writer of g_by_serial (serial_put, serial_del, tex_put, the upgrade's in-place
-// replacement), so alias_take_over asks whether a live texture object still resolves to a shared texture in one lookup. It walked the serial table's whole capacity for
-// each candidate instead: in Ocarina of Time's cutscenes, with about 7,500 serials and thousands of shared textures, that walk was the submit thread's hottest function and
-// frames took up to a second. An entry holds its object (CFBridgingRetain), so a counted address cannot be reused while counted. Under g_smu
-static nvn_hmap g_by_serial_held = {.klen = sizeof(uintptr_t)};
-static void held_add(const void *o, int d) {
-    if (!o) return;
-    uintptr_t k = (uintptr_t)o, n = (uintptr_t)nvn_hm_get(&g_by_serial_held, &k);
-    if (d > 0) nvn_hm_put(&g_by_serial_held, &k, (void *)(n + 1));
-    else if (n > 1) nvn_hm_put(&g_by_serial_held, &k, (void *)(n - 1));
-    else if (n) nvn_hm_del(&g_by_serial_held, &k);   // a slot written past these helpers (a test's table) was never counted: nothing to take away
-}
-static int serial_table_holds(const void *o) { uintptr_t k = (uintptr_t)o; return nvn_hm_get(&g_by_serial_held, &k) != NULL; }
 static nvn_hmap g_alias_seen = {.klen = sizeof(alias_key)};   // key → g_fence + 1 at its last lookup or creation (alias_take_over spares entries looked up lately)
 // Live GPU-only image descriptions, including those not used yet. A dynamic-resolution family declares its largest image before any particular resolution is used.
 // Keeping only descriptions here lets its first allocation cover that family exactly, without allocating every resolution or rounding to a power of two.
