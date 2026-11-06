@@ -14,7 +14,7 @@ enum { POOL = 32 << 20 };
 static tex_t target(pool_t *pool, uint64_t serial, int64_t off, unsigned w, unsigned h, int flags) {
     tex_t t = {.magic = MAGIC('T','E','X',0), .serial = serial, .pool = pool, .off = off, .mem = pool->mem + off};
     t.d = (nvn_texdesc){.target = NVN_TEXTURE_TARGET_2D, .format = NVN_FORMAT_RGBA8, .flags = flags, .width = w, .height = h, .depth = 1, .levels = 1, .samples = 1};
-    nvn_tex_layout(&t.d, &t.L); mtl_tex_init(&t); return t;
+    nvn_tex_layout(&t.d, &t.L); mtl_tex_init(&t); return t;   // NOLINT(clang-analyzer-core.StackAddressEscape): g_tex_live keeps the address a texture was initialized at; mtl_tex_release reads it through vm_read_overwrite and checks magic and serial, so a returned copy is safe
 }
 static id<MTLBuffer> read_image(id<MTLTexture> t) {
     NSUInteger row = t.width * 4, bytes = row * t.height;

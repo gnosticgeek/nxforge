@@ -745,7 +745,7 @@ void mtl_pool_addressed(const void *mem, uint64_t size) {
         while (j < g_naddr && g_addr[j].lo <= hi) { lo = MIN(lo, g_addr[j].lo); hi = MAX(hi, g_addr[j].hi); j++; }
         if (i == j && g_naddr == g_addr_cap) { g_addr_cap = g_addr_cap ? g_addr_cap * 2 : 256; g_addr = realloc_or_die(g_addr, (size_t)g_addr_cap * sizeof *g_addr, "the addressed range table"); }
         if (j != i + 1) memmove(g_addr + i + 1, g_addr + j, (size_t)(g_naddr - j) * sizeof *g_addr);
-        g_naddr += 1 - (j - i); g_addr[i].lo = lo; g_addr[i].hi = hi;
+        g_naddr += 1 - (j - i); g_addr[i].lo = lo; g_addr[i].hi = hi;   // NOLINT(clang-analyzer-security.ArrayBound): i is addr_first's index, lowered only past a touching entry (i > 0)
         atomic_fetch_add(&g_pool_gen, 1);   // the table rebuilds before the next draw that uses it
     }
     pthread_mutex_unlock(&g_mu);
@@ -2422,7 +2422,7 @@ static NvPkg *pkg_shared(const tex_t *t) {
 }
 static void pkg_share_put(const tex_t *t, NvPkg *pk) {
     alias_key k = tex_alias_key(t); NvPkgRef *r = [NvPkgRef new]; r->pkg = pk;
-    pthread_mutex_lock(&g_smu); hm_put_id(&g_pkg_share, &k, r); pthread_mutex_unlock(&g_smu);
+    pthread_mutex_lock(&g_smu); hm_put_id(&g_pkg_share, &k, r); pthread_mutex_unlock(&g_smu);   // NOLINT(clang-analyzer-osx.cocoa.RetainCount): r is held by g_pkg_share (hm_put_id takes a CFBridgingRetain)
 }
 // A sparse texture's CPU-write check walks its page table (nvn_sparse_since). A submission sees the CPU writes and the mappings made before it (as NVN's: a map is a CPU call,
 // not a command), so the replay checks each one once a submission (sub: the submission, g_sub_serial, of its last check). Games remap streamed pages all the time, so the
@@ -6377,7 +6377,7 @@ static int vattr_bytes(int f) {   // bytes of one element of NVN vertex format f
 // The last element a draw reads from stream st: [*last]; 0 = not known on the CPU (indirect, multi-draw, or a per-vertex stream of an indexed draw, whose indices are not scanned here)
 static int vstream_last(int st, const p_draw *dw, const p_draw_idx *di, uint64_t *last) {
     if ((dw && (dw->ind || dw->mdi_cnt)) || (di && (di->ind || di->mdi_cnt)) || (!dw && !di)) return 0;
-    uint32_t stride = S.stream[st].stride, div = S.stream[st].divisor;
+    uint32_t stride = S.stream[st].stride, div = S.stream[st].divisor;   // NOLINT(clang-analyzer-security.ArrayBound): st is a vertex stream index below NSTREAM (the callers loop over the bound streams)
     if (!stride) { *last = 0; return 1; }
     if (div) { int32_t n = dw ? dw->instances : di->instances, b = dw ? dw->base_instance : di->base_instance; if (n < 1) n = 1; if (b < 0) return 0; *last = (uint64_t)b + (uint64_t)(n - 1) / div; return 1; }
     if (!dw || dw->first < 0 || dw->count <= 0) return 0;
@@ -8719,7 +8719,7 @@ static void pool_seen_scan(void) {
         if (fresh) { g_seen_done[i] |= fresh; g_seen_todo[i] |= fresh; for (uint32_t bits = fresh; bits; bits &= bits - 1) pool_ds_note((int)i * 32 + __builtin_ctz(bits)); }
         for (uint32_t bits = g_seen_todo[i]; bits; bits &= bits - 1) {
             int b = __builtin_ctz(bits), id_ = (int)i * 32 + b;
-            if (id_ <= 0 || id_ >= g_ntreg || !g_treg[id_].ok || g_treg[id_].gone || (!g_treg[id_].view && !tex_storage_live(&g_treg[id_].t))) { g_seen_todo[i] &= ~(1u << b); continue; }
+            if (id_ <= 0 || id_ >= g_ntreg || !g_treg[id_].ok || g_treg[id_].gone || (!g_treg[id_].view && !tex_storage_live(&g_treg[id_].t))) { g_seen_todo[i] &= ~(1u << b); continue; }   // NOLINT(clang-analyzer-core.BitwiseShift): b is __builtin_ctz of a nonzero word, 0-31
             if (!g_treg[id_].view && pool_unwritten_target(&g_treg[id_].t)) { g_seen_todo[i] &= ~(1u << b); continue; }
             if (!g_treg[id_].view && !pkg_shared(&g_treg[id_].t) && !tex_get(g_treg[id_].t.serial)) { if (g_walk_req >= POOL_REQ_BYTES) return; g_walk_req += pool_tex_size(&g_treg[id_].t); }
             g_seen_todo[i] &= ~(1u << b);
@@ -12516,7 +12516,7 @@ static void dispatch(const p_dispatch *dp, const uint8_t *next) {
         return;
     }
     const uint16_t *tg = cs->rf.tg;
-    if (!tg[0]) { RED_ONCE(29, "compute shader lacks threadgroup size reflection"); return; }
+    if (!tg[0]) { RED_ONCE(29, "compute shader lacks threadgroup size reflection"); return; }   // NOLINT(clang-analyzer-osx.cocoa.RetainCount): ps is held by g_cps (hm_put_id) once made
     // A store the shader makes on its very first invocation only, before the others run on the Switch: the build takes it out of the shader (dmsh_build.py first_store), as Apple's GPUs start workgroups in no order
     if (dp->ind || (dp->x && dp->y && dp->z)) for (int i = 0; i < cs->rf.nfirst; i++) { const p_bind_buf *u = &S.ssbo[5][cs->rf.first[i].reg]; if (u->addr) mtl_sub_fill(u->addr + 4ull * cs->rf.first[i].word, 4, cs->rf.first[i].value); }
     if (g_nubd && ubd_conflict_cs(cs, dp->ind)) { g_ubd_conflicts++; ubd_land(); }   // see ubd_conflict_cs
@@ -12689,7 +12689,7 @@ static void mrb_note(uint64_t serial, int d) {
     pthread_mutex_lock(&g_mrb_mu);
     int i = 0; while (i < g_mrb_n && g_mrb[i].serial != serial) i++;
     if (i == g_mrb_n && (d < 0 || g_mrb_n == (int)(sizeof g_mrb / sizeof g_mrb[0]))) g_mrb_untracked += d;
-    else { if (i == g_mrb_n) { g_mrb[i].serial = serial; g_mrb[i].n = 0; g_mrb_n++; } if (!(g_mrb[i].n += d)) g_mrb[i] = g_mrb[--g_mrb_n]; }
+    else { if (i == g_mrb_n) { g_mrb[i].serial = serial; g_mrb[i].n = 0; g_mrb_n++; } if (!(g_mrb[i].n += d)) g_mrb[i] = g_mrb[--g_mrb_n]; }   // NOLINT(clang-analyzer-security.ArrayBound): a new entry is added only while g_mrb_n is below the table size (the line above)
     pthread_mutex_unlock(&g_mrb_mu);
 }
 static int mrb_pending(uint64_t serial) {
@@ -12737,8 +12737,8 @@ static void mrbuf_put(id<MTLBuffer> b) {   // the readback has landed: the GPU i
     pthread_mutex_lock(&g_mrbuf_mu);
     // The oldest make room, so a cache full of sizes no longer asked for cannot turn every later size away: each would then be a new buffer, in the residency set and out again (Ocarina of Time: 600 of 0.5 MB per 300 frames)
     id<MTLBuffer> out[16]; int nout = 0, kept = b.length <= (16u << 20);
-    while (kept && g_mrbuf_n && (g_mrbuf_n == 16 || g_mrbuf_bytes + b.length > (16u << 20))) { out[nout++] = g_mrbuf[0]; g_mrbuf_bytes -= g_mrbuf[0].length; g_mrbuf_n--; for (int i = 0; i < g_mrbuf_n; i++) g_mrbuf[i] = g_mrbuf[i + 1]; g_mrbuf[g_mrbuf_n] = nil; }
-    if (kept) { g_mrbuf[g_mrbuf_n++] = b; g_mrbuf_bytes += b.length; }
+    while (kept && g_mrbuf_n && (g_mrbuf_n == 16 || g_mrbuf_bytes + b.length > (16u << 20))) { out[nout++] = g_mrbuf[0]; g_mrbuf_bytes -= g_mrbuf[0].length; g_mrbuf_n--; for (int i = 0; i < g_mrbuf_n; i++) g_mrbuf[i] = g_mrbuf[i + 1]; g_mrbuf[g_mrbuf_n] = nil; }   // NOLINT(clang-analyzer-security.ArrayBound): g_mrbuf_n is 1-16 inside the loop: the shift reads entries 1..n
+    if (kept) { g_mrbuf[g_mrbuf_n++] = b; g_mrbuf_bytes += b.length; }   // NOLINT(clang-analyzer-security.ArrayBound): the loop above leaves g_mrbuf_n below 16 when kept
     pthread_mutex_unlock(&g_mrbuf_mu);
     if (!kept) res_remove(b);
     for (int i = 0; i < nout; i++) res_remove(out[i]);
