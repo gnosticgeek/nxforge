@@ -3921,6 +3921,10 @@ static int udc_on(void) {
 // Mario: off by default (only DM_NVN_TBDR=1 turns it on). These optimizations infer read / write relations from "which textures are bound in texture slots", while 38% of this game's shaders use bindless textures (handles in uniform buffers, NVN_RB_TEXU),
 //   so the inference would miss readers - e.g. deciding an attachment is never read afterwards and not storing it. Turn them back on once they recognize bindless readers.
 static int tbdr_on(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_TBDR"); v = e && !strcmp(e, "1"); if (!v) MLOG("TBDR optimizations off by default (this game uses bindless textures; DM_NVN_TBDR=1 turns them on)"); } return v; }
+// Store lookahead (mtl_sub_index / sdx_decide) alone, without the rest of the TBDR set: an attachment cleared in full before anything reads it is not written back.
+// On by default since its index counts bindless readers (sdx_any_read) and reads through other descriptors of an attachment's storage (sdx_tex_read); DM_NVN_STORE_LOOKAHEAD=0 turns
+// it off for an equivalence comparison. DM_NVN_TBDR=1 implies it. The pass merges and hoists of DM_NVN_TBDR still assume slot-only readers and stay off
+static int sdx_on(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_STORE_LOOKAHEAD"); v = tbdr_on() || !(e && !strcmp(e, "0")); MLOG("store lookahead %s (bindless readers count as reads of every attachment; DM_NVN_STORE_LOOKAHEAD=0 / 1)", v ? "on" : "off"); } return v; }
 static int rt_range_on(void) { static int v = -1; if (v < 0) { const char *e=getenv("DM_NVN_RT_RANGE"); v=e && !strcmp(e,"1"); } return v; }   // Narrow candidate, off by default
 // ---------- In-process A/B phases (DM_AB, measurement) ----------
 // DM_AB=<frames> splits the run into phases of that many frames (frame f is in phase f / frames) and alternates the switches whose value is ab (sw_mode; DM_NVN_BARRIER=ab so far):
@@ -3985,6 +3989,7 @@ void mtl_ab_gpu(uint64_t f, double gpu_ms, double frame_ms) {
 }
 
 static uint64_t g_sd_dead_bytes, g_sd_n_dead, g_sd_n_all;
+static uint64_t g_sdx_reads_any, g_sdx_reads_alias, g_sdx_kept_any, g_sdx_dead_n, g_sdx_dead_bytes, g_sdx_decided;   // store lookahead counters (mtl_sdx_stats): wildcard readers, alias reads, stores kept for a wildcard reader, dropped and their bytes, attachments decided
 // ---------- Cross-submission attachment validity ledger ----------
 // Entry = subresource (texture serial, level, layer) + state, surviving across submissions:
 //   XV_INVALID       content was not written back / not generated and must not be read. The next touch must be a full Clear, or use as an attachment with load action DontCare / Clear; otherwise it is a violation.
@@ -4117,6 +4122,7 @@ static void rt_mirror_flush(void) {
     }
     if (g_blit) { enc_b_end(g_blit); g_blit = nil; }
 }
+static int g_nsdx_poison; static void sdx_poison_flush(void);   // DM_NVN_SDX_POISON (sd_finish)
 static void rp_end(void) { if (g_enc) { AP_B; geo_mesh_flush_pass();
     if (enc_label_on()) { static uint64_t lf = ~0ull, base; uint64_t f = atomic_load(&g_cur_frame); if (f != lf) { lf = f; base = g_stat_pass - 1; }   // Intra-frame serial: the same pass has the same name every frame, so the table can aggregate by name
         [(id)g_enc setLabel:[NSString stringWithFormat:@"p%02llu %dx%d %s d%d", (unsigned long long)(g_stat_pass - base), g_el_w, g_el_h, g_el_key[0] ? g_el_key : "-", g_el_draws]]; }
@@ -4124,7 +4130,7 @@ static void rp_end(void) { if (g_enc) { AP_B; geo_mesh_flush_pass();
     int ranged=g_rt_range_active && !g_rt_range_pending;
 #endif
     sd_finish(); enc_r_end_pass(g_enc); g_gp_bw_l0 = g_bw_load; g_gp_bw_s0 = g_bw_store;   // the profile's per-pass ledger counts from the previous pass end, profiled or not
-    zskip_commit_clears(); g_enc = nil; g_enc_geo_nocolor = 0; g_rt_merged = 0; g_sm_pass = 0; g_rt_range_active = g_rt_range_pending = 0; pg_end_render(); ts_after(); ms_after(); if (g_lp.count) lp_finish(); fz_end();
+    zskip_commit_clears(); g_enc = nil; if (g_nsdx_poison) sdx_poison_flush(); g_enc_geo_nocolor = 0; g_rt_merged = 0; g_sm_pass = 0; g_rt_range_active = g_rt_range_pending = 0; pg_end_render(); ts_after(); ms_after(); if (g_lp.count) lp_finish(); fz_end();
     if (g_nubd && g_nubd >= ubd_lazy()) ubd_flush();   // the inline updates deferred in this pass, in order (see mtl_sub_update); across passes they wait for the next copy or dispatch (blit_raw)
     if (g_nbcrt) bcrt_flush();   // blocks drawn into shadows go back into their compressed textures
     if (g_nrtm) rt_mirror_flush();
@@ -9070,13 +9076,27 @@ static int ds_scan(const uint8_t *p, ds_st *ds, int depth) {
 //   Needed: at a draw / dispatch it is bound to a texture or image slot of any stage (including ones already bound when the scan starts); used as copy source / copy destination / texture-clear target; drawn before cleared after becoming an attachment again (load)
 // Different levels / layers of the same texture are decided separately (a downsample chain writes level k and reads level k−1); a sampler binding counts as a read of the whole texture (conservative)
 static const uint8_t *g_exec_cur;   // The op currently being replayed (inclusive)
-static void sd_need(sd_att *t, int why) { if (!t->state) { t->state = 1; t->why = (uint8_t)why; } }   // why: 1 a draw reads it as a texture 2 as an attachment, drawn before cleared 3 copy 4 texture clear 5 scanned to the end undecided 6 no start point / index unavailable
+static void sd_need(sd_att *t, int why) { if (!t->state) { t->state = 1; t->why = (uint8_t)why; } }   // why: 1 a draw reads it as a texture 2 as an attachment, drawn before cleared 3 copy 4 texture clear 5 scanned to the end undecided 6 no start point / index unavailable 7 a bindless reader (sdx_any_read) may read it
 static int sdx_decide(uint8_t st[SD_ATT_MAX]);   // Store lookahead decision (for the index see mtl_sub_index)
+// DM_NVN_SDX_POISON=1 (a check, not a mode to play in): each colour attachment whose store the lookahead dropped is filled with magenta as soon as its pass ends. The next touch of a
+// correct decision is a full clear, so the picture does not change; a reader the index missed (a bindless one it does not count) samples magenta, which a screenshot shows
+static int sdx_poison_on(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_SDX_POISON"); v = e && !strcmp(e, "1"); if (v) MLOG("[RED] DM_NVN_SDX_POISON=1: attachments whose store the lookahead dropped are filled with magenta after their pass (a check of the decisions)"); } return v; }
+typedef struct { const tex_t *t; uint16_t lv, sl; } sdx_poison_t; static sdx_poison_t g_sdx_poison[8]; static uint64_t g_sdx_poisoned;
+static void clear_tex(const p_clear_tex *c);
+static void sdx_poison_flush(void) {   // rp_end, after the pass: the fills of the attachments whose store was dropped
+    int n = g_nsdx_poison; g_nsdx_poison = 0;
+    for (int i = 0; i < n; i++) { const tex_t *t = g_sdx_poison[i].t; p_clear_tex c = {.tex = t, .has_view = 1, .mask = 0xf, .c.f = {1, 0, 1, 1}};
+        c.view.set_levels = 1; c.view.base_level = g_sdx_poison[i].lv; c.view.nlevels = 1; c.view.set_layers = 1; c.view.min_layer = g_sdx_poison[i].sl; c.view.nlayers = 1;
+        c.r.width = (int)MAX(t->d.width >> g_sdx_poison[i].lv, 1u); c.r.height = (int)MAX(t->d.height >> g_sdx_poison[i].lv, 1u); c.r.depth = 1;
+        clear_tex(&c); g_sdx_poisoned++; }
+}
 static void sd_finish(void) {
     if (!g_nsd) return;
     uint8_t nst[SD_ATT_MAX];
     // Unchanged, loaded attachments already have their content in memory. Their proof depends only on writes in this pass, independently of future bindless readers or the optional lookahead.
-    if (tbdr_on() && sdx_decide(nst)) { for (int i = 0; i < g_nsd; i++) if (nst[i] == 2) g_sd[i].state = 2; else sd_need(&g_sd[i], nst[i] >> 2); }
+    if (sdx_on() && sdx_decide(nst)) { for (int i = 0; i < g_nsd; i++) { g_sdx_decided++; if (nst[i] == 2) { g_sd[i].state = 2; g_sdx_dead_n++; g_sdx_dead_bytes += g_sd[i].bytes;
+            if (sdx_poison_on() && !g_sd[i].depth && g_sd[i].idx >= 0 && g_sd[i].idx < R.rt.n && R.rt.color[g_sd[i].idx] && g_nsdx_poison < 8) g_sdx_poison[g_nsdx_poison++] = (sdx_poison_t){R.rt.color[g_sd[i].idx], (uint16_t)g_sd[i].lv, (uint16_t)g_sd[i].sl}; }
+        else sd_need(&g_sd[i], nst[i] >> 2); } }
     else for (int i = 0; i < g_nsd; i++) sd_need(&g_sd[i], 6);   // Pass ended outside the list / index unavailable: always write back
     for (int i = 0; i < g_nsd; i++) {
         sd_att *t = &g_sd[i]; int udc_dead = udc_on() && t->load && !t->wrote;
@@ -9563,9 +9583,23 @@ typedef struct { uint32_t seq, rtseq; uint64_t ser; const uint8_t *op; uint16_t 
 enum { SDX_READ = 1, SDX_NEED, SDX_ATT, SDX_CLEAR };
 #define SDX_NONE 0xffffffffu
 static sdx_ev *g_sdx, *g_sdx_tmp; static uint32_t g_sdx_n, g_sdx_cap; static int g_sdx_ok;   // Index valid
+// Bindless readers (sdx_any_read): a draw or dispatch whose shader takes a texture through a handle the replay resolves only when it encodes (TEXU / IMGU / TBUFU in a uniform
+// buffer, TEXH tables, TEXP pool arrays) or reads memory raw (GMEM) may read any texture. Its sequence number goes here, in replay order, and counts as a read of every attachment:
+// such a reader made the old slot-only index call the next clear the first touch and drop a store the shader then sampled (why DM_NVN_TBDR stayed off for Mario's bindless shaders)
+static uint32_t *g_sdx_any, g_sdx_any_n, g_sdx_any_cap;
+// Candidate storage (sdx_alias): a texture read through another descriptor of the same memory (an alias, a view the game made over a render target) is a read of that attachment
+typedef struct { uint64_t ser, lo, hi; } sdx_mem; static sdx_mem g_sdx_mem[1024]; static int g_sdx_nmem;
 // Candidate textures (those that have been attachments) -> buckets: open addressing; a texture that has not yet been an attachment when an event occurs is irrelevant to any render pass that ended before then, so it is not recorded
 #define SDX_HB 2048
 static uint64_t g_sdx_hk[SDX_HB]; static uint16_t g_sdx_hb[SDX_HB]; static uint32_t g_sdx_nb, g_sdx_bcnt[SDX_HB + 1], g_sdx_bst[SDX_HB + 1];
+static int sdx_bucket(uint64_t ser, int add);
+static void sdx_cand(const tex_t *t) {   // a texture that becomes an attachment: its bucket and its storage range
+    if (!t || sdx_bucket(t->serial, 1) < 0) return;
+    uint64_t lo = (uint64_t)(uintptr_t)t->mem, hi = lo + t->L.size; if (!lo || hi <= lo) return;
+    for (int i = 0; i < g_sdx_nmem; i++) if (g_sdx_mem[i].ser == t->serial) return;
+    if (g_sdx_nmem == (int)(sizeof g_sdx_mem / sizeof *g_sdx_mem)) { g_sdx_ok = 0; return; }   // too many to check aliases against: no index, every pass stores
+    g_sdx_mem[g_sdx_nmem++] = (sdx_mem){t->serial, lo, hi};
+}
 static int sdx_bucket(uint64_t ser, int add) {   // Returns the bucket number; returns -1 if not in the set (and not adding); invalidates the index when full
     if (!ser) return -1;
     for (uint32_t i = (uint32_t)(ser * 0x9E3779B97F4A7C15ull >> 53), n = 0; n < SDX_HB; i = (i + 1) & (SDX_HB - 1), n++) {
@@ -9580,6 +9614,22 @@ static uint64_t g_pp_slot[6][NTEX + 32]; static const prog_t *g_pp_prog, *g_pp_c
 static uint32_t *g_rtx_seq, *g_drx_seq; static uint32_t g_rtx_n, g_rtx_cap, g_drx_n, g_drx_cap;   // This submit's SET_RT / draw sequence number tables (used by the pre-screen of the readable tile merge)
 static void seq_push(uint32_t **v, uint32_t *n, uint32_t *cap, uint32_t x) { if (*n == *cap) { *cap = *cap ? *cap * 2 : 1024; *v = realloc_or_die(*v, *cap * sizeof **v, "the store lookahead index"); } (*v)[(*n)++] = x; }
 static void sdx_ev_add(sdx_ev e) { if (sdx_bucket(e.ser, 0) < 0) return; if (g_sdx_n == g_sdx_cap) { g_sdx_cap = g_sdx_cap ? g_sdx_cap * 2 : 4096; g_sdx = realloc_or_die(g_sdx, g_sdx_cap * sizeof *g_sdx, "the store lookahead index"); g_sdx_tmp = realloc_or_die(g_sdx_tmp, g_sdx_cap * sizeof *g_sdx, "the store lookahead index"); } g_sdx[g_sdx_n++] = e; }
+static void sdx_any_read(uint32_t seq) {   // a reader the index cannot name (see g_sdx_any): it reads every attachment
+    if (g_sdx_any_n && g_sdx_any[g_sdx_any_n - 1] == seq) return;
+    if (g_sdx_any_n == g_sdx_any_cap) { g_sdx_any_cap = g_sdx_any_cap ? g_sdx_any_cap * 2 : 1024; g_sdx_any = realloc_or_die(g_sdx_any, g_sdx_any_cap * sizeof *g_sdx_any, "the store lookahead index"); }
+    g_sdx_any[g_sdx_any_n++] = seq; g_sdx_reads_any++;
+}
+// A read (kind READ / NEED) of texture t at seq: an event for t and for every candidate whose storage t's overlaps (another descriptor of the same memory)
+static void sdx_tex_read(const tex_t *t, uint64_t ser, uint32_t seq, const uint8_t *p, uint8_t kind, uint8_t why) {
+    if (ser) sdx_ev_add((sdx_ev){seq, 0, ser, p, 0, 0, kind, 0, 0, why});
+    if (!t || !g_sdx_nmem) return;
+    uint64_t lo = (uint64_t)(uintptr_t)t->mem, hi = lo + t->L.size; if (!lo || hi <= lo) return;
+    for (int i = 0; i < g_sdx_nmem; i++) if (g_sdx_mem[i].ser != ser && lo < g_sdx_mem[i].hi && g_sdx_mem[i].lo < hi) { sdx_ev_add((sdx_ev){seq, 0, g_sdx_mem[i].ser, p, 0, 0, kind, 0, 0, why}); g_sdx_reads_alias++; }
+}
+static void sdx_h_read(uint64_t h, uint32_t seq, const uint8_t *p, uint8_t kind, uint8_t why) {   // the same for a texture handle (its descriptor in the registry)
+    int tid = (int)(h & 0xfffff); if (!tid) return;
+    sdx_tex_read(tid < g_ntreg && g_treg[tid].ok ? &g_treg[tid].t : NULL, h_ser(h), seq, p, kind, why);
+}
 static void sdx_lvsl(const view_t *v, int hv, uint16_t *lv, uint16_t *sl) { *lv = (uint16_t)(hv && v->set_levels ? v->base_level : 0); *sl = (uint16_t)(hv && v->set_layers ? v->min_layer : 0); }
 static void sdx_walk(const uint8_t *p, int depth) {
     if (depth > 64) { g_sdx_ok = 0; return; }
@@ -9592,8 +9642,8 @@ static void sdx_walk(const uint8_t *p, int depth) {
             case OP_JUMP: { const uint8_t *t; memcpy(&t, a, 8); p = t; continue; }
             case OP_CALL: { uint64_t t; memcpy(&t, a, 8); sdx_walk((const uint8_t *)t, depth + 1); break; }
             case OP_SET_RT: { const p_set_rt *r = a; g_pp_rt = r; g_pp_rtseq = seq; seq_push(&g_rtx_seq, &g_rtx_n, &g_rtx_cap, seq);
-                for (int k = 0; k < r->n && k < 8; k++) if (r->color[k]) sdx_bucket(r->color[k]->serial, 1);
-                if (r->depth) sdx_bucket(r->depth->serial, 1);
+                for (int k = 0; k < r->n && k < 8; k++) if (r->color[k]) sdx_cand(r->color[k]);
+                if (r->depth) sdx_cand(r->depth);
                 break; }
             case OP_CLEAR_COLOR: { const p_clear_color *c = a; const p_set_rt *r = g_pp_rt;
                 if (!r || (c->mask & 0xf) != 0xf || c->index < 0 || c->index >= r->n || c->index >= 8 || !r->color[c->index]) break;
@@ -9607,30 +9657,38 @@ static void sdx_walk(const uint8_t *p, int depth) {
                 if ((c->stencil_mask & 0xff) == 0xff) sdx_ev_add((sdx_ev){seq, g_pp_rtseq, r->depth->serial, p, lv, sl, SDX_CLEAR, 2, !r->has_dview, 0});
                 break; }
             case OP_BIND_TEX: case OP_BIND_TEX1: case OP_BIND_IMG: { p_bind_handles t1; const p_bind_handles *b = bind_rec(h.op, a, &t1); bh_fresh(b); int base = h.op == OP_BIND_IMG ? NTEX : 0, lim = h.op == OP_BIND_IMG ? 32 : NTEX;
-                if (b->stage < 6 && b->first >= 0 && b->first + b->n <= lim) for (int k = 0; k < b->n; k++) g_pp_slot[b->stage][base + b->first + k] = h_ser(b->h[k]);
+                if (b->stage < 6 && b->first >= 0 && b->first + b->n <= lim) for (int k = 0; k < b->n; k++) g_pp_slot[b->stage][base + b->first + k] = b->h[k];   // handles: sdx_h_read reaches the descriptor (alias reads)
                 break; }
             case OP_BIND_PROGRAM: { const p_bind_program *bp_ = a; if (bp_->stages & 0x20) g_pp_cprog = bp_->prog; if (gfx_stage_bits(bp_->stages)) g_pp_prog = bp_->prog; break; }
             case OP_DRAW: case OP_DRAW_IDX: case OP_MULTI_DRAW: case OP_DISPATCH: {
                 if (h.op != OP_DISPATCH) seq_push(&g_drx_seq, &g_drx_n, &g_drx_cap, seq);
                 const prog_t *pp = h.op == OP_DISPATCH ? g_pp_cprog : g_pp_prog; __unsafe_unretained NvProg *pr = pp ? prog_get(pp) : nil;
-                if (!pr) { for (int st = 0; st < 6; st++) for (int k = 0; k < NTEX + 32; k++) if (g_pp_slot[st][k]) sdx_ev_add((sdx_ev){seq, 0, g_pp_slot[st][k], p, 0, 0, SDX_READ, 0, 0, 1}); }
+                if (!pr) sdx_any_read(seq);   // no program to reflect: it may read anything
                 else for (int st = 0; st < 6; st++) { __unsafe_unretained NvShader *sh = pr->sh[st]; if (!sh || (h.op == OP_DISPATCH) != (st == 5)) continue;
-                    for (int i = 0; i < sh->rf.nb; i++) { const nvn_rbind *b = &sh->rf.b[i]; int k = b->kind == NVN_RB_IMG ? NTEX + b->reg : (b->kind == NVN_RB_TEX || b->kind == NVN_RB_TBUF) ? b->reg : -1;
-                        if (k < 0 || k >= NTEX + 32 || sh->stage < 0 || sh->stage >= 6) continue; uint64_t ser = g_pp_slot[sh->stage][k];
-                        if (ser) sdx_ev_add((sdx_ev){seq, 0, ser, p, 0, 0, SDX_READ, 0, 0, 1}); } }
+                    if (sh->stage < 0 || sh->stage >= 6) { sdx_any_read(seq); continue; }
+                    const uint64_t *sl = g_pp_slot[sh->stage]; int slots = 0;   // slots: every texture and image slot of the stage counts as read (TEXA / TEXD index them at run time)
+                    for (int i = 0; i < sh->rf.nb; i++) { const nvn_rbind *b = &sh->rf.b[i];
+                        switch (b->kind) {
+                            case NVN_RB_TEX: case NVN_RB_TBUF: if (b->reg < NTEX) sdx_h_read(tex_slot_h(sl, sl + NTEX, b->reg), seq, p, SDX_READ, 1); break;   // the word c2 holds for the slot (tex_slot_h): past 31 an image may lie there
+                            case NVN_RB_IMG: if (b->reg < 32) sdx_h_read(sl[NTEX + b->reg], seq, p, SDX_READ, 1); break;
+                            case NVN_RB_TEXA: case NVN_RB_TEXD: slots = 1; break;
+                            case NVN_RB_TEXU: case NVN_RB_IMGU: case NVN_RB_TBUFU: case NVN_RB_TEXP: case NVN_RB_TEXH: case NVN_RB_GMEM: sdx_any_read(seq); break;
+                            default: break; } }
+                    if (sh->rf.bindless || sh->rf.pool || sh->rf.htab) sdx_any_read(seq);   // handles resolved at encode time, whatever binding carries them
+                    if (slots || sh->rf.dyn) for (int k = 0; k < NTEX + 32; k++) if (sl[k]) sdx_h_read(sl[k], seq, p, SDX_READ, 1); }
                 const p_set_rt *r = g_pp_rt;
                 if (h.op != OP_DISPATCH && r) {
                     for (int k = 0; k < r->n && k < 8; k++) if (r->color[k]) { uint16_t lv, sl; sdx_lvsl(&r->cview[k], r->has_cview[k], &lv, &sl); sdx_ev_add((sdx_ev){seq, g_pp_rtseq, r->color[k]->serial, p, lv, sl, SDX_ATT, 0, 0, 2}); }
                     if (r->depth) { uint16_t lv, sl; sdx_lvsl(&r->dview, r->has_dview, &lv, &sl); sdx_ev_add((sdx_ev){seq, g_pp_rtseq, r->depth->serial, p, lv, sl, SDX_ATT, 8, !r->has_dview, 2}); }
                 }
                 break; }
-            case OP_COPY_T2T: { const p_copy_t2t *c = a; if (c->src) sdx_ev_add((sdx_ev){seq, 0, c->src->serial, p, 0, 0, SDX_NEED, 0, 0, 3}); if (c->dst) sdx_ev_add((sdx_ev){seq, 0, c->dst->serial, p, 0, 0, SDX_NEED, 0, 0, 3}); break; }
-            case OP_COPY_T2B: case OP_COPY_B2T: { const p_copy_b2t *c = a; if (c->tex) sdx_ev_add((sdx_ev){seq, 0, c->tex->serial, p, 0, 0, SDX_NEED, 0, 0, 3}); break; }
-            case OP_DRAW_TEX: { const p_draw_tex *c = a; uint64_t ss = h_ser(c->h); if (ss) sdx_ev_add((sdx_ev){seq, 0, ss, p, 0, 0, SDX_NEED, 0, 0, 3});   // read as a copy's source, its targets written as a copy's destination
+            case OP_COPY_T2T: { const p_copy_t2t *c = a; if (c->src) sdx_tex_read(c->src, c->src->serial, seq, p, SDX_NEED, 3); if (c->dst) sdx_tex_read(c->dst, c->dst->serial, seq, p, SDX_NEED, 3); break; }
+            case OP_COPY_T2B: case OP_COPY_B2T: { const p_copy_b2t *c = a; if (c->tex) sdx_tex_read(c->tex, c->tex->serial, seq, p, SDX_NEED, 3); break; }
+            case OP_DRAW_TEX: { const p_draw_tex *c = a; sdx_h_read(c->h, seq, p, SDX_NEED, 3);   // read as a copy's source, its targets written as a copy's destination
                 const p_set_rt *r = g_pp_rt; if (r) for (int k = 0; k < r->n && k < 8; k++) if (r->color[k]) sdx_ev_add((sdx_ev){seq, 0, r->color[k]->serial, p, 0, 0, SDX_NEED, 0, 0, 3});
                 break; }
-            case OP_CLEAR_TEX: { const p_clear_tex *c = a; if (c->tex) sdx_ev_add((sdx_ev){seq, 0, c->tex->serial, p, 0, 0, SDX_NEED, 0, 0, 4}); break; }
-            case OP_DLSS: { const p_dlss *c = a; for (int k = 0; k < DLSS_TEXTURES; k++) if (c->tex[k]) sdx_ev_add((sdx_ev){seq, 0, c->tex[k]->serial, p, 0, 0, SDX_NEED, 0, 0, 3}); break; }
+            case OP_CLEAR_TEX: { const p_clear_tex *c = a; if (c->tex) sdx_tex_read(c->tex, c->tex->serial, seq, p, SDX_NEED, 4); break; }
+            case OP_DLSS: { const p_dlss *c = a; for (int k = 0; k < DLSS_TEXTURES; k++) if (c->tex[k]) sdx_tex_read(c->tex[k], c->tex[k]->serial, seq, p, SDX_NEED, 3); break; }
             default: break;
         }
         p += h.size;
@@ -9639,15 +9697,15 @@ static void sdx_walk(const uint8_t *p, int depth) {
 static void mtl_sub_index_(const uint64_t *h, int n);
 void mtl_sub_index(const uint64_t *h, int n) { cp_stamp start = cp_begin(); mtl_sub_index_(h, n); cp_end(7, start); }
 static void mtl_sub_index_(const uint64_t *h, int n) {   // Start of submit (hle_nvn.c QueueSubmitCommands): build this submit's store lookahead index
-    g_xv_ntouch = 0; g_sdx_n = g_sdx_nop = 0; g_rtx_n = g_drx_n = 0; g_exec_seq = 0; g_sdx_ok = tbdr_on();
+    g_xv_ntouch = 0; g_sdx_n = g_sdx_nop = 0; g_rtx_n = g_drx_n = 0; g_exec_seq = 0; g_sdx_any_n = 0; g_sdx_nmem = 0; g_sdx_ok = sdx_on();
     if (!g_sdx_ok) { g_xv_n = 0; g_xv_block = 1; return; }   // Index unavailable: clear the ledger and add nothing in this submit (the next touch cannot be verified)
     g_xv_block = 0;
     memset(g_sdx_hk, 0, sizeof g_sdx_hk); g_sdx_nb = 0;
     for (int i = 0; i < g_xv_n; i++) sdx_bucket(g_xv[i].ser, 1);   // Textures in the ledger enter the candidate set: otherwise, when one is only sampled and not used as an attachment in this submit, its read events are not indexed and the fallback cannot see them
-    if (R.has_rt) { for (int k = 0; k < R.rt.n && k < 8; k++) if (R.rt.color[k]) sdx_bucket(R.rt.color[k]->serial, 1); if (R.rt.depth) sdx_bucket(R.rt.depth->serial, 1); }   // The targets at the start of the submit (the first draw may reopen the render pass without going through SetRenderTargets)
+    if (R.has_rt) { for (int k = 0; k < R.rt.n && k < 8; k++) if (R.rt.color[k]) sdx_cand(R.rt.color[k]); if (R.rt.depth) sdx_cand(R.rt.depth); }   // The targets at the start of the submit (the first draw may reopen the render pass without going through SetRenderTargets)
     g_pp_prog = S.prog; g_pp_cprog = S.cprog; g_pp_rt = NULL; g_pp_rtseq = SDX_NONE;
-    for (int st = 0; st < 6; st++) { for (int k = 0; k < NTEX; k++) g_pp_slot[st][k] = S.tex[st][k] ? h_ser(S.tex[st][k]) : 0;
-                                     for (int k = 0; k < 32; k++) g_pp_slot[st][NTEX + k] = S.img[st][k] ? h_ser(S.img[st][k]) : 0; }
+    for (int st = 0; st < 6; st++) { for (int k = 0; k < NTEX; k++) g_pp_slot[st][k] = S.tex[st][k];
+                                     for (int k = 0; k < 32; k++) g_pp_slot[st][NTEX + k] = S.img[st][k]; }
     for (int i = 0; i < n && g_sdx_ok; i++) sdx_walk((const uint8_t *)h[i], 0);
     if (!g_sdx_ok) return;
     // Counting sort into buckets: events are appended in sequence-number order, and within the same sequence number READ precedes ATT (the same draw is judged for reads first, then attachments), so after a stable scatter each bucket is ordered
@@ -9664,21 +9722,29 @@ static void sdx_seq(const uint8_t *p) {   // Every operation in mtl_exec: check 
     if (g_exec_seq >= g_sdx_nop || g_sdx_op[g_exec_seq] != p) { RED_ONCE(40, "store lookahead index does not match the replay order (index %u / %u); the remaining passes of this submission all store", g_exec_seq, g_sdx_nop); g_sdx_ok = 0; return; }
     g_exec_seq++;
 }
+static uint32_t sdx_any_from(uint32_t P) {   // the first wildcard reader at or after sequence number P that runs (not a hoisted-away op); SDX_NONE when none
+    uint32_t lo = 0, hi = g_sdx_any_n;
+    while (lo < hi) { uint32_t m = (lo + hi) / 2; if (g_sdx_any[m] < P) lo = m + 1; else hi = m; }
+    for (; lo < g_sdx_any_n; lo++) if (!(g_hoist_n && hoist_skipped(g_sdx_op[g_sdx_any[lo]]))) return g_sdx_any[lo];
+    return SDX_NONE;
+}
 static int sdx_decide(uint8_t st[SD_ATT_MAX]) {   // st[i]: 2 redundant; otherwise why << 2 (the reason it is needed, same as sd_need). Returns 0 = index unavailable
     if (!g_sdx_ok || !g_exec_cur || !g_exec_seq || g_sdx_op[g_exec_seq - 1] != g_exec_cur) return 0;
-    uint32_t P = g_exec_seq - 1;
+    uint32_t P = g_exec_seq - 1, W = sdx_any_from(P);   // W: the first reader that may read anything (sdx_any_read), at or after P
     for (int i = 0; i < g_nsd; i++) { const sd_att *t = &g_sd[i]; st[i] = 5 << 2;
-        int b = sdx_bucket(t->ser, 0); if (b < 0) continue;   // Not in the candidate set: no related event at all in this submit -> undecided after scanning to the end, needed
+        int b = sdx_bucket(t->ser, 0); if (b < 0) { if (W != SDX_NONE) st[i] = 7 << 2; continue; }   // Not in the candidate set: no related event at all in this submit -> undecided after scanning to the end, needed
         uint32_t lo = g_sdx_bst[b], end = g_sdx_bst[b + 1], hi = end;   // First seq >= P in the bucket
         while (lo < hi) { uint32_t m = (lo + hi) / 2; if (g_sdx[m].seq < P) lo = m + 1; else hi = m; }
         for (uint32_t j = lo; j < end; j++) { const sdx_ev *e = &g_sdx[j];
             if (g_hoist_n && hoist_skipped(e->op)) continue;
+            if (e->seq >= W) { st[i] = 7 << 2; g_sdx_kept_any++; break; }   // a bindless reader comes first: it may sample this attachment
             if (e->kind == SDX_READ || e->kind == SDX_NEED) { st[i] = (uint8_t)(e->why << 2); break; }
             if (e->rtseq == SDX_NONE || e->rtseq < P || (g_hoist_n && hoist_skipped(g_sdx_op[e->rtseq]))) continue;   // This target was set before the render pass ended: not re-set as an attachment after the render pass ended, so it does not count
             int hit = t->depth ? (e->kind == SDX_ATT ? e->plane == 8 : e->plane == t->depth) && (e->anyls || (e->lv == t->lv && e->sl == t->sl))
                                : e->plane == 0 && e->lv == t->lv && e->sl == t->sl;
             if (!hit) continue;
             st[i] = e->kind == SDX_CLEAR ? 2 : (uint8_t)(2 << 2); break; }
+        if (st[i] == 5 << 2 && W != SDX_NONE) { st[i] = 7 << 2; g_sdx_kept_any++; }   // no later touch, but a bindless reader: needed for that reason
     }
     return 1;
 }
@@ -9686,13 +9752,14 @@ static void xv_forward(void) {
     if (!g_xv_n) return;
     if (!g_sdx_ok) { g_xv_n = 0; g_xv_block = 1; return; }
     for (int i = 0; i < g_xv_n;) {
-        xv_ent *e = &g_xv[i]; int b = sdx_bucket(e->ser, 0), action = 0;
+        xv_ent *e = &g_xv[i]; int b = sdx_bucket(e->ser, 0), action = 0; uint32_t W = sdx_any_from(0);
         if (b >= 0) for (uint32_t j = g_sdx_bst[b]; j < g_sdx_bst[b + 1]; j++) { sdx_ev *v = &g_sdx[j];
-            if (v->kind == SDX_READ || v->kind == SDX_NEED) { xv_ent copy = *e; xv_violation(&copy, "submission lookahead read/need"); action = 2; break; }
+            if (v->seq >= W || v->kind == SDX_READ || v->kind == SDX_NEED) { xv_ent copy = *e; xv_violation(&copy, v->seq >= W ? "submission lookahead bindless reader" : "submission lookahead read/need"); action = 2; break; }
             if (v->lv != e->lv || v->sl != e->sl) continue;
             if (v->kind == SDX_CLEAR) { xv_good(e); action = 1; break; }
             if (v->kind == SDX_ATT) break;
         }
+        if (!action && W != SDX_NONE && (b < 0 || g_sdx_bst[b] == g_sdx_bst[b + 1])) { xv_ent copy = *e; xv_violation(&copy, "submission lookahead bindless reader"); action = 2; }
         if (!action) i++;
     }
 }
@@ -14189,6 +14256,7 @@ void mtl_use_stats(uint64_t *call, uint64_t *skip) { *call = 0; *skip = 0; }
 uint64_t mtl_ds_omit(void) { return g_stat_ds_omit; }
 void mtl_bw(uint64_t *load, uint64_t *store, uint64_t *full) { *load = g_bw_load; *store = g_bw_store; *full = g_pass_full_rw; }
 uint64_t mtl_udc_saved_bytes(void) { return g_udc_saved_bytes; }
+void mtl_sdx_stats(uint64_t v[6]) { v[0] = g_sdx_dead_n; v[1] = g_sdx_dead_bytes; v[2] = g_sdx_decided; v[3] = g_sdx_kept_any; v[4] = g_sdx_reads_any; v[5] = g_sdx_reads_alias; }   // hle_nvn.c's store lookahead line
 int mtl_has_window(void) { return front_metal_layer() != NULL; }
 int mtl_link_active(void) { return link_on(); }
 int mtl_link_stalled(void) { return __atomic_load_n(&g_stall_t0, __ATOMIC_RELAXED) != 0; }   // the display link has gone silent and mtl_present_wait drops frames (see STALL_NS) until it calls back
