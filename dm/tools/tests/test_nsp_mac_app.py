@@ -802,9 +802,9 @@ class Script(unittest.TestCase):
     def test_pack_command(self):
         o, tmp = self.pack_cmd('nvn')
         self.assertNotIn('--pso-pairs', o)   # no split copy
-        (tmp / 'shader').mkdir(); (tmp / 'shader/pso_pairs.tsv').write_text('v\tf\n')
+        (tmp / nsp.SHADER).mkdir(); (tmp / nsp.SHADER / 'pso_pairs.tsv').write_text('v\tf\n')
         o, tmp2 = self.pack_cmd('nvn', work=tmp)
-        self.assertEqual(o['--pso-pairs'], str(tmp / 'shader/pso_pairs.tsv'))   # the profile has no pso_pairs.tsv: the split's copy goes in
+        self.assertEqual(o['--pso-pairs'], str(tmp / nsp.SHADER / 'pso_pairs.tsv'))   # the profile has no pso_pairs.tsv: the split's copy goes in
         o, tmp = self.pack_cmd('nvn')
         self.assertEqual((o['--msl'], o['--romfs'], o['--tables'], o['--title-id'], o['--sign'], o['--marker']),
                          (str(tmp / 'shader/cache/b-0123456789ab'), str(tmp / 'ex/RomFS'), str(tmp / 'profile'), TID, '-', 'a/b'))
@@ -958,9 +958,13 @@ class SeenShaders(unittest.TestCase):   # --seen-shaders: the keys, the partial 
             self.build()
         self.assertFalse(any('--seen-shaders' in m for m in self.said))
 
-    def test_shader_watch_counts_the_list(self):
-        self.assertEqual(nsp.ShaderWatch(self.g, self.tmp, self.tmp).n, 4)
-        self.assertEqual(nsp.ShaderWatch(self.g, self.tmp, self.tmp, seen=self.keys('a', 'b')).n, 2)
+    def test_shader_watch_reads_the_progress_file(self):   # dmsh_build.py's DMSH_PROGRESS file, whose total is the keys it builds (the list's, for a partial build)
+        p = self.tmp / 'progress.json'; w = nsp.ShaderWatch(p)
+        self.assertIsNone(w())
+        p.write_text(json.dumps({'step': 'cache check', 'done': 1, 'total': 2, 'cached': 1}))
+        self.assertEqual((w()['step'], w()['done'], w()['total']), ('cache check', 1, 2))
+        p.write_text(json.dumps({'step': 'compiling', 'done': 2, 'total': 2, 'cached': 1, 'misses': 1}))
+        self.assertEqual((w()['step'], w()['total'], w()['note']), ('compiling', 2, '1 not cached'))
 
     def run_cmd(self, **kw):
         game = self.tmp / 'ex'; game.mkdir(exist_ok=True); (game / 'RomFS').mkdir(exist_ok=True)

@@ -125,6 +125,8 @@ DM_NVN_CAPTURE	diagnostic	`=<frame>:1:<path>` writes that frame (from its first 
 DM_NVN_CBDUMP	diagnostic	`=<dir>`: saves each draw's whole uniform blocks as `F<frame>_p<pass>_st<stage>_cb<slot>_<address>.bin`, and the source bytes of buffer-to-3D-texture copies, with `DM_NVN_PASSDUMP`
 DM_NVN_CBDUMP_KEY	diagnostic	`=<shader key>`: limits `DM_NVN_CBDUMP` to draws using that shader; for a vertex shader key also saves the draw's vertex streams and index buffer
 DM_NVN_CBLOG	diagnostic	`=1` logs the command memory the game adds to command buffers (`AddCommandMemory`: the first 60, then every 500th) and the out-of-memory callbacks
+DM_NVN_CB_CHECK	test	`1` writes each uniform-only argument table in full as well and logs any difference between the two
+DM_NVN_CB_FAST	diagnostic	`0` writes every argument table in full; by default a shader whose stage only had uniform buffers rebound since its table was written in the pass copies that table and remakes the uniform buffer slots
 DM_NVN_CLEARLOG	diagnostic	`=1` logs the first 40 colour clears drawn as a triangle (inside a pass, with a partial channel mask or a partial scissor)
 DM_NVN_CMDSTAT	diagnostic	`=1` logs every 300 frames the command recording usage: bytes and records per frame, command memory segment sizes, out-of-memory callbacks, host segments, count and bytes per command type
 DM_NVN_COUNT	diagnostic	`1` counts every NVN call (the counting trampolines) and writes the per-frame call lines; off by default (on with a `DM_NVN_TSV` table that has call rows), the count is an atomic add all recording threads share
@@ -175,10 +177,13 @@ DM_NVN_PASSDUMP	diagnostic	`=<f>`, `<f1>-<f2>` or `every:<n>`: logs every render
 DM_NVN_PASSDUMP_ALL	diagnostic	`=1` makes `DM_NVN_PASSDUMP` record every draw and binding change, not only the first per pass and stage, including copies and inline uniform updates
 DM_NVN_PASSGPU	diagnostic	`=<file>` writes the GPU time of each render and compute pass from stage-boundary timestamp counters (off under Metal 4); also gives each dispatch its own encoder
 DM_NVN_PASSGPU_SERIAL	diagnostic	`=1` makes each encoder on the main command buffer wait until all earlier work has finished, so `DM_NVN_PASSGPU` times read each pass's exclusive time (totals read high)
+DM_NVN_PASS_SPLIT	switch	`=<draws>` (default 256, `0` off): a render pass is ended and its segment committed after this many draws while the GPU has no segment left, so the GPU starts a long pass (a G-buffer) before it is all translated; its attachments are stored and loaded again
+DM_NVN_PASS_SPLIT_MAX	switch	`=<n>` (default 2, `0` no limit): the most splits of one render pass (`DM_NVN_PASS_SPLIT`), as each stores and loads its attachments
 DM_NVN_POOL_CHUNKS	switch	`0` wraps a memory pool of 512 MB or more whole in one buffer, as before; by default it is wrapped in overlapping 16 MB chunks made as draws reach them, so only the parts in use are wired
 DM_NVN_POOL_HEAP	switch	`0` gives every shared render target of a CPU_NO_ACCESS pool a Metal allocation of its own, as before; by default the COMPRESSIBLE textures of such a pool (up to 1 GB) share one placement heap, each at its pool offset scaled by 1.25, so render targets an engine places over each other share memory as on NVN (`pool_heap_texture`)
 DM_NVN_PREDICT	switch	`0` turns off the parallel precompile look-ahead: a pipeline miss compiles only the pipeline it needs
 DM_NVN_PREFETCH	switch	`0` turns off loading a program's shader libraries in the background when the game makes it (`nvnProgramSetShaders`); they load at its first draw instead
+DM_NVN_PREFETCH_CPS	switch	`=0` leaves a compute program's pipeline to its first dispatch instead of building it in the background when the game makes the program (on by default)
 DM_NVN_PROF	diagnostic	`=1` wraps the implemented NVN functions in a timing wrapper and collects the time each takes during recording
 DM_NVN_PROGTRACE	diagnostic	`=<vertex keys,...>` logs matching ProgramSetShaders calls and their guest backtraces
 DM_NVN_REGLUM	diagnostic	`=x0,y0,x1,y1:<file>` (normalized coordinates): on every present records the present number, time, mean luminance and a grayscale thumbnail of that region, to check animation speed against frame rate
@@ -192,6 +197,7 @@ DM_NVN_SHMAP	path	The shader map (`shader_map.tsv`); `c1_full.tsv` and `pso_mani
 DM_NVN_SHOT	diagnostic	`=<frame>[,<frame>…]:<path>` saves the swapchain texture as an image at those frames (`%d` in the path = frame number)
 DM_NVN_SHOT_OUT	diagnostic	`=<W>x<H>` makes `DM_NVN_SHOT` capture the picture as the present pass upscales it to that size, the crop included, instead of the raw swapchain texture
 DM_NVN_SKIP_FS	diagnostic	`=<fragment key>[,…]` (up to 16) drops all draws of those fragment shaders, to measure their GPU cost or bisect a wrong draw; the picture is wrong
+DM_NVN_SKIP_MESH	diagnostic	`=1` drops every task / mesh draw, to measure their GPU cost; the picture is wrong
 DM_NVN_SKIP_SMALL	diagnostic	`=<width>` drops all draws whose target width is at most that, to measure the cost of tiny render passes; the picture is wrong
 DM_NVN_SLICE_MERGE	switch	`0` keeps passes into other layers of one array or cube texture level apart (on by default: they run as one layered pass)
 DM_NVN_SNAPRAW	diagnostic	`=1` makes `DM_NVN_TEXDUMP` also save each target's raw bytes, with a text header line, since converting an HDR target to an 8-bit image truncates
@@ -374,6 +380,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
 DM_VK_CAPTURE	path	`=<dir>` (Mac) writes every SPIR-V module the game creates to `<dir>/<key>.spv`; the NSP script's Vulkan shader capture stage sets it
 DM_VK_LOG	diagnostic	`=1` logs Vulkan object creation in the Vulkan-on-Metal layer
 DM_VSYNC_HZ	switch	`=<Hz>`: rate at which a host thread fires the vi vsync event when the display link does not drive it (default 60)
+DM_WAKE_UNLOCKED	switch	`0` signals a woken guest thread while the waker still holds the thread lock, as before; by default the signal comes after the lock is let go, so the woken thread does not sleep again on it
 DM_WATCH	diagnostic	`=<s>` dumps all threads after that many seconds (SIGALRM) and turns on the stall watchdog; off unless set
 DM_WATCH_SAMPLE	diagnostic	`=<path>` (Mac): when the stall watchdog fires, samples the process for 1 s with `/usr/bin/sample` and writes the thread stacks to that path
 DM_WATCH_STALL	diagnostic	`=<s>`: when the frame loop makes no progress for that long (default 15 with `DM_WATCH`), logs a red line, dumps the threads and exits

@@ -12,7 +12,7 @@ static int checks, failed;
 static tex_t texture(uint64_t serial, unsigned w, unsigned h, int format) {
     tex_t t = {.magic = MAGIC('T','E','X',0), .serial = serial, .off = serial << 24};
     t.d = (nvn_texdesc){.target = NVN_TEXTURE_TARGET_2D, .format = format, .width = w, .height = h, .depth = 1, .levels = 1, .samples = 1, .flags = NVN_TEXTURE_FLAGS_IMAGE};
-    nvn_tex_layout(&t.d, &t.L); mtl_tex_init(&t); return t;
+    nvn_tex_layout(&t.d, &t.L); mtl_tex_init(&t); return t;   // NOLINT(clang-analyzer-core.StackAddressEscape): g_tex_live keeps the address a texture was initialized at; mtl_tex_release reads it through vm_read_overwrite and checks magic and serial, so a returned copy is safe
 }
 static void fill(id<MTLTexture> t, MTLClearColor c, int depth) {
     id<MTLCommandBuffer> cb = q_cb(); MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];

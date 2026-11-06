@@ -22,7 +22,7 @@
 #   and its RomFS images are written straight from it; the name, display version and icon come from the NACP and icon it carries, else as for a dump (its name record is a packer's label, not the game's).
 #   The newest version in the folder is packed. A version the profile registers (with every version in its shader_versions in the folder) is built from the profile as it is; any other
 #   version (the base game alone, another update) from a profile derived from it in <build folder>/profile: the same settings, and the version's own shaders (derive_profile).
-# Every intermediate file is under the build folder, <id>_build/ in the NSP folder unless --work-dir / WORK_DIR names another: nsp/ (NSZ / XCZ files converted to NSP / XCI with nsz -D, kept for the next build; pip install nsz, or an nsz 5.0 or later executable on PATH), extract/ (the extracted game files, kept for the next build unless KEEP_EXTRACTED / --no-keep-extracted), aoc/ (one RomFS image per DLC index), tools/ (nx_extract, and the Mac host for a run-time shader capture), patched_*/, shader/ (shader package and caches, kept so the next build is fast), logs/ (each step's full output), tmp/, ipa/. The finished IPA also goes beside the build folder by default (the NSP folder, without --work-dir).
+# Every intermediate file is under the build folder, <id>_build/ in the NSP folder unless --work-dir / WORK_DIR names another: nsp/ (NSZ / XCZ files converted to NSP / XCI with nsz -D, kept for the next build; pip install nsz, or an nsz 5.0 or later executable on PATH), extract/ (the extracted game files, kept for the next build unless KEEP_EXTRACTED / --no-keep-extracted), aoc/ (one RomFS image per DLC index), tools/ (nx_extract, and the Mac host for a run-time shader capture), patched_*/, shader.noindex/ (shader package and caches, kept so the next build is fast; Spotlight leaves a folder of that name alone, SHADER), logs/ (each step's full output), tmp/, ipa/. The finished IPA also goes beside the build folder by default (the NSP folder, without --work-dir).
 # The DLC, the rewrite, the shader split and the iOS (or Vulkan) shaders are reused when all their inputs are as at their last successful run (the game files, the tools, the profile, Xcode and the in-repo spirv-cross: fingerprint() keys beside their output);
 #   the iOS shaders' inputs are the shader package's content and the chain's own tools, so a split that runs again and writes the same package leaves them reused.
 #   The chain version header dm/gfx/nvn/dmsh_chain.h (one version for every game) is written again when a chain change was committed without it (chain_header: it follows from the source alone),
@@ -1936,7 +1936,7 @@ def capture_jit(py, repo, d, patched, work, env, logs, g):
         part, rd, log = caps / f'{name}.partial', work / f'{TMP}/jit_run', logs / f'jit_{name}.log'
         rmtree(part); rmtree(rd); part.mkdir(parents=True)
         for x in ('save', 'temp', 'msl'): (rd / x).mkdir(parents=True)
-        henv = dict(env, DM_ROMFS=str(rfs.source(d)), DM_SAVE=str(rd / 'save'), DM_TEMP=str(rd / 'temp'), DM_MSL_DIR=str(d.parent.parent / 'shader'), DM_JIT_CAPTURE=str(part))
+        henv = dict(env, DM_ROMFS=str(rfs.source(d)), DM_SAVE=str(rd / 'save'), DM_TEMP=str(rd / 'temp'), DM_MSL_DIR=str(d.parent.parent / SHADER), DM_JIT_CAPTURE=str(part))
         if name == 'route': henv['DM_KEYS'] = route
         PROG.set(step=f'booting the game ({name})')
         say(f'booting the game in the Mac host to capture the code its JIT plugin makes ({name}) → {c}')
@@ -2417,46 +2417,17 @@ def seen_keys(g, sh, logs):
 
 
 class ShaderWatch:
-    """Progress of dmsh_build.py, read from the files it writes (it prints nothing until it ends). It works in three phases:
-    the cache check (a hit restores <key>_b.json into the library directory b-<chain>/: the iOS one, or the Mac's for a Mac-only build; a miss writes <key>.bin into its temporary folder dmsh_* under WORK),
-    the translation of the misses (<key>.spv in the temporary folder), and the compile, which takes the keys in a fixed order (sorted, the vertex shaders with pixel pairs last)
-    and writes <key>_b.json again for every miss and every pixel shader: the furthest key written so far tells how far it got"""
-    def __init__(self, g, out, tmp, pso_pairs=None, seen=None):   # out: the library directory b-<chain>/ (the iOS one, or the Mac's for a Mac-only build); seen: the keys of a partial build
-        keys = set(seen) if seen else shader_keys(g)
-        pairs = set()
-        for path in (g.table('shader_pairs.tsv'), pso_pairs):
-            if path and path.is_file():
-                pairs |= {ln.split()[0] for ln in path.read_text(errors='replace').splitlines() if ln.strip() and not ln.startswith('#')}
-        order = sorted(keys - pairs) + sorted(keys & pairs)
-        self.pos, self.n = {k: i for i, k in enumerate(order)}, len(order)
-        self.out, self.tmp, self.t0, self.t1, self.w = out, tmp, time.time(), None, None
-        self.hits, self.fin, self.top = set(), set(), -1
-
-    def written(self, keys, since):   # those of keys whose <key>_b.json in the output was written after since
-        found = set()
-        try:
-            with os.scandir(self.out) as it:
-                for e in it:
-                    if e.name.endswith('_b.json') and e.name[:-7] in keys and e.stat().st_mtime > since: found.add(e.name[:-7])
-        except OSError: pass
-        return found
+    """Progress of dmsh_build.py, from the small JSON file it rewrites at most every half second (DMSH_PROGRESS): the cache check over every key, then the compile, which finishes the keys
+    in batches (cache hits and misses alike) and counts them. It used to be read from the files dmsh_build.py wrote, one per shader output, which it no longer leaves on disk"""
+    def __init__(self, path): self.path = path
 
     def __call__(self):
-        if not self.w:   # dmsh_build.py's temporary folder: the dmsh_* under WORK made since it started
-            self.w = max((d for d in self.tmp.glob('dmsh_*') if d.stat().st_birthtime >= self.t0 - 2), key=lambda d: d.stat().st_birthtime, default=None)
-        try: ext = collections.Counter(os.path.splitext(x)[1] for x in os.listdir(self.w)) if self.w else collections.Counter()
-        except OSError: ext = collections.Counter()
-        if self.t1 is None:
-            self.hits |= self.written(self.pos.keys() - self.hits, self.t0 - 2)
-            if len(self.hits) + ext['.bin'] < self.n and not ext['.spv'] and not ext['.metal']:
-                return {'step': 'cache check', 'done': len(self.hits) + ext['.bin'], 'total': self.n, 'unit': 'shaders', 'note': f'{len(self.hits):,} cached'}
-            self.t1 = time.time()   # the cache check is over: from now on a <key>_b.json is written by the compile
-        if ext['.bin'] and not ext['.metal'] and ext['.spv'] < ext['.bin']:
-            return {'step': 'translating', 'done': ext['.spv'], 'total': ext['.bin'], 'unit': 'shaders'}
-        new = self.written(self.pos.keys() - self.fin, self.t1)
-        self.fin |= new; self.top = max([self.top] + [self.pos[k] for k in new])
-        return {'step': 'compiling' if ext['.bin'] else 'finishing', 'done': max(len(self.fin), self.top + 1), 'total': self.n, 'unit': 'shaders',
-                'note': f'{ext[".bin"]:,} not cached' if ext['.bin'] else ''}
+        try: p = json.loads(self.path.read_text())
+        except (OSError, ValueError): return None
+        cached, misses = p.get('cached', 0), p.get('misses')
+        if p.get('step') == 'cache check':
+            return {'step': 'cache check', 'done': p['done'], 'total': p['total'], 'unit': 'shaders', 'note': f'{cached:,} cached'}
+        return {'step': 'compiling', 'done': p.get('done', 0), 'total': p.get('total', 0), 'unit': 'shaders', 'note': f'{misses:,} not cached' if misses else ''}
 
 
 def spirv_cross(repo, env=None):   # resolve the same selection the shader tools run, including an executable name on PATH
@@ -2469,6 +2440,22 @@ def toolchain(repo, env=None):   # Metal is a separate Xcode download: its versi
     return (('cmd', ['xcodebuild', '-version']), ('files', [spirv_cross(repo, env)]),
             *(('cmd', ['xcrun', '-sdk', sdk, *args]) for sdk in ('macosx', 'iphoneos')
               for args in (['metal', '--version'], ['metallib', '--version'], ['--show-sdk-version'], ['--show-sdk-build-version'])))
+
+
+# The build folder's shader folder: the split's package, the libraries, the compile cache and their keys. Spotlight indexes each file a shader build writes there and reads the
+# text of the .metal sources: Ocarina of Time's b-<chain>/ holds 195,157 files until the step packs them, and a sixteenth of them took Spotlight 152 s of CPU. It leaves out a folder
+# whose name ends in .noindex, which a .metadata_never_index file inside one does not do on macOS 27 (PR #1355)
+SHADER = 'shader.noindex'
+
+
+def move_to_noindex(work, old, new):
+    """A build folder's folder that a build from before named old moves to new, its .noindex name, so the next build reuses what it holds: a rename keeps every file and its times,
+    which the steps' keys read. When new is already there, old is no longer read and stays as it is, with a line, as it may hold gigabytes"""
+    src, dst = work / old, work / new
+    if src.is_symlink() or not src.is_dir(): return
+    if dst.exists(): say(f'[NOTE] {src} is no longer read (the build uses {dst}): delete it to free its space'); return
+    src.rename(dst)
+    say(f'moved {src} to {dst}: Spotlight leaves a folder whose name ends in .noindex alone')
 
 
 def prune_stale_chains(sh, chain):
@@ -2589,8 +2576,6 @@ def build_shaders(py, repo, sh, xlate, env, logs, g, pkg_key=None, mac=False, se
     rmtree(kmac)
     if not mac: rmtree(kf)
     if seen: rmtree(out)   # what a run leaves is what it built; its keys are in partial-keys.txt
-    try: PROG.watch(ShaderWatch(g, libs, Path(env['WORK']), pso_pairs, seen))
-    except Exception: pass   # progress never stops the build (a missing table is dmsh_build.py's to report)
     # The Metal work follows from what the build produces: an iPhone build needs only the iOS libraries (the macOS
     # metallibs are about half of the compile and never enter the IPA), a Mac build only the Mac's, and a build that
     # wants both compiles both. The Mac sources and reflection are written either way (c1_full / cb_extent come from them).
@@ -2604,6 +2589,9 @@ def build_shaders(py, repo, sh, xlate, env, logs, g, pkg_key=None, mac=False, se
     if mac: del benv['IOSOUT']   # dmsh_build.py builds the iOS libraries only with IOSOUT
     elif pull is False: benv['DMSH_IOS_PULL'] = '0'   # nothing in this app reads them
     if seen: benv['DMSH_CAS'] = str(cas)
+    prog = sh / 'progress.json'; rmtree(prog); benv['DMSH_PROGRESS'] = str(prog)   # dmsh_build.py's progress (ShaderWatch)
+    try: PROG.watch(ShaderWatch(prog))
+    except Exception: pass   # progress never stops the build
     try: stale = None if seen else stale_shaders(py, repo, env, [sh / 'cache'] if mac else [sh / 'cache', ios] if keep_mac else [ios], chain, g)
     except Exception: stale = None   # a note never stops the build
     if stale:
@@ -2620,10 +2608,10 @@ def build_shaders(py, repo, sh, xlate, env, logs, g, pkg_key=None, mac=False, se
     PROG.watch(None)
     if not seen and not chain_tables(py, repo, sh, env, logs, g, chain): raise BuildError(f'no stamped Mac shader outputs in {sh / "cache" / f"b-{chain}"} (inputs.tsv): dmsh_build.py did not finish a full build')
     what = 'Mac' if mac else 'iOS'
-    n = sum(1 for _ in libs.glob('*_b.metallib')) if libs.is_dir() else 0
+    n = sum(1 for _ in shader_lib.view(libs).glob('*_b.metallib')) if shader_lib.exists(libs) else 0   # the image dmsh_build.py writes (a folder from an older chain)
     if n == 0: raise BuildError(f'no {what} shader libraries in {libs}')
     say(f'{n} {what} shader libraries ({libs})')
-    if keep_mac: say(f'{sum(1 for _ in (sh / "cache" / f"b-{chain}").glob("*_b.metallib"))} Mac shader libraries kept for the Mac run command ({sh / "cache" / f"b-{chain}"})')
+    if keep_mac: say(f'{sum(1 for _ in shader_lib.view(sh / "cache" / f"b-{chain}").glob("*_b.metallib"))} Mac shader libraries kept for the Mac run command ({sh / "cache" / f"b-{chain}"})')
     t = log.read_text(errors='replace')
     if own := re.search(r'^note: (built with this Mac\'s compilers.*)$', t, re.M): say(own.group(1))
     if lost := re.search(r'^\[RED\] lost without failing: .*$', t, re.M): say(f'{lost.group(0)}; each is named in {log}, and the build goes on: a shader the game never reaches costs nothing')
@@ -2683,7 +2671,7 @@ def shader_regressions(py, repo, lib_dir, chain, logs):
     """dm/gfx/tools/shader_regressions.py on the Mac libraries (dmsh_build.py writes its build report there in an iOS build too): shaders that translated in this game's previous build
     and fail with this chain stop the build, unless ALLOW_SHADER_REGRESSIONS. The chain is one for every game, so a change can break a game its author never ran (GitHub issue #272)"""
     log = logs / 'shader_regressions.log'
-    if not (lib_dir / f'b-{chain}' / '_b_build.json').is_file(): return   # a full dmsh_build.py run always writes it
+    if not (shader_lib.view(lib_dir / f'b-{chain}') / '_b_build.json').is_file(): return   # a full dmsh_build.py run always writes it
     r = subprocess.run([py, str(repo / 'dm/gfx/tools/shader_regressions.py'), str(lib_dir), chain], capture_output=True, text=True, errors='replace')
     log.write_text(r.stdout + r.stderr)
     if r.returncode == 0: return
@@ -2854,7 +2842,7 @@ def mac_run(work, game, patched, host, font, msl, aoc, gfx, lang, env, logs, g, 
     renv.update(DM_LANG=lang, DM_WINDOW=1, DM_AUDIO=1)
     if env_file: renv.update(env_file_pairs(env_file))
     if gfx == 'nvn' and g.table('shader_pairs.tsv').is_file():
-        if not g.table('pso_pairs.tsv').is_file() and (work / 'shader/pso_pairs.tsv').is_file(): renv['DM_PSO_PAIRS'] = work / 'shader/pso_pairs.tsv'   # split_shaders' copy
+        if not g.table('pso_pairs.tsv').is_file() and (work / SHADER / 'pso_pairs.tsv').is_file(): renv['DM_PSO_PAIRS'] = work / SHADER / 'pso_pairs.tsv'   # split_shaders' copy
         # The pipeline prebuild (docs/development.md, Hybrid pipelines): the pulling base of every shader pair into run/pso_archive, so the first run's draws have stand-ins instead
         # of waiting for the Metal compiler. The host's tool mode skips it when pso_archive/prebuilt.tsv matches (chain version, depth mode, pair list): Breath of the Wild's
         # 12,755 pairs took about 3 minutes on an M2 Max the first time. It takes the depth mode from the profile's depth_mode key (default gl, NVN's); with a wrong one the game builds its bases again in the app
@@ -2957,8 +2945,8 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
     PROG.add(1); PROG.stage('Pipeline archive', step=f'{arch} (metal-tt, minutes when its inputs changed)')
     out = work / 'pso/mac'
     cmd = [py, repo / 'dm/gfx/tools/pso_offline.py', '--game', g.id, '--msl', lib, '--out', out, '--work', work / 'pso/mac-work', '--gpu', arch, '--platform', 'macos']
-    if not g.table('pso_pairs.tsv').is_file() and (work / 'shader/pso_pairs.tsv').is_file():   # the split's copy, as the app gets it (--pso-pairs)
-        cmd += ['--pairs', g.table('shader_pairs.tsv'), '--pairs', work / 'shader/pso_pairs.tsv']
+    if not g.table('pso_pairs.tsv').is_file() and (work / SHADER / 'pso_pairs.tsv').is_file():   # the split's copy, as the app gets it (--pso-pairs)
+        cmd += ['--pairs', g.table('shader_pairs.tsv'), '--pairs', work / SHADER / 'pso_pairs.tsv']
     if PLAN is not None:   # pso_offline.py --check: how many bases a run would compile (exit 3), nothing written
         lines = []
         rc = run(cmd + ['--check'], logs / 'pso_offline_mac_check.log', env=env, fatal=False, ok=(3,), on_line=lines.append)
@@ -3002,7 +2990,7 @@ def mac_app(py, repo, out, app, work, game, patched, host, font, msl, aoc, gfx, 
     cmd = [py, repo / 'dm/mac/pack_app.py', out, '--host', host, '--patched', patched, '--romfs', rfs.source(game), '--msl', lib, '--tables', g.table('shader_map.tsv').parent,
            '--font', font, '--title-id', f'{app:016X}', '--name', name, '--bundle-id', bundle_id, '--lang', lang, '--sign', sign or '-',
            '--data-cache', work / 'app/data']   # NXForge: the signed game data bundle, kept for the next build (pack_app.py DATA)
-    split_pairs = work / 'shader/pso_pairs.tsv'   # the split's copy of pso_pairs.tsv, for a profile without the table (as mac_run's DM_PSO_PAIRS)
+    split_pairs = work / SHADER / 'pso_pairs.tsv'   # the split's copy of pso_pairs.tsv, for a profile without the table (as mac_run's DM_PSO_PAIRS)
     for opt, v in (('--version', version), ('--category', g.get('app_category')), ('--marker', g.get('romfs_marker')), ('--aoc', aoc), ('--icon', icon),
                    ('--pso', pso), ('--pso-pairs', split_pairs if gfx == 'nvn' and not g.table('pso_pairs.tsv').is_file() and split_pairs.is_file() else None),
                    ('--env-file', Path(os.path.expanduser(env_file)).resolve() if env_file else None), ('--settings', settings)):
@@ -3292,6 +3280,7 @@ def main(args=None):
     env.update(DM_GAME=g.id, DM_ROOT=str(work), WORK=str(work / TMP))
     logs = work / 'logs'
     global STAGE_TIMES; STAGE_TIMES = logs / 'stage_times.json'
+    move_to_noindex(work, 'shader', SHADER)
     check_prereqs(env, xlate, mac)
     picks = pick_nsps(fam, have, versions)
 
@@ -3390,7 +3379,7 @@ def main(args=None):
             PROG.add(1); g = region_check(repo, game, patched, work, env, logs, g)
     observed_glslc = capture_glslc(repo, {v: dirs[v] for v in sv}, pkg_ver, patched, work, env, logs, g) if glslc else None
     if uedec: decode_ue_shaders(repo, {v: dirs[v] for v in sv}, pkg_ver, patched, work, env, logs, g)
-    sh = work / 'shader'
+    sh = work / SHADER
     if gfx == 'vulkan':   # the packed version's merged RomFS holds the SPIR-V files the game loads; a capture holds those it generates
         cap = capture_shaders(repo, game, patched, work, env, logs, g, 'vk') if vkcap else None
         ios = build_vk_shaders(py, repo, [rfs.source(game)] + dlc_roms + ([cap] if cap else []), sh, env, logs, g, reuse=not ALLOW_DAMAGED, mac=mac, provisional=bool(provisional or derived))

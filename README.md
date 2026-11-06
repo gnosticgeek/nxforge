@@ -340,6 +340,11 @@ Under a game, "60 fps with 1.2.0" means it runs at 60 fps (30 on the console) wi
 <tr>
 <td align="center" valign="top" width="33%"><img src="docs/images/star-fox.jpg" width="256" alt="Star Fox"><br><small><b><a href="dm/games/0400E88025B1A000/README.md">Star Fox</a></b><br>Switch 2, Mac only, from a NUP</small></td>
 <td align="center" valign="top" width="33%"><img src="docs/images/kirby-air-riders.jpg" width="256" alt="Kirby Air Riders"><br><small><b><a href="dm/games/040077201BE50000/README.md">Kirby Air Riders</a></b><br>Switch 2, Mac only, from a NUP</small></td>
+<td align="center" valign="top" width="33%"><img src="docs/images/okami-hd.jpg" width="256" alt="ŌKAMI HD"><br><small><b><a href="dm/games/0100276009872000/README.md">ŌKAMI HD</a></b></small></td>
+</tr>
+<tr>
+<td align="center" valign="top" width="33%"><img src="docs/images/minecraft-dungeons-ii.jpg" width="256" alt="Minecraft Dungeons II"><br><small><b><a href="dm/games/0100A7C01B792000/README.md">Minecraft Dungeons II</a></b></small></td>
+<td></td>
 <td></td>
 </tr>
 </table>
@@ -365,6 +370,7 @@ This project is built on other people's work:
 - **libvpx** (VP9 movies), **stb_vorbis** (movie sound), the **Vulkan headers** and **NVIDIA FLIP** ship in `dm/third_party` with their licenses ([list](dm/third_party/README.md)).
 - **Capstone**, **lz4**, **fontTools** and **XcodeGen** are used by the build.
 - Other nxnative front ends (all MIT) gave NXForge ideas, reimplemented here: **[NX Play](https://github.com/varyform/nx-native-wrapper)** (Keep This Build), the **[NxNative Launcher](https://github.com/rennan101/nxnative_Launcher)** (quitting from the controller, Atmosphere-layout mods) and **[NX2Apple](https://github.com/LNPANDY/NX2Apple)** (issue forms; in 0.10.0 the newer Metal compiler check and the pointer hiding, taken from its patches 0034 by LNPANDY and 0032 by v0lumehi, and ports of its build-input check for older builds, frame-time recording and dropped files). **[LumaNX](https://github.com/Xc1Ym/LumaNX)** gave the converter's failure explanations and its checked save snapshots.
+- **[ns2ios-shell](https://github.com/xinerqu/ns2ios-shell)** (MIT) by xinerqu: the closed standard input for `vk_shaders.py`'s child processes (0.13.0).
 
 ### License
 

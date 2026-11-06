@@ -21,7 +21,7 @@ LEGACY = os.path.expanduser('~/Library/Caches/NXForge/metallib')   # the shared 
 # so the next chain change compiled 12,000 of them again. prune() also never goes below what this build used
 LIMIT_GB = float(os.environ.get('DMSH_MTLCACHE_GB') or 12)
 
-FORMAT = b'dmsh_mtlcache 2'   # earlier prefill could misclassify an unsampled library from another compiler
+FORMAT = b'dmsh_mtlcache 3'   # 3-way cut stores _b / _bx / _bf from one compile (fetch fold); earlier formats cannot be reused
 OUTPUT = re.compile(r'[0-9a-f]{16}_b\.metal')   # a shader's MSL in dmsh_build.py's outputs: <key>_b.metal
 _clonefile = getattr(ctypes.CDLL(None, use_errno=True), 'clonefile', None)   # APFS copy-on-write copy (no data written); elsewhere a plain copy
 
@@ -110,22 +110,34 @@ class Cache:
         n, total, gone = self.store.prune_oldest('metallib/', int(limit_gb * 2**30))
         return f'Metal cache: {n - gone:,} libraries, {total / 2**30:.1f} GB in {self.store.path}' + (f' ({gone:,} unused the longest removed, limit {limit_gb:g} GB, DMSH_MTLCACHE_GB)' if gone else '')
 
-    def compile_split(self, target, msl, a, b, split):
-        """msl → two libraries cut from its one compile, split(the library's bytes) → (a's bytes, b's bytes): clones of what the same source gave before, or a compile (then both kept, not the whole
-        library, so an output stays a clone as compile's are). Raises CalledProcessError as the compile does, and what split raises"""
+    def compile_split(self, target, msl, a, b, split, c=None):
+        """msl → two (or three, when c is set) libraries cut from its one compile. split(the library's bytes) → that many pieces:
+        (a, b) or (a, b, c). Clones of what the same source gave before, or a compile (then the pieces kept, not the whole
+        library, so an output stays a clone as compile's are). The third piece is cached as <digest>_f.metallib.
+        Raises CalledProcessError as the compile does, and what split raises"""
         p = self.path(target, open(msl, 'rb').read()); q = p[:-len('.metallib')] + '_x.metallib'
-        if self.store.has(p) and self.store.has(q):
-            self.store.to_file(p, a); self.store.to_file(q, b); self.count((target, 'reused')); self.mark(p, a); self.mark(q, b); return
+        dests = [a, b]; paths = [p, q]
+        if c is not None:
+            dests.append(c); paths.append(p[:-len('.metallib')] + '_f.metallib')
+        if all(self.store.has(x) for x in paths):
+            for src, dst in zip(paths, dests): self.store.to_file(src, dst)
+            self.count((target, 'reused'))
+            for x, dst in zip(paths, dests): self.mark(x, dst)
+            return
         whole = f'{a}.tmp-{os.getpid()}-{threading.get_ident()}'
         self._compile(target, msl, whole)
         try:
             with open(whole, 'rb') as f: pieces = split(f.read())
         finally: os.unlink(whole)
-        for lib, data in zip((a, b), pieces):
+        if len(pieces) != len(dests):
+            raise ValueError(f'split returned {len(pieces)} pieces, expected {len(dests)}')
+        for lib, data in zip(dests, pieces):
             with open(whole, 'wb') as f: f.write(data)
             os.replace(whole, lib)
-        with self.store.batch(): self.store.put_file(q, b); self.store.put_file(p, a)
-        self.count((target, 'compiled')); self.mark(p, a); self.mark(q, b)
+        with self.store.batch():
+            for path, lib in zip(paths, dests): self.store.put_file(path, lib)
+        self.count((target, 'compiled'))
+        for x, dst in zip(paths, dests): self.mark(x, dst)
 
     def _check(self, target, d, stems, mac_dir):
         """None if folder d was built with the current convention and compiler, else why not"""
