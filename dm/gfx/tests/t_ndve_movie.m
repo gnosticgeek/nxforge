@@ -13,7 +13,7 @@ static tex_t movie_texture(uint64_t serial, unsigned w, unsigned h, unsigned fla
                        .flags = flags};
     nvn_tex_layout(&t.d, &t.L);
     mtl_tex_init(&t);
-    return t;
+    return t;   // NOLINT(clang-analyzer-core.StackAddressEscape): g_tex_live keeps the address a texture was initialized at; mtl_tex_release reads it through vm_read_overwrite and checks magic and serial, so a returned copy is safe
 }
 
 typedef struct { uint8_t bytes[16384]; size_t n; } movie_chain;
