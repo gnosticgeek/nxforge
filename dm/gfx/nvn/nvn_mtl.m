@@ -5880,7 +5880,7 @@ static inline __attribute__((always_inline)) void *tex_fast(int tid) {
 }
 // The texture type the shader declares differs from the one the descriptor gives: use a compatible view. Maxwell sample instructions carry their own dimension, and a non-array instruction reading a 2D array texture reads layer 0;
 // on Metal a 2D array bound to a texture2d argument is a type mismatch with undefined reads (measured: one fixed value). Super Mario 3D World + Bowser's Fury creates its pre-lighting buffer as a one-layer 2D array
-// and the deferred lighting shader samples it as 2D: the ambient light of the whole picture became one colour, washed out white. Supports 2D array <-> 2D, 2D array -> cube / cube array and cube -> 2D (its first face); a 2D texture in a cube or 3D slot reads zero; any other mismatch is reported once. Caller holds g_rmu
+// and the deferred lighting shader samples it as 2D: the ambient light of the whole picture became one colour, washed out white. Supports 2D array <-> 2D, 2D array -> cube / cube array, cube -> 2D (its first face) and cube / cube array -> 2D array (its faces as layers); a 2D texture in a cube or 3D slot reads zero; any other mismatch is reported once. Caller holds g_rmu
 #define DMY_NT 10   // one dummy per MTLTextureType value, 1D (0) to TextureBuffer (9)
 static id<MTLTexture> dummy_tex(int dtt, int dpf); static uint64_t g_dummy_tex_rid[DMY_NT][4];
 static id<MTLTexture> tex_fit(int tid, id<MTLTexture> t, MTLTextureType want, uint64_t *rid) {
@@ -5894,6 +5894,11 @@ static id<MTLTexture> tex_fit(int tid, id<MTLTexture> t, MTLTextureType want, ui
     // its draws read as 2D (a compute shader of CLC.g1s, the PBB materials' pixel shaders, the river's vertex shader), a different texture from run to run: the face-0 view makes
     // those reads defined instead of a type mismatch
     else if (want == MTLTextureType2D && have == MTLTextureTypeCube) ns = 1;
+    // A cube (or cube array) read as a 2D array: its faces are the array's layers, six to a cube, as Maxwell keeps them, so an array sample's layer is the face. The Legend of Zelda:
+    // Ocarina of Time (Switch 2) binds texture ID 906 (an NVN 2D array descriptor, target 4, format 0x3f, whose Metal texture is a cube) to slot 7 of shaders 9b310b3349825e9a and
+    // 09ab31c69af710c9, which declare a 2D array there: bound as is, a type mismatch whose reads are undefined on Metal
+    else if (want == MTLTextureType2DArray && have == MTLTextureTypeCube) ns = 6;
+    else if (want == MTLTextureType2DArray && have == MTLTextureTypeCubeArray) ns = t.arrayLength * 6;
     // A one-layer 2D texture in a cube slot has no cube view (Pokémon Legends: Z-A binds one to a cube sampler on its character creation screen, a placeholder for an environment map): the zero cube,
     // a defined read, instead of a type mismatch whose reads are undefined. The same for a 2D array of fewer than 6 layers, which is how the host holds some 2D textures (Mario Kart 8 Deluxe binds
     // an NVN 2D texture, format 0x44, at slot 10 of two pixel shaders that declare a cube there, as a race loads)
