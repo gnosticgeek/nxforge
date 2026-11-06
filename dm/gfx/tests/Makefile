@@ -128,8 +128,6 @@ t_cpu_tex: t_cpu_tex.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_cpu_tex.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
 t_deferred_release: t_deferred_release.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_deferred_release.m $(MTL_T_SRC) $(FW)
-t_mesh_indirect: t_mesh_indirect.m $(MTL_T_DEP)
-	clang $(CFLAGS) -fobjc-arc -o $@ t_mesh_indirect.m $(MTL_T_SRC) $(FW)
 t_res_guard: t_res_guard.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_res_guard.m $(MTL_T_SRC) $(FW)
 .PHONY: check_t_res_guard
@@ -175,22 +173,8 @@ t_tex_fit_root: t_tex_fit_root.m $(MTL_T_DEP)
 .PHONY: check_t_tex_fit_root
 check_t_tex_fit_root: t_tex_fit_root
 	MTL_DEBUG_LAYER=1 ./t_tex_fit_root
-t_pool_retired: t_pool_retired.m $(MTL_T_DEP)
-	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_retired.m $(MTL_T_SRC) $(FW)
-check_t_pool_retired: RUN_ENV = MTL_DEBUG_LAYER=1
 t_pool_chunks: t_pool_chunks.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_chunks.m $(MTL_T_SRC) $(FW)
-# Raw global memory on the GPU through the host's pool table (t_gmem_raw.m), with the shader test_dmsh_ampere_mem.py translates (DMSH_TEST_XLATE, default the in-repo translator);
-# skipped only when the translator does not run (its exit code 77)
-t_gmem_raw: t_gmem_raw.m $(MTL_T_DEP)
-	clang $(CFLAGS) -fobjc-arc -o $@ t_gmem_raw.m $(MTL_T_SRC) $(FW)
-.PHONY: check_t_gmem_raw
-check_t_gmem_raw: t_gmem_raw
-	@set -e; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; rc=0; DMSH_TEST_XLATE=$${DMSH_TEST_XLATE:-$(CURDIR)/../tools/dmsh_xlate_bin/dmsh_xlate} python3 test_dmsh_ampere_mem.py --fixture "$$work" || rc=$$?; \
-	if [ $$rc = 77 ]; then echo "t_gmem_raw: skipped, the translator does not run"; elif [ $$rc != 0 ]; then exit $$rc; else MTL_DEBUG_LAYER=1 ./t_gmem_raw "$$work/raw.metallib"; fi
-t_pool_table: t_pool_table.m $(MTL_T_DEP)
-	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_table.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
-check_t_pool_table: RUN_ENV = MTL_DEBUG_LAYER=1
 t_sparse_tiles: t_sparse_tiles.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_sparse_tiles.m ../../host/crash.c ../../host/hle_bigstack.c t_host_stubs.c $(filter-out ../nvn/nvn_mtl.m,$(GFX)) $(FW)
 t_readback: t_readback.m $(MTL_T_DEP)
@@ -259,9 +243,6 @@ check_t_queue_origin: t_queue_origin
 	MTL_DEBUG_LAYER=1 ./t_queue_origin
 	DM_NVN_ENC_THREAD=1 MTL_DEBUG_LAYER=1 ./t_queue_origin
 check_t_rast_discard: RUN_ENV = MTL_DEBUG_LAYER=1
-t_gmem_marks: t_gmem_marks.m $(MTL_T_DEP)
-	clang $(CFLAGS) -fobjc-arc -o $@ t_gmem_marks.m $(MTL_T_SRC) $(FW)
-check_t_gmem_marks: RUN_ENV = MTL_DEBUG_LAYER=1
 t_cpu_storage: t_cpu_storage.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_cpu_storage.m $(MTL_T_SRC) $(FW)
 check_t_cpu_storage: RUN_ENV = MTL_DEBUG_LAYER=1
