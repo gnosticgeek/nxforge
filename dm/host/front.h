@@ -65,7 +65,7 @@ float dm_audio_volume(void);
 // Audio tap (hle_audio.c; the video recorder): the 48 kHz 16-bit PCM of the first output playing, as it goes to the sound card before the host volume, ch channels interleaved. fn runs on the
 // real-time audio thread: it must not block or allocate. NULL stops
 void dm_audio_tap_set(void (*fn)(void *ctx, const int16_t *pcm, uint32_t frames, int ch), void *ctx);
-// The shape of the picture the game presents (nvn_mtl.m present_now: the valid rectangle of the presented texture, w x h), called when its width / height changes: the front end
+// The shape of the picture the game presents (nvn_mtl.m present_now, present_shape: the layer's, not the crop's, w x h), called when its width / height changes: the front end
 // lays the picture out in that shape instead of 16:9, so a profile with screen_aspect under DM_SCREEN_ASPECT (1920x1344) fills a 1.43:1 screen and touches map onto the picture
 // as drawn. Before the first call the picture is 16:9. Called from the present thread; the front end switches to its main thread and does not block
 void front_picture_shape(int w, int h);
@@ -109,6 +109,12 @@ void front_save_failed(int err);
 // The Mac front end leaves full screen, says why in an alert and quits as ⌘Q does; without a window it ends the run as the default weak implementation (nvn_mtl.m) does, which the iOS
 // front end keeps: a FATAL line and an abort. Called on Metal's feedback queue; the front end switches to the main thread itself and must not block
 void front_gpu_lost(void);
+
+// GPU memory nearly full (called by the graphics backend's nvn_mtl.m guard_stop, once): the game's GPU memory reached about 95% of Metal's working set, the most the driver can wire, and nothing more
+// could be let go. Past the working set the submit thread would wait in the kernel, unkillable, with the Mac frozen. The Mac front end stops the game's GPU work and sound, leaves full screen, says
+// why in an alert and quits as ⌘Q does, so the launcher's work after the game runs; without a window, and on iOS, the run ends with the host's graceful exit (the weak default in nvn_mtl.m).
+// used_mb, limit_mb: what is allocated, and the working set. Any thread; the front end switches to its main thread and must not block
+void front_gpu_memory_stop(unsigned long long used_mb, unsigned long long limit_mb);
 
 // Offline HTML pages (the web applet's offline pages; hle_web.c): a web view over the game picture (web_apple.m, Mac and iPhone). Called from guest threads; the front end works on its main
 // thread. front_web_open: dir = the folder the document path is relative to (an HtmlDocument's html-document), path = the document path with its query, callback = the URL prefix whose

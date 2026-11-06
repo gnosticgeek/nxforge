@@ -38,6 +38,33 @@ static void retired_classification(void) {
     mtl_alias_drop_pool(&pools[1]);
     CHECK(!tex_cpu_written(b.serial) && !tex_cpu_written(late.serial) && !g_cpu_tex_retired.n, "pool cleanup removes all retired classifications");
 }
+// A pool that holds both kinds: an uncompressed texture is kept from its storage only where the GPU wrote that storage (Ocarina of Time's height tiles beside textures the GPU writes)
+static void gpu_written_ranges(void) {
+    enum { LEN = 4 << 20, FAR = 2 << 20 };
+    uint8_t *mem = mmap(NULL, LEN, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0); if (mem == MAP_FAILED) abort();
+    memset(mem, 0x5a, LEN);
+    static pool_t pool = {.magic=MAGIC('P','O','O','L'), .flags=NVN_MEMORY_POOL_FLAGS_CPU_CACHED | NVN_MEMORY_POOL_FLAGS_GPU_CACHED}; pool.mem = mem; pool.size = LEN;
+    tex_t a = {.magic=MAGIC('T','E','X',0), .serial=nvn_new_serial(), .pool=&pool, .mem=mem}, b = a; b.serial = nvn_new_serial(); b.mem = mem + FAR; b.off = FAR;
+    a.d = b.d = (nvn_texdesc){.target=NVN_TEXTURE_TARGET_2D, .format=NVN_FORMAT_R32F, .width=260, .height=260, .depth=1, .levels=1, .samples=1};
+    nvn_tex_layout(&a.d, &a.L); b.L = a.L;
+    mtl_tex_gpu_written(&pool, mem + FAR, a.L.size);
+    CHECK(tex_cpu_content(&a), "a texture beside what the GPU wrote is taken from its storage, in a pool the GPU writes");
+    CHECK(!tex_cpu_content(&b), "the one over it is not");
+    atomic_store(&g_pool_gpuw_new, 1); cpu_unc_drop();
+    CHECK(nvn_hm_get(&g_cpu_unc, &a.serial) != NULL, "a write elsewhere in the pool leaves it taken");
+    mtl_tex_gpu_written(&pool, mem + 16, 16); cpu_unc_drop();
+    CHECK(!nvn_hm_get(&g_cpu_unc, &a.serial) && !g_cpu_unc_lo.n && !g_cpu_unc_sz.n, "a write over its storage ends that");
+    CHECK(gpuw_overlaps((uint64_t)(uintptr_t)mem + 20, (uint64_t)(uintptr_t)mem + 21) && !gpuw_overlaps((uint64_t)(uintptr_t)mem + 32, (uint64_t)(uintptr_t)mem + 64), "the ranges are exact");
+    uint64_t base = (uint64_t)(uintptr_t)mem; uint32_t n = g_ngpuw;
+    CHECK(gpuw_add(base + 8, base + 40) && g_ngpuw == n && !gpuw_add(base + 20, base + 30), "ranges merge, and one inside another is nothing new");
+    gpuw_add(base + 100, base + 200); gpuw_drop(base + 120, base + 130);
+    CHECK(gpuw_overlaps(base + 110, base + 111) && gpuw_overlaps(base + 150, base + 151) && !gpuw_overlaps(base + 125, base + 126), "dropping the middle of a range leaves both ends");
+    cpu_tex_drop_pool(&pool);
+    CHECK(!gpuw_overlaps(base, base + LEN), "a pool that goes takes its ranges along");
+    mtl_tex_gpu_written(&pool, NULL, 0);
+    CHECK(gpuw_overlaps(base + LEN - 1, base + LEN), "no range given: the whole pool");
+    cpu_tex_drop_pool(&pool); munmap(mem, LEN);
+}
 static void descriptor_replacement(void) {
     tex_t a = {.serial=nvn_new_serial()}, b = {.serial=nvn_new_serial()};
     mtl_tex_init(&a); mtl_tex_init(&b);
@@ -103,44 +130,36 @@ static void finalized_upload(int write_after_record) {
     CHECK(!tex_cpu_written(serial), "pool finalization drops retired CPU classification");
     defer_drain(); munmap(mem,len);
 }
-static void finalized_bindless_pool(void) {
-    enum { N = NGHOST + 16, FIRST = 256, STRIDE = 4096 };
-    const size_t len = N * STRIDE;
+// A texture whose serial left the CPU-written set while its packaged entry is still the texture table's (tex_from_storage is then false): tex_mtl gave the NvPkg itself out as the
+// MTLTexture, and tex_by_id's base.buffer threw "-[NvPkg buffer]: unrecognized selector" (upstream #1299, a crash under a mesh task draw). It hands out the entry's texture, as tex_made does
+static void packaged_entry_outside_the_set(void) {
+    const size_t len = 262144;
     uint8_t *mem = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
     if (mem == MAP_FAILED) abort();
-    NVNmemoryPool pool = {0};
-    pool_builder_t pb = {.mem = mem, .size = len, .flags = NVN_MEMORY_POOL_FLAGS_CPU_CACHED | NVN_MEMORY_POOL_FLAGS_GPU_CACHED};
-    CHECK(h_nvnMemoryPoolInitialize(&pool, (const NVNmemoryPoolBuilder *)&pb), "bindless texture storage initialized");
-    NVNtextureBuilder tb; h_nvnTextureBuilderSetDefaults(&tb);
+    pool_t pool = {0}; pool_builder_t pb = {.mem=mem, .size=len, .flags=NVN_MEMORY_POOL_FLAGS_CPU_CACHED | NVN_MEMORY_POOL_FLAGS_GPU_CACHED};
+    CHECK(h_nvnMemoryPoolInitialize((NVNmemoryPool *)&pool, (const NVNmemoryPoolBuilder *)&pb), "CPU-cached pool initialized");
+    NVNtextureBuilder tb; NVNtexture tex = {0}; h_nvnTextureBuilderSetDefaults(&tb);
     h_nvnTextureBuilderSetWidth(&tb, 4); h_nvnTextureBuilderSetHeight(&tb, 4); h_nvnTextureBuilderSetFormat(&tb, NVN_FORMAT_RGBA8);
-    NVNcopyRegion region = {0, 0, 0, 4, 4, 1};
-    uint8_t pixels[64]; memset(pixels, 0x7e, sizeof pixels);
-    int initialized = 1;
-    for (int i = 0; i < N; i++) {
-        NVNtexture tex = {0};
-        h_nvnTextureBuilderSetStorage(&tb, &pool, (ptrdiff_t)i * STRIDE);
-        initialized &= h_nvnTextureInitialize(&tex, &tb);
-        h_nvnTextureWriteTexels(&tex, NULL, &region, pixels);
-        mtl_reg_tex(FIRST + i, (const tex_t *)&tex, NULL);
-        h_nvnTextureFinalize(&tex);
-    }
-    CHECK(initialized, "all retired descriptors have valid storage");
+    h_nvnTextureBuilderSetStorage(&tb, (NVNmemoryPool *)&pool, 65536);
+    CHECK(h_nvnTextureInitialize(&tex, &tb), "texture initialized");
+    uint64_t serial = ((tex_t *)&tex)->serial;
+    uint8_t pixels[64]; for (int i=0;i<64;i++) pixels[i]=(uint8_t)(i+32);
+    NVNcopyRegion region = {0,0,0,4,4,1};
+    h_nvnTextureWriteTexels(&tex, NULL, &region, pixels);
+    mtl_reg_tex(1, (const tex_t *)&tex, NULL);
     mtl_sub_begin();
-    uint64_t uploads = g_pkg_uploads;
-    __unsafe_unretained id<MTLBuffer> a = nil, b = nil;
-    os_unfair_lock_lock(&g_rmu);
-    pool_gpu(0, MTLTextureType2D, NVN_DPF_FLOAT, 0, &a);
-    uint64_t first = ((const uint64_t *)((const char *)a.contents + DMSH_POOL_HEAD))[FIRST];
-    CHECK(g_pkg_uploads == uploads + N && g_ghost_active.n == N, "one upload per retired descriptor in the first pool walk");
-    pool_gpu(0, MTLTextureType2D, NVN_DPF_FLOAT, 0, &b);
-    uint64_t again = ((const uint64_t *)((const char *)b.contents + DMSH_POOL_HEAD))[FIRST];
-    os_unfair_lock_unlock(&g_rmu);
-    CHECK(first == again && g_pkg_uploads == uploads + N, "rebuilding the pool preserves textures that spilled out of the ghost ring");
-    CHECK(mtl_wait(mtl_sub_commit(), 5000000000ull) && !mtl_last_commit_error(), "bindless pool uploads completed");
-    CHECK(!g_ghost_active.n && g_ghost.n == NGHOST && !g_treg[FIRST].view, "submission drops its pins and transient views and keeps the bounded ghost cache");
-    for (int i = 0; i < N; i++) mtl_reg_tex(FIRST + i, NULL, NULL);
-    h_nvnMemoryPoolFinalize(&pool);
-    defer_drain(); munmap(mem, len);
+    id<MTLTexture> first = tex_by_id(1);
+    CHECK(first && first.width == 4, "the packaged texture resolves");
+    id held = tex_get(serial);
+    CHECK([held isKindOfClass:[NvPkg class]], "its table entry is an NvPkg");
+    pthread_mutex_lock(&g_cpu_tex_mu); nvn_hm_del(&g_cpu_tex, &serial); pthread_mutex_unlock(&g_cpu_tex_mu);   // the serial leaves the set, its entry stays (cpu_unc_drop between its deletes and its tex_put)
+    CHECK(!tex_cpu_written(serial), "the serial is no longer CPU-written");
+    id<MTLTexture> again = tex_mtl((const tex_t *)&tex);
+    CHECK(again && ![(id)again isKindOfClass:[NvPkg class]], "tex_mtl does not hand out the NvPkg");
+    CHECK(again && again.width == 4 && again.height == 4, "it hands out the entry's texture");
+    CHECK(mtl_wait(mtl_sub_commit(),5000000000ull), "submission completed");
+    mtl_reg_tex(1,NULL,NULL); h_nvnMemoryPoolFinalize((NVNmemoryPool *)&pool);
+    defer_drain(); munmap(mem,len);
 }
 int main(int argc, const char **argv) { @autoreleasepool {
     enum { N = 6442, BASE = 1000 };
@@ -166,7 +185,16 @@ int main(int argc, const char **argv) { @autoreleasepool {
     tex_t z = {0}; mtl_tex_cpu_written(&z);
     CHECK(mtl_cpu_tex_count() == N - 2, "a texture with no serial is not recorded");
     for (int i=0;i<N;i++) mtl_tex_release(&t[i]);
-    retired_classification(); descriptor_replacement();
-    if (argc > 1 && !strcmp(argv[1], "--metal")) { mtl_init(); finalized_upload(0); finalized_upload(1); finalized_bindless_pool(); }
+    // NVNtexture is plain data: finalizing a copy ends the copy. The texture stays live while the object it was initialized in holds it; if that object no longer does, the copy was the last one
+    static tex_t own, cpy, moved;
+    own.magic = MAGIC('T', 'E', 'X', 0); own.serial = 900001; own.d = t[0].d; mtl_tex_init(&own); mtl_tex_cpu_written(&own);
+    cpy = own; mtl_tex_release(&cpy);
+    CHECK(tex_cpu_written(own.serial) == 1, "finalizing a copy leaves the texture live");
+    mtl_tex_release(&own);
+    CHECK(!nvn_hm_get(&g_tex_live, &own.serial), "finalizing the object itself ends it");
+    own.serial = 900002; mtl_tex_init(&own); moved = own; own.magic = 0; mtl_tex_release(&moved);
+    CHECK(!nvn_hm_get(&g_tex_live, &moved.serial), "a copy outliving the object it was initialized in ends the texture");
+    retired_classification(); descriptor_replacement(); gpu_written_ranges();
+    if (argc > 1 && !strcmp(argv[1], "--metal")) { mtl_init(); finalized_upload(0); finalized_upload(1); packaged_entry_outside_the_set(); }
     printf("t_cpu_tex: %d checks, %d failed\n", checks, failed); return failed != 0;
 } }
