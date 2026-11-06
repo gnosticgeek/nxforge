@@ -209,7 +209,12 @@ def library_digest(lib_dir, bases):
 
 
 def base_key(lib_dir, base):
-    """One base's identity: its libraries' names and bytes and its entry points (every other part of its descriptor is the same for all bases)"""
+    """One base's identity: its libraries' names and bytes and its entry points (every other part of its descriptor is the same for all bases).
+    A render base is a 4-tuple (vertex library and entry, pixel library and entry), a compute kernel a 2-tuple (library and entry, #1522); a kernel's key is tagged so it can
+    never equal a render base's"""
+    if len(base) == 2:
+        cl, ce = base
+        return hashlib.sha256(b'\0'.join((b'cs', cl.encode(), ce.encode(), lib_digest(lib_dir, cl)))).hexdigest()[:32]
     vl, ve, fl, fe = base
     return hashlib.sha256(b'\0'.join((vl.encode(), ve.encode(), lib_digest(lib_dir, vl), fl.encode(), fe.encode(), lib_digest(lib_dir, fl)))).hexdigest()[:32]
 
