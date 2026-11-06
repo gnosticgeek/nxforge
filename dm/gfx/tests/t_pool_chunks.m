@@ -115,7 +115,7 @@ int main(void) { @autoreleasepool {
     // More pools than DMSH_GMEM_MAP_ENTRIES (Ocarina of Time loads its save with up to about 4,500): each still has an entry, found by the search
     enum { MANY = 5000, PG = 16384 };
     uint8_t *many = mmap(NULL, (size_t)MANY * 2 * PG, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0); if (many == MAP_FAILED) abort();
-    for (int i = 0; i < MANY; i++) mtl_pool_add(many + (size_t)i * 2 * PG, PG);   // a page apart: a range each
+    for (int i = 0; i < MANY; i++) { mtl_pool_add(many + (size_t)i * 2 * PG, PG); mtl_pool_buffer_addr(many + (size_t)i * 2 * PG, PG); }   // a page apart: a range each, each with a buffer address taken (only those go into the table)
     mtl_sub_begin(); CHECK("pool table rebuilt", gmem_map() != nil); finish();
     id<MTLBuffer> map = g_gmem_buf; unsigned cap = (unsigned)(map.length / DMSH_GMEM_MAP_ENTRY); const uint32_t *mw = map.contents;
     CHECK("the table grows to a power of two that holds every pool", cap >= MANY + 2 && !(cap & (cap - 1)) && cap < 2 * (MANY + 2) && mw[4] == cap);
