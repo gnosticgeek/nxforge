@@ -2,6 +2,21 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+Merges nxnative's `main` up to `88c7e03` (25 commits since `865cc35`, 2026-11-04 to 2026-11-06), resolved on the Ocarina of Time branch (`claude/project-thread-27ja4m`). That branch built and passed its tests on the Mac, then ran a 10-minute Kokiri Forest check. The notes below are what changes for NXForge.
+
+**From upstream**
+- **The Legend of Zelda: Ocarina of Time (Switch 2) is on upstream's `main`.** Upstream closed the bring-up pull requests NXForge had merged ahead of it (#1299, #1300, #1312, #1343, #1345, #1353, #1354, #1359, #1360, #1373, #1428, #1430, #1434) and landed its own versions. NXForge now takes those versions whole, translator, host and tests together, instead of keeping the pull-request copies. #1394, #1393 (`pool_skip_retired`) and #1368's mesh prewarm are dropped too, because upstream's new versions replace them. Measured against the 0.11.0-based app on the same save and route: median frame 22.0 ms (was 26.1), p95 23.8 ms (was 28.2), peak resident memory 10.1 GB (was 14.2), no crashes and no red lines.
+- **Kirby Air Riders (Switch 2)** plays at 60 fps, and Mario Strikers: Battle League gets past its black screen after the loading text.
+- A failed command buffer now names its game shaders (upstream's version of the hang names NXForge carried from an open pull request). Each audio renderer plays from its own PCM blocks. The Mac's alias region is the Switch's 64 GB. A 5:4 cutscene crop fills a 16:9 screen again (Galaxy 2).
+
+**Kept in NXForge**
+- NXForge keeps its own `dm/tools/romfs_image.py` (#1354 as NXForge merged it, which also accepts stamps written before the change). Upstream's landed version differs only in that check. The packer's bytes are part of the image stamp, so keeping NXForge's copy means no game's RomFS image is packed again; Ocarina of Time's is 26 GB.
+- Upstream pull requests that are still open stay merged: #1414 (ATOMG.CAS), the LDSM barrier and the rest that `.github/upstream-watch.tsv` does not skip. NXForge's own GPU watchdog (`DM_NVN_GPU_WATCHDOG`) and the stop when macOS revokes GPU access are kept as well.
+- The FXAA warnings move to `RED_ONCE` slots 156 and 157, because upstream took 153 and 154.
+- The shader chain is now `053e94e1fda9`, so every NVN game's shaders rebuild once.
+
 ## 0.11.0 (2026-11-05)
 
 Merges nxnative's `main` up to `975bb4c` (260 commits since `2716f78`, 2026-10-31 to 2026-11-04). The notes below are what changes for NXForge.
