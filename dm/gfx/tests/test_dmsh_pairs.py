@@ -75,6 +75,8 @@ class Pairing(unittest.TestCase):
         self.extra.write_text('# BAHS\nv\tf1\nv\tf6\nv\tf1\n\n')
         self.ns = builder()
         self.ns.update(out=str(self.root), PAIRS=self.ns['load_pairs'](self.g, self.package))
+        # output(): a finished shader's file, read from the output folder here (the build also looks in the cache's stage, which this test has none of)
+        self.ns['output'] = lambda label, name: (self.root / name).read_bytes() if (self.root / name).exists() else None
         for key, loc in [('f0', 0), ('f1', 1), ('f6', 6)]:
             src = pixel(loc)
             if not loc: src = src.replace('    float4 missing [[user(locn0)]];\n', '').replace('in.v0 + in.missing', 'in.v0')

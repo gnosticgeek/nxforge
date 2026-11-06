@@ -20,9 +20,9 @@ from test_dmsh_ampere_alu import STORE, waiting, s2r_tid   # noqa: E402
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 tree = ast.parse((TOOLS / 'dmsh_build.py').read_text())
 scope = {}
-exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.Assign) and any(getattr(t, 'id', None) == 'MAC_METAL' for t in n.targets)], type_ignores=[]),
+exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.Assign) and any(getattr(t, 'id', None) in ('MAC_METAL', '_XCRUN_METAL') for t in n.targets)], type_ignores=[]),
              str(TOOLS / 'dmsh_build.py'), 'exec'), scope)
-MAC_METAL = scope['MAC_METAL']
+MAC_METAL = scope['_XCRUN_METAL'] if '_XCRUN_METAL' in scope else scope['MAC_METAL']   # PR #1520: the Mac compile picks its launch at import; xcrun's is the one a test can name
 
 LDG = (0x000ea200081e890f, 0x0000000405067981)   # LDG.E R6, [R5.64 + UR4]: R5 the thread index, an address the translator traces to no storage buffer
 HELPER = re.compile(r'(?m)^int (_\d+)\(thread const int& _\d+, thread const int& _\d+, const device (_\d+)& \w+, thread uint& (_\d+)\)\n\{\n')
