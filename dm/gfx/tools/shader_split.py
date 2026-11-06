@@ -223,7 +223,8 @@ def ndsr_shaders(d, label):
     entries point at control sections. Read from +0x10 the same pack gave no shader, the upscaler's draws were skipped and every 3D frame reached the window black"""
     if d[:4] != b'NDSR' or len(d) < 0x20: return []
     def entries_from(o):   # how many of the first entries point at an NVN2 control section
-        return sum(1 for c, _ in struct.iter_unpack('<2I', d[o:o + 16 * 16]) if c + 0x48 <= len(d) and nvn2_ctl(d[c:c + 0x48]))
+        n = min(32, (len(d) - o) // 8)   # whole entries only: a file whose length after o is not a multiple of 8 made iter_unpack raise
+        return sum(1 for c, _ in struct.iter_unpack('<2I', d[o:o + 8 * n]) if c + 0x48 <= len(d) and nvn2_ctl(d[c:c + 0x48]))
     out = []; o = max((0x10, 0x14), key=entries_from); prog = None
     while o + 16 <= len(d):
         c, cl, k, _ = struct.unpack_from('<4I', d, o)
@@ -2559,6 +2560,20 @@ def unity_text_glslc(x, base):
         if b'\x91\x68\x86\x19' in b: out += glslc_shaders(b, f'{base}#{name}', need=False)
     return out
 
+def narc_members(d, label):
+    """The members of a NARC (cra.py), each unpacked: red() for a damaged or cut one, where cra.py raises (a header, table or member past the end, a packed member that does not
+    unpack) instead of the declared rejection. An LZ4 member's unpacked size is in its header and allocated before it is read: more than LZ4's largest ratio (about 255) of the
+    NARC's length is a damaged header, not a member"""
+    import cra
+    import lz4.block
+    try: members = cra.narc_members(d, label)
+    except (cra.Error, struct.error) as e: red(f'{label}: {e}' if str(e).startswith(label) else f'{label}: a NARC header or table past the end ({e})')
+    for i, m in enumerate(members):
+        if m[:1] == b'\x94' and len(m) >= 8 and struct.unpack_from('<I', m, 4)[0] > 256 * len(d): red(f'{label}/{i}: an LZ4 member larger than LZ4 can pack into the file')
+        try: m = cra.undo(m)
+        except (cra.Error, struct.error, IndexError, lz4.block.LZ4BlockError, zlib.error, cra.zstd_mod().ZstdError) as e: red(f'{label}/{i}: a packed member that does not unpack ({e})')
+        yield m
+
 NEST = 16   # archives in archives scan_blob opens (SARC, PlatinumGames' DAT): real files nest a few. A damaged or crafted one could nest one per header's length, or have every
             # member point at the same inner archive, its work doubling with each level. Two budgets of NEST times the file bound the work: left[0], the members a file's archives open,
             # each counted by what it takes up in its archive, and left[1], what its Yaz0 members expand to. Counting a Yaz0 member by what it expands to in the first budget paid twice
@@ -2589,8 +2604,7 @@ def scan_blob(d, label, out, depth=0, left=None):
         for nm, m in sarc_members(d, label): scan_blob(m, f'{label}/{nm}', out, depth + 1, left)
         return
     if d[:4] == b'NARC':   # Camelot's containers (cra.py): each member packed by its first byte, so its size says nothing about the budget above
-        import cra
-        for i, m in enumerate(cra.narc_members(d, label)): scan_blob(cra.undo(m), f'{label}/{i}', out, depth + 1)
+        for i, m in enumerate(narc_members(d, label)): scan_blob(m, f'{label}/{i}', out, depth + 1)
         return
     if d[:4] == b'BAHS': out.extend(bahs_shaders(d, label)); return
     if d[:4] == b'NDSR': out.extend(ndsr_shaders(d, label)); return
