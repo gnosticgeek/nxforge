@@ -189,6 +189,18 @@ class Doctor(unittest.TestCase):   # the optional tools a game needs, decided as
             self.assertEqual(nx.main(['doctor', str(oot)]), 1)
         self.assertIn('fix: /py -m pip install zbic', out.getvalue()); self.assertIn('--  glslang', out.getvalue())
 
+    def test_build_refused_before_it_starts_when_the_game_needs_a_missing_tool(self):
+        oot = self.game('oot', ['0400486024DEC000_build', 'prod.keys'])
+        tools = {'glslang': (False, 'not found', 'brew install glslang'), 'nsz': (True, 'installed', ''), 'zbic': (False, 'not installed', '/py -m pip install zbic==1.0.1.post1')}
+        with mock.patch.object(nx, 'settings', dict), mock.patch.object(nx, 'find_repo', lambda s: str(self.repo)), \
+             mock.patch.object(nx, 'find_python', lambda s, r: ('/py', [])), mock.patch.object(nx, 'optional_tools', lambda py, env: tools):
+            with self.assertRaises(nx.Refused) as e: nx.build_command(str(oot))
+            self.assertIn('zbic is needed (Switch 2 games', str(e.exception)); self.assertIn('/py -m pip install zbic', str(e.exception))
+            self.assertNotIn('glslang', str(e.exception))   # not an OpenGL game
+            tools['zbic'] = (True, 'installed', '')
+            repo, args = nx.build_command(str(oot))
+            self.assertEqual(args[:3], ['/py', '-u', f'{self.repo}/scripts/build_ipa_from_nsp.py'])
+
 
 class StatusLines(unittest.TestCase):   # status printed the interpreter's path (cut at 100 characters, before the script's name) and the converter's caffeinate wrapper as a second build
     def test_a_build_reads_from_its_script_once(self):

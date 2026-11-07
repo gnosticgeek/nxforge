@@ -7,7 +7,7 @@
 #   builds                 the recorded builds: app, game folder, engine, whether the app is still there, backups
 #   disk                   what NXForge uses on disk, by category, with what a safe cleanup would free
 #   clean                  delete what a category holds: --safe (the hourly-safe set), or --only <category>[,…]; --dry-run lists without deleting
-#   build <game folder>    build or rebuild a game's Mac app as the converter does (--plan: the dry run that lists which stages are reused or redone; --background)
+#   build <game folder>    build or rebuild a game's Mac app as the converter does, refused when the game needs glslang / nsz / zbic and it is missing (--plan: the dry run that lists which stages are reused or redone; --background)
 #   jobs / job <id> / stop <id>   background builds started here
 #   update [--apply]       engine updates: commits waiting on its update branch; --apply fast-forwards
 #   doctor [game folder]   the tools a build needs (git, python modules, dotnet, xcrun), then glslang / nsz / zbic: optional unless the game folder needs one; exit 1 when one is missing
@@ -582,6 +582,9 @@ def build_command(game_dir, *, plan=False, rebuild=None, out=None, keys=None, cl
     if not py or miss: raise Refused(f'no Python with the script\'s modules ({", ".join(miss)}): run doctor')
     gd = Path(game_dir).expanduser().resolve()
     if not gd.is_dir(): raise Refused(f'{gd} is not a folder')
+    if not plan and (needs := game_needs(gd, repo)):   # as the converter does before it starts a build: a missing one would stop the build partway (nsz at the start, zbic at the unpack)
+        tools = optional_tools(py, tool_env(repo))
+        if gone := [n for n in needs if not tools[n][0]]: raise Refused('; '.join(f'{n} is needed ({needs[n]}): {tools[n][2]}' for n in gone))
     keys = keys or (str(gd / 'prod.keys') if (gd / 'prod.keys').is_file() else s.get('default_keys') or s.get('keys'))
     if not keys or not Path(keys).expanduser().is_file(): raise Refused('no prod.keys: put one in the game folder or pass --keys')
     if plan and not script_has(repo, py, '--plan'): raise Refused(f'the engine at {repo} has no --plan yet (update it)')
@@ -758,6 +761,18 @@ def game_needs(game_dir, repo):
     return out
 
 
+def optional_tools(py, env):
+    """{name: (there, detail, the command that installs it)} for the tools only some games need: glslang, and nsz / zbic in the build's Python"""
+    def has(mod):
+        try: return bool(py) and subprocess.run([py, '-I', '-c', f'import {mod}'], capture_output=True, timeout=30, env=env).returncode == 0
+        except (OSError, subprocess.TimeoutExpired): return False
+    gl = shutil.which('glslangValidator', path=env['PATH'])
+    nsz, zbic = has('nsz'), has('zbic')
+    return {'glslang': (bool(gl), gl or 'not found', 'brew install glslang'),
+            'nsz': (nsz, 'installed' if nsz else 'not installed in that Python', f'{py} -m pip install nsz'),
+            'zbic': (zbic, 'installed' if zbic else 'not installed in that Python', f'{py} -m pip install zbic==1.0.1.post1')}
+
+
 def doctor(game_dir=None):
     """The tools a build needs, then the optional ones (glslang, nsz, zbic) the converter's Toolchain page lists: optional unless game_dir is a game that needs one"""
     s = settings()
@@ -770,14 +785,7 @@ def doctor(game_dir=None):
         checks.append((t, bool(w), w or 'not found'))
     out = [{'name': n, 'ok': ok, 'detail': d} for n, ok, d in checks]
     needs = game_needs(game_dir, repo) if game_dir else {}
-    def has(mod):
-        try: return bool(py) and subprocess.run([py, '-I', '-c', f'import {mod}'], capture_output=True, timeout=30, env=env).returncode == 0
-        except (OSError, subprocess.TimeoutExpired): return False
-    gl = shutil.which('glslangValidator', path=env['PATH'])
-    nsz, zbic = has('nsz'), has('zbic')
-    for name, ok, detail, fix in (('glslang', bool(gl), gl or 'not found', 'brew install glslang'),
-                                  ('nsz', nsz, 'installed' if nsz else 'not installed in that Python', f'{py} -m pip install nsz'),
-                                  ('zbic', zbic, 'installed' if zbic else 'not installed in that Python', f'{py} -m pip install zbic==1.0.1.post1')):
+    for name, (ok, detail, fix) in optional_tools(py, env).items():
         out.append({'name': name, 'ok': ok, 'detail': detail, 'optional': name not in needs, **({'needed': needs[name]} if name in needs else {}), **({} if ok else {'fix': fix})})
     return out
 

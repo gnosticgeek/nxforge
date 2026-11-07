@@ -18,7 +18,7 @@ Every command takes `--json` (before the command) for one JSON document on stand
 | `disk [--all] [--only …] [--game …]` | What NXForge uses on disk (game folders, build folders and their entries, caches, checkouts) and what each cleanup category would free; deletes nothing |
 | `clean --safe` / `clean --only <categories>` `[--dry-run] [--game …]` | Deletes what the categories hold; `--dry-run` lists it instead |
 | `clean --worktree <path>` | Removes one engine worktree, only when it is clean, pushed and not the engine |
-| `build <game folder> [--plan] [--rebuild <app>] [--background]` | Builds the game's Mac app as the converter does (keys: the folder's `prod.keys`, else the settings'); `--plan` is the dry run that lists the stages that will be reused or redone (engines that have it); `--background` starts a job |
+| `build <game folder> [--plan] [--rebuild <app>] [--background]` | Builds the game's Mac app as the converter does (keys: the folder's `prod.keys`, else the settings'); refused before it starts, with the install command, when the game needs glslang, nsz or zbic and it is missing (see `doctor`); `--plan` is the dry run that lists the stages that will be reused or redone (engines that have it); `--background` starts a job |
 | `jobs`, `job <id>`, `stop <id>` | Background builds: stage, progress, result and the last log lines; `stop` is the app's Stop |
 | `update [--apply]` | Fetches the engine and lists the commits waiting on its update branch; `--apply` fast-forwards (refused while a build runs or with uncommitted changes) |
 
