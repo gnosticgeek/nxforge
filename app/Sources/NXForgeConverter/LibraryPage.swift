@@ -106,7 +106,7 @@ struct LibraryPage: View {
                 }
                 Text(([g.contents, g.titleID, g.bytes > 0 ? Disk.gb(g.bytes) : nil].compactMap { $0 }).joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
                 if g.shared {
-                    Label("Shares its folder with other games: Convert moves its \(g.fileCount) file\(g.fileCount == 1 ? "" : "s") into a folder of their own", systemImage: "folder.badge.plus")
+                    Label("Shares its folder with other games: Convert first moves its \(g.fileCount == 1 ? "file" : "\(g.fileCount) files") into a folder of its own", systemImage: "folder.badge.plus")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(g.notes, id: \.self) { n in
