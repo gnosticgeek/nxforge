@@ -28,6 +28,10 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - Texture samples overlap better on the GPU (#1230, `shader_border_emu 0`, `shader_nan_coord fmax`), measured on an M1 Pro.
 - Not taken: #1350 (segment times without the GPU's idle gaps: written before upstream's in-buffer segment boundaries, and with them two reports in one command buffer read the same time), #1251 (cube-map prefilter split by output; written before the one-file shader libraries, its MSL copy does not fit them), #1292 (1.8.0 image slots; this Mac has the base game), the LAN and iOS work in progress (#1321, #1383).
 
+**Small fixes and tweaks**
+- `c1_full.tsv` and `cb_extent.tsv` keep their bytes when a full shader build finds the same rows, and a new one carries no clock time, so a rebuild that changes no shader changes no packed table (from devinhurry's fork, f6c3b82b).
+- `nxforge status`: a running build shows from its script (`build_ipa_from_nsp.py --mac base.nsp ...`) instead of the Python framework's path, once instead of twice (the converter's `caffeinate` wrapper), and recorded builds whose app was deleted are counted on one line.
+
 ## 0.13.0 (2026-11-06)
 
 A performance release. Merges nxnative's `main` up to `04df08d` (11 commits since `88c7e03`) and upstream pull requests that are still open, picked for build and run-time speed. The shader chain changes, so every NVN game's shaders rebuild once.
