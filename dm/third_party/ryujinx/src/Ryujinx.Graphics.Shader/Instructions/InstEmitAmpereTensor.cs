@@ -1,3 +1,4 @@
+using System.Linq;
 using Ryujinx.Graphics.Shader.Decoders;
 using Ryujinx.Graphics.Shader.IntermediateRepresentation;
 using Ryujinx.Graphics.Shader.Translation;
@@ -261,18 +262,17 @@ namespace Ryujinx.Graphics.Shader.Instructions
             Operand g = compute ? null : context.ShiftRightU32(lane, Const(2));
             Operand t = compute ? null : context.BitwiseAnd(lane, Const(3));
 
+            // nxnative: LDSM reads rows that other lanes of the warp stored (STS) just before, often with no BAR between them (Ocarina of Time's NDVE movie networks and its
+            // scene's compute). On the Switch a warp's shared memory accesses are in order; Metal orders another lane's threadgroup store and this lane's load only through a
+            // barrier, and its compiler moves them past each other: dotted rows, every other pixel of a few rows wrong (the high halves of packed pairs), in other places each run.
+            // LDSM is warp-collective (the whole warp runs it), so a subgroup barrier before its reads (the stores have landed) and one after (no lane's next store reaches the
+            // rows before every lane has read them) is safe. In a compute shader the barriers bracket the MatrixLoads, so they bracket the per-lane code TensorPass puts in their
+            // place; TensorPass does not count a subgroup barrier as a shared memory write, so an HMMA still reads its A straight from where the LDSM read it
+            context.SubgroupBarrier();
+
             // nxnative: in a compute shader, one MatrixLoad a matrix (sources: shared memory id, mode, row address, matrix), which TensorPass lowers to the same per-lane code
             // (LdsmLane) once it knows whether the HMMAs it feeds read their A straight from where it reads (Ampere HMMA through simdgroup_matrix). One destination each:
             // the optimizer's dead code removal takes an operation whose destination nothing reads as dead, sources included
-            // nxforge: LDSM reads rows that other lanes of the warp stored (STS) just before, with no BAR between (the agl networks of Ocarina of Time's movie filter); the
-            // warp's shared memory accesses are in order on the Switch, while Metal orders another lane's threadgroup store and this load only through a barrier: every other
-            // pixel of a few rows came out wrong. LDSM is warp-collective, so a subgroup barrier before its loads and one after is safe (TensorPass.LowerLoad fences the
-            // compute form the same way)
-            if (!compute)
-            {
-                context.SubgroupBarrier();
-            }
-
             for (int m = 0; m < count && x.Rd + m < RegisterConsts.RegisterZeroIndex; m++)
             {
                 Operand result = compute ? context.Add(Instruction.MatrixLoad, Local(), Const(id), Const(mode), addr, Const(m)) : LdsmLane(context, g, t, addr, id, m, mode);
@@ -280,10 +280,7 @@ namespace Ryujinx.Graphics.Shader.Instructions
                 context.Copy(Register(x.Rd + m, RegisterType.Gpr), result);
             }
 
-            if (!compute)
-            {
-                context.SubgroupBarrier();
-            }
+            context.SubgroupBarrier();
         }
 
         // LDSM per lane: lane L's register of matrix m (g = L / 4, t = L % 4), from the row addresses (bytes in shared memory `id`) the lanes hold in addr
@@ -341,12 +338,26 @@ namespace Ryujinx.Graphics.Shader.Instructions
             }
         }
 
+        // .FTZ (80) of HSETP2 / HSET2: a subnormal half compares as zero, as FSETP.FTZ's float does (AFtz). The lanes are unpacked to 32 bits, where a half's subnormals
+        // are normal floats, so FlushDenormal's bound would never flush them: the half's own bound is 2^-14
+        private static (Operand[] A, Operand[] B) AHalfFtz(EmitterContext context, AmpereOp x, (Operand[] A, Operand[] B) src)
+        {
+            if (!x.Bit(80))
+            {
+                return src;
+            }
+
+            Operand[] Flush(Operand[] v) => [.. v.Select(l => context.ConditionalSelect(context.FPCompareLess(context.FPAbsolute(l), ConstF(6.1035156e-05f)), ConstF(0), l))];
+
+            return (Flush(src.A), Flush(src.B));
+        }
+
         // HSETP2 Pd0, Pd1, a, b, P: each half's comparison (76..80) combined with P (87..90) by the operation at 69..71; with .H_AND (71) the two halves' results ANDed
         // into Pd0 and its negation into Pd1
         public static void AHsetp2(EmitterContext context)
         {
             AmpereOp x = new(context.CurrOp);
-            (Operand[] a, Operand[] b) = AHalfSecond(context, x);
+            (Operand[] a, Operand[] b) = AHalfFtz(context, x, AHalfSecond(context, x));
 
             Operand lo = GetFPComparison(context, (FComp)x.Bits(76, 80), a[0], b[0]);
             Operand hi = GetFPComparison(context, (FComp)x.Bits(76, 80), a[1], b[1]);
@@ -368,7 +379,7 @@ namespace Ryujinx.Graphics.Shader.Instructions
         public static void AHset2(EmitterContext context)
         {
             AmpereOp x = new(context.CurrOp);
-            (Operand[] a, Operand[] b) = AHalfSecond(context, x);
+            (Operand[] a, Operand[] b) = AHalfFtz(context, x, AHalfSecond(context, x));
             Operand p = APred(context, x, 87, 90);
             BoolOp bop = (BoolOp)x.Bits(69, 71);
             Operand res = Const(0);

@@ -79,7 +79,7 @@ enum BuildDiagnosis {
              fix: "Build again with Reuse cached build steps off in Settings. If it fails the same way, Copy error summary and report it with the game's version."),
         Rule(code: .signing, phrases: ["signature check failed", "codesign", "errsecinternalcomponent", "no identity found"],
              title: "The app could not be signed",
-             fix: "Choose Ad-hoc (this Mac only) under Sign apps with in Settings, or unlock your login keychain if you sign with a Developer ID.", page: .settings),
+             fix: "Choose Ad-hoc (this Mac only) under Sign apps with in Settings, or unlock your login keychain if you sign with a Developer ID."),
     ]
 
     /// The error first (the script's last red line names the failed step); when it says nothing known, the end of the log.

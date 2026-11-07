@@ -9,8 +9,8 @@ on:
   pull_request:
     paths: ['dm/host/**', 'dm/gfx/**.[chm]', 'dm/gfx/**.mm', 'dm/gfx/**.cpp', 'dm/gfx/**/Makefile', .clang-tidy, dm/tools/lint_c.py,
             dm/tools/lint_c_baseline.tsv, .github/workflows/lint-c.yml]
-  push:
-    branches: [main]
+  push:   # main, and the release branch commits land on during the day (release-X.Y.Z), so a break shows before its release pull request opens
+    branches: [main, 'release-*']
     paths: ['dm/host/**', 'dm/gfx/**.[chm]', 'dm/gfx/**.mm', 'dm/gfx/**.cpp', 'dm/gfx/**/Makefile', .clang-tidy, dm/tools/lint_c.py,
             dm/tools/lint_c_baseline.tsv, .github/workflows/lint-c.yml]
   workflow_dispatch:
@@ -21,7 +21,7 @@ permissions:
 # As in tests.yml: it waits for the same Mac runners, so a push to main never cancels, or main's runs do not finish.
 concurrency:
   group: lint-c-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/release-') }}   # a release branch's newest push is the one that counts
 
 env:
   # The LLVM release whose clang-tidy runs here, and the sha256 of its macOS arm64 archive (github.com/llvm/llvm-project/releases). The baseline names

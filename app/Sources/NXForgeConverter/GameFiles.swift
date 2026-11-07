@@ -27,7 +27,7 @@ struct Validation {
     let files: [FileReport]
 }
 
-private struct Entry {
+struct Entry {
     let name: String
     let offset: UInt64
     let size: UInt64
@@ -153,17 +153,17 @@ enum GameFiles {
         n.count > 14 ? "\(n.prefix(6))…\(n.suffix(8))" : n
     }
 
-    private static func read(_ h: FileHandle, _ off: UInt64, _ len: Int) throws -> [UInt8] {
+    static func read(_ h: FileHandle, _ off: UInt64, _ len: Int) throws -> [UInt8] {
         try h.seek(toOffset: off)
         guard let d = try h.read(upToCount: len), d.count == len else { throw ConverterError(String(format: "short read at %#llx", off)) }
         return [UInt8](d)
     }
 
-    private static func u32(_ b: [UInt8], _ o: Int) -> UInt32 { (0..<4).reduce(0) { $0 | UInt32(b[o + $1]) << (8 * $1) } }
-    private static func u64(_ b: [UInt8], _ o: Int) -> UInt64 { (0..<8).reduce(0) { $0 | UInt64(b[o + $1]) << (8 * $1) } }
+    static func u32(_ b: [UInt8], _ o: Int) -> UInt32 { (0..<4).reduce(0) { $0 | UInt32(b[o + $1]) << (8 * $1) } }
+    static func u64(_ b: [UInt8], _ o: Int) -> UInt64 { (0..<8).reduce(0) { $0 | UInt64(b[o + $1]) << (8 * $1) } }
 
     /// A PFS0 (NSP) or HFS0 (XCI partition) at `base`: the files inside, with absolute offsets.
-    private static func partition(_ h: FileHandle, base: UInt64, magic: String, entrySize: Int) throws -> [Entry] {
+    static func partition(_ h: FileHandle, base: UInt64, magic: String, entrySize: Int) throws -> [Entry] {
         let head = try read(h, base, 16)
         guard String(bytes: head[0..<4], encoding: .ascii) == magic else {
             throw ConverterError(magic == "PFS0" ? "not an NSP (no PFS0 header)" : "no HFS0 partition header")
@@ -181,9 +181,9 @@ enum GameFiles {
         }
     }
 
-    private static func pfs0(_ h: FileHandle, base: UInt64) throws -> [Entry] { try partition(h, base: base, magic: "PFS0", entrySize: 0x18) }
+    static func pfs0(_ h: FileHandle, base: UInt64) throws -> [Entry] { try partition(h, base: base, magic: "PFS0", entrySize: 0x18) }
 
-    private static func xciSecure(_ h: FileHandle) throws -> [Entry] {
+    static func xciSecure(_ h: FileHandle) throws -> [Entry] {
         let head = try read(h, 0x100, 0x40)
         guard String(bytes: head[0..<4], encoding: .ascii) == "HEAD" else { throw ConverterError("not an XCI (no HEAD magic)") }
         let root = try partition(h, base: u64(head, 0x30), magic: "HFS0", entrySize: 0x40)
@@ -191,7 +191,7 @@ enum GameFiles {
         return try partition(h, base: secure.offset, magic: "HFS0", entrySize: 0x40)
     }
 
-    private static func ticketBase(_ t: [UInt8]) -> Int? {
+    static func ticketBase(_ t: [UInt8]) -> Int? {
         guard t.count >= 4 else { return nil }
         let sig = u32(t, 0)
         let (size, pad): (Int, Int)
@@ -205,7 +205,7 @@ enum GameFiles {
     }
 
     /// The rights ID of a ticket, nil for an unreadable one.
-    private static func ticketRights(_ t: [UInt8]) -> [UInt8]? {
+    static func ticketRights(_ t: [UInt8]) -> [UInt8]? {
         guard let b = ticketBase(t), t.count >= b + 0x170 else { return nil }
         return Array(t[(b + 0x160)..<(b + 0x170)])
     }

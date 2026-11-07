@@ -154,5 +154,77 @@ class McpTest(Fake):
         self.assertTrue(r['result']['isError'])
 
 
+class Doctor(unittest.TestCase):   # the optional tools a game needs, decided as the converter's GameNeeds.swift does
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory(); self.addCleanup(self.td.cleanup); self.root = Path(self.td.name)
+        self.repo = self.root / 'repo'
+
+    def game(self, name, files, profile=None):
+        d = self.root / name; d.mkdir()
+        for f in files: (d / f).mkdir() if f.endswith('_build') else (d / f).write_bytes(b'')
+        return d
+
+    def profile(self, tid, tsv='', gl=False):
+        p = self.repo / 'dm/games' / tid; p.mkdir(parents=True); (p / 'game.tsv').write_text(tsv)
+        if gl: (p / 'gl_capture.tsv').write_text('')
+
+    def test_needs(self):
+        self.profile('0100A00000001000', '# built with SDK 22.2.8 (nnSdk)\n'); self.profile('0100B00000002000', 'renderer\tOpenGL\n', gl=True)
+        self.assertEqual(nx.game_needs(self.game('oot', ['0400486024DEC000_build', 'x.nup']), self.repo), {'zbic': mock.ANY})
+        self.assertEqual(set(nx.game_needs(self.game('new', ['Game [0100A00000001800][v65536].nsz']), self.repo)), {'nsz', 'zbic'})   # an update's ID names its base game
+        self.assertEqual(set(nx.game_needs(self.game('gl', ['Game [0100B00000002000].nsp']), self.repo)), {'glslang'})
+        self.assertEqual(nx.game_needs(self.game('plain', ['Game [0100C00000003000].nsp']), self.repo), {})
+        self.assertEqual(nx.game_needs(self.root / 'nowhere', self.repo), {})
+
+    def test_optional_tools_and_exit_code(self):
+        with mock.patch.object(nx, 'settings', dict), mock.patch.object(nx, 'find_repo', lambda s: str(self.repo)), \
+             mock.patch.object(nx, 'find_python', lambda s, r: ('/py', [])), mock.patch.object(nx.shutil, 'which', lambda t, path=None: None if t == 'glslangValidator' else f'/bin/{t}'), \
+             mock.patch.object(nx.subprocess, 'run', lambda *a, **k: mock.Mock(returncode=1)), mock.patch('sys.stdout', io.StringIO()) as out:
+            res = nx.doctor()
+            self.assertEqual([(c['name'], c['optional']) for c in res if 'optional' in c], [('glslang', True), ('nsz', True), ('zbic', True)])
+            self.assertEqual(nx.main(['doctor']), 0)
+            oot = self.game('oot', ['0400486024DEC000_build'])
+            zbic = next(c for c in nx.doctor(str(oot)) if c['name'] == 'zbic')
+            self.assertFalse(zbic['optional']); self.assertIn('Switch 2', zbic['needed']); self.assertEqual(zbic['fix'], '/py -m pip install zbic==1.0.1.post1')
+            self.assertEqual(nx.main(['doctor', str(oot)]), 1)
+        self.assertIn('fix: /py -m pip install zbic', out.getvalue()); self.assertIn('--  glslang', out.getvalue())
+
+    def test_build_refused_before_it_starts_when_the_game_needs_a_missing_tool(self):
+        oot = self.game('oot', ['0400486024DEC000_build', 'prod.keys'])
+        tools = {'glslang': (False, 'not found', 'brew install glslang'), 'nsz': (True, 'installed', ''), 'zbic': (False, 'not installed', '/py -m pip install zbic==1.0.1.post1')}
+        with mock.patch.object(nx, 'settings', dict), mock.patch.object(nx, 'find_repo', lambda s: str(self.repo)), \
+             mock.patch.object(nx, 'find_python', lambda s, r: ('/py', [])), mock.patch.object(nx, 'optional_tools', lambda py, env: tools):
+            with self.assertRaises(nx.Refused) as e: nx.build_command(str(oot))
+            self.assertIn('zbic is needed (Switch 2 games', str(e.exception)); self.assertIn('/py -m pip install zbic', str(e.exception))
+            self.assertNotIn('glslang', str(e.exception))   # not an OpenGL game
+            tools['zbic'] = (True, 'installed', '')
+            repo, args = nx.build_command(str(oot))
+            self.assertEqual(args[:3], ['/py', '-u', f'{self.repo}/scripts/build_ipa_from_nsp.py'])
+
+
+class StatusLines(unittest.TestCase):   # status printed the interpreter's path (cut at 100 characters, before the script's name) and the converter's caffeinate wrapper as a second build
+    def test_a_build_reads_from_its_script_once(self):
+        py = '/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python'
+        args = 'scripts/build_ipa_from_nsp.py --mac /Users/tom/Documents/Game/base.nsp --keys /Users/tom/Documents/Game/prod.keys'
+        procs = [(10, 480, f'caffeinate -is /Users/tom/Library/venv/bin/python3 {args}'), (11, 479, f'{py} {args}'),
+                 (12, 60, '/Users/tom/Documents/Game/Game.app/Contents/MacOS/dmhost --x')]
+        r = nx.running(procs)
+        builds = nx.shown(r['builds'])
+        self.assertEqual([(p['pid'], p['brief']) for p in builds], [(11, 'build_ipa_from_nsp.py --mac base.nsp --keys prod.keys')])
+        self.assertEqual([p['brief'] for p in nx.shown(r['games'])], ['dmhost --x'])
+        self.assertEqual(len(r['builds']), 2)   # --json still lists both processes
+
+    def test_builds_whose_app_is_gone_are_one_line(self):
+        res = {'engine': {}, 'free_gb': 60.0, 'running': {'builds': [], 'games': []},
+               'builds': [{'built_at': '2026-11-06 17:42', 'engine': 'v0.12.0', 'exists': True, 'app': '/a/Kept.app'}] +
+                         [{'built_at': '2026-10-25 16:43', 'engine': 'v0.1.0', 'exists': False, 'app': f'/a/Gone{i}.app'} for i in range(3)]}
+        out = io.StringIO()
+        with mock.patch('sys.stdout', out): nx.human('status', res)
+        lines = out.getvalue().splitlines()
+        self.assertIn('build    2026-11-06 17:42  v0.12.0    /a/Kept.app', lines)
+        self.assertIn('build    3 more recorded whose app is gone (`nxforge builds` lists them)', lines)
+        self.assertNotIn('Gone0', out.getvalue())
+
+
 if __name__ == '__main__':
     unittest.main()

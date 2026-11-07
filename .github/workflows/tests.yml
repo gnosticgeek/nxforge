@@ -5,8 +5,8 @@ name: tests
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  push:   # main, and the release branch commits land on during the day (release-X.Y.Z), so a break shows before its release pull request opens
+    branches: [main, 'release-*']
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ permissions:
 # with no finished run for 87 commits. The running one finishes and only the newest push waits behind it (GitHub replaces an older waiting run).
 concurrency:
   group: tests-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/release-') }}   # a release branch's newest push is the one that counts
 
 env:
   # The toolchain the project supports (README: Xcode 27.2; dm/gfx/tools/dmsh_chain.lock: its Metal compiler), on GitHub's xcode-27 image (macOS 27, a preview image),

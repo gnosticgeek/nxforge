@@ -401,3 +401,122 @@ import Testing
         #expect(LogLevel("pso_offline: batch 3/31: ready") == .info)
     }
 }
+
+/// The Library scan: one game per folder, games sharing a folder split apart, DLC in a subfolder folded into its game,
+/// Switch 2 .nup files and dump folders, and the converter's own folders left out.
+@Suite struct LibraryScanning {
+    func tree(_ files: [String]) throws -> String {
+        let root = FileManager.default.temporaryDirectory.appending(path: "nxc-lib-\(UUID().uuidString)").path
+        for f in files {
+            let p = "\(root)/\(f)"
+            try FileManager.default.createDirectory(atPath: (p as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            try Data([1]).write(to: URL(fileURLWithPath: p))
+        }
+        return root
+    }
+
+    @Test func names() {
+        #expect(GameLibrary.cleanName("Super Mario Odyssey [0100000000010000][v0]") == "Super Mario Odyssey")
+        #expect(GameLibrary.cleanName("Yoshis_Crafted_World_[01006000040C2000][v0]") == "Yoshis Crafted World")
+        #expect(GameLibrary.cleanName("Shadow of the Ninja Reborn [010072601DB8C000][v0] (1.98 GB)") == "Shadow of the Ninja Reborn")
+        #expect(GameLibrary.cleanName("Kirby Star Allies[01007E3006DDA800][US][v327680]") == "Kirby Star Allies")
+        #expect(GameLibrary.cleanName("Pikmin 1-2 [NSP]") == "Pikmin 1-2")
+        #expect(GameLibrary.titleTag("0100f9f00c697001.nsp") == 0x0100_F9F0_0C69_7001)
+        #expect(GameLibrary.titleTag("Snipperclips [UPD][0100704000b3a800][v65536].nsp") == 0x0100_7040_00B3_A800)
+        #expect(GameLibrary.titleTag("Kirby and the Forgotten Land [v0].nsp") == nil)
+    }
+
+    @Test func scan() throws {
+        let root = try tree([
+            "Super Mario Odyssey [0100000000010000][v0].nsp", "Super Mario Odyssey [0100000000010800][v262144].nsp",
+            "Metroid Prime REMASTERED [010012101468C000][v0][US].nsp", "The Legend of Zelda Skyward Sword HD.nsp",
+            "Cadence [NSP]/Cadence of Hyrule [01000B900D8B0000][v0].nsp", "Cadence [NSP]/Cadence of Hyrule [01000B900D8B0800][v458752].nsp",
+            "Cadence [NSP]/4 DLCs/Cadence [DLC] [01000B900D8B1001][v1].nsp", "Cadence [NSP]/4 DLCs/Cadence [DLC] [01000B900D8B1002][v1].nsp",
+            "Pikmin 1-2 [NSP]/Pikmin 1 [0100AA80194B0000][v0].nsp", "Pikmin 1-2 [NSP]/Pikmin 2 [0100D680194B2000][v0].nsp",
+            "Gato Roboto [NSP]/Gato Roboto [010025500C098800][v458752].nsp",
+            "Echoes/Echoes of Wisdom [01008CF01BAAC000][v0][US].xci",
+            "Echoes/0100ABCD00000000_build/extract/x.nsp",
+            "Switch 2/The Legend of Zelda Ocarina of Time [0400486024DEC000][v131072].nup",
+            "Dumps/Mario Kart World [0400C3F00006E000]/base/exefs/main.npdm", "Dumps/Mario Kart World [0400C3F00006E000]/base/romfs/a.nsp",
+            "Empty/._Hidden [0100000000010000].nsp", "notes.txt",
+        ])
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let s = GameLibrary.scan(root: root)
+        #expect(s.stopped == nil)
+        let by = Dictionary(s.games.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        #expect(s.games.count == 10, "\(s.games.map(\.name))")
+        let smo = try #require(by["Super Mario Odyssey"])
+        #expect(smo.shared && smo.base && smo.updates == 1 && smo.files.count == 2 && smo.path == root)
+        #expect(by["The Legend of Zelda Skyward Sword HD"]?.shared == true)
+        let coh = try #require(by["Cadence of Hyrule"])
+        #expect(!coh.shared && coh.updates == 1 && coh.notes.count == 1)
+        #expect(by["Pikmin 1"]?.shared == true && by["Pikmin 2"]?.shared == true)
+        #expect(by["Gato Roboto"]?.base == false && by["Gato Roboto"]?.notes.isEmpty == false)
+        #expect(by["Echoes of Wisdom"]?.fileCount == 1)   // the _build folder is not read
+        #expect(by["The Legend of Zelda Ocarina of Time"]?.kind == .nup && by["The Legend of Zelda Ocarina of Time"]?.console == .switch2)
+        #expect(by["Mario Kart World"]?.kind == .dump && by["Mario Kart World"]?.titleID == "0400C3F00006E000")
+
+        // a shared game moves into a folder of its own, and is then one game there
+        let p = try GameLibrary.moveToOwnFolder(smo)
+        #expect(p == "\(root)/Super Mario Odyssey" && GameFiles.list(in: p.url).count == 2)
+        let again = GameLibrary.scan(root: root)
+        #expect(again.games.first { $0.name == "Super Mario Odyssey" }?.shared == false)
+    }
+
+    @Test func missingRoot() {
+        let s = GameLibrary.scan(root: "/nonexistent-\(UUID().uuidString)")
+        #expect(s.stopped != nil && s.games.isEmpty)
+    }
+}
+
+/// The Library's tidying and control data: DLC in a subfolder moved beside its game, the same game in two folders, version
+/// tags, and a control RomFS's files.
+@Suite struct LibraryDetails {
+    func tree(_ files: [String]) throws -> String {
+        let root = FileManager.default.temporaryDirectory.appending(path: "nxc-lib2-\(UUID().uuidString)").path
+        for f in files {
+            let p = "\(root)/\(f)"
+            try FileManager.default.createDirectory(atPath: (p as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            try Data([1]).write(to: URL(fileURLWithPath: p))
+        }
+        return root
+    }
+
+    @Test func versionTags() {
+        #expect(GameLibrary.versionTag("Super Mario Odyssey [0100000000010800][v1.3.0][v262144].nsp") == 262144)
+        #expect(GameLibrary.versionTag("Game [0100000000010000].nsp") == nil)
+    }
+
+    @Test func strayAndDuplicates() throws {
+        let root = try tree([
+            "Cadence/Cadence [01000B900D8B0000][v0].nsp", "Cadence/Cadence [01000B900D8B0800][v458752].nsp",
+            "Cadence/DLC/Cadence [DLC] [01000B900D8B1001][v1].nsp",
+            "Cyber Shadow/Cyber Shadow [0100C1F0141AA000][v0].nsp", "Cyber Shadow [NSP]/Cyber Shadow [0100C1F0141AA000][v0].nsp",
+        ])
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let s = GameLibrary.scan(root: root)
+        let c = try #require(s.games.first { $0.titleID == "01000B900D8B0000" })
+        #expect(c.stray?.count == 1 && c.dlc == 1 && c.newestUpdate == 458752)
+        #expect(s.games.filter { $0.titleID == "0100C1F0141AA000" }.allSatisfy { $0.duplicates?.count == 1 })
+        try GameLibrary.moveStray(c)
+        let again = GameLibrary.scan(root: root).games.first { $0.titleID == "01000B900D8B0000" }
+        #expect(again?.files.count == 3 && again?.stray == nil && again?.notes.isEmpty == true)
+    }
+
+    @Test func romfsFiles() {
+        // a RomFS with two files at the root: header (0x50), file table, then the data
+        func le(_ v: Int, _ n: Int) -> [UInt8] { (0..<n).map { UInt8((v >> (8 * $0)) & 0xFF) } }
+        let names = ["control.nacp", "icon_AmericanEnglish.dat"], datas: [[UInt8]] = [[1, 2, 3], [0xFF, 0xD8, 0xFF]]
+        var table: [UInt8] = [], data: [UInt8] = []
+        for (n, d) in zip(names, datas) {
+            let nb = Array(n.utf8)
+            table += le(0, 4) + le(0, 4) + le(data.count, 8) + le(d.count, 8) + le(0, 4) + le(nb.count, 4) + nb + [UInt8](repeating: 0, count: (4 - nb.count % 4) % 4)
+            data += d
+        }
+        let metaOff = 0x50, dataOff = metaOff + table.count
+        var header = le(0x50, 8) + le(0, 8) + le(0, 8) + le(0, 8) + le(0, 8) + le(0, 8) + le(0, 8)
+        header += le(metaOff, 8) + le(table.count, 8) + le(dataOff, 8)
+        let files = ControlReader.romfsFiles(header + table + data)
+        #expect(files["control.nacp"] == [1, 2, 3] && files["icon_AmericanEnglish.dat"] == [0xFF, 0xD8, 0xFF])
+    }
+}

@@ -17,3 +17,5 @@ title_id	game	version	release	mac	date	result	note
 0100DCD01F306000	Mina the Hollower	1.0.5	0.3.0	M4 Pro	2026-10-27	boots	Intro and menus with input; gameplay still in bring-up
 0100152000022000	Mario Kart 8 Deluxe	4.0.1	0.4.0	M4 Pro	2026-10-27	plays	60 fps with the Booster Course DLC (3.0.1 is 32-bit and cannot run)
 010015100B514000	Super Mario Bros. Wonder	-	0.7.1	M4 Pro	2026-10-30	plays	A 30-minute session recorded the prewarm list; frame dips still being looked into
+0400C3F00006E000	Mario Kart World	1.0.0	0.11.0	M4 Pro	2026-11-06	plays	Races over two sessions (33 min); an abort after one race (VP9 player) is fixed in 0.13.0
+0400486024DEC000	The Legend of Zelda: Ocarina of Time	-	pre-0.14.0	M4 Pro	2026-11-07	plays	Title and Kokiri Forest; foliage white until its pipelines compile on a first start, one GPU memory stop (upstream fixes merged for 0.14.0, to retest)

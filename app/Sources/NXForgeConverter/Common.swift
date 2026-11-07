@@ -6,26 +6,45 @@ let helpURL = URL(string: "https://github.com/gnosticgeek/nxforge/blob/main/app/
 
 struct RootView: View {
     @Bindable var model: AppModel
+    @State private var width: CGFloat = 1200
 
     var body: some View {
         NavigationSplitView {
-            List(Page.allCases, selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) { p in
-                Label(p.rawValue, systemImage: p.symbol).font(.title3).padding(.vertical, 3).tag(p)
+            List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
+                ForEach(Page.allCases) { p in
+                    Label(p.rawValue, systemImage: p.symbol).font(.system(size: 15)).padding(.vertical, 3).tag(p)
+                }
             }
-            .navigationSplitViewColumnWidth(min: 250, ideal: 265, max: 300)
+            .safeAreaInset(edge: .top) { SidebarBrand() }
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
             .safeAreaInset(edge: .bottom) { ToolchainFooter(model: model) }
         } detail: {
             Group {
                 switch model.page {
-                case .convert: ScrollView { ConvertPage(model: model).padding(24) }
+                case .convert: ScrollView { ConvertPage(model: model, wide: width > 860).padding(20) }
+                case .library: LibraryPage(model: model)
                 case .builds: BuildsPage(model: model)
                 case .storage: StoragePage(model: model)
-                case .toolchain: ScrollView { ToolchainPage(model: model).padding(24) }
-                case .settings: SettingsPage(model: model)
+                case .toolchain: ScrollView { ToolchainPage(model: model).padding(20) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .navigationTitle("NXForge Converter")
+            // the page sits on the navy; Convert's banner sits behind its heading, up under the toolbar
+            .background(alignment: .top) {
+                ZStack(alignment: .top) {
+                    Theme.background
+                    if model.page == .convert || model.page == .storage { HeroBanner(scene: .dish).frame(height: 230) }
+                    if model.page == .toolchain { HeroBanner(scene: .peaks).frame(height: 230) }
+                }
+                .ignoresSafeArea()
+            }
+            // pages with their own banner heading drop the window title over it
+            .toolbar(removing: model.page.hasHero ? .title : nil)
+            .toolbarBackgroundVisibility(model.page.hasHero ? .hidden : .automatic, for: .windowToolbar)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            // the window title names the page, as Mac apps do; the subtitle names the game being converted
+            .navigationTitle(model.page.rawValue)
+            .navigationSubtitle(model.page == .convert ? model.game?.name ?? "" : "")
             // a game folder (or a file in it) dropped anywhere on the window becomes the game to convert
             .dropDestination(for: URL.self) { urls, _ in
                 guard !model.run.running, !urls.isEmpty else { return false }
@@ -33,38 +52,39 @@ struct RootView: View {
                 return true
             }
             .toolbar {
-                if model.page == .builds {
-                    ToolbarItem {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                            TextField("Search builds", text: $model.buildSearch).textFieldStyle(.plain).frame(width: 200)
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                    }
-                }
-                ToolbarItem {
-                    Button { NSWorkspace.shared.open(helpURL) } label: { Image(systemName: "questionmark") }.help("NXForge Converter help")
+                ToolbarItem(placement: .automatic) {
+                    Button { NSWorkspace.shared.open(helpURL) } label: { Image(systemName: "questionmark") }.help("NXForge Converter Help")
                 }
             }
         }
     }
 }
 
-/// The page title and its one-line subtitle, with optional trailing controls.
+/// The app's mark and name over the sidebar.
+struct SidebarBrand: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 38, height: 38)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("NXForge").font(.title3.weight(.bold))
+                Text("Game Conversion Toolkit").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The page's one-line description; its trailing controls (the page's actions) go in the window toolbar.
 struct PageHeader<Trailing: View>: View {
     let title: String
     let subtitle: String
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 30, weight: .bold))
-                Text(subtitle).font(.title3).foregroundStyle(.secondary)
-            }
-            Spacer()
-            trailing
-        }
+        Text(subtitle).foregroundStyle(.secondary)
+            .toolbar { ToolbarItemGroup(placement: .primaryAction) { trailing } }
     }
 }
 
@@ -102,6 +122,8 @@ struct StatusIcon: View {
 struct Card<Content: View>: View {
     var title = ""
     var subtitle = ""
+    /// the step this card is, in a blue circle before its title
+    var number: Int? = nil
     var padding: CGFloat = 18
     /// Fill the height offered (for cards side by side in a row of equal heights)
     var fillHeight = false
@@ -110,8 +132,11 @@ struct Card<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !title.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.title2.weight(.semibold))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 9) {
+                        if let number { NumberBadge(n: number) }
+                        Text(title).font(number == nil ? .headline : .title3.weight(.bold))
+                    }
                     if !subtitle.isEmpty { Text(subtitle).foregroundStyle(.secondary) }
                 }
             }
@@ -119,8 +144,8 @@ struct Card<Content: View>: View {
         }
         .padding(padding)
         .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
-        .background(.background.secondary.opacity(0.7), in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.separator.opacity(0.7)))
+        .background(Theme.card, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
     }
 }
 

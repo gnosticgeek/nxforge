@@ -1,5 +1,5 @@
 // The app and its one window. NXC_SNAPSHOT=<file.png> saves a picture of the window a few seconds after it
-// opens and quits (NXC_PAGE=builds, toolchain or settings for another page; NXC_AUTOBUILD=1 builds the chosen
+// opens and quits (NXC_PAGE=library, builds, storage or toolchain for another page; NXC_AUTOBUILD=1 builds the chosen
 // folder first), for checking the layout without a screen capture.
 import AppKit
 import SwiftUI
@@ -42,10 +42,10 @@ struct ConverterApp: App {
     var body: some Scene {
         Window("NXForge Converter", id: "main") {
             RootView(model: model)
-                .frame(minWidth: 1080, minHeight: 720)
+                .frame(minWidth: 820, minHeight: 580)
                 .task { await snapshotIfAsked() }
         }
-        .defaultSize(width: 1280, height: 980)
+        .defaultSize(width: 1200, height: 860)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -55,6 +55,16 @@ struct ConverterApp: App {
                 .keyboardShortcut("o")
                 .disabled(model.run.running)
             }
+            // View: the pages on ⌘1…⌘5, above the sidebar and toolbar items
+            CommandGroup(before: .sidebar) {
+                ForEach(Array(Page.allCases.enumerated()), id: \.element) { i, p in
+                    Button(p.rawValue) { model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                }
+                Divider()
+            }
+            CommandGroup(replacing: .help) {
+                Button("NXForge Converter Help") { NSWorkspace.shared.open(helpURL) }
+            }
             CommandMenu("Build") {
                 Button("Build Mac App") { model.build() }.keyboardShortcut("b").disabled(!model.ready)
                 Button("Rebuild") { model.rebuildCurrent() }.keyboardShortcut("r").disabled(model.run.running || !model.allOK)
@@ -62,6 +72,10 @@ struct ConverterApp: App {
                 Divider()
                 Button("Stop Build…") { model.stopBuild() }.keyboardShortcut(".").disabled(!model.run.running)
             }
+        }
+        // Settings… (⌘,) in the app menu
+        SwiftUI.Settings {
+            SettingsPage(model: model)
         }
     }
 

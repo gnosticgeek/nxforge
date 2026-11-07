@@ -2,6 +2,83 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.14.0 (2026-11-07)
+
+Merges nxnative's `main` up to `5636e7a7` (20 commits since `04df08d`), mostly Ocarina of Time fixes. The shader chain changes, so every NVN game's shaders rebuild once.
+
+**From upstream `main`**
+- Ocarina of Time: the ground no longer opens in holes after walking (#1604: an uncompressed texture is taken from its storage unless the GPU wrote that storage, not its pool; this replaces NXForge's range tracking from #1390), the dotted rows across fog and light are gone (an HMMA outside a chain no longer overwrites a chain's accumulator, #1537), and the game no longer crashes at the first note of the ocarina (#1527).
+- Translator fixes: I2F / F2F directed rounding (#1411), half-pair swizzles and HSETP2 .FTZ (#1410), Ampere IADD3 / PLOP3 / POPC / FLO / LEA (#1329), ATOMS.INC / DEC / CAS (#1413), large-turn MUFU.SIN / COS (#1234). The LDSM subgroup barriers are upstream's landed version (#1376), which replaces NXForge's.
+- Landed versions of pull requests 0.13.0 carried: the pool table notes (#1489) and bound render targets kept across submissions (#1502). A GPU whose access macOS revoked stops the game (#1332); NXForge keeps its own alert, which quits as ⌘Q does.
+- A damaged `.zs` file in a NUP or dump stops the build (#1530), Sonic Superstars plays on the Mac, and a jump table's bound is the compare its branch acts on (#1515).
+
+Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes again (`34c912566064`).
+
+**From upstream `main`, second merge**
+- Ocarina of Time: the foliage mesh pipelines build again (mesh shaders get the outputs their pixel shaders read, #1590, #1628), Kokiri Forest loses its white blotches (#1575), command allocators no longer grow to 36-80 MB each (#1556), the dynamic-resolution depth buffer no longer keeps 15-16 sizes alive (#1557), terrain tile maps the CPU rewrites are read again (#1558), and a prewarm seed list for a first start (#1493, #1488; replaces the open pull request copy 0.13.0 carried).
+- Compute pipelines in the pipeline archives as upstream landed them (#1307), in place of #1522. NXForge's compute prefetch at program creation and its incremental archive batches stay.
+- Shared-memory byte stores are one Metal store (#1503 as landed). A texture ID with no texture drops its cached view (GPU page faults, #1607). GPU copies into write-protected pool pages are kept (#1591).
+- Controllers: press a button to join (`DM_PAD_PRESS_TO_JOIN`, #1596), identical pads each get a player (#1595), HID pads wait for GameController (#859). NXForge's button remap stays.
+- Tetris 99, Pokémon Friends, Trails in the Sky, Splatoon Raiders, Super Smash Bros. Ultimate, Super Mario 3D All-Stars and Hyrule Warriors: Age of Calamity fixes; a packer update keeps an intact NUP image (#1630).
+
+**Mario Kart World** (open upstream pull requests)
+- Free roam stays near 4 GB: `MapPhysicalMemory` past the 9 GB pool fails as on Horizon, so the game frees its own blocks (#1594, `mem_map_limit on`).
+- Dynamic resolution works: timestamp reports take their segment's GPU time (#1229, `gpu_timestamps segment`), as on Donkey Kong Bananza.
+- Indirect-count multi-draws are copied before the pass opens, so the scene passes are no longer split: GPU p50 13.65-14.1 to 13.0 ms on an M4 Pro (#1179).
+- Texture samples overlap better on the GPU (#1230, `shader_border_emu 0`, `shader_nan_coord fmax`), measured on an M1 Pro.
+- Not taken: #1350 (segment times without the GPU's idle gaps: written before upstream's in-buffer segment boundaries, and with them two reports in one command buffer read the same time), #1251 (cube-map prefilter split by output; written before the one-file shader libraries, its MSL copy does not fit them), #1292 (1.8.0 image slots; this Mac has the base game), the LAN and iOS work in progress (#1321, #1383).
+
+**Converter: Library**
+- A **Library** page lists every game under a games folder you choose (Library or Settings; for example a share at `/Volumes/Gaming/roms/switch`): folders of NSP / XCI / NSZ / XCZ files, Switch 2 `.nup` files and dump folders, in every folder below it. Each row has the game's name, console, base / update / DLC, title ID, size and whether it is built, and **Convert** makes it the game on Convert. Games whose files share a folder are listed one by one and moved into a folder of their own (a rename) before they build, since the build takes one game per folder. Folders with only an update or DLC, and DLC in a subfolder the build does not read, get a note.
+- Made for slow network shares: names come from file names (nothing is opened), one listing per folder with a 20-second limit, a folder that does not answer is skipped, three in a row stop the scan (keeping what it found), and the list is kept between starts in `library.json`. `NXForgeConverter --library <folder> [<prod.keys>]` prints the same scan.
+- Each game's own name, icon, publisher and version, read from its Control NCA with `prod.keys` (a few hundred KB per game: 31 games on a network share in about 3 s), kept between scans.
+- Badges for games NXForge lists as playing, booting or broken, or has a profile for, and for built games (on the current or an older engine; apps are matched by title ID wherever they were built), with a filter: not built, plays, has a profile, built on an older engine, newer update than the build, needs attention.
+- **Build selected**: tick games and they build one after another, after a free-space estimate per drive; a failed game is noted and the next starts, a stop or low disk ends the run, and a summary (and notification) follows.
+- A folder holding a newer update than the one the app was built with says so. Update and DLC files in a subfolder move beside the game in one click, and the same game in two folders gets a note on each.
+- The games folder is scanned again when its drive or share mounts, and when the Library opens on a list over a day old.
+
+**Converter: Apple Human Interface Guidelines pass**
+- Settings is its own window from the app menu (⌘,), laid out as a grouped form; a signing failure links to it.
+- Mac-sized type: the window title names the page (the game on Convert), page titles and oversized buttons are gone, sidebar rows use the system size.
+- Builds is a real list: arrow keys select, ⌘⌫ moves the app to the Trash, double-click opens it; the detail scrolls beside it in a resizable split.
+- Page actions (Rebuild All, Scan Again, Run Checks, Measure Again, console filter, sort) and search live in the window toolbar; search is the standard field.
+- Confirmations are sheets on the window; Trash, Stop, Quit and Clear buttons are red; a notice has just OK.
+- One blue button per view, on Return (Build Mac app; Open app or Rebuild on Builds); Library's row Convert buttons are plain.
+- Native empty states on Builds and Library; the window goes down to 820×580 and Convert's cards stack when narrow.
+- View menu switches pages with ⌘1 to ⌘5; Help › NXForge Converter Help opens the README.
+- Convert restyled after Tom's mockup: navy theme in Dark Mode, the app's name over the sidebar, a drawn dusk banner behind the page heading, numbered Source files and Mac app cards with a drop zone (Choose Game… / Choose Keys…), seven numbered step tiles in Build activity, and the log always below with All / Warnings / Errors tabs.
+- Toolchain restyled the same way: a peaks banner, a green Liquid Glass Ready to build bar, the tool table grouped with icons and an ⓘ per tool, and an Engine card with glass Change location / Check for updates, the environment details, Advanced configuration, Copy environment and Copy diagnostics.
+- Storage restyled too: a disk card with a used/free bar, Reclaimable space with Clean Up…, glass filter chips by type with counts, search and sort, and a selectable table with coloured type icons and badges, folder and … buttons, and Delete Selected….
+- Convert has a Remove build folder after building switch (the same choice as Settings › After a build: Remove build cache).
+
+**Small fixes and tweaks**
+- `c1_full.tsv` and `cb_extent.tsv` keep their bytes when a full shader build finds the same rows, and a new one carries no clock time, so a rebuild that changes no shader changes no packed table (from devinhurry's fork, f6c3b82b).
+- `nxforge status`: a running build shows from its script (`build_ipa_from_nsp.py --mac base.nsp ...`) instead of the Python framework's path, once instead of twice (the converter's `caffeinate` wrapper), and recorded builds whose app was deleted are counted on one line.
+- `nxforge doctor [game folder]` also checks the optional tools the converter's Toolchain page lists (glslang, nsz, zbic) with the command that installs each; given a game folder, the ones that game needs count as required (as the converter decides it), and doctor exits 1 when a required tool is missing. The MCP tool takes `game_dir` too. `nxforge build` refuses up front, with the install command, when the game needs one that is missing, as the converter does, instead of stopping partway.
+- CI: the tests and both lint workflows also run on pushes to a `release-*` branch (a newer push cancels the older run there), so a break on the day's release branch shows before its release pull request opens.
+- Verified on NXForge (`docs/nxforge-games.tsv`, the converter's Builds page): Mario Kart World and The Legend of Zelda: Ocarina of Time, as played on this Mac on 2026-11-06 and 2026-11-07.
+- The C lint ratchet is green again after the upstream merges: a texture without a pool no longer dereferences a null pool in the first-use log line (#1604), and two tests stop cleanly when a Metal lookup returns nothing.
+- After the second upstream merge of the day: `t_present_rescue`'s 30 fps checks (#1555) run with `DM_PRESENT_LATENCY` set, the one case where NXForge keeps the display link in fullscreen, and the device-shared range table grows through a temporary pointer (C lint).
+- `uepak.py` unpacks its cached image before `find_key`, so the Python lint passes with upstream #1646.
+
+**From upstream `main`, 13:30 check (picked, not merged)**
+- Ocarina of Time no longer faults on the GPU 15-45 minutes into play (#1644): a retired texture stays resident while any serial entry still draws with it. NXForge's shared-texture release (`alias_let_go`) follows the same rule.
+- The NSP script's fallback tool folders come after the caller's `PATH` (#1475).
+- Not taken yet: upstream's landed #1520 (readable-tile split, a new shader chain) and #1484 (pool residency for shader keys). NXForge already carries both as pull-request heads; the landed versions come with the next full merge.
+
+**From upstream `main`, 13:45 check (picked)**
+- A texture copy into an uncompressed alias of a compressed texture writes the compressed texture (#1617, Monster Jam Steel Titans 2's arena floor). Its red-line key is 159 here (156 is taken). `DM_NVN_BC_ALIAS=0` turns it off.
+- The shader split reads legacy Unreal paks with encrypted indexes (#1646), and `--progress json` sends a game event before the shader stages (#1627).
+- Not taken yet: the NSP script's title IDs from content metas (5c4dc18f) and its ShaderWatch test follow-up (0caa6f93), which conflict with NXForge's build script; they come with the next full merge.
+
+**From upstream `main`, 15:45 check**
+- Picked: the graphics and sanitizer test targets run from a checkout path with a space (12ddb1fb).
+- Mario Kart World's blob shadows draw again (32335650, #1648, merged by hand): an image slot takes a view of the Metal type its shader declares, alongside NXForge's sRGB image views in `img_fit`. Its red-line key is 160 here (157 is taken).
+- Left for the next full merge: the controller applet waits for players (24fe1e5a; meets NXForge's `front_mac.m`).
+
+**From upstream pull requests (not yet on `main`)**
+- Ocarina of Time's foliage no longer draws as flat white, blue and cream shapes for its first seconds (#1368): a task / mesh pipeline missing at its first draw is built there instead of the draw being left out until a background build finished (3.5 to 7 s each on an M4 Pro), and it is recorded in the prewarm list, so later starts build it during the prepare screen.
+
 ## 0.13.0 (2026-11-06)
 
 A performance release. Merges nxnative's `main` up to `04df08d` (11 commits since `88c7e03`) and upstream pull requests that are still open, picked for build and run-time speed. The shader chain changes, so every NVN game's shaders rebuild once.

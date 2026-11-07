@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-06 (0.13.0: upstream main up to 04df08d plus open speed pull requests).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-07 (0.14.0: upstream main up to d777f0a plus picks, Mario Kart World pull requests, the converter's Library page).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
@@ -21,11 +21,11 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 | Rewriter jump-table fix (49a670a) | Superseded by upstream | Upstream follows the copy to the function start (Mario + Rabbids Kingdom Battle's GLSLC, the same code as Curse of the Moon's); the 0.6.0 merge takes theirs. Nothing to send. |
 | Filters + Quick settings sidebar | On hold for upstream | Tom holds the upstream PR until the sidebar is finished (see the next section). |
 | Cheats engine | Replaced by upstream's (0.9.0) | Upstream's `hle_cheats.c` (PR #406) took over from NXForge's Markdown engine; the sidebar's Cheats section now shows upstream's rows, and `dm/tools/cheats_md.py txt` converts old Markdown files. |
-| Merge upstream main | On fork main (0.13.0) | Last merge: seedds/nxnative main at 04df08d (11 commits since 88c7e03, including #1464 and the HMMA title-movie speed-up), plus 16 open upstream pull requests for build and run-time speed, released in 0.13.0. Choices are in CHANGELOG 0.13.0. |
-| China-region profanity check (Cruis'n Blast) | Upstream PR open ([#789](https://github.com/seedds/nxnative/pull/789)), on fork main | Branch `contrib/ngc-china-profanity`, from c86bc9b. |
-| pso_offline free-space check | Upstream PR open ([#790](https://github.com/seedds/nxnative/pull/790)), on fork main | Branch `contrib/pso-offline-free-space`, from fde1e63. |
-| Unity 6000.3 shader layouts | Upstream PR open ([#791](https://github.com/seedds/nxnative/pull/791)), on fork main | Branch `contrib/unity-6000-3-shaders`, from f6388f2. |
-| bench.py offline pipeline archive | Upstream PR open ([#792](https://github.com/seedds/nxnative/pull/792)), on fork main | Branch `contrib/bench-pso-bundle`, from 2309513. |
+| Merge upstream main | On fork main (0.14.0) | Last merges: seedds/nxnative main at d777f0a plus picks up to 32335650, and open Mario Kart World pull requests (#1594, #1229, #1179, #1230). Choices are in CHANGELOG 0.14.0. |
+| China-region profanity check (Cruis'n Blast) | Closed upstream ([#789](https://github.com/seedds/nxnative/pull/789)), its fix landed there | Branch `contrib/ngc-china-profanity`, from c86bc9b. |
+| pso_offline free-space check | Closed upstream ([#790](https://github.com/seedds/nxnative/pull/790)), its fix landed there | Branch `contrib/pso-offline-free-space`, from fde1e63. |
+| Unity 6000.3 shader layouts | Closed upstream ([#791](https://github.com/seedds/nxnative/pull/791)), its fix landed there | Branch `contrib/unity-6000-3-shaders`, from f6388f2. |
+| bench.py offline pipeline archive | Closed upstream ([#792](https://github.com/seedds/nxnative/pull/792)), on fork main | Branch `contrib/bench-pso-bundle`, from 2309513. |
 | Next upstream candidates | Next | Anisotropic filtering floor, untagged and multi-application XCI dumps, the shader build speed-up with a shared Metal cache, the rumble permission before a controller connects. The present filters and MetalFX defaults need an issue first (over about 1,000 lines). |
 
 ## Quick settings sidebar and filters

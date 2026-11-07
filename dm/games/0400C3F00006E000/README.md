@@ -9,13 +9,14 @@ A Switch 2 game. Brought up on the base game (v0), SDK 19.3.3 built for the Swit
 | `sys_resource 0x4000000` | [`game.tsv`](game.tsv) | the NPDM declares 64 MB of system resource: virtual address memory on, and `nninitStartup` still sets a heap |
 | `app_pool 0x240000000`, `mem_reserve 0x320000000`, `mem_alias 0x100000000` | `game.tsv` | the Switch 2's 9 GB, as Donkey Kong Bananza's. `SetHeapSize` asks for 0x1dbc00000 (7.43 GB; 1.8.0 asks 0x1de400000 by pull request #1116), and with a 7.5 GB heap region the first boot stopped there (`SetHeapSize OOM`): an 8 GB heap region. The alias region is mapped up to +1.75 GB by the title |
 | `modules main subsdk0 subsdk1 sdk` | `game.tsv` | the base game has no `subsdk1`; each build row names its own modules ([A version without one of the profile's modules](../../../docs/reference/packing.md#a-version-without-one-of-the-profiles-modules-stops-the-host-at-boot)) |
+| `mem_map_limit on` | `game.tsv` | `MapPhysicalMemory` past the 9 GB pool fails as on Horizon, so the game frees its own blocks when it streams in free roam instead of mapping more ([Memory in free roam](#memory-in-free-roam)) |
 | `render_cond on` | `game.tsv` | agl wraps its clears in render conditions, as in Donkey Kong Bananza and Splatoon Raiders; not tried without it here |
 | `romfs_marker Movie/StaffRoll_00.webm` | `game.tsv` | a file of both versions' RomFS |
 
 ## Files
 
 - Packed from a dump folder (`base/` only) with [`scripts/pack_dump.py`](../../../scripts/pack_dump.py): 205,902 RomFS entries, 21.7 GB.
-- Shaders: 11,561 in [`shader_map.tsv`](shader_map.tsv) (compute 727, domain 12, pixel 7,261, vertex 3,561), from `Shader/` (bfsha, `Drive.Nin_Ounce_NVN2.release.sarc.zs`), `Lib/` (agl, gsys), `Effect/`, `Layout/` and 40 in `main`.
+- Shaders: 11,560 in [`shader_map.tsv`](shader_map.tsv) (compute 726, domain 12, pixel 7,261, vertex 3,561), from `Shader/` (bfsha, `Drive.Nin_Ounce_NVN2.release.sarc.zs`), `Lib/` (agl, gsys), `Effect/`, `Layout/` and 40 in `main`.
 - The rewriter (`dm/tools/patch_nso.py`) rewrites the three modules with no cut. The SDK-wide address region rules of `dm/tools/sdk_patches.py` match no function of this `sdk`.
 
 ## Shaders
@@ -26,6 +27,8 @@ The full Mac build translates all 11,561. Getting there took four things, all ge
 - 8 pixel shaders use UP2UR with masks 8 and 0x40, and one compute shader (`ab77eaee44cfef88`) SURED: [Ampere shader code](../../../docs/reference/shaders.md#ampere-shader-code-switch-2).
 - The 168 compute shaders of `DrivePassShaderDefault` that declare 48 KB of shared memory build since [Compute shared memory past 32 KB](../../../docs/reference/shaders.md#compute-shared-memory-past-32-kb); before it, the 3D scene of the title had sky and clouds over black geometry.
 - `dcb0504c844f1ecc` copies a flat per-primitive attribute into an R8Uint target, so it needs the integer entry point `fs_uint` now gives such a shader.
+
+On an M1 Pro (16 GB) the GPU took 27 to 28 ms a frame at the title, three times the M6's. The profile sets `shader_border_emu 0` and `shader_nan_coord fmax`, which give the samples back their overlap there ([Samples that do not overlap on Apple's M1](../../../docs/reference/shaders.md#samples-that-do-not-overlap-on-apples-m1-the-border-branch-and-the-coordinate-nan-select)): 18.3 to 19.5 ms at the title, and the first race of the Mushroom Cup from 39.9 to 47.7 fps (on `c96a5dce`). On main `777a5f6c` with segment timestamps (`DM_NVN_GPU_TS=segment`, so that dynamic resolution sees the GPU time), the same race went from 42.2–42.3 to 50.0–50.5 fps (two alternating runs each), with its scene at 1516x852 to 2048x1152 instead of 1328x748. No run printed the host's `which Metal lacks` line, so no sampler needs the twin the first key leaves out (the title, the menus, the Mushroom Cup's four races).
 
 ## Rendering
 
@@ -60,9 +63,17 @@ On a 16 GB M1 Pro (2026-11-04) the same race kept its frame median at 25 to 28 m
 
 On the 16 GB M6 (2026-11-04, a host on the older chain `475a55e74858`, the Mac also swapping for another session's game for part of the run), the first race with those shared tiles: 4 heaps (1,024 MB) where the run above had 12 (3,072 MB), resident memory 11.3 GB where it had 12.8 GB, the frame median 16.7 ms and the 95th percentile 17 to 20 ms over 2,400 frames, no out-of-memory line. The run was minutes long, so it does not show that [issue #1193](https://github.com/seedds/nxnative/issues/1193)'s crash after 16 minutes is gone.
 
+Dynamic resolution needs the profile's `gpu_timestamps segment` ([GPU timestamps per submission segment](../../../docs/reference/frame-rate.md#gpu-timestamps-per-submission-segment)), as on Donkey Kong Bananza (same engine): the game takes its GPU time as the difference of timestamp reports in one submission, which read about 0 when every report of a submission carries one time, so the scene stayed at 2048x1152 however long the GPU took. On a 16 GB M1 Pro (2026-11-04, main `777a5f6c`) the scene of the first race steps down from 2048x1152 to 1328x748, and that race (frames from 160 to 196 s, two alternating runs each, `DM_NVN_GPU_TS=submission` for the old behaviour) went from 33.4–33.6 to 42.2–42.3 fps, the GPU p50 from 26.8–28.3 to 20.8–22.4 ms. A GPU within budget, as the M6's 8.3 to 9.3 ms should be, keeps full size; not run on the M6.
+
+## Memory in free roam
+
+Free roam streams the world as the kart drives on, and without `mem_map_limit` memory kept growing: on a 16 GB M1 Pro (2026-11-06, handheld, headless, a scripted drive into new areas, `DM_MEMSTAT`), the footprint went from 7.8 to 9.4 GB in 12 minutes, the game's own charged memory from 3.9 to 5.3 GB, and macOS compressed 4.5 GB of it, with swap growing. The host's GPU memory grew only 0.3 GB of that; Metal's allocated total rose 2.6 GB, mostly the no-copy buffers over the game's pools. Grand Prix races did not show it.
+
+With `mem_map_limit on`, the game maps up to 1.5 GB in its alias region where it mapped 3.0 GB, as [issue #1536](https://github.com/seedds/nxnative/issues/1536) found on an 8 GB Mac. With `DM_GUEST_FILE=1` too (the game's memory in files, which macOS writes out instead of compressing or swapping), the footprint stayed at 3.8 to 4.4 GB over 13 to 17 minutes of free roam, compressed memory under 0.6 GB, swap flat, wired unchanged at about 6.5 GB. The cost is more long frames: a played windowed run of 20 minutes (Grand Prix and free roam) had 1.35 long frames a second (21 over 100 ms) against 0.65 to 0.73 in runs without the files, mostly later in the session; a headless free-roam run had 0.75 against 0.49. The limit and the files do not change the frame rate: free roam drops to about 40 fps on this Mac in its heavier areas. The files take disk space while the game runs (about 8 GB here) and go at exit. Measured on a branch with pull requests #1179, #1229, #1230, #1251 and #1350 as well.
+
 ## Terrain and movies
 
-The flat ground with blocky seams behind the title and the menu was terrain tiles the CPU wrote with no flush, read as zeros: [Uncompressed storage the CPU wrote, in a pool the GPU has not written](../../../docs/reference/nvn-objects.md#uncompressed-storage-the-cpu-wrote-where-the-gpu-has-not-written). The title now shows real terrain, with hills, lawns and road edges.
+The flat ground with blocky seams behind the title and the menu was terrain tiles the CPU wrote with no flush, read as zeros: [Uncompressed storage the CPU wrote, in a pool the GPU has not written](../../../docs/reference/nvn-objects.md#uncompressed-storage-the-cpu-wrote-in-a-pool-the-gpu-has-not-written). The title now shows real terrain, with hills, lawns and road edges.
 
 The Mushroom Cup's opening movie plays: VP9 at 2560x1440, 1,423 pictures over about 25 s of frames at steady pacing, with correct colours. It used to show the last 3D frame, which [Textures of an sRGB / linear pair over the same storage](../../../docs/reference/rendering.md#textures-of-an-srgb--linear-pair-over-the-same-storage) fits.
 
@@ -86,7 +97,6 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
 
 ## Open
 
-- **Shader tables:** split them again with this game's files and compare: `shader_map.tsv` may hold agl rows that are no shaders ([A control section's words read as a BAHS entry](../../../docs/reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry)), and if so the NSP script stops at the table check until the split's tables replace them.
 - **Long frames:** first-use pipeline compiles (no `pso_manifest.tsv` yet).
 - **Shading rate:** the calls are accepted and ignored ([Variable rate shading ignored](../../../docs/reference/rendering.md#variable-rate-shading-ignored)), so every pixel is shaded where the game meant to save GPU time.
 - **Mesh draws:** `DrawMeshTasks3D` and the indirect forms are not implemented; no run reached them.
@@ -95,6 +105,7 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
 
 ## Found on this game
 
+- [Indirect-count multi-draws split the pass an earlier draw opened](../../../docs/reference/rendering.md#indirect-count-multi-draws-split-the-pass-an-earlier-draw-opened): the scene passes' colour and depth loaded again.
 - [A NUP with complete standalone updates stops at "no base game"](../../../docs/reference/packing.md#a-nup-with-complete-standalone-updates-stops-at-no-base-game) (packing reproduced with the base dump; 1.8.0 gameplay remains untested)
 - [Large sparse textures as Metal placement sparse textures](../../../docs/reference/nvn-objects.md#large-sparse-textures-as-metal-placement-sparse-textures)
 - [Physical pages mapped at several places of a placement sparse texture](../../../docs/reference/nvn-objects.md#physical-pages-mapped-at-several-places-of-a-placement-sparse-texture)
@@ -102,14 +113,19 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
 - [NVN2 task and mesh shaders](../../../docs/reference/shaders.md#nvn2-task-and-mesh-shaders)
 - [Task and mesh draws reading the dummy buffer](../../../docs/reference/shaders.md#task-and-mesh-draws-reading-the-dummy-buffer)
 - [A store only a dispatch's first invocation makes](../../../docs/reference/shaders.md#a-store-only-a-dispatchs-first-invocation-makes)
-- [Uncompressed storage the CPU wrote, in a pool the GPU has not written](../../../docs/reference/nvn-objects.md#uncompressed-storage-the-cpu-wrote-where-the-gpu-has-not-written)
+- [Uncompressed storage the CPU wrote, in a pool the GPU has not written](../../../docs/reference/nvn-objects.md#uncompressed-storage-the-cpu-wrote-in-a-pool-the-gpu-has-not-written)
 - [Comparisons with .FTZ](../../../docs/reference/shaders.md#comparisons-with-ftz)
 - [Variable rate shading ignored](../../../docs/reference/rendering.md#variable-rate-shading-ignored)
+- [Image views of the type a shader declares](../../../docs/reference/rendering.md#image-views-of-the-type-a-shader-declares) (the dark box around each kart's shadow, issue #1648)
 - [A DualShock 4 that connects after the first stays on Core Haptics](../../../docs/reference/services.md#a-dualshock-4-that-connects-after-the-first-stays-on-core-haptics)
+- [Identical controllers that GameController lists as one](../../../docs/reference/services.md#identical-controllers-that-gamecontroller-lists-as-one) (two Pro Controllers over USB, split-screen races)
 - [Scaled shared memory addresses](../../../docs/reference/shaders.md#scaled-shared-memory-addresses)
 - [iOS ends the app once the guest's touched pages reach its memory limit](../../../docs/reference/memory.md#ios-ends-the-app-once-the-guests-touched-pages-reach-its-memory-limit)
 - [Compute shared memory past 32 KB](../../../docs/reference/shaders.md#compute-shared-memory-past-32-kb)
 - [Uniform references past the first kilobyte](../../../docs/reference/shaders.md#uniform-references-past-the-first-kilobyte)
+- [A control section's words read as a BAHS entry](../../../docs/reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry) (resolved, [issue #1592](https://github.com/seedds/nxnative/issues/1592)): `cs_lib.bin` 74, `797e77c2ec4341c5` at `agl_common.sharcb#BAHS@0x5c778`, was no shader. Dropping it and its fact moved the 69 `cs_lib.bin` rows after it (`agl_common`, `agl_ndsr`, `agl_technique_pfx`, gsys `common`) down one index, as the reporter's split of the base game has them; not split again here, as the game's files are not on this Mac.
+- [Samples that do not overlap on Apple's M1: the border branch and the coordinate NaN select](../../../docs/reference/shaders.md#samples-that-do-not-overlap-on-apples-m1-the-border-branch-and-the-coordinate-nan-select)
 - [SDK 19's decoder forms](../../../docs/reference/movies.md#sdk-19s-decoder-forms)
 - [A version without one of the profile's modules stops the host at boot](../../../docs/reference/packing.md#a-version-without-one-of-the-profiles-modules-stops-the-host-at-boot)
+- [GPU timestamps per submission segment](../../../docs/reference/frame-rate.md#gpu-timestamps-per-submission-segment)
 - 1.8.0, by pull request #1116: [The camera through the graphics system](../../../docs/reference/services.md#the-camera-through-the-graphics-system), [Layer HDR metadata](../../../docs/reference/services.md#layer-hdr-metadata), the SDK 21 forms in [The Joy-Con mouse pointer](../../../docs/reference/services.md#the-joy-con-mouse-pointer) and [GameChat at boot](../../../docs/reference/services.md#gamechat-at-boot)

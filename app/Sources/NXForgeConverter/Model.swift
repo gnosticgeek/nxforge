@@ -6,15 +6,17 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
-    case convert = "Convert", builds = "Builds", storage = "Storage", toolchain = "Toolchain", settings = "Settings"
+    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain"
     var id: String { rawValue }
+    /// drawn with its own banner and big heading (HeroHeader) instead of the window title
+    var hasHero: Bool { self == .convert || self == .toolchain || self == .storage }
     var symbol: String {
         switch self {
         case .convert: "macwindow.badge.plus"
+        case .library: "books.vertical"
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
         case .storage: "internaldrive"
         case .toolchain: "wrench.and.screwdriver"
-        case .settings: "gearshape"
         }
     }
 }
@@ -66,6 +68,25 @@ final class AppModel {
     var buildSearch = ""
     var buildSort: BuildSort = .newest
     var buildConsole: ConsoleFilter = .all
+    /// Library: the last scan of the games folder (kept in library.json), and the scan running now: (folders read, folder being read)
+    var library: LibraryScan? = GameLibrary.loadCache()
+    var libraryProgress: (folders: Int, current: String, found: Int)?
+    var librarySearch = ""
+    var libraryConsole: ConsoleFilter = .all
+    var libraryMessage: String?
+    var libraryFilter: LibraryFilter = .all
+    /// reading names and icons from the games' control data: (done, of)
+    var libraryDetails: (done: Int, total: Int)?
+    /// games ticked for Build selected, by id
+    var librarySelection: Set<String> = []
+    /// Build selected: the games still to build, the one building now, what happened to each, and why it stopped, if it did
+    var batchQueue: [LibraryGame] = []
+    var batchCurrent: LibraryGame?
+    var batchResults: [BatchResult] = []
+    var batchMessage: String?
+    var libraryTask: Task<Void, Never>?
+    var detailsTask: Task<Void, Never>?
+    var mountObserver: NSObjectProtocol?
     var selectedBuild: String?
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
     var rebuildQueue: [BuildRecord] = []
@@ -102,6 +123,7 @@ final class AppModel {
         }
         applyAppearance()
         recheck()
+        watchMounts()
         if settings.gameDir != nil { validate() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -252,7 +274,7 @@ final class AppModel {
         guard let env, let dir = settings.gameDir, let folder = gameFolder else { return }
         let keys = needsKeys ? settings.keys : nil
         if needsKeys && keys == nil { return }
-        if !plan, let d = diskNeed, d.short, rebuildQueue.isEmpty,
+        if !plan, let d = diskNeed, d.short, rebuildQueue.isEmpty, batchCurrent == nil,
            !confirm("Build with too little free space?", "\(d.text). The converter stops the build if free space drops below \(Disk.gb(Disk.stopBelow)); the steps it finished are kept for the next try. Storage lists what can be deleted.", action: "Build Anyway") { return }
         let name = game?.name ?? ""
         let out = settings.outDir.flatMap { $0 == folder || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
@@ -445,6 +467,7 @@ final class AppModel {
     private func buildEnded(_ r: Result<String, ConverterError>) {
         diskWatch?.cancel(); diskWatch = nil; diskWarning = nil
         if run.planning { return }   // a preview: it stays on Convert, with its plan
+        if batchCurrent != nil { batchBuildEnded(r) }
         let name = game?.name ?? "The game"
         if settings.notify, Bundle.main.bundleIdentifier != nil {
             let c = UNMutableNotificationContent()
@@ -455,8 +478,11 @@ final class AppModel {
             }
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
-        if settings.openAfterBuild, case .success = r, let app = run.app { openApp(app) }
-        if case .success = r {
+        if settings.openAfterBuild, batchCurrent == nil, case .success = r, let app = run.app { openApp(app) }
+        if batchCurrent != nil {
+            if case .success = r { finishConvert() }
+            nextInBatch()
+        } else if case .success = r {
             finishConvert()
             if let next = rebuildQueue.first { rebuildQueue.removeFirst(); rebuild(next) }
             else if queueMessage == "" { queueMessage = nil }
@@ -469,7 +495,7 @@ final class AppModel {
 
     /// A built game leaves Convert: the folder, its keys, the check and the activity are cleared for the next game,
     /// and Builds opens on the new app. A failed build stays on Convert with its stages and log.
-    private func finishConvert() {
+    func finishConvert() {
         selectedBuild = run.app
         buildSearch = ""
         settings.gameDir = nil
@@ -539,12 +565,22 @@ final class AppModel {
         return Source.isDir(u.path) || Source.isNupFile(u.path) ? u.path : u.deletingLastPathComponent().path
     }
 
-    func confirm(_ title: String, _ text: String, action: String) -> Bool {
+    /// Asks on a sheet over the window in front (HIG: alerts about a window's work attach to it), waiting for the answer.
+    /// An action that deletes, stops or quits gets the red destructive style; "OK" alone is a notice with no Cancel.
+    func confirm(_ title: String, _ text: String, action: String, destructive: Bool? = nil) -> Bool {
         let a = NSAlert()
         a.messageText = title
         a.informativeText = text
-        a.addButton(withTitle: action)
-        a.addButton(withTitle: "Cancel")
-        return a.runModal() == .alertFirstButtonReturn
+        let ok = a.addButton(withTitle: action)
+        let notice = action == "OK"
+        if !notice { a.addButton(withTitle: "Cancel") }
+        let words = ["Trash", "Delete", "Stop", "Quit", "Clear", "Remove"]
+        if destructive ?? words.contains(where: { action.contains($0) }) { ok.hasDestructiveAction = true }
+        else if notice { a.alertStyle = .warning }
+        guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) else {
+            return a.runModal() == .alertFirstButtonReturn
+        }
+        a.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
+        return NSApp.runModal(for: a.window) == .alertFirstButtonReturn
     }
 }

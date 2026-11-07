@@ -23,17 +23,22 @@ func mmss(_ s: Int) -> String { "\(s / 60):\(String(format: "%02d", s % 60))" }
 
 struct ConvertPage: View {
     @Bindable var model: AppModel
+    /// room for the two cards side by side; a narrow window stacks them
+    var wide = true
     @State private var dropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PageHeader(title: "Convert game", subtitle: "Create a native Mac app from your game files, or drop them here.")
-            HStack(alignment: .top, spacing: 16) {
+            HeroHeader(symbol: "gamecontroller", title: "Convert", subtitle: "Create a native Mac app from your game files, or drop them here.")
+            let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(spacing: 16))
+            layout {
                 SourceFilesCard(model: model)
                 MacAppCard(model: model)
             }
             .fixedSize(horizontal: false, vertical: true)
             ActivityCard(model: model)
+            LogView(lines: model.run.done.map(\.line) + model.run.log, running: model.run.running, file: model.run.logFile,
+                    placeholder: model.settings.gameDir == nil ? "Choose a game to see its build steps…" : "The build's output shows here.") { copyToClipboard(model.logText) }
         }
         // a game folder, game files and prod.keys, in any mix (DropFiles)
         .dropDestination(for: URL.self) { urls, _ in model.drop(urls) } isTargeted: { dropTargeted = $0 && !model.run.running }
@@ -53,22 +58,8 @@ struct SourceFilesCard: View {
 
     var body: some View {
         let keyless = !model.needsKeys
-        Card(title: "Source files", subtitle: "Select your game folder and prod.keys, or a Switch 2 game's .nup file or dump folder.") {
-            PathField(label: "Game", labelWidth: 100, symbol: model.settings.gameDir.map(Source.isNupFile) == true ? "shippingbox" : "folder", value: model.settings.gameDir?.tildePath) {
-                if let d = model.chooseGame(start: model.settings.gameDir) { model.setGameDir(d) }
-            }
-            .disabled(model.run.running)
-            if keyless {
-                HStack(spacing: 10) {
-                    Text("Keys file").frame(width: 100, alignment: .leading)
-                    Text("Not needed: a .nup or a dump folder is not encrypted").foregroundStyle(.secondary)
-                }
-            } else {
-                PathField(label: "Keys file", labelWidth: 100, symbol: "doc", value: model.settings.keys?.tildePath) {
-                    if let f = model.choose(folder: false, start: model.gameFolder) { model.settings.keys = f; model.validate() }
-                }
-                .disabled(model.run.running)
-            }
+        Card(title: "Source files", subtitle: "Select your game folder and prod.keys, or a Switch 2 game's .nup file or dump folder.", number: 1) {
+            DropZone(model: model, keyless: keyless)
 
             if model.validating {
                 HStack { ProgressView().controlSize(.small); Text(keyless ? "Reading the game's container…" : "Checking the game files against your keys…").foregroundStyle(.secondary) }
@@ -125,17 +116,14 @@ struct SourceFilesCard: View {
             Divider()
             HStack {
                 // the version and its state sit under the heading, where they have the card's width (beside it they were cut off)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Engine").font(.headline)
-                    EngineStatus(model: model)
-                        .help(model.updateNote.map { "New: \($0)" } ?? "")
-                }
+                EngineStatus(model: model)
+                    .help(model.updateNote.map { "New: \($0)" } ?? "")
                 Spacer(minLength: 12)
                 if model.updatesAvailable {
-                    Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.glassProminent)
+                    Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.glass)
                         .disabled(model.run.running || model.engine?.dirty == true || model.engineBusy).fixedSize()
                 } else {
-                    Button("Check for updates…") { model.engineAction(update: false) }.buttonStyle(.glass).disabled(model.run.running || model.engineBusy || model.engine == nil).fixedSize()
+                    Button { model.engineAction(update: false) } label: { Label("Check for updates…", systemImage: "arrow.clockwise") }.buttonStyle(.glass).disabled(model.run.running || model.engineBusy || model.engine == nil).fixedSize()
                 }
             }
         }
@@ -172,8 +160,9 @@ struct EngineStatus: View {
             let failed = model.engineMessage?.ok == false
             HStack(spacing: 7) {
                 if model.engineBusy { ProgressView().controlSize(.mini) }
-                StatusDot(color: failed ? .red : model.updatesAvailable ? .blue : .green,
-                          text: "\(e.short)\(e.dirty ? "+" : "") · \(failed ? "Check failed" : model.engineMessage?.text ?? "Current")")
+                StatusDot(color: failed ? .red : model.updatesAvailable ? .blue : .green)
+                Text("Engine \(e.short)\(e.dirty ? "+" : "")").fontWeight(.medium)
+                Text("· \(failed ? "Check failed" : model.engineMessage?.text ?? "Current")").foregroundStyle(failed ? .red : model.updatesAvailable ? .blue : .green)
             }
             .lineLimit(1)
             .help("\(model.env?.repo ?? "") on \(e.branch)\n\(e.subject)\n\(model.engineMessage?.text ?? "")")
@@ -188,11 +177,11 @@ struct MacAppCard: View {
 
     var body: some View {
         let _ = model.revision
-        Card(title: "Mac app", subtitle: "Build settings for your native Mac application.") {
+        Card(title: "Mac app", subtitle: "Build settings for your native Mac application.", number: 2) {
             HStack(spacing: 16) {
                 GameIcon(url: model.game?.icon, size: 116)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(model.game?.name ?? "No game selected").font(.title2.weight(.bold)).lineLimit(2)
+                    Text(model.game?.name ?? "No game selected").font(.title3.weight(.semibold)).lineLimit(2)
                     Text(model.source == nil ? "Apple Silicon · Metal" : "Apple Silicon · Metal · Switch 2").foregroundStyle(.secondary)
                     Text("A native macOS version built with NXForge.").foregroundStyle(.secondary)
                 }
@@ -201,20 +190,35 @@ struct MacAppCard: View {
                 if let d = model.choose(folder: true, start: model.outputFolder) { model.settings.outDir = d == model.gameFolder ? nil : d }
             }
             .disabled(model.run.running)
+            // the same choice as Settings › After a build: on deletes <id>_build once the app is built and signed
+            Toggle(isOn: Binding(get: { model.settings.cleanup == .all }, set: { model.settings.cleanup = $0 ? .all : .off })) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Remove build folder after building")
+                    Text(model.settings.cleanup == .all
+                         ? "Frees the space once the app is ready. A rebuild then starts over (about 30 to 50 minutes) and needs the game files again."
+                         : "Kept, so a rebuild reuses its finished steps.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .toggleStyle(.switch)
+            .disabled(model.run.running)
+            .help("Deletes the game's _build folder (extracted files and compiled shaders) after a successful build. Also in Settings › After a build.")
 
             if model.run.running {
                 HStack {
                     Button { } label: {
-                        Label(model.run.planning ? "Checking…" : "Building…", systemImage: model.run.planning ? "list.bullet.clipboard" : "hammer.fill").font(.title3.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 30)
+                        Label(model.run.planning ? "Checking…" : "Building…", systemImage: model.run.planning ? "list.bullet.clipboard" : "hammer.fill").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(true)
-                    Button("Stop") { model.stopBuild() }.buttonStyle(.glass).controlSize(.extraLarge)
+                    .buttonStyle(.glassProminent).controlSize(.large).disabled(true)
+                    Button("Stop") { model.stopBuild() }.buttonStyle(.glass).controlSize(.large)
                 }
             } else {
                 Button { model.build() } label: {
-                    Label("Build Mac app", systemImage: "hammer.fill").font(.title3.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 30)
+                    Label("Build Mac app", systemImage: "hammer.fill").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glassProminent).controlSize(.extraLarge)
+                .buttonStyle(.glassProminent).controlSize(.large)
+                .keyboardShortcut(.defaultAction)   // Return builds: the page's one default button
                 .disabled(!model.ready)
                 .help(model.ready ? "" : !model.missingForGame.isEmpty ? "This game needs \(model.missingForGame.map(\.name).joined(separator: ", ")): install it above" : !model.allOK ? "Some toolchain checks failed: see Toolchain" : model.needsKeys ? "Choose a game folder and keys that validate" : "Choose a .nup or a dump folder that reads")
                 if model.buildCache != nil {
@@ -268,7 +272,7 @@ struct MacAppCard: View {
                     Button { model.build(rebuild: app) } label: {
                         Label("Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(!model.ready)
+                    .buttonStyle(.glass).controlSize(.large).disabled(!model.ready)   // Build Mac app above stays the one blue button
                     .help(model.settings.keepBackups ? "Moves this app to app-backups/ and builds it again on the current engine" : "Builds this app again on the current engine; the old one goes to the Trash")
                 }
             } else if !model.run.running {
@@ -288,31 +292,31 @@ struct MacAppCard: View {
 
 struct ActivityCard: View {
     let model: AppModel
-    /// the stage table and the log, behind "Show details"; opens by itself when a build fails
+    /// the stage table, behind "Show every step"; opens by itself when a build fails
     @AppStorage("activityDetails") private var details = false
 
     var body: some View {
         let run = model.run
         Card {
-            HStack(alignment: .center) {
+            HStack(alignment: .center, spacing: 14) {
+                IconTile(symbol: "square.stack.3d.up", size: 46)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Build activity").font(.title2.weight(.semibold))
+                    Text("Build activity").font(.title3.weight(.bold))
                     Text(run.planning ? "What a build would reuse and redo; nothing is built." : "Converting your game to a native Mac application.").foregroundStyle(.secondary)
                 }
                 Spacer()
                 state
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Theme.tile, in: .capsule)
             }
+            StepTiles(model: model)
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 summary(now: ctx.date)
             }
             DisclosureGroup(isExpanded: $details) {
-                VStack(alignment: .leading, spacing: 12) {
-                    stages
-                    LogView(lines: run.done.map(\.line) + run.log, running: run.running, file: run.logFile) { copyToClipboard(model.logText) }
-                }
-                .padding(.top, 8)
+                stages.padding(.top, 8)
             } label: {
-                Text(details ? "Hide details" : "Show details: every step and the log").font(.headline)
+                Text(details ? "Hide steps" : "Show every step with its time").font(.headline)
                     .contentShape(.rect).onTapGesture { withAnimation { details.toggle() } }
             }
         }
@@ -365,8 +369,9 @@ struct ActivityCard: View {
         } else {
             let plan = Estimates.plan(model.expected)
             if plan.isEmpty {
-                Text(model.settings.gameDir == nil ? "Choose a game to see its build steps." : "A first build takes 20 to 60 minutes, depending on the game. The bar shows the time left once it starts.")
-                    .foregroundStyle(.secondary)
+                if model.settings.gameDir != nil {
+                    Text("A first build takes 20 to 60 minutes, depending on the game. The bar shows the time left once it starts.").foregroundStyle(.secondary)
+                }
             } else {
                 let total = plan.map(\.seconds).reduce(0, +)
                 HStack {
@@ -492,7 +497,10 @@ struct BuildFailure: View {
                 }
                 HStack {
                     if let p = d.page, p != .convert {
-                        Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.glassProminent)
+                        Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.glass)
+                    }
+                    if d.code == .signing {
+                        SettingsLink { Label("Open Settings", systemImage: "gearshape") }.buttonStyle(.glass)
                     }
                     if d.code != .stopped {
                         Button {
@@ -528,4 +536,113 @@ struct FirstLaunchNote: View {
 
 extension Result {
     var isFailure: Bool { if case .failure = self { true } else { false } }
+}
+
+/// Where a game goes: drop it here or choose it; once chosen, the game and its keys with Change buttons.
+struct DropZone: View {
+    @Bindable var model: AppModel
+    let keyless: Bool
+    @State private var hover = false
+
+    var body: some View {
+        let game = model.settings.gameDir
+        VStack(spacing: 12) {
+            if let game {
+                VStack(alignment: .leading, spacing: 8) {
+                    line(game.isNupFileish ? "shippingbox.fill" : "folder.fill", "Game", game.tildePath)
+                    if keyless { line("key", "Keys", "Not needed: a .nup or a dump folder is not encrypted", dim: true) }
+                    else { line("key.fill", "Keys", model.settings.keys?.tildePath ?? "Not chosen", dim: model.settings.keys == nil) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Image(systemName: "folder.badge.plus").font(.system(size: 40, weight: .light)).foregroundStyle(Color.accentColor)
+                    .symbolRenderingMode(.hierarchical)
+                Text("Drag and drop your game folder, or click to choose").font(.headline)
+            }
+            HStack(spacing: 12) {
+                Button { chooseGame() } label: { Label(game == nil ? "Choose Game…" : "Change Game…", systemImage: "folder") }
+                if !keyless {
+                    Button { chooseKeys() } label: { Label(model.settings.keys == nil ? "Choose Keys…" : "Change Keys…", systemImage: "key") }
+                }
+            }
+            .buttonStyle(.glass).controlSize(.large)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity)
+        .background(Color.accentColor.opacity(hover ? 0.10 : 0.05), in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+        .contentShape(.rect)
+        .onTapGesture { if game == nil { chooseGame() } }
+        .onHover { hover = $0 }
+        .disabled(model.run.running)
+    }
+
+    func line(_ symbol: String, _ label: String, _ value: String, dim: Bool = false) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).foregroundStyle(Color.accentColor).frame(width: 20)
+            Text(label).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
+            Text(value).foregroundStyle(dim ? .secondary : .primary).lineLimit(1).truncationMode(.middle).help(value)
+        }
+    }
+
+    func chooseGame() { if let d = model.chooseGame(start: model.settings.gameDir) { model.setGameDir(d) } }
+    func chooseKeys() { if let f = model.choose(folder: false, start: model.gameFolder) { model.settings.keys = f; model.validate() } }
+}
+
+/// The seven steps of a build as numbered tiles: done ones ticked, the running one lit, a failed one red.
+struct StepTiles: View {
+    let model: AppModel
+
+    static let symbols: [String: String] = [
+        "Extract tools": "square.and.arrow.down", "Extract game files": "doc", "Rewrite executable": "gearshape",
+        "Split shaders": "square.3.layers.3d", "Compile Metal shaders": "chevron.left.forwardslash.chevron.right",
+        "Build Mac host": "hammer", "Package Mac app": "shippingbox",
+    ]
+
+    enum TileState { case pending, running, done, failed }
+
+    var body: some View {
+        let run = model.run
+        HStack(spacing: 8) {
+            ForEach(Array(stageNames.enumerated()), id: \.offset) { i, s in
+                let name = s.1
+                let st = state(name, run)
+                if i > 0 { Circle().fill(.secondary.opacity(0.4)).frame(width: 3, height: 3) }
+                tile(i + 1, name, st)
+            }
+        }
+        .padding(.top, 10)
+    }
+
+    func state(_ name: String, _ run: BuildRun) -> TileState {
+        if run.running && friendly(run.stage.name) == name { return .running }
+        let done = run.done.filter { friendly($0.name) == name }
+        if done.contains(where: { !$0.ok }) { return .failed }
+        if !done.isEmpty { return .done }
+        return .pending
+    }
+
+    func tile(_ n: Int, _ name: String, _ st: TileState) -> some View {
+        let tint: Color = st == .failed ? .red : st == .done ? .green : .accentColor
+        let lit = st != .pending
+        return VStack(spacing: 6) {
+            Image(systemName: st == .done ? "checkmark.circle" : st == .failed ? "xmark.octagon" : Self.symbols[name] ?? "circle")
+                .font(.system(size: 22)).foregroundStyle(lit ? tint : Color.primary.opacity(0.85))
+                .symbolEffect(.pulse, isActive: st == .running)
+            Text(name).font(.callout.weight(.medium)).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
+        }
+        .padding(.top, 14)
+        .frame(maxWidth: .infinity, minHeight: 94, alignment: .top)
+        .padding(.horizontal, 6)
+        .background(lit ? tint.opacity(0.14) : Theme.tile.opacity(0.6), in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(lit ? tint.opacity(0.9) : Theme.cardStroke, lineWidth: lit ? 1.5 : 1))
+        .overlay(alignment: .top) { NumberBadge(n: n, color: lit ? tint : Color.secondary.opacity(0.7), size: 20).offset(y: -10) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Step \(n), \(name), \(st == .done ? "done" : st == .running ? "running" : st == .failed ? "failed" : "not run")")
+    }
+}
+
+extension String {
+    /// a Switch 2 package file rather than a folder
+    var isNupFileish: Bool { Source.isNupFile(self) }
 }
