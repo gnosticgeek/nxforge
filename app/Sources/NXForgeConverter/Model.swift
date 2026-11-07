@@ -580,7 +580,7 @@ final class AppModel {
             if r.stopped != nil, let before {
                 // keep what the last scan found in the folders this one did not get to
                 let seen = Set(r.games.map(\.folder))
-                out.games = GameLibrary.fold(r.games + before.games.filter { !seen.contains($0.folder) && !r.games.contains(where: { g in g.id == $0.id }) })
+                out.games = GameLibrary.fold(r.games + before.games.filter { o in !seen.contains(o.folder) && !r.games.contains { $0.id == o.id } })
             }
             await MainActor.run {
                 self.library = out

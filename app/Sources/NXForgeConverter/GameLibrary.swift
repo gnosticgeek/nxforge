@@ -85,12 +85,14 @@ enum GameLibrary {
 
     // MARK: file names
 
+    private static let tagPattern = try! NSRegularExpression(pattern: #"\[([0-9A-Fa-f]{16})\]"#)
+
     /// The first [16 hex digits] tag of a file name, or a name that is only a title ID ("0100f9f00c697001.nsp").
     static func titleTag(_ name: String) -> UInt64? {
         let stem = (name as NSString).deletingPathExtension
         if stem.count == 16, let v = UInt64(stem, radix: 16) { return v }
-        if let m = stem.firstMatch(of: /\[([0-9A-Fa-f]{16})\]/) { return UInt64(m.1, radix: 16) }
-        return nil
+        guard let m = tagPattern.firstMatch(in: stem, range: NSRange(stem.startIndex..., in: stem)), let r = Range(m.range(at: 1), in: stem) else { return nil }
+        return UInt64(stem[r], radix: 16)
     }
 
     /// "Super Mario Odyssey [0100000000010000][v0].nsp" → "Super Mario Odyssey"; "Yoshis_Crafted_World_[01006…].nsp" → "Yoshis Crafted World";
@@ -98,9 +100,9 @@ enum GameLibrary {
     static func cleanName(_ raw: String) -> String {
         var s = raw.replacingOccurrences(of: "_", with: " ")
         if let i = s.firstIndex(of: "["), i != s.startIndex { s = String(s[..<i]) }
-        s = s.replacing(/\s*\([\d.,]+\s*[KMGT]B\)/.ignoresCase(), with: "")
-        s = s.replacing(/\s*\[[^\]]*\]/, with: "")
-        s = s.replacing(/\s+/, with: " ")
+        s = s.replacingOccurrences(of: #"\s*\([\d.,]+\s*[KMGT]B\)"#, with: "", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: #"\s*\[[^\]]*\]"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         return s.trimmingCharacters(in: .whitespaces)
     }
 
