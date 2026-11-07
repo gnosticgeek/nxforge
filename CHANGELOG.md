@@ -42,6 +42,11 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - The NSP script's fallback tool folders come after the caller's `PATH` (#1475).
 - Not taken yet: upstream's landed #1520 (readable-tile split, a new shader chain) and #1484 (pool residency for shader keys). NXForge already carries both as pull-request heads; the landed versions come with the next full merge.
 
+**From upstream `main`, 13:45 check (picked)**
+- A texture copy into an uncompressed alias of a compressed texture writes the compressed texture (#1617, Monster Jam Steel Titans 2's arena floor). Its red-line key is 159 here (156 is taken). `DM_NVN_BC_ALIAS=0` turns it off.
+- The shader split reads legacy Unreal paks with encrypted indexes (#1646), and `--progress json` sends a game event before the shader stages (#1627).
+- Not taken yet: the NSP script's title IDs from content metas (5c4dc18f) and its ShaderWatch test follow-up (0caa6f93), which conflict with NXForge's build script; they come with the next full merge.
+
 **From upstream pull requests (not yet on `main`)**
 - Ocarina of Time's foliage no longer draws as flat white, blue and cream shapes for its first seconds (#1368): a task / mesh pipeline missing at its first draw is built there instead of the draw being left out until a background build finished (3.5 to 7 s each on an M4 Pro), and it is recorded in the prewarm list, so later starts build it during the prepare screen.
 
