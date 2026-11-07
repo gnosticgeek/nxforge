@@ -199,6 +199,7 @@ struct MacAppCard: View {
                          : "Kept, so a rebuild reuses its finished steps.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .toggleStyle(.switch)
             .disabled(model.run.running)
