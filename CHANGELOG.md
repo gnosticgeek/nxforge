@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+- **NXForge Sidebar 0.2.0** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): pause while the sidebar is open, a save backup button, Full screen and Picture size (Fit, Stretch, Pixel-perfect), control swaps, mod load order, mute, recent captures, a frame-time graph, defaults for every game, cheat sections and search, and each game's settings in a plain text file (`NXForge settings.txt` in the game folder).
+
 ## 0.16.0 (2026-11-07)
 
 - **The sidebar has its own version.** The in-game Quick settings sidebar is now versioned and released on its own, starting at **NXForge Sidebar 0.1.0** (tag `sidebar-v0.1.0`), with its own [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md). The sidebar shows its version under the button legend. NXForge's releases keep their `vX.Y.Z` tags; `scripts/release_check.py` and the `release` workflow handle both kinds (UPSTREAM.md, Versions).

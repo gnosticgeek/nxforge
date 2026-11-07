@@ -242,7 +242,7 @@ iCloud Drive takes a moment to carry a file from one device to the other. Quit t
 
 ## Quick settings on the Mac
 
-A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧⌘G, the Graphics menu, or Home or − / + on a controller). At the top are Screenshot, Record, the FPS counter and the volume; under them are six pages (Graphics, FPS, Capture, Mods, Cheats, Controls), which L and R on a controller or Tab and Shift-Tab on the keyboard turn, and at the bottom a legend shows which buttons or keys work on the selected item. Its changes apply at once, except anisotropic filtering, recording frame times and mods, which apply from the next launch: those rows carry a **Next launch** tag, orange while the choice differs from the running game, and the footer counts them and offers **Restart game** (pressed twice), which quits and starts the game again. A dot before a setting marks one changed from its default, and Graphics and FPS each have a Reset button. Like the settings window, a setting that an `env.txt` or the launch environment fixes is not saved. Every setting a Mac app has, and where it is changed and kept:
+A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧⌘G, the Graphics menu, or Home or − / + on a controller). At the top are Screenshot, Record, the FPS counter, the volume and mute; under them are seven pages (General, Graphics, FPS, Capture, Mods, Cheats, Controls), which L and R on a controller or Tab and Shift-Tab on the keyboard turn, and at the bottom a legend shows which buttons or keys work on the selected item. Its changes apply at once, except anisotropic filtering, recording frame times and mods, which apply from the next launch: those rows carry a **Next launch** tag, orange while the choice differs from the running game, and the footer counts them and offers **Restart game** (pressed twice), which quits and starts the game again. A dot before a setting marks one changed from its default, and Graphics and FPS each have a Reset button. Like the settings window, a setting that an `env.txt` or the launch environment fixes is not saved. Every setting a Mac app has, and where it is changed and kept:
 
 | Setting | Settings window | Quick settings | `env.txt` / environment | Saved in the app's preferences as |
 |---|---|---|---|---|
@@ -253,19 +253,21 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧�
 | Performance rows (Frame buffering, Metal 4 pipelines, …) | Advanced settings › Performance | – | as in [Settings in a file](#settings-in-a-file) | `launcher.<variable>` |
 | Cloud saves folder | Cloud saves | – | `DM_SAVE_SYNC` | `cloudSaves.folder` |
 | Picture filter and its strength (Quick settings and the Graphics menu offer off and CRT; the environment also takes the engine's other filters) | – | Graphics › CRT filter, Strength | `DM_PRESENT_FILTER`, `DM_PRESENT_FILTER_STRENGTH` | `DMPresentFilter.mode.<game>`, `DMPresentFilter.strength.<game>` |
+| Picture size (Fit, Stretch, Pixel-perfect) | – | Graphics › Picture size | `DM_PRESENT_SCALE` (`fit`, `stretch`, `integer`) | `DMQuickSettings.scale.<game>` |
 | CRT line size | – | Graphics › Line size | `DM_PRESENT_SCANLINE` | `DMPresentFilter.scanline.<game>` |
 | Anti-aliasing (FXAA) | – | Graphics › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>` |
 | Anisotropic filtering (16× by default) | – | Graphics › Anisotropic filtering | `DM_ANISO` | `DMQuickSettings.aniso.<game>` |
-| Frame-rate counter and its corner | – | FPS › Show FPS (and FPS at the top) | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>` |
+| Frame-rate counter, its corner and milliseconds | – | FPS › Show FPS (and FPS at the top), Show milliseconds | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>`, `DMQuickSettings.fpsMs.<game>` |
 | Record frame times (from the next launch) | – | FPS › Record frame times | `DM_FRAME_TIMES` (a `DM_NVN_TSV` wins) | `DMQuickSettings.frameTimes.<game>` |
-| Volume | – | the slider at the top | – | `DMQuickSettings.volume.<game>` |
+| Volume and mute | – | the slider and speaker at the top | – | `DMQuickSettings.volume.<game>`, `DMQuickSettings.muted.<game>` |
+| Pause the game, quieter sound while the sidebar is open | – | General | – | `DMQuickSettings.pauseOpen.<game>` (unset: on), `DMQuickSettings.duckOpen.<game>` |
 | Screenshot and recording folder | – | Capture | – | `DMQuickSettings.captureDir.<game>` (unset: the game folder) |
-| Mods that are on | – | Mods | `DM_ROMFS_OVERLAY` replaces them | `DMQuickSettings.mods.<game>` |
+| Mods that are on, and their load order | – | Mods | `DM_ROMFS_OVERLAY` replaces them | `DMQuickSettings.mods.<game>`, `DMQuickSettings.modOrder.<game>` |
 | Cheats that are on | – | Cheats (and the Cheats menu) | `DM_CHEATS_ON` | not in the preferences: `<build ID>.enabled` beside the cheat file |
 | Keys and buttons | – | Controls | – | `DMQuickSettings.keys.<game>`, `DMQuickSettings.pad.<game>` (the maps), `DMQuickSettings.keyNames.<game>`, `DMQuickSettings.padNames.<game>` (their labels) |
 | Show this window at launch | the window's switch | – | `DM_LAUNCHER=0` skips it | `window.show` |
 
-`<game>` is the game's profile name; each game app has preferences of its own (`org.nxforge.<title ID>`). `dm/tools/tests/test_settings_table.py` checks that every key Quick settings saves is in this table.
+`<game>` is the game's profile name; each game app has preferences of its own (`org.nxforge.<title ID>`). The sidebar's settings are also kept as plain text in `NXForge settings.txt` in the game folder (`name = value` a line; `DM_SETTINGS_FILE=0` turns it off), which wins at launch, so an edit made with the game closed applies; General › Make these my defaults writes the shared ones to `~/Library/Application Support/NXForge/Sidebar defaults.txt`, where a game without a settings file of its own starts. `dm/tools/tests/test_settings_table.py` checks that every key Quick settings saves is in this table.
 
 ## In-game menu
 
