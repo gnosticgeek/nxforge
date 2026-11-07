@@ -6,11 +6,12 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
-    case convert = "Convert", builds = "Builds", storage = "Storage", toolchain = "Toolchain", settings = "Settings"
+    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain", settings = "Settings"
     var id: String { rawValue }
     var symbol: String {
         switch self {
         case .convert: "macwindow.badge.plus"
+        case .library: "books.vertical"
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
         case .storage: "internaldrive"
         case .toolchain: "wrench.and.screwdriver"
@@ -66,6 +67,13 @@ final class AppModel {
     var buildSearch = ""
     var buildSort: BuildSort = .newest
     var buildConsole: ConsoleFilter = .all
+    /// Library: the last scan of the games folder (kept in library.json), and the scan running now: (folders read, folder being read)
+    var library: LibraryScan? = GameLibrary.loadCache()
+    var libraryProgress: (folders: Int, current: String, found: Int)?
+    var librarySearch = ""
+    var libraryConsole: ConsoleFilter = .all
+    var libraryMessage: String?
+    private var libraryTask: Task<Void, Never>?
     var selectedBuild: String?
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
     var rebuildQueue: [BuildRecord] = []
@@ -537,6 +545,88 @@ final class AppModel {
         if let start { p.directoryURL = Source.folder(of: start).url }
         guard p.runModal() == .OK, let u = p.url else { return nil }
         return Source.isDir(u.path) || Source.isNupFile(u.path) ? u.path : u.deletingLastPathComponent().path
+    }
+
+    // MARK: Library
+
+    var libraryScanning: Bool { libraryProgress != nil }
+
+    func chooseGamesRoot() {
+        guard let d = choose(folder: true, start: settings.gamesRoot ?? "/Volumes") else { return }
+        settings.gamesRoot = d
+        scanLibrary()
+    }
+
+    /// Scans the games folder off the main thread, showing games as they are found; the result replaces the kept list
+    /// (a scan that ended early keeps the games it did not reach from the last one, so a dropped share loses nothing).
+    func scanLibrary() {
+        guard let root = settings.gamesRoot, !libraryScanning else { return }
+        libraryProgress = (0, root, 0)
+        libraryMessage = nil
+        let before = library?.root == root ? library : nil
+        libraryTask = Task.detached(priority: .utility) {
+            // the kept list stays up while the scan runs (no flicker on a slow share); with none kept, games show as they are found
+            var lastGames = 0
+            let r = GameLibrary.scan(root: root) { n, cur, games in
+                let fresh = before == nil && games.count != lastGames ? games : nil
+                lastGames = games.count
+                Task { @MainActor in
+                    guard self.libraryScanning else { return }
+                    self.libraryProgress = (n, cur, games.count)
+                    if let fresh { self.library = LibraryScan(root: root, scanned: Date(), games: GameLibrary.fold(fresh)) }
+                }
+            }
+            var out = r
+            if r.stopped != nil, let before {
+                // keep what the last scan found in the folders this one did not get to
+                let seen = Set(r.games.map(\.folder))
+                out.games = GameLibrary.fold(r.games + before.games.filter { !seen.contains($0.folder) && !r.games.contains(where: { g in g.id == $0.id }) })
+            }
+            await MainActor.run {
+                self.library = out
+                self.libraryProgress = nil
+                self.libraryMessage = r.stopped
+                if r.stopped == nil || !r.games.isEmpty { GameLibrary.saveCache(out) }
+            }
+        }
+    }
+
+    func stopLibraryScan() { libraryTask?.cancel() }
+
+    /// A Mac app built from this game: one beside its files (found by the scan), else the newest build recorded for its path.
+    func builtApp(_ g: LibraryGame, records: [BuildRecord]) -> String? {
+        if let a = g.app { return a }
+        return records.filter { $0.gameDir == g.path && FileManager.default.fileExists(atPath: $0.app) }.max { $0.builtAt < $1.builtAt }?.app
+    }
+
+    /// The game becomes the one to convert. A game whose files share a folder with other games moves into a folder of its own
+    /// first (the script builds one game per folder), once asked.
+    func convertFromLibrary(_ g: LibraryGame) {
+        guard !run.running else { return }
+        var path = g.path
+        if g.shared {
+            guard confirm("Move \(g.name) into its own folder?", "The build takes one game per folder, and \(g.path.lastComponent) holds other games too. Its \(g.files.count) file\(g.files.count == 1 ? "" : "s") move into a new folder, “\(g.name)”, inside it. Nothing is copied or deleted.", action: "Move and Convert") else { return }
+            guard let p = moveToOwnFolder(g) else { return }
+            path = p
+        }
+        setGameDir(path)
+        page = .convert
+    }
+
+    /// Moves a shared game's files into a folder of its own and updates the list; the new folder, or nil (and a message) when it failed.
+    @discardableResult func moveToOwnFolder(_ g: LibraryGame) -> String? {
+        do {
+            let p = try GameLibrary.moveToOwnFolder(g)
+            if var l = library, let i = l.games.firstIndex(of: g) {
+                l.games[i].path = p; l.games[i].files = []; l.games[i].shared = false
+                library = l
+                GameLibrary.saveCache(l)
+            }
+            return p
+        } catch {
+            libraryMessage = "Could not move \(g.name)'s files: \(error.localizedDescription)"
+            return nil
+        }
     }
 
     func confirm(_ title: String, _ text: String, action: String) -> Bool {

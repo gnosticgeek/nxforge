@@ -22,6 +22,8 @@ struct Settings: Codable, Equatable {
     var outDir: String?
     /// the keys file for a game folder that has no prod.keys of its own
     var defaultKeys: String?
+    /// the Library page's root: every game under it is listed (a drive or a share, such as /Volumes/Gaming/roms/switch)
+    var gamesRoot: String?
     var appearance: Appearance = .system
     var notify = true
     var openAfterBuild = false
@@ -36,7 +38,7 @@ struct Settings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
-        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys"
+        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root"
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
     }
 
@@ -52,6 +54,7 @@ struct Settings: Codable, Equatable {
         signIdentity = try c.decodeIfPresent(String.self, forKey: .signIdentity)
         outDir = try c.decodeIfPresent(String.self, forKey: .outDir)
         defaultKeys = try c.decodeIfPresent(String.self, forKey: .defaultKeys)
+        gamesRoot = try c.decodeIfPresent(String.self, forKey: .gamesRoot)
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? .system
         notify = (try? c.decodeIfPresent(Bool.self, forKey: .notify)) ?? true
         openAfterBuild = (try? c.decodeIfPresent(Bool.self, forKey: .openAfterBuild)) ?? false

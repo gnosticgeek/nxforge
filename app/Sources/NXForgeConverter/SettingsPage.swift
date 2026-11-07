@@ -40,6 +40,11 @@ struct SettingsPage: View {
                 }
             }
             SettingsSection(title: "Files & folders") {
+                setting("Games folder", "Searched, with every folder inside it, for games to build: see Library.") {
+                    Text(model.settings.gamesRoot?.tildePath ?? "None").foregroundStyle(model.settings.gamesRoot == nil ? .secondary : .primary)
+                        .lineLimit(1).truncationMode(.middle).frame(maxWidth: 260, alignment: .trailing)
+                    Button("Choose…") { model.chooseGamesRoot() }.buttonStyle(.glass).disabled(model.libraryScanning)
+                }
                 setting("Default output location", "Where new Mac apps are saved.") {
                     Picker("", selection: Binding(get: { model.settings.outDir ?? "" }, set: { model.settings.outDir = $0.isEmpty ? nil : $0 })) {
                         Label("Alongside game files", systemImage: "folder").tag("")

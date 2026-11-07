@@ -18,6 +18,7 @@ struct RootView: View {
             Group {
                 switch model.page {
                 case .convert: ScrollView { ConvertPage(model: model).padding(24) }
+                case .library: LibraryPage(model: model)
                 case .builds: BuildsPage(model: model)
                 case .storage: StoragePage(model: model)
                 case .toolchain: ScrollView { ToolchainPage(model: model).padding(24) }
@@ -33,11 +34,12 @@ struct RootView: View {
                 return true
             }
             .toolbar {
-                if model.page == .builds {
+                if model.page == .builds || model.page == .library {
                     ToolbarItem {
                         HStack(spacing: 6) {
                             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                            TextField("Search builds", text: $model.buildSearch).textFieldStyle(.plain).frame(width: 200)
+                            TextField(model.page == .library ? "Search games" : "Search builds", text: model.page == .library ? $model.librarySearch : $model.buildSearch)
+                                .textFieldStyle(.plain).frame(width: 200)
                         }
                         .padding(.horizontal, 10).padding(.vertical, 5)
                     }

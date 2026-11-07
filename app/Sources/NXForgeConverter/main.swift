@@ -2,7 +2,7 @@
 // 1. lists what the script needs, ticked or crossed; 2. checks a game folder against prod.keys;
 // 3. converts the folder to a signed Mac app, and rebuilds it when the engine changes. The same steps run headless:
 //   NXForgeConverter --check | --validate <folder> [<prod.keys>] | --convert <folder> [<prod.keys>] [--sign <identity>]
-//   | --rebuild <app> [<prod.keys>] [--sign <identity>] | --engine [<folder>] | --verify <app>
+//   | --rebuild <app> [<prod.keys>] [--sign <identity>] | --engine [<folder>] | --verify <app> | --library <games folder>
 // <folder> may also be a Switch 2 game's .nup file or dump folder, which need no prod.keys.
 import AppKit
 import SwiftUI
@@ -80,10 +80,20 @@ case "--engine": exit(MainActor.assumeIsolated { CLI.engine(args.count > 1 ? arg
 case "--convert" where args.count >= 2: exit(MainActor.assumeIsolated { CLI.convert(args[1], keysArg(args), sign: signArg(args), rebuild: nil) })
 case "--rebuild" where args.count >= 2:
     exit(MainActor.assumeIsolated { CLI.convert(args[1].url.deletingLastPathComponent().path, keysArg(args), sign: signArg(args), rebuild: args[1]) })
+case "--library" where args.count >= 2:
+    // the Library page's scan, printed: one game per line (nothing is moved or written)
+    let s = GameLibrary.scan(root: args[1])
+    for g in s.games {
+        print("\(g.console == .switch2 ? "S2" : "S1") \(g.name) · \(g.contents)\(g.titleID.map { " · \($0)" } ?? "")\(g.shared ? " · shares its folder" : "")\(g.app != nil ? " · built" : "")")
+        print("   \(g.path)")
+        for n in g.notes { print("   ! \(n)") }
+    }
+    print("\(s.games.count) games in \(s.folders) folders\(s.skipped.isEmpty ? "" : ", \(s.skipped.count) skipped")\(s.stopped.map { ". \($0)" } ?? "")")
+    exit(s.stopped == nil ? 0 : 1)
 case "--verify" where args.count >= 2:
     do { print("✓ \(try BuildRun.verify(args[1]))"); exit(0) } catch { print("✗ \(error)"); exit(1) }
 case let a? where a.hasPrefix("--") && !a.hasPrefix("-NS") && !a.hasPrefix("-Apple"):
-    FileHandle.standardError.write(Data("usage: NXForgeConverter [--check | --validate <folder | game.nup> [<prod.keys>] | --convert <folder | game.nup> [<prod.keys>] [--sign <identity>] | --rebuild <app> [<prod.keys>] [--sign <identity>] | --engine [<folder>] | --verify <app>]\n".utf8))
+    FileHandle.standardError.write(Data("usage: NXForgeConverter [--check | --validate <folder | game.nup> [<prod.keys>] | --convert <folder | game.nup> [<prod.keys>] [--sign <identity>] | --rebuild <app> [<prod.keys>] [--sign <identity>] | --engine [<folder>] | --verify <app> | --library <games folder>]\n".utf8))
     exit(2)
 default:
     ConverterApp.main()
