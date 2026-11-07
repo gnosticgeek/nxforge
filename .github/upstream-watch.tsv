@@ -3,6 +3,8 @@
 # Every seedds/nxnative pull request that matches and was updated in the last 14 days is listed in one issue labelled "upstream-watch", with where NXForge holds it.
 0400486024DEC000	The Legend of Zelda: Ocarina of Time (Switch 2)	claude/project-thread-27ja4m
 "Ocarina of Time"	The Legend of Zelda: Ocarina of Time (Switch 2)	claude/project-thread-27ja4m
+0400C3F00006E000	Mario Kart World (Switch 2)	
+"Mario Kart World"	Mario Kart World (Switch 2)	
 # Pull requests NXForge leaves out on purpose: "skip", the number, and why (shown in the issue instead of "not in NXForge", and not counted).
 skip	1311	Ocarina's play reports already complete offline (hle_offline.c, from #1299); this is a whole prepo:u service on new CMIF and transfer memory, not taken upstream yet
 skip	1357	NXForge compiles again with -fbracket-depth=2048 only when Metal asks for it (dmsh_pch.py), so the shader chain stays the same
@@ -18,3 +20,8 @@ skip	1427	raw pool table words follow the pools at commit, written against main'
 skip	1438	renames the build folder's shader directory to shader.noindex: existing <id>_build folders would lose their shader cache (about 27 GB for Ocarina of Time); take it when it lands upstream
 skip	1447	its GPU-written ranges (2a18e3ec) replace #1390's, which NXForge has; DM_TEX_RELEASE is opt-in and the game page waits for #1299's profile to land
 skip	1455	retires idle shared textures past 85% of the working set (alias_retire_idle); NXForge has #1391's GPU memory guard, whose alias_evict_idle does the same job and shares g_alias_idle with it, so the two need one design first (based on a2d39a26, whose romfs_image.py change would repack every RomFS image)
+skip	1251	Mario Kart World's split_outputs: its MSL copy goes into msl/b-<chain>/, which the one-file shader libraries (b-<chain>.img) replaced; take it once it lands upstream
+skip	1292	Mario Kart World 1.8.0 image slots; its depth register part landed (473c902), and the image-slot part conflicts with upstream's sRGB img_fit; Tom's copy is the base game
+skip	1321	WIP, do not merge (Mario Kart World LAN play)
+skip	1383	WIP: Mario Kart World 1.8.0 on iOS
+skip	1252	an older Mario Kart World 1.8.0 port, superseded by what landed (#1116)

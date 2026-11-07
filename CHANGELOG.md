@@ -12,6 +12,22 @@ Merges nxnative's `main` up to `5636e7a7` (20 commits since `04df08d`), mostly O
 - Landed versions of pull requests 0.13.0 carried: the pool table notes (#1489) and bound render targets kept across submissions (#1502). A GPU whose access macOS revoked stops the game (#1332); NXForge keeps its own alert, which quits as ⌘Q does.
 - A damaged `.zs` file in a NUP or dump stops the build (#1530), Sonic Superstars plays on the Mac, and a jump table's bound is the compare its branch acts on (#1515).
 
+Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes again (`34c912566064`).
+
+**From upstream `main`, second merge**
+- Ocarina of Time: the foliage mesh pipelines build again (mesh shaders get the outputs their pixel shaders read, #1590, #1628), Kokiri Forest loses its white blotches (#1575), command allocators no longer grow to 36-80 MB each (#1556), the dynamic-resolution depth buffer no longer keeps 15-16 sizes alive (#1557), terrain tile maps the CPU rewrites are read again (#1558), and a prewarm seed list for a first start (#1493, #1488; replaces the open pull request copy 0.13.0 carried).
+- Compute pipelines in the pipeline archives as upstream landed them (#1307), in place of #1522. NXForge's compute prefetch at program creation and its incremental archive batches stay.
+- Shared-memory byte stores are one Metal store (#1503 as landed). A texture ID with no texture drops its cached view (GPU page faults, #1607). GPU copies into write-protected pool pages are kept (#1591).
+- Controllers: press a button to join (`DM_PAD_PRESS_TO_JOIN`, #1596), identical pads each get a player (#1595), HID pads wait for GameController (#859). NXForge's button remap stays.
+- Tetris 99, Pokémon Friends, Trails in the Sky, Splatoon Raiders, Super Smash Bros. Ultimate, Super Mario 3D All-Stars and Hyrule Warriors: Age of Calamity fixes; a packer update keeps an intact NUP image (#1630).
+
+**Mario Kart World** (open upstream pull requests)
+- Free roam stays near 4 GB: `MapPhysicalMemory` past the 9 GB pool fails as on Horizon, so the game frees its own blocks (#1594, `mem_map_limit on`).
+- Dynamic resolution works: timestamp reports take their segment's GPU time (#1229, `gpu_timestamps segment`), without the GPU's idle gaps between segments, which made distant mountains and bridges flicker (#1350).
+- Indirect-count multi-draws are copied before the pass opens, so the scene passes are no longer split: GPU p50 13.65-14.1 to 13.0 ms on an M4 Pro (#1179).
+- Texture samples overlap better on the GPU (#1230, `shader_border_emu 0`, `shader_nan_coord fmax`), measured on an M1 Pro.
+- Not taken: #1251 (cube-map prefilter split by output; written before the one-file shader libraries, its MSL copy does not fit them), #1292 (1.8.0 image slots; this Mac has the base game), the LAN and iOS work in progress (#1321, #1383).
+
 ## 0.13.0 (2026-11-06)
 
 A performance release. Merges nxnative's `main` up to `04df08d` (11 commits since `88c7e03`) and upstream pull requests that are still open, picked for build and run-time speed. The shader chain changes, so every NVN game's shaders rebuild once.
