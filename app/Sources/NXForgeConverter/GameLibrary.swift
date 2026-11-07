@@ -15,14 +15,15 @@ import Foundation
 
 struct LibraryGame: Codable, Hashable, Identifiable {
     enum Kind: String, Codable { case packages, nup, dump }
-    var id: String { files.isEmpty ? path : path + "|" + files.joined(separator: "|") }
+    var id: String { shared ? path + "|" + files.joined(separator: "|") : path }
     var kind: Kind
     /// what the converter builds from: the game's folder, or the .nup file
     var path: String
     var name: String
     /// the application's title ID ("0100…" / "0400…"), when a file name carries it
     var titleID: String?
-    /// shared: the game's own files, in a folder that holds other games too (they move to a folder of their own before a build)
+    /// the game's own files (names in path); shared: in a folder that holds other games too (they move to a folder of their own
+    /// before a build)
     var files: [String] = []
     var shared = false
     var fileCount: Int
@@ -34,6 +35,24 @@ struct LibraryGame: Codable, Hashable, Identifiable {
     var app: String?
     /// what stops the build or may surprise: no base game, DLC in a subfolder the script does not read
     var notes: [String] = []
+    /// update or DLC files in a subfolder of the game's folder, which the build does not read (full paths)
+    var stray: [String]?
+    /// the same game in other folders
+    var duplicates: [String]?
+    /// the newest update's version number ([v262144]), when the files carry it
+    var newestUpdate: UInt64?
+    /// from the game's own control data (GameControl), when read: its name, publisher, display version and icon file
+    var title: String?
+    var publisher: String?
+    var version: String?
+    var icon: String?
+    /// the files the control data was read from (or tried): read again when they change
+    var detailsKey: String?
+
+    /// the name to show: the game's own, else the one from its file names
+    var displayName: String { title ?? name }
+    var fileURLs: [URL] { files.map { "\(path)/\($0)".url } }
+    var signature: String { files.sorted().joined(separator: "|") }
 
     var folder: String { kind == .nup ? path.url.deletingLastPathComponent().path : path }
     var console: Console { kind != .packages || titleID?.hasPrefix("04") == true ? .switch2 : .switch1 }
@@ -94,6 +113,13 @@ enum GameLibrary {
         guard let m = tagPattern.firstMatch(in: stem, range: NSRange(stem.startIndex..., in: stem)), let r = Range(m.range(at: 1), in: stem) else { return nil }
         return UInt64(stem[r], radix: 16)
     }
+
+    /// The [v262144] tag of a file name.
+    static func versionTag(_ name: String) -> UInt64? {
+        guard let m = versionPattern.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)), let r = Range(m.range(at: 1), in: name) else { return nil }
+        return UInt64(name[r])
+    }
+    private static let versionPattern = try! NSRegularExpression(pattern: #"\[v(\d+)\]"#)
 
     /// "Super Mario Odyssey [0100000000010000][v0].nsp" → "Super Mario Odyssey"; "Yoshis_Crafted_World_[01006…].nsp" → "Yoshis Crafted World";
     /// "Shadow of the Ninja Reborn [0100…][v0] (1.98 GB).nsz" → "Shadow of the Ninja Reborn". Folder names lose " [NSP]" and the like.
@@ -188,9 +214,10 @@ enum GameLibrary {
             var name = cleanName(named.url.deletingPathExtension().lastPathComponent)
             if name.isEmpty || (named.tid != nil && name.count == 16 && UInt64(name, radix: 16) != nil) { name = cleanName(dir.lastPathComponent) }
             var g = LibraryGame(kind: .packages, path: dir.path, name: name, titleID: app.map { String(format: "%016llX", $0) },
-                                files: shared ? files.map(\.url.lastPathComponent).sorted() : [], shared: shared,
+                                files: files.map(\.url.lastPathComponent).sorted(), shared: shared,
                                 fileCount: files.count, bytes: files.reduce(0) { $0 + $1.bytes }, base: base, updates: updates, dlc: dlc)
             if !shared { g.app = apps.sorted().first }
+            g.newestUpdate = files.filter { $0.tid.map { $0 & 0xFFF == 0x800 } ?? false }.compactMap { versionTag($0.url.lastPathComponent) }.max()
             if !base { g.notes.append(updates > 0 ? "No base game here, only an update: add the base game's NSP or XCI to build it" : "No base game here, only DLC") }
             return g
         }
@@ -250,16 +277,66 @@ enum GameLibrary {
     }
 
     /// DLC or an update in a subfolder of its base game's folder ("Cadence of Hyrule/4 DLCs"): the script reads one folder only,
-    /// so it is not used; it becomes a note on the game rather than a game of its own.
+    /// so it is not used; it becomes a note on the game (with its files, to move beside the game) rather than a game of its own.
+    /// The same game in two folders gets a note on each.
     static func fold(_ games: [LibraryGame]) -> [LibraryGame] {
         var out = games
         for (i, g) in games.enumerated() where g.kind == .packages && !g.base && !g.shared {
             guard let tid = g.titleID, let p = out.firstIndex(where: { $0.titleID == tid && $0.base && g.path.hasPrefix($0.folder + "/") }) else { continue }
             let what = [g.updates > 0 ? (g.updates == 1 ? "an update" : "\(g.updates) updates") : nil, g.dlc > 0 ? "\(g.dlc) DLC" : nil].compactMap { $0 }.joined(separator: " and ")
-            out[p].notes.append("\(what) in “\(g.path.lastComponent)” not used: the build reads only the game's own folder; move the files beside the base game")
+            out[p].notes.append("\(what) in “\(g.path.lastComponent)” not used: the build reads only the game's own folder")
+            out[p].stray = (out[p].stray ?? []) + g.fileURLs.map(\.path)
+            out[p].dlc += g.dlc
             out[i].path = ""   // dropped below
         }
-        return out.filter { !$0.path.isEmpty }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        out = out.filter { !$0.path.isEmpty }
+        for i in out.indices where out[i].kind == .packages && out[i].base {
+            guard let tid = out[i].titleID else { continue }
+            let others = out.filter { $0.titleID == tid && $0.id != out[i].id && $0.base }.map(\.folder)
+            out[i].duplicates = others.isEmpty ? nil : others
+        }
+        return out.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+    }
+
+    /// Moves a game's stray update and DLC files from its subfolders beside its other files.
+    static func moveStrayBeside(_ g: LibraryGame) throws {
+        let fm = FileManager.default
+        for f in g.stray ?? [] {
+            let dest = "\(g.path)/\(f.lastComponent)"
+            if fm.fileExists(atPath: dest) { continue }
+            try fm.moveItem(atPath: f, toPath: dest)
+        }
+    }
+
+    /// The control data (name, version, icon) a new scan's games had in the last one, for the same files.
+    static func carryDetails(from old: [LibraryGame], to new: [LibraryGame]) -> [LibraryGame] {
+        let byKey = Dictionary(old.compactMap { g in g.detailsKey.map { ($0, g) } }, uniquingKeysWith: { a, _ in a })
+        return new.map { g in
+            var g = g
+            if let o = byKey[detailsKey(g)] { g.title = o.title; g.publisher = o.publisher; g.version = o.version; g.icon = o.icon; g.detailsKey = o.detailsKey }
+            return g
+        }
+    }
+
+    static func detailsKey(_ g: LibraryGame) -> String { "\(g.path)|\(g.signature)" }
+
+    static let iconDir = Settings.supportDir.appending(path: "library-icons")
+
+    /// Reads a game's control data with these keys; the game with its name, version and icon filled in (or just marked as tried).
+    static func withDetails(_ g: LibraryGame, keys: Keys) -> LibraryGame {
+        var g = g
+        g.detailsKey = detailsKey(g)
+        guard g.kind == .packages, let c = ControlReader.read(files: g.fileURLs, keys: keys) else { return g }
+        g.title = c.name.trimmingCharacters(in: .whitespaces)
+        g.publisher = c.publisher
+        g.version = c.version.isEmpty ? nil : c.version
+        if let icon = c.icon {
+            let tid = g.titleID ?? g.path.replacingOccurrences(of: "/", with: "_")
+            try? FileManager.default.createDirectory(at: iconDir, withIntermediateDirectories: true)
+            let f = iconDir.appending(path: "\(tid).jpg")
+            if (try? icon.write(to: f, options: .atomic)) != nil { g.icon = f.path }
+        }
+        return g
     }
 
     // MARK: tidying
@@ -267,7 +344,7 @@ enum GameLibrary {
     /// Moves a shared game's files into a new folder named after the game, beside them; the game's new path.
     static func moveToOwnFolder(_ g: LibraryGame) throws -> String {
         let fm = FileManager.default
-        let safe = g.name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: " -")
+        let safe = g.displayName.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: " -")
         var target = "\(g.path)/\(safe.isEmpty ? (g.titleID ?? "Game") : safe)"
         // a folder of that name with other game files in it is not this game's: take the next free name
         var n = 2

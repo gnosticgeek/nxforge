@@ -468,3 +468,55 @@ import Testing
         #expect(s.stopped != nil && s.games.isEmpty)
     }
 }
+
+/// The Library's tidying and control data: DLC in a subfolder moved beside its game, the same game in two folders, version
+/// tags, and a control RomFS's files.
+@Suite struct LibraryDetails {
+    func tree(_ files: [String]) throws -> String {
+        let root = FileManager.default.temporaryDirectory.appending(path: "nxc-lib2-\(UUID().uuidString)").path
+        for f in files {
+            let p = "\(root)/\(f)"
+            try FileManager.default.createDirectory(atPath: (p as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            try Data([1]).write(to: URL(fileURLWithPath: p))
+        }
+        return root
+    }
+
+    @Test func versionTags() {
+        #expect(GameLibrary.versionTag("Super Mario Odyssey [0100000000010800][v1.3.0][v262144].nsp") == 262144)
+        #expect(GameLibrary.versionTag("Game [0100000000010000].nsp") == nil)
+    }
+
+    @Test func strayAndDuplicates() throws {
+        let root = try tree([
+            "Cadence/Cadence [01000B900D8B0000][v0].nsp", "Cadence/Cadence [01000B900D8B0800][v458752].nsp",
+            "Cadence/DLC/Cadence [DLC] [01000B900D8B1001][v1].nsp",
+            "Cyber Shadow/Cyber Shadow [0100C1F0141AA000][v0].nsp", "Cyber Shadow [NSP]/Cyber Shadow [0100C1F0141AA000][v0].nsp",
+        ])
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let s = GameLibrary.scan(root: root)
+        let c = try #require(s.games.first { $0.titleID == "01000B900D8B0000" })
+        #expect(c.stray?.count == 1 && c.dlc == 1 && c.newestUpdate == 458752)
+        #expect(s.games.filter { $0.titleID == "0100C1F0141AA000" }.allSatisfy { $0.duplicates?.count == 1 })
+        try GameLibrary.moveStray(c)
+        let again = GameLibrary.scan(root: root).games.first { $0.titleID == "01000B900D8B0000" }
+        #expect(again?.files.count == 3 && again?.stray == nil && again?.notes.isEmpty == true)
+    }
+
+    @Test func romfsFiles() {
+        // a RomFS with two files at the root: header (0x50), file table, then the data
+        func le(_ v: Int, _ n: Int) -> [UInt8] { (0..<n).map { UInt8((v >> (8 * $0)) & 0xFF) } }
+        let names = ["control.nacp", "icon_AmericanEnglish.dat"], datas: [[UInt8]] = [[1, 2, 3], [0xFF, 0xD8, 0xFF]]
+        var table: [UInt8] = [], data: [UInt8] = []
+        for (n, d) in zip(names, datas) {
+            let nb = Array(n.utf8)
+            table += le(0, 4) + le(0, 4) + le(data.count, 8) + le(d.count, 8) + le(0, 4) + le(nb.count, 4) + nb + [UInt8](repeating: 0, count: (4 - nb.count % 4) % 4)
+            data += d
+        }
+        let metaOff = 0x50, dataOff = metaOff + table.count
+        var header = le(0x50, 8) + le(0, 8) + le(0, 8) + le(0, 8) + le(0, 8) + le(0, 8) + le(0, 8)
+        header += le(metaOff, 8) + le(table.count, 8) + le(dataOff, 8)
+        let files = ControlReader.romfsFiles(header + table + data)
+        #expect(files["control.nacp"] == [1, 2, 3] && files["icon_AmericanEnglish.dat"] == [0xFF, 0xD8, 0xFF])
+    }
+}

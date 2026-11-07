@@ -73,7 +73,19 @@ final class AppModel {
     var librarySearch = ""
     var libraryConsole: ConsoleFilter = .all
     var libraryMessage: String?
-    private var libraryTask: Task<Void, Never>?
+    var libraryFilter: LibraryFilter = .all
+    /// reading names and icons from the games' control data: (done, of)
+    var libraryDetails: (done: Int, total: Int)?
+    /// games ticked for Build selected, by id
+    var librarySelection: Set<String> = []
+    /// Build selected: the games still to build, the one building now, what happened to each, and why it stopped, if it did
+    var batchQueue: [LibraryGame] = []
+    var batchCurrent: LibraryGame?
+    var batchResults: [BatchResult] = []
+    var batchMessage: String?
+    var libraryTask: Task<Void, Never>?
+    var detailsTask: Task<Void, Never>?
+    var mountObserver: NSObjectProtocol?
     var selectedBuild: String?
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
     var rebuildQueue: [BuildRecord] = []
@@ -110,6 +122,7 @@ final class AppModel {
         }
         applyAppearance()
         recheck()
+        watchMounts()
         if settings.gameDir != nil { validate() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -260,7 +273,7 @@ final class AppModel {
         guard let env, let dir = settings.gameDir, let folder = gameFolder else { return }
         let keys = needsKeys ? settings.keys : nil
         if needsKeys && keys == nil { return }
-        if !plan, let d = diskNeed, d.short, rebuildQueue.isEmpty,
+        if !plan, let d = diskNeed, d.short, rebuildQueue.isEmpty, batchCurrent == nil,
            !confirm("Build with too little free space?", "\(d.text). The converter stops the build if free space drops below \(Disk.gb(Disk.stopBelow)); the steps it finished are kept for the next try. Storage lists what can be deleted.", action: "Build Anyway") { return }
         let name = game?.name ?? ""
         let out = settings.outDir.flatMap { $0 == folder || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
@@ -453,6 +466,7 @@ final class AppModel {
     private func buildEnded(_ r: Result<String, ConverterError>) {
         diskWatch?.cancel(); diskWatch = nil; diskWarning = nil
         if run.planning { return }   // a preview: it stays on Convert, with its plan
+        if batchCurrent != nil { batchBuildEnded(r) }
         let name = game?.name ?? "The game"
         if settings.notify, Bundle.main.bundleIdentifier != nil {
             let c = UNMutableNotificationContent()
@@ -463,8 +477,11 @@ final class AppModel {
             }
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
-        if settings.openAfterBuild, case .success = r, let app = run.app { openApp(app) }
-        if case .success = r {
+        if settings.openAfterBuild, batchCurrent == nil, case .success = r, let app = run.app { openApp(app) }
+        if batchCurrent != nil {
+            if case .success = r { finishConvert() }
+            nextInBatch()
+        } else if case .success = r {
             finishConvert()
             if let next = rebuildQueue.first { rebuildQueue.removeFirst(); rebuild(next) }
             else if queueMessage == "" { queueMessage = nil }
@@ -477,7 +494,7 @@ final class AppModel {
 
     /// A built game leaves Convert: the folder, its keys, the check and the activity are cleared for the next game,
     /// and Builds opens on the new app. A failed build stays on Convert with its stages and log.
-    private func finishConvert() {
+    func finishConvert() {
         selectedBuild = run.app
         buildSearch = ""
         settings.gameDir = nil
@@ -545,88 +562,6 @@ final class AppModel {
         if let start { p.directoryURL = Source.folder(of: start).url }
         guard p.runModal() == .OK, let u = p.url else { return nil }
         return Source.isDir(u.path) || Source.isNupFile(u.path) ? u.path : u.deletingLastPathComponent().path
-    }
-
-    // MARK: Library
-
-    var libraryScanning: Bool { libraryProgress != nil }
-
-    func chooseGamesRoot() {
-        guard let d = choose(folder: true, start: settings.gamesRoot ?? "/Volumes") else { return }
-        settings.gamesRoot = d
-        scanLibrary()
-    }
-
-    /// Scans the games folder off the main thread, showing games as they are found; the result replaces the kept list
-    /// (a scan that ended early keeps the games it did not reach from the last one, so a dropped share loses nothing).
-    func scanLibrary() {
-        guard let root = settings.gamesRoot, !libraryScanning else { return }
-        libraryProgress = (0, root, 0)
-        libraryMessage = nil
-        let before = library?.root == root ? library : nil
-        libraryTask = Task.detached(priority: .utility) {
-            // the kept list stays up while the scan runs (no flicker on a slow share); with none kept, games show as they are found
-            var lastGames = 0
-            let r = GameLibrary.scan(root: root) { n, cur, games in
-                let fresh = before == nil && games.count != lastGames ? games : nil
-                lastGames = games.count
-                Task { @MainActor in
-                    guard self.libraryScanning else { return }
-                    self.libraryProgress = (n, cur, games.count)
-                    if let fresh { self.library = LibraryScan(root: root, scanned: Date(), games: GameLibrary.fold(fresh)) }
-                }
-            }
-            var out = r
-            if r.stopped != nil, let before {
-                // keep what the last scan found in the folders this one did not get to
-                let seen = Set(r.games.map(\.folder))
-                out.games = GameLibrary.fold(r.games + before.games.filter { o in !seen.contains(o.folder) && !r.games.contains { $0.id == o.id } })
-            }
-            await MainActor.run {
-                self.library = out
-                self.libraryProgress = nil
-                self.libraryMessage = r.stopped
-                if r.stopped == nil || !r.games.isEmpty { GameLibrary.saveCache(out) }
-            }
-        }
-    }
-
-    func stopLibraryScan() { libraryTask?.cancel() }
-
-    /// A Mac app built from this game: one beside its files (found by the scan), else the newest build recorded for its path.
-    func builtApp(_ g: LibraryGame, records: [BuildRecord]) -> String? {
-        if let a = g.app { return a }
-        return records.filter { $0.gameDir == g.path && FileManager.default.fileExists(atPath: $0.app) }.max { $0.builtAt < $1.builtAt }?.app
-    }
-
-    /// The game becomes the one to convert. A game whose files share a folder with other games moves into a folder of its own
-    /// first (the script builds one game per folder), once asked.
-    func convertFromLibrary(_ g: LibraryGame) {
-        guard !run.running else { return }
-        var path = g.path
-        if g.shared {
-            guard confirm("Move \(g.name) into its own folder?", "The build takes one game per folder, and \(g.path.lastComponent) holds other games too. Its \(g.files.count) file\(g.files.count == 1 ? "" : "s") move into a new folder, “\(g.name)”, inside it. Nothing is copied or deleted.", action: "Move and Convert") else { return }
-            guard let p = moveToOwnFolder(g) else { return }
-            path = p
-        }
-        setGameDir(path)
-        page = .convert
-    }
-
-    /// Moves a shared game's files into a folder of its own and updates the list; the new folder, or nil (and a message) when it failed.
-    @discardableResult func moveToOwnFolder(_ g: LibraryGame) -> String? {
-        do {
-            let p = try GameLibrary.moveToOwnFolder(g)
-            if var l = library, let i = l.games.firstIndex(of: g) {
-                l.games[i].path = p; l.games[i].files = []; l.games[i].shared = false
-                library = l
-                GameLibrary.saveCache(l)
-            }
-            return p
-        } catch {
-            libraryMessage = "Could not move \(g.name)'s files: \(error.localizedDescription)"
-            return nil
-        }
     }
 
     func confirm(_ title: String, _ text: String, action: String) -> Bool {

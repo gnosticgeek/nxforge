@@ -2,7 +2,7 @@
 // 1. lists what the script needs, ticked or crossed; 2. checks a game folder against prod.keys;
 // 3. converts the folder to a signed Mac app, and rebuilds it when the engine changes. The same steps run headless:
 //   NXForgeConverter --check | --validate <folder> [<prod.keys>] | --convert <folder> [<prod.keys>] [--sign <identity>]
-//   | --rebuild <app> [<prod.keys>] [--sign <identity>] | --engine [<folder>] | --verify <app> | --library <games folder>
+//   | --rebuild <app> [<prod.keys>] [--sign <identity>] | --engine [<folder>] | --verify <app> | --library <games folder> [<prod.keys>]
 // <folder> may also be a Switch 2 game's .nup file or dump folder, which need no prod.keys.
 import AppKit
 import SwiftUI
@@ -82,18 +82,21 @@ case "--rebuild" where args.count >= 2:
     exit(MainActor.assumeIsolated { CLI.convert(args[1].url.deletingLastPathComponent().path, keysArg(args), sign: signArg(args), rebuild: args[1]) })
 case "--library" where args.count >= 2:
     // the Library page's scan, printed: one game per line (nothing is moved or written)
-    let s = GameLibrary.scan(root: args[1])
+    var s = GameLibrary.scan(root: args[1])
+    // with a keys file: each game's own name, publisher and version from its control data, as the Library reads them
+    if args.count > 2, let k = try? Keys(contentsOf: args[2].url) { s.games = s.games.map { GameLibrary.withDetails($0, keys: k) } }
     for g in s.games {
-        print("\(g.console == .switch2 ? "S2" : "S1") \(g.name) · \(g.contents)\(g.titleID.map { " · \($0)" } ?? "")\(g.shared ? " · shares its folder" : "")\(g.app != nil ? " · built" : "")")
+        print("\(g.console == .switch2 ? "S2" : "S1") \(g.displayName)\(g.version.map { " v\($0)" } ?? "")\(g.publisher.map { " (\($0))" } ?? "")\(g.icon != nil ? " [icon]" : "") · \(g.contents)\(g.titleID.map { " · \($0)" } ?? "")\(g.shared ? " · shares its folder" : "")\(g.app != nil ? " · built" : "")")
         print("   \(g.path)")
         for n in g.notes { print("   ! \(n)") }
+        for d in g.duplicates ?? [] { print("   = also in \(d)") }
     }
     print("\(s.games.count) games in \(s.folders) folders\(s.skipped.isEmpty ? "" : ", \(s.skipped.count) skipped")\(s.stopped.map { ". \($0)" } ?? "")")
     exit(s.stopped == nil ? 0 : 1)
 case "--verify" where args.count >= 2:
     do { print("✓ \(try BuildRun.verify(args[1]))"); exit(0) } catch { print("✗ \(error)"); exit(1) }
 case let a? where a.hasPrefix("--") && !a.hasPrefix("-NS") && !a.hasPrefix("-Apple"):
-    FileHandle.standardError.write(Data("usage: NXForgeConverter [--check | --validate <folder | game.nup> [<prod.keys>] | --convert <folder | game.nup> [<prod.keys>] [--sign <identity>] | --rebuild <app> [<prod.keys>] [--sign <identity>] | --engine [<folder>] | --verify <app> | --library <games folder>]\n".utf8))
+    FileHandle.standardError.write(Data("usage: NXForgeConverter [--check | --validate <folder | game.nup> [<prod.keys>] | --convert <folder | game.nup> [<prod.keys>] [--sign <identity>] | --rebuild <app> [<prod.keys>] [--sign <identity>] | --engine [<folder>] | --verify <app> | --library <games folder> [<prod.keys>]]\n".utf8))
     exit(2)
 default:
     ConverterApp.main()
