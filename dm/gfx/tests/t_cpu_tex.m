@@ -131,7 +131,8 @@ static void packaged_entry_outside_the_set(void) {
     CHECK(again && ![(id)again isKindOfClass:[NvPkg class]], "tex_mtl does not hand out the NvPkg");
     CHECK(again && again.width == 4 && again.height == 4, "it hands out the entry's texture");
     CHECK(mtl_wait(mtl_sub_commit(),5000000000ull), "submission completed");
-    mtl_reg_tex(1,NULL,NULL); h_nvnMemoryPoolFinalize((NVNmemoryPool *)&pool);
+    // finalized before its memory goes: a texture left registered (nvn_ft_poll's list) would have the later poll tests read the unmapped pages
+    mtl_reg_tex(1,NULL,NULL); h_nvnTextureFinalize(&tex); h_nvnMemoryPoolFinalize((NVNmemoryPool *)&pool);
     defer_drain(); munmap(mem,len);
 }
 // nvnMemoryPoolFinalize on a game thread while the submit thread walks the texture IDs (pool_gpu, holding g_rmu): the finalize dropped the pool's CPU-written classification before it
