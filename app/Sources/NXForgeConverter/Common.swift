@@ -10,10 +10,13 @@ struct RootView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(Page.allCases, selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) { p in
-                Label(p.rawValue, systemImage: p.symbol).tag(p)
+            List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
+                ForEach(Page.allCases) { p in
+                    Label(p.rawValue, systemImage: p.symbol).font(.system(size: 15)).padding(.vertical, 3).tag(p)
+                }
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 280)
+            .safeAreaInset(edge: .top) { SidebarBrand() }
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
             .safeAreaInset(edge: .bottom) { ToolchainFooter(model: model) }
         } detail: {
             Group {
@@ -26,6 +29,16 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // the page sits on the navy; Convert's banner sits behind its heading, up under the toolbar
+            .background(alignment: .top) {
+                ZStack(alignment: .top) {
+                    Theme.background
+                    if model.page == .convert { HeroBanner().frame(height: 230) }
+                }
+                .ignoresSafeArea()
+            }
+            .toolbar(removing: model.page == .convert ? .title : nil)
+            .toolbarBackgroundVisibility(model.page == .convert ? .hidden : .automatic, for: .windowToolbar)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             // the window title names the page, as Mac apps do; the subtitle names the game being converted
             .navigationTitle(model.page.rawValue)
@@ -42,6 +55,22 @@ struct RootView: View {
                 }
             }
         }
+    }
+}
+
+/// The app's mark and name over the sidebar.
+struct SidebarBrand: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 38, height: 38)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("NXForge").font(.title3.weight(.bold))
+                Text("Game Conversion Toolkit").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -91,6 +120,8 @@ struct StatusIcon: View {
 struct Card<Content: View>: View {
     var title = ""
     var subtitle = ""
+    /// the step this card is, in a blue circle before its title
+    var number: Int? = nil
     var padding: CGFloat = 18
     /// Fill the height offered (for cards side by side in a row of equal heights)
     var fillHeight = false
@@ -99,8 +130,11 @@ struct Card<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !title.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 9) {
+                        if let number { NumberBadge(n: number) }
+                        Text(title).font(number == nil ? .headline : .title3.weight(.bold))
+                    }
                     if !subtitle.isEmpty { Text(subtitle).foregroundStyle(.secondary) }
                 }
             }
@@ -108,8 +142,8 @@ struct Card<Content: View>: View {
         }
         .padding(padding)
         .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
-        .background(.background.secondary.opacity(0.7), in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.separator.opacity(0.7)))
+        .background(Theme.card, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
     }
 }
 

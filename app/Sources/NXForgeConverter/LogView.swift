@@ -27,6 +27,8 @@ struct LogView: View {
     let running: Bool
     /// the log written to <id>_build/logs, once the build ended
     var file: String?
+    /// shown in the empty log, as a prompt line
+    var placeholder = "Nothing logged yet."
     var copy: () -> Void
     @State private var filter: LogFilter = .all
     @State private var search = ""
@@ -35,21 +37,24 @@ struct LogView: View {
     var body: some View {
         let shown = visible
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Picker("", selection: $filter) {
-                    ForEach(LogFilter.allCases, id: \.self) { f in Text(label(f)).tag(f) }
+            HStack(spacing: 12) {
+                // All / Warnings / Errors as tabs with their counts
+                HStack(spacing: 2) {
+                    ForEach(LogFilter.allCases, id: \.self) { f in tab(f) }
                 }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .padding(3)
+                .background(Theme.card, in: .rect(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.cardStroke))
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Search the log", text: $search).textFieldStyle(.plain)
+                    TextField("Search the log…", text: $search).textFieldStyle(.plain)
                     if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain) }
                 }
-                .padding(.horizontal, 8).frame(height: 26)
-                .background(.background.opacity(0.5), in: .rect(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator))
-                Toggle("Follow", isOn: $follow).toggleStyle(.checkbox).help("Keep the newest line in view while the build runs")
+                .padding(.horizontal, 10).frame(height: 32).frame(maxWidth: 520)
+                .background(Theme.card, in: .rect(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.cardStroke))
                 Spacer()
+                Toggle("Follow", isOn: $follow).toggleStyle(.checkbox).help("Keep the newest line in view while the build runs")
                 Button { copy() } label: { Label("Copy log", systemImage: "doc.on.clipboard") }.buttonStyle(.glass)
                 if let file {
                     Button { NSWorkspace.shared.open(file.url) } label: { Label("Open log file", systemImage: "doc.text") }.buttonStyle(.glass)
@@ -71,11 +76,14 @@ struct LogView: View {
                     }
                     .padding(8)
                 }
-                .frame(height: 260)
-                .background(.background.opacity(0.35), in: .rect(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator.opacity(0.8)))
-                .overlay {
-                    if shown.isEmpty { Text(lines.isEmpty ? "Nothing logged yet." : "No lines match.").foregroundStyle(.secondary) }
+                .frame(minHeight: 140, idealHeight: 240, maxHeight: 320)
+                .background(Theme.well, in: .rect(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.cardStroke))
+                .overlay(alignment: .topLeading) {
+                    if shown.isEmpty {
+                        Text("> " + (lines.isEmpty ? placeholder : "No lines match."))
+                            .font(.callout.monospaced()).foregroundStyle(.secondary).padding(14)
+                    }
                 }
                 .onChange(of: lines.count) { _, _ in
                     if follow, running, let last = shown.last { proxy.scrollTo(last.offset, anchor: .bottom) }
@@ -99,11 +107,30 @@ struct LogView: View {
         }.map { (offset: $0.offset, element: $0.element) }
     }
 
-    func label(_ f: LogFilter) -> String {
+    func count(_ f: LogFilter) -> Int {
         switch f {
-        case .all: return "All \(lines.count)"
-        case .warnings: return "Warnings \(lines.filter { LogLevel($0) != .info }.count)"
-        case .errors: return "Errors \(lines.filter { LogLevel($0) == .error }.count)"
+        case .all: lines.count
+        case .warnings: lines.filter { LogLevel($0) != .info }.count
+        case .errors: lines.filter { LogLevel($0) == .error }.count
         }
+    }
+
+    func tab(_ f: LogFilter) -> some View {
+        let on = filter == f
+        let (symbol, tint): (String, Color) = switch f {
+        case .all: ("list.bullet.circle.fill", .accentColor)
+        case .warnings: ("exclamationmark.triangle.fill", .yellow)
+        case .errors: ("xmark.circle.fill", .red)
+        }
+        return Button { filter = f } label: {
+            Label { Text("\(f.rawValue) (\(count(f)))") } icon: { Image(systemName: symbol).foregroundStyle(on ? .white : tint) }
+                .fontWeight(.medium)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .foregroundStyle(on ? .white : .primary)
+                .background(on ? Color.accentColor : .clear, in: .rect(cornerRadius: 7))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
