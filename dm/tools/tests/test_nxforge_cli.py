@@ -154,5 +154,18 @@ class McpTest(Fake):
         self.assertTrue(r['result']['isError'])
 
 
+class StatusLines(unittest.TestCase):   # status printed the interpreter's path (cut at 100 characters, before the script's name) and the converter's caffeinate wrapper as a second build
+    def test_a_build_reads_from_its_script_once(self):
+        py = '/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python'
+        args = 'scripts/build_ipa_from_nsp.py --mac /Users/tom/Documents/Game/base.nsp --keys /Users/tom/Documents/Game/prod.keys'
+        procs = [(10, 480, f'caffeinate -is /Users/tom/Library/venv/bin/python3 {args}'), (11, 479, f'{py} {args}'),
+                 (12, 60, '/Users/tom/Documents/Game/Game.app/Contents/MacOS/dmhost --x')]
+        r = nx.running(procs)
+        builds = nx.shown(r['builds'])
+        self.assertEqual([(p['pid'], p['brief']) for p in builds], [(11, 'build_ipa_from_nsp.py --mac base.nsp --keys prod.keys')])
+        self.assertEqual([p['brief'] for p in nx.shown(r['games'])], ['dmhost --x'])
+        self.assertEqual(len(r['builds']), 2)   # --json still lists both processes
+
+
 if __name__ == '__main__':
     unittest.main()

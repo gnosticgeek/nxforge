@@ -145,6 +145,22 @@ def running(procs=None):
     return {'builds': builds, 'games': games}
 
 
+def brief(command):
+    """A running build's or game's command line as a person reads it: from the tool itself (build_ipa_from_nsp.py ..., dmhost ...), without the interpreter's path in front of it
+    or the caffeinate wrapper the converter starts it under, and with the paths in its arguments shortened to their last part"""
+    words = command.split()
+    start = next((i for i, w in enumerate(words) if any(k in os.path.basename(w) for k in BUILD_PROCS) or os.path.basename(w) in GAME_PROCS), 0)
+    return ' '.join(os.path.basename(w) if '/' in w and not w.startswith('-') else w for w in words[start:])
+
+
+def shown(items):
+    """running()'s builds or games for the text output: one line per tool run, so the caffeinate wrapper and the Python it starts are not two builds"""
+    out, seen = [], set()
+    for p in sorted(items, key=lambda p: 'caffeinate' in p['command'].split()[0]):   # the tool's own process first, its wrapper after
+        if (b := brief(p['command'])) not in seen: seen.add(b); out.append({**p, 'brief': b})
+    return out
+
+
 def game_dirs(s=None, recs=None):
     """The game folders NXForge knows: the recorded builds' and the settings' last one"""
     s = settings() if s is None else s
@@ -744,7 +760,7 @@ def human(cmd, res):
         print(f'engine   {e.get("version", "?")}{"+changes" if e.get("dirty") else ""} ({e.get("branch", "?")}) {e.get("subject", "")}  [{e.get("repo", "not found")}]')
         print(f'free     {res["free_gb"]} GB')
         for k in ('builds', 'games'):
-            for p in res['running'][k]: print(f'running  {k[:-1]} pid {p["pid"]} for {p["seconds"] // 60} min: {p["command"][:100]}')
+            for p in shown(res['running'][k]): print(f'running  {k[:-1]} pid {p["pid"]} for {p["seconds"] // 60} min: {p["brief"][:120]}')
         for b in res['builds']: print(f'build    {b["built_at"]}  {b["engine"]:<10} {"" if b["exists"] else "(missing) "}{b["app"]}')
     elif cmd == 'builds':
         for b in res: print(f'{b["built_at"]}  {b["engine"]:<10} {"kept " if b["kept"] else ""}{"" if b["exists"] else "(missing) "}{b["app"]}  backups: {len(b["backups"])}')
