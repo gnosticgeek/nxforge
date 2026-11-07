@@ -1,6 +1,6 @@
 # NXForge
 
-NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It tracks nxnative closely and adds Mac features on top: a Quick settings sidebar with a CRT filter, cheats, mods, screenshots and recordings, and controller rumble fixes. Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
+NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It is two things on top of nxnative's engine: the **NXForge Converter**, a Mac app that finds your games and builds and rebuilds them, and a **Mac player layer**: the in-game Quick settings sidebar with a CRT filter, FXAA, anisotropic filtering, cheats, mods, screenshots and recordings, and control remapping. The engine itself is nxnative's and follows it closely ([UPSTREAM.md](UPSTREAM.md#thin-fork-from-0150)). Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
 
 Play your own Nintendo Switch games natively on Mac, iPhone and iPad. Bring your game (its NSP files) and your `prod.keys`; one script turns them into an IPA that you sideload.
 
