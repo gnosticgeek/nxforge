@@ -5,6 +5,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 ## 0.16.0 (2026-11-07)
 
 - **The sidebar has its own version.** The in-game Quick settings sidebar is now versioned and released on its own, starting at **NXForge Sidebar 0.1.0** (tag `sidebar-v0.1.0`), with its own [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md). The sidebar shows its version under the button legend. NXForge's releases keep their `vX.Y.Z` tags; `scripts/release_check.py` and the `release` workflow handle both kinds (UPSTREAM.md, Versions).
+- **The Converter has its own version.** The NXForge Converter app is versioned the same way, starting at **NXForge Converter 0.1.0** (tag `converter-v0.1.0`), with its own [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md). It shows its version under the NXForge name in the sidebar, in About NXForge Converter (with the engine's release) and in Copy diagnostics and error summaries. The engine row and the app's build number still come from the `v*` tags only.
 
 ## 0.15.0 (2026-11-07)
 

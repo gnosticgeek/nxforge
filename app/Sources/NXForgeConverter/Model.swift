@@ -522,7 +522,7 @@ final class AppModel {
 
     /// Everything the converter knows, for a bug report (no key values: the keys file is named, never read here).
     var diagnostics: String {
-        var l = ["NXForge Converter diagnostics, \(Date().formatted())",
+        var l = ["NXForge Converter \(CONVERTER_VERSION) diagnostics, \(Date().formatted())",
                  "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
                  "engine: \(env?.repo ?? "none") \(engine?.label ?? "")",
                  "python: \(env?.python ?? "none")", "DOTNET_ROOT: \(env?.dotnetRoot ?? "none")", "PATH: \(env?.path ?? "")", ""]

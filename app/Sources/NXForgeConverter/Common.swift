@@ -68,6 +68,8 @@ struct SidebarBrand: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("NXForge").font(.title3.weight(.bold))
                 Text("Game Conversion Toolkit").font(.caption).foregroundStyle(.secondary)
+                Text("Converter \(CONVERTER_VERSION)").font(.caption2).foregroundStyle(.tertiary)
+                    .help("NXForge Converter \(CONVERTER_VERSION). The engine's release is on the Toolchain page.")
             }
             Spacer(minLength: 0)
         }
