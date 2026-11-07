@@ -190,6 +190,19 @@ struct MacAppCard: View {
                 if let d = model.choose(folder: true, start: model.outputFolder) { model.settings.outDir = d == model.gameFolder ? nil : d }
             }
             .disabled(model.run.running)
+            // the same choice as Settings › After a build: on deletes <id>_build once the app is built and signed
+            Toggle(isOn: Binding(get: { model.settings.cleanup == .all }, set: { model.settings.cleanup = $0 ? .all : .off })) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Remove build folder after building")
+                    Text(model.settings.cleanup == .all
+                         ? "Frees the space once the app is ready. A rebuild then starts over (about 30 to 50 minutes) and needs the game files again."
+                         : "Kept, so a rebuild reuses its finished steps.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch)
+            .disabled(model.run.running)
+            .help("Deletes the game's _build folder (extracted files and compiled shaders) after a successful build. Also in Settings › After a build.")
 
             if model.run.running {
                 HStack {
