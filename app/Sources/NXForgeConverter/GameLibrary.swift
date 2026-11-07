@@ -299,7 +299,7 @@ enum GameLibrary {
     }
 
     /// Moves a game's stray update and DLC files from its subfolders beside its other files.
-    static func moveStrayBeside(_ g: LibraryGame) throws {
+    static func moveStray(_ g: LibraryGame) throws {
         let fm = FileManager.default
         for f in g.stray ?? [] {
             let dest = "\(g.path)/\(f.lastComponent)"
