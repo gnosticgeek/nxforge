@@ -154,10 +154,20 @@ static void qs_pause(int on) {
     if (on) { dm_audio_suspend(1); guest_clock_freeze_for(3, 1); dm_gfx_suspend(1); LOG("front end: game paused while Quick settings is open"); }
     else { if (!g_win.miniaturized) { dm_gfx_suspend(0); dm_audio_suspend(0); } guest_clock_freeze_for(3, 0); LOG("front end: game resumed"); }
 }
+// Pause once the picture has slid aside and a frame has been presented there (a window macOS has hidden presents nothing meanwhile, so it waits up to 2 s, then pauses anyway)
+static void qs_pause_when_aside(int tries) {
+    static uint64_t seen;
+    if (!g_menu_open || !qs_pause_wanted() || g_paused) return;
+    if (tries == 0) seen = 0;
+    if (g_inset_timer) seen = 0;
+    else if (!seen) seen = mtl_present_count() + 1;   // the inset is final: the next present shows it
+    if ((seen && mtl_present_count() > seen) || tries >= 40) { qs_pause(1); dm_qs_refresh(); return; }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ qs_pause_when_aside(tries + 1); });
+}
 int front_qs_paused(void) { return g_paused; }
 void front_qs_pause_set(int on) {   // the General page's switch, while the sidebar is up: applies at once
     [NSUserDefaults.standardUserDefaults setBool:on != 0 forKey:opt_key(@"pauseOpen")];
-    if (g_menu_open) qs_pause(on != 0);
+    if (g_menu_open) { if (on) qs_pause_when_aside(0); else qs_pause(0); }
 }
 // Quieter while open: the game's sound at a quarter of its volume while the sidebar is up and the game is not paused
 static void qs_volume_apply(void) {
@@ -233,7 +243,7 @@ void front_qs_defaults_use(void) {
         inset_to(w < gv.bounds.size.width ? (float)(w / gv.bounds.size.width) : 0);   // a sidebar as wide as the window covers the game instead
         input_release(); dm_focus_set(2);   // as when the window loses focus: nothing stays held, and a game that pauses for the HOME menu pauses
         qs_volume_apply();
-        if (qs_pause_wanted()) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ if (g_menu_open && qs_pause_wanted()) { qs_pause(1); dm_qs_refresh(); } });   // once the picture has slid aside
+        if (qs_pause_wanted()) qs_pause_when_aside(0);
         LOG("front end: Quick settings open");
     } else {
         qs_pause(0);
