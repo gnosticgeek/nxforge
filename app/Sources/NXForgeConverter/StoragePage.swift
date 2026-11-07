@@ -106,89 +106,276 @@ enum Storage {
     }
 }
 
+/// The page's type filter chips, in the table's order of kinds.
+enum StorageFilter: String, CaseIterable {
+    case all = "All", apps = "Mac Apps", caches = "Caches", copies = "Copies", gameFiles = "Game Files", shaders = "Shaders"
+
+    var symbol: String {
+        switch self {
+        case .all: "square.3.layers.3d"
+        case .apps: "laptopcomputer"
+        case .caches: "shippingbox"
+        case .copies: "clock.arrow.circlepath"
+        case .gameFiles: "gamecontroller"
+        case .shaders: "square.stack.3d.up"
+        }
+    }
+
+    func matches(_ k: StorageItem.Kind) -> Bool {
+        switch self {
+        case .all: true
+        case .apps: k == .app
+        case .caches: k == .cache
+        case .copies: k == .backups
+        case .gameFiles: k == .gameFiles
+        case .shaders: k == .metal
+        }
+    }
+}
+
+enum StorageSort: String, CaseIterable { case size = "Size", name = "Name", type = "Type" }
+
+extension StorageItem.Kind {
+    var badge: String {
+        switch self { case .app: "Mac App"; case .backups: "Copy"; case .cache: "Cache"; case .gameFiles: "Game Files"; case .metal: "Shaders" }
+    }
+    var color: Color {
+        switch self { case .app: .indigo; case .backups: .orange; case .cache: .green; case .gameFiles: .blue; case .metal: .pink }
+    }
+}
+
 struct StoragePage: View {
     @Bindable var model: AppModel
     @State private var items: [StorageItem] = []
     @State private var volumes: [VolumeInfo] = []
     @State private var scanning = false
-    @State private var deleting: String?
+    @State private var deleting: Set<String> = []
+    @State private var filter: StorageFilter = .all
+    @State private var search = ""
+    @State private var sort: StorageSort = .size
+    @State private var selection: Set<String> = []
+
+    var shown: [StorageItem] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let v = items.filter { filter.matches($0.kind) && (q.isEmpty || $0.game.lowercased().contains(q) || $0.title.lowercased().contains(q) || $0.path.lowercased().contains(q)) }
+        switch sort {
+        case .size: return v.sorted { $0.bytes > $1.bytes }
+        case .name: return v.sorted { $0.game.localizedStandardCompare($1.game) == .orderedAscending }
+        case .type: return v.sorted { ($0.kind.badge, -$0.bytes) < ($1.kind.badge, -$1.bytes) }
+        }
+    }
 
     var body: some View {
+        let list = shown
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PageHeader(title: "Storage", subtitle: "What NXForge keeps on disk, and what can go.") {
-                    Button { scan() } label: { Label("Measure Again", systemImage: "arrow.clockwise") }
-                        .help("Measure the caches and apps again").disabled(scanning)
-                }
-                HStack(spacing: 16) {
+                HeroHeader(symbol: "internaldrive", title: "Storage", subtitle: "What NXForge keeps on disk, and what can go.")
+                HStack(alignment: .top, spacing: 16) {
                     ForEach(volumes) { v in volumeCard(v) }
                     reclaimCard
                 }
                 .fixedSize(horizontal: false, vertical: true)
+                filterBar
                 if scanning && items.isEmpty {
                     Card { HStack { ProgressView().controlSize(.small); Text("Measuring the build caches and apps…").foregroundStyle(.secondary) } }
                 } else {
-                    InsetTable {
-                        ForEach(items) { i in
-                            if i.id != items.first?.id { Divider() }
-                            row(i)
-                        }
-                    }
+                    table(list)
                 }
-                Text("Deleting here is permanent: files moved to the Trash keep using space until it is emptied.").font(.callout).foregroundStyle(.secondary)
+                Label("Deleting here is permanent: files moved to the Trash keep using space until it is emptied.", systemImage: "info.circle")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             .padding(20)
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { scan() } label: { Label("Measure Again", systemImage: "arrow.clockwise") }
+                    .help("Measure the caches and apps again").disabled(scanning)
+            }
         }
         .task(id: model.revision) { scan() }
     }
 
+    var deletableItems: [StorageItem] { items.filter { $0.deletable && canDelete($0) } }
     var reclaimable: Int64 { items.filter(\.deletable).reduce(0) { $0 + $1.bytes } }
 
+    func canDelete(_ i: StorageItem) -> Bool { i.deletable && !i.busy && !(model.run.running && i.kind != .backups) && !deleting.contains(i.path) }
+
     func volumeCard(_ v: VolumeInfo) -> some View {
-        Card(padding: 14, fillHeight: true) {
-            Label(v.name, systemImage: "internaldrive").font(.headline)
-            ProgressView(value: Double(max(v.total - v.free, 0)), total: Double(max(v.total, 1)))
-                .tint(v.free < Disk.warnBelow ? .orange : .accentColor)
-            Text("\(Disk.gb(v.free)) free of \(Disk.gb(v.total))").foregroundStyle(v.free < Disk.warnBelow ? .orange : .secondary)
+        let used = max(v.total - v.free, 0)
+        let low = v.free < Disk.warnBelow
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(v.name, systemImage: "internaldrive").font(.title3.weight(.semibold))
+                Spacer()
+                Text("\(Disk.gb(v.total)) total").foregroundStyle(.secondary)
+            }
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.tile)
+                    Capsule().fill(LinearGradient(colors: low ? [.orange, .red] : [.cyan, .accentColor], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: g.size.width * CGFloat(Double(used) / Double(max(v.total, 1))))
+                }
+            }
+            .frame(height: 12)
+            .accessibilityLabel("\(Disk.gb(used)) used of \(Disk.gb(v.total))")
+            HStack(spacing: 22) {
+                legend(low ? .orange : .accentColor, "\(Disk.gb(used)) used")
+                legend(.secondary, "\(Disk.gb(v.free)) free (\(Int((Double(v.free) / Double(max(v.total, 1)) * 100).rounded()))%)")
+            }
+            .foregroundStyle(low ? .orange : .primary)
         }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.card, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
+    }
+
+    func legend(_ c: Color, _ t: String) -> some View {
+        HStack(spacing: 7) { Circle().fill(c).frame(width: 9, height: 9); Text(t) }
     }
 
     var reclaimCard: some View {
-        Card(padding: 14, fillHeight: true) {
-            Label("Can be deleted", systemImage: "trash").font(.headline)
-            Text(scanning && items.isEmpty ? "…" : Disk.gb(reclaimable)).font(.title.weight(.semibold)).monospacedDigit()
-            Text("Build caches, older app copies and the shader cache").foregroundStyle(.secondary).lineLimit(1)
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label { Text("Reclaimable space").font(.title3.weight(.semibold)) } icon: { Image(systemName: "leaf.fill").foregroundStyle(.green) }
+                Text(scanning && items.isEmpty ? "…" : Disk.gb(reclaimable)).font(.system(size: 30, weight: .bold)).monospacedDigit()
+                Text("Build caches, older app copies and the shader cache.").foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button { cleanUp() } label: { Label("Clean Up…", systemImage: "wand.and.sparkles") }
+                .buttonStyle(.glassProminent).controlSize(.extraLarge)
+                .disabled(deletableItems.isEmpty || !deleting.isEmpty)
+                .help(deletableItems.isEmpty ? "Nothing can be deleted now" : "Delete every build cache, older app copy and the shader cache that no build is using")
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Theme.card, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
+    }
+
+    var filterBar: some View {
+        HStack(spacing: 10) {
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(StorageFilter.allCases, id: \.self) { f in chip(f) }
+                }
+            }
+            Spacer(minLength: 8)
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search storage…", text: $search).textFieldStyle(.plain)
+                if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain) }
+            }
+            .padding(.horizontal, 10).frame(width: 220, height: 32)
+            .glassEffect(.regular, in: .rect(cornerRadius: 10))
+            Menu {
+                Picker("Sort by", selection: $sort) { ForEach(StorageSort.allCases, id: \.self) { Text($0.rawValue) } }
+                    .pickerStyle(.inline)
+            } label: { Image(systemName: "slider.horizontal.3") }
+            .menuStyle(.button).buttonStyle(.glass).fixedSize()
+            .help("Sort the list")
         }
     }
 
+    func chip(_ f: StorageFilter) -> some View {
+        let n = items.filter { f.matches($0.kind) }.count
+        let on = filter == f
+        return Button { filter = f } label: {
+            Label("\(f.rawValue) (\(n))", systemImage: f.symbol)
+        }
+        .modifier(GlassButton(prominent: on))
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    func table(_ list: [StorageItem]) -> some View {
+        let selectable = list.filter(canDelete)
+        let picked = items.filter { selection.contains($0.id) }
+        return VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Toggle("", isOn: Binding(get: { !selectable.isEmpty && selectable.allSatisfy { selection.contains($0.id) } },
+                                         set: { on in if on { selection.formUnion(selectable.map(\.id)) } else { selection.subtract(list.map(\.id)) } }))
+                    .toggleStyle(.checkbox).labelsHidden().disabled(selectable.isEmpty)
+                    .help("Select everything here that can be deleted")
+                Text("Item").padding(.leading, 50)
+                Spacer()
+                Button { sort = .size } label: { HStack(spacing: 3) { Text("Size"); if sort == .size { Image(systemName: "arrow.down") } } }
+                    .buttonStyle(.plain).frame(width: 90, alignment: .trailing)
+                Button { sort = .type } label: { HStack(spacing: 3) { Text("Type"); if sort == .type { Image(systemName: "arrow.down") } } }
+                    .buttonStyle(.plain).frame(width: 100, alignment: .leading)
+                Color.clear.frame(width: 96, height: 1)
+            }
+            .font(.callout.weight(.medium)).foregroundStyle(.secondary)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            Divider()
+            if list.isEmpty {
+                ContentUnavailableView(search.isEmpty ? "Nothing Here" : "No Matches", systemImage: "internaldrive",
+                                       description: Text(search.isEmpty ? "Nothing of this type is on disk." : "Nothing matches “\(search)”."))
+                    .padding(.vertical, 20)
+            }
+            ForEach(list) { i in
+                row(i)
+                Divider().opacity(i.id == list.last?.id ? 0 : 1)
+            }
+            Divider()
+            HStack(spacing: 14) {
+                Text("\(picked.count) item\(picked.count == 1 ? "" : "s") selected")
+                Divider().frame(height: 18)
+                Text("Total size: ").foregroundStyle(.secondary) + Text(Disk.gb(picked.reduce(0) { $0 + $1.bytes })).fontWeight(.semibold)
+                Spacer()
+                Button { deleteMany(picked) } label: { Label("Delete Selected…", systemImage: "trash") }
+                    .buttonStyle(.glass).controlSize(.large).disabled(picked.isEmpty || !deleting.isEmpty)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+        }
+        .background(Theme.card, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
+        .clipShape(.rect(cornerRadius: 16))
+    }
+
     func row(_ i: StorageItem) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: i.symbol).font(.title3).foregroundStyle(.secondary).frame(width: 26)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+        let c = i.kind.color
+        return HStack(spacing: 12) {
+            Toggle("", isOn: Binding(get: { selection.contains(i.id) }, set: { on in if on { selection.insert(i.id) } else { selection.remove(i.id) } }))
+                .toggleStyle(.checkbox).labelsHidden().disabled(!canDelete(i))
+                .help(!i.deletable ? "The converter does not delete this here" : i.busy ? "In use: a build wrote to it in the last ten minutes" : model.run.running && i.kind != .backups ? "Not while a build runs: it uses this" : "Select to delete")
+            Image(systemName: i.symbol).font(.system(size: 18, weight: .medium)).foregroundStyle(c)
+                .frame(width: 38, height: 38)
+                .background(c.opacity(0.18), in: .rect(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(c.opacity(0.35)))
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 5) {
                     Text(i.title).font(.headline)
-                    Text("· \(i.game)").foregroundStyle(.secondary).lineLimit(1)
+                    Text("· \(i.game)").lineLimit(1)
                 }
-                Text(i.note).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                Text(i.note).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 Text(i.path.tildePath).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
             }
-            Spacer()
-            Text(Disk.gb(i.bytes)).font(.title3.weight(.semibold)).monospacedDigit().frame(width: 90, alignment: .trailing)
-            Button { reveal(i.path) } label: { Image(systemName: "folder") }.buttonStyle(.glass).help("Show in Finder")
-            if i.deletable {
-                if deleting == i.path {
-                    ProgressView().controlSize(.small).frame(width: 70)
-                } else {
-                    Button("Delete…") { delete(i) }.buttonStyle(.glass)
-                        .disabled(deleting != nil || i.busy || (model.run.running && i.kind != .backups))
-                        .help(i.busy ? "In use: a build wrote to it in the last ten minutes" : model.run.running && i.kind != .backups ? "Not while a build runs: it uses this" : "Delete permanently")
-                        .frame(width: 70)
-                }
+            Spacer(minLength: 8)
+            if deleting.contains(i.path) {
+                ProgressView().controlSize(.small).frame(width: 90, alignment: .trailing)
             } else {
-                Color.clear.frame(width: 70, height: 1)
+                Text(Disk.gb(i.bytes)).font(.headline).monospacedDigit().frame(width: 90, alignment: .trailing)
             }
+            Text(i.kind.badge).font(.caption.weight(.semibold)).foregroundStyle(c)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(c.opacity(0.2), in: .capsule)
+                .frame(width: 100, alignment: .leading)
+            HStack(spacing: 6) {
+                Button { reveal(i.path) } label: { Image(systemName: "folder") }.buttonStyle(.glass).help("Show in Finder")
+                Menu {
+                    Button("Show in Finder") { reveal(i.path) }
+                    Button("Copy Path") { copyToClipboard(i.path) }
+                    if i.deletable {
+                        Divider()
+                        Button("Delete…", role: .destructive) { deleteMany([i]) }.disabled(!canDelete(i))
+                    }
+                } label: { Image(systemName: "ellipsis") }
+                .menuStyle(.button).menuIndicator(.hidden).buttonStyle(.glass).fixedSize()
+            }
+            .frame(width: 96, alignment: .trailing)
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(selection.contains(i.id) ? Color.accentColor.opacity(0.08) : .clear)
     }
 
     func scan() {
@@ -197,17 +384,39 @@ struct StoragePage: View {
         let game = model.settings.gameDir
         Task.detached {
             let r = Storage.scan(currentGame: game)
-            await MainActor.run { items = r.items; volumes = r.volumes; scanning = false }
+            await MainActor.run {
+                items = r.items; volumes = r.volumes; scanning = false
+                selection = selection.intersection(Set(r.items.filter { $0.deletable }.map(\.id)))
+            }
         }
     }
 
-    func delete(_ i: StorageItem) {
-        guard model.confirm("Delete \(i.title.lowercased()) (\(Disk.gb(i.bytes)))?", "\(i.path.tildePath) is deleted permanently. \(i.note)", action: "Delete") else { return }
-        deleting = i.path
-        let path = i.path
+    /// Everything that can go now, after one question.
+    func cleanUp() {
+        let all = deletableItems
+        guard !all.isEmpty else { return }
+        let total = all.reduce(0) { $0 + $1.bytes }
+        guard model.confirm("Clean up \(Disk.gb(total))?", "Deletes permanently: \(all.map { "\($0.title.lowercased()) · \($0.game)" }.joined(separator: ", ")). The next build of each game starts over (about 30 to 50 minutes), and shaders compile again. Apps and game files stay.", action: "Delete") else { return }
+        remove(all)
+    }
+
+    func deleteMany(_ list: [StorageItem]) {
+        let ok = list.filter(canDelete)
+        guard !ok.isEmpty else { return }
+        let total = ok.reduce(0) { $0 + $1.bytes }
+        let what = ok.count == 1 ? "\(ok[0].title.lowercased()) (\(Disk.gb(total)))" : "\(ok.count) items (\(Disk.gb(total)))"
+        let detail = ok.count == 1 ? "\(ok[0].path.tildePath) is deleted permanently. \(ok[0].note)" : ok.map { $0.path.tildePath }.joined(separator: "\n") + "\n\nThese are deleted permanently."
+        guard model.confirm("Delete \(what)?", detail, action: "Delete") else { return }
+        remove(ok)
+    }
+
+    func remove(_ list: [StorageItem]) {
+        let paths = list.map(\.path)
+        deleting.formUnion(paths)
+        selection.subtract(paths)
         Task.detached {
-            try? FileManager.default.removeItem(atPath: path)
-            await MainActor.run { deleting = nil; model.revision += 1; model.measure() }
+            for p in paths { try? FileManager.default.removeItem(atPath: p) }
+            await MainActor.run { deleting.subtract(paths); model.revision += 1; model.measure() }
         }
     }
 }

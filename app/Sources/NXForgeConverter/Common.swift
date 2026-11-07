@@ -33,7 +33,7 @@ struct RootView: View {
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     Theme.background
-                    if model.page == .convert { HeroBanner(scene: .dish).frame(height: 230) }
+                    if model.page == .convert || model.page == .storage { HeroBanner(scene: .dish).frame(height: 230) }
                     if model.page == .toolchain { HeroBanner(scene: .peaks).frame(height: 230) }
                 }
                 .ignoresSafeArea()
