@@ -196,12 +196,14 @@ enum GameLibrary {
         }
         // one game: every tagged file is of one title, with at most one untagged file that can be its base game (a cartridge dump
         // with no tags), or only untagged files (the script reads their tickets)
-        let taggedBase = groups.values.first?.contains { $0.tid & 0xFFF == 0 } ?? false
+        let taggedBase = groups.values.contains { fs in fs.contains { $0.tid & 0xFFF == 0 } }
         if groups.isEmpty || (groups.count == 1 && (untagged.isEmpty || (untagged.count == 1 && !taggedBase))) {
-            let all = groups.values.flatMap { $0.map { ($0.url, $0.bytes, Optional($0.tid)) } } + untagged.map { ($0.url, $0.bytes, UInt64?.none) }
-            return [make(all.map { (url: $0.0, bytes: $0.1, tid: $0.2) }, app: groups.keys.first, shared: false)]
+            var all: [(url: URL, bytes: Int64, tid: UInt64?)] = []
+            for fs in groups.values { for f in fs { all.append((url: f.url, bytes: f.bytes, tid: f.tid)) } }
+            for f in untagged { all.append((url: f.url, bytes: f.bytes, tid: nil)) }
+            return [make(all, app: groups.keys.first, shared: false)]
         }
-        var out = groups.map { app, fs in make(fs.map { (url: $0.url, bytes: $0.bytes, tid: Optional($0.tid)) }, app: app, shared: true) }
+        var out = groups.map { app, fs in make(fs.map { (url: $0.url, bytes: $0.bytes, tid: UInt64?.some($0.tid)) }, app: app, shared: true) }
         out += untagged.map { make([(url: $0.url, bytes: $0.bytes, tid: nil)], app: nil, shared: true) }
         return out
     }
