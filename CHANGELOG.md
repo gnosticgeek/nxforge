@@ -36,6 +36,7 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - Verified on NXForge (`docs/nxforge-games.tsv`, the converter's Builds page): Mario Kart World and The Legend of Zelda: Ocarina of Time, as played on this Mac on 2026-11-06 and 2026-11-07.
 - The C lint ratchet is green again after the upstream merges: a texture without a pool no longer dereferences a null pool in the first-use log line (#1604), and two tests stop cleanly when a Metal lookup returns nothing.
 - After the second upstream merge of the day: `t_present_rescue`'s 30 fps checks (#1555) run with `DM_PRESENT_LATENCY` set, the one case where NXForge keeps the display link in fullscreen, and the device-shared range table grows through a temporary pointer (C lint).
+- `uepak.py` unpacks its cached image before `find_key`, so the Python lint passes with upstream #1646.
 
 **From upstream `main`, 13:30 check (picked, not merged)**
 - Ocarina of Time no longer faults on the GPU 15-45 minutes into play (#1644): a retired texture stays resident while any serial entry still draws with it. NXForge's shared-texture release (`alias_let_go`) follows the same rule.
