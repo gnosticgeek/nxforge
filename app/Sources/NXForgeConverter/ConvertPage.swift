@@ -498,6 +498,9 @@ struct BuildFailure: View {
                     if let p = d.page, p != .convert {
                         Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.glass)
                     }
+                    if d.code == .signing {
+                        SettingsLink { Label("Open Settings", systemImage: "gearshape") }.buttonStyle(.glass)
+                    }
                     if d.code != .stopped {
                         Button {
                             copyToClipboard(summary(d)); copied = true

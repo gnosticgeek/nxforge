@@ -74,7 +74,7 @@ struct ConverterApp: App {
             }
         }
         // Settings… (⌘,) in the app menu
-        Settings {
+        SwiftUI.Settings {
             SettingsPage(model: model)
         }
     }
