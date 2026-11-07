@@ -2,6 +2,24 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+The thin-fork release: NXForge is now the Converter plus a Mac player layer on nxnative's engine ([UPSTREAM.md](UPSTREAM.md#thin-fork-from-0150)). Merges nxnative's `main` up to `bd979ce` (19 commits since `d777f0a` and the picks). The shader chain changes (`4f4abb1e5355`), so every NVN game's shaders rebuild once.
+
+**From upstream `main`**
+- Pikmin 4 and DRAGON BALL Sparking! ZERO play at 60 fps, and up to 120 on the Mac (Unreal's fixed frame rate). DRAGON BALL's encrypted IoStore containers split their shaders.
+- The controller applet's player prompt: a game that asks for more players than have joined waits for them behind a prompt (on the keyboard, Return or J is done and Escape or K closes it).
+- Every package's title ID and version come from its content metas, not its file name.
+- WaitSynchronization keeps the objects it waits on, Ori and the Will of the Wisps finds copied programs' keys, Ocarina of Time's foliage no longer flashes, and counter reports take their time from Metal's paired CPU sample.
+- Landed versions of pull requests NXForge carried early replace NXForge's copies: the shared pixel-shader body (#1520) and the shader-code pools left out of the residency set (#1484, `mtl_addr_known`).
+
+**Thin fork**
+- The in-game sidebar's glue, its controller navigation, control remapping and the present filters live in NXForge's own files (`dm/host/nxforge/`, `dm/gfx/nvn/nxforge/`), which nxnative's files include at one line each. `front_mac.m` differs from nxnative's by 159 lines instead of 468.
+- NXForge's own red lines have a table of their own (`NXF_RED_ONCE`), so upstream's `RED_ONCE` keys keep their numbers and no merge renumbers them again.
+- Kept until upstream lands them: the open upstream pull requests NXForge already carries, and NXForge's fixes headed upstream. Four of those are ready as single commits on nxnative's `main` (`contrib/vp9-late-free`, `contrib/gpu-watchdog`, `contrib/dirty-page-pool-bounds`, `contrib/c1-tables-stable-bytes`).
+- Kept on top of upstream's content-meta scan: a cartridge with several applications (Belmont's Curse and its Art Gallery) still packs the largest program.
+- README and UPSTREAM.md describe NXForge as the Converter plus a Mac player, and UPSTREAM.md has the thin-fork merge rules.
+
 ## 0.14.0 (2026-11-07)
 
 Merges nxnative's `main` up to `5636e7a7` (20 commits since `04df08d`), mostly Ocarina of Time fixes. The shader chain changes, so every NVN game's shaders rebuild once.
