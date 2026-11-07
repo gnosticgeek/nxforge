@@ -123,7 +123,9 @@ extension AppModel {
                         // a game whose share stops answering is left for next time rather than holding the rest up
                         final class Box: @unchecked Sendable { var g: LibraryGame? }
                         let box = Box(), sem = DispatchSemaphore(value: 0)
-                        DispatchQueue.global(qos: .utility).async { box.g = GameLibrary.withDetails(g, keys: k); sem.signal() }
+                        let t = Thread { box.g = GameLibrary.withDetails(g, keys: k); sem.signal() }   // its own thread, as GameLibrary.list
+                        t.qualityOfService = .utility
+                        t.start()
                         if sem.wait(timeout: .now() + 30) == .success, let r = box.g { d = r } else { continue }
                     }
                 } else { d.detailsKey = GameLibrary.detailsKey(g) }

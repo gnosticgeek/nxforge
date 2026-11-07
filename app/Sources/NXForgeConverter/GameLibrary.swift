@@ -146,10 +146,11 @@ enum GameLibrary {
     static func list(_ dir: URL, timeout: Double) -> Listing? {
         final class Box: @unchecked Sendable { var v: Listing?; var done = false }
         let box = Box(), sem = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
-            box.v = listNow(dir)
-            sem.signal()
-        }
+        // a thread of its own, not a global queue: when other work (parallel tests, a busy app) holds the queue's threads, a listing
+        // queued there could wait past the time limit without ever starting, and a healthy folder would count as not answering
+        let t = Thread { box.v = listNow(dir); sem.signal() }
+        t.qualityOfService = .utility
+        t.start()
         // a hung call on a dead share is left behind: it ends, or fails, when the share comes back or the mount times out
         return sem.wait(timeout: .now() + timeout) == .success ? box.v : nil
     }
