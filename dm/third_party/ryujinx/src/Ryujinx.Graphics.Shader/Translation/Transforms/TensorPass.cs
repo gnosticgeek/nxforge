@@ -267,10 +267,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Transforms
             Operand g = emit.ShiftRightU32(lane, Const(2));
             Operand t = emit.BitwiseAnd(lane, Const(3));
 
-            // nxforge: fenced as InstEmitAmpereTensor.ALdsm fences the other stages (other lanes' shared memory stores land first, and no lane stores over the rows before all have read)
-            emit.SubgroupBarrier();
             emit.Copy(operation.Dest, InstEmit.LdsmLane(emit, g, t, operation.GetSource(2), operation.GetSource(0).Value, operation.GetSource(3).Value, operation.GetSource(1).Value));
-            emit.SubgroupBarrier();
 
             LinkedListNode<INode> last = node;
 

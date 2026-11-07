@@ -2,6 +2,16 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## Unreleased
+
+Merges nxnative's `main` up to `5636e7a7` (20 commits since `04df08d`), mostly Ocarina of Time fixes. The shader chain changes, so every NVN game's shaders rebuild once.
+
+**From upstream `main`**
+- Ocarina of Time: the ground no longer opens in holes after walking (#1604: an uncompressed texture is taken from its storage unless the GPU wrote that storage, not its pool; this replaces NXForge's range tracking from #1390), the dotted rows across fog and light are gone (an HMMA outside a chain no longer overwrites a chain's accumulator, #1537), and the game no longer crashes at the first note of the ocarina (#1527).
+- Translator fixes: I2F / F2F directed rounding (#1411), half-pair swizzles and HSETP2 .FTZ (#1410), Ampere IADD3 / PLOP3 / POPC / FLO / LEA (#1329), ATOMS.INC / DEC / CAS (#1413), large-turn MUFU.SIN / COS (#1234). The LDSM subgroup barriers are upstream's landed version (#1376), which replaces NXForge's.
+- Landed versions of pull requests 0.13.0 carried: the pool table notes (#1489) and bound render targets kept across submissions (#1502). A GPU whose access macOS revoked stops the game (#1332); NXForge keeps its own alert, which quits as ⌘Q does.
+- A damaged `.zs` file in a NUP or dump stops the build (#1530), Sonic Superstars plays on the Mac, and a jump table's bound is the compare its branch acts on (#1515).
+
 ## 0.13.0 (2026-11-06)
 
 A performance release. Merges nxnative's `main` up to `04df08d` (11 commits since `88c7e03`) and upstream pull requests that are still open, picked for build and run-time speed. The shader chain changes, so every NVN game's shaders rebuild once.

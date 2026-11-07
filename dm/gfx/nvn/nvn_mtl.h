@@ -21,7 +21,6 @@ void mtl_pool_del(const void *mem);
 void mtl_alias_drop_pool(const void *pool);
 // physical memory pool Finalize: the shared placement sparse tiles of its memory go back once no texture maps them (sp_release)
 void mtl_sp_phys_gone(const void *mem, uint64_t size);
-void mtl_tex_gpu_written(const void *pool, const void *mem, uint64_t size);   // the GPU writes this storage of the pool (a texture's; mem NULL or size 0: the whole pool): the uncompressed textures over it are no longer taken from storage (tex_cpu_content)
 int mtl_addr(uint64_t addr, uint64_t len, void **buf, uint64_t *off);   // 1 on success; buf is a (__bridge) id<MTLBuffer>
 int mtl_pool_holds(uint64_t addr, uint64_t len);   // 1 when the range lies in one memory pool (as mtl_addr finds it); does not make the pool resident
 
