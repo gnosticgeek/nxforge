@@ -36,6 +36,9 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - Verified on NXForge (`docs/nxforge-games.tsv`, the converter's Builds page): Mario Kart World and The Legend of Zelda: Ocarina of Time, as played on this Mac on 2026-11-06 and 2026-11-07.
 - The C lint ratchet is green again after the upstream merges: a texture without a pool no longer dereferences a null pool in the first-use log line (#1604), and two tests stop cleanly when a Metal lookup returns nothing.
 
+**From upstream pull requests (not yet on `main`)**
+- Ocarina of Time's foliage no longer draws as flat white, blue and cream shapes for its first seconds (#1368): a task / mesh pipeline missing at its first draw is built there instead of the draw being left out until a background build finished (3.5 to 7 s each on an M4 Pro), and it is recorded in the prewarm list, so later starts build it during the prepare screen.
+
 ## 0.13.0 (2026-11-06)
 
 A performance release. Merges nxnative's `main` up to `04df08d` (11 commits since `88c7e03`) and upstream pull requests that are still open, picked for build and run-time speed. The shader chain changes, so every NVN game's shaders rebuild once.
