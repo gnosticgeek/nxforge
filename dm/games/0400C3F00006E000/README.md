@@ -28,6 +28,8 @@ The full Mac build translates all 11,561. Getting there took four things, all ge
 - The 168 compute shaders of `DrivePassShaderDefault` that declare 48 KB of shared memory build since [Compute shared memory past 32 KB](../../../docs/reference/shaders.md#compute-shared-memory-past-32-kb); before it, the 3D scene of the title had sky and clouds over black geometry.
 - `dcb0504c844f1ecc` copies a flat per-primitive attribute into an R8Uint target, so it needs the integer entry point `fs_uint` now gives such a shader.
 
+On an M1 Pro (16 GB) the GPU took 27 to 28 ms a frame at the title, three times the M6's. The profile sets `shader_border_emu 0` and `shader_nan_coord fmax`, which give the samples back their overlap there ([Samples that do not overlap on Apple's M1](../../../docs/reference/shaders.md#samples-that-do-not-overlap-on-apples-m1-the-border-branch-and-the-coordinate-nan-select)): 18.3 to 19.5 ms at the title, and the first race of the Mushroom Cup from 39.9 to 47.7 fps (on `c96a5dce`). On main `777a5f6c` with segment timestamps (`DM_NVN_GPU_TS=segment`, so that dynamic resolution sees the GPU time), the same race went from 42.2–42.3 to 50.0–50.5 fps (two alternating runs each), with its scene at 1516x852 to 2048x1152 instead of 1328x748. No run printed the host's `which Metal lacks` line, so no sampler needs the twin the first key leaves out (the title, the menus, the Mushroom Cup's four races).
+
 ## Rendering
 
 The game draws into the top left 2048x1152 of a 3840x2160 window texture and crops the window to it, so screenshots are taken with `DM_NVN_SHOT_OUT=1920x1080` (`play.sh` in the work folder does).
@@ -122,6 +124,7 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
 - [Compute shared memory past 32 KB](../../../docs/reference/shaders.md#compute-shared-memory-past-32-kb)
 - [Uniform references past the first kilobyte](../../../docs/reference/shaders.md#uniform-references-past-the-first-kilobyte)
 - [A control section's words read as a BAHS entry](../../../docs/reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry) (resolved, [issue #1592](https://github.com/seedds/nxnative/issues/1592)): `cs_lib.bin` 74, `797e77c2ec4341c5` at `agl_common.sharcb#BAHS@0x5c778`, was no shader. Dropping it and its fact moved the 69 `cs_lib.bin` rows after it (`agl_common`, `agl_ndsr`, `agl_technique_pfx`, gsys `common`) down one index, as the reporter's split of the base game has them; not split again here, as the game's files are not on this Mac.
+- [Samples that do not overlap on Apple's M1: the border branch and the coordinate NaN select](../../../docs/reference/shaders.md#samples-that-do-not-overlap-on-apples-m1-the-border-branch-and-the-coordinate-nan-select)
 - [SDK 19's decoder forms](../../../docs/reference/movies.md#sdk-19s-decoder-forms)
 - [A version without one of the profile's modules stops the host at boot](../../../docs/reference/packing.md#a-version-without-one-of-the-profiles-modules-stops-the-host-at-boot)
 - [GPU timestamps per submission segment](../../../docs/reference/frame-rate.md#gpu-timestamps-per-submission-segment)
