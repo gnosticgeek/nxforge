@@ -1021,7 +1021,7 @@ struct QuickSettingsView: View {
                         Button { withAnimation(motion) { m.moveMod(n, -1) } } label: { Image(systemName: "chevron.up").frame(width: 18, height: 14) }.buttonStyle(.plain).disabled(i == 0).help("Load earlier: wins over the ones below").nav(m, .modUp(n))
                         Button { withAnimation(motion) { m.moveMod(n, 1) } } label: { Image(systemName: "chevron.down").frame(width: 18, height: 14) }.buttonStyle(.plain).disabled(i == m.mods.count - 1).help("Load later").nav(m, .modDown(n))
                     }.foregroundStyle(.secondary).padding(.top, 2)
-                    Toggle(isOn: Binding(get: { on }, set: { m.setMod(n, $0) })) {
+                    HStack(alignment: .top, spacing: 10) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(n).font(.body.weight(.medium))
                             if let run = m.modsRun {
@@ -1029,8 +1029,9 @@ struct QuickSettingsView: View {
                                 else { Text(run.contains(n) ? "Loaded" : "Off").font(.caption).foregroundStyle(.secondary) }
                             } else { Text("Not used: DM_ROMFS_OVERLAY is set").font(.caption).foregroundStyle(.secondary) }
                             if on, let c = m.modClash[n] { Label(c, systemImage: "square.on.square").font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
-                        }
-                    }.toggleStyle(.switch).nav(m, .mod(n))
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        Toggle(n, isOn: Binding(get: { on }, set: { m.setMod(n, $0) })).toggleStyle(.switch).labelsHidden()
+                    }.nav(m, .mod(n))
                 }
             }
             if m.modOrderPending { HStack(spacing: 6) { Text("Load order").font(.caption); NextLaunchTag(pending: true) } }
@@ -1118,7 +1119,7 @@ struct QuickSettingsView: View {
         if c.label {
             Text(c.name).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         } else {
-            Toggle(isOn: Binding(get: { c.on || c.master }, set: { m.setCheat(c, $0) })) {
+            HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(c.name).font(.body.weight(.medium))
                     if !c.note.isEmpty { Text(c.note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
@@ -1126,8 +1127,9 @@ struct QuickSettingsView: View {
                     else if c.disabled { Label(c.why.isEmpty ? "Off: this host cannot run it" : c.why, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
                     else if c.once { Text("Applied once, then it turns itself off").font(.caption).foregroundStyle(.secondary) }
                     else { Text(c.on ? "Active" : "Off").font(.caption).foregroundStyle(.secondary) }
-                }
-            }.toggleStyle(.switch).disabled(c.kind != 0).nav(m, .cheat(c.id))
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                Toggle(c.name, isOn: Binding(get: { c.on || c.master }, set: { m.setCheat(c, $0) })).toggleStyle(.switch).labelsHidden().disabled(c.kind != 0)
+            }.nav(m, .cheat(c.id))
         }
     }
     private var footer: some View {
