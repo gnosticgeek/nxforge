@@ -8,8 +8,8 @@ name: lint-python
 on:
   pull_request:
     paths: ['**.py', pyproject.toml, .github/requirements/lint.txt, .github/workflows/lint-python.yml, dm/tools/lint_python_baseline.tsv]
-  push:
-    branches: [main]
+  push:   # main, and the release branch commits land on during the day (release-X.Y.Z), so a break shows before its release pull request opens
+    branches: [main, 'release-*']
     paths: ['**.py', pyproject.toml, .github/requirements/lint.txt, .github/workflows/lint-python.yml, dm/tools/lint_python_baseline.tsv]
   workflow_dispatch:
 

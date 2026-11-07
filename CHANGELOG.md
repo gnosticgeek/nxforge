@@ -32,6 +32,7 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - `c1_full.tsv` and `cb_extent.tsv` keep their bytes when a full shader build finds the same rows, and a new one carries no clock time, so a rebuild that changes no shader changes no packed table (from devinhurry's fork, f6c3b82b).
 - `nxforge status`: a running build shows from its script (`build_ipa_from_nsp.py --mac base.nsp ...`) instead of the Python framework's path, once instead of twice (the converter's `caffeinate` wrapper), and recorded builds whose app was deleted are counted on one line.
 - `nxforge doctor [game folder]` also checks the optional tools the converter's Toolchain page lists (glslang, nsz, zbic) with the command that installs each; given a game folder, the ones that game needs count as required (as the converter decides it), and doctor exits 1 when a required tool is missing. The MCP tool takes `game_dir` too.
+- CI: the tests and both lint workflows also run on pushes to a `release-*` branch (a newer push cancels the older run there), so a break on the day's release branch shows before its release pull request opens.
 
 ## 0.13.0 (2026-11-06)
 
