@@ -108,41 +108,15 @@ class Plan(unittest.TestCase):
         self.shader('fsc', {}, {'_b': [('main0', True)]})
         self.shader('fsx', {'entry': 'main1'}, {'_b': [('main0', False)]})
         self.shader('fsp', {'raster': {'primitive_id': 1}}, {'_b': [('main0', False)]})   # reads the primitive ID: no base
+        self.shader('mesh', {'entry_z': 'main0_z', 'mesh_stage': {'kind': 'ms'}}, {'_b': vz})   # a mesh shader's pair (for its padding): built at the draw, no base
         pairs = [('pull', 'fs'), ('plain', 'fs'), ('inputs', 'fs'), ('layer', 'fs'), ('other', 'fs'), ('nolib', 'fs'), ('pull', 'fsc'), ('pull', 'fsx'), ('pull', 'gone'), ('pull', 'fs'),
-                 ('plain', 'fsp')]
+                 ('plain', 'fsp'), ('mesh', 'fs')]
         bases, rest, left = po.plan(self.d, CHAIN, pairs, False)
         self.assertEqual(bases, [('pull_bp', 'main0', 'fs_b', 'main0'), ('plain_b', 'main0', 'fs_b', 'main0')])
         self.assertEqual(rest, [('pull', 'fsc')])
-        self.assertEqual(left, {'reflection': 2, 'stage inputs': 1, 'library': 1, 'layer': 1, 'primitive ID': 1, 'entry': 1})
+        self.assertEqual(left, {'reflection': 2, 'mesh': 1, 'stage inputs': 1, 'library': 1, 'layer': 1, 'primitive ID': 1, 'entry': 1})
         bases, _, _ = po.plan(self.d, CHAIN, pairs[:2], True)   # near = 0: the entry_z entries
         self.assertEqual(bases, [('pull_bp', 'main0_z', 'fs_b', 'main0'), ('plain_b', 'main0_z', 'fs_b', 'main0')])
-
-    def test_compute_kernels_and_their_descriptors(self):   # every compute shader of the map, whole (no base), left out as the host would not dispatch it
-        self.shader('cs', {'stage': 'cs'}, {'_b': [('main0', False)]})
-        self.shader('csk', {'stage': 'cs', 'entry': 'kmain'}, {'_b': [('kmain', False)]})
-        self.shader('csc', {'stage': 'cs'}, {'_b': [('main0', True)]})   # function constants: the device specializes it
-        self.shader('csx', {'stage': 'cs', 'entry': 'main1'}, {'_b': [('main0', False)]})
-        self.shader('csv', {'stage': 'vs'}, {'_b': [('main0', False)]})   # a vertex shader the map calls compute
-        self.shader('cso', {'stage': 'cs', 'chain': 'fedcba987654'}, {'_b': [('main0', False)]})
-        self.shader('csn', {'stage': 'cs'}, {})   # no library
-        m = self.d.parent / 'shader_map.tsv'
-        m.write_text('# a map\n' + ''.join(f'cs_lib.bin\t{i}\tcompute\t{k}\t/x\n' for i, k in enumerate(['cs', 'csk', 'csc', 'csx', 'csv', 'cso', 'csn', 'cs', 'gone'])) + 'ps_lib.bin\t9\tpixel\tcs\t/x\n')
-        keys = po.compute_keys([str(m), '/nonexistent/map.tsv'])
-        self.assertEqual(keys, ['cs', 'csk', 'csc', 'csx', 'csv', 'cso', 'csn', 'gone'])
-        kernels, left = po.plan_compute(self.d, CHAIN, keys)
-        self.assertEqual(kernels, [('cs_b', 'main0'), ('csk_b', 'kmain')])
-        self.assertEqual(left, {'reflection': 3, 'library': 1, 'entry': 1, 'function constants': 1})
-        j = po.script(self.d, [('v_bp', 'main0', 'f_b', 'main0')] + kernels)
-        self.assertEqual([l['label'] for l in j['libraries']], ['v_bp', 'f_b', 'cs_b', 'csk_b'])
-        self.assertEqual(j['pipeline_descriptors']['compute_pipeline_descriptors'], [{'compute_function_descriptor': 'fnd:cs_b.main0'}, {'compute_function_descriptor': 'fnd:csk_b.kmain'}])
-        self.assertEqual(len(j['pipeline_descriptors']['render_pipeline_descriptors']), 1)
-        self.assertNotIn('compute_pipeline_descriptors', po.script(self.d, [('v_bp', 'main0', 'f_b', 'main0')])['pipeline_descriptors'])   # none: the key as before
-        self.assertEqual(po.library_digest(self.d, kernels), po.library_digest(self.d, kernels))
-        self.assertNotEqual(po.library_digest(self.d, kernels), po.library_digest(self.d, kernels[:1]))
-        # the batched build keys every entry: a kernel (2-tuple) gets its own key, never a render base's (0.13.0 Ocarina build: "expected 4, got 2" in base_key)
-        kk = [po.base_key(self.d, k) for k in kernels]
-        self.assertEqual(len(set(kk)), 2)
-        self.assertNotIn(po.base_key(self.d, ('cs_b', 'main0')), {po.base_key(self.d, ('cs_b', 'main0', 'cs_b', 'main0'))})
 
     def test_script(self):
         j = po.script(self.d, [('v_bp', 'main0', 'f_b', 'main0'), ('w_bp', 'main0_z', 'f_b', 'main0')])
@@ -158,6 +132,53 @@ class Plan(unittest.TestCase):
         self.assertEqual(len(p[0]['color_attachments']), 8)
         self.assertTrue(all(v == 'Unspecialized' for a in p[0]['color_attachments'] for v in a.values()))
         self.assertEqual(len(p[0]['color_attachments'][0]), 9)
+
+
+class Compute(unittest.TestCase):
+    """The compute pipelines: every compute shader of the shader map after the prewarm list's C rows, each from its function alone"""
+    d: Path   # Plan.setUp's folder
+    setUp, shader = Plan.setUp, Plan.shader
+    def test_shaders_from_the_list_then_the_map(self):
+        m, l = self.d / 'shader_map.tsv', self.d / 'pso_manifest.tsv'
+        m.write_text('package\tindex\tstage\tdm_ctl_sha16\tsource\ncs\t0\tcompute\tc2\tx\nvs\t0\tvertex\tv\tx\ncs\t1\tcompute\tc1\tx\ncs\t2\tcompute\tc3\tx\n')
+        l.write_text('# header\nS\tv_b\t0\nC\tc1_b\nR\t00ff\nC\told_b\nC\tc1_b\n')
+        self.assertEqual(po.read_computes([m], [l]), ['c1_b', 'old_b', 'c2_b', 'c3_b'])   # recorded order first, each once; the map's own order after
+        self.assertEqual(po.read_computes([m], [self.d / 'none.tsv']), ['c2_b', 'c1_b', 'c3_b'])   # a provisional profile: no list, the map's alone
+        self.assertEqual(po.read_computes([], []), [])
+
+    def test_pipelines_and_left_out(self):
+        self.shader('c1', {'stage': 'cs'}, {'_b': [('main0', False)]})
+        self.shader('c2', {'stage': 'cs'}, {'_b': [('main0', False)]})
+        self.shader('c3', {'stage': 'cs'}, {'_b': [('main0', True)]})   # function constants: the host specializes it, MTLDevice
+        self.shader('c4', {'stage': 'cs', 'entry': 'k'}, {'_b': [('main0', False)]})
+        self.shader('c5', {'stage': 'cs', 'chain': 'fedcba987654'}, {'_b': [('main0', False)]})
+        self.shader('c6', {'stage': 'cs'}, {})
+        self.shader('v', {'stage': 'vs'}, {'_b': [('main0', False)]})
+        keys = ['c1_b', 'c2_b', 'c3_b', 'c4_b', 'c5_b', 'c6_b', 'v_b', 'gone_b', 'c1_b']
+        pipes, left = po.plan_compute(self.d, CHAIN, keys)
+        self.assertEqual(pipes, [('c1_b', 'main0'), ('c2_b', 'main0')])   # each once
+        self.assertEqual(left, {'reflection': 3, 'library': 1, 'entry': 1, 'constants': 1})
+
+    def test_pipelines_from_a_library_image(self):   # one-file libraries (b-<chain>.img, shader_lib.py), as dmsh_build.py writes them: read in place, as plan reads the bases
+        self.shader('c1', {'stage': 'cs'}, {'_b': [('main0', False)]})
+        self.shader('c3', {'stage': 'cs'}, {'_b': [('main0', True)]})
+        self.assertTrue(po.shader_lib.pack(str(self.d), say=lambda m: None)); self.assertFalse(self.d.exists())
+        pipes, left = po.plan_compute(po.shader_lib.view(str(self.d)), CHAIN, ['c1_b', 'c3_b'])
+        self.assertEqual(pipes, [('c1_b', 'main0')])
+        self.assertEqual(left, {'reflection': 0, 'library': 0, 'entry': 0, 'constants': 1})
+
+    def test_script(self):
+        j = po.script(self.d, [('v_bp', 'main0', 'f_b', 'main0')], [('c_b', 'main0'), ('d_b', 'main0')])
+        self.assertEqual([l['label'] for l in j['libraries']], ['v_bp', 'f_b', 'c_b', 'd_b'])
+        self.assertEqual(j['pipeline_descriptors']['compute_pipeline_descriptors'],   # the function alone: what the host's lookup names (cps_bundle)
+                         [{'compute_function_descriptor': 'fnd:c_b.main0'}, {'compute_function_descriptor': 'fnd:d_b.main0'}])
+        self.assertNotIn('compute_pipeline_descriptors', po.script(self.d, [('v_bp', 'main0', 'f_b', 'main0')])['pipeline_descriptors'])   # bases alone: the script as before
+
+    def test_groups(self):
+        b, c = [('v', f'e{i}', 'f', 'main0') for i in range(3)], [(f'c{i}_b', 'main0') for i in range(3)]
+        self.assertEqual([(n, len(x), len(y)) for n, x, y in po.groups_of(b, c, 2, 2)], [('00001', 2, 0), ('00002', 1, 0), ('c00001', 0, 2), ('c00002', 0, 1)])
+        self.assertEqual([(n, len(x), len(y)) for n, x, y in po.groups_of(b, [], 0, 0)], [('00001', 3, 0)])
+        self.assertEqual([(n, len(x), len(y)) for n, x, y in po.groups_of([], c, 5, 0)], [('c00001', 0, 3)])
 
 
 class Build(unittest.TestCase):
@@ -280,8 +301,8 @@ class Build(unittest.TestCase):
         self.main('--depth', 'gl')
         self.assertEqual(len(self.calls), 2)
         original = po.script
-        def changed(lib_dir, bases):
-            config = original(lib_dir, bases)
+        def changed(lib_dir, bases, computes=()):
+            config = original(lib_dir, bases, computes)
             config['pipeline_descriptors']['render_pipeline_descriptors'][0]['raster_sample_count'] = 4
             return config
         with mock.patch.object(po, 'script', changed):
@@ -336,7 +357,8 @@ class Build(unittest.TestCase):
         # Exercise the real profiles through the builder with synthetic pairs: an omitted key must not quietly build main0.
         profiles = ('01008CF01BAAC000', '010089C01E9CA000', '010056B015FE8000', '01007BB017812000',
                     '01003E601E324000', '010020400E1C2000', '0100429011144000', '010014C011146000',
-                    '0100ACD0163D0000', '010040801A4C8000', '0100C49025D3E000', '0100A3900C3E2000')
+                    '0100ACD0163D0000', '010040801A4C8000', '0100C49025D3E000', '0100A3900C3E2000',
+                    '01006A800016E000')   # Super Smash Bros. Ultimate: a player's start log (its note)
         for gid in profiles:
             with self.subTest(game=gid):
                 self.main('--game', gid, '--pairs', str(self.prof / 'shader_pairs.tsv'), '--script-only')
@@ -483,6 +505,38 @@ class Build(unittest.TestCase):
             self.main('--batch-size', '1', '--os-min', '27.0')
         self.assertEqual(sorted(d.name for d in groups.iterdir() if d.is_dir()), ['00001', '00002'])
 
+    def test_compute_pipelines_are_groups_of_their_own(self):
+        (self.prof / 'shader_map.tsv').write_text('package\tindex\tstage\tdm_ctl_sha16\tsource\ncs\t0\tcompute\tk\tx\ncs\t1\tcompute\tkc\tx\n')
+        (self.prof / 'pso_manifest.tsv').write_text('# list\nC\tk_b\n')
+        for k, const in (('k', False), ('kc', True)):
+            (self.lib / f'{k}_b.json').write_text(json.dumps({'chain': CHAIN, 'stage': 'cs', 'entry': 'main0'}))
+            (self.lib / f'{k}_b.metallib').write_bytes(metallib([('main0', const)]))
+        runner, observed = self.batched_runner()
+        def computes(): return [f['library'] for f in json.loads((self.work / 'bases.mtl4-json').read_text())['function_descriptors']['library_function_descriptors'] if f['library'].startswith('lib:k')]
+        with mock.patch.object(self, 'fake_run', runner):
+            self.main('--os-min', '27.0')
+            self.assertEqual(observed, [('compile', ['main0_z']), ('compile', []), ('merge', 2)])   # the bases, the compute pipelines, one archive
+            self.assertEqual(computes(), ['lib:k_b'])   # kc has function constants: left to the host
+            self.assertIn('compute\t1\n', (self.out / 'archive.tsv').read_text())
+            self.assertEqual(sorted(d.name for d in (self.work / 'batches.applegpu_g18p').iterdir() if d.is_dir()), ['00001', 'c00001'])   # NXForge: beside assign.json
+            observed.clear(); self.main('--os-min', '27.0'); self.assertEqual(observed, [])   # unchanged: the archive reused
+            (self.prof / 'shader_pairs.tsv').write_text('v\tc\nv\tf\n')   # other pair lists, the same bases and compute pipelines: the archive reused
+            observed.clear(); self.main('--os-min', '27.0'); self.assertEqual(observed, [])
+            observed.clear(); self.main('--os-min', '27.0', '--depth', 'gl'); self.assertEqual(observed, [('compile', ['main0']), ('merge', 2)])   # other bases: the compute group kept
+            (self.lib / 'k_b.metallib').write_bytes(metallib([('main0', False), ('other', False)]))   # another compute library: its group again, the bases kept
+            observed.clear(); self.main('--os-min', '27.0', '--depth', 'gl'); self.assertEqual(observed, [('compile', []), ('merge', 2)])
+            observed.clear(); self.main('--os-min', '27.0', '--depth', 'gl', '--no-compute'); self.assertEqual(observed, [('compile', ['main0'])])   # bases alone: one compiler run
+            self.assertIn('compute\t0\n', (self.out / 'archive.tsv').read_text())
+
+    def test_compute_pipelines_alone_make_an_archive(self):   # no base (every pair has function constants), but compute shaders: still an archive
+        (self.prof / 'shader_pairs.tsv').write_text('v\tc\n')
+        (self.prof / 'shader_map.tsv').write_text('p\ti\tstage\tkey\ts\ncs\t0\tcompute\tk\tx\n')
+        (self.lib / 'k_b.json').write_text(json.dumps({'chain': CHAIN, 'stage': 'cs', 'entry': 'main0'})); (self.lib / 'k_b.metallib').write_bytes(metallib([('main0', False)]))
+        self.assertEqual(self.main('--gpu', 'g18p'), 0)
+        self.assertEqual(len(self.calls), 1)
+        self.assertTrue((self.out / 'applegpu_g18p.mtl4a').is_file())
+        self.assertEqual((self.out / 'rest_pairs.tsv').read_text(), 'v\tc\n')
+
     def test_only_changed_bases_are_recompiled(self):   # NXForge: a changed base goes into a new batch; its old batch is kept while most of it is still wanted
         bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(5)]
         runner, observed = self.batched_runner()
@@ -495,13 +549,6 @@ class Build(unittest.TestCase):
         state = json.loads((groups / 'assign.json').read_text())
         self.assertEqual(sorted(state['batches']), ['1', '2', '3', '4'])
         self.assertEqual(len(state['batches']['4']['members']), 1)
-
-    def test_batches_take_compute_kernels(self):   # upstream #1522 puts 2-tuple kernels in the same list as the 4-tuple bases the batches group
-        bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(3)] + [('c_b', 'main0')]
-        runner, observed = self.batched_runner()
-        with mock.patch.object(self, 'fake_run', runner), mock.patch.object(po, 'plan', return_value=(bases, [], {})):
-            self.main('--batch-size','2','--os-min','27.0')
-        self.assertTrue(observed)
 
     def test_changed_bases_scattered_over_every_batch(self):   # a translator fix that touches one shader in each batch: one new batch, not every batch again
         bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(8)]

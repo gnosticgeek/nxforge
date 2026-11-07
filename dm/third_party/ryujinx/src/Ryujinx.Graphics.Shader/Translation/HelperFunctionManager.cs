@@ -291,19 +291,16 @@ namespace Ryujinx.Graphics.Shader.Translation
             Operand wordOffset = context.ShiftRightU32(offset, Const(2));
             Operand bitOffset = GetBitOffset(context, offset);
 
-            // Clear the byte or half-word with an atomic AND, then set it with an atomic OR. Lanes that write other bytes of the same word commute with both, so the result is the
-            // same as the compare-and-swap loop this used to be, without the retries: with 32 lanes writing neighbouring bytes (a mesh shader's primitive indices, Ocarina of Time's
-            // foliage: 10 such stores a lane), four lanes contend for each word and the loop ran about four times a store, 8.5 ms of GPU a frame on an M3 Pro, 3.8 ms with this.
-            // Two lanes writing the same byte at once get an undefined mix instead of one of the two values, as the hardware's order between them is undefined too.
-            Operand fieldMask = context.ShiftLeft(Const((1 << bitSize) - 1), bitOffset);
-            Operand fieldValue = context.ShiftLeft(context.BitwiseAnd(value, Const((1 << bitSize) - 1)), bitOffset);
-
-            context.AtomicAnd(StorageKind.SharedMemory, Const(id), wordOffset, context.BitwiseNot(fieldMask));
-            context.AtomicOr(StorageKind.SharedMemory, Const(id), wordOffset, fieldValue);
+            GenerateSharedAtomicCasLoop(context, wordOffset, id, (memValue) =>
+            {
+                return context.BitfieldInsert(memValue, value, bitOffset, Const(bitSize));
+            });
 
             context.Return();
 
-            return new Function(ControlFlowGraph.Create(context.GetOperations()).Blocks, $"SharedStore{bitSize}_{id}", false, 2, 0);
+            // nxnative: the dmsh_ name keeps the helper's name in the SPIR-V, and the shader build replaces this compare-and-swap loop in the Metal source with a store of the byte or
+            // half-word (dmsh_build.py, shared_store_msl), which Metal's threadgroup memory takes: the name, the arguments (byte offset, value) and the array are the contract
+            return new Function(ControlFlowGraph.Create(context.GetOperations()).Blocks, $"dmsh_shared_store{bitSize}_{id}", false, 2, 0);
         }
 
         private static Function GenerateShuffleFunction(HelperFunctionName functionName, int subgroupSize)
