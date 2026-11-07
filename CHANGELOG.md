@@ -47,6 +47,7 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - Native empty states on Builds and Library; the window goes down to 820×580 and Convert's cards stack when narrow.
 - View menu switches pages with ⌘1 to ⌘5; Help › NXForge Converter Help opens the README.
 - Convert restyled after Tom's mockup: navy theme in Dark Mode, the app's name over the sidebar, a drawn dusk banner behind the page heading, numbered Source files and Mac app cards with a drop zone (Choose Game… / Choose Keys…), seven numbered step tiles in Build activity, and the log always below with All / Warnings / Errors tabs.
+- Toolchain restyled the same way: a peaks banner, a green Liquid Glass Ready to build bar, the tool table grouped with icons and an ⓘ per tool, and an Engine card with glass Change location / Check for updates, the environment details, Advanced configuration, Copy environment and Copy diagnostics.
 
 **Small fixes and tweaks**
 - `c1_full.tsv` and `cb_extent.tsv` keep their bytes when a full shader build finds the same rows, and a new one carries no clock time, so a rebuild that changes no shader changes no packed table (from devinhurry's fork, f6c3b82b).
