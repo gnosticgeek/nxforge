@@ -101,7 +101,7 @@ struct HeroBanner: View {
         }
         // fade into the page: away to the left, and down into the cards
         .mask {
-            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.85), location: 0.55), .init(color: .black, location: 1)],
+            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .clear, location: 0.4), .init(color: .black.opacity(0.85), location: 0.68), .init(color: .black, location: 1)],
                            startPoint: .leading, endPoint: .trailing)
                 .mask(LinearGradient(colors: [.black, .black, .clear], startPoint: .top, endPoint: .bottom))
         }

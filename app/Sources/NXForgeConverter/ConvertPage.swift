@@ -617,8 +617,9 @@ struct StepTiles: View {
                 .symbolEffect(.pulse, isActive: st == .running)
             Text(name).font(.callout.weight(.medium)).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
         }
-        .frame(maxWidth: .infinity, minHeight: 86)
-        .padding(.horizontal, 6).padding(.top, 8)
+        .padding(.top, 14)
+        .frame(maxWidth: .infinity, minHeight: 94, alignment: .top)
+        .padding(.horizontal, 6)
         .background(lit ? tint.opacity(0.14) : Theme.tile.opacity(0.6), in: .rect(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(lit ? tint.opacity(0.9) : Theme.cardStroke, lineWidth: lit ? 1.5 : 1))
         .overlay(alignment: .top) { NumberBadge(n: n, color: lit ? tint : Color.secondary.opacity(0.7), size: 20).offset(y: -10) }
