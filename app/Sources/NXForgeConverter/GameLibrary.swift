@@ -158,7 +158,7 @@ enum GameLibrary {
     /// The converter's own folders, and bundles: never games.
     static func skipDir(_ name: String) -> Bool {
         let n = name.lowercased()
-        return n.hasSuffix("_build") || n == "app-backups" || n.hasSuffix(".sparsebundle") || n.hasSuffix(".noindex") || n == "staging"
+        return n.hasSuffix("_build") || n.hasSuffix("_survey") || n == "app-backups" || n.hasSuffix(".sparsebundle") || n.hasSuffix(".noindex") || n == "staging"
             || n == "#recycle" || n == "@eadir" || n == "$recycle.bin" || n == "system volume information"
     }
 
@@ -213,6 +213,7 @@ enum GameLibrary {
         var result = LibraryScan(root: root, scanned: Date(), games: [])
         var stack: [(URL, Int)] = [(root.url, 0)]
         var silent = 0
+        var parentHasPackages = Set<String>()
         var lastReport = Date.distantPast
         while let (dir, depth) = stack.popLast() {
             if Task.isCancelled { result.stopped = "Stopped before the end: the list may be incomplete."; break }
@@ -226,12 +227,14 @@ enum GameLibrary {
             }
             silent = 0
             result.folders += 1
-            if dir.path != root && isDump(dir, l) {
+            // a dump is a folder of its own: one beside game packages is something extracted from them
+            if dir.path != root && !parentHasPackages.contains(dir.deletingLastPathComponent().path) && isDump(dir, l) {
                 let tid = titleTag(dir.lastPathComponent).map { String(format: "%016llX", GameFiles.appOf($0)) }
                 result.games.append(LibraryGame(kind: .dump, path: dir.path, name: cleanName(dir.lastPathComponent), titleID: tid, fileCount: 0, bytes: 0,
                                                 base: true, updates: 0, dlc: 0, app: l.apps.sorted().first))
                 continue   // a dump's own folders are its files
             }
+            if !l.packages.isEmpty { parentHasPackages.insert(dir.path) }
             result.games += games(in: dir, packages: l.packages, apps: l.apps)
             for n in l.nups {
                 let tid = titleTag(n.url.lastPathComponent).map { String(format: "%016llX", GameFiles.appOf($0)) }
