@@ -451,7 +451,9 @@ final class QuickSettings: ObservableObject {
                 var img: NSImage?
                 if c.video {
                     let g = AVAssetImageGenerator(asset: AVURLAsset(url: URL(fileURLWithPath: c.path))); g.appliesPreferredTrackTransform = true; g.maximumSize = CGSize(width: 320, height: 180)
-                    if let cg = try? g.copyCGImage(at: CMTime(seconds: 0.5, preferredTimescale: 600), actualTime: nil) { img = NSImage(cgImage: cg, size: .zero) }
+                    g.generateCGImageAsynchronously(for: CMTime(seconds: 0.5, preferredTimescale: 600)) { cg, _, _ in
+                        if let cg { let i = NSImage(cgImage: cg, size: .zero); DispatchQueue.main.async { self.thumbs[c.path] = i } }
+                    }
                 } else if let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: c.path) as CFURL, nil),
                           let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 320] as CFDictionary) {
                     img = NSImage(cgImage: cg, size: .zero)
