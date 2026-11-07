@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## Unreleased
+## 0.14.0 (2026-11-07)
 
 Merges nxnative's `main` up to `5636e7a7` (20 commits since `04df08d`), mostly Ocarina of Time fixes. The shader chain changes, so every NVN game's shaders rebuild once.
 
