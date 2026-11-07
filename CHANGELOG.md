@@ -33,6 +33,7 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - `nxforge status`: a running build shows from its script (`build_ipa_from_nsp.py --mac base.nsp ...`) instead of the Python framework's path, once instead of twice (the converter's `caffeinate` wrapper), and recorded builds whose app was deleted are counted on one line.
 - `nxforge doctor [game folder]` also checks the optional tools the converter's Toolchain page lists (glslang, nsz, zbic) with the command that installs each; given a game folder, the ones that game needs count as required (as the converter decides it), and doctor exits 1 when a required tool is missing. The MCP tool takes `game_dir` too.
 - CI: the tests and both lint workflows also run on pushes to a `release-*` branch (a newer push cancels the older run there), so a break on the day's release branch shows before its release pull request opens.
+- Verified on NXForge (`docs/nxforge-games.tsv`, the converter's Builds page): Mario Kart World and The Legend of Zelda: Ocarina of Time, as played on this Mac on 2026-11-06 and 2026-11-07.
 
 ## 0.13.0 (2026-11-06)
 
