@@ -29,6 +29,37 @@ class RepoFiles(unittest.TestCase):
         problems = rc.lint((REPO / 'CHANGELOG.md').read_text(), (REPO / 'BACKLOG.md').read_text())
         self.assertEqual(problems, [])
 
+    def test_sidebar_changelog_and_version_pass_lint(self):
+        problems = rc.lint_sidebar((REPO / rc.SIDEBAR_LOG).read_text(), (REPO / rc.SIDEBAR_SWIFT).read_text())
+        self.assertEqual(problems, [])
+
+
+SWIFT = 'import SwiftUI\n\nlet SIDEBAR_VERSION = "0.2.0"\n'
+SIDE_LOG = LOG.replace('0.8.0', '0.2.0').replace('0.7.1', '0.1.0')
+
+
+class Sidebar(unittest.TestCase):
+    def test_good_sidebar_release(self):
+        self.assertEqual(rc.check_sidebar('0.2.0', SIDE_LOG, SWIFT), [])
+
+    def test_swift_constant_must_match_the_tag(self):
+        problems = rc.check_sidebar('0.2.0', SIDE_LOG, SWIFT.replace('0.2.0', '0.3.0'))
+        self.assertTrue(any('SIDEBAR_VERSION is 0.3.0, not 0.2.0' in p for p in problems))
+
+    def test_swift_constant_may_run_ahead_but_not_behind(self):
+        self.assertEqual(rc.lint_sidebar(SIDE_LOG, SWIFT.replace('0.2.0', '0.3.0')), [])
+        self.assertTrue(any('older than' in p for p in rc.lint_sidebar(SIDE_LOG, SWIFT.replace('0.2.0', '0.1.0'))))
+        self.assertTrue(any('no line' in p for p in rc.lint_sidebar(SIDE_LOG, 'import SwiftUI\n')))
+
+    def test_problems_name_the_sidebar_changelog(self):
+        problems = rc.check_sidebar('0.3.0', SIDE_LOG, SWIFT)
+        self.assertTrue(any(p.startswith(rc.SIDEBAR_LOG + ': the newest entry is 0.2.0') for p in problems))
+
+    def test_tags(self):
+        self.assertEqual(rc.parse_tag('sidebar-v0.1.0'), (True, '0.1.0'))
+        self.assertEqual(rc.parse_tag('v0.16.0'), (False, '0.16.0'))
+        self.assertEqual(rc.parse_tag('0.16.0'), (False, '0.16.0'))
+
 
 class Rules(unittest.TestCase):
     def test_good_release(self):

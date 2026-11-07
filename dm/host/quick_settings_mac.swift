@@ -10,6 +10,10 @@
 import AppKit
 import SwiftUI
 
+// The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
+// scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
+let SIDEBAR_VERSION = "0.1.0"
+
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
 private let filterFixed = env["DM_PRESENT_FILTER"] != nil
@@ -707,6 +711,8 @@ struct QuickSettingsView: View {
                     .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.quitArmed ? Color.red : nil).help("Ends the game, as ⌘Q does. Asks twice.").nav(m, .quit)
             }
             legend
+            Text("NXForge Sidebar \(SIDEBAR_VERSION)").font(.caption2).foregroundStyle(.tertiary).frame(maxWidth: .infinity)
+                .help("The sidebar's own version (SIDEBAR_CHANGELOG.md), separate from NXForge's release")
         }
     }
     // The button legend: what works on the selection now (Nav, QuickSettings.legend), in the controller's own glyphs while a controller drives the sidebar

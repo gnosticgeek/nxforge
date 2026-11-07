@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.16.0 (2026-11-07)
+
+- **The sidebar has its own version.** The in-game Quick settings sidebar is now versioned and released on its own, starting at **NXForge Sidebar 0.1.0** (tag `sidebar-v0.1.0`), with its own [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md). The sidebar shows its version under the button legend. NXForge's releases keep their `vX.Y.Z` tags; `scripts/release_check.py` and the `release` workflow handle both kinds (UPSTREAM.md, Versions).
+
 ## 0.15.0 (2026-11-07)
 
 The thin-fork release: NXForge is now the Converter plus a Mac player layer on nxnative's engine ([UPSTREAM.md](UPSTREAM.md#thin-fork-from-0150)). Merges nxnative's `main` up to `bd979ce` (19 commits since `d777f0a` and the picks). The shader chain changes (`4f4abb1e5355`), so every NVN game's shaders rebuild once.
