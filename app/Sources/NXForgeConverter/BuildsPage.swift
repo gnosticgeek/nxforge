@@ -77,12 +77,14 @@ struct BuildsPage: View {
                     List(selection: Binding(get: { selected?.app }, set: { model.selectedBuild = $0 })) {
                         // Switch 2 games first, then Switch games, each under its own heading when both are listed
                         let groups = Console.allCases.map { c in (c, list.filter { Console.of($0) == c }) }.filter { !$0.1.isEmpty }
-                        ForEach(groups, id: \.0) { c, items in
-                            Section(groups.count > 1 ? "\(c.rawValue) · \(items.count)" : "") {
-                                ForEach(items) { b in
-                                    BuildRow(model: model, build: b, name: name(b)).tag(b.app)
+                        if groups.count > 1 {
+                            ForEach(groups, id: \.0) { c, items in
+                                Section("\(c.rawValue) · \(items.count)") {
+                                    ForEach(items) { b in BuildRow(model: model, build: b, name: name(b)).tag(b.app) }
                                 }
                             }
+                        } else {
+                            ForEach(list) { b in BuildRow(model: model, build: b, name: name(b)).tag(b.app) }
                         }
                     }
                     .listStyle(.inset)
