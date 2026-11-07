@@ -253,20 +253,33 @@ struct StoragePage: View {
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
     }
 
+    /// Chips, then search and sort, on one row when they fit; on a narrow window the search and sort move to a row of their own
+    /// rather than squeezing the chips into truncated labels.
     var filterBar: some View {
-        HStack(spacing: 10) {
-            GlassEffectContainer(spacing: 8) {
-                HStack(spacing: 8) {
-                    ForEach(StorageFilter.allCases, id: \.self) { f in chip(f) }
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { chips; Spacer(minLength: 8); searchAndSort }
+            VStack(alignment: .leading, spacing: 10) { chips; HStack { Spacer(); searchAndSort } }
+            VStack(alignment: .leading, spacing: 10) { ScrollView(.horizontal, showsIndicators: false) { chips }; HStack { Spacer(); searchAndSort } }
+        }
+    }
+
+    var chips: some View {
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(StorageFilter.allCases, id: \.self) { f in chip(f).fixedSize() }
             }
-            Spacer(minLength: 8)
+        }
+        .fixedSize()
+    }
+
+    var searchAndSort: some View {
+        HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search storage…", text: $search).textFieldStyle(.plain)
                 if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain) }
             }
-            .padding(.horizontal, 10).frame(width: 220, height: 32)
+            .padding(.horizontal, 10).frame(width: 190, height: 32)
             .glassEffect(.regular, in: .rect(cornerRadius: 10))
             Menu {
                 Picker("Sort by", selection: $sort) { ForEach(StorageSort.allCases, id: \.self) { Text($0.rawValue) } }
@@ -275,6 +288,7 @@ struct StoragePage: View {
             .menuStyle(.button).buttonStyle(.glass).fixedSize()
             .help("Sort the list")
         }
+        .fixedSize()
     }
 
     func chip(_ f: StorageFilter) -> some View {
