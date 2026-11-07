@@ -37,6 +37,11 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - The C lint ratchet is green again after the upstream merges: a texture without a pool no longer dereferences a null pool in the first-use log line (#1604), and two tests stop cleanly when a Metal lookup returns nothing.
 - After the second upstream merge of the day: `t_present_rescue`'s 30 fps checks (#1555) run with `DM_PRESENT_LATENCY` set, the one case where NXForge keeps the display link in fullscreen, and the device-shared range table grows through a temporary pointer (C lint).
 
+**From upstream `main`, 13:30 check (picked, not merged)**
+- Ocarina of Time no longer faults on the GPU 15-45 minutes into play (#1644): a retired texture stays resident while any serial entry still draws with it. NXForge's shared-texture release (`alias_let_go`) follows the same rule.
+- The NSP script's fallback tool folders come after the caller's `PATH` (#1475).
+- Not taken yet: upstream's landed #1520 (readable-tile split, a new shader chain) and #1484 (pool residency for shader keys). NXForge already carries both as pull-request heads; the landed versions come with the next full merge.
+
 **From upstream pull requests (not yet on `main`)**
 - Ocarina of Time's foliage no longer draws as flat white, blue and cream shapes for its first seconds (#1368): a task / mesh pipeline missing at its first draw is built there instead of the draw being left out until a background build finished (3.5 to 7 s each on an M4 Pro), and it is recorded in the prewarm list, so later starts build it during the prepare screen.
 
