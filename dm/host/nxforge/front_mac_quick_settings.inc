@@ -27,7 +27,12 @@ static NSArray<NSString *> *mods_list(void) {   // the mod folders, in the order
         BOOL dir = NO;
         if (![n hasPrefix:@"."] && [NSFileManager.defaultManager fileExistsAtPath:[d stringByAppendingPathComponent:n] isDirectory:&dir] && dir) [r addObject:n];
     }
-    return [r sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
+    r = [[r sortedArrayUsingSelector:@selector(localizedStandardCompare:)] mutableCopy];
+    // the load order the sidebar's Mods page set (modOrder: names, first loads first); a mod it has not placed yet comes after those, in name order
+    NSArray *order = [NSUserDefaults.standardUserDefaults arrayForKey:opt_key(@"modOrder")] ?: @[]; NSMutableArray *o = [NSMutableArray array];
+    for (NSString *n in order) if ([n isKindOfClass:NSString.class] && [r containsObject:n] && ![o containsObject:n]) [o addObject:n];
+    for (NSString *n in r) if (![o containsObject:n]) [o addObject:n];
+    return o;
 }
 // A mod's RomFS files: its romfs folder, or the one in the Atmosphere layout a mod is usually downloaded in (atmosphere/contents/<title ID>/romfs,
 // contents/<title ID>/romfs or <title ID>/romfs, after the NxNative Launcher's mod manager), or else the mod folder itself
@@ -41,6 +46,7 @@ static NSString *mod_root(NSString *name) {
     return p;
 }
 static NSSet<NSString *> *g_mods_run;   // the mods this launch overlaid (nil: DM_ROMFS_OVERLAY came from the environment)
+static NSArray<NSString *> *g_mods_run_order;   // the same, in the order they were overlaid
 static void mods_start(void) {   // main thread, before the guest runs (the game mounts its RomFS later, hle_fs.c h_fs_MountRom)
     if (getenv("DM_ROMFS_OVERLAY")) { LOG("front end: RomFS overlay from DM_ROMFS_OVERLAY; this game's enabled mods are not used"); return; }
     NSArray *want = [NSUserDefaults.standardUserDefaults arrayForKey:opt_key(@"mods")] ?: @[];
@@ -52,12 +58,13 @@ static void mods_start(void) {   // main thread, before the guest runs (the game
         if (len + k > 4096) { LOG("[RED] mod '%s' and the ones after it not used: the overlay list is full (4,096 bytes of paths)", n.UTF8String); break; }
         [roots addObject:r]; [on addObject:n]; len += k;
     }
-    g_mods_run = on;
+    g_mods_run = on; g_mods_run_order = [mods_list() filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *n, NSDictionary *b) { (void)b; return [on containsObject:n]; }]];
     if (!roots.count) return;
     setenv("DM_ROMFS_OVERLAY", [roots componentsJoinedByString:@":"].fileSystemRepresentation, 1);
     LOG("front end: %lu mod%s over the RomFS (Quick settings): %s", (unsigned long)roots.count, roots.count == 1 ? "" : "s", [on.allObjects componentsJoinedByString:@", "].UTF8String);
 }
 
+#include "front_mac_settings_file.inc"
 
 @interface DmSettings : NSObject
 @property NSView *view; @property NSMutableArray<NSMenuItem *> *items; @property NSTextField *fpsLabel; @property NSTimer *fpsTimer; @property uint64_t fpsN0; @property double fpsT0;
@@ -90,12 +97,17 @@ static NSString *where(NSString *path) {   // a saved file's folder for a toast:
     NSArray *c = path.stringByDeletingLastPathComponent.pathComponents; NSUInteger n = c.count;
     return n >= 2 ? [NSString stringWithFormat:@"%@ › %@", c[n - 2], c[n - 1]] : path.stringByDeletingLastPathComponent;
 }
+static int g_paused;
+static void qs_pause(int on);
 void front_qs_screenshot(void) {
-    capture_screenshot(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Screenshot saved to " stringByAppendingString:where(path)] : err); });
+    int was = g_paused; if (was) qs_pause(0);   // the screenshot is the next frame presented: a paused game presents none
+    capture_screenshot(DM_GAME_NAME, ^(NSString *path, NSString *err) {
+        dispatch_async(dispatch_get_main_queue(), ^{ if (was && g_menu_open) qs_pause(1); dm_qs_captures_changed(); });
+        toast(path ? [@"Screenshot saved to " stringByAppendingString:where(path)] : err); });
 }
 void front_qs_record(void) {
     if (capture_recording()) { capture_record_stop(); toast(@"Saving the recording…"); return; }
-    capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Recording saved to " stringByAppendingString:where(path)] : err); if (g_menu_open) dm_qs_refresh(); });
+    capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Recording saved to " stringByAppendingString:where(path)] : err); if (g_menu_open) { dm_qs_refresh(); dm_qs_captures_changed(); } });
     if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
 }
 int front_qs_recording(void) { return capture_recording(); }
@@ -106,7 +118,7 @@ void front_qs_restart(void) {
     const char *rf = getenv("DM_LAUNCHER_RESTART"); if (!rf || !*rf) return;
     int fd = open(rf, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) { LOG("[RED] front end: Restart game: cannot write %s: %s", rf, strerror(errno)); toast(@"Restart did not work: quit and open the game again"); return; }
-    close(fd); LOG("front end: Restart game (Quick settings)"); [NSApp terminate:nil];
+    close(fd); LOG("front end: Restart game (Quick settings)"); qs_pause(0); [NSApp terminate:nil];
 }
 // Where captures go, for the Capture section: the folder chosen for this game (saved), or none for the default
 const char *front_qs_capture_folder(int video) { return capture_folder(video).fileSystemRepresentation; }
@@ -127,6 +139,48 @@ static void inset_to(float share) {
         g_inset_now = from + (g_inset_to - from) * (float)u; mtl_present_inset(g_inset_now);
         if (u >= 1) { [t invalidate]; g_inset_timer = nil; } }];
 }
+// Pause while open (the sidebar's General page, on unless turned off): once the picture has slid aside, the game stops as when the window is minimized: its sound (dm_audio_suspend),
+// its clock (guest_clock_freeze_for, reason 3: the sidebar) and its graphics (dm_gfx_suspend: a submit or present waits). Closing the sidebar, quitting or a screenshot taken from
+// it starts it again first. Un-minimizing the window resumes sound and graphics (front_mac.m), so while the sidebar is up they are stopped again after it
+static BOOL qs_pause_wanted(void) { id v = [NSUserDefaults.standardUserDefaults objectForKey:opt_key(@"pauseOpen")]; return v ? [v boolValue] : YES; }
+static void qs_pause(int on) {
+    if (on == g_paused) return;
+    static int observed;
+    if (!observed) { observed = 1;   // after front_mac.m's own observers: those resume, this stops again
+        [NSNotificationCenter.defaultCenter addObserverForName:NSWindowDidDeminiaturizeNotification object:g_win queue:nil usingBlock:^(NSNotification *n) { (void)n; if (g_paused) { dm_audio_suspend(1); dm_gfx_suspend(1); } }];
+        [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationWillTerminateNotification object:nil queue:nil usingBlock:^(NSNotification *n) { (void)n; qs_pause(0); }];
+    }
+    g_paused = on;
+    if (on) { dm_audio_suspend(1); guest_clock_freeze_for(3, 1); dm_gfx_suspend(1); LOG("front end: game paused while Quick settings is open"); }
+    else { if (!g_win.miniaturized) { dm_gfx_suspend(0); dm_audio_suspend(0); } guest_clock_freeze_for(3, 0); LOG("front end: game resumed"); }
+}
+int front_qs_paused(void) { return g_paused; }
+void front_qs_pause_set(int on) {   // the General page's switch, while the sidebar is up: applies at once
+    [NSUserDefaults.standardUserDefaults setBool:on != 0 forKey:opt_key(@"pauseOpen")];
+    if (g_menu_open) qs_pause(on != 0);
+}
+// Quieter while open: the game's sound at a quarter of its volume while the sidebar is up and the game is not paused
+static void qs_volume_apply(void) {
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    float v = [d objectForKey:opt_key(@"volume")] ? [d floatForKey:opt_key(@"volume")] : 1;
+    if ([d boolForKey:opt_key(@"muted")]) v = 0;
+    if (g_menu_open && [d boolForKey:opt_key(@"duckOpen")]) v *= 0.25f;
+    dm_audio_volume_set(v);
+}
+void front_qs_volume_apply(void) { qs_volume_apply(); }
+// Full screen from the Display section
+int front_qs_fullscreen(void) { return g_fullscreen; }
+void front_qs_fullscreen_toggle(void) { [g_win toggleFullScreen:nil]; }
+// Where this game's settings file is ("" when there is none: DM_SETTINGS_FILE=0 or no folder), and my defaults
+const char *front_qs_settings_path(void) { NSString *p = settings_file_path(); return p ? p.fileSystemRepresentation : ""; }
+const char *front_qs_defaults_path(void) { NSString *p = defaults_file_path(); return p ? p.fileSystemRepresentation : ""; }
+int front_qs_defaults_exist(void) { NSString *p = defaults_file_path(); return p && [NSFileManager.defaultManager fileExistsAtPath:p]; }
+static void settings_apply(int start);
+void front_qs_defaults_save(void) { settings_file_write_to(defaults_file_path(), 1); toast(@"Saved as my defaults for every game"); }
+void front_qs_defaults_use(void) {
+    if (!settings_file_read(defaults_file_path(), 1)) { toast(@"No defaults saved yet"); return; }
+    settings_apply(0); settings_file_write(); toast(@"My defaults applied to this game");
+}
 @implementation DmSettings
 - (BOOL)fpsOn {
     const char *e = getenv("DM_SHOW_FPS"); if (e) return atoi(e) != 0;
@@ -137,7 +191,7 @@ static void inset_to(float share) {
     if (!self.fpsOn) { [self.fpsTimer invalidate]; self.fpsTimer = nil; [self.fpsLabel removeFromSuperview]; self.fpsLabel = nil; return; }
     NSView *gv = g_win.contentView;
     if (!self.fpsLabel) {
-        NSTextField *l = [NSTextField labelWithString:@"-- FPS"]; l.font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightSemibold]; l.textColor = NSColor.whiteColor;
+        NSTextField *l = [NSTextField labelWithString:@"-- FPS · --.- ms"]; l.font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightSemibold]; l.textColor = NSColor.whiteColor;
         NSShadow *sh = [NSShadow new]; sh.shadowColor = [NSColor colorWithWhite:0 alpha:0.8]; sh.shadowBlurRadius = 2; sh.shadowOffset = NSMakeSize(0, -1); l.shadow = sh;
         if (self.view.superview) [gv addSubview:l positioned:NSWindowBelow relativeTo:self.view]; else [gv addSubview:l];
         self.fpsLabel = l; self.fpsN0 = mtl_present_count(); self.fpsT0 = CACurrentMediaTime();
@@ -145,7 +199,9 @@ static void inset_to(float share) {
         self.fpsTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
             (void)t; DmSettings *s = me; if (!s) return;
             uint64_t n = mtl_present_count(); double now = CACurrentMediaTime();
-            if (now - s.fpsT0 < 1.5) s.fpsLabel.stringValue = [NSString stringWithFormat:@"%.0f FPS", (n - s.fpsN0) / (now - s.fpsT0)];   // a longer span was a stall (minimized): no reading
+            double fps = (n - s.fpsN0) / (now - s.fpsT0);
+            if (now - s.fpsT0 < 1.5) s.fpsLabel.stringValue = [NSUserDefaults.standardUserDefaults boolForKey:opt_key(@"fpsMs")] && fps > 0   // a longer span was a stall (minimized): no reading
+                ? [NSString stringWithFormat:@"%.0f FPS · %.1f ms", fps, 1000 / fps] : [NSString stringWithFormat:@"%.0f FPS", fps];
             s.fpsN0 = n; s.fpsT0 = now;
         }];
         LOG("front end: frame-rate counter on");
@@ -161,7 +217,7 @@ static void inset_to(float share) {
     (void)sender;
     if (!g_menu_open) {
         if (!self.view) {
-            NSString *run = g_mods_run ? [g_mods_run.allObjects componentsJoinedByString:@"\n"] : nil;
+            NSString *run = g_mods_run ? [g_mods_run_order componentsJoinedByString:@"\n"] : nil;   // in load order
             self.view = (__bridge_transfer NSView *)dm_qs_make(DM_GAME_NAME, mods_dir().fileSystemRepresentation, run.UTF8String, qs_close, qs_fps);
             self.view.autoresizingMask = NSViewMinXMargin | NSViewHeightSizable;
             NSView *gv = g_win.contentView; gv.postsFrameChangedNotifications = YES;
@@ -171,13 +227,17 @@ static void inset_to(float share) {
         }
         NSView *gv = g_win.contentView; CGFloat w = MIN(460, gv.bounds.size.width);
         self.view.frame = NSMakeRect(gv.bounds.size.width - w, 0, w, gv.bounds.size.height);
+        if (settings_file_changed() && settings_file_read(settings_file_path(), 0)) { settings_apply(0); settings_file_write(); toast(@"Settings file read again"); }   // edited while the game ran
         dm_qs_opened(g_open_by_pad); dm_qs_refresh();
         [gv addSubview:self.view]; g_menu_open = 1;
         inset_to(w < gv.bounds.size.width ? (float)(w / gv.bounds.size.width) : 0);   // a sidebar as wide as the window covers the game instead
         input_release(); dm_focus_set(2);   // as when the window loses focus: nothing stays held, and a game that pauses for the HOME menu pauses
+        qs_volume_apply();
+        if (qs_pause_wanted()) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ if (g_menu_open && qs_pause_wanted()) { qs_pause(1); dm_qs_refresh(); } });   // once the picture has slid aside
         LOG("front end: Quick settings open");
     } else {
-        [self.view removeFromSuperview]; g_menu_open = 0; inset_to(0); g_pad_quiet = 1; g_assign = -1;
+        qs_pause(0);
+        [self.view removeFromSuperview]; g_menu_open = 0; inset_to(0); g_pad_quiet = 1; g_assign = -1; qs_volume_apply();
         [g_win makeFirstResponder:g_win.contentView];
         if (g_win.isKeyWindow) { input_resume(); dm_focus_set(1); }   // otherwise the window's becoming key resumes them
         LOG("front end: Quick settings closed");
@@ -214,21 +274,33 @@ static void inset_to(float share) {
     g_opts = self; g_menu_toggle = qs_toggle; [self fpsCounter];
 }
 @end
-static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, anisotropic filtering, upscaling, anti-aliasing, volume, controls and mods, unless the environment names them
-    mods_start(); controls_load();
-    capture_folder_set([NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")]);
+// The saved settings put to work: at launch (start: also the mods, the capture folder and anisotropic filtering, which take effect only then), and after the settings file or
+// my defaults were read while the game runs. A setting the environment names wins over its saved value
+static void settings_apply(int start) {
     NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
-    // Anisotropic filtering: 16x unless this game's saved choice says otherwise (the Mac has the GPU time to spare; "Game default" is saved as 0). Taken at the game's first sampler: before the guest runs
-    if (!getenv("DM_ANISO")) mtl_aniso_set([d objectForKey:opt_key(@"aniso")] ? (int)[d integerForKey:opt_key(@"aniso")] : 16);
+    if (start) {
+        mods_start();
+        capture_folder_set([d stringForKey:opt_key(@"captureDir")]);
+        // Anisotropic filtering: 16x unless this game's saved choice says otherwise (the Mac has the GPU time to spare; "Game default" is saved as 0). Taken at the game's first sampler: before the guest runs
+        if (!getenv("DM_ANISO")) mtl_aniso_set([d objectForKey:opt_key(@"aniso")] ? (int)[d integerForKey:opt_key(@"aniso")] : 16);
+    } else if (!getenv("DM_ANISO")) mtl_aniso_set([d objectForKey:opt_key(@"aniso")] ? (int)[d integerForKey:opt_key(@"aniso")] : 16);   // logs that it applies at the next launch
+    controls_load();
     // Upscaling: MetalFX unless the settings window's saved choice (launcher.DM_PRESENT_UPSCALE, which Quick settings writes too) says off; the window and env.txt set it in the environment
     if (!getenv("DM_PRESENT_UPSCALE")) { NSString *u = [d stringForKey:@"launcher.DM_PRESENT_UPSCALE"]; mtl_present_upscale_set(u ? [u isEqualToString:@"metalfx"] : 1); }
-    if (!getenv("DM_PRESENT_AA") && [d objectForKey:opt_key(@"aa")]) mtl_present_aa_set((int)[d integerForKey:opt_key(@"aa")]);
-    if ([d objectForKey:opt_key(@"volume")]) dm_audio_volume_set([d floatForKey:opt_key(@"volume")]);
-    if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);
+    if (!getenv("DM_PRESENT_AA")) mtl_present_aa_set([d objectForKey:opt_key(@"aa")] ? (int)[d integerForKey:opt_key(@"aa")] : DM_PAA_OFF);
+    if (!getenv("DM_PRESENT_SCALE")) mtl_present_scale_set([d objectForKey:opt_key(@"scale")] ? (int)[d integerForKey:opt_key(@"scale")] : DM_PSCALE_FIT);
+    qs_volume_apply();
+    if (!getenv("DM_PRESENT_SCANLINE")) mtl_present_scanline_set([d objectForKey:pfx_key(@"scanline")] ? (int)[d integerForKey:pfx_key(@"scanline")] : 0);
+    if (!start && g_opts) [g_opts fpsCounter];
     if (getenv("DM_PRESENT_FILTER")) return;
-    if (![d objectForKey:pfx_key(@"mode")]) return;
+    if (![d objectForKey:pfx_key(@"mode")]) { if (!start) mtl_present_filter_set(DM_PFX_OFF, 0.5f); return; }
     int m = (int)[d integerForKey:pfx_key(@"mode")]; if (m != DM_PFX_CRT) m = DM_PFX_OFF;   // a choice saved before Sharpen, Pixel-perfect, CRT-Lottes and LCD Grid left the menus: off
     float k = [d objectForKey:pfx_key(@"strength")] ? [d floatForKey:pfx_key(@"strength")] : 0.5f;
     mtl_present_filter_set(m, k); LOG("front end: present filter from the saved choice for this game (Quick settings)");
 }
-
+static void graphics_start(void) {   // main thread, before the guest runs: the settings file, then the saved filter, anisotropic filtering, upscaling, anti-aliasing, volume, controls and mods
+    settings_file_start();
+    settings_apply(1);
+}
+const char *front_qs_title_id(void) { return DM_GAME_ID; }   // the save backups' manifest and the mods' Atmosphere folders
+void front_qs_toast_text(const char *msg) { toast(@(msg)); }   // the sidebar's own toasts (a save backed up, a capture copied)

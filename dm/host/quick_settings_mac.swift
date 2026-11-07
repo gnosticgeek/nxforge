@@ -1,18 +1,21 @@
 // Quick settings sidebar (front_mac.m opens and closes it; quick_settings_mac.h is the C side): SwiftUI with the system's controls, on a Liquid Glass panel on macOS 26 and later
 // (a material panel before). The settings are front_mac.m's: the same user defaults keys (per game), the same rule that a setting the environment names wins and is not saved.
-// Layout, top to bottom: a quick bar (Screenshot, Record, the FPS counter, volume), a row of page tabs (Graphics, FPS, Capture, Mods, Cheats, Controls; L / R or Tab turn the page),
+// Layout, top to bottom: a quick bar (Screenshot, Record, the FPS counter, volume and mute), a row of page tabs (General, Graphics, FPS, Capture, Mods, Cheats, Controls; L / R or Tab turn the page),
 // the page, and a footer with what needs a restart (Restart game), Resume and Quit, and a legend of the buttons that work on the selection, in the controller's own glyphs or as keys.
 // The filter (off or CRT; the engine's other filters stay for DM_PRESENT_FILTER), its strength and line size go to the graphics backend at once (front.h mtl_present_*); the frame-rate
 // counter is drawn by front_mac.m, told through the fps callback; mods are the folders of this game's mods folder, overlaid at the next launch (front_mac.m mods_start); cheats are the
 // host's (hle_cheats.c dm_cheat*): this build's Atmosphère cheat file, a switch each, which the host saves beside the file (<build ID>.enabled) and runs from the next frame. The Cheats
 // menu and panel (front_mac.m) show the same rows. Settings that apply at the next launch (anisotropic filtering, frame times, mods) carry a "Next launch" tag, orange while they differ
-// from what this launch runs, and the footer counts those
+// from what this launch runs, and the footer counts and names those. General: pause while open, quieter while open, a save backup (the Converter's save snapshots, same format),
+// the settings file (front_mac_settings_file.inc: the settings as text beside the game) and my defaults for every game
 import AppKit
+import AVFoundation
+import GameController
 import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.1.0"
+let SIDEBAR_VERSION = "0.2.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -20,6 +23,8 @@ private let filterFixed = env["DM_PRESENT_FILTER"] != nil
 private let cornerNames = ["Top left", "Top right", "Bottom left", "Bottom right"]
 private let anisoSteps = [0, 2, 4, 8, 16]   // front.h mtl_aniso_set: 0 is the game's own
 private let anisoDefault = 16               // front_mac.m graphics_start: 16x until a choice is saved
+private let sizeNames = ["Fit", "Stretch", "Pixel-perfect"]   // front.h DM_PSCALE_*, in that order
+private let scaleFixed = env["DM_PRESENT_SCALE"] != nil
 private let aaNames = ["Off", "FXAA"]   // front.h DM_PAA_*, in that order
 // Upscaling is the settings window's setting too (launcher.DM_PRESENT_UPSCALE): fixed here only when the launch environment or an env file set it, not when the window or a saved choice did
 private let upscaleFixed = env["DM_PRESENT_UPSCALE"] != nil && (env["DM_ENV_LAUNCH_KEYS"] == nil
@@ -29,31 +34,37 @@ private let upscaleFixed = env["DM_PRESENT_UPSCALE"] != nil && (env["DM_ENV_LAUN
 private let actionNames = ["A", "B", "X", "Y", "Left stick press", "Right stick press", "L", "R", "ZL", "ZR", "+ (Plus)", "− (Minus)", "D-pad left", "D-pad up", "D-pad right", "D-pad down",
                            "Left stick up", "Left stick left", "Left stick down", "Left stick right", "Shake"]
 private let keyDefaults = ["J", "K", "U", "I", "F", "G", "Q", "E", "Z", "C", "Return", "Tab", "←", "↑", "→", "↓", "W", "A", "S", "D", "Space"]
+private let keyDefaultCodes: [Int] = [38, 40, 32, 34, 3, 5, 12, 14, 6, 8, 36, 48, 123, 126, 124, 125, 13, 0, 1, 2, 49]   // front_mac.m g_key_default
+private let padDefaultInputs = [GCInputButtonB, GCInputButtonA, GCInputButtonY, GCInputButtonX, GCInputLeftThumbstickButton, GCInputRightThumbstickButton,   // front_mac.m pad_default
+                                GCInputLeftShoulder, GCInputRightShoulder, GCInputLeftTrigger, GCInputRightTrigger, GCInputButtonMenu, GCInputButtonOptions]
 private let padDefaults = ["Right button", "Bottom button", "Top button", "Left button", "Left stick press", "Right stick press", "Left shoulder", "Right shoulder",
                            "Left trigger", "Right trigger", "Menu", "Options"]
 // The pages, in tab order: a short name for the tab, a longer one over the page
-private let pages: [(tab: String, title: String, icon: String)] = [("Graphics", "Graphics", "display"), ("FPS", "Performance", "chart.bar.fill"), ("Capture", "Capture", "camera"),
-                                                                  ("Mods", "Mods", "puzzlepiece.extension"), ("Cheats", "Cheats", "wand.and.stars"), ("Controls", "Controls", "gamecontroller")]
+private let pages: [(tab: String, title: String, icon: String)] = [("General", "General", "gearshape"), ("Graphics", "Graphics", "display"), ("FPS", "Performance", "chart.bar.fill"),
+                                                                  ("Capture", "Capture", "camera"), ("Mods", "Mods", "puzzlepiece.extension"), ("Cheats", "Cheats", "wand.and.stars"),
+                                                                  ("Controls", "Controls", "gamecontroller")]
+private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods = 4, pCheats = 5, pControls = 6
 // What the controller and keyboard selection can be on (dm_qs_nav)
 enum Nav: Hashable {
-    case shot, record, fpsQuick, volume, tab(Int)
-    case crt, strength, scanlines, upscale, aa, aniso, resetGraphics
-    case fps, corner, frameTimes, frameTimesFolder, resetPerformance
-    case showFolder, changeFolder, defaultFolder
-    case mod(String), modsOpen, modsRefresh
-    case cheat(Int), cheatsRestore, cheatsOpen, cheatsRefresh
+    case shot, record, fpsQuick, volume, mute, tab(Int)
+    case pauseOpen, duckOpen, backup, backupShow, settingsShow, settingsOpen, defaultsSave, defaultsUse
+    case fullscreen, scale, crt, strength, scanlines, upscale, aa, aniso, resetGraphics
+    case fps, corner, fpsMs, frameTimes, frameTimesFolder, resetPerformance
+    case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
+    case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
+    case section(String), cheat(Int), cheatsAllOff, cheatsRestore, cheatsOpen, cheatsRefresh
     case key(Int), pad(Int), resetControls
     case restart, resume, quit
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .fps, .fpsQuick, .corner, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .fullscreen, .scale, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .fps, .fpsQuick, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
 }
 struct Cheat: Identifiable {
-    let id: Int, name: String, why: String, note: String, kind: Int32, on: Bool, flags: Int32
+    let id: Int, name: String, why: String, note: String, kind: Int32, on: Bool, flags: Int32, section: String
     var master: Bool { kind == 1 }
     var disabled: Bool { kind == 2 }
     var label: Bool { kind == 3 }
@@ -68,29 +79,124 @@ private func cheatText(_ p: UnsafePointer<CChar>?) -> String {
     return String(validatingCString: p) ?? String(cString: p, encoding: .isoLatin1) ?? ""
 }
 
+// A screenshot or recording on the Capture page
+struct CaptureFile: Hashable { let path: String, date: Date, video: Bool }
+// The save backup (General page): the Converter's save snapshots, made here while the game runs (app/Sources/NXForgeConverter/SaveSnapshots.swift, the same files and manifest)
+struct BackupFile: Codable, Equatable { var size: Int64; var sha256: String }
+struct BackupInventory: Codable, Equatable { var files: [String: BackupFile] = [:]; var directories: [String] = [] }
+struct BackupManifest: Codable { var schema = 1; var id: String; var titleID: String; var created: Date; var reason: String; var inventory: BackupInventory }
+enum SaveBackup {
+    struct Failure: Error { let text: String }
+    /// The committed save (hle_fs.c DM_SAVE; the game writes to <save>.work and commits by swapping it in) and the device save beside it
+    static var save: String? { env["DM_SAVE"].map { var p = $0; while p.count > 1 && p.hasSuffix("/") { p.removeLast() }; return p } }
+    static var folder: String? { save.map { ($0 as NSString).deletingLastPathComponent + "/save-snapshots" } }
+    static func sha256(_ path: String) throws -> String {
+        guard let h = FileHandle(forReadingAtPath: path) else { throw Failure(text: "cannot read \(path)") }
+        defer { try? h.close() }
+        var ctx = CC_SHA256_CTX(); CC_SHA256_Init(&ctx)
+        while let chunk = try h.read(upToCount: 1 << 20), !chunk.isEmpty { chunk.withUnsafeBytes { _ = CC_SHA256_Update(&ctx, $0.baseAddress, CC_LONG($0.count)) } }
+        var d = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH)); CC_SHA256_Final(&d, &ctx)
+        return d.map { String(format: "%02x", $0) }.joined()
+    }
+    static func inventory(_ parts: [(String, String)]) throws -> BackupInventory {
+        let fm = FileManager.default; var inv = BackupInventory()
+        for (name, root) in parts {
+            var dir: ObjCBool = false
+            guard fm.fileExists(atPath: root, isDirectory: &dir) else { continue }
+            guard dir.boolValue else { throw Failure(text: "\(root) is not a folder") }
+            inv.directories.append(name)
+            guard let walk = fm.enumerator(atPath: root) else { continue }
+            for case let rel as String in walk {
+                let p = "\(root)/\(rel)", a = try fm.attributesOfItem(atPath: p)
+                switch a[.type] as? FileAttributeType {
+                case .typeDirectory?: inv.directories.append("\(name)/\(rel)")
+                case .typeRegular?: inv.files["\(name)/\(rel)"] = BackupFile(size: (a[.size] as? NSNumber)?.int64Value ?? 0, sha256: try sha256(p))
+                default: throw Failure(text: "the save holds a link or a special file")
+                }
+            }
+        }
+        inv.directories.sort(); return inv
+    }
+    static let encoder: JSONEncoder = { let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]; e.dateEncodingStrategy = .iso8601; return e }()
+    static let decoder: JSONDecoder = { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }()
+    /// A checked copy of the save in save-snapshots/<id> (the Converter lists and restores it); the time it was made
+    static func make() throws -> Date {
+        guard let save = save, let folder = folder else { throw Failure(text: "this launch has no save folder (DM_SAVE)") }
+        let fm = FileManager.default, parts = [("save", save), ("save_device", save + "_device")]
+        let has = parts.contains { ((try? fm.contentsOfDirectory(atPath: $0.1)) ?? []).contains { $0 != ".DS_Store" } }
+        guard has else { throw Failure(text: "The game has not saved anything yet") }
+        let inv = try inventory(parts)
+        try fm.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let now = Date(), id = f.string(from: now) + " " + String(UUID().uuidString.prefix(4)).lowercased()
+        let stage = "\(folder)/.making-\(UUID().uuidString)"
+        defer { try? fm.removeItem(atPath: stage) }
+        for d in inv.directories { try fm.createDirectory(atPath: "\(stage)/data/\(d)", withIntermediateDirectories: true) }
+        let roots = Dictionary(uniqueKeysWithValues: parts)
+        for k in inv.files.keys.sorted() {
+            let top = String(k.split(separator: "/", maxSplits: 1)[0])
+            try fm.copyItem(atPath: (roots[top] ?? "") + k.dropFirst(top.count), toPath: "\(stage)/data/\(k)")
+        }
+        let copied = try inventory(inv.directories.filter { !$0.contains("/") }.map { ($0, "\(stage)/data/\($0)") })
+        guard copied == inv else { throw Failure(text: "The copy did not match the save; try again") }
+        guard try inventory(parts) == inv else { throw Failure(text: "The game saved while it was being copied; try again") }
+        let m = BackupManifest(id: id, titleID: String(cString: front_qs_title_id()).uppercased(), created: now, reason: "manual", inventory: inv)
+        try encoder.encode(m).write(to: URL(fileURLWithPath: stage + "/manifest.json"), options: .atomic)
+        try fm.moveItem(atPath: stage, toPath: "\(folder)/\(id)")
+        return now
+    }
+    /// The newest backup's time, nil when there is none
+    static func latest() -> Date? {
+        guard let folder = folder else { return nil }
+        let ids = ((try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []).filter { !$0.hasPrefix(".") }.sorted()
+        for id in ids.reversed() {
+            if let d = FileManager.default.contents(atPath: "\(folder)/\(id)/manifest.json"), let m = try? decoder.decode(BackupManifest.self, from: d) { return m.created }
+        }
+        return nil
+    }
+}
+
 final class QuickSettings: ObservableObject {
-    let game: String, modsDir: String, modsRun: Set<String>?, close: () -> Void, fpsChanged: () -> Void
+    let game: String, modsDir: String, modsRun: Set<String>?, modsRunOrder: [String]?, close: () -> Void, fpsChanged: () -> Void
     let canRestart = front_qs_can_restart() != 0
     @Published var filter = 0
     @Published var strength = 0.5
     @Published var scanline = 0
     @Published var fps = false
     @Published var corner = 0
+    @Published var fpsMs = false          // the counter shows milliseconds a frame too
     @Published var frameTimes = false   // record from the next launch
-    @Published var mods: [String] = []
+    @Published var mods: [String] = []    // in load order
     @Published var wanted: [String] = []
+    @Published var modClash: [String: String] = [:]   // an enabled mod sharing files with another: a line saying which wins
     @Published var cheats: [Cheat] = []
     @Published var cheatsBuild = ""
     @Published var cheatsVersion = ""
     @Published var cheatsSafe = false
+    @Published var cheatSearch = ""
+    @Published var folded: Set<String> = []   // the Cheats page's closed sections
     @Published var page: Int
     @Published var volume = 1.0
+    @Published var muted = false
     @Published var recording = false
     @Published var shotDir = ""
     @Published var upscale = false   // MetalFX where the picture is shown larger than the game renders it
     @Published var aa = 0            // the present's anti-aliasing (DM_PAA_*)
     @Published var aniso = 0      // the chosen anisotropic filtering floor (0: the game's own)
     @Published var anisoRun = 0   // the one this launch took
+    @Published var scale = 0      // picture size (DM_PSCALE_*)
+    @Published var fullscreen = false
+    @Published var pauseOpen = true   // pause the game while the sidebar is up
+    @Published var duckOpen = false   // quieter sound while it is up
+    @Published var paused = false
+    @Published var lastBackup: Date?
+    @Published var backupBusy = false
+    @Published var backupNote = ""
+    @Published var settingsPath = ""
+    @Published var defaultsExist = false
+    @Published var captures: [CaptureFile] = []
+    @Published var picked: String?    // the capture the Capture page's buttons act on
+    @Published var thumbs: [String: NSImage] = [:]
     @Published var recDir = ""
     @Published var customDir = false
     @Published var sel: Nav? { didSet { if sel != .quit { quitArmed = false }; if sel != .restart { restartArmed = false } } }
@@ -101,9 +207,15 @@ final class QuickSettings: ObservableObject {
     @Published var assigning = -1
     @Published var keyNames: [String] = keyDefaults
     @Published var padNames: [String] = padDefaults
-    init(game: String, modsDir: String, modsRun: Set<String>?, close: @escaping () -> Void, fpsChanged: @escaping () -> Void) {
-        self.game = game; self.modsDir = modsDir; self.modsRun = modsRun; self.close = close; self.fpsChanged = fpsChanged
+    @Published var keyClash: [Int: String] = [:]   // an action whose key another action has too: that action's name
+    @Published var padClash: [Int: String] = [:]
+    private var observers: [NSObjectProtocol] = []
+    init(game: String, modsDir: String, modsRunOrder: [String]?, close: @escaping () -> Void, fpsChanged: @escaping () -> Void) {
+        self.game = game; self.modsDir = modsDir; self.modsRunOrder = modsRunOrder; self.modsRun = modsRunOrder.map(Set.init); self.close = close; self.fpsChanged = fpsChanged
         page = min(max(UserDefaults.standard.integer(forKey: "DMQuickSettings.page.\(game)"), 0), pages.count - 1)
+        for n in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.fullscreen = front_qs_fullscreen() != 0 })
+        }
         refresh()
     }
     private func pfxKey(_ what: String) -> String { "DMPresentFilter.\(what).\(game)" }
@@ -113,22 +225,76 @@ final class QuickSettings: ObservableObject {
         filter = Int(mtl_present_filter(&k)); strength = Double(k); scanline = Int(mtl_present_scanline())
         let d = UserDefaults.standard
         if let e = env["DM_SHOW_FPS"] { fps = (Int(e) ?? 0) != 0 } else { fps = d.bool(forKey: optKey("fps")) }
-        corner = min(max(d.integer(forKey: optKey("fpsPos")), 0), 3)
+        corner = min(max(d.integer(forKey: optKey("fpsPos")), 0), 3); fpsMs = d.bool(forKey: optKey("fpsMs"))
         if let e = env["DM_FRAME_TIMES"] { frameTimes = (Int(e) ?? 0) != 0 } else { frameTimes = d.bool(forKey: optKey("frameTimes")) }
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
-        volume = Double(dm_audio_volume()); recording = front_qs_recording() != 0
+        volume = d.object(forKey: optKey("volume")) == nil ? 1 : d.double(forKey: optKey("volume")); muted = d.bool(forKey: optKey("muted"))
+        recording = front_qs_recording() != 0
+        pauseOpen = d.object(forKey: optKey("pauseOpen")) == nil ? true : d.bool(forKey: optKey("pauseOpen")); duckOpen = d.bool(forKey: optKey("duckOpen"))
+        paused = front_qs_paused() != 0; fullscreen = front_qs_fullscreen() != 0
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
-        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa())
+        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale())
         shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
+        settingsPath = String(cString: front_qs_settings_path()); defaultsExist = front_qs_defaults_exist() != 0
         let kn = d.dictionary(forKey: optKey("keyNames")) as? [String: String] ?? [:], pn = d.dictionary(forKey: optKey("padNames")) as? [String: String] ?? [:]
         keyNames = keyDefaults.indices.map { kn[String($0)] ?? keyDefaults[$0] }; padNames = padDefaults.indices.map { pn[String($0)] ?? padDefaults[$0] }
+        refreshClashes()
         let fm = FileManager.default
-        mods = ((try? fm.contentsOfDirectory(atPath: modsDir)) ?? []).filter { n in
+        let found = ((try? fm.contentsOfDirectory(atPath: modsDir)) ?? []).filter { n in
             var dir: ObjCBool = false
             return !n.hasPrefix(".") && fm.fileExists(atPath: (modsDir as NSString).appendingPathComponent(n), isDirectory: &dir) && dir.boolValue
         }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        var order: [String] = []   // front_mac.m mods_list: the saved order first, then the rest by name
+        for n in d.stringArray(forKey: optKey("modOrder")) ?? [] where found.contains(n) && !order.contains(n) { order.append(n) }
+        mods = order + found.filter { !order.contains($0) }
+        refreshModClash()
+        lastBackup = SaveBackup.latest()
         refreshCheats()
+        refreshCaptures()
+    }
+    // Keys or buttons two actions share (a map saved before swapping, or a hand edit of the settings file): each names the other
+    private func refreshClashes() {
+        let d = UserDefaults.standard
+        let k = d.dictionary(forKey: optKey("keys")) ?? [:], p = d.dictionary(forKey: optKey("pad")) ?? [:]
+        let codes = keyDefaultCodes.indices.map { (k[String($0)] as? NSNumber)?.intValue ?? keyDefaultCodes[$0] }
+        let inputs = padDefaultInputs.indices.map { p[String($0)] as? String ?? padDefaultInputs[$0] }
+        var kc: [Int: String] = [:], pc: [Int: String] = [:]
+        for i in codes.indices where codes[i] != 0xffff { if let j = codes.indices.first(where: { $0 != i && codes[$0] == codes[i] }) { kc[i] = actionNames[j] } }
+        for i in inputs.indices where !inputs[i].isEmpty { if let j = inputs.indices.first(where: { $0 != i && inputs[$0] == inputs[i] }) { pc[i] = actionNames[j] } }
+        keyClash = kc; padClash = pc
+    }
+    /// A mod's game files (front_mac.m mod_root): its romfs folder, an Atmosphere layout's, or the folder itself
+    private func modRoot(_ n: String) -> String {
+        let p = (modsDir as NSString).appendingPathComponent(n), tid = String(cString: front_qs_title_id())
+        for sub in ["romfs", "atmosphere/contents/\(tid)/romfs", "contents/\(tid)/romfs", "\(tid)/romfs"] {
+            var dir: ObjCBool = false; let rf = (p as NSString).appendingPathComponent(sub)
+            if FileManager.default.fileExists(atPath: rf, isDirectory: &dir), dir.boolValue { return rf }
+        }
+        return p
+    }
+    // Enabled mods that replace the same files: the first in the load order wins
+    func refreshModClash() {
+        let on = mods.filter { wanted.contains($0) }
+        guard on.count > 1 else { modClash = [:]; return }
+        var owner: [String: String] = [:], shared: [String: [String: Int]] = [:]
+        for n in on {
+            var seen = 0
+            guard let walk = FileManager.default.enumerator(atPath: modRoot(n)) else { continue }
+            for case let rel as String in walk {
+                seen += 1; if seen > 50_000 { break }
+                if rel.hasPrefix(".") || rel.contains("/.") { continue }
+                if let first = owner[rel] { shared[n, default: [:]][first, default: 0] += 1; shared[first, default: [:]][n, default: 0] += 1 } else { owner[rel] = n }
+            }
+        }
+        var out: [String: String] = [:]
+        for (n, others) in shared {
+            out[n] = others.sorted { $0.key < $1.key }.map { o, c in
+                let wins = (on.firstIndex(of: n) ?? 0) < (on.firstIndex(of: o) ?? 0)
+                return "\(c) file\(c == 1 ? "" : "s") also in \(o): \(wins ? "this one wins" : "\(o) wins")"
+            }.joined(separator: "\n")
+        }
+        modClash = out
     }
     // One row per cheat the Cheats page shows: not the off half of an on / off pair (its on half is the switch) and not a section marker
     func refreshCheats() {
@@ -139,7 +305,7 @@ final class QuickSettings: ObservableObject {
             var name = cheatText(dm_cheat_name_at(Int32(i)))
             if f & Int32(QS_CHEAT_PAIR_ON) != 0, let r = name.range(of: #"(\s*[-:_]\s*|\s+|\s*[(\[]\s*)on\s*[)\]]?\s*$"#, options: [.regularExpression, .caseInsensitive]), r.lowerBound > name.startIndex { name.removeSubrange(r) }
             return Cheat(id: i, name: name, why: cheatText(dm_cheat_why_at(Int32(i))).trimmingCharacters(in: .whitespaces), note: cheatText(dm_cheat_note_at(Int32(i))),
-                         kind: dm_cheat_kind_at(Int32(i)), on: dm_cheat_on_at(Int32(i)) != 0, flags: f)
+                         kind: dm_cheat_kind_at(Int32(i)), on: dm_cheat_on_at(Int32(i)) != 0, flags: f, section: cheatText(dm_cheat_section_at(Int32(i))))
         }
         cheatsBuild = cheatText(dm_cheats_build()).uppercased()
         cheatsVersion = cheatText(dm_cheats_version()); cheatsSafe = dm_cheats_safe() != 0
@@ -147,12 +313,22 @@ final class QuickSettings: ObservableObject {
     func setCheat(_ c: Cheat, _ on: Bool) { if c.on != on { dm_cheat_toggle(Int32(c.id)) }; refreshCheats() }
     func rescanCheats() { dm_cheats_reload(); refreshCheats() }
     func restoreCheats() { dm_cheats_safe_restore(); refreshCheats() }
+    func cheatsAllOff() { for c in cheats where c.kind == 0 && c.on { dm_cheat_toggle(Int32(c.id)) }; refreshCheats() }
     func openCheatsFolder() {
         let dir = cheatText(dm_cheats_dir_path()); if dir.isEmpty { return }
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(URL(fileURLWithPath: dir))
     }
     var cheatsOn: Int { cheats.filter { $0.on && $0.kind == 0 }.count }
+    /// The Cheats page as shown: the search's matches (no sections), or the sections in file order, each with its rows unless closed
+    var cheatGroups: [(section: String, rows: [Cheat])] {
+        let q = cheatSearch.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty { return [("", cheats.filter { !$0.label && ($0.name.localizedCaseInsensitiveContains(q) || $0.note.localizedCaseInsensitiveContains(q)) })] }
+        var g: [(section: String, rows: [Cheat])] = []
+        for c in cheats { if let i = g.indices.last, g[i].section == c.section { g[i].rows.append(c) } else { g.append((c.section, [c])) } }
+        return g
+    }
+    func toggleSection(_ s: String) { if folded.contains(s) { folded.remove(s) } else { folded.insert(s) } }
     var crtOn: Bool { filter == pfxCRT }
     func setFilter(_ m: Int, _ k: Double) {
         mtl_present_filter_set(Int32(m), Float(k)); filter = m; strength = k
@@ -174,16 +350,19 @@ final class QuickSettings: ObservableObject {
         mtl_present_scanline_set(Int32(r)); scanline = r
         if env["DM_PRESENT_SCANLINE"] == nil { UserDefaults.standard.set(r, forKey: pfxKey("scanline")) }
     }
-    var graphicsChanged: Bool { filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault }
+    func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); UserDefaults.standard.set(n, forKey: optKey("scale")) }
+    func toggleFullscreen() { front_qs_fullscreen_toggle() }
+    var graphicsChanged: Bool { filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
-        setUpscale(true)
+        setUpscale(true); setScale(0)
         if env["DM_PRESENT_AA"] == nil { setAA(0) }
         if env["DM_ANISO"] == nil { setAniso(anisoDefault) }
     }
     func setFps(_ on: Bool) { fps = on; if env["DM_SHOW_FPS"] == nil { UserDefaults.standard.set(on, forKey: optKey("fps")) }; fpsChanged() }
     func setCorner(_ c: Int) { corner = c; UserDefaults.standard.set(c, forKey: optKey("fpsPos")); fpsChanged() }
+    func setFpsMs(_ on: Bool) { fpsMs = on; UserDefaults.standard.set(on, forKey: optKey("fpsMs")); fpsChanged() }
     /// The file this launch records to (front_mac.m frame_times_begin), nil when it records nothing
     var frameTimesNow: String? { env["DM_NVN_TSV"].flatMap { $0.isEmpty ? nil : $0 } }
     /// Where Record frame times writes: the game folder's Frame times, else <DM_ROOT>/frame-times (as frame_times_begin)
@@ -198,17 +377,52 @@ final class QuickSettings: ObservableObject {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(URL(fileURLWithPath: dir))
     }
-    var performanceChanged: Bool { fps || corner != 0 || frameTimes }
+    var performanceChanged: Bool { fps || corner != 0 || frameTimes || fpsMs }
     func resetPerformance() {
         if env["DM_SHOW_FPS"] == nil && fps { setFps(false) }
         if corner != 0 { setCorner(0) }
+        if fpsMs { setFpsMs(false) }
         if env["DM_FRAME_TIMES"] == nil && frameTimes { setFrameTimes(false) }
     }
     func setMod(_ n: String, _ on: Bool) {
         wanted.removeAll { $0 == n }; if on { wanted.append(n) }
-        UserDefaults.standard.set(wanted, forKey: optKey("mods"))
+        UserDefaults.standard.set(wanted, forKey: optKey("mods")); refreshModClash()
     }
-    func setVolume(_ v: Double) { volume = v; dm_audio_volume_set(Float(v)); UserDefaults.standard.set(v, forKey: optKey("volume")) }
+    /// Move a mod up (d -1: it loads earlier and wins over the ones after it) or down the load order
+    func moveMod(_ n: String, _ d: Int) {
+        guard let i = mods.firstIndex(of: n) else { return }
+        let j = min(max(i + d, 0), mods.count - 1); if i == j { return }
+        mods.swapAt(i, j); UserDefaults.standard.set(mods, forKey: optKey("modOrder")); refreshModClash()
+    }
+    // Sound: the volume and mute are saved, and front_mac.m sets the game's gain from them (quieter while the sidebar is up when that is on)
+    func setVolume(_ v: Double) { volume = v; muted = false; UserDefaults.standard.set(v, forKey: optKey("volume")); UserDefaults.standard.set(false, forKey: optKey("muted")); front_qs_volume_apply() }
+    func setMuted(_ on: Bool) { muted = on; UserDefaults.standard.set(on, forKey: optKey("muted")); front_qs_volume_apply() }
+    func setDuck(_ on: Bool) { duckOpen = on; UserDefaults.standard.set(on, forKey: optKey("duckOpen")); front_qs_volume_apply() }
+    func setPauseOpen(_ on: Bool) { pauseOpen = on; front_qs_pause_set(on ? 1 : 0); paused = front_qs_paused() != 0 }
+    // Save backup: off the main thread (it reads and checks every file twice), a toast when it is done
+    func backup() {
+        guard !backupBusy else { return }
+        backupBusy = true; backupNote = "Backing up…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = Result<Date, Error>(catching: { try SaveBackup.make() })
+            DispatchQueue.main.async {
+                self.backupBusy = false
+                switch r {
+                case .success(let d): self.lastBackup = d; self.backupNote = ""; front_qs_toast_text("Save backed up")
+                case .failure(let e): self.backupNote = (e as? SaveBackup.Failure)?.text ?? e.localizedDescription
+                }
+            }
+        }
+    }
+    func showBackups() {
+        guard let f = SaveBackup.folder else { return }
+        try? FileManager.default.createDirectory(atPath: f, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(URL(fileURLWithPath: f))
+    }
+    func showSettingsFile() { if !settingsPath.isEmpty { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: settingsPath)]) } }
+    func openSettingsFile() { if !settingsPath.isEmpty { NSWorkspace.shared.open(URL(fileURLWithPath: settingsPath)) } }
+    func saveDefaults() { front_qs_defaults_save(); defaultsExist = front_qs_defaults_exist() != 0 }
+    func useDefaults() { front_qs_defaults_use(); refresh(); fpsChanged() }
     func showCaptureFolder() {
         try? FileManager.default.createDirectory(atPath: shotDir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(URL(fileURLWithPath: shotDir == recDir ? shotDir : (shotDir as NSString).deletingLastPathComponent))
@@ -219,6 +433,42 @@ final class QuickSettings: ObservableObject {
         if p.runModal() == .OK, let u = p.url { front_qs_capture_folder_set(u.path); refresh() }
     }
     func defaultCaptureFolder() { front_qs_capture_folder_set(nil); refresh() }
+    // Recent captures: the newest six screenshots and recordings in the capture folders, with thumbnails made off the main thread
+    func refreshCaptures() {
+        let fm = FileManager.default
+        var all: [CaptureFile] = []
+        for dir in Set([shotDir, recDir]) {
+            for n in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] {
+                let ext = (n as NSString).pathExtension.lowercased(); guard ["png", "jpg", "heic", "mov", "mp4"].contains(ext) else { continue }
+                let p = (dir as NSString).appendingPathComponent(n)
+                if let d = (try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date { all.append(CaptureFile(path: p, date: d, video: ext == "mov" || ext == "mp4")) }
+            }
+        }
+        captures = Array(all.sorted { $0.date > $1.date }.prefix(6))
+        if picked == nil || !captures.contains(where: { $0.path == picked }) { picked = captures.first?.path }
+        for c in captures where thumbs[c.path] == nil {
+            DispatchQueue.global(qos: .utility).async {
+                var img: NSImage?
+                if c.video {
+                    let g = AVAssetImageGenerator(asset: AVURLAsset(url: URL(fileURLWithPath: c.path))); g.appliesPreferredTrackTransform = true; g.maximumSize = CGSize(width: 320, height: 180)
+                    if let cg = try? g.copyCGImage(at: CMTime(seconds: 0.5, preferredTimescale: 600), actualTime: nil) { img = NSImage(cgImage: cg, size: .zero) }
+                } else if let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: c.path) as CFURL, nil),
+                          let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 320] as CFDictionary) {
+                    img = NSImage(cgImage: cg, size: .zero)
+                }
+                if let img { DispatchQueue.main.async { self.thumbs[c.path] = img } }
+            }
+        }
+    }
+    func copyCapture() {
+        guard let p = picked else { return }
+        let pb = NSPasteboard.general; pb.clearContents()
+        let url = URL(fileURLWithPath: p) as NSURL
+        if p.lowercased().hasSuffix(".mov") || p.lowercased().hasSuffix(".mp4") { pb.writeObjects([url]) } else if let img = NSImage(contentsOfFile: p) { pb.writeObjects([img, url]) }
+        front_qs_toast_text("Copied: paste it into a message or document")
+    }
+    func openCapture() { if let p = picked { NSWorkspace.shared.open(URL(fileURLWithPath: p)) } }
+    func revealCapture() { if let p = picked { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) } }
     func record() { front_qs_record(); recording = front_qs_recording() != 0 }
     func assign(_ i: Int, pad: Bool) { front_qs_assign(Int32(i), pad ? 1 : 0); assigning = Int(front_qs_assigning()) }
     func resetControls() {
@@ -231,11 +481,21 @@ final class QuickSettings: ObservableObject {
     }
     var modsOn: Int { mods.filter { wanted.contains($0) }.count }
 
-    // What applies at the next launch: one count for the footer, the same test as each row's tag
+    // What applies at the next launch: one count for the footer and the names under it, the same test as each row's tag
     var anisoPending: Bool { env["DM_ANISO"] == nil && aniso != anisoRun }
     var frameTimesPending: Bool { env["DM_FRAME_TIMES"] == nil && frameTimes != (frameTimesNow != nil) }
     func modPending(_ n: String) -> Bool { modsRun.map { $0.contains(n) != wanted.contains(n) } ?? false }
-    var restartCount: Int { (anisoPending ? 1 : 0) + (frameTimesPending ? 1 : 0) + mods.filter(modPending).count }
+    /// The enabled mods would load in another order than this launch's
+    var modOrderPending: Bool {
+        guard let run = modsRunOrder else { return false }
+        let now = mods.filter { wanted.contains($0) }
+        return Set(now) == Set(run) && now != run
+    }
+    var pendingNames: [String] {
+        (anisoPending ? ["Anisotropic filtering"] : []) + (frameTimesPending ? ["Record frame times"] : [])
+            + mods.filter(modPending).map { "Mod \($0) \(wanted.contains($0) ? "on" : "off")" } + (modOrderPending ? ["Mod load order"] : [])
+    }
+    var restartCount: Int { pendingNames.count }
     /// Restart game (front_mac.m front_qs_restart): the first press arms it, the second quits and the launcher starts the game again
     func restart() { if restartArmed { front_qs_restart() } else { restartArmed = true } }
     /// Quit game (after the NxNative Launcher's hold-Home exit): the first press arms it, the second ends the game as ⌘Q does
@@ -245,22 +505,33 @@ final class QuickSettings: ObservableObject {
     // setting's value, or move along a row of buttons (the quick bar, the tabs, the footer); L / R (Tab / Shift-Tab) turn the page
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
-        case 0: return [[.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.resetGraphics]]
-        case 1: return [[.fps]] + (fps ? [[.corner]] : []) + [[.frameTimes], [.frameTimesFolder], [.resetPerformance]]
-        case 2: return [[.showFolder, .changeFolder]] + (customDir ? [[.defaultFolder]] : [])
-        case 3: return mods.map { [.mod($0)] } + [[.modsOpen, .modsRefresh]]
-        case 4: return (cheatsSafe ? [[.cheatsRestore]] : []) + cheats.filter { !$0.label }.map { [.cheat($0.id)] } + [[.cheatsOpen, .cheatsRefresh]]
-        case 5: return actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
+        case pGeneral:
+            return [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+        case pGraphics: return [[.fullscreen], [.scale], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.resetGraphics]]
+        case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.frameTimes], [.frameTimesFolder], [.resetPerformance]]
+        case pCapture:
+            let shots = captures.map { Nav.capture($0.path) }
+            return (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
+                + [[.showFolder, .changeFolder]] + (customDir ? [[.defaultFolder]] : [])
+        case pMods: return mods.map { [.mod($0), .modUp($0), .modDown($0)] } + [[.modsOpen, .modsRefresh]]
+        case pCheats:
+            var r: [[Nav]] = cheatsSafe ? [[.cheatsRestore]] : []
+            for g in cheatGroups {
+                if !g.section.isEmpty && cheatSearch.isEmpty { r.append([.section(g.section)]); if folded.contains(g.section) { continue } }
+                r += g.rows.filter { !$0.label }.map { [.cheat($0.id)] }
+            }
+            return r + (cheatsOn > 0 ? [[.cheatsAllOff]] : []) + [[.cheatsOpen, .cheatsRefresh]]
+        case pControls: return actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
         default: return []
         }
     }
     var rows: [[Nav]] {
-        var r: [[Nav]] = [[.shot, .record, .fpsQuick], [.volume], pages.indices.map { .tab($0) }] + pageRows(page)
+        var r: [[Nav]] = [[.shot, .record, .fpsQuick], [.mute, .volume], pages.indices.map { .tab($0) }] + pageRows(page)
         if restartCount > 0 && canRestart { r.append([.restart]) }
         return r + [[.resume, .quit]]
     }
     var firstOnPage: Nav { pageRows(page).first?.first ?? .tab(page) }
-    func setPage(_ p: Int) { page = p; UserDefaults.standard.set(p, forKey: optKey("page")) }
+    func setPage(_ p: Int) { page = p; UserDefaults.standard.set(p, forKey: optKey("page")); if p == pCapture { refreshCaptures() } }
     func turnPage(_ d: Int) { setPage((page + d + pages.count) % pages.count); sel = firstOnPage }
     func nav(_ cmd: Int32) {
         if cmd == 6 { close(); return }
@@ -273,9 +544,10 @@ final class QuickSettings: ObservableObject {
             if to.contains(.tab(page)) { sel = .tab(page) } else { sel = to[min(ci, to.count - 1)] }
         case 3, 4:
             let d = cmd == 4 ? 1 : -1
-            if rs[ri].count > 1 {
+            if rs[ri].count > 1 && !(cur == .volume) {
                 let n = rs[ri][min(max(ci + d, 0), rs[ri].count - 1)]; sel = n
                 if case .tab(let i) = n { setPage(i) }
+                if case .capture(let p) = n { picked = p }
             } else { adjust(cur, d) }
         case 5: activate(cur)
         default: break
@@ -283,6 +555,10 @@ final class QuickSettings: ObservableObject {
     }
     private func adjust(_ n: Nav, _ d: Int) {
         switch n {
+        case .pauseOpen: setPauseOpen(d > 0)
+        case .duckOpen: setDuck(d > 0)
+        case .fullscreen: if (d > 0) != fullscreen { toggleFullscreen() }
+        case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
         case .crt: setCRT(d > 0)
         case .strength: if crtOn { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
         case .scanlines: if crtOn { setScanline(min(max(scanline + d, 0), 8)) }
@@ -291,6 +567,7 @@ final class QuickSettings: ObservableObject {
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[min(max(i + d, 0), anisoSteps.count - 1)]) }
         case .fps, .fpsQuick: setFps(d > 0)
         case .corner: if fps { setCorner((corner + d + 4) % 4) }
+        case .fpsMs: setFpsMs(d > 0)
         case .frameTimes: setFrameTimes(d > 0)
         case .volume: setVolume(min(max(volume + 0.05 * Double(d), 0), 1))
         case .mod(let name): setMod(name, d > 0)
@@ -303,7 +580,18 @@ final class QuickSettings: ObservableObject {
         case .shot: front_qs_screenshot()
         case .record: record()
         case .fps, .fpsQuick: setFps(!fps)
+        case .mute, .volume: setMuted(!muted)
         case .tab(let i): setPage(i); sel = firstOnPage
+        case .pauseOpen: setPauseOpen(!pauseOpen)
+        case .duckOpen: setDuck(!duckOpen)
+        case .backup: backup()
+        case .backupShow: showBackups()
+        case .settingsShow: showSettingsFile()
+        case .settingsOpen: openSettingsFile()
+        case .defaultsSave: saveDefaults()
+        case .defaultsUse: useDefaults()
+        case .fullscreen: toggleFullscreen()
+        case .scale: setScale((scale + 1) % sizeNames.count)
         case .crt: setCRT(!crtOn)
         case .scanlines: if crtOn { setScanline((scanline + 1) % 9) }
         case .upscale: setUpscale(!upscale)
@@ -311,16 +599,25 @@ final class QuickSettings: ObservableObject {
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[(i + 1) % anisoSteps.count]) }
         case .resetGraphics: resetGraphics()
         case .corner: if fps { setCorner((corner + 1) % 4) }
+        case .fpsMs: setFpsMs(!fpsMs)
         case .frameTimes: setFrameTimes(!frameTimes)
         case .frameTimesFolder: showFrameTimes()
         case .resetPerformance: resetPerformance()
+        case .capture(let p): picked = p; copyCapture()
+        case .captureCopy: copyCapture()
+        case .captureOpen: openCapture()
+        case .captureReveal: revealCapture()
         case .showFolder: showCaptureFolder()
         case .changeFolder: chooseCaptureFolder()
         case .defaultFolder: defaultCaptureFolder()
         case .mod(let name): setMod(name, !wanted.contains(name))
+        case .modUp(let name): moveMod(name, -1)
+        case .modDown(let name): moveMod(name, 1)
         case .modsOpen: openModsFolder()
         case .modsRefresh: refresh()
+        case .section(let s): toggleSection(s)
         case .cheat(let id): if let c = cheats.first(where: { $0.id == id }), c.kind == 0 { setCheat(c, !c.on) }
+        case .cheatsAllOff: cheatsAllOff()
         case .cheatsRestore: restoreCheats()
         case .cheatsOpen: openCheatsFolder()
         case .cheatsRefresh: rescanCheats()
@@ -330,7 +627,7 @@ final class QuickSettings: ObservableObject {
         case .restart: restart()
         case .resume: close()
         case .quit: quit()
-        case .strength, .volume: break
+        case .strength: break
         }
     }
     // The legend: what the buttons do on the selection now, as this controller's glyphs or as keys
@@ -341,11 +638,14 @@ final class QuickSettings: ObservableObject {
         let side = Cap(symbol: nil, text: pad ? "◀▶" : "←→")
         var r: [Hint] = []
         if let s = sel {
-            if s.isValue {
-                if s != .strength && s != .volume { r.append(Hint(caps: [ok], text: "Change")) }
+            if s == .volume { r.append(Hint(caps: [ok], text: muted ? "Unmute" : "Mute")); r.append(Hint(caps: [side], text: "Adjust")) }
+            else if case .capture = s { r.append(Hint(caps: [ok], text: "Copy")); r.append(Hint(caps: [side], text: "Move")) }
+            else if case .section(let n) = s { r.append(Hint(caps: [ok], text: folded.contains(n) ? "Open" : "Close")) }
+            else if s.isValue && (rows.first(where: { $0.contains(s) })?.count ?? 1) == 1 {
+                if s != .strength { r.append(Hint(caps: [ok], text: "Change")) }
                 r.append(Hint(caps: [side], text: "Adjust"))
             } else {
-                if case .tab = s { r.append(Hint(caps: [ok], text: "Open")) } else { r.append(Hint(caps: [ok], text: "Select")) }
+                if case .tab = s { r.append(Hint(caps: [ok], text: "Open")) } else if case .mod = s { r.append(Hint(caps: [ok], text: "Change")) } else { r.append(Hint(caps: [ok], text: "Select")) }
                 if (rows.first(where: { $0.contains(s) })?.count ?? 1) > 1 { r.append(Hint(caps: [side], text: "Move")) }
             }
         } else { r.append(Hint(caps: [Cap(symbol: nil, text: pad ? "▲▼" : "↑↓")], text: "Move")) }
@@ -467,17 +767,20 @@ struct QuickSettingsView: View {
                     .modifier(GlassButton(prominent: m.fps)).help(m.fps ? "Hide the frame-rate counter" : "Show the frame-rate counter").nav(m, .fpsQuick)
             }.controlSize(.large)
             HStack(spacing: 10) {
-                Image(systemName: m.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill").foregroundStyle(.secondary).frame(width: 22)
-                Slider(value: Binding(get: { m.volume }, set: { m.setVolume($0) }), in: 0...1)
-                Text("\(Int((m.volume * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
+                Button { m.setMuted(!m.muted) } label: {
+                    Image(systemName: m.muted || m.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill").foregroundStyle(m.muted ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary)).frame(width: 22, height: 22).contentShape(.rect)
+                }.buttonStyle(.plain).keyboardShortcut("m", modifiers: []).help(m.muted ? "Unmute (M)" : "Mute (M)").nav(m, .mute)
+                Slider(value: Binding(get: { m.muted ? 0 : m.volume }, set: { m.setVolume($0) }), in: 0...1)
+                Text(m.muted ? "Muted" : "\(Int((m.volume * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 48, alignment: .trailing)
             }.help("Volume").nav(m, .volume)
         }
     }
     private func tabBadge(_ i: Int) -> Color? {
         switch i {
-        case 2: return m.recording ? .red : nil
-        case 3: return m.modsOn > 0 ? .accentColor : nil
-        case 4: return m.cheatsOn > 0 ? .accentColor : nil
+        case pCapture: return m.recording ? .red : nil
+        case pMods: return m.modsOn > 0 ? .accentColor : nil
+        case pCheats: return m.cheatsOn > 0 ? .accentColor : nil
+        case pControls: return m.keyClash.isEmpty && m.padClash.isEmpty ? nil : .orange
         default: return nil
         }
     }
@@ -501,11 +804,12 @@ struct QuickSettingsView: View {
     }
     @ViewBuilder private var pageBody: some View {
         switch m.page {
-        case 0: graphics
-        case 1: performance
-        case 2: capture
-        case 3: mods
-        case 4: cheats
+        case pGeneral: general
+        case pGraphics: graphics
+        case pPerformance: performance
+        case pCapture: capture
+        case pMods: mods
+        case pCheats: cheats
         default: controls
         }
     }
@@ -515,9 +819,66 @@ struct QuickSettingsView: View {
         Button { withAnimation(motion) { action() } } label: { Label(title, systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
             .modifier(GlassButton(prominent: false)).controlSize(.large).disabled(!enabled).padding(.top, 4).nav(m, n)
     }
+    private var general: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            subhead("While this menu is open")
+            Row(title: "Pause the game", changed: !m.pauseOpen) {
+                Toggle("Pause the game", isOn: Binding(get: { m.pauseOpen }, set: { m.setPauseOpen($0) })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .pauseOpen)
+            note(m.paused ? "Paused now: the game, its sound and its clock stop until you resume" : m.pauseOpen ? "The game stops a moment after this menu opens"
+                 : "The game keeps running behind this menu, so graphics changes show at once")
+            Row(title: "Quieter sound", changed: m.duckOpen) {
+                Toggle("Quieter sound", isOn: Binding(get: { m.duckOpen }, set: { m.setDuck($0) })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .duckOpen)
+            note(m.pauseOpen ? "Used when the game is not paused: a quarter of the volume" : "A quarter of the volume while this menu is open")
+            subhead("Save").padding(.top, 6)
+            HStack(spacing: 10) {
+                Button { m.backup() } label: { Label(m.backupBusy ? "Backing up…" : "Back up save now", systemImage: "externaldrive.badge.timemachine").frame(maxWidth: .infinity) }
+                    .modifier(GlassButton(prominent: false)).disabled(m.backupBusy || SaveBackup.save == nil).nav(m, .backup)
+                Button { m.showBackups() } label: { Label("Show", systemImage: "folder").frame(maxWidth: 90) }.modifier(GlassButton(prominent: false)).disabled(SaveBackup.folder == nil).nav(m, .backupShow)
+            }.controlSize(.large)
+            Group {
+                if !m.backupNote.isEmpty { Label(m.backupNote, systemImage: m.backupBusy ? "clock" : "exclamationmark.triangle").foregroundStyle(m.backupBusy ? Color.secondary : Color.orange) }
+                else if let d = m.lastBackup { Text("Last backup \(d.formatted(.relative(presentation: .named))). The NXForge Converter's Builds page restores it (Save snapshots).").foregroundStyle(.secondary) }
+                else { Text("A checked copy of this game's save, kept beside it; the NXForge Converter's Builds page restores it.").foregroundStyle(.secondary) }
+            }.font(.caption).fixedSize(horizontal: false, vertical: true)
+            if !m.settingsPath.isEmpty {
+                subhead("Settings file").padding(.top, 6)
+                Text(tilde(m.settingsPath)).font(.callout).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                HStack(spacing: 10) {
+                    Button { m.showSettingsFile() } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .settingsShow)
+                    Button { m.openSettingsFile() } label: { Label("Open", systemImage: "doc.text").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .settingsOpen)
+                }.controlSize(.large)
+                Text("This game's settings as plain text, one per line, kept up to date as you change them. Edit it with the game closed, or reopen this menu after saving it.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            subhead("My defaults").padding(.top, 6)
+            HStack(spacing: 10) {
+                Button { m.saveDefaults() } label: { Label("Make these my defaults", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .defaultsSave)
+                if m.defaultsExist {
+                    Button { withAnimation(motion) { m.useDefaults() } } label: { Label("Use my defaults", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .defaultsUse)
+                }
+            }.controlSize(.large)
+            Text("Graphics, sound, the FPS counter, pausing and controls. A game opened for the first time starts with your defaults; mods, frame times and the capture folder stay per game.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
     private var graphics: some View {
         VStack(alignment: .leading, spacing: 12) {
-            subhead("Look")
+            if m.paused { Label("The game is paused: changes here show when it resumes. Turn off General › Pause the game to see them at once.", systemImage: "pause.circle")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            subhead("Display")
+            Row(title: "Full screen", changed: false) {
+                Toggle("Full screen", isOn: Binding(get: { m.fullscreen }, set: { _ in m.toggleFullscreen() })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .fullscreen)
+            Row(title: "Picture size", changed: m.scale != 0) {
+                Picker("Picture size", selection: Binding(get: { m.scale }, set: { m.setScale($0) })) {
+                    ForEach(sizeNames.indices, id: \.self) { Text(sizeNames[$0]).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(scaleFixed)
+            }.nav(m, .scale)
+            note(scaleFixed ? "Set by DM_PRESENT_SCALE for this run" : m.scale == 1 ? "Fills the window; the picture may look wider or taller than the game draws it"
+                 : m.scale == 2 ? "Each game pixel the same whole number of screen pixels: crisp pixel art, with a border" : "The game's shape, with black bars where the window is wider or taller")
+            subhead("Look").padding(.top, 6)
             Row(title: "CRT filter", changed: m.crtOn) {
                 Toggle("CRT filter", isOn: Binding(get: { m.crtOn }, set: { on in withAnimation(motion) { m.setCRT(on) } })).toggleStyle(.switch).labelsHidden().disabled(filterFixed)
             }.nav(m, .crt)
@@ -570,7 +931,12 @@ struct QuickSettingsView: View {
                         ForEach(0..<4) { Text(cornerNames[$0]).tag($0) }
                     }.pickerStyle(.menu).labelsHidden().fixedSize()
                 }.nav(m, .corner)
+                Row(title: "Show milliseconds", changed: m.fpsMs) {
+                    Toggle("Show milliseconds", isOn: Binding(get: { m.fpsMs }, set: { m.setFpsMs($0) })).toggleStyle(.switch).labelsHidden()
+                }.nav(m, .fpsMs)
             }
+            subhead("Frame times").padding(.top, 6)
+            FrameGraph(paused: m.paused)
             subhead("Advanced").padding(.top, 6)
             Row(title: "Record frame times", changed: m.frameTimes, nextLaunch: env["DM_FRAME_TIMES"] == nil ? m.frameTimesPending : nil) {
                 Toggle("Record frame times", isOn: Binding(get: { m.frameTimes }, set: { m.setFrameTimes($0) })).toggleStyle(.switch).labelsHidden()
@@ -588,7 +954,19 @@ struct QuickSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Screenshot and Record are at the top of this menu. The picture is saved as you see it, filter included.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            subhead("Saved to")
+            subhead("Recent")
+            if m.captures.isEmpty { Text("Nothing yet: your screenshots and recordings show here.").font(.callout).foregroundStyle(.tertiary) }
+            else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                    ForEach(m.captures, id: \.self) { c in captureTile(c) }
+                }
+                HStack(spacing: 8) {
+                    Button { m.copyCapture() } label: { Label("Copy", systemImage: "doc.on.doc").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .captureCopy)
+                    Button { m.openCapture() } label: { Label("Open", systemImage: "eye").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .captureOpen)
+                    Button { m.revealCapture() } label: { Label("Finder", systemImage: "folder").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .captureReveal)
+                }.controlSize(.large).disabled(m.picked == nil)
+            }
+            subhead("Saved to").padding(.top, 6)
             VStack(alignment: .leading, spacing: 3) {   // where they go: by default beside the game, in the game folder
                 if m.shotDir == m.recDir { Text(tilde(m.shotDir)).font(.callout).lineLimit(2).truncationMode(.middle) }
                 else { Text("Screenshots: \(tilde(m.shotDir))").font(.callout).lineLimit(1).truncationMode(.middle); Text("Recordings: \(tilde(m.recDir))").font(.callout).lineLimit(1).truncationMode(.middle) }
@@ -604,26 +982,56 @@ struct QuickSettingsView: View {
             Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
+    private func captureTile(_ c: CaptureFile) -> some View {
+        let on = m.picked == c.path
+        return Button { m.picked = c.path } label: {
+            ZStack(alignment: .bottomLeading) {
+                Group {
+                    if let img = m.thumbs[c.path] { Image(nsImage: img).resizable().aspectRatio(contentMode: .fill) }
+                    else { Rectangle().fill(.white.opacity(0.06)) }
+                }.frame(height: 72).frame(maxWidth: .infinity).clipped()
+                if c.video { Image(systemName: "video.fill").font(.caption2).padding(4).background(.black.opacity(0.5), in: .rect(cornerRadius: 4)).padding(4) }
+            }
+            .clipShape(.rect(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? Color.accentColor : .white.opacity(0.12), lineWidth: on ? 2 : 1))
+            .contentShape(.rect)
+        }.buttonStyle(.plain).help("\((c.path as NSString).lastPathComponent), \(c.date.formatted(date: .abbreviated, time: .shortened))")
+        .contextMenu {
+            Button("Copy") { m.picked = c.path; m.copyCapture() }
+            Button("Open") { m.picked = c.path; m.openCapture() }
+            Button("Show in Finder") { m.picked = c.path; m.revealCapture() }
+        }
+        .onTapGesture(count: 2) { m.picked = c.path; m.openCapture() }
+        .nav(m, .capture(c.path))
+    }
     private var mods: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Each folder in this game's mods folder replaces game files. Enabled mods load in name order; the first one with a file wins.")
+            Text("Each folder in this game's mods folder replaces game files. Enabled mods load from the top down; when two have the same file, the higher one wins. The arrows change the order.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if m.mods.isEmpty {
                 Text("No mods yet. Put each mod in a folder of its own in the mods folder (its files, a romfs folder holding them, or a mod as downloaded for Atmosphere), then Refresh.")
                     .font(.callout).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(m.mods, id: \.self) { n in
+            ForEach(Array(m.mods.enumerated()), id: \.element) { i, n in
                 let on = m.wanted.contains(n)
-                Toggle(isOn: Binding(get: { on }, set: { m.setMod(n, $0) })) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(n).font(.body.weight(.medium))
-                        if let run = m.modsRun {
-                            if m.modPending(n) { NextLaunchTag(pending: true) }
-                            else { Text(run.contains(n) ? "Loaded" : "Off").font(.caption).foregroundStyle(.secondary) }
-                        } else { Text("Not used: DM_ROMFS_OVERLAY is set").font(.caption).foregroundStyle(.secondary) }
-                    }
-                }.toggleStyle(.switch).nav(m, .mod(n))
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(spacing: 2) {
+                        Button { withAnimation(motion) { m.moveMod(n, -1) } } label: { Image(systemName: "chevron.up").frame(width: 18, height: 14) }.buttonStyle(.plain).disabled(i == 0).help("Load earlier: wins over the ones below").nav(m, .modUp(n))
+                        Button { withAnimation(motion) { m.moveMod(n, 1) } } label: { Image(systemName: "chevron.down").frame(width: 18, height: 14) }.buttonStyle(.plain).disabled(i == m.mods.count - 1).help("Load later").nav(m, .modDown(n))
+                    }.foregroundStyle(.secondary).padding(.top, 2)
+                    Toggle(isOn: Binding(get: { on }, set: { m.setMod(n, $0) })) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(n).font(.body.weight(.medium))
+                            if let run = m.modsRun {
+                                if m.modPending(n) { NextLaunchTag(pending: true) }
+                                else { Text(run.contains(n) ? "Loaded" : "Off").font(.caption).foregroundStyle(.secondary) }
+                            } else { Text("Not used: DM_ROMFS_OVERLAY is set").font(.caption).foregroundStyle(.secondary) }
+                            if on, let c = m.modClash[n] { Label(c, systemImage: "square.on.square").font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+                        }
+                    }.toggleStyle(.switch).nav(m, .mod(n))
+                }
             }
+            if m.modOrderPending { HStack(spacing: 6) { Text("Load order").font(.caption); NextLaunchTag(pending: true) } }
             HStack(spacing: 10) {
                 Button { m.openModsFolder() } label: { Label("Open mods folder", systemImage: "folder").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .modsOpen)
                 Button { withAnimation(motion) { m.refresh() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .modsRefresh)
@@ -632,7 +1040,11 @@ struct QuickSettingsView: View {
     }
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Choose a key or button, then press the new one; Esc cancels. Saved for this game.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Choose a key or button, then press the new one; Esc cancels. A key another button already has swaps with it. Saved for this game.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if !m.keyClash.isEmpty || !m.padClash.isEmpty {
+                Label("\(m.keyClash.count + m.padClash.count) buttons share a key or button with another (marked below). Choose a new one, or Reset controls.", systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             subhead("Keyboard").padding(.top, 4)
             ForEach(actionNames.indices, id: \.self) { i in Row(title: actionNames[i]) { assignButton(i, pad: false) }.nav(m, .key(i)) }
             subhead("Controller").padding(.top, 6)
@@ -643,10 +1055,14 @@ struct QuickSettingsView: View {
         }
     }
     private func assignButton(_ i: Int, pad: Bool) -> some View {
-        let waiting = m.assigning == i * 2 + (pad ? 1 : 0)
-        return Button { m.assign(i, pad: pad) } label: {
-            Text(waiting ? (pad ? "Press a button…" : "Press a key…") : (pad ? m.padNames[i] : m.keyNames[i])).lineLimit(1).frame(minWidth: 130)
-        }.modifier(GlassButton(prominent: waiting))
+        let waiting = m.assigning == i * 2 + (pad ? 1 : 0), name = pad ? m.padNames[i] : m.keyNames[i]
+        let clash = pad ? m.padClash[i] : m.keyClash[i], unset = name == "Not set"
+        return VStack(alignment: .trailing, spacing: 2) {
+            Button { m.assign(i, pad: pad) } label: {
+                Text(waiting ? (pad ? "Press a button…" : "Press a key…") : name).lineLimit(1).frame(minWidth: 130)
+            }.modifier(GlassButton(prominent: waiting)).tint(clash != nil || unset ? .orange : nil)
+            if let c = clash { Text("Also on \(c)").font(.caption2).foregroundStyle(.orange) }
+        }
     }
     private var cheats: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -668,26 +1084,48 @@ struct QuickSettingsView: View {
                 Text("No cheats for this build. Put Atmosphère's \(m.cheatsBuild).txt in the cheats folder, then Refresh.")
                     .font(.callout).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(m.cheats) { c in
-                if c.label {
-                    Text(c.name).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Toggle(isOn: Binding(get: { c.on || c.master }, set: { m.setCheat(c, $0) })) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(c.name).font(.body.weight(.medium))
-                            if !c.note.isEmpty { Text(c.note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-                            if c.master { Text("Master code: always on").font(.caption).foregroundStyle(.secondary) }
-                            else if c.disabled { Label(c.why.isEmpty ? "Off: this host cannot run it" : c.why, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
-                            else if c.once { Text("Applied once, then it turns itself off").font(.caption).foregroundStyle(.secondary) }
-                            else { Text(c.on ? "Active" : "Off").font(.caption).foregroundStyle(.secondary) }
-                        }
-                    }.toggleStyle(.switch).disabled(c.kind != 0).nav(m, .cheat(c.id))
-                }
+            if m.cheats.filter({ !$0.label }).count > 8 {
+                TextField("Search cheats", text: $m.cheatSearch).textFieldStyle(.roundedBorder)
+            }
+            ForEach(Array(m.cheatGroups.enumerated()), id: \.offset) { _, g in
+                if !g.section.isEmpty && m.cheatSearch.isEmpty {
+                    let open = !m.folded.contains(g.section), live = g.rows.filter { $0.kind == 0 }, nOn = live.filter(\.on).count
+                    Button { withAnimation(motion) { m.toggleSection(g.section) } } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).rotationEffect(.degrees(open ? 90 : 0))
+                            Text(g.section).font(.callout.weight(.semibold))
+                            Spacer(minLength: 4)
+                            Text(nOn > 0 ? "\(nOn) of \(live.count) on" : "\(live.count)").font(.caption).foregroundStyle(nOn > 0 ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                        }.contentShape(.rect)
+                    }.buttonStyle(.plain).padding(.top, 4).nav(m, .section(g.section))
+                    if open { ForEach(g.rows) { c in cheatRow(c) } }
+                } else { ForEach(g.rows) { c in cheatRow(c) } }
+            }
+            if !m.cheatSearch.isEmpty && m.cheatGroups.first?.rows.isEmpty != false { Text("No cheat matches “\(m.cheatSearch)”.").font(.callout).foregroundStyle(.tertiary) }
+            if m.cheatsOn > 0 {
+                Button { withAnimation(motion) { m.cheatsAllOff() } } label: { Label("Turn all off (\(m.cheatsOn) on)", systemImage: "power").frame(maxWidth: .infinity) }
+                    .modifier(GlassButton(prominent: false)).controlSize(.large).nav(m, .cheatsAllOff)
             }
             HStack(spacing: 10) {
                 Button { m.openCheatsFolder() } label: { Label("Open cheats folder", systemImage: "folder").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .cheatsOpen)
                 Button { withAnimation(motion) { m.rescanCheats() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .cheatsRefresh)
             }.controlSize(.large)
+        }
+    }
+    @ViewBuilder private func cheatRow(_ c: Cheat) -> some View {
+        if c.label {
+            Text(c.name).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            Toggle(isOn: Binding(get: { c.on || c.master }, set: { m.setCheat(c, $0) })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(c.name).font(.body.weight(.medium))
+                    if !c.note.isEmpty { Text(c.note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                    if c.master { Text("Master code: always on").font(.caption).foregroundStyle(.secondary) }
+                    else if c.disabled { Label(c.why.isEmpty ? "Off: this host cannot run it" : c.why, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+                    else if c.once { Text("Applied once, then it turns itself off").font(.caption).foregroundStyle(.secondary) }
+                    else { Text(c.on ? "Active" : "Off").font(.caption).foregroundStyle(.secondary) }
+                }
+            }.toggleStyle(.switch).disabled(c.kind != 0).nav(m, .cheat(c.id))
         }
     }
     private var footer: some View {
@@ -702,7 +1140,8 @@ struct QuickSettingsView: View {
                             .modifier(GlassButton(prominent: m.restartArmed)).tint(.orange).help("Quits and starts the game again. Asks twice.").nav(m, .restart)
                     }
                 }
-                if !m.canRestart { Text("Quit and open the game again to apply.").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
+                Text(m.pendingNames.joined(separator: ", ") + (m.canRestart ? "" : ". Quit and open the game again to apply."))
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 10) {
                 Button(action: m.close) { Text("Resume game").font(.headline).frame(maxWidth: .infinity) }
@@ -732,6 +1171,46 @@ struct QuickSettingsView: View {
             Text(c.text).font(.caption.weight(.medium)).padding(.horizontal, 6).padding(.vertical, 2)
                 .background(.white.opacity(0.1), in: .rect(cornerRadius: 5)).overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.18)))
         }
+    }
+}
+// The Performance page's frame-time graph: the time between the last presents (front.h mtl_present_times, about four seconds at 60 FPS), redrawn four times a second while the
+// page shows, with lines at 60 and 30 FPS; under it the average, the 1% low (the slowest 1% of frames as a rate) and the longest frame
+struct FrameGraph: View {
+    let paused: Bool
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            let (v, age) = FrameGraph.sample()
+            VStack(alignment: .leading, spacing: 6) {
+                Canvas { ctx, size in
+                    let top = 50.0   // ms at the top of the graph
+                    func y(_ ms: Double) -> CGFloat { size.height * (1 - CGFloat(min(ms, top) / top)) }
+                    for (ms, label) in [(1000.0 / 60, "60"), (1000.0 / 30, "30")] {
+                        var p = Path(); p.move(to: CGPoint(x: 0, y: y(ms))); p.addLine(to: CGPoint(x: size.width, y: y(ms)))
+                        ctx.stroke(p, with: .color(.white.opacity(0.18)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        ctx.draw(Text(label).font(.system(size: 9)).foregroundStyle(.secondary), at: CGPoint(x: size.width - 2, y: y(ms) - 6), anchor: .trailing)
+                    }
+                    guard v.count > 1 else { return }
+                    let w = size.width / CGFloat(max(v.count, 120))
+                    for (i, ms) in v.enumerated() {
+                        let r = CGRect(x: CGFloat(i) * w, y: y(ms), width: max(w - 0.5, 1), height: size.height - y(ms))
+                        ctx.fill(Path(r), with: .color(ms > 1000.0 / 30 + 2 ? .orange : ms > 1000.0 / 60 + 2 ? .yellow.opacity(0.85) : .green.opacity(0.85)))
+                    }
+                }.frame(height: 70).background(.white.opacity(0.05), in: .rect(cornerRadius: 8))
+                Text(FrameGraph.summary(v, age: age, paused: paused)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+        }
+    }
+    static func sample() -> ([Double], Double) {
+        var buf = [Double](repeating: 0, count: 240), age = -1.0
+        let n = Int(mtl_present_times(&buf, 240, &age))
+        return (Array(buf.prefix(n)).filter { $0 > 0 && $0 < 1000 }, age)
+    }
+    static func summary(_ v: [Double], age: Double, paused: Bool) -> String {
+        if paused { return "Paused: the graph starts again when the game resumes" }
+        if v.count < 10 || age > 1000 { return "No frames in the last second" }
+        let avg = v.reduce(0, +) / Double(v.count), sorted = v.sorted()
+        let p99 = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.99))]
+        return String(format: "%.0f FPS average · 1%% low %.0f FPS · longest %.1f ms", 1000 / avg, 1000 / p99, sorted.last ?? 0)
     }
 }
 private func tilde(_ p: String) -> String { (p as NSString).abbreviatingWithTildeInPath }
@@ -781,8 +1260,8 @@ private var shared: QuickSettings?
 @_cdecl("dm_qs_make")
 public func dm_qs_make(_ game: UnsafePointer<CChar>, _ modsDir: UnsafePointer<CChar>, _ modsRun: UnsafePointer<CChar>?,
                        _ close: @escaping @convention(c) () -> Void, _ fps: @escaping @convention(c) () -> Void) -> UnsafeMutableRawPointer {
-    let run = modsRun.map { Set(String(cString: $0).split(separator: "\n").map(String.init)) }
-    let m = QuickSettings(game: String(cString: game), modsDir: String(cString: modsDir), modsRun: run, close: { close() }, fpsChanged: { fps() })
+    let run = modsRun.map { String(cString: $0).split(separator: "\n").map(String.init) }   // in load order
+    let m = QuickSettings(game: String(cString: game), modsDir: String(cString: modsDir), modsRunOrder: run, close: { close() }, fpsChanged: { fps() })
     shared = m
     let v = NSHostingView(rootView: QuickSettingsView(m: m))
     v.sizingOptions = []   // front_mac.m sizes it: the right of the game window, full height
@@ -790,6 +1269,8 @@ public func dm_qs_make(_ game: UnsafePointer<CChar>, _ modsDir: UnsafePointer<CC
 }
 @_cdecl("dm_qs_nav")
 public func dm_qs_nav(_ cmd: Int32) { shared?.nav(cmd) }
+@_cdecl("dm_qs_captures_changed")
+public func dm_qs_captures_changed() { shared?.refreshCaptures() }
 @_cdecl("dm_qs_refresh")
 public func dm_qs_refresh() { shared?.refresh() }
 @_cdecl("dm_qs_opened")
