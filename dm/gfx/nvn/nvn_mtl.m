@@ -2321,6 +2321,7 @@ static int alias_has(id o) { return g_alias_set && o && CFSetContainsValue(g_ali
 static void treg_drop_pool_views(const void *pool);
 static void cpu_tex_drop_pool(const void *pool);
 static void gws_drop_pool(const pool_t *p);
+static nvn_hmap g_pool_heap = {.klen = sizeof(void *)};   // pool object → NvPoolHeap (retained), under g_smu; dropped with the pool (mtl_alias_drop_pool)
 void mtl_alias_drop_pool(const void *pool) {
     if (!pool) return;
     pthread_mutex_lock(&g_smu);
@@ -4005,7 +4006,6 @@ enum { POOL_HEAP_GRAIN = 64 << 10 };
 @implementation NvPoolHeap
 - (void)dealloc { free(used); }
 @end
-static nvn_hmap g_pool_heap = {.klen = sizeof(void *)};   // pool object → NvPoolHeap (retained), under g_smu; dropped with the pool (mtl_alias_drop_pool)
 static id<MTLTexture> pool_heap_texture(const tex_t *t, MTLTextureDescriptor *d) {
     static int on = -1; if (on < 0) { const char *e = getenv("DM_NVN_POOL_HEAP"); on = !e || atoi(e); }
     const pool_t *p = t->pool;
