@@ -30,7 +30,8 @@ SCOPE = {
 TOOLS = [
     ('nxforge_status', 'Engine version, running builds and games, free disk space, recorded builds and running background jobs.', obj(), True),
     ('nxforge_builds', 'The game apps the converter built: path, whether it still exists, game folder, engine version, backups.', obj(), True),
-    ('nxforge_doctor', 'Check the tools a build needs (engine checkout, Python modules, git, dotnet, xcrun).', obj(), True),
+    ('nxforge_doctor', 'Check the tools a build needs (engine checkout, Python modules, git, dotnet, xcrun), then the optional ones (glslang, nsz, zbic): with game_dir, '
+     'those the game needs are marked needed and are not optional.', obj({'game_dir': {'type': 'string', 'description': 'a game folder (optional)'}}), True),
     ('nxforge_disk_report', 'What NXForge uses on disk (game folders, <id>_build folders, caches, checkouts) and what each cleanup category would free. Deletes nothing. '
      'Categories: ' + '; '.join(f'{k}{" [safe]" if s else ""}: {d}' for k, (d, s) in nx.CATEGORIES.items()), obj(dict(SCOPE, all={'type': 'boolean', 'description': 'every category, not only the safe ones'})), True),
     ('nxforge_clean', 'Delete what the given cleanup categories hold (default: the safe set, the one an hourly routine uses). dry_run defaults to true: pass dry_run false to delete. '
@@ -62,7 +63,7 @@ def cats_of(a, default_all=False):
 def call(name, a):
     if name == 'nxforge_status': return nx.status()
     if name == 'nxforge_builds': return nx.builds_list()
-    if name == 'nxforge_doctor': return nx.doctor()
+    if name == 'nxforge_doctor': return nx.doctor(a.get('game_dir'))
     if name == 'nxforge_disk_report':
         ctx = scope_ctx(a)
         res = {'categories': nx.find(ctx, cats_of(a, a.get('all', False))), 'overview': nx.overview(ctx), 'free_bytes': nx.free_bytes()}

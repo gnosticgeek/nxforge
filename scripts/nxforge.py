@@ -10,7 +10,7 @@
 #   build <game folder>    build or rebuild a game's Mac app as the converter does (--plan: the dry run that lists which stages are reused or redone; --background)
 #   jobs / job <id> / stop <id>   background builds started here
 #   update [--apply]       engine updates: commits waiting on its update branch; --apply fast-forwards
-#   doctor                 the tools a build needs (git, python modules, dotnet, xcrun)
+#   doctor [game folder]   the tools a build needs (git, python modules, dotnet, xcrun), then glslang / nsz / zbic: optional unless the game folder needs one; exit 1 when one is missing
 # Safety: nothing here touches the NSPs, prod.keys, installed or recorded apps, saves, profiles or the engine's own checkout; build-folder and Metal-cache cleanups wait while a
 # build runs; worktrees are only reported unless named one by one, and one with uncommitted or unpushed work, or the engine's, is never removed.
 # Exit code 0 on success (also when there is nothing to delete), 1 on an error, 2 when a cleanup or build was refused because something is running.
@@ -740,7 +740,26 @@ def status():
             'builds': builds_list(), 'jobs': [j for j in list_jobs() if j['running']], 'game_dirs': [str(d) for d in game_dirs(s)]}
 
 
-def doctor():
+def game_needs(game_dir, repo):
+    """{optional tool: why this game needs it}, as the converter decides it (app GameNeeds.swift): nsz for .nsz / .xcz files, zbic for code built with system 22 or later
+    (every Switch 2 game, and a Switch game whose profile names SDK 22 or later), glslang for an OpenGL game"""
+    d, out = Path(game_dir).expanduser(), {}
+    try: names = sorted(n.name for n in d.iterdir())
+    except OSError: return out
+    if any(n.lower().endswith(('.nsz', '.xcz')) for n in names): out['nsz'] = 'this folder has compressed .nsz or .xcz files'
+    tid = next((n[:16].upper() for n in names if n.endswith('_build') and len(n) == 22), None)
+    if not tid and (m := next((m for n in names if (m := re.search(r'\[([0-9A-Fa-f]{16})\]', n))), None)): tid = m.group(1)[:13].upper() + '000'
+    prof = Path(repo) / 'dm/games' / tid if repo and tid else None
+    try: tsv = (prof / 'game.tsv').read_text(errors='replace') if prof else ''
+    except OSError: tsv = ''
+    if tid and tid.startswith('04'): out['zbic'] = 'Switch 2 games are built with system 22 or later, whose code is ZBIC-compressed'
+    elif (m := re.search(r'SDK (\d+)\.', tsv)) and int(m.group(1)) >= 22: out['zbic'] = f'its profile says SDK {m.group(1)}: code built with system 22 or later is ZBIC-compressed'
+    if prof and ((prof / 'gl_capture.tsv').is_file() or 'OpenGL' in tsv): out['glslang'] = 'it is an OpenGL game: glslang compiles its GLSL shaders'
+    return out
+
+
+def doctor(game_dir=None):
+    """The tools a build needs, then the optional ones (glslang, nsz, zbic) the converter's Toolchain page lists: optional unless game_dir is a game that needs one"""
     s = settings()
     repo = find_repo(s)
     env = tool_env(repo)
@@ -749,7 +768,18 @@ def doctor():
     for t in ('git', 'dotnet', 'xcrun', 'zstd'):
         w = shutil.which(t, path=env['PATH'])
         checks.append((t, bool(w), w or 'not found'))
-    return [{'name': n, 'ok': ok, 'detail': d} for n, ok, d in checks]
+    out = [{'name': n, 'ok': ok, 'detail': d} for n, ok, d in checks]
+    needs = game_needs(game_dir, repo) if game_dir else {}
+    def has(mod):
+        try: return bool(py) and subprocess.run([py, '-I', '-c', f'import {mod}'], capture_output=True, timeout=30, env=env).returncode == 0
+        except (OSError, subprocess.TimeoutExpired): return False
+    gl = shutil.which('glslangValidator', path=env['PATH'])
+    nsz, zbic = has('nsz'), has('zbic')
+    for name, ok, detail, fix in (('glslang', bool(gl), gl or 'not found', 'brew install glslang'),
+                                  ('nsz', nsz, 'installed' if nsz else 'not installed in that Python', f'{py} -m pip install nsz'),
+                                  ('zbic', zbic, 'installed' if zbic else 'not installed in that Python', f'{py} -m pip install zbic==1.0.1.post1')):
+        out.append({'name': name, 'ok': ok, 'detail': detail, 'optional': name not in needs, **({'needed': needs[name]} if name in needs else {}), **({} if ok else {'fix': fix})})
+    return out
 
 
 # ---------- command line ----------
@@ -787,7 +817,9 @@ def human(cmd, res):
         print(f'{res["repo"]}: {res["behind"]} commits on {res["target"]}{" (applied)" if res["applied"] else ""}')
         for c in res['commits']: print(f'  {c}')
     elif cmd == 'doctor':
-        for c in res: print(f'{"ok " if c["ok"] else "NO "} {c["name"]:<8} {c["detail"]}')
+        for c in res:
+            mark = 'ok ' if c['ok'] else '-- ' if c.get('optional') else 'NO '
+            print(f'{mark} {c["name"]:<8} {c["detail"]}' + (f'  (needed: {c["needed"]})' if c.get('needed') else '  (optional)' if c.get('optional') and not c['ok'] else '') + (f'\n             fix: {c["fix"]}' if c.get('fix') and not c.get('optional') else ''))
     else:
         print(json.dumps(res, indent=2, default=str))
 
@@ -798,7 +830,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('status', help='engine, running builds and games, free space, recorded builds')
     sub.add_parser('builds', help='recorded builds and their backups')
-    sub.add_parser('doctor', help='check the tools a build needs')
+    sub.add_parser('doctor', help='check the tools a build needs').add_argument('game_dir', nargs='?', help="a game folder: the optional tools it needs (glslang, nsz, zbic) count as required")
     for name in ('disk', 'clean'):
         p = sub.add_parser(name, help='report disk use by category' if name == 'disk' else 'delete what cleanup categories hold')
         p.add_argument('--safe', action='store_true', help=f'the safe set: {", ".join(SAFE)}' + (' (the default)' if name == 'disk' else ''))
@@ -832,7 +864,7 @@ def main(argv=None):
     try:
         if a.cmd == 'status': res = status()
         elif a.cmd == 'builds': res = builds_list()
-        elif a.cmd == 'doctor': res = doctor()
+        elif a.cmd == 'doctor': res = doctor(a.game_dir)
         elif a.cmd in ('disk', 'clean'):
             if a.only:
                 cats = [c.strip() for c in a.only.split(',') if c.strip()]
@@ -871,6 +903,7 @@ def main(argv=None):
     else: human(a.cmd, res)
     if a.cmd == 'clean' and isinstance(res, dict) and res.get('errors'): return 1
     if a.cmd == 'build' and isinstance(res, dict) and not res.get('ok', True): return 1
+    if a.cmd == 'doctor' and isinstance(res, list) and any(isinstance(c, dict) and not c['ok'] and not c.get('optional') for c in res): return 1
     return 0
 
 

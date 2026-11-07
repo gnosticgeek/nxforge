@@ -154,6 +154,42 @@ class McpTest(Fake):
         self.assertTrue(r['result']['isError'])
 
 
+class Doctor(unittest.TestCase):   # the optional tools a game needs, decided as the converter's GameNeeds.swift does
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory(); self.addCleanup(self.td.cleanup); self.root = Path(self.td.name)
+        self.repo = self.root / 'repo'
+
+    def game(self, name, files, profile=None):
+        d = self.root / name; d.mkdir()
+        for f in files: (d / f).mkdir() if f.endswith('_build') else (d / f).write_bytes(b'')
+        return d
+
+    def profile(self, tid, tsv='', gl=False):
+        p = self.repo / 'dm/games' / tid; p.mkdir(parents=True); (p / 'game.tsv').write_text(tsv)
+        if gl: (p / 'gl_capture.tsv').write_text('')
+
+    def test_needs(self):
+        self.profile('0100A00000001000', '# built with SDK 22.2.8 (nnSdk)\n'); self.profile('0100B00000002000', 'renderer\tOpenGL\n', gl=True)
+        self.assertEqual(nx.game_needs(self.game('oot', ['0400486024DEC000_build', 'x.nup']), self.repo), {'zbic': mock.ANY})
+        self.assertEqual(set(nx.game_needs(self.game('new', ['Game [0100A00000001800][v65536].nsz']), self.repo)), {'nsz', 'zbic'})   # an update's ID names its base game
+        self.assertEqual(set(nx.game_needs(self.game('gl', ['Game [0100B00000002000].nsp']), self.repo)), {'glslang'})
+        self.assertEqual(nx.game_needs(self.game('plain', ['Game [0100C00000003000].nsp']), self.repo), {})
+        self.assertEqual(nx.game_needs(self.root / 'nowhere', self.repo), {})
+
+    def test_optional_tools_and_exit_code(self):
+        with mock.patch.object(nx, 'settings', dict), mock.patch.object(nx, 'find_repo', lambda s: str(self.repo)), \
+             mock.patch.object(nx, 'find_python', lambda s, r: ('/py', [])), mock.patch.object(nx.shutil, 'which', lambda t, path=None: None if t == 'glslangValidator' else f'/bin/{t}'), \
+             mock.patch.object(nx.subprocess, 'run', lambda *a, **k: mock.Mock(returncode=1)), mock.patch('sys.stdout', io.StringIO()) as out:
+            res = nx.doctor()
+            self.assertEqual([(c['name'], c['optional']) for c in res if 'optional' in c], [('glslang', True), ('nsz', True), ('zbic', True)])
+            self.assertEqual(nx.main(['doctor']), 0)
+            oot = self.game('oot', ['0400486024DEC000_build'])
+            zbic = next(c for c in nx.doctor(str(oot)) if c['name'] == 'zbic')
+            self.assertFalse(zbic['optional']); self.assertIn('Switch 2', zbic['needed']); self.assertEqual(zbic['fix'], '/py -m pip install zbic==1.0.1.post1')
+            self.assertEqual(nx.main(['doctor', str(oot)]), 1)
+        self.assertIn('fix: /py -m pip install zbic', out.getvalue()); self.assertIn('--  glslang', out.getvalue())
+
+
 class StatusLines(unittest.TestCase):   # status printed the interpreter's path (cut at 100 characters, before the script's name) and the converter's caffeinate wrapper as a second build
     def test_a_build_reads_from_its_script_once(self):
         py = '/opt/homebrew/Cellar/python@3.15/3.15.0/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python'

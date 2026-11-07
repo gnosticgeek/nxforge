@@ -14,7 +14,7 @@ Every command takes `--json` (before the command) for one JSON document on stand
 |---|---|
 | `status` | Engine version and branch, running builds and games, free space, recorded builds, running background jobs |
 | `builds` | Recorded builds: app, whether it still exists, game folder, engine, backups |
-| `doctor` | The tools a build needs: engine checkout, Python with the script's modules, git, dotnet, xcrun |
+| `doctor [game folder]` | The tools a build needs: engine checkout, Python with the script's modules, git, dotnet, xcrun. Then the optional ones the Toolchain page lists (glslang, nsz, zbic), with the command that installs each; given a game folder, those the game needs (as the converter decides) count as required. Exits 1 when a required tool is missing |
 | `disk [--all] [--only …] [--game …]` | What NXForge uses on disk (game folders, build folders and their entries, caches, checkouts) and what each cleanup category would free; deletes nothing |
 | `clean --safe` / `clean --only <categories>` `[--dry-run] [--game …]` | Deletes what the categories hold; `--dry-run` lists it instead |
 | `clean --worktree <path>` | Removes one engine worktree, only when it is clean, pushed and not the engine |
