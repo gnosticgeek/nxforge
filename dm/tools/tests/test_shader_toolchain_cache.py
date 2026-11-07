@@ -52,7 +52,7 @@ class ShaderCache(unittest.TestCase):
                        spawn=lambda *a, **k: subprocess.run(*a, **k))   # noqa: PLW0108  (looked up per call, so a test that patches subprocess.run sees it)
         (root / 'out').mkdir()
         names = {'tool_fingerprint', 'shader_key', 'cache_path', 'cache_outputs', 'restore_cache', 'publish_cache', 'atomic_json', 'cache_meta_path',
-                 'bf_digest', 'bf_cache_root', 'bf_cache_restore', 'vs_pad', 'label_dir', 'output', 'commit', 'publish_library'}
+                 'bf_digest', 'bf_cache_root', 'bf_cache_restore', 'vs_pad', 'partner_inputs', 'label_dir', 'output', 'commit', 'publish_library'}
         tree = ast.parse((TOOLS / 'dmsh_build.py').read_text())
         self.tree = tree
         nodes: list[ast.stmt] = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names]
