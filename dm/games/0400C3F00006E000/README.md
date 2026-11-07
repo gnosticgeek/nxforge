@@ -105,7 +105,6 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
 
 ## Found on this game
 
-- [GPU timestamps per submission segment](../../../docs/reference/frame-rate.md#gpu-timestamps-per-submission-segment): with `DM_NVN_GPU_TS=segment` (the profile has no `gpu_timestamps` key), distant mountains and bridges flickered in free roam and on the title screen while the GPU's idle gaps between segments counted as GPU time; without them, no flicker (M5)
 - [Indirect-count multi-draws split the pass an earlier draw opened](../../../docs/reference/rendering.md#indirect-count-multi-draws-split-the-pass-an-earlier-draw-opened): the scene passes' colour and depth loaded again.
 - [A NUP with complete standalone updates stops at "no base game"](../../../docs/reference/packing.md#a-nup-with-complete-standalone-updates-stops-at-no-base-game) (packing reproduced with the base dump; 1.8.0 gameplay remains untested)
 - [Large sparse textures as Metal placement sparse textures](../../../docs/reference/nvn-objects.md#large-sparse-textures-as-metal-placement-sparse-textures)

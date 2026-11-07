@@ -23,10 +23,10 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 
 **Mario Kart World** (open upstream pull requests)
 - Free roam stays near 4 GB: `MapPhysicalMemory` past the 9 GB pool fails as on Horizon, so the game frees its own blocks (#1594, `mem_map_limit on`).
-- Dynamic resolution works: timestamp reports take their segment's GPU time (#1229, `gpu_timestamps segment`), without the GPU's idle gaps between segments, which made distant mountains and bridges flicker (#1350).
+- Dynamic resolution works: timestamp reports take their segment's GPU time (#1229, `gpu_timestamps segment`), as on Donkey Kong Bananza.
 - Indirect-count multi-draws are copied before the pass opens, so the scene passes are no longer split: GPU p50 13.65-14.1 to 13.0 ms on an M4 Pro (#1179).
 - Texture samples overlap better on the GPU (#1230, `shader_border_emu 0`, `shader_nan_coord fmax`), measured on an M1 Pro.
-- Not taken: #1251 (cube-map prefilter split by output; written before the one-file shader libraries, its MSL copy does not fit them), #1292 (1.8.0 image slots; this Mac has the base game), the LAN and iOS work in progress (#1321, #1383).
+- Not taken: #1350 (segment times without the GPU's idle gaps: written before upstream's in-buffer segment boundaries, and with them two reports in one command buffer read the same time), #1251 (cube-map prefilter split by output; written before the one-file shader libraries, its MSL copy does not fit them), #1292 (1.8.0 image slots; this Mac has the base game), the LAN and iOS work in progress (#1321, #1383).
 
 ## 0.13.0 (2026-11-06)
 

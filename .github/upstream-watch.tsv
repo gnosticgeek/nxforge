@@ -25,3 +25,4 @@ skip	1292	Mario Kart World 1.8.0 image slots; its depth register part landed (47
 skip	1321	WIP, do not merge (Mario Kart World LAN play)
 skip	1383	WIP: Mario Kart World 1.8.0 on iOS
 skip	1252	an older Mario Kart World 1.8.0 port, superseded by what landed (#1116)
+skip	1350	segment gap subtraction predates upstream's in-buffer segment boundaries (6121fd7): with both, t_feedback's two reports in one command buffer read the same time
