@@ -166,6 +166,17 @@ class StatusLines(unittest.TestCase):   # status printed the interpreter's path 
         self.assertEqual([p['brief'] for p in nx.shown(r['games'])], ['dmhost --x'])
         self.assertEqual(len(r['builds']), 2)   # --json still lists both processes
 
+    def test_builds_whose_app_is_gone_are_one_line(self):
+        res = {'engine': {}, 'free_gb': 60.0, 'running': {'builds': [], 'games': []},
+               'builds': [{'built_at': '2026-11-06 17:42', 'engine': 'v0.12.0', 'exists': True, 'app': '/a/Kept.app'}] +
+                         [{'built_at': '2026-10-25 16:43', 'engine': 'v0.1.0', 'exists': False, 'app': f'/a/Gone{i}.app'} for i in range(3)]}
+        out = io.StringIO()
+        with mock.patch('sys.stdout', out): nx.human('status', res)
+        lines = out.getvalue().splitlines()
+        self.assertIn('build    2026-11-06 17:42  v0.12.0    /a/Kept.app', lines)
+        self.assertIn('build    3 more recorded whose app is gone (`nxforge builds` lists them)', lines)
+        self.assertNotIn('Gone0', out.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main()

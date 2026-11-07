@@ -761,7 +761,9 @@ def human(cmd, res):
         print(f'free     {res["free_gb"]} GB')
         for k in ('builds', 'games'):
             for p in shown(res['running'][k]): print(f'running  {k[:-1]} pid {p["pid"]} for {p["seconds"] // 60} min: {p["brief"][:120]}')
-        for b in res['builds']: print(f'build    {b["built_at"]}  {b["engine"]:<10} {"" if b["exists"] else "(missing) "}{b["app"]}')
+        for b in res['builds']:
+            if b['exists']: print(f'build    {b["built_at"]}  {b["engine"]:<10} {b["app"]}')
+        if gone := sum(not b['exists'] for b in res['builds']): print(f'build    {gone} more recorded whose app is gone (`nxforge builds` lists them)')
     elif cmd == 'builds':
         for b in res: print(f'{b["built_at"]}  {b["engine"]:<10} {"kept " if b["kept"] else ""}{"" if b["exists"] else "(missing) "}{b["app"]}  backups: {len(b["backups"])}')
     elif cmd in ('disk', 'clean'):
