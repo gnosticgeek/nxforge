@@ -129,7 +129,8 @@ static void latency(void) {   // frame latency 1 in a window, no link in fullscr
     g_present_latency = 0; test_fullscreen = test_variable_refresh = 0; link_sync(); g_link = nil; g_link_started = 0;
 }
 static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except in fullscreen on a fixed-rate screen, where it stays at 60 Hz and the present interval paces the 30.
-    reset(); test_fullscreen = 0; test_variable_refresh = 0; test_game_fps = 30;
+    // NXForge leaves the link in fullscreen unless DM_PRESENT_LATENCY is set (latency() checks that), so these run with it set: upstream's fullscreen pacing (#1555) applies where the link runs
+    reset(); test_fullscreen = 0; test_variable_refresh = 0; test_game_fps = 30; g_present_latency = 2;
     SilentDisplayLink *link = [SilentDisplayLink new]; g_link = link; g_link_started = 1;
     link_sync(); CHECK("a window at 30 fps takes the 30 Hz link", g_link_mode == 3 && link.preferredFrameRateRange.preferred == 30 && mtl_link_rate() == 30);
     test_fullscreen = 1; link_sync(); CHECK("fullscreen on a fixed-rate screen at 30 fps keeps the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
@@ -137,7 +138,7 @@ static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except i
     test_variable_refresh = 0; link_sync(); CHECK("back on a fixed-rate screen: the 60 Hz link again", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60);
     test_fullscreen = 0; link_sync(); CHECK("leaving fullscreen: the 30 Hz link again", g_link_mode == 3 && link.preferredFrameRateRange.preferred == 30);
     test_game_fps = 60; link_sync(); CHECK("60 fps in a window: the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60);
-    g_link = nil; g_link_started = 0;
+    g_present_latency = 0; g_link = nil; g_link_started = 0;
 }
 static void metal_lifecycle(void) {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
