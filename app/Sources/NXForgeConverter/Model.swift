@@ -8,6 +8,8 @@ import UserNotifications
 enum Page: String, CaseIterable, Identifiable {
     case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain"
     var id: String { rawValue }
+    /// drawn with its own banner and big heading (HeroHeader) instead of the window title
+    var hasHero: Bool { self == .convert || self == .toolchain }
     var symbol: String {
         switch self {
         case .convert: "macwindow.badge.plus"

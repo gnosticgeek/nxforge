@@ -33,12 +33,14 @@ struct RootView: View {
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     Theme.background
-                    if model.page == .convert { HeroBanner().frame(height: 230) }
+                    if model.page == .convert { HeroBanner(scene: .dish).frame(height: 230) }
+                    if model.page == .toolchain { HeroBanner(scene: .peaks).frame(height: 230) }
                 }
                 .ignoresSafeArea()
             }
-            .toolbar(removing: model.page == .convert ? .title : nil)
-            .toolbarBackgroundVisibility(model.page == .convert ? .hidden : .automatic, for: .windowToolbar)
+            // pages with their own banner heading drop the window title over it
+            .toolbar(removing: model.page.hasHero ? .title : nil)
+            .toolbarBackgroundVisibility(model.page.hasHero ? .hidden : .automatic, for: .windowToolbar)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             // the window title names the page, as Mac apps do; the subtitle names the game being converted
             .navigationTitle(model.page.rawValue)
