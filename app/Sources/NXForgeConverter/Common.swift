@@ -6,27 +6,30 @@ let helpURL = URL(string: "https://github.com/gnosticgeek/nxforge/blob/main/app/
 
 struct RootView: View {
     @Bindable var model: AppModel
+    @State private var width: CGFloat = 1200
 
     var body: some View {
         NavigationSplitView {
             List(Page.allCases, selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) { p in
-                Label(p.rawValue, systemImage: p.symbol).font(.title3).padding(.vertical, 3).tag(p)
+                Label(p.rawValue, systemImage: p.symbol).tag(p)
             }
-            .navigationSplitViewColumnWidth(min: 250, ideal: 265, max: 300)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 280)
             .safeAreaInset(edge: .bottom) { ToolchainFooter(model: model) }
         } detail: {
             Group {
                 switch model.page {
-                case .convert: ScrollView { ConvertPage(model: model).padding(24) }
+                case .convert: ScrollView { ConvertPage(model: model, wide: width > 860).padding(20) }
                 case .library: LibraryPage(model: model)
                 case .builds: BuildsPage(model: model)
                 case .storage: StoragePage(model: model)
-                case .toolchain: ScrollView { ToolchainPage(model: model).padding(24) }
-                case .settings: SettingsPage(model: model)
+                case .toolchain: ScrollView { ToolchainPage(model: model).padding(20) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .navigationTitle("NXForge Converter")
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            // the window title names the page, as Mac apps do; the subtitle names the game being converted
+            .navigationTitle(model.page.rawValue)
+            .navigationSubtitle(model.page == .convert ? model.game?.name ?? "" : "")
             // a game folder (or a file in it) dropped anywhere on the window becomes the game to convert
             .dropDestination(for: URL.self) { urls, _ in
                 guard !model.run.running, !urls.isEmpty else { return false }
@@ -34,39 +37,23 @@ struct RootView: View {
                 return true
             }
             .toolbar {
-                if model.page == .builds || model.page == .library {
-                    ToolbarItem {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                            TextField(model.page == .library ? "Search games" : "Search builds", text: model.page == .library ? $model.librarySearch : $model.buildSearch)
-                                .textFieldStyle(.plain).frame(width: 200)
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                    }
-                }
-                ToolbarItem {
-                    Button { NSWorkspace.shared.open(helpURL) } label: { Image(systemName: "questionmark") }.help("NXForge Converter help")
+                ToolbarItem(placement: .automatic) {
+                    Button { NSWorkspace.shared.open(helpURL) } label: { Image(systemName: "questionmark") }.help("NXForge Converter Help")
                 }
             }
         }
     }
 }
 
-/// The page title and its one-line subtitle, with optional trailing controls.
+/// The page's one-line description; its trailing controls (the page's actions) go in the window toolbar.
 struct PageHeader<Trailing: View>: View {
     let title: String
     let subtitle: String
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 30, weight: .bold))
-                Text(subtitle).font(.title3).foregroundStyle(.secondary)
-            }
-            Spacer()
-            trailing
-        }
+        Text(subtitle).foregroundStyle(.secondary)
+            .toolbar { ToolbarItemGroup(placement: .primaryAction) { trailing } }
     }
 }
 
@@ -113,7 +100,7 @@ struct Card<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             if !title.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.title2.weight(.semibold))
+                    Text(title).font(.headline)
                     if !subtitle.isEmpty { Text(subtitle).foregroundStyle(.secondary) }
                 }
             }

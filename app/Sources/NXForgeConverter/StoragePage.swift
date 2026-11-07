@@ -117,8 +117,8 @@ struct StoragePage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(title: "Storage", subtitle: "What NXForge keeps on disk, and what can go.") {
-                    Button { scan() } label: { Label("Measure again", systemImage: "arrow.clockwise").font(.title3) }
-                        .buttonStyle(.glass).controlSize(.extraLarge).disabled(scanning)
+                    Button { scan() } label: { Label("Measure Again", systemImage: "arrow.clockwise") }
+                        .help("Measure the caches and apps again").disabled(scanning)
                 }
                 HStack(spacing: 16) {
                     ForEach(volumes) { v in volumeCard(v) }
@@ -137,7 +137,7 @@ struct StoragePage: View {
                 }
                 Text("Deleting here is permanent: files moved to the Trash keep using space until it is emptied.").font(.callout).foregroundStyle(.secondary)
             }
-            .padding(24)
+            .padding(20)
         }
         .task(id: model.revision) { scan() }
     }

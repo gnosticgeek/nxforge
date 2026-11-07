@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
-    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain", settings = "Settings"
+    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -15,7 +15,6 @@ enum Page: String, CaseIterable, Identifiable {
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
         case .storage: "internaldrive"
         case .toolchain: "wrench.and.screwdriver"
-        case .settings: "gearshape"
         }
     }
 }
@@ -564,12 +563,22 @@ final class AppModel {
         return Source.isDir(u.path) || Source.isNupFile(u.path) ? u.path : u.deletingLastPathComponent().path
     }
 
-    func confirm(_ title: String, _ text: String, action: String) -> Bool {
+    /// Asks on a sheet over the window in front (HIG: alerts about a window's work attach to it), waiting for the answer.
+    /// An action that deletes, stops or quits gets the red destructive style; "OK" alone is a notice with no Cancel.
+    func confirm(_ title: String, _ text: String, action: String, destructive: Bool? = nil) -> Bool {
         let a = NSAlert()
         a.messageText = title
         a.informativeText = text
-        a.addButton(withTitle: action)
-        a.addButton(withTitle: "Cancel")
-        return a.runModal() == .alertFirstButtonReturn
+        let ok = a.addButton(withTitle: action)
+        let notice = action == "OK"
+        if !notice { a.addButton(withTitle: "Cancel") }
+        let words = ["Trash", "Delete", "Stop", "Quit", "Clear", "Remove"]
+        if destructive ?? words.contains(where: { action.contains($0) }) { ok.hasDestructiveAction = true }
+        else if notice { a.alertStyle = .warning }
+        guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) else {
+            return a.runModal() == .alertFirstButtonReturn
+        }
+        a.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
+        return NSApp.runModal(for: a.window) == .alertFirstButtonReturn
     }
 }

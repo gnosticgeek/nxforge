@@ -23,12 +23,15 @@ func mmss(_ s: Int) -> String { "\(s / 60):\(String(format: "%02d", s % 60))" }
 
 struct ConvertPage: View {
     @Bindable var model: AppModel
+    /// room for the two cards side by side; a narrow window stacks them
+    var wide = true
     @State private var dropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PageHeader(title: "Convert game", subtitle: "Create a native Mac app from your game files, or drop them here.")
-            HStack(alignment: .top, spacing: 16) {
+            PageHeader(title: "Convert", subtitle: "Create a native Mac app from your game files, or drop them here.")
+            let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(spacing: 16))
+            layout {
                 SourceFilesCard(model: model)
                 MacAppCard(model: model)
             }
@@ -132,7 +135,7 @@ struct SourceFilesCard: View {
                 }
                 Spacer(minLength: 12)
                 if model.updatesAvailable {
-                    Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.glassProminent)
+                    Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.glass)
                         .disabled(model.run.running || model.engine?.dirty == true || model.engineBusy).fixedSize()
                 } else {
                     Button("Check for updates…") { model.engineAction(update: false) }.buttonStyle(.glass).disabled(model.run.running || model.engineBusy || model.engine == nil).fixedSize()
@@ -192,7 +195,7 @@ struct MacAppCard: View {
             HStack(spacing: 16) {
                 GameIcon(url: model.game?.icon, size: 116)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(model.game?.name ?? "No game selected").font(.title2.weight(.bold)).lineLimit(2)
+                    Text(model.game?.name ?? "No game selected").font(.title3.weight(.semibold)).lineLimit(2)
                     Text(model.source == nil ? "Apple Silicon · Metal" : "Apple Silicon · Metal · Switch 2").foregroundStyle(.secondary)
                     Text("A native macOS version built with NXForge.").foregroundStyle(.secondary)
                 }
@@ -205,16 +208,17 @@ struct MacAppCard: View {
             if model.run.running {
                 HStack {
                     Button { } label: {
-                        Label(model.run.planning ? "Checking…" : "Building…", systemImage: model.run.planning ? "list.bullet.clipboard" : "hammer.fill").font(.title3.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 30)
+                        Label(model.run.planning ? "Checking…" : "Building…", systemImage: model.run.planning ? "list.bullet.clipboard" : "hammer.fill").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(true)
-                    Button("Stop") { model.stopBuild() }.buttonStyle(.glass).controlSize(.extraLarge)
+                    .buttonStyle(.glassProminent).controlSize(.large).disabled(true)
+                    Button("Stop") { model.stopBuild() }.buttonStyle(.glass).controlSize(.large)
                 }
             } else {
                 Button { model.build() } label: {
-                    Label("Build Mac app", systemImage: "hammer.fill").font(.title3.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 30)
+                    Label("Build Mac app", systemImage: "hammer.fill").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glassProminent).controlSize(.extraLarge)
+                .buttonStyle(.glassProminent).controlSize(.large)
+                .keyboardShortcut(.defaultAction)   // Return builds: the page's one default button
                 .disabled(!model.ready)
                 .help(model.ready ? "" : !model.missingForGame.isEmpty ? "This game needs \(model.missingForGame.map(\.name).joined(separator: ", ")): install it above" : !model.allOK ? "Some toolchain checks failed: see Toolchain" : model.needsKeys ? "Choose a game folder and keys that validate" : "Choose a .nup or a dump folder that reads")
                 if model.buildCache != nil {
@@ -268,7 +272,7 @@ struct MacAppCard: View {
                     Button { model.build(rebuild: app) } label: {
                         Label("Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(!model.ready)
+                    .buttonStyle(.glass).controlSize(.large).disabled(!model.ready)   // Build Mac app above stays the one blue button
                     .help(model.settings.keepBackups ? "Moves this app to app-backups/ and builds it again on the current engine" : "Builds this app again on the current engine; the old one goes to the Trash")
                 }
             } else if !model.run.running {
@@ -296,7 +300,7 @@ struct ActivityCard: View {
         Card {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Build activity").font(.title2.weight(.semibold))
+                    Text("Build activity").font(.headline)
                     Text(run.planning ? "What a build would reuse and redo; nothing is built." : "Converting your game to a native Mac application.").foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -492,7 +496,7 @@ struct BuildFailure: View {
                 }
                 HStack {
                     if let p = d.page, p != .convert {
-                        Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.glassProminent)
+                        Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.glass)
                     }
                     if d.code != .stopped {
                         Button {

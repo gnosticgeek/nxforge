@@ -28,122 +28,130 @@ struct BuildsPage: View {
     var body: some View {
         let list = builds
         let selected = list.first { $0.app == model.selectedBuild } ?? list.first
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                PageHeader(title: "Builds", subtitle: "Your native Mac apps, ready to play.") {
-                    let outdated = model.outdatedBuilds
-                    if !outdated.isEmpty || !model.rebuildQueue.isEmpty {
-                        Button { model.rebuildAll() } label: {
-                            Label(model.queueMessage == "" ? "Rebuilding all… \(model.rebuildQueue.count) to go" : "Rebuild all on \(model.engine?.short ?? "the current engine") (\(outdated.count))",
-                                  systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.glassProminent).controlSize(.large)
-                        .disabled(model.run.running || !model.allOK)
-                        .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
+        VStack(alignment: .leading, spacing: 0) {
+            PageHeader(title: "Builds", subtitle: "Your native Mac apps, ready to play.") {
+                let outdated = model.outdatedBuilds
+                if !outdated.isEmpty || !model.rebuildQueue.isEmpty {
+                    Button { model.rebuildAll() } label: {
+                        Label(model.queueMessage == "" ? "Rebuilding All… \(model.rebuildQueue.count) to Go" : "Rebuild All on \(model.engine?.short ?? "Current Engine") (\(outdated.count))",
+                              systemImage: "arrow.clockwise")
                     }
-                    Picker("Console", selection: $model.buildConsole) {
-                        ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented).labelsHidden().fixedSize()
-                    .help("Show the Switch 2 games, the Switch games, or both")
-                    Picker("Sort", selection: $model.buildSort) {
-                        ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue) }
-                    }
-                    .pickerStyle(.menu).fixedSize()
+                    .labelStyle(.titleAndIcon)
+                    .disabled(model.run.running || !model.allOK)
+                    .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
                 }
-                if let m = model.queueMessage, !m.isEmpty {
-                    HStack {
-                        StatusDot(color: .red, text: m)
-                        Spacer()
-                        Button("Dismiss") { model.queueMessage = nil }.buttonStyle(.glass)
+                Picker("Console", selection: $model.buildConsole) {
+                    ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue) }
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .help("Show the Switch 2 games, the Switch games, or both")
+                Picker("Sort", selection: $model.buildSort) {
+                    ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue) }
+                }
+                .pickerStyle(.menu).fixedSize()
+                .help("Sort the builds")
+            }
+            .padding(.horizontal, 20).padding(.vertical, 10)
+            if let m = model.queueMessage, !m.isEmpty {
+                HStack {
+                    StatusDot(color: .red, text: m)
+                    Spacer()
+                    Button("Dismiss") { model.queueMessage = nil }.buttonStyle(.glass)
+                }
+                .padding(.horizontal, 20).padding(.bottom, 10)
+            }
+            Divider()
+            if list.isEmpty {
+                Group {
+                    if !model.buildSearch.isEmpty { ContentUnavailableView.search(text: model.buildSearch) }
+                    else {
+                        ContentUnavailableView(model.buildConsole != .all ? "No \(model.buildConsole.rawValue) Games Built" : "No Builds Yet",
+                                               systemImage: "macwindow.badge.plus",
+                                               description: Text("Convert a game to see its Mac app here."))
                     }
                 }
-                if list.isEmpty {
-                    Card {
-                        Text(!model.buildSearch.isEmpty ? "No builds match “\(model.buildSearch)”." : model.buildConsole != .all ? "No \(model.buildConsole.rawValue) games built yet." : "Nothing built yet. Convert a game to see it here.")
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    HStack(alignment: .top, spacing: 16) {
-                        Card(padding: 8) {
-                            // Switch 2 games first, then Switch games, each under its own heading when both are listed
-                            let groups = Console.allCases.map { c in (c, list.filter { Console.of($0) == c }) }.filter { !$0.1.isEmpty }
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(groups, id: \.0) { c, items in
-                                    if groups.count > 1 {
-                                        Text("\(c.rawValue) · \(items.count)").font(.headline).foregroundStyle(.secondary)
-                                            .padding(.horizontal, 10).padding(.top, c == groups.first?.0 ? 4 : 12)
-                                    }
-                                    ForEach(items) { b in
-                                        BuildRow(model: model, build: b, name: name(b), selected: b.app == selected?.app)
-                                            .onTapGesture { model.selectedBuild = b.app }
-                                    }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HSplitView {
+                    // a real list: arrow keys move the selection, ⌘⌫ moves the app to the Trash, VoiceOver reads the rows
+                    List(selection: Binding(get: { selected?.app }, set: { model.selectedBuild = $0 })) {
+                        // Switch 2 games first, then Switch games, each under its own heading when both are listed
+                        let groups = Console.allCases.map { c in (c, list.filter { Console.of($0) == c }) }.filter { !$0.1.isEmpty }
+                        ForEach(groups, id: \.0) { c, items in
+                            Section(groups.count > 1 ? "\(c.rawValue) · \(items.count)" : "") {
+                                ForEach(items) { b in
+                                    BuildRow(model: model, build: b, name: name(b)).tag(b.app)
                                 }
                             }
                         }
-                        .frame(maxWidth: .infinity)
-                        if let s = selected { BuildDetail(model: model, build: s, name: name(s)).frame(maxWidth: .infinity) }
                     }
+                    .listStyle(.inset)
+                    .alternatingRowBackgrounds(.disabled)
+                    .onDeleteCommand { if let s = selected { trashBuild(model, s, name(s)) } }
+                    .contextMenu(forSelectionType: String.self) { _ in } primaryAction: { apps in
+                        if let a = apps.first { model.openApp(a) }   // double-click opens the app
+                    }
+                    .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
                     if let s = selected {
-                        PreviousBuilds(model: model, build: s)
-                        SaveSnapshotsCard(model: model, build: s)
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                                BuildDetail(model: model, build: s, name: name(s))
+                                PreviousBuilds(model: model, build: s)
+                                SaveSnapshotsCard(model: model, build: s)
+                            }
+                            .padding(20)
+                        }
+                        .frame(minWidth: 380, maxWidth: .infinity)
                     }
                 }
             }
-            .padding(24)
         }
+        .searchable(text: $model.buildSearch, placement: .toolbar, prompt: "Search builds")
     }
+}
+
+/// Moves a built app to the Trash after asking (the row's menu and ⌘⌫)
+@MainActor func trashBuild(_ model: AppModel, _ build: BuildRecord, _ name: String) {
+    guard model.confirm("Move \(name) to the Trash?", "The app goes to the Trash and leaves this list. Its game files, build cache and saves stay where they are.", action: "Move to Trash") else { return }
+    try? FileManager.default.trashItem(at: build.app.url, resultingItemURL: nil)
+    Engine.forget(build.app)
+    model.revision += 1
 }
 
 struct BuildRow: View {
     let model: AppModel
     let build: BuildRecord
     let name: String
-    let selected: Bool
 
     var body: some View {
-        HStack(spacing: 14) {
-            AppIcon(path: build.app, size: 84)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(name).font(.title3.weight(.semibold)).lineLimit(2)
-                Text("\(Console.of(build).rawValue) · \(build.date.map(relativeDay) ?? build.builtAt)").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
+        HStack(spacing: 10) {
+            AppIcon(path: build.app, size: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(.headline).lineLimit(1)
+                Text("\(Console.of(build).rawValue) · \(build.date.map(relativeDay) ?? build.builtAt)").font(.callout).foregroundStyle(.secondary).lineLimit(1)
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 6) {
-                StatusDot(color: .green, text: "Ready")
-                if build.kept == true {
-                    Label("kept · \(build.engine.short)", systemImage: "lock.fill").font(.caption.weight(.semibold))
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(.secondary.opacity(selected ? 0.45 : 0.18), in: .capsule)
-                        .help("Kept as it is: Rebuild all passes it by")
-                } else if model.engine != nil && !model.isCurrent(build) {
-                    Text("older · \(build.engine.short)").font(.caption.weight(.semibold))
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(.orange.opacity(selected ? 0.55 : 0.25), in: .capsule)
-                        .help("Built on \(build.engine.short); the engine is now \(model.engine?.short ?? "")")
-                } else {
-                    Text("Apple Silicon").foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
-                }
+            Spacer(minLength: 4)
+            if build.kept == true {
+                Label("kept", systemImage: "lock.fill").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    .help("Kept as it is: Rebuild all passes it by")
+            } else if model.engine != nil && !model.isCurrent(build) {
+                Text("older").font(.caption.weight(.semibold))
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(.orange.opacity(0.25), in: .capsule)
+                    .help("Built on \(build.engine.short); the engine is now \(model.engine?.short ?? "")")
             }
         }
-        .padding(10)
-        .foregroundStyle(selected ? .white : .primary)
-        .background(selected ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 12))
-        .contentShape(.rect)
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
         .contextMenu {
             Button("Open") { model.openApp(build.app) }
             Button("Show in Finder") { reveal(build.app) }
-            Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the current engine")") { model.rebuildAsked(build) }
+            Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the Current Engine")") { model.rebuildAsked(build) }
                 .disabled(model.run.running || !model.allOK)
             Button(build.kept == true ? "Stop Keeping This Build" : "Keep This Build") { model.setKept(build, build.kept != true) }
             Divider()
             Button("Remove from List") { Engine.forget(build.app); model.revision += 1 }
-            Button("Move App to Trash…") {
-                guard model.confirm("Move \(name) to the Trash?", "The app goes to the Trash and leaves this list. Its game files, build cache and saves stay where they are.", action: "Move to Trash") else { return }
-                try? FileManager.default.trashItem(at: build.app.url, resultingItemURL: nil)
-                Engine.forget(build.app)
-                model.revision += 1
-            }
+            Button("Move App to Trash…") { trashBuild(model, build, name) }
         }
     }
 }
@@ -162,20 +170,21 @@ struct BuildDetail: View {
         let nudge = !current && build.kept != true && model.engine != nil
         Card {
             HStack(spacing: 16) {
-                AppIcon(path: build.app, size: 128)
+                AppIcon(path: build.app, size: 96)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(name).font(.title.weight(.bold)).lineLimit(2)
+                    Text(name).font(.title2.weight(.semibold)).lineLimit(2)
                     Text("Apple Silicon · Metal").foregroundStyle(.secondary)
                     StatusDot(color: .green, text: "Ready")
                 }
             }
             HStack {
-                Button { model.openApp(build.app) } label: { Label("Open app", systemImage: "play.fill").font(.title3).frame(maxWidth: .infinity) }
+                Button { model.openApp(build.app) } label: { Label("Open app", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: !nudge))   // on an older engine Rebuild is the blue one, unless the build is kept
+                    .keyboardShortcut(nudge ? nil : .defaultAction)   // Return acts on the blue button
                 Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.glass)
             }
-            .controlSize(.extraLarge)
+            .controlSize(.large)
             if build.launched != true { FirstLaunchNote() }
             VStack(spacing: 0) {
                 detail("Built", (build.date.map(relativeDay) ?? build.builtAt) + (build.seconds.map { " · took \(duration(Double($0)))" } ?? ""))
@@ -233,9 +242,10 @@ struct BuildDetail: View {
                 .padding(.vertical, 6)
             }
             Button { model.rebuildAsked(build) } label: {
-                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").font(nudge ? .title3 : .body).frame(maxWidth: .infinity)
+                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
             }
-            .modifier(GlassButton(prominent: nudge)).controlSize(nudge ? .extraLarge : .large)
+            .modifier(GlassButton(prominent: nudge)).controlSize(.large)
+            .keyboardShortcut(nudge ? .defaultAction : nil)
             .disabled(!model.allOK || model.run.running)
             DisclosureGroup(isExpanded: $detailsOpen) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -385,7 +395,7 @@ struct SaveSnapshotsCard: View {
                         Button { reveal(loc.save) } label: { Image(systemName: "folder") }.buttonStyle(.glass).help("Show the save in Finder")
                     }
                     Button { make(loc) } label: { Label("Snapshot now", systemImage: "camera") }
-                        .buttonStyle(.glassProminent).disabled(busy || !SaveSnapshots.hasSave(loc))
+                        .buttonStyle(.glass).disabled(busy || !SaveSnapshots.hasSave(loc))
                         .help("Copies the save beside it, in save-snapshots, and checks every file of the copy")
                 }
                 if let m = message {

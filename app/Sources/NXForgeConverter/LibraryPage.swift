@@ -16,11 +16,11 @@ struct LibraryPage: View {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(title: "Library", subtitle: "Every game in your games folder, ready to build.") {
                     if model.libraryScanning {
-                        Button { model.stopLibraryScan() } label: { Label("Stop", systemImage: "stop.fill").font(.title3) }
-                            .buttonStyle(.glass).controlSize(.extraLarge)
+                        Button { model.stopLibraryScan() } label: { Label("Stop Scan", systemImage: "stop.fill") }
+                            .help("Stop the scan")
                     } else {
-                        Button { model.scanLibrary() } label: { Label("Scan again", systemImage: "arrow.clockwise").font(.title3) }
-                            .buttonStyle(.glass).controlSize(.extraLarge).disabled(model.settings.gamesRoot == nil)
+                        Button { model.scanLibrary() } label: { Label("Scan Again", systemImage: "arrow.clockwise") }
+                            .help("Scan the games folder again").disabled(model.settings.gamesRoot == nil)
                     }
                 }
                 rootCard
@@ -42,7 +42,12 @@ struct LibraryPage: View {
                     }
                     if !model.librarySelection.isEmpty { selectionBar(all, builds) }
                     if games.isEmpty {
-                        Text(model.librarySearch.isEmpty ? "No game matches these filters." : "No game matches “\(model.librarySearch)”.").foregroundStyle(.secondary).padding(.top, 8)
+                        Group {
+                            if model.librarySearch.isEmpty {
+                                ContentUnavailableView("No Matching Games", systemImage: "line.3.horizontal.decrease.circle", description: Text("No game matches these filters."))
+                            } else { ContentUnavailableView.search(text: model.librarySearch) }
+                        }
+                        .padding(.top, 24)
                     } else {
                         InsetTable {
                             ForEach(games) { g in
@@ -52,14 +57,19 @@ struct LibraryPage: View {
                         }
                     }
                 } else if !model.libraryScanning, let root = model.settings.gamesRoot {
-                    Card {
-                        Label("No games found in \(root.tildePath)", systemImage: "questionmark.folder").font(.headline)
-                        Text("The scan looks for .nsp, .xci, .nsz and .xcz files, Switch 2 .nup files and dump folders, in every folder up to \(GameLibrary.maxDepth) levels down.").foregroundStyle(.secondary)
+                    ContentUnavailableView {
+                        Label("No Games Found", systemImage: "questionmark.folder")
+                    } description: {
+                        Text("Nothing to build in \(root.tildePath). The scan looks for .nsp, .xci, .nsz and .xcz files, Switch 2 .nup files and dump folders, in every folder up to \(GameLibrary.maxDepth) levels down.")
+                    } actions: {
+                        Button("Scan Again") { model.scanLibrary() }
                     }
+                    .padding(.top, 24)
                 }
             }
-            .padding(24)
+            .padding(20)
         }
+        .searchable(text: $model.librarySearch, placement: .toolbar, prompt: "Search games")
         // first visit with a folder chosen, or a list over a day old: scan; names and icons not read yet: read them
         .task {
             model.scanIfStale()
@@ -230,7 +240,7 @@ struct LibraryPage: View {
                 Button { model.openApp(b.app) } label: { Image(systemName: "play.fill") }.buttonStyle(.glass).help("Open \(b.app.lastComponent)")
             }
             Button("Convert") { model.convertFromLibrary(g) }
-                .buttonStyle(.glassProminent).disabled(model.run.running || model.batchRunning)
+                .buttonStyle(.glass).disabled(model.run.running || model.batchRunning)
                 .help(model.run.running ? "Not while a build runs" : "Make this the game on the Convert page")
                 .frame(minWidth: 86)
         }

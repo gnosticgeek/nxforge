@@ -11,12 +11,12 @@ struct ToolchainPage: View {
             PageHeader(title: "Toolchain", subtitle: "Everything needed to build native Mac apps.") {
                 let fixable = model.fixable
                 if !fixable.isEmpty {
-                    Button { model.fixAll() } label: { Label("Fix all (\(fixable.count))", systemImage: "wrench.adjustable").font(.title3) }
-                        .buttonStyle(.glassProminent).controlSize(.extraLarge).disabled(model.checking || model.pythonSetup?.running == true)
+                    Button { model.fixAll() } label: { Label("Fix all (\(fixable.count))", systemImage: "wrench.adjustable") }
+                        .labelStyle(.titleAndIcon).buttonStyle(.glassProminent).disabled(model.checking || model.pythonSetup?.running == true)
                         .help("Sets up the converter's own Python if it needs one, and runs every other fix in one Terminal window. The checks run again when you come back.")
                 }
-                Button { model.recheck() } label: { Label("Run checks", systemImage: "arrow.clockwise").font(.title3) }
-                    .modifier(GlassButton(prominent: model.fixable.isEmpty)).controlSize(.extraLarge).disabled(model.checking)
+                Button { model.recheck() } label: { Label("Run Checks", systemImage: "arrow.clockwise") }
+                    .help("Run every check again").disabled(model.checking)
             }
 
             Card(padding: 14) {
@@ -85,7 +85,7 @@ struct ToolchainPage: View {
                     .buttonStyle(.glass)
                     if model.updatesAvailable {
                         Button { model.engineAction(update: true) } label: { Label("Update engine", systemImage: "arrow.down.circle") }
-                            .buttonStyle(.glassProminent).disabled(model.engineBusy || model.run.running || model.engine?.dirty == true)
+                            .buttonStyle(.glass).disabled(model.engineBusy || model.run.running || model.engine?.dirty == true)
                     } else {
                         Button { model.engineAction(update: false) } label: { Label("Check for updates", systemImage: "arrow.clockwise") }
                             .buttonStyle(.glass).disabled(model.engineBusy || model.engine == nil)
@@ -159,12 +159,12 @@ struct ToolchainPage: View {
                 } else if c.optional, let why = model.needs[c.name] {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     Text("Needed for this game").foregroundStyle(.orange).help(why)
-                    if let fix = c.fix { Button("Install") { model.runFix(fix) }.buttonStyle(.glassProminent).controlSize(.small).help(fix) }
+                    if let fix = c.fix { Button("Install") { model.runFix(fix) }.buttonStyle(.glass).controlSize(.small).help(fix) }
                 } else {
                     Image(systemName: c.optional ? "minus" : "xmark").foregroundStyle(c.optional ? Color.secondary : .red).fontWeight(.semibold)
                     Text(c.optional ? "Not installed" : "Missing").foregroundStyle(c.optional ? Color.secondary : .red)
                     if python {
-                        Button("Set up") { model.setUpPython() }.buttonStyle(.glassProminent).controlSize(.small)
+                        Button("Set up") { model.setUpPython() }.buttonStyle(.glass).controlSize(.small)
                             .disabled(model.pythonSetup?.running == true).help("Make the converter's own Python with the modules the script needs")
                     } else if let fix = c.fix {
                         Button("Fix") { model.runFix(fix) }.buttonStyle(.glass).controlSize(.small).help(fix)
