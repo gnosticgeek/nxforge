@@ -10,6 +10,17 @@ NXForge is a downstream of [nxnative](https://github.com/seedds/nxnative) (seedd
 - The nightly `upstream-check` workflow (`.github/workflows/upstream-check.yml`) test-merges nxnative's `main` and keeps one open issue labelled `upstream` with how many commits `main` is behind and which files a merge would conflict in. It never pushes; the merge is still done on a branch with a Mac build and a play test.
 - Add Mac-only features in new files where possible (as `quick_settings_mac.swift` and `capture_mac.m` are), with small hooks into shared files, so upstream merges stay easy.
 
+## Thin fork (from 0.15.0)
+
+NXForge is the NXForge Converter plus a Mac player layer (the Quick settings sidebar and what it drives) on nxnative's engine. The translator, the GPU core and game bring-up are nxnative's; NXForge takes them as they land. Rules:
+
+1. Merge nxnative's `main` whole, never commit by commit: no hand-picked upstream commits on a release branch.
+2. An open upstream pull request comes in early only when it fixes a game being played that week. It is listed in `.github/upstream-watch.tsv`, and once upstream lands its own version, that version replaces ours at the next merge.
+3. A fix headed upstream stays in NXForge until upstream has landed it (or its own version of it); only then is NXForge's copy removed. Removal is gradual, merge by merge.
+4. Player code lives in NXForge's own files: `quick_settings_mac.swift`, `capture_mac.m`, and the `nxforge/` folders beside nxnative's sources (`dm/host/nxforge/*.inc`, `dm/gfx/nvn/nxforge/*.inc`), which nxnative's files include at one line each. A new player feature goes there, with a hook, not into an nxnative function.
+5. NXForge's own red lines use `NXF_RED_ONCE` (its own table in `nvn_mtl.m`), never a `RED_ONCE` key, so upstream's keys are never renumbered.
+6. The nightly upstream check reports how many files a merge would conflict in. Above 10 is a signal to shrink the fork before the next release.
+
 ## Upstream: sending fixes back
 
 - A fix that helps nxnative's users too goes upstream: crashes, rendering, shader, rewriter, frame pacing, input and haptics fixes, and new game profiles. Send it as a small pull request to seedds/nxnative, one fix per PR, from a branch based on upstream `main`, following nxnative's [AGENTS.md](AGENTS.md) rules (findings in the game note or `docs/reference`, `python3 dm/tools/tests/test_docs.py` passing).

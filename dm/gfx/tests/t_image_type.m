@@ -34,7 +34,7 @@ int main(void) { @autoreleasepool {
     id<MTLTexture> img = img_binding(TID, &b2d, &rid, &real);
     id<MTLTexture> again = img_binding(TID, &b2d, &rid2, &real2);
     id<MTLTexture> arr = img_binding(TID, &barr, &rid_arr, &real_arr);
-    int red_before = g_red_once[160];
+    int red_before = g_red_once[157];
     id<MTLTexture> vol = img_binding(TID, &b3d, &rid_3d, &real_3d);
     os_unfair_lock_unlock(&g_rmu);
     CHECK(real && img.textureType == MTLTextureType2D, "a slot declared 2D gets a 2D view");
@@ -42,7 +42,7 @@ int main(void) { @autoreleasepool {
     CHECK((img.usage & MTLTextureUsageShaderWrite) && rid == img.gpuResourceID._impl, "writable, with its own resource ID");
     CHECK(real2 && again == img && rid2 == rid, "kept for the next bind");
     CHECK(real_arr && arr.textureType == MTLTextureType2DArray && arr.arrayLength == 1 && arr != img, "a slot declared 2D array gets the registered view as it is");
-    CHECK(real_3d && vol.textureType == MTLTextureType2DArray && g_red_once[160] == red_before + 1, "a 3D slot: no view bridges it, bound as is and logged red");
+    CHECK(real_3d && vol.textureType == MTLTextureType2DArray && g_red_once[157] == red_before + 1, "a 3D slot: no view bridges it, bound as is and logged red");
     NSError *error = nil;
     id<MTLLibrary> library = [g_dev newLibraryWithSource:@"#include <metal_stdlib>\nusing namespace metal;\nkernel void store(texture2d<float, access::write> t [[texture(0)]], uint2 p [[thread_position_in_grid]]) { t.write(float4(0.5), p); }\n" options:nil error:&error];
     id<MTLFunction> fn = library ? [library newFunctionWithName:@"store"] : nil;

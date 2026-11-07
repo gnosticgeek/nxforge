@@ -30,6 +30,7 @@ _Static_assert(QS_CHEAT_LABEL == DM_CHEAT_LABEL && QS_CHEAT_SECTION_START == DM_
 #include "pad_hid_mac.h"
 #include "home_quit.h"
 #include "home_quit_mac.h"
+#include "ctrl_prompt.h"
 #include <signal.h>
 #include <math.h>
 #include <errno.h>
@@ -163,9 +164,15 @@ static int fn_shortcut(NSEvent *e) {
     NSString *s = e.charactersIgnoringModifiers;
     return (e.modifierFlags & NSEventModifierFlagFunction) && s.length == 1 && [[NSCharacterSet letterCharacterSet] characterIsMember:[s characterAtIndex:0]];
 }
+static ctrl_prompt g_cp; static int g_cp_confirm, g_cp_cancel;   // the controller applet's prompt (front_ctrl_support) and a key pressed in it since its last step
+static int cp_poll(void);
 static void on_key(NSEvent *e, int down) {
     if (!g_input_on) return;
     unsigned short c = e.keyCode; uint64_t m = 0;
+    if (cp_blocks_input(g_cp.phase)) {   // the prompt has the keyboard: Return or J (A) is done, Escape or K (B) closes it, no key reaches the game
+        if (down && g_cp.phase == CP_OPEN) { if (c == 53 || c == 40) g_cp_cancel = 1; else if (c == 36 || c == 38) g_cp_confirm = 1; cp_poll(); }
+        return;
+    }
     // An arrow key pressed with Shift held is the right stick until it is released; without Shift, the D-pad. The keyboard had no right stick: a 3D game's camera
     // could be turned only with a controller (Donkey Kong Bananza)
     int *rs = c == 123 ? &g_rl : c == 126 ? &g_ru : c == 124 ? &g_rr : c == 125 ? &g_rd : NULL;
@@ -178,37 +185,7 @@ static void on_key(NSEvent *e, int down) {
     if (down && (m || c == 13 || c == 0 || c == 1 || c == 2)) cursor_hide_for_input();   // a key the game takes (WASD: the left stick)
     push();
 }
-// Assigning (the Controls section: front_qs_assign): the next key, or the next controller button, becomes that action's; Esc cancels. Another action holding that key loses it
-static int g_assign = -1, g_assign_pad;
-void front_qs_assign(int action, int pad) { g_assign = action >= 0 && action < (pad ? PAD_N : ACT_N) ? action : -1; g_assign_pad = pad; }
-int front_qs_assigning(void) { return g_assign < 0 ? -1 : g_assign * 2 + g_assign_pad; }
-void front_qs_controls_reload(void) { controls_load(); }
-static void toast(NSString *msg);
-static void assign_save(NSString *map, NSString *names, int action, id value, NSString *label, BOOL key) {
-    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
-    NSMutableDictionary *m = [[d dictionaryForKey:opt_key(map)] mutableCopy] ?: [NSMutableDictionary dictionary], *n = [[d dictionaryForKey:opt_key(names)] mutableCopy] ?: [NSMutableDictionary dictionary];
-    for (int i = 0; i < (key ? ACT_N : PAD_N); i++) if (i != action) {
-        id cur = m[@(i).stringValue] ?: (key ? (id)@(g_key_default[i]) : pad_default(i));
-        if ([cur isEqual:value]) { m[@(i).stringValue] = key ? @(KEY_NONE) : @""; n[@(i).stringValue] = @"Not set"; }
-    }
-    m[@(action).stringValue] = value; n[@(action).stringValue] = label;
-    [d setObject:m forKey:opt_key(map)]; [d setObject:n forKey:opt_key(names)];
-    g_assign = -1; controls_load(); dm_qs_refresh();
-}
-static NSString *key_label(NSEvent *e) {
-    switch (e.keyCode) {
-        case 36: return @"Return"; case 48: return @"Tab"; case 49: return @"Space"; case 51: return @"Delete"; case 76: return @"Enter";
-        case 123: return @"←"; case 124: return @"→"; case 125: return @"↓"; case 126: return @"↑";
-    }
-    NSString *c = e.charactersIgnoringModifiers.uppercaseString;
-    return c.length && [c characterAtIndex:0] > ' ' ? c : [NSString stringWithFormat:@"Key %d", e.keyCode];
-}
-static BOOL assign_key(NSEvent *e) {   // key monitor: the key that answers a pending assignment (YES: taken)
-    if (g_assign < 0 || g_assign_pad || e.type != NSEventTypeKeyDown) return NO;
-    if (e.keyCode == 53) { g_assign = -1; dm_qs_refresh(); return YES; }
-    assign_save(@"keys", @"keyNames", g_assign, @(e.keyCode), key_label(e), YES);
-    return YES;
-}
+#include "nxforge/front_mac_controls.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
 
 // Physical controllers (GameController) go to dm_pad_set_player, mapped as the iPhone's (DmGamepad.m read_pad, same layout); player 1's is ORed with the keyboard, a stick takes
 // whichever is deflected more (hle_hid.c). DM_KEYS uses player 1's path, so player 1's controller touched during a script takes it over.
@@ -247,6 +224,7 @@ static void pad_read(GCExtendedGamepad *g) {
         GCController *c = g.controller; if (!m || (p = pad_join((__bridge const void *)c, pad_name(c))) < 0) return;
         g_held[p] = c; dm_motion_attach(c, p); pro_players_changed(nil);
     }
+    if (cp_poll()) return;   // the controller applet's prompt has the controllers (front_ctrl_support)
     dm_haptics_apple_controller(p, g.controller);
     if (g_pad_quiet) { if (m) { dm_pad_set_player(p, 0, 0, 0, 0, 0); return; } g_pad_quiet = 0; }
     pad_set(p, m, pad_axis(g.leftThumbstick.xAxis.value), pad_axis(g.leftThumbstick.yAxis.value), pad_axis(g.rightThumbstick.xAxis.value), pad_axis(g.rightThumbstick.yAxis.value));
@@ -257,55 +235,7 @@ static void pad_keep_system_buttons(GCController *c) {
     for (NSString *b in @[GCInputButtonHome, GCInputButtonShare]) c.physicalInputProfile.buttons[b].preferredSystemGestureState = GCSystemGestureStateDisabled;
     c.extendedGamepad.buttonHome.pressedChangedHandler = ^(GCControllerButtonInput *b, float v, BOOL down) { (void)b; (void)v; (void)down; if (g_input_on) hq_poll(); };
 }
-// The sidebar with a controller (after RetroReplay's pause menu): the D-pad or left stick moves the selection, left / right change its value, A (the right face button) activates it,
-// B (the bottom one), + or Home close the sidebar, L / R turn the page; a held direction repeats. quick_settings_mac.swift dm_qs_nav keeps the selection
-enum { NAV_UP = 1, NAV_DOWN, NAV_LEFT, NAV_RIGHT, NAV_OK, NAV_BACK, NAV_PREV, NAV_NEXT };
-static uint32_t g_nav_prev; static NSTimer *g_nav_rep;
-// The sidebar's button legend shows this controller's own glyphs (its elements' SF Symbols: an Xbox pad's B where a Nintendo pad has A) for the buttons pad_nav reads
-static void pad_glyphs(GCExtendedGamepad *g) {
-    static const void *last;   // only compared: a new controller (or the first) sends its glyphs
-    if (last == (__bridge const void *)g) { dm_qs_input(1, NULL, NULL, NULL, NULL); return; }
-    last = (__bridge const void *)g;
-    dm_qs_input(1, g.buttonB.sfSymbolsName.UTF8String, g.buttonA.sfSymbolsName.UTF8String, g.leftShoulder.sfSymbolsName.UTF8String, g.rightShoulder.sfSymbolsName.UTF8String);
-}
-static void pad_nav(GCExtendedGamepad *g) {
-    float x = g.leftThumbstick.xAxis.value, y = g.leftThumbstick.yAxis.value; uint32_t now = 0;
-    if (g.dpad.up.isPressed || y > 0.6f) now |= 1u << NAV_UP;
-    if (g.dpad.down.isPressed || y < -0.6f) now |= 1u << NAV_DOWN;
-    if (g.dpad.left.isPressed || x < -0.6f) now |= 1u << NAV_LEFT;
-    if (g.dpad.right.isPressed || x > 0.6f) now |= 1u << NAV_RIGHT;
-    if (g.buttonB.isPressed) now |= 1u << NAV_OK;
-    if (g.buttonA.isPressed || g.buttonMenu.isPressed || g.buttonHome.isPressed) now |= 1u << NAV_BACK;
-    if (g.leftShoulder.isPressed) now |= 1u << NAV_PREV;
-    if (g.rightShoulder.isPressed) now |= 1u << NAV_NEXT;
-    uint32_t pressed = now & ~g_nav_prev, dirs = (1u << NAV_UP) | (1u << NAV_DOWN) | (1u << NAV_LEFT) | (1u << NAV_RIGHT); g_nav_prev = now;
-    if (pressed && g_menu_open) pad_glyphs(g);
-    for (int c = NAV_UP; c <= NAV_NEXT && g_menu_open; c++) if (pressed & (1u << c)) dm_qs_nav(c);
-    if (!(now & dirs) || !g_menu_open) { [g_nav_rep invalidate]; g_nav_rep = nil; }
-    else if (pressed & dirs) {
-        [g_nav_rep invalidate];
-        g_nav_rep = [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:NO block:^(NSTimer *t0) { (void)t0;
-            g_nav_rep = [NSTimer scheduledTimerWithTimeInterval:0.09 repeats:YES block:^(NSTimer *t) { (void)t;
-                for (int c = NAV_UP; c <= NAV_RIGHT; c++) if (g_menu_open && (g_nav_prev & (1u << c))) dm_qs_nav(c); }]; }];
-    }
-}
-static BOOL assign_pad(GCExtendedGamepad *g, GCControllerElement *el) {   // a controller button that answers a pending assignment
-    if (g_assign < 0 || !g_assign_pad || ![el isKindOfClass:GCControllerButtonInput.class] || !((GCControllerButtonInput *)el).isPressed) return g_assign >= 0 && g_assign_pad;
-    GCPhysicalInputProfile *pf = g.controller.physicalInputProfile; NSString *name = nil;
-    for (NSString *a in el.aliases) if (pf.buttons[a] && (!name || a.length < name.length)) name = a;
-    if (!name || [name hasPrefix:@"Direction Pad"] || [name isEqualToString:GCInputButtonHome]) return YES;   // the D-pad and Home stay as they are
-    assign_save(@"pad", @"padNames", g_assign, name, el.localizedName ?: name, NO);
-    return YES;
-}
-static void pad_event(GCExtendedGamepad *g, GCControllerElement *el) {
-    if (assign_pad(g, el)) return;
-    if (g_menu_open) { pad_nav(g); return; }
-    // The controller opens the sidebar: Home, or − and + pressed together (a game sees those two for a moment)
-    static BOOL held; BOOL now = g.buttonHome.isPressed || (g.buttonMenu.isPressed && g.buttonOptions.isPressed);
-    if (now && !held && g_menu_toggle) { held = YES; g_nav_prev = ~0u; g_open_by_pad = 1; g_menu_toggle(); g_open_by_pad = 0; if (g_menu_open) pad_glyphs(g); return; }   // every button counts as held, so the opening press does not also act in the sidebar
-    held = now;
-    pad_read(g);
-}
+#include "nxforge/front_mac_pad_nav.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
 static const char *pad_name(GCController *c) { return c.vendorName.UTF8String ?: "?"; }
 static void npad_name(int p, char *out, size_t cap) { uint32_t id = dm_player_npad(p); if (id == 0x20) snprintf(out, cap, "handheld"); else snprintf(out, cap, "%u", id); }
 static void pro_players_changed(GCController *gone) {
@@ -374,6 +304,7 @@ static void pads_changed(GCController *gone) {
     hidpad_twins_take(gone);   // the pads of a model GameController lists fewer of, a player each
     dm_pad_players(pad_slot_mask(&g_slots));
     pro_players_changed(gone);
+    cp_poll();   // a controller came or went while the controller applet's prompt is up
 }
 // Display sleep: macOS counts keyboard and mouse input as user activity, not a controller's, so in controller-only play the display dims and locks; the latency
 // activity in front_run keeps the system awake, not the display. While the game window is key the display stays awake (NSActivityIdleDisplaySleepDisabled);
@@ -427,6 +358,7 @@ static void hidpad_read(hid_pad *d) {
     int p = g_merge ? 0 : pad_slot_of(&g_slots, d);
     int pro = d->twin && hidpad_is_pro(d);
     if (p < 0 && (!g_press_to_join || !(pro ? d->pro_m : pad_hid_buttons(&d->st)) || (p = pad_join(d, d->name)) < 0)) return;   // DM_PAD_PRESS_TO_JOIN=1: joins at its first button
+    if (cp_poll()) return;   // the controller applet's prompt has the controllers
     if (pro) { pad_set(p, d->pro_m, d->pro_s[0], d->pro_s[1], d->pro_s[2], d->pro_s[3]); return; }
     int32_t s[4]; pad_hid_sticks(&d->st, s);
     pad_set(p, pad_hid_buttons(&d->st), s[0], s[1], s[2], s[3]);
@@ -455,6 +387,7 @@ static void hidpad_detach(hid_pad *d) {   // d is already off g_hidpads
     npad_name(p, nb, sizeof nb); LOG("controller '%s' (HID) disconnected: player %d (npad %s) is free", d->name, p + 1, nb);
     dm_pad_set_player(p, 0, 0, 0, 0, 0);   // nothing stays pressed
     dm_pad_players(pad_slot_mask(&g_slots));
+    cp_poll();   // one controller fewer to wait for, or one player fewer
 }
 // Quit with the Home button (home_quit.h, LNPANDY/NX2Apple#336): held for 2 s it opens the prompt (home_quit_mac.h) over the game's view, A quits through the same path as ⌘Q
 // (NSApp terminate, so the save writer and the other exit handlers run as there), B or Home closes it. While the prompt is open the game is told it lost the focus, as the
@@ -553,6 +486,67 @@ static void hq_close(void) {
     if (g_hq.phase == HQ_PROMPT) LOG("front end: quit prompt closed, the window lost the focus");
     hq_cancel(&g_hq); hq_hide_hold(); hq_hide_prompt();
 }
+// The controller applet's prompt (front.h front_ctrl_support, ctrl_prompt.h; GitHub issue #1640): the game asked for more players than it sees, and the game's thread waits while
+// the prompt is up over the game, as the Switch's player screen. A controller that joins meanwhile is a player at once (its first button with DM_PAD_PRESS_TO_JOIN, its
+// connection without), and the count on the card follows. A and B are GameController's buttonA and buttonB on any controller, as the Home prompt's (a raw HID pad's A and B,
+// pad_hid_mac.h); the press that makes a controller join does not count. Return or J is done, Escape or K closes it. The game gets no controller, keyboard or mouse input
+// while it is up, nor until the A or B that closed it is let go. A front end passes the texts in the player's language as DM_CTRL_PROMPT_TEXT (cp_text)
+static NSView *g_cp_view; static dispatch_semaphore_t g_cp_done; static int g_cp_ok, g_cp_shown_joined = -1, g_cp_shown_on = -1;
+static void cp_buttons(int *a, int *b) {
+    *a = *b = 0;
+    for (GCController *c in GCController.controllers) { GCExtendedGamepad *g = c.extendedGamepad; if (g) { *a |= g.buttonA.isPressed; *b |= g.buttonB.isPressed; } }
+    for (hid_pad *d = g_hidpads; d; d = d->next) { uint64_t m = d->twin && hidpad_is_pro(d) ? d->pro_m : pad_hid_buttons(&d->st); *a |= !!(m & DM_BTN_A); *b |= !!(m & DM_BTN_B); }
+}
+static int cp_waiting(void) {   // connected controllers that are no player yet
+    if (g_merge) return 0;
+    int n = 0;
+    for (GCController *c in GCController.controllers) if (c.extendedGamepad && !hidpad_gc_unread(c) && pad_slot_of(&g_slots, (__bridge const void *)c) < 0) n++;
+    for (hid_pad *d = g_hidpads; d; d = d->next) if (pad_slot_of(&g_slots, d) < 0) n++;
+    return n;
+}
+static void cp_show(void) {   // the card, built again when its count or its done action changes
+    int on = cp_can_confirm(&g_cp);
+    if (g_cp_view && g_cp_shown_joined == g_cp.joined && g_cp_shown_on == on) return;
+    const char *env = getenv("DM_CTRL_PROMPT_TEXT"); char t[CP_TEXTS][256];
+    for (int i = 0; i < CP_TEXTS; i++) cp_text(env, i, &g_cp, t[i], sizeof t[i]);
+    GCExtendedGamepad *g = nil; for (GCController *c in GCController.controllers) if ((g = c.extendedGamepad)) break;
+    NSView *cv = g_win.contentView, *v = hq_card_view(cv.bounds, @(t[CP_TEXT_TITLE]), [NSString stringWithFormat:@"%s\n%s", t[CP_TEXT_HINT], t[CP_TEXT_COUNT]], @(t[CP_TEXT_DONE]),
+                                                   @(t[CP_TEXT_CANCEL]), g.buttonA.sfSymbolsName, g.buttonB.sfSymbolsName, on);
+    if (g_cp_view) [g_cp_view removeFromSuperview];
+    [cv addSubview:v]; if (!g_cp_view) hq_fade(v, 1);
+    g_cp_view = v; g_cp_shown_joined = g_cp.joined; g_cp_shown_on = on;
+}
+// One step of the prompt (a button, a key, a controller joining, coming or going); returns whether it keeps the game's input
+static int cp_poll(void) {
+    if (g_cp.phase == CP_IDLE) return 0;
+    int a, b, joined = dm_players_reported(); cp_buttons(&a, &b);
+    int confirm = g_cp_confirm, cancel = g_cp_cancel; g_cp_confirm = g_cp_cancel = 0;
+    cp_phase was = g_cp.phase, ph = cp_step(&g_cp, joined, cp_waiting(), a, b, confirm, cancel);
+    if (was == CP_OPEN && ph == CP_OPEN) cp_show();
+    if (was == CP_OPEN && ph != CP_OPEN) {
+        hq_fade(g_cp_view, 0); g_cp_view = nil;
+        LOG("front end: controller prompt closed: %d players (%s)", joined, g_cp.ok ? "done" : "canceled");
+        g_cp_ok = g_cp.ok; dispatch_semaphore_signal(g_cp_done);
+        ph = cp_step(&g_cp, joined, 0, a, b, 0, 0);   // nothing held: the game has its input at once
+    }
+    if (ph == CP_IDLE) { pads_reread(); return 0; }   // each controller read as it is now
+    return 1;
+}
+int front_ctrl_support(int min, int max) {
+    if (!g_layer) return -1;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        g_btn = 0; g_w = g_a = g_s = g_d = 0; g_rl = g_ru = g_rr = g_rd = 0; push();   // nothing the game held stays pressed while the prompt has the input
+        if (g_mouse_down) { g_mouse_down = 0; dm_touch_set(NULL, 0); }
+        pads_release();
+        int a, b; cp_buttons(&a, &b);
+        g_cp_done = done; cp_open(&g_cp, min, max, dm_players_reported(), a, b);
+        LOG("front end: controller prompt open: %d to %d players wanted, %d in, %d controllers waiting to join", min, max, g_cp.joined, cp_waiting());
+        cp_show(); cp_poll();
+    });
+    dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
+    return g_cp_ok;
+}
 static void pads_start(void) {
     const char *e = getenv("DM_PAD_MERGE"); g_merge = e && atoi(e);
     e = getenv("DM_KBD_PLAYER"); g_kbd_own = !g_merge && e && !strcmp(e, "own");
@@ -600,238 +594,7 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect = 
 - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self fitDrawable]; }
 @end
 
-// Quick settings: a sidebar over the right of the game picture (Esc, ⇧⌘G or the Graphics menu opens it; Esc, its close button or Resume game closes it), fullscreen too. The sidebar itself is
-// SwiftUI (quick_settings_mac.swift: the system's controls on a Liquid Glass panel); this side opens and closes it, draws the frame-rate counter and loads the mods at launch. Kept per game in the
-// user defaults (the app bundle's own domain; the keys name the game for a bare dmhost); a setting the environment names wins over its saved value and is not saved.
-// - Graphics & shaders: the present filter (front.h mtl_present_filter_set, nvn_mtl.m), from the next frame, so the game runs on behind the sidebar and shows the change at once.
-//   DM_PRESENT_FILTER / DM_PRESENT_FILTER_STRENGTH / DM_PRESENT_SCANLINE in the environment.
-// - Performance: a frame-rate counter in a corner of the game picture, the frames put on screen in the last second (nvn_mtl.m mtl_present_count, as on the iPhone). DM_SHOW_FPS=0 / 1.
-// - Mods: each folder in ~/Library/Application Support/nxnative/<title ID>/mods is a mod, the game's RomFS files it replaces either in it, in its romfs folder (the layout other
-//   Switch tools use) or in Atmosphere's atmosphere/contents/<title ID>/romfs (mod_root). The enabled ones are overlaid on the RomFS at launch in name order, the first one holding a file winning (hle_fs.c DM_ROMFS_OVERLAY, which names them),
-//   so a change applies on the next launch. DM_ROMFS_OVERLAY in the environment replaces them.
-// - Cheats: this build's Atmosphère cheat file (hle_cheats.c), a switch per cheat, the same rows as the Cheats menu; the host keeps the toggles beside the file (<build ID>.enabled).
-// While the sidebar is up the game sees what it sees when its window loses focus: its input is released (input_release) and its focus state is out of focus (dm_focus_set 2), so a game
-// that pauses for the HOME menu pauses; the keyboard goes to the sidebar's controls. The game itself is not suspended, so the filter shows live
-static NSString *const g_pfx_title[DM_PFX_N] = {@"Off", @"Sharpen", @"Pixel-perfect", @"CRT", @"CRT-Lottes", @"LCD Grid"};
-static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"DMPresentFilter.%@.%s", what, DM_GAME_NAME]; }
-static NSString *opt_key(NSString *what) { return [NSString stringWithFormat:@"DMQuickSettings.%@.%s", what, DM_GAME_NAME]; }
-
-static NSString *mods_dir(void) {
-    NSURL *u = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
-    return [u.path stringByAppendingFormat:@"/nxnative/%s/mods", DM_GAME_ID];
-}
-static NSArray<NSString *> *mods_list(void) {   // the mod folders, in the order they are overlaid (quick_settings_mac.swift lists them the same way)
-    NSMutableArray *r = [NSMutableArray array]; NSString *d = mods_dir();
-    if (!d) return r;   // no Application Support folder: no mods
-    for (NSString *n in [NSFileManager.defaultManager contentsOfDirectoryAtPath:d error:nil] ?: @[]) {
-        BOOL dir = NO;
-        if (![n hasPrefix:@"."] && [NSFileManager.defaultManager fileExistsAtPath:[d stringByAppendingPathComponent:n] isDirectory:&dir] && dir) [r addObject:n];
-    }
-    return [r sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
-}
-// A mod's RomFS files: its romfs folder, or the one in the Atmosphere layout a mod is usually downloaded in (atmosphere/contents/<title ID>/romfs,
-// contents/<title ID>/romfs or <title ID>/romfs, after the NxNative Launcher's mod manager), or else the mod folder itself
-static NSString *mod_root(NSString *name) {
-    NSString *p = [mods_dir() stringByAppendingPathComponent:name], *tid = @DM_GAME_ID;
-    for (NSString *sub in @[@"romfs", [NSString stringWithFormat:@"atmosphere/contents/%@/romfs", tid], [NSString stringWithFormat:@"contents/%@/romfs", tid],
-                            [NSString stringWithFormat:@"%@/romfs", tid]]) {
-        NSString *rf = [p stringByAppendingPathComponent:sub]; BOOL dir = NO;
-        if ([NSFileManager.defaultManager fileExistsAtPath:rf isDirectory:&dir] && dir) return rf;
-    }
-    return p;
-}
-static NSSet<NSString *> *g_mods_run;   // the mods this launch overlaid (nil: DM_ROMFS_OVERLAY came from the environment)
-static void mods_start(void) {   // main thread, before the guest runs (the game mounts its RomFS later, hle_fs.c h_fs_MountRom)
-    if (getenv("DM_ROMFS_OVERLAY")) { LOG("front end: RomFS overlay from DM_ROMFS_OVERLAY; this game's enabled mods are not used"); return; }
-    NSArray *want = [NSUserDefaults.standardUserDefaults arrayForKey:opt_key(@"mods")] ?: @[];
-    NSMutableArray *roots = [NSMutableArray array]; NSMutableSet *on = [NSMutableSet set]; size_t len = 0;
-    for (NSString *n in mods_list()) {
-        if (![want containsObject:n]) continue;
-        NSString *r = mod_root(n); size_t k = strlen(r.fileSystemRepresentation) + 1;
-        if ([r containsString:@":"]) { LOG("[RED] mod '%s' not used: its path has a ':' (the overlay list separator)", n.UTF8String); continue; }
-        if (len + k > 4096) { LOG("[RED] mod '%s' and the ones after it not used: the overlay list is full (4,096 bytes of paths)", n.UTF8String); break; }
-        [roots addObject:r]; [on addObject:n]; len += k;
-    }
-    g_mods_run = on;
-    if (!roots.count) return;
-    setenv("DM_ROMFS_OVERLAY", [roots componentsJoinedByString:@":"].fileSystemRepresentation, 1);
-    LOG("front end: %lu mod%s over the RomFS (Quick settings): %s", (unsigned long)roots.count, roots.count == 1 ? "" : "s", [on.allObjects componentsJoinedByString:@", "].UTF8String);
-}
-
-
-@interface DmSettings : NSObject
-@property NSView *view; @property NSMutableArray<NSMenuItem *> *items; @property NSTextField *fpsLabel; @property NSTimer *fpsTimer; @property uint64_t fpsN0; @property double fpsT0;
-- (void)toggle:(id)sender; - (void)fpsCounter;
-@end
-static DmSettings *g_opts;
-static void qs_close(void) { if (g_menu_open) [g_opts toggle:nil]; }
-// Record frame times (Quick settings › Performance, from the next launch; after NX2Apple's FrameTimes.swift, MIT): the host's per-frame timing rows (hle_nvn.c DM_NVN_TSV,
-// timing rows only) go to a new file per launch in the game folder's "Frame times" (DM_GAME_FOLDER), else <DM_ROOT>/frame-times (Application Support/nxnative/<title ID>),
-// named like the captures. DM_FRAME_TIMES=1 / 0 turns it on or off for one run without saving; a DM_NVN_TSV the environment sets wins over both. scripts/bench.py's
-// percentiles, and the NXForge Converter's Builds page sums the newest recording up the same way
-static void frame_times_begin(void) {
-    if (getenv("DM_NVN_TSV")) return;
-    const char *e = getenv("DM_FRAME_TIMES");
-    if (!(e ? atoi(e) != 0 : [NSUserDefaults.standardUserDefaults boolForKey:opt_key(@"frameTimes")])) return;
-    const char *g = getenv("DM_GAME_FOLDER"), *root = getenv("DM_ROOT");
-    NSString *dir = g && *g ? [@(g) stringByAppendingPathComponent:@"Frame times"] : root && *root ? [@(root) stringByAppendingPathComponent:@"frame-times"] : nil;
-    if (!dir || ![NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil]) { LOG("[RED] front end: no folder for frame times (DM_GAME_FOLDER and DM_ROOT unset or not writable)"); return; }
-    NSDateFormatter *f = [NSDateFormatter new]; f.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
-    NSString *name = [[NSString stringWithFormat:@"%s %@.tsv", DM_GAME_NAME, [f stringFromDate:NSDate.date]] stringByReplacingOccurrencesOfString:@"/" withString:@"-"];
-    NSString *path = [dir stringByAppendingPathComponent:name];
-    setenv("DM_NVN_TSV", path.fileSystemRepresentation, 1); setenv("DM_NVN_TSV_CALLS", "0", 0);
-    LOG("front end: recording frame times to %s", path.fileSystemRepresentation);
-}
-static void qs_toggle(void) { [g_opts toggle:nil]; }
-static void qs_fps(void) { [g_opts fpsCounter]; }
-static void toast(NSString *msg) { dm_qs_toast((__bridge void *)g_win.contentView, msg.UTF8String); }
-// Capture (capture_mac.m): from the sidebar's Capture section, the Capture menu (⇧⌘S, ⇧⌘R) or a controller (front_controller); a toast says where the file went
-static NSString *where(NSString *path) {   // a saved file's folder for a toast: its last two folders ("Curse of the Moon › Screenshots")
-    NSArray *c = path.stringByDeletingLastPathComponent.pathComponents; NSUInteger n = c.count;
-    return n >= 2 ? [NSString stringWithFormat:@"%@ › %@", c[n - 2], c[n - 1]] : path.stringByDeletingLastPathComponent;
-}
-void front_qs_screenshot(void) {
-    capture_screenshot(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Screenshot saved to " stringByAppendingString:where(path)] : err); });
-}
-void front_qs_record(void) {
-    if (capture_recording()) { capture_record_stop(); toast(@"Saving the recording…"); return; }
-    capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Recording saved to " stringByAppendingString:where(path)] : err); if (g_menu_open) dm_qs_refresh(); });
-    if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
-}
-int front_qs_recording(void) { return capture_recording(); }
-// Restart game (Quick settings, for the settings that apply at the next launch): the app's launcher (dm/mac/launcher.c) names a file in DM_LAUNCHER_RESTART; the host makes it
-// and quits as ⌘Q does, and the launcher, finding the file, starts the host again with the same environment. A bare dmhost has no launcher and no restart
-int front_qs_can_restart(void) { const char *e = getenv("DM_LAUNCHER_RESTART"); return e && *e; }
-void front_qs_restart(void) {
-    const char *rf = getenv("DM_LAUNCHER_RESTART"); if (!rf || !*rf) return;
-    int fd = open(rf, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) { LOG("[RED] front end: Restart game: cannot write %s: %s", rf, strerror(errno)); toast(@"Restart did not work: quit and open the game again"); return; }
-    close(fd); LOG("front end: Restart game (Quick settings)"); [NSApp terminate:nil];
-}
-// Where captures go, for the Capture section: the folder chosen for this game (saved), or none for the default
-const char *front_qs_capture_folder(int video) { return capture_folder(video).fileSystemRepresentation; }
-int front_qs_capture_custom(void) { return [NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")].length > 0; }
-void front_qs_capture_folder_set(const char *dir) {
-    NSString *d = dir && *dir ? @(dir) : nil;
-    if (d) [NSUserDefaults.standardUserDefaults setObject:d forKey:opt_key(@"captureDir")]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:opt_key(@"captureDir")];
-    capture_folder_set(d);
-}
-// While the sidebar is up the game picture moves aside into the window's left part (front.h mtl_present_inset), sliding with it unless Reduce Motion is on
-static float g_inset_now, g_inset_to; static NSTimer *g_inset_timer;
-static void inset_to(float share) {
-    g_inset_to = share; [g_inset_timer invalidate]; g_inset_timer = nil;
-    if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) { g_inset_now = share; mtl_present_inset(share); return; }
-    float from = g_inset_now; double t0 = CACurrentMediaTime();
-    g_inset_timer = [NSTimer scheduledTimerWithTimeInterval:1 / 120.0 repeats:YES block:^(NSTimer *t) {
-        double u = fmin(1, (CACurrentMediaTime() - t0) / 0.25); u = 1 - pow(1 - u, 3);   // ease out over a quarter second
-        g_inset_now = from + (g_inset_to - from) * (float)u; mtl_present_inset(g_inset_now);
-        if (u >= 1) { [t invalidate]; g_inset_timer = nil; } }];
-}
-@implementation DmSettings
-- (BOOL)fpsOn {
-    const char *e = getenv("DM_SHOW_FPS"); if (e) return atoi(e) != 0;
-    return [NSUserDefaults.standardUserDefaults boolForKey:opt_key(@"fps")];
-}
-// The frame-rate counter, in the chosen corner of the game view, under the sidebar
-- (void)fpsCounter {
-    if (!self.fpsOn) { [self.fpsTimer invalidate]; self.fpsTimer = nil; [self.fpsLabel removeFromSuperview]; self.fpsLabel = nil; return; }
-    NSView *gv = g_win.contentView;
-    if (!self.fpsLabel) {
-        NSTextField *l = [NSTextField labelWithString:@"-- FPS"]; l.font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightSemibold]; l.textColor = NSColor.whiteColor;
-        NSShadow *sh = [NSShadow new]; sh.shadowColor = [NSColor colorWithWhite:0 alpha:0.8]; sh.shadowBlurRadius = 2; sh.shadowOffset = NSMakeSize(0, -1); l.shadow = sh;
-        if (self.view.superview) [gv addSubview:l positioned:NSWindowBelow relativeTo:self.view]; else [gv addSubview:l];
-        self.fpsLabel = l; self.fpsN0 = mtl_present_count(); self.fpsT0 = CACurrentMediaTime();
-        __weak DmSettings *me = self;
-        self.fpsTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
-            (void)t; DmSettings *s = me; if (!s) return;
-            uint64_t n = mtl_present_count(); double now = CACurrentMediaTime();
-            if (now - s.fpsT0 < 1.5) s.fpsLabel.stringValue = [NSString stringWithFormat:@"%.0f FPS", (n - s.fpsN0) / (now - s.fpsT0)];   // a longer span was a stall (minimized): no reading
-            s.fpsN0 = n; s.fpsT0 = now;
-        }];
-        LOG("front end: frame-rate counter on");
-    }
-    [self.fpsLabel sizeToFit];
-    int c = (int)MIN(MAX([NSUserDefaults.standardUserDefaults integerForKey:opt_key(@"fpsPos")], 0), 3);
-    NSSize b = gv.bounds.size, s = self.fpsLabel.frame.size; s.width += 24;   // room for wider readings
-    self.fpsLabel.frame = NSMakeRect(c & 1 ? b.width - s.width - 12 : 12, c & 2 ? 10 : b.height - s.height - 10, s.width, s.height);
-    self.fpsLabel.alignment = c & 1 ? NSTextAlignmentRight : NSTextAlignmentLeft;
-    self.fpsLabel.autoresizingMask = (c & 1 ? NSViewMinXMargin : NSViewMaxXMargin) | (c & 2 ? NSViewMaxYMargin : NSViewMinYMargin);
-}
-- (void)toggle:(id)sender {
-    (void)sender;
-    if (!g_menu_open) {
-        if (!self.view) {
-            NSString *run = g_mods_run ? [g_mods_run.allObjects componentsJoinedByString:@"\n"] : nil;
-            self.view = (__bridge_transfer NSView *)dm_qs_make(DM_GAME_NAME, mods_dir().fileSystemRepresentation, run.UTF8String, qs_close, qs_fps);
-            self.view.autoresizingMask = NSViewMinXMargin | NSViewHeightSizable;
-            NSView *gv = g_win.contentView; gv.postsFrameChangedNotifications = YES;
-            [NSNotificationCenter.defaultCenter addObserverForName:NSViewFrameDidChangeNotification object:gv queue:nil usingBlock:^(NSNotification *n) {   // a resize while it is up: the picture keeps beside it
-                (void)n; if (!g_menu_open || g_inset_timer) return; CGFloat W = gv.bounds.size.width, sw = self.view.frame.size.width;
-                g_inset_now = g_inset_to = sw < W ? (float)(sw / W) : 0; mtl_present_inset(g_inset_now); }];
-        }
-        NSView *gv = g_win.contentView; CGFloat w = MIN(460, gv.bounds.size.width);
-        self.view.frame = NSMakeRect(gv.bounds.size.width - w, 0, w, gv.bounds.size.height);
-        dm_qs_opened(g_open_by_pad); dm_qs_refresh();
-        [gv addSubview:self.view]; g_menu_open = 1;
-        inset_to(w < gv.bounds.size.width ? (float)(w / gv.bounds.size.width) : 0);   // a sidebar as wide as the window covers the game instead
-        input_release(); dm_focus_set(2);   // as when the window loses focus: nothing stays held, and a game that pauses for the HOME menu pauses
-        LOG("front end: Quick settings open");
-    } else {
-        [self.view removeFromSuperview]; g_menu_open = 0; inset_to(0); g_pad_quiet = 1; g_assign = -1;
-        [g_win makeFirstResponder:g_win.contentView];
-        if (g_win.isKeyWindow) { input_resume(); dm_focus_set(1); }   // otherwise the window's becoming key resumes them
-        LOG("front end: Quick settings closed");
-    }
-}
-- (void)pickItem:(NSMenuItem *)it {
-    float k; mtl_present_filter(&k); mtl_present_filter_set((int)it.tag, k);
-    if (!getenv("DM_PRESENT_FILTER")) { NSUserDefaults *d = NSUserDefaults.standardUserDefaults; [d setInteger:it.tag forKey:pfx_key(@"mode")]; [d setFloat:k forKey:pfx_key(@"strength")]; }
-    if (g_menu_open) dm_qs_refresh();
-}
-- (BOOL)validateMenuItem:(NSMenuItem *)it {   // check marks: the filter now, and the sidebar while it is up
-    if (it.action == @selector(toggle:)) it.state = g_menu_open ? NSControlStateValueOn : NSControlStateValueOff;
-    else if (it.action == @selector(record:)) it.title = capture_recording() ? @"Stop Recording" : @"Start Recording";
-    else if (it.action == @selector(pickItem:)) it.state = it.tag == mtl_present_filter(NULL) ? NSControlStateValueOn : NSControlStateValueOff;
-    return YES;
-}
-- (void)screenshot:(id)sender { (void)sender; front_qs_screenshot(); }
-- (void)record:(id)sender { (void)sender; front_qs_record(); if (g_menu_open) dm_qs_refresh(); }
-- (void)menuIn:(NSMenu *)bar {
-    NSMenu *gm = [[NSMenu alloc] initWithTitle:@"Graphics"]; self.items = [NSMutableArray array];
-    [[bar addItemWithTitle:@"Graphics" action:nil keyEquivalent:@""] setSubmenu:gm];
-    for (int i = 0; i < DM_PFX_N; i++) {
-        if (i != DM_PFX_OFF && i != DM_PFX_CRT) continue;   // the player picks off or CRT; the others stay for DM_PRESENT_FILTER
-        NSMenuItem *it = [gm addItemWithTitle:[NSString stringWithFormat:@"Filter: %@", g_pfx_title[i]] action:@selector(pickItem:) keyEquivalent:@""];
-        it.target = self; it.tag = i; [self.items addObject:it];
-    }
-    [gm addItem:NSMenuItem.separatorItem];
-    NSMenuItem *it = [gm addItemWithTitle:@"Quick Settings" action:@selector(toggle:) keyEquivalent:@"g"];   // ⇧⌘G (and Esc in the game window), checked while the sidebar is up (validateMenuItem)
-    it.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; it.target = self;
-    NSMenu *cm = [[NSMenu alloc] initWithTitle:@"Capture"];   // ⇧⌘S and ⇧⌘R: ⌘ shortcuts never reach the game
-    [[bar addItemWithTitle:@"Capture" action:nil keyEquivalent:@""] setSubmenu:cm];
-    NSMenuItem *sh = [cm addItemWithTitle:@"Take Screenshot" action:@selector(screenshot:) keyEquivalent:@"s"], *rc = [cm addItemWithTitle:@"Start Recording" action:@selector(record:) keyEquivalent:@"r"];
-    for (NSMenuItem *x in @[sh, rc]) { x.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; x.target = self; }
-    g_opts = self; g_menu_toggle = qs_toggle; [self fpsCounter];
-}
-@end
-static void graphics_start(void) {   // main thread, before the guest runs: the saved filter, anisotropic filtering, upscaling, anti-aliasing, volume, controls and mods, unless the environment names them
-    mods_start(); controls_load();
-    capture_folder_set([NSUserDefaults.standardUserDefaults stringForKey:opt_key(@"captureDir")]);
-    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
-    // Anisotropic filtering: 16x unless this game's saved choice says otherwise (the Mac has the GPU time to spare; "Game default" is saved as 0). Taken at the game's first sampler: before the guest runs
-    if (!getenv("DM_ANISO")) mtl_aniso_set([d objectForKey:opt_key(@"aniso")] ? (int)[d integerForKey:opt_key(@"aniso")] : 16);
-    // Upscaling: MetalFX unless the settings window's saved choice (launcher.DM_PRESENT_UPSCALE, which Quick settings writes too) says off; the window and env.txt set it in the environment
-    if (!getenv("DM_PRESENT_UPSCALE")) { NSString *u = [d stringForKey:@"launcher.DM_PRESENT_UPSCALE"]; mtl_present_upscale_set(u ? [u isEqualToString:@"metalfx"] : 1); }
-    if (!getenv("DM_PRESENT_AA") && [d objectForKey:opt_key(@"aa")]) mtl_present_aa_set((int)[d integerForKey:opt_key(@"aa")]);
-    if ([d objectForKey:opt_key(@"volume")]) dm_audio_volume_set([d floatForKey:opt_key(@"volume")]);
-    if (!getenv("DM_PRESENT_SCANLINE") && [d objectForKey:pfx_key(@"scanline")]) mtl_present_scanline_set((int)[d integerForKey:pfx_key(@"scanline")]);
-    if (getenv("DM_PRESENT_FILTER")) return;
-    if (![d objectForKey:pfx_key(@"mode")]) return;
-    int m = (int)[d integerForKey:pfx_key(@"mode")]; if (m != DM_PFX_CRT) m = DM_PFX_OFF;   // a choice saved before Sharpen, Pixel-perfect, CRT-Lottes and LCD Grid left the menus: off
-    float k = [d objectForKey:pfx_key(@"strength")] ? [d floatForKey:pfx_key(@"strength")] : 0.5f;
-    mtl_present_filter_set(m, k); LOG("front end: present filter from the saved choice for this game (Quick settings)");
-}
-
+#include "nxforge/front_mac_quick_settings.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
 // AppKit reports a refused fullscreen request only to the window delegate (there is no notification for it)
 static void (^g_fs_failed)(void);
 @interface DmWinDelegate : NSObject <NSWindowDelegate> @end

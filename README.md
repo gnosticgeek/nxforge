@@ -1,6 +1,6 @@
 # NXForge
 
-NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It tracks nxnative closely and adds Mac features on top: a Quick settings sidebar with a CRT filter, cheats, mods, screenshots and recordings, and controller rumble fixes. Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
+NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It is two things on top of nxnative's engine: the **NXForge Converter**, a Mac app that finds your games and builds and rebuilds them, and a **Mac player layer**: the in-game Quick settings sidebar with a CRT filter, FXAA, anisotropic filtering, cheats, mods, screenshots and recordings, and control remapping. The engine itself is nxnative's and follows it closely ([UPSTREAM.md](UPSTREAM.md#thin-fork-from-0150)). Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
 
 Play your own Nintendo Switch games natively on Mac, iPhone and iPad. Bring your game (its NSP files) and your `prod.keys`; one script turns them into an IPA that you sideload.
 
@@ -218,7 +218,7 @@ Under a game, "60 fps with 1.2.0" means it runs at 60 fps (30 on the console) wi
 <td align="center" valign="top" width="33%"><img src="docs/images/persona-5-royal.jpg" width="256" alt="Persona 5 Royal"><br><small><b><a href="dm/games/01005CA01580E000/README.md">Persona 5 Royal</a></b></small></td>
 </tr>
 <tr>
-<td align="center" valign="top" width="33%"><img src="docs/images/pikmin-4.jpg" width="256" alt="Pikmin 4"><br><small><b><a href="dm/games/0100B7C00933A000/README.md">Pikmin 4</a></b></small></td>
+<td align="center" valign="top" width="33%"><img src="docs/images/pikmin-4.jpg" width="256" alt="Pikmin 4"><br><small><b><a href="dm/games/0100B7C00933A000/README.md">Pikmin 4</a></b><br>60 fps, up to 120 on the Mac</small></td>
 <td align="center" valign="top" width="33%"><img src="docs/images/pokemon-brilliant-diamond.jpg" width="256" alt="Pokémon Brilliant Diamond"><br><small><b><a href="dm/games/0100000011D90000/README.md">Pokémon Brilliant Diamond</a></b><br>60 fps with 1.3.0</small></td>
 <td align="center" valign="top" width="33%"><img src="docs/images/pokemon-legends-z-a.jpg" width="256" alt="Pokémon Legends: Z-A"><br><small><b><a href="dm/games/0100F43008C44000/README.md">Pokémon Legends: Z-A</a></b></small></td>
 </tr>
@@ -345,7 +345,7 @@ Under a game, "60 fps with 1.2.0" means it runs at 60 fps (30 on the console) wi
 <tr>
 <td align="center" valign="top" width="33%"><img src="docs/images/minecraft-dungeons-ii.jpg" width="256" alt="Minecraft Dungeons II"><br><small><b><a href="dm/games/0100A7C01B792000/README.md">Minecraft Dungeons II</a></b></small></td>
 <td align="center" valign="top" width="33%"><img src="docs/images/sonic-superstars.jpg" width="256" alt="Sonic Superstars"><br><small><b><a href="dm/games/01008F701C074000/README.md">Sonic Superstars</a></b></small></td>
-<td></td>
+<td align="center" valign="top" width="33%"><img src="docs/images/dragon-ball-sparking-zero.jpg" width="256" alt="DRAGON BALL: Sparking! ZERO"><br><small><b><a href="dm/games/010035F022078000/README.md">DRAGON BALL: Sparking! ZERO</a></b><br>60 fps, up to 120 on the Mac</small></td>
 </tr>
 </table>
 <!-- end of gallery -->

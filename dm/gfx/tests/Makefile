@@ -13,7 +13,7 @@ GAME_H = ../../host/gen/$(GAME)/game_profile.h
 MSL_H = ../../host/gen/msl-macosx/host_msl_gen.h
 CFLAGS=-O1 -g -Wall -Wno-unused-function -I../nvn/include -I$(dir $(GAME_H)) -I$(dir $(MSL_H))
 GFX=$(filter-out ../nvn/hle_nvn.c,$(sort $(wildcard ../nvn/*.c ../nvn/*.m ../nvn/*.S ../tex/*.c ../tex/*.m)))
-GFX_H=$(wildcard ../nvn/*.h ../nvn/*.inc ../nvn/include/*.h ../tex/*.h) $(GAME_H) $(MSL_H)
+GFX_H=$(wildcard ../nvn/*.h ../nvn/*.inc ../nvn/nxforge/*.inc ../nvn/include/*.h ../tex/*.h) $(GAME_H) $(MSL_H)
 .DEFAULT_GOAL := t_nvn   # the profile header rule comes first, so keep the default goal as before
 $(GAME_H):
 	$(MAKE) -C ../../host game_profile GAME=$(GAME)
@@ -83,6 +83,8 @@ t_pace: t_pace.c ../nvn/nvn_pace.h
 	clang -O1 -Wall -o $@ t_pace.c
 t_timestamp: t_timestamp.c ../nvn/nvn_timestamp.h
 	$(CC) -std=c11 -O2 -g -Wall -Wextra -Werror -o $@ $<
+t_counter_clock: t_counter_clock.m ../../host/hle_os.c ../../host/dm.h $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_counter_clock.m ../../host/hle_os.c $(MTL_T_SRC) $(FW)
 t_fstep: t_fstep.c ../nvn/nvn_fstep.h
 	clang -O1 -Wall -o $@ t_fstep.c
 t_thermal: t_thermal.c $(MTL_T_DEP)
@@ -176,8 +178,8 @@ t_tex_fit_root: t_tex_fit_root.m $(MTL_T_DEP)
 .PHONY: check_t_tex_fit_root
 check_t_tex_fit_root: t_tex_fit_root
 	MTL_DEBUG_LAYER=1 ./t_tex_fit_root
-t_pool_holds: t_pool_holds.m $(MTL_T_DEP)
-	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_holds.m $(MTL_T_SRC) $(FW)
+t_addr_known: t_addr_known.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_addr_known.m $(MTL_T_SRC) $(FW)
 t_pool_chunks: t_pool_chunks.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_chunks.m $(MTL_T_SRC) $(FW)
 t_gmem_words: t_gmem_words.m $(MTL_T_DEP)

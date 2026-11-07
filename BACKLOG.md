@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-07 (0.14.0: upstream main up to d777f0a plus picks, Mario Kart World pull requests, the converter's Library page).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-07 (0.15.0: thin fork, upstream main up to bd979ce).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
@@ -26,6 +26,9 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 | pso_offline free-space check | Closed upstream ([#790](https://github.com/seedds/nxnative/pull/790)), its fix landed there | Branch `contrib/pso-offline-free-space`, from fde1e63. |
 | Unity 6000.3 shader layouts | Closed upstream ([#791](https://github.com/seedds/nxnative/pull/791)), its fix landed there | Branch `contrib/unity-6000-3-shaders`, from f6388f2. |
 | bench.py offline pipeline archive | Closed upstream ([#792](https://github.com/seedds/nxnative/pull/792)), on fork main | Branch `contrib/bench-pso-bundle`, from 2309513. |
+| Thin-fork upstream PRs | Ready for Tom to open | Branches `contrib/vp9-late-free`, `contrib/gpu-watchdog`, `contrib/dirty-page-pool-bounds`, `contrib/c1-tables-stable-bytes`, each one commit on nxnative `main` bd979ce; bodies in project files `nxnative-pr/0.15/`. NXForge keeps its copies until upstream lands them. |
+| Thin-fork: still to prepare | Next | Anisotropic filtering floor (needs an nxnative issue first), incremental pipeline archive and shared Metal cache, GameData.bundle signing, Mina the Hollower and Kirby's Return to Dream Land Deluxe profiles. |
+| Fullscreen 60 fps: ours or upstream's | Needs a hands-on check | Upstream keeps the display link in fullscreen (490859e and earlier). Compare a 60 fps game at 120 Hz fullscreen with and without `DM_PRESENT_LATENCY=2` (upstream's path); drop NXForge's no-link mode if upstream's holds 60. |
 | Next upstream candidates | Next | Anisotropic filtering floor, untagged and multi-application XCI dumps, the shader build speed-up with a shared Metal cache, the rumble permission before a controller connects. The present filters and MetalFX defaults need an issue first (over about 1,000 lines). |
 
 ## Quick settings sidebar and filters

@@ -939,14 +939,13 @@ static int pool_find(uint64_t addr, uint64_t len) {
     for (int i = 0; i < g_npool; i++) if (addr >= g_pools[i].lo && addr + len <= g_pools[i].hi) return g_plast = i;
     return -1;
 }
-// Whether [addr, addr + len) lies in a pool, with no side effect: mtl_addr makes the pool resident, for a GPU use to follow
-static int mtl_addr_known(uint64_t addr, uint64_t len) {
-    pthread_mutex_lock(&g_mu); int ok = big_of(addr) >= 0 || pool_find(addr, len) >= 0; pthread_mutex_unlock(&g_mu);
+// Whether [addr, addr + len) lies in a pool, with no side effect: mtl_addr makes the pool resident, for a GPU use to follow. A large pool is answered from its range, since its lookup
+// (big_lookup) makes the chunk that holds the range. hle_nvn.c keys_hash asks this whether a shader's code is mapped: through mtl_addr every pool holding shader code went into the
+// residency set, though the GPU never reads it (the shaders run translated): The Great Ace Attorney Chronicles' three chunks, about 5 MB
+int mtl_addr_known(uint64_t addr, uint64_t len) {
+    pthread_mutex_lock(&g_mu); int b = big_of(addr), ok = b >= 0 ? addr + len <= g_big[b].hi : pool_find(addr, len) >= 0; pthread_mutex_unlock(&g_mu);
     return ok;
 }
-// Whether [addr, addr + len) lies in one memory pool, as mtl_addr finds it, without making the pool resident. hle_nvn.c keys_hash checks this way that a shader's code is mapped:
-// through mtl_addr it made every pool holding shader code resident, which the GPU never reads, since the shaders run translated (Ocarina of Time: 222 pools, 334 MB)
-int mtl_pool_holds(uint64_t addr, uint64_t len) { pthread_mutex_lock(&g_mu); int i = pool_find(addr, len); pthread_mutex_unlock(&g_mu); return i >= 0; }
 int mtl_addr(uint64_t addr, uint64_t len, void **buf, uint64_t *off) {
     const pc_ent *c = pc_get(addr, len);
     if (c) { *buf = (__bridge void *)c->buf; *off = addr - c->base; return 1; }
@@ -1849,18 +1848,18 @@ struct seg_clk { _Atomic int refs; _Atomic uint64_t t[SEG_CLK_N][2]; uint32_t nb
 static int seg_ts(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_GPU_TS"); v = e && *e ? !strcmp(e, "segment") : DM_GAME_GPU_TS_SEGMENT; MLOG("counter timestamps: %s (profile key gpu_timestamps; DM_NVN_GPU_TS=segment / submission)", v ? "GPU start / end time of their segment" : "one time for the whole submission"); } return v; }
 static void seg_clk_put(seg_clk *c) { if (c && atomic_fetch_sub(&c->refs, 1) == 1) free(c); }
 static uint64_t gpu_s_guest_ns(double s) {   // a feedback GPU time (seconds on the mach absolute time base) on the guest clock; 0 when unknown
-    static mach_timebase_info_data_t tb; if (!tb.denom) mach_timebase_info(&tb);
-    uint64_t g = guest_ns(), now = tb.denom ? mach_absolute_time() * tb.numer / tb.denom : 0, at = (uint64_t)(s * 1e9);
-    if (s <= 0 || !g || at > now || now - at > g) return 0;
-    return g - (now - at);
+    uint64_t now = now_ns();
+    uint64_t g = guest_ns_at_host_time(now);
+    double age = (double)now - s * 1e9;
+    return s > 0 && age >= 0 && age < (double)g ? g - (uint64_t)age : 0;
 }
 static uint64_t rep_ticks(const post_op *o, seg_clk *sc, uint32_t last, uint64_t c0, uint64_t c1) {   // the time a counter report records (614.4 MHz); c0 / c1: the last segment's GPU start / end on the guest clock
     int top = o->type == 0x10; uint64_t ns = 0;
     uint32_t bi = o->seg + !top;
-    if (sc && bi < sc->nb && g_ts_heap) {   // the boundary's own timestamp, on the guest clock through a pair of samples: how long ago it was on the GPU's clock, back from the guest clock now
+    if (sc && bi < sc->nb && g_ts_heap) {   // Map the GPU boundary through the paired CPU sample. Reading the guest clock later adds CPU scheduling delay to the timestamp.
         NSData *d = [g_ts_heap resolveCounterRange:NSMakeRange(sc->b[bi], 1)]; const MTL4TimestampHeapEntry *e = d.bytes; MTLTimestamp cpu = 0, gpu = 0; [g_dev sampleTimestamps:&cpu gpuTimestamp:&gpu];
         static double scale; if (!scale) { uint64_t hz = [g_dev queryTimestampFrequency]; scale = hz ? 1e9 / (double)hz : 1; }
-        uint64_t g = guest_ns();
+        uint64_t g = cpu ? guest_ns_at_host_time(cpu) : 0;
         if (e && d.length >= sizeof *e && e->timestamp && g) { double at = (double)e->timestamp * scale, ago = (double)gpu - at; if (ago >= 0 && ago < 2e9 && ago < (double)g) ns = g - (uint64_t)ago; }   // an entry counts at queryTimestampFrequency (24 MHz here), a sample in ns
         if (ns) return nvn_timestamp_from_ns(ns);
     }
@@ -2303,8 +2302,12 @@ static int obj_is_tex(id o) {
     int a = [o conformsToProtocol:@protocol(MTLTexture)]; unsigned k = nx++ % NC; ans[k] = (int8_t)a; cls[k] = c;
     return a;
 }
-static int g_red_once[161];   // one past the highest key: a new key raises this, and the macro refuses to compile otherwise
+static int g_red_once[158];   // one past the highest key: a new key raises this, and the macro refuses to compile otherwise
 #define RED_ONCE(k, ...) do { _Static_assert((k) < sizeof g_red_once / sizeof *g_red_once, "a RED_ONCE key past g_red_once: raise its size"); if (!g_red_once[k]++) MLOG("[RED] " __VA_ARGS__); } while (0)
+// NXForge's own red lines keep a table of their own, so upstream's keys never move them (each upstream merge renumbered them before 0.15.0). Keys: 0 packaged entry not
+// CPU-written, 1-2 present anti-aliasing (FXAA). A new NXForge key raises g_nxf_red_once
+static int g_nxf_red_once[3];
+#define NXF_RED_ONCE(k, ...) do { _Static_assert((k) < sizeof g_nxf_red_once / sizeof *g_nxf_red_once, "an NXF_RED_ONCE key past g_nxf_red_once: raise its size"); if (!g_nxf_red_once[k]++) MLOG("[RED] " __VA_ARGS__); } while (0)
 // NVN vertex streams 0–15 → Metal vertex buffer slots: 0–13 go to 16–29 (30 is the constant fallback buffer), 14 and 15 to 14 and 15. Metal has only the 31 slots 0–30; translated shaders use only buffer(0) (the argument buffer),
 // and the host's own vertex functions read no vertex buffers. 13 Sentinels uses stream 15, and the old 16 + stream went out of range (Metal assertion: buffer index (31) must be < 31)
 #define VB_SLOT(st) ((st) < 14 ? 16 + (st) : (st))
@@ -4292,7 +4295,7 @@ static void *tex_mtl_(const tex_t *ct) {
     }
     if (have && [have isKindOfClass:[NvPkg class]]) {   // the serial left the CPU-written set (tex_from_storage is false) while its packaged entry is still the table's: the entry's texture, as tex_made gives, never the NvPkg itself (tex_by_id asks its result for .buffer)
         NvPkg *pk = have;
-        RED_ONCE(158, "texture serial %llu has a packaged entry but is not CPU-written: its entry's Metal texture is used (what removes it from the set first is not known; see the symptom index)", (unsigned long long)t->serial);
+        NXF_RED_ONCE(0, "texture serial %llu has a packaged entry but is not CPU-written: its entry's Metal texture is used (what removes it from the set first is not known; see the symptom index)", (unsigned long long)t->serial);
         have = pk->view ? pk->view : pk->tex;
     }
     if (have) { if (t->pool && nvn_sparse_pool(t->pool)) sparse_gpu_look(t, have); return (__bridge void *)(have); }
@@ -4576,6 +4579,7 @@ __attribute__((weak)) void dm_guest_frame_tick(void) {}   // hle_os.c provides t
 __attribute__((weak)) void dm_cheats_present(void) {}   // hle_cheats.c provides the strong definition (the Atmosphère cheat pass per presented frame); a no-op when graphics unit tests do not link the host
 __attribute__((weak)) int dm_detclock_enabled(void) { return 0; }   // Same as above: the host's hle_os.c provides the strong definition; when graphics unit tests do not link the host, the deterministic clock is treated as off
 __attribute__((weak)) uint64_t guest_ns(void) { return 0; }          // Same as above: read only when the deterministic clock is on; never reached in graphics unit tests
+__attribute__((weak)) uint64_t guest_ns_at_host_time(uint64_t host_ns) { (void)host_ns; return guest_ns(); }
 static uint64_t att_bytes(id<MTLTexture> t, NSUInteger level) {
     if (!t) return 0;
     NSUInteger w = MAX(t.width >> level, 1), h = MAX(t.height >> level, 1);
@@ -5895,7 +5899,7 @@ static __unsafe_unretained NvProg *prog_get(const prog_t *cp) {   // Called only
     NvProg *o = [NvProg new];
     for (unsigned i = 0; i < p->nstage; i++) {
         // Key = sha256(first 0x880 bytes of the control section + code area): many of Mario's shaders share a control section but differ in code (dm/gfx/tools/shader_split.py). It was computed at SetShaders (hle_nvn.c): by now the game may have freed the control section
-        uint8_t md[8]; prog_key(p, i, md);
+        uint8_t md[8] = {0}; prog_key(p, i, md);
         NSString *k = [NSString stringWithFormat:@"%02x%02x%02x%02x%02x%02x%02x%02x", md[0], md[1], md[2], md[3], md[4], md[5], md[6], md[7]];
         NSString *stage = g_shmap[k];
         if (!stage) {   // Not in the package: look up the compute kernels embedded in the main body (nvn_builtin.h)
@@ -6540,7 +6544,7 @@ static id<MTLTexture> img_fit(int tid, id<MTLTexture> t, int dpf, MTLTextureType
         RED_ONCE(106, "image read as %s in the shader, texture of Metal format %lu (texture ID %d): no view of that class, bound as is (reads undefined)", u ? "uint" : "int", (unsigned long)t.pixelFormat, tid); return nil; }
     NSUInteger ns = t.textureType != want ? fit_layers(t, want) : t.textureType == MTLTextureType3D ? 1 : t.arrayLength * (t.textureType == MTLTextureTypeCube || t.textureType == MTLTextureTypeCubeArray ? 6 : 1);
     if (!ns) {
-        RED_ONCE(160, "image slot declared as Metal type %lu holds texture ID %d of type %lu (Metal format %lu, %lux%lu): no view bridges them, bound as is (its accesses are undefined, its stores lost)",
+        RED_ONCE(157, "image slot declared as Metal type %lu holds texture ID %d of type %lu (Metal format %lu, %lux%lu): no view bridges them, bound as is (its accesses are undefined, its stores lost)",
                  (unsigned long)want, tid, (unsigned long)t.textureType, (unsigned long)t.pixelFormat, (unsigned long)t.width, (unsigned long)t.height); return nil; }
     if (cls && !(base.usage & MTLTextureUsagePixelFormatView)) {   // made without the format-view usage (it costs lossless compression, so textures get it only when needed): upgraded before the next
         int seen = 0; for (int i = 0; i < g_imfit_npend; i++) seen |= g_imfit_pend[i] == tid;   // draw pass opens, as an upgrade copies the texture and so cannot run inside this draw's pass;
@@ -13777,7 +13781,7 @@ static int bc_alias_copy(const p_copy_t2t *c, id<MTLTexture> s, unsigned sl, uns
     if (!st || st.length < img) {
         if (st) defer_obj_release(st);
         st = [g_dev newBufferWithLength:img options:MTLResourceStorageModePrivate];
-        if (!st) { RED_ONCE(159, "compressed alias copy: no %#lx-byte staging buffer", (unsigned long)img); return 0; }
+        if (!st) { RED_ONCE(156, "compressed alias copy: no %#lx-byte staging buffer", (unsigned long)img); return 0; }
         res_add(st);
     }
     // the forms without options: deferred encoding (DM_NVN_ENC_THREAD, on by default on iOS) records only those (nvn_rec.h RO_C_COPY_TB / RO_C_COPY_BT); with options it stopped the host
@@ -14468,87 +14472,7 @@ void mtl_exec(const uint8_t *p) {
 // ---------- Present: draw the swapchain texture to the CAMetalLayer; optional screenshot ----------
 static id<MTLRenderPipelineState> g_blit_pso; static MTLPixelFormat g_blit_fmt;
 static id<MTLSamplerState> g_blit_samp;
-// Present filter (front.h; the Mac's Graphics menu and panel, front_mac.m; DM_PRESENT_FILTER=sharpen|pixel|crt with DM_PRESENT_FILTER_STRENGTH=0 to 1, 0.5 by default): the present pass has
-// one fragment function per filter and takes the one set at each present, so a change shows on the next frame and costs no pipeline build then (all are built with the bilinear one).
-// Off is the bilinear stretch as before. Sharpen: contrast-adaptive (after AMD's FidelityFX CAS), a cross of the source texels around each sample, weighted less where the neighbourhood
-// already has contrast, so edges sharpen without ringing. Pixel: sharp bilinear, each source texel a block of one colour and only the seam between two blocks blended over one output pixel,
-// so pixel art at a non-integer scale (720p into a 1898-pixel-high fullscreen) neither blurs nor shimmers. CRT: scanlines (about 240 lines, or a set height in source rows: mtl_present_scanline)
-// and an RGB aperture mask on the output columns, brightened by part of what they take away; the scanlines fade out where a line spans under 2.5 output pixels. CRT-Lottes: Timothy Lottes'
-// public-domain CRT shader (beams, bloom and a shadow mask on cells of the scanline height). LCD Grid: each cell a square with a dark gap and RGB thirds, like a handheld's screen. The filters work on the stored bytes as the bilinear stretch does (present_raw_src); the whole-window screenshot (grab_present) shows the filter too,
-// the raw swapchain screenshots (shot: DM_NVN_SHOT, DM_NVN_SHOT_UI) do not
-static const char *const g_pfx_name[DM_PFX_N] = {"off", "sharpen", "pixel", "crt", "lottes", "lcd"};
-static id<MTLRenderPipelineState> g_pfx_pso[DM_PFX_N];   // [0] is g_blit_pso
-static _Atomic int g_pfx = -1; static _Atomic float g_pfx_k = 0.5f;
-// The CRT filter's scanline height in source rows (DM_PRESENT_SCANLINE=1 to 8; 0 = auto, -1 = not read yet). Auto gives about 240 lines whatever the frame's size: a pixel-art game
-// draws its art at a low resolution and enlarges it into a 720p or 1080p frame itself (Bloodstained: Curse of the Moon hands over 1280x720), so a line per frame row was a stripe of
-// one or two screen pixels, too fine to see, and the filter only darkened the picture and brightened it again
-static _Atomic int g_pfx_rows = -1;
-int mtl_present_scanline(void) {
-    int r = g_pfx_rows;
-    if (r >= 0) return r;
-    const char *e = getenv("DM_PRESENT_SCANLINE"); int want = 0;
-    if (e && *e && strcasecmp(e, "auto")) { char *end; long v = strtol(e, &end, 10); if (end != e && !*end && v >= 0 && v <= 8) want = (int)v; else MLOG("[RED] DM_PRESENT_SCANLINE=%s: must be auto or 0 to 8; using auto", e); }
-    int none = -1; atomic_compare_exchange_strong(&g_pfx_rows, &none, want);
-    return g_pfx_rows;
-}
-void mtl_present_scanline_set(int rows) {
-    rows = rows < 0 ? 0 : rows > 8 ? 8 : rows;
-    if (g_pfx_rows != rows) { g_pfx_rows = rows; if (rows) MLOG("present: CRT scanlines every %d source rows", rows); else MLOG("present: CRT scanlines auto (about 240 lines)"); }
-}
-static int pfx_mode(void) {   // any thread: the filter now, read from the environment the first time (a front end's mtl_present_filter_set before that wins)
-    int m = g_pfx;
-    if (m >= 0) return m;
-    const char *e = getenv("DM_PRESENT_FILTER"), *k = getenv("DM_PRESENT_FILTER_STRENGTH"); int want = 0;
-    if (e && *e) { for (int i = 0; i < DM_PFX_N; i++) if (!strcasecmp(e, g_pfx_name[i])) want = i;
-        if (!want && strcasecmp(e, "off") && strcmp(e, "0")) MLOG("[RED] DM_PRESENT_FILTER=%s: not off, sharpen, pixel, crt, lottes or lcd; presenting without a filter", e); }
-    if (k && *k) { char *end; float v = strtof(k, &end); if (end != k && !*end && v >= 0 && v <= 1) g_pfx_k = v; else MLOG("[RED] DM_PRESENT_FILTER_STRENGTH=%s: must be 0 to 1; keeping %.2f", k, (double)g_pfx_k); }
-    int none = -1;
-    if (atomic_compare_exchange_strong(&g_pfx, &none, want) && want) MLOG("present: filter %s, strength %.2f (DM_PRESENT_FILTER)", g_pfx_name[want], (double)g_pfx_k);
-    return g_pfx;
-}
-int mtl_present_filter(float *strength) { int m = pfx_mode(); if (strength) *strength = g_pfx_k; return m; }
-void mtl_present_filter_set(int mode, float strength) {
-    if (mode < 0 || mode >= DM_PFX_N) mode = 0;
-    strength = strength < 0 ? 0 : strength > 1 ? 1 : strength;
-    int was = g_pfx; float k0 = g_pfx_k; g_pfx_k = strength; g_pfx = mode;
-    if (was != mode || fabsf(k0 - strength) > 0.001f) MLOG("present: filter %s, strength %.2f", g_pfx_name[mode], strength);
-}
-// Anisotropic filtering floor (front.h mtl_aniso_set; DM_ANISO=2|4|8|16, 0 or unset = the game's own): every filtered, mipmapped sampler the game makes (NVN, GL and Vulkan alike)
-// samples at least that many taps along a surface seen at an angle; a game asking for more keeps its own. Samplers without mips, with a nearest minifying filter, depth comparison or
-// a min / max reduction keep the game's value: they are lookup tables, pixel art, shadow maps and depth pyramids, where extra taps change the result rather than sharpen it.
-// The floor is taken when the first sampler is made (Metal sampler states are immutable and the game holds its own), so a change after that applies at the next launch
-static _Atomic int g_aniso = -1;   // -1: not read yet
-static _Atomic int g_aniso_latched;
-static int aniso_norm(int n) { return n >= 16 ? 16 : n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 0; }
-int mtl_aniso(void) {
-    int a = g_aniso;
-    if (a >= 0) return a;
-    const char *e = getenv("DM_ANISO"); int want = 0;
-    if (e && *e) { char *end; long v = strtol(e, &end, 10);
-        if (end != e && (!*end || !strcasecmp(end, "x")) && (v == 0 || v == 1 || v == 2 || v == 4 || v == 8 || v == 16)) want = aniso_norm((int)v);
-        else MLOG("[RED] DM_ANISO=%s: not 0, 2, 4, 8 or 16; keeping the game's anisotropic filtering", e); }
-    int none = -1;
-    if (atomic_compare_exchange_strong(&g_aniso, &none, want) && want) MLOG("samplers: anisotropic filtering at least %dx (DM_ANISO)", want);
-    return g_aniso;
-}
-void mtl_aniso_set(int n) {
-    n = aniso_norm(n);
-    if (g_aniso_latched) { if (n != g_aniso) MLOG("samplers: anisotropic filtering %dx applies at the next launch (keeping %dx)", n, g_aniso); return; }
-    if (g_aniso != n) { if (n) MLOG("samplers: anisotropic filtering at least %dx", n); else MLOG("samplers: the game's own anisotropic filtering"); }
-    g_aniso = n;
-}
-unsigned mtl_aniso_pick(float game, int eligible) {
-    unsigned g = !(game >= 1) ? 1 : game > 16 ? 16 : (unsigned)game;   // NaN and below 1 → 1
-    if (!g_aniso_latched) { mtl_aniso(); g_aniso_latched = 1; }
-    unsigned f = (unsigned)g_aniso;
-    return eligible && f > g ? f : g;
-}
-// The filter's parameters (the fragment functions' Crop.fx): strength, the output pixels per source texel on x and y (the viewport over the crop), which sharp bilinear needs,
-// and the CRT filter's scanline height in source rows
-static void pfx_params(float fx[4], const MTLViewport *vp, NSUInteger cw, NSUInteger ch) {
-    int rows = mtl_present_scanline(); if (!rows) rows = (int)fmax(1, floor(ch / 240.0 + 0.5));
-    fx[0] = g_pfx_k; fx[1] = cw ? (float)(vp->width / cw) : 1; fx[2] = ch ? (float)(vp->height / ch) : 1; fx[3] = (float)rows;
-}
+#include "nxforge/present_filters.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
 static uint64_t g_present_n;
 uint64_t mtl_present_count(void) { return g_present_n; }   // Actual present count (heat attribution DM_HEAT computes the present frame rate)
 void mtl_res_snapshot(mtl_res_count *out) {
@@ -15146,13 +15070,13 @@ static id<MTLTexture> aa_encode(fx_state *fx, id<MTL4CommandBuffer> cb, id<MTLTe
         MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:raw.pixelFormat width:cw height:ch mipmapped:NO];
         td.storageMode = MTLStorageModePrivate; td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
         id<MTLTexture> t = [g_dev newTextureWithDescriptor:td];
-        if (!t) { RED_ONCE(156, "present anti-aliasing: cannot create its %lux%lu texture; presenting without it", (unsigned long)cw, (unsigned long)ch); return nil; }
+        if (!t) { NXF_RED_ONCE(1, "present anti-aliasing: cannot create its %lux%lu texture; presenting without it", (unsigned long)cw, (unsigned long)ch); return nil; }
         t.label = @"present anti-aliasing"; res_add(t); res_commit(); fx->aa = t;
     }
     MTL4RenderPassDescriptor *rp = [MTL4RenderPassDescriptor new];
     rp.colorAttachments[0].texture = fx->aa; rp.colorAttachments[0].loadAction = MTLLoadActionDontCare; rp.colorAttachments[0].storeAction = MTLStoreActionStore;
     id<MTL4RenderCommandEncoder> en = [cb renderCommandEncoderWithDescriptor:rp];
-    if (!en) { RED_ONCE(157, "present anti-aliasing: no render encoder; presenting without it"); return nil; }
+    if (!en) { NXF_RED_ONCE(2, "present anti-aliasing: no render encoder; presenting without it"); return nil; }
     [en barrierAfterQueueStages:MTLStageAll beforeStages:MTLStageAll visibilityOptions:resource_vis()];   // after the frame's work, and after earlier presents' reads of fx->aa
     [en setArgumentTable:g_present_args atStages:MTLRenderStageFragment];
     [g_present_args setTexture:raw.gpuResourceID atIndex:0];
