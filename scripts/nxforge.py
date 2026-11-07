@@ -27,7 +27,7 @@ CATEGORIES = {
     # name: (description, part of --safe)
     'gpuarchiver': ("Metal's pipeline-archive build folders in the user cache folder, idle for an hour and older than every running game", True),
     'build-temp': ('temporary files in each <id>_build: tmp/, tmp.noindex/, *.partial (left by a stopped or failed step)', True),
-    'metal-cache': (f'the shared compiled-shader cache (~/Library/Caches/NXForge/metallib), trimmed to {MTLCACHE_GB:g} GB by deleting the libraries unused the longest', True),
+    'metal-cache': (f'the shared compiled-shader cache (~/Library/Caches/NXForge/metallib.db; the metallib folder before 0.11), trimmed to {MTLCACHE_GB:g} GB by deleting the libraries unused the longest', True),
     'app-backups': ('apps a rebuild moved to app-backups/: all but the newest per game, and only ones older than --backup-days (default 3)', True),
     'old-logs': ('files in ~/Library/Logs/nxnative older than --log-days (default 30)', True),
     'build-unused': ("each <id>_build's rewritten modules of versions other than the last packed one (patched_<v>, nro_<v>) and the game's survey folder", False),
