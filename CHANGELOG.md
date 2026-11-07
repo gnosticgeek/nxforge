@@ -37,6 +37,16 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - A folder holding a newer update than the one the app was built with says so. Update and DLC files in a subfolder move beside the game in one click, and the same game in two folders gets a note on each.
 - The games folder is scanned again when its drive or share mounts, and when the Library opens on a list over a day old.
 
+**Converter: Apple Human Interface Guidelines pass**
+- Settings is its own window from the app menu (⌘,), laid out as a grouped form; a signing failure links to it.
+- Mac-sized type: the window title names the page (the game on Convert), page titles and oversized buttons are gone, sidebar rows use the system size.
+- Builds is a real list: arrow keys select, ⌘⌫ moves the app to the Trash, double-click opens it; the detail scrolls beside it in a resizable split.
+- Page actions (Rebuild All, Scan Again, Run Checks, Measure Again, console filter, sort) and search live in the window toolbar; search is the standard field.
+- Confirmations are sheets on the window; Trash, Stop, Quit and Clear buttons are red; a notice has just OK.
+- One blue button per view, on Return (Build Mac app; Open app or Rebuild on Builds); Library's row Convert buttons are plain.
+- Native empty states on Builds and Library; the window goes down to 820×580 and Convert's cards stack when narrow.
+- View menu switches pages with ⌘1 to ⌘5; Help › NXForge Converter Help opens the README.
+
 **Small fixes and tweaks**
 - `c1_full.tsv` and `cb_extent.tsv` keep their bytes when a full shader build finds the same rows, and a new one carries no clock time, so a rebuild that changes no shader changes no packed table (from devinhurry's fork, f6c3b82b).
 - `nxforge status`: a running build shows from its script (`build_ipa_from_nsp.py --mac base.nsp ...`) instead of the Python framework's path, once instead of twice (the converter's `caffeinate` wrapper), and recorded builds whose app was deleted are counted on one line.
