@@ -1453,6 +1453,7 @@ def check_formats(dirs):
     import romfs_image
     for ver, d in dirs.items():
         img = d / 'RomFS.img'; stamp = d / 'RomFS.img.formats'
+        if not img.is_file(): continue   # a RomFS folder (an extraction from before the image, which the packers still take): no image to read
         st = img.stat(); ident = f'{st.st_size} {st.st_mtime_ns}'
         try: lines = stamp.read_text().splitlines()
         except OSError: lines = []
