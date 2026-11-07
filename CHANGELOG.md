@@ -48,6 +48,10 @@ Then merges `main` up to `d777f0a` (35 more commits). The shader chain changes a
 - The shader split reads legacy Unreal paks with encrypted indexes (#1646), and `--progress json` sends a game event before the shader stages (#1627).
 - Not taken yet: the NSP script's title IDs from content metas (5c4dc18f) and its ShaderWatch test follow-up (0caa6f93), which conflict with NXForge's build script; they come with the next full merge.
 
+**From upstream `main`, 15:45 check**
+- Picked: the graphics and sanitizer test targets run from a checkout path with a space (12ddb1fb).
+- Left for the next full merge (both conflict with NXForge's own changes in the same code): an image slot takes a view of the type its shader declares (32335650, Mario Kart World's blob shadows; meets NXForge's sRGB image views in `img_fit`), and the controller applet waits for players (24fe1e5a; meets NXForge's `front_mac.m`).
+
 **From upstream pull requests (not yet on `main`)**
 - Ocarina of Time's foliage no longer draws as flat white, blue and cream shapes for its first seconds (#1368): a task / mesh pipeline missing at its first draw is built there instead of the draw being left out until a background build finished (3.5 to 7 s each on an M4 Pro), and it is recorded in the prewarm list, so later starts build it during the prepare screen.
 
