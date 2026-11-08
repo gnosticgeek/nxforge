@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.2.1 (2026-11-08)
+
+A fix for 0.2.0. Ships in NXForge 0.17.1.
+
+- **No more hang at launch.** 0.2.0 stopped answering for 20 seconds or more each time it started: SwiftUI's menu bar item for build progress kept redrawing its button. The progress is now a plain status item, made only while a build runs (click it for the time left, the step, Show Log and Stop Build).
+
 ## 0.2.0 (2026-11-08)
 
 Twenty improvements, some from other nxnative forks' ideas. Ships in NXForge 0.17.0.
@@ -16,7 +22,7 @@ Twenty improvements, some from other nxnative forks' ideas. Ships in NXForge 0.1
 - **Playtime:** each session of a built game is timed while the converter is open, however the game was started; Continue Playing over the Library, Recently played order, and a weekly chart on the game page.
 - **Is a rebuild worth it?** The engine commits since a build that touch what that game's build reads, its own profile's changes marked, with a verdict and how long the last build took.
 - **NXForge notes:** the game's profile README (what it is, open issues) on the game page and on Convert before a long build.
-- **Menu bar progress:** a build's percent in the menu bar (only while a build runs); click it for the time left, the step, Show Log and Stop Build.
+- **Menu bar progress:** a build's percent in the menu bar, with the time left, the step, Show Log and Stop Build.
 - **Notifications with actions:** Play and Show in Finder on a finished build; Show Log and Copy Error Summary on a failed one.
 - **Build later:** Build selected tonight at 2:00, at a time, or once the Mac is on power; the Mac stays awake while it waits, the queue survives a quit, and games in it can be moved up, down or out.
 - **Offline drives:** a games folder or game files on a drive or share that is away say so, with Mount (the address is remembered) and Locate Game Files…; Rebuild asks instead of failing.

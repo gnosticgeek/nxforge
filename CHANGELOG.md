@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.17.1 (2026-11-08)
+
+- **NXForge Converter 0.2.1** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the converter no longer hangs for 20 seconds or more at launch (the menu bar build progress is now a plain status item, shown only while a build runs).
+
 ## 0.17.0 (2026-11-08)
 
 - **NXForge Sidebar 0.2.0** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): pause while the sidebar is open, a save backup button, Full screen and Picture size (Fit, Stretch, Pixel-perfect), control swaps, mod load order, mute, recent captures, a frame-time graph, defaults for every game, cheat sections and search, and each game's settings in a plain text file (`NXForge settings.txt` in the game folder).
