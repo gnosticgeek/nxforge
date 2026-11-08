@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## Unreleased
+## 0.20.0 (2026-11-08)
 
 - **Up to nxnative `028a263`** (4 commits past 0.19's engine `c78d737`): cloud saves can ask which copy to keep when both changed (nxnative #1785, `DM_SAVE_SYNC_CHOICE`), Minecraft Dungeons II runs at 60 or 120 fps, Luigi's Mansion 3 holds 60 fps, and a README pointer to nxnative's Discussions. Only the packing patch needed a hand (a test file both sides added to). No shader chain change, so no game's shaders are translated again.
 - **`scripts/layer.py continue [--skip]`:** after fixing a patch that stopped an update, this finishes it and applies the patches after it. Before, `git -C tree am --continue` finished only the stopped patch, and `layer.py export` then dropped the rest; export now refuses until they are applied.
