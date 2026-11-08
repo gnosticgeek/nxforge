@@ -594,3 +594,60 @@ import Testing
         #expect(Calendar.current.component(.hour, from: t) == 2)
     }
 }
+
+@Suite struct UnifiedUpdates {
+    @Test func releaseTags() {
+        #expect(Releases.version(tag: "v0.17.1", prefix: "v") == "0.17.1")
+        #expect(Releases.version(tag: "converter-v0.2.1", prefix: "converter-v") == "0.2.1")
+        #expect(Releases.version(tag: "v0.17", prefix: "v") == nil)
+        #expect(Releases.version(tag: "v0.17.1-rc1", prefix: "v") == nil)
+        #expect(Releases.newest(["v0.9.1", "v0.10.0", "v0.2.0", "vnext"], prefix: "v") == "v0.10.0")
+        #expect(Releases.base(ofDescribe: "v0.17.0-3-gabc1234") == "0.17.0")
+        #expect(Releases.base(ofDescribe: "pre-v0.1.0") == nil)
+    }
+
+    @Test func sidebarVersionLine() {
+        #expect(Releases.parseSidebar("import SwiftUI\n\nlet SIDEBAR_VERSION = \"0.2.0\"\n") == "0.2.0")
+        #expect(Releases.parseSidebar("let x = 1") == nil)
+    }
+
+    @Test func notesBetweenVersions() {
+        let log = "# Log\n\n## 0.17.1 (2026-11-08)\n\n- Fix.\n\n## 0.17.0 (2026-11-08)\n\n- Feature.\n\n## 0.16.0 (2026-11-07)\n\n- Old.\n"
+        #expect(Releases.entries(log, after: "0.16.0", upTo: "0.17.1").map(\.version) == ["0.17.1", "0.17.0"])
+        #expect(Releases.entries(log, after: "0.17.0", upTo: "0.17.0").isEmpty)
+    }
+
+    @Test func upToDateWording() {
+        #expect(AppModel.describe(Engine.Update(count: 0, target: "origin/main", ref: "v0.17.1", release: "0.17.1"), branch: "main") == "Up to date")
+        #expect(AppModel.describe(Engine.Update(count: 3, target: "origin/main", ref: "v0.17.1", release: "0.17.1"), branch: "main") == "0.17.1 available")
+        #expect(AppModel.describe(Engine.Update(count: 2, target: "origin/main", ref: "origin/main", release: nil), branch: "release-0.17.0") == "2 updates available on main")
+    }
+
+    /// A clone of a repository whose main has release tags and a commit after the newest one (a release PR merged, not
+    /// tagged yet): the engine updates to the tag, not past it, and stays on main.
+    @Test func engineUpdatesToNewestReleaseTag() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "nxc-upd-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        func sh(_ cmd: String) throws {
+            let r = run("/bin/bash", ["-c", "set -e; export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t; \(cmd)"],
+                        env: ["PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", "HOME": root])
+            if r?.ok != true { throw ConverterError("\(cmd): \(r?.out ?? "no shell")") }
+        }
+        try sh("""
+        mkdir -p \(root) && cd \(root) && git init -q -b main src && cd src
+        echo 1 > f && git add f && git commit -qm one && git tag v0.1.0
+        cd .. && git clone -q src engine && cd src
+        echo 2 > f && git commit -qam two && git tag -a v0.2.0 -m 0.2.0
+        echo 3 > f && git commit -qam three
+        """)
+        let repo = "\(root)/engine"
+        let u = try Engine.checkUpdates(repo)
+        #expect(u.release == "0.2.0")
+        #expect(u.ref == "v0.2.0")
+        #expect(u.count == 1)
+        try Engine.update(repo)
+        #expect(Engine.current(repo)?.subject == "two")
+        #expect(Engine.current(repo)?.branch == "main")
+        #expect(try Engine.checkUpdates(repo).count == 0)
+    }
+}

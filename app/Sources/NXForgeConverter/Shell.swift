@@ -222,6 +222,7 @@ struct CommandPalette: View {
         out.append(PaletteItem(id: "act-ipa", title: "Build iPhone and iPad IPA…", detail: "Action", symbol: "iphone") { m.buildIPA() })
         out.append(PaletteItem(id: "act-couch", title: m.couchMode ? "Leave Couch Mode" : "Couch Mode", detail: "Action", symbol: "sofa") { m.toggleCouch() })
         out.append(PaletteItem(id: "act-check", title: "Check the Toolchain Again", detail: "Action", symbol: "checkmark.seal") { m.page = .toolchain; m.recheck() })
+        out.append(PaletteItem(id: "act-updates", title: "Check for Updates", detail: "Action", symbol: "arrow.down.circle") { m.page = .updates; m.engineAction(update: false) })
         out.append(PaletteItem(id: "act-new", title: "What's New in NXForge Converter", detail: "Action", symbol: "sparkles") { m.showWhatsNew() })
         if m.converterUpdate != nil {
             out.append(PaletteItem(id: "act-update", title: "Update NXForge Converter…", detail: "Action", symbol: "arrow.down.circle") { m.updateConverter() })
@@ -302,21 +303,28 @@ struct CommandPalette: View {
     }
 }
 
-/// Over the sidebar: a newer converter is ready to install.
+/// Over the sidebar: a newer converter or engine release; it opens the Updates page.
 struct UpdateCapsule: View {
     let model: AppModel
 
+    var text: String? {
+        if model.converterUpdating { return "Updating…" }
+        if let u = model.converterUpdate { return "Converter \(u.version) available" }
+        if let e = model.engineUpdate { return e.release.map { "NXForge \($0) available" } ?? "Engine updates available" }
+        return nil
+    }
+
     var body: some View {
-        if let u = model.converterUpdate {
-            Button { model.updateConverter() } label: {
-                Label(model.converterUpdating ? "Updating…" : "Converter \(u.version) available", systemImage: "arrow.down.circle.fill")
+        if let text {
+            Button { model.page = .updates } label: {
+                Label(text, systemImage: "arrow.down.circle.fill")
                     .font(.caption.weight(.semibold)).padding(.horizontal, 10).padding(.vertical, 4)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white)
             .background(Color.accentColor, in: .capsule)
             .disabled(model.converterUpdating)
-            .help("Rebuild the converter from the engine checkout and open the new one")
+            .help("Show the Updates page")
             .padding(.horizontal, 16).padding(.bottom, 8)
         }
     }

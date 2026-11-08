@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.18.0 (2026-11-08)
+
+- **NXForge Converter 0.3.0: one updater.** An Updates page for the engine, the converter and the in-game sidebar, each with its own Update button; the engine now updates to the newest release tag (and fetches before it updates, so it no longer says "Updated" while a newer release exists); a sheet at launch when something is newer, with an Update automatically switch; upstream nxnative commits not merged yet are shown for information; games on an older sidebar can be rebuilt in one go. [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md) has the details.
+
 ## 0.17.1 (2026-11-08)
 
 - **NXForge Converter 0.2.1** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the converter no longer hangs for 20 seconds or more at launch (the menu bar build progress is now a plain status item, shown only while a build runs).

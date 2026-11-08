@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
-    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain"
+    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain", updates = "Updates"
     var id: String { rawValue }
     /// drawn with its own banner and big heading (HeroHeader) instead of the window title
     var hasHero: Bool { true }
@@ -17,6 +17,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
         case .storage: "internaldrive"
         case .toolchain: "wrench.and.screwdriver"
+        case .updates: "arrow.down.circle"
         }
     }
 }
@@ -111,6 +112,17 @@ final class AppModel {
     /// a newer converter in the engine checkout or on its update branch, and the update running
     var converterUpdate: ConverterUpdateInfo?
     var converterUpdating = false
+    /// Updates (Updates.swift): what the last engine check found (nil: up to date or not checked), and when it ran
+    var engineUpdate: Engine.Update?
+    var lastUpdateCheck: Date?
+    /// upstream nxnative's commits NXForge has not merged yet
+    var upstream: UpstreamStatus?
+    /// the sidebar version in the engine checkout, and in each built app ("" before the sidebar had one), by app path
+    var sidebarCurrent: String?
+    var sidebarBuilds: [String: String] = [:]
+    /// the sheet offering updates at launch, and one waiting for What's New to close
+    var updateOffer: UpdateOffer?
+    var pendingOffer: UpdateOffer?
     /// the game page open over the Library or Builds (GamePage), and the quick preview (Space)
     var gameDetail: GameRef?
     var preview: GameRef?
@@ -158,6 +170,7 @@ final class AppModel {
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
+                self?.recheckUpdatesIfStale()
                 guard let self, self.fixPending, !self.checking else { return }
                 self.fixPending = false
                 self.recheck()
@@ -203,7 +216,8 @@ final class AppModel {
                 if !self.needsKeys { self.validate() }
                 if repoChanged { self.measure() }   // the game's profile (GameNeeds) is in the engine checkout
                 // once per launch: look for a newer engine (a fetch; quiet when offline)
-                if !self.checkedForUpdates, ver != nil { self.checkedForUpdates = true; self.engineAction(update: false) }
+                if !self.checkedForUpdates, ver != nil { self.checkedForUpdates = true; self.engineAction(update: false, reason: .launch) }
+                if repoChanged { self.refreshSidebarStatus() }
                 self.showWhatsNewIfNeeded()
                 self.learnRemounts()
             }
@@ -272,35 +286,55 @@ final class AppModel {
         if settings.keys == nil { measure() }   // validate measures only with keys chosen
     }
 
-    func engineAction(update: Bool) {
-        guard let repo = env?.repo else { return }
+    /// Check for engine updates (a fetch with tags), or update the engine and check again, so the status never stays at
+    /// "Updated" while something newer has landed meanwhile. Then the converter, the sidebar and upstream are looked at too.
+    func engineAction(update: Bool, reason: UpdateCheckReason = .manual) {
+        guard let repo = env?.repo, !engineBusy else { return }
         engineBusy = true
         engineMessage = (true, update ? "Updating…" : "Checking…")
+        let branch = engine?.branch
         Task.detached {
-            let msg: (Bool, String)
-            var target: String?
+            var msg: (Bool, String)
+            var found: Engine.Update?
             do {
-                if update { try Engine.update(repo); msg = (true, "Updated") }
-                else {
-                    let (n, up) = try Engine.checkUpdates(repo)
-                    target = up
-                    // a merged release branch updates from main: say so, since Update engine switches to it
-                    let onto = up.split(separator: "/", maxSplits: 1).last.map(String.init) ?? up
-                    let other = onto != (Engine.current(repo)?.branch ?? onto) ? " on \(onto)" : ""
-                    msg = (true, n == 0 ? "Up to date" : "\(n) update\(n == 1 ? "" : "s") available\(other)")
+                if update {
+                    try Engine.update(repo)
+                    let now = Engine.current(repo)?.short ?? "the newest"
+                    found = try? Engine.checkUpdates(repo)
+                    let more = found.flatMap { $0.count > 0 ? " · \($0.release ?? "\($0.count) more") available" : nil } ?? ""
+                    msg = (true, "Updated to \(now)\(more)")
+                } else {
+                    let u = try Engine.checkUpdates(repo)
+                    found = u
+                    msg = (true, AppModel.describe(u, branch: branch))
                 }
             } catch { msg = (false, "\(error)") }
             let ver = Engine.current(repo)
-            let note = msg.1.contains("available") ? target.flatMap { Engine.upstreamNote(repo, target: $0) } : nil
-            let found = target
+            let available = found.flatMap { $0.count > 0 ? $0 : nil }
+            let note = available.flatMap { Engine.upstreamNote(repo, target: $0.ref) }
+            let target = found?.ref
             await MainActor.run {
                 self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note
-                self.checkConverterUpdate(target: update ? nil : found)
+                self.engineUpdate = available
+                self.lastUpdateCheck = Date()
+                self.revision += 1
+                self.checkConverterUpdate(target: target, reason: update ? .manual : reason)
+                self.refreshSidebarStatus()
+                self.checkUpstream()
             }
         }
     }
 
-    var updatesAvailable: Bool { engineMessage.map { $0.ok && $0.text.contains("available") } ?? false }
+    /// "Up to date", "0.17.1 available", or "3 updates available on main" for a branch's commits.
+    nonisolated static func describe(_ u: Engine.Update, branch: String?) -> String {
+        if u.count == 0 { return "Up to date" }
+        if let r = u.release { return "\(r) available" }
+        let onto = u.target.split(separator: "/", maxSplits: 1).last.map(String.init) ?? u.target
+        let other = onto != (branch ?? onto) ? " on \(onto)" : ""
+        return "\(u.count) update\(u.count == 1 ? "" : "s") available\(other)"
+    }
+
+    var updatesAvailable: Bool { engineUpdate != nil }
 
     /// The folder new apps go to: the setting, else beside the game files.
     var outputFolder: String? { settings.outDir ?? gameFolder }

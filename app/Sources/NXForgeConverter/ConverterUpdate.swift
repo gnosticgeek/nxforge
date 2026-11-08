@@ -137,6 +137,11 @@ extension AppModel {
     func dismissWhatsNew() {
         settings.lastSeenVersion = CONVERTER_VERSION
         whatsNew = nil
+        // the launch's update offer waited for this sheet
+        if let o = pendingOffer {
+            pendingOffer = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { MainActor.assumeIsolated { self.updateOffer = o } }
+        }
     }
 
     /// The What's New of the running version, on demand (Help menu).
@@ -149,17 +154,17 @@ extension AppModel {
     }
 
     /// After the engine's update check: is there a newer converter?
-    func checkConverterUpdate(target: String?) {
+    func checkConverterUpdate(target: String?, reason: UpdateCheckReason = .manual) {
         guard let repo = env?.repo else { return }
         Task.detached {
             let u = ConverterUpdate.check(repo: repo, target: target)
-            await MainActor.run { self.converterUpdate = u }
+            await MainActor.run { self.converterUpdate = u; self.afterUpdateCheck(reason) }
         }
     }
 
     /// Update the converter: pull the engine first when the newer converter is not in the checkout yet, then rebuild this app in
     /// place and open it again.
-    func updateConverter() {
+    func updateConverter(ask: Bool = true) {
         guard let u = converterUpdate, let repo = env?.repo else { return }
         guard !run.running, !batchRunning else {
             _ = confirm("A build is running", "Update the converter once the build has finished: the update quits the converter.", action: "OK")
@@ -170,7 +175,7 @@ extension AppModel {
             return
         }
         let what = u.needsPull ? "The engine updates to \(u.ref) first (as Update engine does), then the converter" : "The converter"
-        guard confirm("Update to NXForge Converter \(u.version)?", "\(what) is rebuilt from \(repo.tildePath) and replaces the copy in \(folder.tildePath), which takes about a minute. The converter quits now and opens again when it is built; if the build fails, the current copy stays and its log opens.", action: "Update and Relaunch") else { return }
+        guard !ask || confirm("Update to NXForge Converter \(u.version)?", "\(what) is rebuilt from \(repo.tildePath) and replaces the copy in \(folder.tildePath), which takes about a minute. The converter quits now and opens again when it is built; if the build fails, the current copy stays and its log opens.", action: "Update and Relaunch") else { return }
         converterUpdating = true
         Task.detached {
             do {
