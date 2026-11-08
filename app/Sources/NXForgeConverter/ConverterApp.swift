@@ -111,13 +111,6 @@ struct ConverterApp: App {
         SwiftUI.Settings {
             SettingsPage(model: model)
         }
-        // the build's progress in the menu bar while one runs (a preview builds nothing, so it shows none)
-        MenuBarExtra(isInserted: Binding(get: { model.run.running && !model.run.planning }, set: { _ in })) {
-            MenuBarProgress(model: model)
-        } label: {
-            MenuBarLabel(model: model)
-        }
-        .menuBarExtraStyle(.window)
     }
 
     @MainActor

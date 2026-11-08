@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.2.1 (2026-11-08)
+
+A fix for 0.2.0. Ships in NXForge 0.17.1.
+
+- **No more hang at launch.** 0.2.0 stopped answering for 20 seconds or more each time it started: SwiftUI's menu bar item for build progress kept redrawing its button. The progress is now a plain status item, made only while a build runs (click it for the time left, the step, Show Log and Stop Build).
+
 ## 0.2.0 (2026-11-08)
 
 Twenty improvements, some from other nxnative forks' ideas. Ships in NXForge 0.17.0.

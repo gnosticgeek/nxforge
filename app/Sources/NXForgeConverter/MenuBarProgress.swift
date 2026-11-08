@@ -3,20 +3,50 @@
 import AppKit
 import SwiftUI
 
-struct MenuBarLabel: View {
-    let model: AppModel
+/// The status item itself, in AppKit: SwiftUI's MenuBarExtra kept redrawing its button from launch (a hang at start in 0.2.0's
+/// first builds), so the item is made only while a build runs, and its title set only when the percent changes.
+@MainActor
+enum StatusProgress {
+    private static var item: NSStatusItem?
+    private static var popover: NSPopover?
+    private static var shown = -1
 
-    var body: some View {
-        // no timer here: a TimelineView in a menu bar label keeps SwiftUI redrawing it from launch; the run's own changes
-        // (each log line) redraw it often enough
-        let pct = model.run.running ? Int((model.run.overall().fraction * 100).rounded()) : 0
-        Label("\(pct)%", systemImage: "hammer.fill").labelStyle(.titleAndIcon)
+    /// Called on every change of the run, beside DockProgress.show.
+    static func show(_ model: AppModel) {
+        let run = model.run
+        guard run.running, !run.planning else {
+            if let i = item { NSStatusBar.system.removeStatusItem(i); item = nil; popover?.close(); popover = nil; shown = -1 }
+            return
+        }
+        if item == nil {
+            let i = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            i.button?.image = NSImage(systemSymbolName: "hammer.fill", accessibilityDescription: "Build progress")
+            i.button?.imagePosition = .imageLeading
+            i.button?.target = Handler.shared
+            i.button?.action = #selector(Handler.toggle(_:))
+            item = i
+            let p = NSPopover()
+            p.behavior = .transient
+            p.contentViewController = NSHostingController(rootView: MenuBarProgress(model: model))
+            popover = p
+        }
+        let pct = Int((run.overall().fraction * 100).rounded())
+        if pct != shown { shown = pct; item?.button?.title = " \(pct)%" }
+    }
+
+    final class Handler: NSObject {
+        static let shared = Handler()
+        @objc func toggle(_ sender: NSStatusBarButton) {
+            MainActor.assumeIsolated {
+                guard let p = StatusProgress.popover else { return }
+                if p.isShown { p.performClose(nil) } else { p.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY) }
+            }
+        }
     }
 }
 
 struct MenuBarProgress: View {
     let model: AppModel
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { ctx in
@@ -59,7 +89,9 @@ struct MenuBarProgress: View {
     func show(_ p: Page) {
         model.page = p
         model.gameDetail = nil
-        openWindow(id: "main")
         NSApp.activate()
+        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true }) ?? NSApp.windows.first(where: { $0.canBecomeMain }) {
+            w.makeKeyAndOrderFront(nil)
+        }
     }
 }
