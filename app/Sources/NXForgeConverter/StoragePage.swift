@@ -98,9 +98,9 @@ enum Storage {
         // the volumes these live on
         var vols: [String: VolumeInfo] = [:]
         for p in [NSHomeDirectory()] + dirs {
-            let keys: Set<URLResourceKey> = [.volumeLocalizedNameKey, .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]
+            let keys: Set<URLResourceKey> = [.volumeLocalizedNameKey, .volumeTotalCapacityKey]
             guard let v = try? p.url.resourceValues(forKeys: keys), let name = v.volumeLocalizedName else { continue }
-            vols[name] = VolumeInfo(name: name, free: v.volumeAvailableCapacityForImportantUsage ?? 0, total: Int64(v.volumeTotalCapacity ?? 0))
+            vols[name] = VolumeInfo(name: name, free: Disk.free(p) ?? 0, total: Int64(v.volumeTotalCapacity ?? 0))
         }
         return (items.sorted { $0.bytes > $1.bytes }, vols.values.sorted { $0.name < $1.name })
     }

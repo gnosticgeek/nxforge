@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.4.1 (2026-11-08)
+
+A fix for 0.4.0. Ships in NXForge 0.20.1.
+
+- **Free space on network shares and non-APFS drives is read right.** macOS gives its "important usage" free space only for APFS volumes, so a game on an SMB share or an output folder on an exFAT drive read as 0.0 GB free: the converter asked "Build with too little free space?" and, during a build, could stop it as soon as it started. It now takes the plain free space there (the same as Finder and `df`), in the space check, the build's watch, Storage and save snapshots.
+- **Each drive is checked for its own share of a build.** With the output folder on another drive, the build folder (beside the game files) and the app (in the output folder) are checked against their own drives, and the shared Metal cache against the home folder's, instead of the whole build against the game folder's drive. Changing the output folder checks again.
+
 ## 0.4.0 (2026-11-08)
 
 For NXForge's new layout (an untouched nxnative engine plus NXForge's layer). Ships in NXForge 0.19.0.
