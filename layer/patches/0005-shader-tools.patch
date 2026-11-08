@@ -5,6 +5,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  tolerance, stable c1 tables, offline PSO
 
 ---
+ dm/gfx/nvn/dmsh_chain.h                       |   2 +-
  dm/gfx/tests/test_dmsh_ampere_mem.py          |   2 +-
  dm/gfx/tests/test_dmsh_gather_offsets.py      |   4 +-
  dm/gfx/tests/test_dmsh_raw_last.py            |   4 +-
@@ -26,8 +27,17 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/tools/tests/test_pso_offline.py            |  54 ++++++++-
  dm/tools/tests/test_shader_pch.py             |  16 ++-
  dm/tools/tests/test_shader_toolchain_cache.py |  64 ++++++++++-
- 21 files changed, 602 insertions(+), 98 deletions(-)
+ 22 files changed, 603 insertions(+), 99 deletions(-)
 
+diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
+index 3c8e35cfba159e79490d28fb78a39d0fedfe29f5..d5bf6e758ea30102a38278533fae20ddbdc90da6 100644
+--- a/dm/gfx/nvn/dmsh_chain.h
++++ b/dm/gfx/nvn/dmsh_chain.h
+@@ -1,3 +1,3 @@
+ // Generated file (dm/gfx/tools/dmsh_chain.py --header): the B shader library translation chain version this source tree expects (default options), one for every game;
+ // the host loads only <library dir>/b-<V>/. Run dmsh_chain.py --header after changing the chain's tools and commit this file with the change
+-#define DMSH_CHAIN "89f44f9b6bb0"
++#define DMSH_CHAIN "98747cde2289"
 diff --git a/dm/gfx/tests/test_dmsh_ampere_mem.py b/dm/gfx/tests/test_dmsh_ampere_mem.py
 index 7651bb650fd6c31b7a80995bb1752f8ed83a21f9..5869f9e86e4d01020b512dc5fdca4adda2f4c7df 100644
 --- a/dm/gfx/tests/test_dmsh_ampere_mem.py
@@ -59,7 +69,7 @@ index d7fc708fb5f4bc971bffce73c1ad7d8b16135ee7..fffadd9fe8ef94db7ce75b524f3aba61
  HEAD = '''#include <metal_stdlib>
  using namespace metal;
 diff --git a/dm/gfx/tests/test_dmsh_raw_last.py b/dm/gfx/tests/test_dmsh_raw_last.py
-index 1e21c06d70cc7628d4be06e9c7455172bf8b1560..d7b59fc58e9b1779dac2ced3e7ce138fb5e11b4a 100644
+index 8b5d32fa5f019944c4b635fcf2c970d732543a97..732d0ab0f792ff831b76f2f25073f6a17d0503d9 100644
 --- a/dm/gfx/tests/test_dmsh_raw_last.py
 +++ b/dm/gfx/tests/test_dmsh_raw_last.py
 @@ -20,9 +20,9 @@ from test_dmsh_ampere_alu import STORE, waiting, s2r_tid   # noqa: E402
@@ -170,7 +180,7 @@ index 878932666fed6a57b8a003b2915c2b09a93bae62..280c0a0efdc61aeb3063a1b55b7bfa4d
  
  
 diff --git a/dm/gfx/tools/dmsh_build.py b/dm/gfx/tools/dmsh_build.py
-index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c8bb0aee9 100644
+index 541e0b60fbf6c67525d4ffdc3b89ad5e98aa64ea..4f73ca2a4976f27c869024551287e5b9c87c1af0 100644
 --- a/dm/gfx/tools/dmsh_build.py
 +++ b/dm/gfx/tools/dmsh_build.py
 @@ -7,7 +7,7 @@
@@ -182,7 +192,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
  # Build output: <key>_b.metallib, <key>_b.json (replay reflection, including drv_reads, the runtime read offsets into driver segments c0 / c2), <key>_b.metal (MSL)
  # Environment IOSOUT=dir: the same MSL also goes through dm/ios/tools/ios_metal.compile to produce an iphoneos metallib + reflection (chain_metal records the iOS compile convention)
  # Final summary: success / failure counts and the distribution of reasons; distribution of driver segment read offsets (those outside the range the replay layer can fill are listed separately);
-@@ -326,6 +326,34 @@ template<typename V, typename T, typename... A> static inline __attribute__((alw
+@@ -334,6 +334,34 @@ template<typename V, typename T, typename... A> static inline __attribute__((alw
      return r;
  }}
  '''
@@ -217,7 +227,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
  def border_emu(msl):
      """The samples of the argument buffer's textures through its sampler members, T.sample(S, args) → dm_bs(T.sample(S, args), block, bit, T, S_w, args) (see BORDER_HELPERS);
      the source unchanged when it samples through none. Only samples of float textures: an integer texture is not filtered, and its border colour is Maxwell's integer one, which
-@@ -379,7 +407,11 @@ METAL_DEPTH = ['-fbracket-depth=1024']
+@@ -387,7 +415,11 @@ METAL_DEPTH = ['-fbracket-depth=1024']
  METAL_FP = dmsh_mtlcache.compiler_id('macosx') + ('\0iphoneos\0' + dmsh_mtlcache.compiler_id('iphoneos') if IOSOUT else '')
  def mac_compile(msl, air, lib):   # same interface as ios_metal.compile; the precompiled header and METAL_DEPTH change no output, so MAC_RECORD does not name them (dmsh_pch.py)
      dmsh_pch.compile(MAC_RUN + METAL_DEPTH, msl, air)
@@ -230,7 +240,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
  # The NVN driver's constant segments have one layout in every game, which dm/gfx/nvn/dmsh_abi.h holds for the host and this build (through dmsh_abi.py); nvn_mtl.m fills them the same way at run time.
  #   c2 C2_TEX + 8 r: handles bound with nvnCommandBufferBindTexture (combined texture and sampler), slot r. The driver has 32 such slots, but a game may bind higher ones, whose words lie in the
  #     image table (Hades II binds slot 34, and no image), so a texture instruction's handle anywhere below the separate texture table names a combined slot. In the image
-@@ -416,7 +448,7 @@ def shader_rule_source(name):
+@@ -424,7 +456,7 @@ def shader_rule_source(name):
      return b''.join(inspect.getsource(f).encode() for f, applies in RULES if applies(name))
  
  def tool_fingerprint():
@@ -239,7 +249,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
      return ('lock\0' + open(dmsh_chain.LOCK).read() + '\0options\0' + dmsh_chain.options() +
              '\0xlate\0' + dmsh_chain.xlate_source_sha() + '\0spirv-cross\0' + sc.stdout + sc.stderr +
              '\0xc\0' + repr(XC) + '\0mac\0' + MAC_RECORD + '\0ios\0' + (ios_metal.RECORD if IOSOUT else '') + '\0metal\0' + METAL_FP)
-@@ -1258,7 +1290,7 @@ def gs_slice(spv):
+@@ -1276,7 +1308,7 @@ def gs_slice(spv):
      grading LUT the tone mapper reads, and without it the screen came out a flat blue). Metal has no geometry stage, so the host drops such a shader and draws with the vertex shader's
      layer entry points instead (vs_layer_entry), which write that component as the layer. Read from the SPIR-V as GLSL (SPIRV-Cross writes no MSL for a geometry stage).
      → {'loc': input location, 'comp': component} or None (any other geometry shader: one-pass cube shadows emit six transformed triangles)"""
@@ -248,7 +258,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
      g = r.stdout
      if r.returncode or 'layout(triangles) in;' not in g or 'layout(max_vertices = 3, triangle_strip) out;' not in g or g.count('EmitVertex();') != 3 or 'EndPrimitive' in g: return None
      ins = {m.group(2): int(m.group(1)) for m in re.finditer(r'layout\(location = (\d+)\) in vec4 (\w+)\[3\];', g)}
-@@ -1481,14 +1513,14 @@ def geometry_finish(key, w, j, c1):
+@@ -1499,14 +1531,14 @@ def geometry_finish(key, w, j, c1):
      dmsh_geometry.output_layout(code, 0)   # validate before running the translator
      jobs = [{**j, 'key': key + '_g' + str(t), 'geometry_topology': t} for t in range(5)]
      jp = os.path.join(w, key + '_geometry.json'); atomic_json(jp, jobs)
@@ -265,7 +275,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
          if r.returncode: return 'geometry MSL failed', r.stderr.strip()[:160], None
          plain = dmsh_geometry.topology_pointer(pool_arrays(precise(dmsh_atomic.check_msl(r.stdout))))
          src = dmsh_geometry.capture_input(plain)
-@@ -1518,7 +1550,7 @@ def geometry_finish(key, w, j, c1):
+@@ -1536,7 +1568,7 @@ def geometry_finish(key, w, j, c1):
              base = {**refl, 'key': key + '_b'}
              save('_b', src, base)
              spv = os.path.join(w, k + '.reader.spv'); dmsh_geometry.flatten_sets(spv)
@@ -274,7 +284,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
              if r.returncode: return 'geometry reader failed', r.stderr.strip()[:160], None
              reader = vs_layer(vs_init(dmsh_geometry.reader(pool_arrays(precise(dmsh_atomic.check_msl(r.stdout))))))
              analysis, full = vs_depth(reader)
-@@ -1546,17 +1578,17 @@ def finish(key, w, j, c1):
+@@ -1564,17 +1596,17 @@ def finish(key, w, j, c1):
          try: return geometry_finish(key, w, j, c1)
          except (ValueError, subprocess.CalledProcessError) as e: return 'geometry failed', str(e)[:160], None
      if j['stage'] == 'vs': spv_single_lane(os.path.join(w, key + '.spv'))   # one-lane subgroups (see spv_single_lane)
@@ -295,7 +305,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
              if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
              src = open(msl).read()
      try: src = dmsh_atomic.check_msl(src)
-@@ -1571,7 +1603,9 @@ def finish(key, w, j, c1):
+@@ -1589,7 +1621,9 @@ def finish(key, w, j, c1):
      try: src = pool_arrays(src)   # handles traced to no slot read the pools the replay keeps (see pool_arrays)
      except ValueError as e: return 'pool rewrite failed', str(e)[:160], None
      src = dmsh_wide.wide_loads(src)   # storage words the translator split, read whole again (see dmsh_wide.py)
@@ -306,7 +316,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
      first, spill = [], 0
      mesh = j.get('mesh_stage')
      if mesh:   # the kernel as the Metal object or mesh function (dmsh_meshstage.py)
-@@ -1662,8 +1696,9 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
+@@ -1680,8 +1714,9 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
      os.makedirs(_d, exist_ok=True)
      for _n in os.listdir(_d):   # a partial build over a folder (an older chain's, or one a stopped build left)
          _m = OUT_KEY.match(_n)
@@ -318,7 +328,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
  STORE.delete_prefix(STAGE + '/')   # what a stopped build of this folder staged
  
  def sweep_work(root):
-@@ -1684,7 +1719,10 @@ _work = os.environ.get('WORK') or tempfile.gettempdir()
+@@ -1702,7 +1737,10 @@ _work = os.environ.get('WORK') or tempfile.gettempdir()
  sweep_work(_work)
  w = tempfile.mkdtemp(prefix='dmsh_', dir=_work)
  with open(os.path.join(w, 'pid'), 'w') as _f: _f.write(str(os.getpid()))
@@ -330,7 +340,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
  # first take the libraries earlier chain versions left on disk: the b-*/ and b-*.img beside the output (iOS: the folder of the same name) and the roots DMSH_PREFILL lists
  for _spec in [cache_root + ('=' + os.path.dirname(IOSOUT) if IOSOUT else '')] + [x for x in os.environ.get('DMSH_PREFILL', '').split(os.pathsep) if x]:
      _mac, _, _ios = _spec.partition('=')
-@@ -1733,6 +1771,7 @@ def xlate_errors(r):
+@@ -1751,6 +1789,7 @@ def xlate_errors(r):
      for ln in r.stderr.splitlines():
          m = re.match(r'\[RED\] (\w+): (.*)', ln)
          if m: xerr[m.group(1)] = m.group(2)[:160]
@@ -338,7 +348,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
  def translate(batch):
      """A batch's misses translated into a working folder of its own (removed once the batch is finished) → that folder"""
      wb = tempfile.mkdtemp(prefix='batch_', dir=w)
-@@ -1740,9 +1779,12 @@ def translate(batch):
+@@ -1758,9 +1797,12 @@ def translate(batch):
      for k in miss: jobs[k], c1s[k] = job_for(k, loc[k][0], rec_of(k)[1], wb)
      def xl(ch):
          jp = os.path.join(wb, f'job_{abs(hash(ch[0]))}.json'); json.dump([jobs[k] for k in ch], open(jp, 'w'))
@@ -353,7 +363,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
      return wb
  def restored(key, wb):
      """A cache hit's outputs back on disk while it is finished. When another build pruned them since the look (cache_lookup), the shader is translated now, in the batch's folder: False"""
-@@ -1750,7 +1792,7 @@ def restored(key, wb):
+@@ -1768,7 +1810,7 @@ def restored(key, wb):
      PRE_STATS['hit'] -= 1; PRE_STATS['miss'] += 1; PRE_STATS['pruned meanwhile'] += 1
      jobs[key], c1s[key] = job_for(key, loc[key][0], rec_of(key)[1], wb)
      jp = os.path.join(wb, f'job1_{key}.json'); json.dump([jobs[key]], open(jp, 'w'))
@@ -362,7 +372,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
      return False
  DONE = collections.Counter()
  def fin(key, wb):
-@@ -1821,6 +1863,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
+@@ -1839,6 +1881,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
        f'{PULL_STATS["no stage input"]} vertex shaders without stage inputs (none needed)')
  print('mesh libraries (<vertex>_<geometry>_m3, dmsh_mesh.py): ' + (', '.join(f'{k} {v}' for k, v in MESH_STATS.items()) or 'none'))
  print(MTL.summary())
@@ -370,7 +380,7 @@ index 91a3b847d45f5b94967d5632a4dd97eb19c26c81..b8937468109f5be3a890c43255d2874c
  for lvl in [k for k in st if k != 'ok']:
      for e, n in collections.Counter(r[2] for r in res if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
  ok = [r[3] for r in res if r[1] == 'ok']
-@@ -1856,7 +1899,7 @@ if PROGRESS:
+@@ -1874,7 +1917,7 @@ if PROGRESS:
      except FileNotFoundError: pass
  if not want:
      for _tool, _table in (('c1_guard.py', 'c1_full.tsv'), ('cb_extent.py', 'cb_extent.tsv')):

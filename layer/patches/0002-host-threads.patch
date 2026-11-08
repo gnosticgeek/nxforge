@@ -50,10 +50,10 @@ index 198de551180fc8861e7c096d10329c4714870c47..08af31c629ff3d8067fbe780484abf5f
              q += k; if (*q == ',') q++;
          }
 diff --git a/dm/host/hle_sdk16.c b/dm/host/hle_sdk16.c
-index 6ad1c76477d2e295ca985064ce96d9bdf0c54417..f6813b40a82f8dd0979e7b0259c0b9c19c84bc8d 100644
+index fe8da3baa9fe5afe8d01231d8c9caef6c44078bf..5d15662a023bdb7487fc3f70a50bdc9104495667 100644
 --- a/dm/host/hle_sdk16.c
 +++ b/dm/host/hle_sdk16.c
-@@ -338,7 +338,10 @@ HLE_FORCE("_ZN2nn4diag6detail7PutImplERKNS0_11LogMetaDataEPKcm", "game log → h
+@@ -340,7 +340,10 @@ HLE_FORCE("_ZN2nn4diag6detail7PutImplERKNS0_11LogMetaDataEPKcm", "game log → h
  static void diag_abort(uint32_t res, void *lr) {
      module_t *m = module_of(lr);
      LOG("game called nn::diag abort: Result %#x, call site %s+%#llx", res, m ? m->name : "?", m ? (unsigned long long)((uint8_t *)lr - m->base) : (unsigned long long)(uintptr_t)lr);

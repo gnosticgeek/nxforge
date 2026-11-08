@@ -4,7 +4,6 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
- dm/tools/impact_map.tsv              |  1 +
  dm/tools/lint_c_baseline.tsv         | 18 ++----------------
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
@@ -13,20 +12,8 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 19 ++++++++++---------
- 9 files changed, 54 insertions(+), 43 deletions(-)
+ 8 files changed, 53 insertions(+), 43 deletions(-)
 
-diff --git a/dm/tools/impact_map.tsv b/dm/tools/impact_map.tsv
-index b1e4bfbd857b589db352c7cccee7a695db4b93a4..3f352010b1659b452f37af618e44300187622bd1 100644
---- a/dm/tools/impact_map.tsv
-+++ b/dm/tools/impact_map.tsv
-@@ -41,6 +41,7 @@ dm/gfx/nvn/nvn_mtl.m:warm_|prepare|prebuild|front_progress	present:pipeline_prep
- dm/gfx/nvn/nvn_mtl.m:pso_arch|arch_|pso_bundle	present:pipeline_archive	the pipeline archive
- dm/gfx/nvn/nvn_mtl.m:^tf_|xfb	shader:transform_feedback	transform feedback
- dm/gfx/nvn/nvn_mtl.m:^geo_|^gs_	shader:stage:gs	geometry shaders
-+dm/gfx/nvn/nvn_geometry.inc:^mtk_	nvn:nvnCommandBufferDrawMeshTasks*	native task and mesh pipelines
- dm/gfx/nvn/nvn_mtl.m:^lo_|^lop_	nvn:nvnColorStateSetLogicOp	logic operations
- dm/gfx/nvn/nvn_mtl.m:prog_swrites|swrite_note	nvn:nvnCommandBufferBarrier	ordering barriers and shader writes in a draw pass
- dm/gfx/nvn/nvn_mtl.m:^at_|^atest_	nvn:nvnColorStateSetAlphaTest	the alpha test
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
 index 073fdf8bb297d894c54d0052cdadea50754d00ee..cd3833a778b79a1d68bfbb230cf5d5d0d56555b9 100644
 --- a/dm/tools/lint_c_baseline.tsv
