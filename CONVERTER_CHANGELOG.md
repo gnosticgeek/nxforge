@@ -16,7 +16,7 @@ Twenty improvements, some from other nxnative forks' ideas. Ships in NXForge 0.1
 - **Playtime:** each session of a built game is timed while the converter is open, however the game was started; Continue Playing over the Library, Recently played order, and a weekly chart on the game page.
 - **Is a rebuild worth it?** The engine commits since a build that touch what that game's build reads, its own profile's changes marked, with a verdict and how long the last build took.
 - **NXForge notes:** the game's profile README (what it is, open issues) on the game page and on Convert before a long build.
-- **Menu bar progress:** a build's percent in the menu bar, with the time left, the step, Show Log and Stop Build.
+- **Menu bar progress:** a build's percent in the menu bar (only while a build runs); click it for the time left, the step, Show Log and Stop Build.
 - **Notifications with actions:** Play and Show in Finder on a finished build; Show Log and Copy Error Summary on a failed one.
 - **Build later:** Build selected tonight at 2:00, at a time, or once the Mac is on power; the Mac stays awake while it waits, the queue survives a quit, and games in it can be moved up, down or out.
 - **Offline drives:** a games folder or game files on a drive or share that is away say so, with Mount (the address is remembered) and Locate Game Files…; Rebuild asks instead of failing.

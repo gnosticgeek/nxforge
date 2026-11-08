@@ -143,6 +143,7 @@ final class AppModel {
         run.onChange = { [weak self] in
             guard let self else { return }
             DockProgress.show(self.run)
+            StatusProgress.show(self)
             guard !self.run.running, let r = self.run.result else { return }
             self.refreshGame()
             self.revision += 1
