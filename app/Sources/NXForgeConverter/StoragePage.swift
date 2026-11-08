@@ -78,8 +78,9 @@ enum Storage {
         var appDirs = Set<String>()
         for d in dirs {
             let game = GameInfo.read(d).name
-            for b in ((try? fm.contentsOfDirectory(atPath: d)) ?? []).filter({ $0.hasSuffix("_build") }) {
-                items.append(StorageItem(kind: .cache, game: game, path: "\(d)/\(b)", bytes: Disk.size("\(d)/\(b)"), busy: recentlyWritten("\(d)/\(b)")))
+            let home = Disk.buildHome(d)
+            for b in ((try? fm.contentsOfDirectory(atPath: home)) ?? []).filter({ $0.hasSuffix("_build") }) {
+                items.append(StorageItem(kind: .cache, game: game, path: "\(home)/\(b)", bytes: Disk.size("\(home)/\(b)"), busy: recentlyWritten("\(home)/\(b)")))
             }
             let files = GameFiles.list(in: d.url)
             if !files.isEmpty { items.append(StorageItem(kind: .gameFiles, game: game, path: d, bytes: files.reduce(0) { $0 + Disk.size($1.path) })) }

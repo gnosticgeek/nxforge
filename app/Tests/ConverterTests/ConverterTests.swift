@@ -672,3 +672,15 @@ import Testing
         #expect(try Engine.checkUpdates(repo).count == 0)
     }
 }
+
+@Suite struct BuildHome {
+    @Test func localGameBuildsBesideItsFiles() {
+        let dir = NSTemporaryDirectory() + "nxf-buildhome-\(UUID().uuidString)"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        #expect(!Disk.isNetwork(dir))
+        #expect(Disk.buildHome(dir) == dir)
+        #expect(Disk.workDir(dir) == nil)
+        #expect(Disk.free(dir).map { $0 > 0 } == true)
+    }
+}

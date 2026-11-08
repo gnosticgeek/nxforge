@@ -44,8 +44,8 @@ enum Estimates {
     }
 
     /// <game folder>/<id>_build/logs/stage_times.json
-    static func ownTimes(_ gameDir: String) -> [String: Double] {
-        let fm = FileManager.default
+    static func ownTimes(_ gameFolder: String) -> [String: Double] {
+        let fm = FileManager.default, gameDir = Disk.buildHome(gameFolder)
         guard let b = ((try? fm.contentsOfDirectory(atPath: gameDir)) ?? []).first(where: { $0.hasSuffix("_build") }),
               let d = try? Data(contentsOf: URL(fileURLWithPath: "\(gameDir)/\(b)/logs/stage_times.json")),
               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
