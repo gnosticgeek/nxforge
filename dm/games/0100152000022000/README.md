@@ -4,6 +4,8 @@ Updates 4.0.0 (v1441792) and 4.0.1 (v1507328) over the base game, SDK 4.4.0, the
 
 The 4.0.1 build has the same `subsdk0` and `sdk` build IDs as 4.0.0 and a different `main` build ID. This profile has no build-specific function patches. [A 4.0.1 iPhone report](https://github.com/seedds/nxnative/issues/281) covers the title, menus and a complete three-lap Grand Prix race after the shared notification-wait fix. A second 4.0.1 build from current upstream, with Booster Course DLC and a derived profile, completed a full race on an iPhone 15 Pro Max (iOS 27.0.1) and on a Mac. The registered profile's combined shader tables and Mac build passed shader and pipeline prebuild checks; gameplay on a build made from this registered profile has not yet been tested. A build from the registered profile needs both update NSPs in the input folder.
 
+3.0.1 (v1179648) cannot be packed: it is a 32-bit (AArch32) program (its `main.npdm` clears the 64-bit flag, its modules have 32-bit dynamic sections), which Apple Silicon cannot run, and the NSP script stops on it (`check_versions_aarch64`) instead of deriving a profile. 4.0.1 (v1507328) packs from a profile derived from 4.0.0's, with the unregistered-build warning; on the Mac it boots and runs at 60 fps.
+
 Brought up on the Mac from 4.0.0: boot, the title with its demo race, the Mii pick, the menus (their movie previews play), a 50cc Grand Prix race at Mario Kart Stadium to its results, and a second boot that loads the save. 60 fps (p50 16.7 ms), sound; about 2.4 GB resident and 1.26 GB of Metal allocations in the race, flat over minutes.
 
 ## What it needs
@@ -58,6 +60,7 @@ The game builds Mii heads from the console's MiiModel system data, starting at b
 - The work folder's `run/ctl.sh` drives a run started with `DM_CTL`.
 - `run/race.sh` boots from a copy of a save past the Mii pick into a 50cc Grand Prix (Mario, Mushroom Cup) with frame-timed keys and holds accelerate: `DM_KEYS=f960:L+R~0.3,f1260:A,f1500:A,f1740:A,f2000:A,f2240:A,f2400:A,f2560:A,f2800:A,f3040:A,f4300:A~70`.
 - From a fresh save, L+R at the title opens "Select a Mii" (Right, A takes the first default Mii).
+- `bench.tsv` is provisional and not yet timed: `title-race-start` and `probe`, with the keys from `run/race.sh`.
 - 2P: from a save past the Mii pick, L+R at the title, Down, A (2P), A (Grand Prix), A (50cc) opens the controller applet; 1.5–4 s between presses, or the menu fades drop them. Headless runs report one player; two players need a second controller.
 
 ## Found on this game

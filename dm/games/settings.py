@@ -74,6 +74,7 @@ def build(gid, patched, control):
 
     def shown(cond, n):
         if cond == 'always': return True
+        if '&' in cond: return all(shown(c, n) for c in cond.split('&'))   # every one of them (gfxapi:nvn&platform:mac)
         if cond == 'languages>1': return len(langs) > 1
         if cond.startswith('fixups:'): return cond[7:] in keys
         if cond.startswith('gfxapi:'): return os.environ.get('GFXAPI', '') == cond[7:]
