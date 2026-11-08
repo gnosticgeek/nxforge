@@ -43,7 +43,7 @@ for s in srcs:
 print('HEADER_SEARCH_PATHS = $(inherited) ' + ' '.join(f'"{d}"' for d in incs + dirs))
 print('OTHER_CFLAGS = $(inherited) ' + ' '.join(defs))
 sdk = subprocess.run(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], capture_output=True, text=True, check=True).stdout.strip()
-fws = list(dict.fromkeys(fws))
+fws = [f for f in dict.fromkeys(fws) if f != 'SwiftUI']   # SwiftUI: the Mac sidebar's (quick_settings_mac.swift)
 mac_only = [f for f in fws if not os.path.isdir(f'{sdk}/System/Library/Frameworks/{f}.framework')]
 if mac_only: print('gen_build: not in the iOS SDK, left out of the link: ' + ' '.join(mac_only), file=sys.stderr)
 print('DM_FRAMEWORKS = ' + ' '.join(f'-framework {f}' for f in fws if f not in mac_only))

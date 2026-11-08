@@ -1,5 +1,6 @@
 """Packer/cache round trips and the index validator shared by host mounts and iOS startup; synthetic files only."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
@@ -110,6 +111,20 @@ class Images(unittest.TestCase):
             self.assertEqual(image.file_identity(self.dst), identity)
             self.assertEqual(image.source_digest(self.src, image.entries(self.src)), digest)
             self.assertTrue(image.reusable(str(self.dst), digest))
+
+    def test_a_stamp_from_before_keeps_its_image_and_a_bad_one_does_not(self):   # the stamp of an image made with st_dev first in its identity, whatever that number was
+        (self.src / 'a').write_bytes(b'data')
+        image.pack(self.src, self.dst, reuse=True)
+        digest, stamp = image.source_digest(self.src, image.entries(self.src)), Path(str(self.dst) + '.inputs.json')
+        old = [16777234, *image.file_identity(self.dst)]
+        stamp.write_text(json.dumps({'source': digest, 'image': old}))
+        self.assertTrue(image.reusable(str(self.dst), digest))
+        self.assertFalse(image.reusable(str(self.dst), 'another digest'))
+        old[2] += 1
+        stamp.write_text(json.dumps({'source': digest, 'image': old}))
+        self.assertFalse(image.reusable(str(self.dst), digest))
+        for text in ('[]', '{}', '{"source": 1, "image": 2}', 'not json'):
+            stamp.write_text(text); self.assertFalse(image.reusable(str(self.dst), digest))
 
     def test_changed_source_during_pack_preserves_previous_image(self):
         (self.src / 'a').write_bytes(b'old'); image.pack(self.src, self.dst)

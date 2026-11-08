@@ -24,6 +24,31 @@ def pfs0(path, names):   # a PFS0 holding empty files with these names
     path.write_bytes(b'PFS0' + struct.pack('<III', len(names), len(strs), 0) + ent + strs)
 
 
+HEADER_KEY = bytes(range(32))
+
+
+def nca(tid, kind=0):   # an NCA header naming this title and content type (0 Program, 1 Meta), encrypted as a console does: AES-128-XTS, 0x200-byte sectors, the sector number big-endian as the tweak
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes   # pyright: ignore[reportMissingImports]  (optional: the tests that need it skip without it)
+    h = bytearray(0x400); h[0x200:0x204] = b'NCA3'; h[0x205] = kind; struct.pack_into('<Q', h, 0x210, tid)
+    out = b''
+    for sec in range(2):
+        e = Cipher(algorithms.AES(HEADER_KEY), modes.XTS(sec.to_bytes(16, 'big'))).encryptor()
+        out += e.update(bytes(h[sec * 0x200:(sec + 1) * 0x200])) + e.finalize()
+    return out
+
+
+def hfs0_files(files):   # an HFS0 partition holding these (name, data) files
+    strs = b''.join(n.encode() + b'\0' for n, _ in files); ent, o, so = b'', 0, 0
+    for n, d in files: ent += struct.pack('<QQII', o, len(d), so, 0) + bytes(0x28); o += len(d); so += len(n) + 1
+    return b'HFS0' + struct.pack('<III', len(files), len(strs), 0) + ent + strs + b''.join(d for _, d in files)
+
+
+def xci_cart(path, tids, ncas=(), names=()):   # a cartridge dump: card header (HEAD at 0x100, root partition offset at 0x130), root HFS0 with a secure partition holding one NCA per title, then ncas: (title, type, body size)
+    secure = hfs0_files([(f'{i:032x}.cnmt.nca', nca(t)) for i, t in enumerate(tids)] + [(f'{i:032x}.nca', nca(t, k) + bytes(n)) for i, (t, k, n) in enumerate(ncas, len(tids))] + [(n, b'') for n in names])
+    head = bytearray(0x200); head[0x100:0x104] = b'HEAD'; struct.pack_into('<Q', head, 0x130, 0x200)
+    path.write_bytes(bytes(head) + hfs0_files([('update', b''), ('secure', secure)]))
+
+
 def xci(path, names):   # an XCI whose root HFS0 holds a secure partition holding empty files with these names
     def hfs0(entries):   # [(name, data bytes)]
         strs = b''.join(n.encode() + b'\0' for n, _ in entries); ent, o, so, data = b'', 0, 0, b''
@@ -65,6 +90,21 @@ class Scan(unittest.TestCase):
         (self.tmp / ('._' + base.name)).write_bytes(b'\0\x05\x16\x07' + b'\0' * 4092)
         self.assertEqual(nsp.scan_nsps(self.tmp, fake_contents)[1]['base'], base)
         self.assertEqual(self.said, [])
+
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'needs the cryptography module to make the test cartridge')
+    def test_untagged_xci_titled_from_its_ncas(self):   # Game.XCI: no ticket, no tags, upper-case extension, the update on the cartridge too (1G+1U)
+        keys = self.tmp / 'prod.keys'; keys.write_text(f'header_key = {HEADER_KEY.hex()}\n')
+        base = self.tmp / 'Game.XCI'; xci_cart(base, [APP | 0x800, APP])
+        self.assertEqual(nsp.xci_title(base, keys), APP)   # the folder scan reads its content metas (package_reader); xci_title only picks among several applications
+
+
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'needs the cryptography module to make the test cartridge')
+    def test_cartridge_with_two_applications_gives_the_larger_program(self):   # Castlevania: Belmont's Curse's Midnight Edition: the game and its gallery, the gallery's title ID lower
+        keys = self.tmp / 'prod.keys'; keys.write_text(f'header_key = {HEADER_KEY.hex()}\n')
+        gallery, game = 0x01005F4027E94000, 0x0100BA4026E94000
+        base = self.tmp / 'Game.xci'; xci_cart(base, [], [(gallery, 1, 0), (gallery, 0, 0x200), (game, 1, 0), (game, 2, 0x800), (game, 0, 0x400)], [meta(gallery), meta(game)])
+        self.assertEqual(nsp.xci_title(base, keys), game)
+        self.assertEqual(nsp.scan_nsps(self.tmp, fake_contents, keys=keys)[0], game)
 
     def test_extension_in_any_letter_case(self):   # `Game [id].NSP` (a download, a card dump): glob('*.nsp') missed it on every POSIX system, a case-insensitive Mac volume too (LNPANDY/NX2Apple#554)
         base = self.tmp / f'Game [{APP:016X}][v0].NSP'; pfs0(base, [meta(APP)])

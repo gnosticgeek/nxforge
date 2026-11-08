@@ -16,7 +16,7 @@
 # A dump has no control data, so there is no control.nacp or icon.jpg beside them, as there is after nx_extract.
 # The title ID is the program ID in main.npdm. A repeat run keeps code modules that are the same and an image whose source tree, packer and image are unchanged (romfs_image.py --reuse).
 # Usage: pack_dump.py <dump folder> [--version N] [--work-dir DIR]   (exit 1 on error)
-import argparse, filecmp, shutil, struct, subprocess, sys
+import argparse, filecmp, os, shutil, struct, subprocess, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dm/tools'))
 import romfs_image
@@ -85,7 +85,8 @@ def scan(dump):
     app = program_id((base_of(dump) or max((p for p in vers.values() if is_version(p)), key=lambda p: int(p.name))) / 'exefs/main.npdm')
     if app & 0xFFF: raise Error(f'{dump}: base program ID {app:016X} is not a base title ID')
     dlc = {}
-    for d in sorted(p for p in (dump / 'dlc').iterdir() if p.is_dir()) if (dump / 'dlc').is_dir() else []:
+    dlcs = next((p for p in sorted(dump.iterdir()) if p.name.lower() == 'dlc' and p.is_dir()), None)   # NXForge: DLC/ in any letter case, on a case-sensitive volume too
+    for d in sorted(p for p in dlcs.iterdir() if p.is_dir()) if dlcs else []:
         try: tid = int(d.name, 16)
         except ValueError: raise Error(f'{d}: not a DLC title ID') from None
         if not 0 < tid - app - 0x1000 <= 2000: raise Error(f'{d}: {tid:016X} is not a DLC of {app:016X}')
@@ -100,6 +101,12 @@ def pack_version(src, app, out, say=print):   # one version's folder (base/ or u
     if (pid := program_id(src / 'exefs/main.npdm')) != app: raise Error(f'{src}: program ID {pid:016X}, the base is {app:016X}')
     exefs(src / 'exefs', out / 'ExeFS')
     pack(src / 'romfs', out / 'RomFS.img', say)
+
+
+def version_reusable(src, out):   # whether pack_version keeps out/RomFS.img as it is (the NSP script's --plan)
+    if not (src / 'romfs').is_dir(): return False
+    roms = os.fspath(src / 'romfs')
+    return romfs_image.reusable(os.fspath(out / 'RomFS.img'), romfs_image.source_digest(roms, romfs_image.entries(roms)))
 
 
 def pack_dlc(app, dlc, aoc, say=print):   # {DLC title ID: its RomFS folder} → aoc/<index>.img; images of DLC no longer in the folder go

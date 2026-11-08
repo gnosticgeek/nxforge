@@ -19,6 +19,9 @@ REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / 'scripts/build_ipa_from_nsp.py'
 spec = importlib.util.spec_from_file_location('build_ipa_from_nsp', SCRIPT)
 nsp = importlib.util.module_from_spec(spec); spec.loader.exec_module(nsp)
+bench_spec = importlib.util.spec_from_file_location('bench', REPO / 'scripts/bench.py')
+if bench_spec is None or bench_spec.loader is None: raise ImportError('scripts/bench.py')
+bench = importlib.util.module_from_spec(bench_spec); bench_spec.loader.exec_module(bench)
 
 
 class Base(unittest.TestCase):
@@ -27,6 +30,22 @@ class Base(unittest.TestCase):
         self.said = []
         for cm in (mock.patch.object(nsp, 'PROG', mock.Mock()), mock.patch.object(nsp, 'say', self.said.append)):
             cm.__enter__(); self.addCleanup(cm.__exit__, None, None, None)
+
+
+class Temporaries(unittest.TestCase):
+    def test_spotlight_leaves_the_build_folders_temporaries_out(self):   # by the folder's name: a .metadata_never_index file in it did not stop the indexing
+        self.assertTrue(nsp.TMP.endswith('.noindex'))
+        self.assertNotIn("WORK=str(work / 'tmp')", SCRIPT.read_text())
+
+
+class CacheNote(unittest.TestCase):
+    def test_the_metal_cache_is_counted_beside_the_per_shader_cache(self):   # a chain change read "0 from the cache" while the Metal cache gave back 95% of the libraries
+        log = 'shader cache: hit 0, rebuilt 42851\nMetal cache: mac 98356 reused, 8 compiled; mac_tensor 3 reused, 0 compiled, 2 filled from earlier builds\n'
+        self.assertEqual(nsp.shader_cache_note(log), ' (0 from the cache; Metal libraries: 98,359 reused, 8 compiled)')
+
+    def test_a_log_without_either_says_nothing(self):
+        self.assertEqual(nsp.shader_cache_note('shaders 1: ok 1\n'), '')
+        self.assertEqual(nsp.shader_cache_note('shader cache: hit 3, rebuilt 0\n'), ' (3 from the cache)')
 
 
 class Header(Base):
@@ -135,6 +154,27 @@ class TableTools(unittest.TestCase):
                 self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual((lib.parent / 'c1_full.tsv').read_text().splitlines()[1:], [key])   # the shader itself is still checked
 
+    def test_unchanged_tables_keep_their_bytes_and_new_ones_carry_no_clock_time(self):   # every full shader build rewrote both with the time in the header, so the packed data changed
+        lib = Path(tempfile.mkdtemp()) / 'b-0123456789ab'; lib.mkdir(); self.addCleanup(shutil.rmtree, lib.parent)
+        (lib / 'inputs.tsv').write_text('game\tfixture\ninputs\taaaaaaaaaaaa\n')
+        key = '00112233aabbccdd'
+        (lib / f'{key}_b.metal').write_text('fragment float4 main0(constant cb& fp_c1) { int _5 = in.v; return (fp_c1)._m0[_5]; }\n')
+        (lib / f'{key}_b.json').write_text(json.dumps({'bindings': [{'kind': 'cbuf', 'reg': 0, 'msl_name': 'fp_c1'}]}))
+        for tool, table in (('c1_guard.py', 'c1_full.tsv'), ('cb_extent.py', 'cb_extent.tsv')):
+            with self.subTest(tool=tool):
+                path = lib.parent / table
+                def run(tool=tool, path=path):
+                    r = subprocess.run([sys.executable, REPO / 'dm/gfx/tools' / tool, lib, path], capture_output=True, text=True)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                run(); made = path.read_bytes()
+                self.assertEqual(made.splitlines()[0], b'# chain b-0123456789ab inputs aaaaaaaaaaaa generated')
+                run(); self.assertEqual(path.read_bytes(), made)   # the same again: reproducible
+                older = made.replace(b' generated\n', b' 2026-11-01T21:36:26+00:00\n', 1)   # one written before this, with the same rows: kept, time and all
+                path.write_bytes(older); os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+                run(); self.assertEqual(path.read_bytes(), older); self.assertEqual(path.stat().st_mtime_ns, 1_000_000_000)
+                path.write_bytes(older + b'stale row\n'); run(); self.assertEqual(path.read_bytes(), made)   # other rows: written again
+                path.write_bytes(older.replace(b'aaaaaaaaaaaa', b'bbbbbbbbbbbb', 1)); run(); self.assertEqual(path.read_bytes(), made)   # another library's inputs: written again
+
 
 class TableDifference(unittest.TestCase):   # the row the build error names when a split table differs from the profile's (GitHub issue #1263)
     HEAD = b'# header\n'
@@ -152,6 +192,34 @@ class TableDifference(unittest.TestCase):   # the row the build error names when
 
     def test_order_only(self):
         self.assertEqual(nsp.table_difference('t.tsv', b'a\nb\n', b'b\na\n'), 't.tsv: the same rows in another order')
+
+
+class Spotlight(Base):   # the build folder's shader folder is named .noindex, which Spotlight leaves out; a folder from before moves there with what it holds
+    def test_names(self):
+        self.assertTrue(nsp.SHADER.endswith('.noindex'))
+        self.assertEqual(bench.SHADER_FOLDERS, (nsp.SHADER, 'shader'))   # bench.py and regress.py read the folder the script writes, or one it has not moved yet
+        self.assertNotIn("work / 'shader", SCRIPT.read_text())
+
+    def test_a_folder_from_before_moves_with_its_times(self):   # the steps' keys read names, sizes and times: a moved shader folder is reused, not built again
+        old = self.tmp / 'shader'; (old / 'cache').mkdir(parents=True)
+        key = old / 'mac-b-0123456789ab.key'; key.write_text('key\nnote\n'); os.utime(key, ns=(1_000_000_000, 2_000_000_000))
+        nsp.move_to_noindex(self.tmp, 'shader', nsp.SHADER)
+        new = self.tmp / nsp.SHADER
+        self.assertFalse(old.exists()); self.assertTrue((new / 'cache').is_dir())
+        self.assertEqual(((new / key.name).read_text(), (new / key.name).stat().st_mtime_ns), ('key\nnote\n', 2_000_000_000))
+        self.assertEqual(len(self.said), 1); self.assertTrue(self.said[0].startswith(f'moved {old} to {new}'))
+
+    def test_the_new_folder_wins_and_the_old_one_stays(self):   # a build of an older checkout made shader/ again: nothing is deleted, a line names it
+        for name in ('shader', nsp.SHADER): (self.tmp / name).mkdir(); (self.tmp / name / 'mark').write_text(name)
+        nsp.move_to_noindex(self.tmp, 'shader', nsp.SHADER)
+        for name in ('shader', nsp.SHADER): self.assertEqual((self.tmp / name / 'mark').read_text(), name)
+        self.assertEqual(len(self.said), 1); self.assertTrue(self.said[0].startswith(f'[NOTE] {self.tmp / "shader"} is no longer read'))
+
+    def test_nothing_to_move(self):
+        nsp.move_to_noindex(self.tmp, 'shader', nsp.SHADER)   # a new build folder
+        (self.tmp / 'elsewhere').mkdir(); (self.tmp / 'shader').symlink_to(self.tmp / 'elsewhere')
+        nsp.move_to_noindex(self.tmp, 'shader', nsp.SHADER)   # a link is someone's own arrangement
+        self.assertFalse((self.tmp / nsp.SHADER).exists()); self.assertTrue((self.tmp / 'shader').is_symlink()); self.assertEqual(self.said, [])
 
 
 if __name__ == '__main__':

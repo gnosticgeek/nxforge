@@ -1,5 +1,5 @@
 """NSP script Mac app (scripts/build_ipa_from_nsp.py --platform mac-app, dm/mac/pack_app.py, dm/mac/launcher.c): the bundle's layout, Info.plist and ad-hoc signature without the hardened
-runtime; the launcher's environment for the host (the bundle's files, the save, temporary files and log in the player's Library), the previous log kept, environment files, the host's exit
+runtime; the launcher's environment for the host (the bundle's files, the save in the game folder with the old one copied in, temporary files and log in the player's Library), the previous log kept, environment files, the host's exit
 code returned and SIGTERM forwarded to it, an alert when the game data is missing; the script's options and its pack_app.py command line; --seen-shaders' keys and partial library.
 No game files, keys or Xcode needed: a stand-in host compiled here records what it was given (temporary files only in a temporary folder)."""
 import contextlib
@@ -109,7 +109,7 @@ class PackReuse(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix='pack-reuse-', dir=TEST_ROOT)).resolve()
         self.addCleanup(shutil.rmtree, self.tmp)
         t = self.tmp
-        for d in ('patched', 'romfs/empty', 'msl', 'profile', 'font', 'aoc/1', 'pso', 'bin', 'sdk', 'source', 'host', 'tools', 'ios/Sources'):
+        for d in ('patched', 'romfs/empty', 'msl', 'profile', 'font', 'aoc/1', 'pso', 'bin', 'sdk', 'source', 'source/nxforge', 'host', 'tools', 'ios/Sources'):
             (t / d).mkdir(parents=True)
         files = {
             'dmhost': b'host', 'patched/main.patched.bin': b'code', 'patched/main.fixups.tsv': b'fixups',
@@ -119,7 +119,7 @@ class PackReuse(unittest.TestCase):
             'pso/prebuilt.tsv': b'prebuilt', 'pso/rest_pairs.tsv': b'rest', 'pso/archive.tsv': b'index',
             'env.txt': b'DM_TEST=1', 'split.tsv': b'split', 'icon.jpg': b'jpeg', 'source/launcher.c': b'launcher',
             'host/romfs_image.h': b'validator', 'host/save_sync.c': b'sync', 'host/save_sync.h': b'sync api', 'tools/romfs.py': b'reader',
-            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report',
+            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_window.swift': b'nxf',
         }
         for n in pack_app.TABLES: files['profile/' + n] = n.encode()
         for n, content in files.items(): (t / n).write_bytes(content)
@@ -182,6 +182,30 @@ class PackReuse(unittest.TestCase):
         self.assertIs(type(info['DMSaveSyncChoice']), int)
         self.assertEqual(info['DMSaveSyncChoice'], 1)   # the host follows DM_SAVE_SYNC_CHOICE (docs/frontends.md, The cloud saves folder)
 
+    def test_game_data_bundle_is_signed_once_and_kept(self):
+        """NXForge: the RomFS, shader libraries and pipeline archive go into Contents/PlugIns/GameData.bundle, signed on its own and linked from Contents/Resources; with --data-cache
+        a repack whose game data is unchanged clones the kept bundle and signs only the app"""
+        self.args.data_cache = str(self.tmp / 'build/app/data')
+        def signed(): return [c[-1] for c in self.commands if '--sign' in c]
+        out = self.pack()
+        self.assertIn('step: signing the game data', out)
+        app = Path(self.args.out)
+        data = app / 'Contents/PlugIns' / pack_app.DATA / 'Contents'
+        self.assertEqual(plistlib.loads((data / 'Info.plist').read_bytes())['CFBundlePackageType'], 'BNDL')
+        for n in ('msl', 'romfs', 'pso'):
+            link = app / 'Contents/Resources' / n
+            self.assertTrue(link.is_symlink()); self.assertEqual(os.readlink(link), f'../PlugIns/{pack_app.DATA}/Contents/Resources/{n}')
+        self.assertEqual((app / 'Contents/Resources/pso/gpu.mtl4a').read_bytes(), b'archive')
+        self.assertEqual(signed()[0], str(self.tmp / 'build/app/data' / (pack_app.DATA + '.partial')))   # the data first, in the cache, then the host and the app
+        (self.tmp / 'dmhost').write_bytes(b'new host')
+        out = self.pack()
+        self.assertIn('step: game data (signed before, reused)', out)
+        self.assertNotIn(pack_app.DATA, ' '.join(signed()))
+        self.assertEqual((app / 'Contents/Resources/romfs/marker').read_bytes(), b'game')
+        (self.tmp / 'pso/gpu.mtl4a').write_bytes(b'new archive')
+        self.assertIn('step: signing the game data', self.pack())
+        self.assertEqual((app / 'Contents/Resources/pso/gpu.mtl4a').read_bytes(), b'new archive')
+
     def test_retargeted_input_symlink_repacks(self):
         msl = self.tmp / 'msl'
         for name in ('left.metallib', 'right.metallib'): (msl / name).write_bytes(b'same library')
@@ -204,7 +228,7 @@ class PackReuse(unittest.TestCase):
         names = ['dmhost', 'patched/main.patched.bin', 'patched/main.fixups.tsv', 'patched/main.gates.tsv', 'patched/main.cuts.tsv',
                  'patched/main.obs.tsv', 'patched/nro.tsv', 'msl/k.metallib', 'msl/k.json', 'msl/inputs.tsv', 'font/nintendo_ext.ttf',
                  'pso/gpu.mtl4a', 'pso/prebuilt.tsv', 'pso/rest_pairs.tsv', 'pso/archive.tsv', 'env.txt', 'icon.jpg', 'source/launcher.c',
-                 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift',   # the settings window's sources
+                 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_window.swift',   # the settings window's sources
                  'host/save_sync.c', 'host/save_sync.h']   # the cloud-save code the launcher links (its send after the host exits)
         names += ['profile/' + n for n in pack_app.TABLES]
         for name in names:
@@ -265,7 +289,7 @@ class PackReuse(unittest.TestCase):
         self.assertIn(c[c.index('-o') + 1], s)   # launcher.c's object, with its main
         sync = next(c for c in self.commands if Path(c[0]).name == 'clang' and '-o' in c and c[-1].endswith('save_sync.c'))
         self.assertIn(sync[sync.index('-o') + 1], s)   # save_sync.c's object: the launcher sends the save once the host has exited
-        self.assertEqual([Path(x).name for x in s if x.endswith('.swift')], ['Launcher.swift', 'LauncherSettings.swift', 'LauncherRow.swift', 'SaveSyncReport.swift'])
+        self.assertEqual([Path(x).name for x in s if x.endswith('.swift')], ['Launcher.swift', 'LauncherSettings.swift', 'LauncherRow.swift', 'SaveSyncReport.swift', 'launcher_window.swift'])
 
     def test_selected_file_modes_and_file_additions_and_removals_invalidate(self):
         self.pack()
@@ -338,7 +362,7 @@ class PackReuse(unittest.TestCase):
     def test_missing_selected_inputs_fail_before_reuse_or_partial_creation(self):
         self.pack()
         for name in ('dmhost', 'patched/main.fixups.tsv', 'msl/k.metallib', 'romfs/marker', 'pso/prebuilt.tsv', 'env.txt', 'icon.jpg',
-                     'font', 'aoc', 'profile', 'bin/clang', 'bin/swiftc', 'sdk', 'bin/codesign', 'source/launcher.c', 'source/Launcher.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift'):
+                     'font', 'aoc', 'profile', 'bin/clang', 'bin/swiftc', 'sdk', 'bin/codesign', 'source/launcher.c', 'source/Launcher.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_window.swift'):
             with self.subTest(name=name):
                 p = self.tmp / name; hidden = p.with_name(p.name + '.hidden'); p.rename(hidden)
                 try:
@@ -503,7 +527,7 @@ class App(unittest.TestCase):
 
     def test_info_plist(self):
         p = plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())
-        self.assertEqual((p['CFBundleExecutable'], p['CFBundleName'], p['CFBundleIdentifier'], p['CFBundleShortVersionString']), ('nxnative', 'Game: Test', 'org.nxnative.01008cf01baac000', '1.0.1'))
+        self.assertEqual((p['CFBundleExecutable'], p['CFBundleName'], p['CFBundleIdentifier'], p['CFBundleShortVersionString']), ('nxnative', 'Game: Test', 'org.nxforge.01008cf01baac000', '1.0.1'))
         self.assertEqual((p['DMTitleID'], p['DMLanguage'], p['DMRomfsMarker'], p['CFBundleIconFile']), (TID, 'fr', 'region_common/audio/edward.bfsar', 'AppIcon'))
         self.assertIs(p['LSSupportsGameMode'], False)   # macOS's Game Mode holds the GPU at its lowest clock (frame-rate.md)
         self.assertEqual(p['DMSettings'], [])   # launcher.json's settings, as the saved choices they accept: none here
@@ -595,10 +619,12 @@ class App(unittest.TestCase):
         self.assertEqual((r['DM_ROMFS'], r['DM_MSL_DIR'], r['DM_NVN_SHMAP'], r['DM_FONT_DIR'], r['DM_AOC_DIR']),
                          (str(res / 'romfs'), str(res / 'msl'), str(res / 'dm/shader_map.tsv'), str(res / 'dm/font'), str(res / 'aoc')))
         self.assertEqual(r['DM_PSO_BUNDLE'], str(res / 'pso'))   # the pipeline archive made offline, as the iOS app's main.m sets it
-        self.assertEqual((r['DM_SAVE'], r['DM_TEMP'], r['DM_ROOT'], r['cwd']), (str(sup / 'save'), str(sup / 'temp'), str(sup), str(sup)))   # pso_user.tsv goes beside save/
+        self.assertEqual((r['DM_SAVE'], r['DM_TEMP'], r['DM_ROOT'], r['cwd']), (str(self.tmp / 'Saves/save'), str(sup / 'temp'), str(sup), str(sup)))   # the save in the game folder; pso_user.tsv in the Library
+        self.assertEqual(r['DM_GAME_FOLDER'], str(self.tmp))   # captures go there too (capture_mac.m)
+        self.assertEqual(r['DM_PSO_USER'], str(sup / 'pso_user.tsv'))   # the pipeline list stays in the Library, not beside the game's save
         self.assertEqual((r['DM_WINDOW'], r['DM_AUDIO'], r['DM_LANG']), ('1', '1', 'ja'))   # the caller's DM_LANG wins over the packed language
         self.assertEqual((r['DM_BAKED'], r['DM_BOTH']), ('1', 'player'))   # the player's env.txt before the bundle's
-        self.assertTrue((sup / 'save').is_dir()); self.assertTrue((sup / 'temp').is_dir())
+        self.assertTrue((self.tmp / 'Saves/save').is_dir()); self.assertTrue((sup / 'temp').is_dir())
         self.assertIn('standin host output', (logs / f'{TID}.log').read_text())
         p = self.launch(); p.communicate(timeout=30)
         self.assertIn('standin host output', (logs / f'{TID}.prev.log').read_text())
@@ -616,7 +642,7 @@ class App(unittest.TestCase):
     def test_missing_data(self):
         broken = self.tmp / 'Broken.app'; shutil.rmtree(broken, ignore_errors=True)
         subprocess.run(['/bin/cp', '-R', self.app, broken], check=True)
-        shutil.rmtree(broken / 'Contents/Resources/romfs')
+        romfs = broken / 'Contents/Resources/romfs'; romfs.unlink() if romfs.is_symlink() else shutil.rmtree(romfs)   # a link into the data bundle (pack_app.py DATA)
         (self.tmp / 'home/alert.txt').unlink(missing_ok=True)
         p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(self.tmp / 'home'), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'), capture_output=True, text=True, timeout=30)
         self.assertEqual(p.returncode, 1)
@@ -641,7 +667,7 @@ class App(unittest.TestCase):
         title = 'Game "Test" \\ Edition'
         plist = broken / 'Contents/Info.plist'
         info = plistlib.loads(plist.read_bytes()); info['CFBundleName'] = title; plist.write_bytes(plistlib.dumps(info))
-        shutil.rmtree(broken / 'Contents/Resources/romfs')
+        romfs = broken / 'Contents/Resources/romfs'; romfs.unlink() if romfs.is_symlink() else shutil.rmtree(romfs)   # a link into the data bundle (pack_app.py DATA)
         home = self.tmp / 'home'
         (home / 'alert.scpt').unlink(missing_ok=True)
         p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(home), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'),
@@ -651,6 +677,57 @@ class App(unittest.TestCase):
         args = (home / 'alert.args').read_bytes().decode().split('\0')[:-1]
         self.assertEqual(args[2], title)   # data is passed separately from the compiled script
         self.assertIn('game data inside this app is missing', args[3])
+
+    def test_save_moves_in(self):   # the Library's save copied into the game folder once (temporary folder, then rename), the old one left; a save already there wins and neither changes
+        home = self.tmp / 'home'; old = home / f'Library/Application Support/nxnative/{TID}/save'; new = self.tmp / 'Saves/save'; logs = home / 'Library/Logs/nxnative'
+        shutil.rmtree(self.tmp / 'Saves', ignore_errors=True); shutil.rmtree(old, ignore_errors=True)
+        (old / '0000000000000001').mkdir(parents=True); (old / '0000000000000001/slot.bin').write_bytes(b'progress')
+        p = self.launch(); p.communicate(timeout=30)
+        self.assertEqual(self.host_run()['DM_SAVE'], str(new))
+        self.assertEqual((new / '0000000000000001/slot.bin').read_bytes(), b'progress'); self.assertEqual((old / '0000000000000001/slot.bin').read_bytes(), b'progress')
+        self.assertEqual([x.name for x in (self.tmp / 'Saves').iterdir()], ['save'])   # no temporary copy left beside it
+        self.assertIn('copied the save from', (logs / f'{TID}.log').read_text())
+        (new / '0000000000000001/slot.bin').write_bytes(b'newer'); (old / '0000000000000001/slot.bin').write_bytes(b'older')
+        p = self.launch(); p.communicate(timeout=30)
+        self.assertEqual(((new / '0000000000000001/slot.bin').read_bytes(), (old / '0000000000000001/slot.bin').read_bytes()), (b'newer', b'older'))
+        self.assertIn('the older one in', (logs / f'{TID}.log').read_text())
+
+    def test_save_stays_in_library(self):   # DM_GAME_FOLDER=0, or a game folder the launcher cannot write: the save where it was, no captures folder
+        home = self.tmp / 'home'; sup = home / f'Library/Application Support/nxnative/{TID}'
+        p = self.launch(DM_GAME_FOLDER='0'); p.communicate(timeout=30)
+        r = self.host_run(); self.assertEqual(r['DM_SAVE'], str(sup / 'save')); self.assertNotIn('DM_GAME_FOLDER', r)
+        ro = self.tmp / 'ro'; ro.mkdir(exist_ok=True); copy = ro / self.app.name
+        subprocess.run(['ditto', self.app, copy], check=True); ro.chmod(0o555)
+        try:
+            p = subprocess.Popen([copy / 'Contents/MacOS/nxnative'], env=dict(HOME=str(home), PATH='/usr/bin:/bin'), stdout=subprocess.PIPE, stderr=subprocess.STDOUT); p.communicate(timeout=30)
+            r = self.host_run(); self.assertEqual(r['DM_SAVE'], str(sup / 'save')); self.assertNotIn('DM_GAME_FOLDER', r)
+        finally:
+            ro.chmod(0o755); shutil.rmtree(ro)
+
+    def test_save_off_apfs(self):   # a game folder on exFAT (no folder cloning or swapping, which the host's save transaction needs): the save stays in the Library,
+        # a save an older NXForge put beside the app is copied back once (without the ._ files macOS writes there), the captures still go to the game folder
+        home = self.tmp / 'home'; sup = home / f'Library/Application Support/nxnative/{TID}'; logs = home / 'Library/Logs/nxnative'
+        shutil.rmtree(sup / 'save', ignore_errors=True)
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as d:
+            img, mnt = Path(d) / 'exfat.dmg', Path(d) / 'mnt'; mnt.mkdir()
+            made = subprocess.run(['hdiutil', 'create', '-size', '64m', '-fs', 'ExFAT', '-volname', 'NXFTEST', img], capture_output=True)
+            if made.returncode or subprocess.run(['hdiutil', 'attach', '-nobrowse', '-mountpoint', mnt, img], capture_output=True).returncode:
+                self.skipTest('no exFAT disk image here (hdiutil)')
+            try:
+                game = mnt / 'Game'; game.mkdir(); subprocess.run(['cp', '-RL', self.app, game], check=True)
+                there = game / 'Saves/save'; (there / 'Play').mkdir(parents=True); (there / 'Play/account.sav').write_bytes(b'progress')
+                (there / '._Play').write_bytes(b'appledouble')
+                p = self.launch(app=game / self.app.name); p.communicate(timeout=30)
+                r = self.host_run()
+                self.assertEqual(r['DM_SAVE'], str(sup / 'save')); self.assertEqual(r['DM_GAME_FOLDER'], str(game.resolve()))
+                self.assertEqual((sup / 'save/Play/account.sav').read_bytes(), b'progress'); self.assertFalse((sup / 'save/._Play').exists())
+                self.assertEqual((there / 'Play/account.sav').read_bytes(), b'progress')   # left as it was
+                self.assertIn('cannot hold a save', (logs / f'{TID}.log').read_text())
+                (sup / 'save/Play/account.sav').write_bytes(b'newer')   # the next launch keeps the Library's save
+                p = self.launch(app=game / self.app.name); p.communicate(timeout=30)
+                self.assertEqual((sup / 'save/Play/account.sav').read_bytes(), b'newer')
+            finally:
+                subprocess.run(['hdiutil', 'detach', '-force', mnt], capture_output=True)
 
     def test_relocated(self):   # run with the entire build folder unavailable
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as dst:
@@ -732,12 +809,13 @@ class Script(unittest.TestCase):
             ran.append([str(c) for c in cmd])
             if str(cmd[1]).endswith('dm/games/settings.py'):   # the launcher settings, before the packer
                 self.settings_env = env; Path(cmd[-1]).write_text('{}'); return
-            if not on_line:   # pso_offline.py: its archive, or none when every eligible pair has function constants
+            if str(cmd[1]).endswith('pso_offline.py'):   # pso_offline.py (which reports its batches through on_line): its archive, or none when every eligible pair has function constants
                 o = Path(cmd[cmd.index('--out') + 1]); o.mkdir(parents=True, exist_ok=True)
                 if kw.get('pso_fail'):   # metal-tt failed
                     self.assertFalse(fatal); (o / 'applegpu_g14s.mtl4a.partial').write_bytes(b'half'); return 1
                 if not kw.get('no_bases'): (o / f'{cmd[cmd.index("--gpu") + 1]}.mtl4a').write_bytes(b'arch')
                 return
+            assert on_line   # the packer reports its steps
             (out / 'Contents/MacOS').mkdir(parents=True); (out / 'Contents/MacOS/dmhost').write_bytes(b'x')
             on_line('step: launcher and host (clones of the game files)')
             on_line(f'app: {out}')
@@ -747,7 +825,7 @@ class Script(unittest.TestCase):
         with mock.patch.object(nsp, 'run', fake_run), mock.patch.object(nsp, 'PROG', self.prog), mock.patch.object(nsp, 'chain_of', lambda repo: '0123456789ab'), \
              mock.patch.object(nsp, 'mac_gpu_arch', lambda *a: 'applegpu_g14s'), mock.patch.object(nsp, 'say', self.said.append):
             nsp.mac_app(sys.executable, REPO, out, 0x01008CF01BAAC000, tmp, tmp / 'ex', tmp / 'patched', tmp / 'dmhost', tmp / 'font', tmp / 'shader/cache' if gfx == 'nvn' else tmp / 'shader',
-                        kw.get('aoc'), gfx, 'en-US', g, 'Game', '1.0.0', 'org.nxnative.01008cf01baac000', None, kw.get('sign', ''), {}, tmp, gpus=kw.get('gpus', ''))
+                        kw.get('aoc'), gfx, 'en-US', g, 'Game', '1.0.0', 'org.nxforge.01008cf01baac000', None, kw.get('sign', ''), {}, tmp, gpus=kw.get('gpus', ''))
         self.pso_cmd = next((c for c in ran if c[1].endswith('pso_offline.py')), None)   # before the packer
         self.settings_cmd = next(c for c in ran if c[1].endswith('dm/games/settings.py'))
         c = ran[-1]; return {c[i]: c[i + 1] for i in range(3, len(c) - 1) if c[i].startswith('--')}, tmp
@@ -755,9 +833,9 @@ class Script(unittest.TestCase):
     def test_pack_command(self):
         o, tmp = self.pack_cmd('nvn')
         self.assertNotIn('--pso-pairs', o)   # no split copy
-        (tmp / 'shader').mkdir(); (tmp / 'shader/pso_pairs.tsv').write_text('v\tf\n')
+        (tmp / nsp.SHADER).mkdir(); (tmp / nsp.SHADER / 'pso_pairs.tsv').write_text('v\tf\n')
         o, tmp2 = self.pack_cmd('nvn', work=tmp)
-        self.assertEqual(o['--pso-pairs'], str(tmp / 'shader/pso_pairs.tsv'))   # the profile has no pso_pairs.tsv: the split's copy goes in
+        self.assertEqual(o['--pso-pairs'], str(tmp / nsp.SHADER / 'pso_pairs.tsv'))   # the profile has no pso_pairs.tsv: the split's copy goes in
         o, tmp = self.pack_cmd('nvn')
         self.assertEqual((o['--msl'], o['--romfs'], o['--tables'], o['--title-id'], o['--sign'], o['--marker']),
                          (str(tmp / 'shader/cache/b-0123456789ab'), str(tmp / 'ex/RomFS'), str(tmp / 'profile'), TID, '-', 'a/b'))
@@ -910,6 +988,14 @@ class SeenShaders(unittest.TestCase):   # --seen-shaders: the keys, the partial 
         with mock.patch.object(nsp, 'chain_tables', lambda *a: True), mock.patch.object(nsp, 'stale_shaders', lambda *a: None), mock.patch.object(nsp, 'prune_stale_chains'), mock.patch.object(nsp, 'prune_shader_cache'):
             self.build()
         self.assertFalse(any('--seen-shaders' in m for m in self.said))
+
+    def test_shader_watch_reads_the_progress_file(self):   # dmsh_build.py's DMSH_PROGRESS file, whose total is the keys it builds (the list's, for a partial build)
+        p = self.tmp / 'progress.json'; w = nsp.ShaderWatch(p)
+        self.assertIsNone(w())
+        p.write_text(json.dumps({'step': 'cache check', 'done': 1, 'total': 2, 'cached': 1}))
+        self.assertEqual((w()['step'], w()['done'], w()['total']), ('cache check', 1, 2))
+        p.write_text(json.dumps({'step': 'compiling', 'done': 2, 'total': 2, 'cached': 1, 'misses': 1}))
+        self.assertEqual((w()['step'], w()['total'], w()['note']), ('compiling', 2, '1 not cached'))
 
     def run_cmd(self, **kw):
         game = self.tmp / 'ex'; game.mkdir(exist_ok=True); (game / 'RomFS').mkdir(exist_ok=True)

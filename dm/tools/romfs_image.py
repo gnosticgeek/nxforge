@@ -70,9 +70,11 @@ def source_digest(src, ents):
     return h.hexdigest()
 
 
-def reusable(dst, digest):   # whether dst is the image the stamp beside it says was made from inputs with this digest
-    try: return json.loads(Path(dst + '.inputs.json').read_text()) == {'source': digest, 'image': file_identity(dst)}
-    except (OSError, ValueError): return False
+def reusable(dst, digest):   # whether dst is the image the stamp beside it says was made from inputs with this digest; a stamp from before file_identity left st_dev out has it first
+    try:
+        stamp = json.loads(Path(dst + '.inputs.json').read_text())
+        return stamp['source'] == digest and stamp['image'][-4:] == file_identity(dst)
+    except (OSError, ValueError, KeyError, TypeError): return False
 
 
 def layout(ents, end):

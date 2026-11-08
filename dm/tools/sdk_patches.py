@@ -11,6 +11,13 @@ CUTS = {
     (0x93e8c, 'ea030232', '0a80a052', 'VammManager occupied node area: 1 GB to 64 MB'),
     (0x93fe0, 'ea030232', '0a40a052', 'AllocateAddressRegion: align regions of 1 GB and more to 32 MB'),
   ],
+  # SDK 21.4.3 sdk cb82ed522163 (Mina the Hollower 1.0.5, an NXForge port): the node area cut. Its malloc StandardAllocator (cut to 4 GB in its patches.py) takes its region after the node area, which a
+  # 4.375 GB alias region does not hold after a 1 GB node area. The constructor is at sdk+0x14fbe0 (the limit at +0x14fbf0, the occupied length at +0x14fc5c), SDK 20.5.22's layout at other
+  # offsets; VammManager::AllocateAddressRegion (sdk+0x14fd00) aligns regions to 64 KB or 2 MB only, as SDK 20.5.22's. Likely what the SDK-wide rules give (below); the row stays until a run checks that
+  'cb82ed52216313df5626154efb64d45f': [
+    (0x14fbf0, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
+    (0x14fc5c, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
+  ],
 }
 
 # SDK-wide function patches (dm/tools/nso_match.py): the two fixes above that hold for any game on an iPhone's small address space, for every game's sdk of a build with no CUTS
@@ -187,6 +194,9 @@ BINDING = [
     {'what': 'node area 1 GB → 62 MB and regions of 4 MB and more aligned to 2 MB, as SDK 20: the SDK-wide rules', 'now': 'sdk', 'goal': 'sdk', 'purpose': 'address space',
      'checked': '20 registered builds rewritten byte-identical with the rules alone, 2026-10-29 and 2026-10-30; the 2 MB alignment on every sdk build on the drive, 2026-10-30',
      'why': 'one rule per reviewed implementation; every sdk build without CUTS gets them'},
+    {'what': "Mina the Hollower's row (cb82ed52, SDK 21.4.3; NXForge)", 'now': 'build', 'goal': 'sdk', 'purpose': 'address space',
+     'why': "SDK 20.5.22's constructor layout, which the rules now cover; the row came before the rules",
+     'blocked': 'drop it once a Mina build rewritten with the rules alone matches this one'},
     {'what': 'VammManager node area and alignment, SDK 4.4.0 (9de92bad)', 'now': 'build', 'goal': 'sdk', 'purpose': 'address space',
      'why': 'an older implementation no rule covers (its large regions aligned to 32 MB, not the rules\' 2 MB); a rule once a second game ships it',
      'blocked': 'one game ships it'},

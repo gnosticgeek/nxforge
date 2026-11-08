@@ -116,6 +116,14 @@ class Pack(Base):
         self.assertIn('dir/new', names)
         self.assertNotIn('dir/old', names)   # an update's RomFS is the patched tree, never laid over the base
 
+    def test_plan_reads_the_packers_own_reuse_check(self):   # what --plan asks before it says "reused"
+        src = self.dump / f'updates/{VER}'
+        self.assertFalse(pack_dump.version_reusable(src, self.out()))
+        pack_dump.pack_version(src, TID, self.out(), say=lambda s: None)
+        self.assertTrue(pack_dump.version_reusable(src, self.out()))
+        (src / 'romfs/dir/new').write_text('changed')   # a game file changed: packed again
+        self.assertFalse(pack_dump.version_reusable(src, self.out()))
+
     def test_other_title_refused(self):
         with self.assertRaisesRegex(pack_dump.Error, 'the base is'): pack_dump.pack_version(self.dump / f'updates/{VER}', TID + 0x2000, self.out(), say=lambda s: None)
 
