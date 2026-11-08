@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
     id<MTLCommandBuffer> rcb = [g_q commandBuffer]; id<MTLBlitCommandEncoder> rbe = [rcb blitCommandEncoder];   // after the upload: one queue runs its command buffers in commit order
     [rbe copyFromTexture:dtex->tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(4, 4, 1) toBuffer:rb destinationOffset:0 destinationBytesPerRow:16 destinationBytesPerImage:64];
     [rbe endEncoding]; [rcb commit]; [rcb waitUntilCompleted];
-    assert(!memcmp(rb.contents, depth, sizeof depth));
+    assert(!memcmp(rb.contents, depth, sizeof depth));   // NOLINT(bugprone-suspicious-memory-comparison): the blit must copy the depth texels bit for bit
     // A real link: the linked program keeps the stages' code (si, fn) whatever its attachments do afterwards; a relink without a stage fails. The same shader attached twice
     // changes nothing (its count included)
     void (*link)(GLuint) = import("glLinkProgram");

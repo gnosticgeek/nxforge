@@ -24,11 +24,10 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
 dm/gfx/nvn/nvn_mtl.m	bugprone-misplaced-widening-cast	1
 dm/gfx/nvn/nvn_mtl.m	bugprone-signed-char-misuse	1
 dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	9
+dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	8
 dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
 dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	5
 dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-security.ArrayBound	1
 dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	4
 dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
 dm/gfx/nvn/nvn_mtl.m	misc-redundant-expression	2
@@ -104,7 +103,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
 dm/host/tests/t_fs.c	bugprone-command-processor	2
 dm/host/tests/t_fs.c	clang-analyzer-unix.Stream	1
 dm/host/tests/t_fs_case.c	clang-analyzer-unix.Stream	1
-dm/host/tests/t_hid.c	bugprone-suspicious-memory-comparison	2
+dm/host/tests/t_hid.c	bugprone-suspicious-memory-comparison	1
 dm/host/tests/t_hid.c	bugprone-unsafe-functions	1
 dm/host/tests/t_hid.c	clang-analyzer-unix.Errno	1
 dm/host/tests/t_movie_vpx.c	clang-analyzer-core.UndefinedBinaryOperatorResult	1
