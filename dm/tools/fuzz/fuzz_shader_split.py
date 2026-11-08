@@ -10,6 +10,8 @@ allocation gets past that net. Usage: see fuzzlib.py"""
 import struct
 import sys
 
+import lz4.block
+
 import fuzzlib
 
 ss = fuzzlib.import_shader_split()
@@ -116,12 +118,20 @@ def rgxd():
     for (ctl, code), extra in ((VS, b''), (PS, bytes(12))):
         c = ctl + extra; d += struct.pack('<I', 0x10 + len(code) + len(c)) + GLSLC + struct.pack('<II', len(code), len(c)) + code + c
     return bytes(d)
+def narc(members):
+    """Camelot's NARC (cra.py): a 16-byte header with its length and section count at 0xc, a BTAF of (start, end) pairs into GMIF, then GMIF (members 4-aligned)"""
+    data = b''; fat = b''
+    for m in members:
+        fat += struct.pack('<II', len(data), len(data) + len(m)); data += m + bytes(-len(m) % 4)
+    btaf = b'BTAF' + struct.pack('<II', 12 + len(fat), len(members)) + fat
+    gmif = b'GMIF' + struct.pack('<I', 8 + len(data)) + data
+    return b'NARC' + struct.pack('<IIHH', 0xfffe0100, 16 + len(btaf) + len(gmif), 16, 2) + btaf + gmif
 
 
 def seeds():
     b = bnsh()
     return {'bnsh': b, 'bahs': bahs(), 'mshd': mshd(), 'sarc-yaz0': yaz0(sarc([(b'shader.bnsh', b)])), 'glslc': glslc([VS]), 'glslc-program': glslc([VS, PS]),
-            'sdf': sdf(), 'arh1': arh1(), 'rgxd': rgxd()}
+            'sdf': sdf(), 'arh1': arh1(), 'rgxd': rgxd(), 'narc': narc([b, b'\x94\0\0\0' + struct.pack('<I', len(b)) + lz4.block.compress(b, store_size=False)])}
 
 
 def check(data):

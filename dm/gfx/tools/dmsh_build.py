@@ -7,7 +7,7 @@
 # at the end (publish_library), so a build, stopped or not, leaves a few files and not one per shader output (Octopath Traveler 0, stopped in its compile: 68,230 files). The translator's
 # working files go into a folder per batch of shaders, removed when the batch is done; a working folder whose build is gone is removed at the next start (sweep_work).
 # A full build (no keys) also stamps both directories with the game and the digest of its profile inputs (inputs.tsv) and writes the profile's c1_full.tsv and cb_extent.tsv (c1_guard.py, cb_extent.py)
-# from its Mac outputs. One output directory per game: the chain version is the same for every game   Environment: DM_GAME=game profile (required, dm/games/<id>), XLATE=path to the translation tool (default the in-repo dmsh_xlate_bin), DMSH_CAS=the compile cache, one file (shader_cache.py; default <output cache dir>/cas.db), DMSH_PREFILL=Mac library root[=iOS library root] (separated by :, their b-*/ go into the MSL-keyed compile cache first; sibling b-*/ always do), J=concurrency, DMSH_PROCS=processes that finish shaders (default J; 0 = threads of this process, see fin_worker)
+# from its Mac outputs. One output directory per game: the chain version is the same for every game   Environment: DM_GAME=game profile (required, dm/games/<id>), XLATE=path to the translation tool (default the in-repo dmsh_xlate_bin), DMSH_CAS=the compile cache, one file (shader_cache.py; default <output cache dir>/cas.db), DMSH_PREFILL=Mac library root[=iOS library root] (separated by :, their b-*/ go into the MSL-keyed compile cache first; sibling b-*/ always do), DMSH_MTLCACHE=the Metal compile cache, one file for every game (default ~/Library/Caches/NXForge/metallib.db; DMSH_MTLCACHE_GB its size limit, default 4; dmsh_mtlcache.py), J=concurrency, DMSH_PROCS=processes that finish shaders (default J; 0 = threads of this process, see fin_worker)
 # Build output: <key>_b.metallib, <key>_b.json (replay reflection, including drv_reads, the runtime read offsets into driver segments c0 / c2), <key>_b.metal (MSL)
 # Environment IOSOUT=dir: the same MSL also goes through dm/ios/tools/ios_metal.compile to produce an iphoneos metallib + reflection (chain_metal records the iOS compile convention)
 # Final summary: success / failure counts and the distribution of reasons; distribution of driver segment read offsets (those outside the range the replay layer can fill are listed separately);
@@ -51,6 +51,34 @@ DUAL_WANT_FILE = str(GAME.table('dual_want.tsv'))   # pixel shaders a pipeline b
 DUAL_WANT = {line.split()[0] for line in open(DUAL_WANT_FILE) if line.strip() and not line.lstrip().startswith('#')} if os.path.exists(DUAL_WANT_FILE) else set()
 XC = ['--msl', '--msl-version', '20300', '--msl-argument-buffers', '--msl-texture-buffer-native', '--msl-pad-fragment-output']
 
+# Two game profile switches for Apple's M1 (game.tsv; shader_* keys are part of every shader's cache key). On the M1 Pro's compiler, a per-sample uniform branch (border_emu's dm_bs)
+# and the translator's NaN select on sample coordinates each keep a shader's samples from overlapping. Mario Kart World's cube prefilter (4744589bb8f9f7dd, 192 cube samples a pixel) took
+# 2.2 ms a chain as built and 0.67 ms with neither; with only one of them gone it was no faster (the branch kept: 2.1 ms) or slower (the select kept: 3.4 ms).
+#   shader_border_emu 0: no twin samplers. A sampler whose border colour Metal lacks keeps the nearest Metal colour; the host's "which Metal lacks" line names each one. Only for a game that
+#     never prints that line.
+#   shader_nan_coord fmax: the coordinate guard select(c, 0, isnan(c)) as fmax(c, -FLT_MAX) (see nan_coord_fmax)
+BORDER_EMU = GAME.get('shader_border_emu', '1') != '0'
+NAN_COORD_FMAX = GAME.get('shader_nan_coord', 'select') == 'fmax'
+NAN_COORD = re.compile(r'select\((_\d+), (float[234])\(0\.0\), isnan\(\1\)\)')
+NAN_CUBE_TEX = re.compile(r'^\s*(?:texture|depth)cube(?:_array)?<[^>]*>\s+(\w+)\s*\[\[id\(', re.M)
+NAN_CUBE_USE = re.compile(r'spvDescriptorSet0\.(\w+)\.(?:sample|gather)\w*\([^,()]+, (?:(select\((_\d+), float[234]\(0\.0\), isnan\(\3\)\))|(_\d+)\b)')
+def nan_coord_fmax(msl):
+    """The translator's guard on float texture coordinates, select(c, 0, isnan(c)) (vendored Ryujinx Instructions.cs, its only Select of an IsNan, so nothing else matches), made cheap
+    for the M1 (shader_nan_coord fmax). Apple's max returns the operand that is not NaN, in fast math too, so fmax(c, -FLT_MAX) turns a NaN into -FLT_MAX instead of 0: the same texel
+    through clamp-to-edge, repeat and mirrored repeat (2D, 3D, array layers), the whole border colour instead of half of it through clamp-to-border. A cube direction keeps no guard (a
+    cube array keeps it on its layer): any operation on the direction, fmax, fmin, precise::fmax, per component or not, cost a cube-array prefilter (765844f5609bb11b) as much as the
+    select (64x64 pass 1.96 ms, 0.26 ms without), and fmax would not keep the guard's face anyway (a NaN axis becomes the negative one). An exact form costs as much as the select
+    (fmax(c, 0) + fmin(c, 0): 5.5 ms a chain on 4744589bb8f9f7dd)"""
+    body = re.search(r'struct spvDescriptorSetBuffer0\s*\{(.*?)\};', msl, re.S)
+    cubes = set(NAN_CUBE_TEX.findall(body.group(1))) if body else set()
+    inline, temps = set(), set()   # guards that are a cube sample's coordinate argument; temporaries a cube sample takes its coordinates from
+    for m in NAN_CUBE_USE.finditer(msl) if cubes else ():
+        if m.group(1) not in cubes: continue
+        if m.group(2): inline.add(m.start(2))
+        else: temps.add(m.group(4))
+    def cube(v, ty): return f'float4({v}.xyz, fmax({v}.w, -FLT_MAX))' if ty == 'float4' else v   # a cube array's coordinates end with the layer
+    tmp = {m.start(2) for m in re.finditer(r'(_\d+) = (select\((_\d+), float[234]\(0\.0\), isnan\(\3\)\))', msl) if m.group(1) in temps}
+    return NAN_COORD.sub(lambda m: cube(m.group(1), m.group(2)) if m.start() in inline or m.start() in tmp else f'fmax({m.group(1)}, {m.group(2)}(-FLT_MAX))', msl)
 STORE: 'shader_cache.Store | shader_cache.Remote' = shader_cache.Store(os.environ.get('DMSH_CAS', os.path.join(cache_root, 'cas.db')))
 atexit.register(STORE.close)   # folds its log into the one file
 CAS_LOCKS, CAS_LOCKS_GUARD = {}, threading.Lock()
@@ -71,7 +99,11 @@ METAL_DEPTH = ['-fbracket-depth=1024']
 METAL_FP = dmsh_mtlcache.compiler_id('macosx') + ('\0iphoneos\0' + dmsh_mtlcache.compiler_id('iphoneos') if IOSOUT else '')
 def mac_compile(msl, air, lib):   # same interface as ios_metal.compile; the precompiled header and METAL_DEPTH change no output, so MAC_RECORD does not name them (dmsh_pch.py)
     dmsh_pch.compile(MAC_RUN + METAL_DEPTH, msl, air)
-    subprocess.run([*MAC_LINK, air, '-o', lib], check=True)
+    spawn([*MAC_LINK, air, '-o', lib], check=True)
+spawn = dmsh_mtlcache.run   # subprocess.run without a fork (dmsh_mtlcache.run)
+def ios_compile(msl, air, lib):   # ios_metal.compile's commands, without a fork
+    spawn([*ios_metal.METAL, msl, '-o', air], check=True)
+    spawn([*ios_metal.METALLIB, air, '-o', lib], check=True)
 
 def record_index(path):   # → (an open descriptor, {a record's key: its bytes' (start, end)}): shader_split.py writes each record's key at +0x08, its bytes from its marker to the next one
     # Scanned through a read-only mapping that is closed again, so no package stays in this process. Pokopia's ps_rdb.bin (4.25 GB) read and cut into its 105,118
@@ -99,7 +131,7 @@ def shader_rule_source(name):
     return b''.join(inspect.getsource(f).encode() for f, applies in RULES if applies(name))
 
 def tool_fingerprint():
-    sc = subprocess.run([SPIRV_CROSS, '--version'], capture_output=True, text=True, timeout=30)
+    sc = spawn([SPIRV_CROSS, '--version'], capture_output=True, text=True, timeout=30)
     return ('lock\0' + open(dmsh_chain.LOCK).read() + '\0options\0' + dmsh_chain.options() +
             '\0xlate\0' + dmsh_chain.xlate_source_sha() + '\0spirv-cross\0' + sc.stdout + sc.stderr +
             '\0xc\0' + repr(XC) + '\0mac\0' + MAC_RECORD + '\0ios\0' + (ios_metal.RECORD if IOSOUT else '') + '\0metal\0' + METAL_FP)
@@ -576,7 +608,7 @@ def gs_slice(spv):
     grading LUT the tone mapper reads, and without it the screen came out a flat blue). Metal has no geometry stage, so the host drops such a shader and draws with the vertex shader's
     layer entry points instead (vs_layer_entry), which write that component as the layer. Read from the SPIR-V as GLSL (SPIRV-Cross writes no MSL for a geometry stage).
     → {'loc': input location, 'comp': component} or None (any other geometry shader: one-pass cube shadows emit six transformed triangles)"""
-    r = subprocess.run([SPIRV_CROSS, spv, '--version', '450'], capture_output=True, text=True)
+    r = spawn([SPIRV_CROSS, spv, '--version', '450'], capture_output=True, text=True)
     g = r.stdout
     if r.returncode or 'layout(triangles) in;' not in g or 'layout(max_vertices = 3, triangle_strip) out;' not in g or g.count('EmitVertex();') != 3 or 'EndPrimitive' in g: return None
     ins = {m.group(2): int(m.group(1)) for m in re.finditer(r'layout\(location = (\d+)\) in vec4 (\w+)\[3\];', g)}
@@ -673,14 +705,14 @@ def geometry_finish(key, w, j, c1):
     dmsh_geometry.output_layout(code, 0)   # validate before running the translator
     jobs = [{**j, 'key': key + '_g' + str(t), 'geometry_topology': t} for t in range(5)]
     jp = os.path.join(w, key + '_geometry.json'); atomic_json(jp, jobs)
-    rx = subprocess.run([XLATE, jp, w], capture_output=True, text=True)
+    rx = spawn([XLATE, jp, w], capture_output=True, text=True)
     if rx.returncode: return 'geometry failed', rx.stderr.strip()[:160], None
     base = None
     for t, job in enumerate(jobs):
         layout = dmsh_geometry.output_layout(code, t)
         k = job['key']; spv = os.path.join(w, k + '.spv')
         dmsh_geometry.flatten_sets(spv)
-        r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
+        r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
         if r.returncode: return 'geometry MSL failed', r.stderr.strip()[:160], None
         try: selected = dmsh_rewrite.uniform_tests(dmsh_fetch.select_guards(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout))))   # bounded uniform reads as selects (see dmsh_fetch.select_guards), tested words as volatile loads (see uniform_tests)
         except ValueError as e: return 'geometry MSL failed', str(e)[:160], None
@@ -712,7 +744,7 @@ def geometry_finish(key, w, j, c1):
             base = {**refl, 'key': key + '_b'}
             save('_b', src, base)
             spv = os.path.join(w, k + '.reader.spv'); dmsh_geometry.flatten_sets(spv)
-            r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
+            r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
             if r.returncode: return 'geometry reader failed', r.stderr.strip()[:160], None
             try: selected = dmsh_rewrite.uniform_tests(dmsh_fetch.select_guards(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout))))
             except ValueError as e: return 'geometry reader failed', str(e)[:160], None
@@ -741,17 +773,17 @@ def finish(key, w, j, c1):
         try: return geometry_finish(key, w, j, c1)
         except (ValueError, subprocess.CalledProcessError) as e: return 'geometry failed', str(e)[:160], None
     if j['stage'] in ('vs', 'ds'): spv_single_lane(os.path.join(w, key + '.spv'))   # one-lane subgroups (see spv_single_lane); a domain shader is a vertex function in Metal too
-    r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, os.path.join(w, key + '.spv')), os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
+    r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, os.path.join(w, key + '.spv')), os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
     if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
     src = open(msl).read()
     if j['stage'] == 'vs':   # second pass: re-translate with inputs that are only used as integers reported as uint (see int_inputs)
         extra = {l: t for l, t in dmsh_entry.int_inputs(src).items() if l not in j['attr']}
         if extra:
             j['attr'].update(extra); jp = os.path.join(w, f'job1_{key}.json'); json.dump([j], open(jp, 'w'))
-            rx = subprocess.run([XLATE, jp, w], capture_output=True, text=True)
+            rx = spawn([XLATE, jp, w], capture_output=True, text=True)
             if rx.returncode or not os.path.exists(os.path.join(w, key + '.spv')): return 'translation failed', ('integer-input retranslation: ' + rx.stderr.strip())[:160], None
             spv_single_lane(os.path.join(w, key + '.spv'))
-            r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, os.path.join(w, key + '.spv')), os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
+            r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, os.path.join(w, key + '.spv')), os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
             if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
             src = open(msl).read()
     try: src = dmsh_atomic.check_msl(src)
@@ -771,7 +803,8 @@ def finish(key, w, j, c1):
     except ValueError as e: return 'pool rewrite failed', str(e)[:160], None
     src = dmsh_wide.wide_loads(src)   # storage words the translator split, read whole again (see dmsh_wide.py)
     src = dmsh_rewrite.tg_fence(src)   # warp-synchronous shared memory: a simdgroup-scope fence after each threadgroup store (see tg_fence)
-    src = dmsh_rewrite.border_emu(src)   # border colours Metal lacks (see border_emu)
+    if NAN_COORD_FMAX: src = nan_coord_fmax(src)   # the profile's switch (see nan_coord_fmax)
+    if BORDER_EMU: src = dmsh_rewrite.border_emu(src)   # border colours Metal lacks (see border_emu)
     if j['stage'] == 'ps': src = dmsh_rewrite.frag_z_snap(src)[0]   # gl_FragCoord.z against a depth of its own surface (see frag_z_snap)
     try: src = dmsh_rewrite.uniform_tests(src)   # a uniform word tested against constants read by a volatile load per test, so the front end folds no switch (see uniform_tests)
     except ValueError as e: return 'uniform tests rewrite failed', str(e)[:160], None
@@ -871,8 +904,9 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
     os.makedirs(_d, exist_ok=True)
     for _n in os.listdir(_d):   # a partial build over a folder (an older chain's, or one a stopped build left)
         _m = OUT_KEY.match(_n)
-        if _m and _m.group(1) in want: os.unlink(os.path.join(_d, _n))
-    if STAMP_BEFORE != INPUTS and os.path.exists(os.path.join(_d, dmsh_chain.STAMP)): os.unlink(os.path.join(_d, dmsh_chain.STAMP))
+        if _m and (not want or _m.group(1) in want): os.unlink(os.path.join(_d, _n))
+    if (not want or STAMP_BEFORE != INPUTS) and os.path.exists(os.path.join(_d, dmsh_chain.STAMP)): os.unlink(os.path.join(_d, dmsh_chain.STAMP))
+    if not want and os.path.exists(os.path.join(_d, CAS_USED)): os.unlink(os.path.join(_d, CAS_USED))   # written again at the end, with the stamp
 STORE.delete_prefix(STAGE + '/')   # what a stopped build of this folder staged
 
 def sweep_work(root):
@@ -893,7 +927,10 @@ _work = os.environ.get('WORK') or tempfile.gettempdir()
 sweep_work(_work)
 w = tempfile.mkdtemp(prefix='dmsh_', dir=_work)
 with open(os.path.join(w, 'pid'), 'w') as _f: _f.write(str(os.getpid()))
-MTL = dmsh_mtlcache.Cache(STORE, {'mac': ('macosx', MAC_RECORD, mac_compile), **({'ios': ('iphoneos', ios_metal.RECORD, ios_metal.compile)} if IOSOUT else {})}, w)
+MTL_STORE = shader_cache.Store(dmsh_mtlcache.SHARED)   # NXForge: the Metal libraries in one cache for every game (dmsh_mtlcache.py)
+atexit.register(MTL_STORE.close)
+MTL = dmsh_mtlcache.Cache(MTL_STORE, {'mac': ('macosx', MAC_RECORD, mac_compile), **({'ios': ('iphoneos', ios_metal.RECORD, ios_compile)} if IOSOUT else {})}, w)
+if (_n := MTL.adopt_folder()): print(f'Metal cache: {_n:,} libraries moved from {dmsh_mtlcache.LEGACY} into {dmsh_mtlcache.SHARED}', flush=True)
 # first take the libraries earlier chain versions left on disk: the b-*/ and b-*.img beside the output (iOS: the folder of the same name) and the roots DMSH_PREFILL lists
 for _spec in [cache_root + ('=' + os.path.dirname(IOSOUT) if IOSOUT else '')] + [x for x in os.environ.get('DMSH_PREFILL', '').split(os.pathsep) if x]:
     _mac, _, _ios = _spec.partition('=')
@@ -950,6 +987,7 @@ def xlate_errors(r):
     for ln in r.stderr.splitlines():
         m = re.match(r'\[RED\] (\w+): (.*)', ln)
         if m: xerr[m.group(1)] = m.group(2)[:160]
+XLATE_MIN = 64
 def translate(batch):
     """A batch's misses translated into a working folder of its own (removed once the batch is finished) → that folder"""
     wb = tempfile.mkdtemp(prefix='batch_', dir=w)
@@ -957,9 +995,12 @@ def translate(batch):
     for k in miss: jobs[k], c1s[k] = job_for(k, loc[k][0], rec_of(k)[1], wb)
     def xl(ch):
         jp = os.path.join(wb, f'job_{abs(hash(ch[0]))}.json'); json.dump([jobs[k] for k in ch], open(jp, 'w'))
-        return subprocess.run([XLATE, jp, wb], capture_output=True, text=True)
+        return spawn([XLATE, jp, wb], capture_output=True, text=True)
+    # NXForge: more, smaller translator runs than workers (a shared queue): with one run per worker, the runs that land on the efficiency cores finished last and held up
+    # the batch. Each run keeps at least XLATE_MIN shaders, so the translator's start-up stays a small part of it
+    n = max(1, min(4 * NJ, len(miss) // XLATE_MIN))
     with cf.ThreadPoolExecutor(NJ) as ex:
-        for r in ex.map(xl, [c for c in (miss[i::NJ] for i in range(NJ)) if c]): xlate_errors(r)
+        for r in ex.map(xl, [c for c in (miss[i::n] for i in range(n)) if c]): xlate_errors(r)
     return wb
 def restored(key, wb):
     """A cache hit's outputs back on disk while it is finished. When another build pruned them since the look (cache_lookup), the shader is translated now, in the batch's folder: False"""
@@ -967,7 +1008,7 @@ def restored(key, wb):
     PRE_STATS['hit'] -= 1; PRE_STATS['miss'] += 1; PRE_STATS['pruned meanwhile'] += 1
     jobs[key], c1s[key] = job_for(key, loc[key][0], rec_of(key)[1], wb)
     jp = os.path.join(wb, f'job1_{key}.json'); json.dump([jobs[key]], open(jp, 'w'))
-    xlate_errors(subprocess.run([XLATE, jp, wb], capture_output=True, text=True))
+    xlate_errors(spawn([XLATE, jp, wb], capture_output=True, text=True))
     return False
 DONE = collections.Counter()
 def fin(key, wb):
@@ -1003,7 +1044,8 @@ COUNTERS = (PRE_STATS, VIN_STATS, PULL_STATS, SIDE_STATS, BF_STATS, MTL.stats)
 def worker_start():
     global PROGRESS, STORE
     assert SERVED is not None
-    STORE = MTL.store = SERVED.worker()
+    STORE = SERVED.worker()
+    MTL.store = SERVED_MTL.worker() if SERVED_MTL else MTL.store   # NXForge: the shared Metal cache is a file of its own (MTL_STORE), served the same way
     PROGRESS = None   # this build writes it, as the workers' shaders finish
 def fin_worker(key, wb, job, err):
     """fin in a worker process, given what translate left for the shader in this process (its job and c1, its translator error) → (fin's result, what it added to the counters)"""
@@ -1027,12 +1069,13 @@ def results(fs):   # → what fin returned for them, in their order (a worker's 
         out.append(r)
     return out
 SERVED = shader_cache.Served(STORE, PROCS) if PROCS and keys else None
+SERVED_MTL = shader_cache.Served(MTL_STORE, PROCS) if SERVED else None   # NXForge: a worker no more opens metallib.db than cas.db (GitHub issue #2354)
 px = cf.ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context('fork'), initializer=worker_start) if PROCS and keys else None
 if px:
     if 'mac' in TARGETS: dmsh_pch.header(MAC_RUN + METAL_DEPTH)
     if IOSOUT: dmsh_pch.header(ios_metal.METAL + ios_metal.DEPTH)
     px.submit(int).result()   # forks every worker now, while this process has no other thread
-    assert SERVED is not None; SERVED.start()
+    assert SERVED is not None and SERVED_MTL is not None; SERVED.start(); SERVED_MTL.start()
 # Two phases: paired vertex shaders read their pixel shaders' MSL (vs_pad), so they go last, in batches of their own, once every shader before them is finished. The next batch is
 # translated while this one is finished, and handed out before this one is done, so that no worker waits for the slowest shader of a batch; a batch's working folder goes when it is done
 batches = [b[i:i + BATCH] for b in ([k for k in keys if k not in PAIRS], [k for k in keys if k in PAIRS]) for i in range(0, len(b), BATCH)]
@@ -1093,6 +1136,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
       f'{PULL_STATS["no stage input"]} vertex shaders without stage inputs (none needed)')
 print('mesh libraries (<vertex>_<geometry>_m3, dmsh_mesh.py): ' + (', '.join(f'{k} {v}' for k, v in MESH_STATS.items()) or 'none'))
 print(MTL.summary())
+print(MTL.prune(), flush=True)
 for lvl in [k for k in st if k != 'ok']:
     for e, n in collections.Counter(r[2] for r in res if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
 ok = [r[3] for r in res if r[1] == 'ok']
@@ -1128,7 +1172,7 @@ if PROGRESS:
     except FileNotFoundError: pass
 if not want:
     for _tool, _table in (('c1_guard.py', 'c1_full.tsv'), ('cb_extent.py', 'cb_extent.tsv')):
-        _r = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), _tool), out, str(GAME.table(_table))], capture_output=True, text=True)
+        _r = spawn([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), _tool), out, str(GAME.table(_table))], capture_output=True, text=True)
         if _r.returncode: sys.exit(f'[RED] {_tool} failed ({_r.returncode}): {_r.stderr.strip()[-500:]}')
         print(f'{_table}: {(_r.stdout.strip().splitlines() or [""])[-1]}', flush=True)
 elif STAMP_BEFORE != INPUTS: print(f'no library stamp: the profile\'s inputs changed since the last full build ({STAMP_BEFORE} → {INPUTS}), and a partial build does not rebuild the rest', flush=True)

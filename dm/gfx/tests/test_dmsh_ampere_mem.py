@@ -356,7 +356,7 @@ class StageMemory(Translated):
     def test_the_zero_count_is_left_out(self):   # threads are not in step on Metal: it could land after the real count, and the stage memory starts at zero
         without = self.msl(self.COUNT)
         with_zero = self.msl(self.COUNT_ZERO, self.COUNT)
-        self.assertEqual(without.count('atomic_compare_exchange'), with_zero.count('atomic_compare_exchange'))
+        self.assertEqual(without.count('atomic_fetch_or'), with_zero.count('atomic_fetch_or'))
 
     def test_a_byte_goes_through_its_word_atomically(self):   # neighbouring threads write neighbouring bytes; the shader build makes the helper's loop one byte store (test_dmsh_shared_store.py)
         self.assertIn('atomic_compare_exchange', self.msl(self.INDEX))

@@ -12,8 +12,16 @@ import os, re, sys, json, shutil, ctypes, hashlib, threading, subprocess, collec
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
 import romfs, shader_cache, shader_lib   # the libraries of an earlier build may be one file (shader_lib.py), read in place
 STAMPS = 'metallib/filled.json'   # the earlier builds' folders already read
+# NXForge: one cache for every game and build (SHARED, DMSH_MTLCACHE): nothing in a key names a game, and a cache inside <id>_build went with it when a Mac app's build cleaned up
+# (CLEANUP 'all'), so the next build of the game after a chain change compiled every shader again (Cruis'n Blast: 46 minutes). Since upstream's compile cache became one SQLite file
+# (shader_cache.py) the shared cache is one such file too, beside the game's own; a use refreshes an entry's mtime and prune() keeps it under DMSH_MTLCACHE_GB by removing the entries unused the longest.
+SHARED = os.environ.get('DMSH_MTLCACHE') or os.path.expanduser('~/Library/Caches/NXForge/metallib.db')
+LEGACY = os.path.expanduser('~/Library/Caches/NXForge/metallib')   # the shared cache as a folder (NXForge 0.6 to 0.11), moved into SHARED by adopt_folder()
+# Kirby's Return to Dream Land Deluxe: 32,278 libraries in 0.9 GB; The Legend of Zelda: Ocarina of Time (Switch 2): about 43,000 in about 7 GB, which a 4 GB limit pruned after every build,
+# so the next chain change compiled 12,000 of them again. prune() also never goes below what this build used
+LIMIT_GB = float(os.environ.get('DMSH_MTLCACHE_GB') or 12)
 
-FORMAT = b'dmsh_mtlcache 2'   # earlier prefill could misclassify an unsampled library from another compiler
+FORMAT = b'dmsh_mtlcache 3'   # 3-way cut stores _b / _bx / _bf from one compile (fetch fold); earlier formats cannot be reused
 OUTPUT = re.compile(r'[0-9a-f]{16}_b\.metal')   # a shader's MSL in dmsh_build.py's outputs: <key>_b.metal
 _clonefile = getattr(ctypes.CDLL(None, use_errno=True), 'clonefile', None)   # APFS copy-on-write copy (no data written); elsewhere a plain copy
 
@@ -24,10 +32,18 @@ def clone(src, dst):
     os.replace(tmp, dst)
 
 
+def run(cmd, **kw):
+    """subprocess.run, started with posix_spawn rather than fork + exec. A fork copies the page tables of the whole build process (several hundred MB) and holds the GIL while it does:
+    about 6 ms, three or four times a shader, which kept dmsh_build.py at 100% of one core and half its Metal compiles waiting (Kirby, 47,099 shaders). Python spawns only for an executable
+    given with its folder and close_fds=False (macOS has no POSIX_SPAWN_CLOSEFROM); every descriptor Python opens is close-on-exec, so the child still gets only its standard streams"""
+    exe = cmd[0] if os.path.dirname(cmd[0]) else shutil.which(cmd[0]) or cmd[0]
+    return subprocess.run(cmd, executable=exe, close_fds=False, **kw)
+
+
 def compiler_id(sdk):
-    def run(*a): return subprocess.run(['xcrun', '-sdk', sdk, *a], capture_output=True, text=True).stdout
-    tools = ''.join(run(t, '--version') for t in ('metal', 'metallib'))
-    return re.sub(r'(?m)^InstalledDir:.*\n?', '', tools) + run('--show-sdk-version') + run('--show-sdk-build-version')   # the install path changes with each toolchain mount
+    def ask(*a): return run(['xcrun', '-sdk', sdk, *a], capture_output=True, text=True).stdout
+    tools = ''.join(ask(t, '--version') for t in ('metal', 'metallib'))
+    return re.sub(r'(?m)^InstalledDir:.*\n?', '', tools) + ask('--show-sdk-version') + ask('--show-sdk-build-version')   # the install path changes with each toolchain mount
 
 
 class Cache:
@@ -35,7 +51,8 @@ class Cache:
         """store: the compile cache (in a worker process of dmsh_build.py, its Remote); targets: {name: (sdk, record, compile)}, compile(msl, air, lib) as ios_metal.compile; work: a folder for temporary .air files"""
         self.store, self.targets, self.work = store, targets, work
         self.ident = {t: hashlib.sha256(FORMAT + b'\0' + rec.encode() + b'\0' + compiler_id(sdk).encode()).digest() for t, (sdk, rec, _) in targets.items()}
-        self.stats, self.lock = collections.Counter(), threading.Lock()
+        self.stats, self.lock, self.busy = collections.Counter(), threading.Lock(), {}
+        self.used = {}   # NXForge: entry → bytes, every library this build took from the cache or put in it (prune keeps them all)
 
     def path(self, target, src):
         d = hashlib.sha256(self.ident[target] + b'\0' + src).hexdigest()
@@ -56,11 +73,43 @@ class Cache:
     def compile(self, target, msl, lib):
         """msl → lib for target: a clone of the library that the same source compiled to before, or a compile (then kept). Raises CalledProcessError as the compile does"""
         p = self.path(target, open(msl, 'rb').read())
-        if self.store.to_file(p, lib): self.count((target, 'reused')); return
-        tmp = f'{lib}.tmp-{os.getpid()}-{threading.get_ident()}'
-        self._compile(target, msl, tmp)
-        os.replace(tmp, lib)
-        self.store.put_file(p, lib); self.count((target, 'compiled'))
+        with self.lock: mine = self.busy.setdefault(p, threading.Lock())
+        with mine:   # NXForge: a source another thread is compiling waits for that compile (about half of a game's libraries share their MSL with another)
+            if self.store.to_file(p, lib): self.store.touch(p); self.count((target, 'reused')); self.mark(p, lib); return
+            tmp = f'{lib}.tmp-{os.getpid()}-{threading.get_ident()}'
+            self._compile(target, msl, tmp)
+            os.replace(tmp, lib)
+            self.store.put_file(p, lib); self.count((target, 'compiled')); self.mark(p, lib)
+
+    def mark(self, entry, lib):
+        try: size = os.path.getsize(lib)
+        except OSError: return
+        with self.lock: self.used[entry] = size
+
+    def adopt_folder(self, old=LEGACY):
+        """NXForge: the libraries of the shared cache as a folder (old/<target>/<2 hex>/<digest>.metallib) into the store, and the folder removed; returns the number taken"""
+        if not os.path.isdir(old): return 0
+        n = 0
+        with self.store.batch():
+            for target in ('mac', 'ios'):   # also a target this build does not compile
+                for d, _, names in os.walk(os.path.join(old, target)):
+                    for name in names:
+                        if not name.endswith('.metallib') or name.startswith('._'): continue
+                        p = f'metallib/{target}/{name}'
+                        if self.store.has(p): continue
+                        with open(os.path.join(d, name), 'rb') as f: self.store.put(p, f.read())
+                        n += 1
+        shutil.rmtree(old, ignore_errors=True)
+        return n
+
+    def prune(self, limit_gb=LIMIT_GB):
+        """NXForge: removes the metallib/ entries unused the longest until the libraries are under limit_gb, or under what this build used when that is more
+        (the entries it used are the newest, so none of them goes). Returns the line to print"""
+        with self.lock: mine = sum(self.used.values())
+        limit_gb = max(limit_gb, mine / 2**30)
+        assert isinstance(self.store, shader_cache.Store), 'prune runs in the process that opened the cache'
+        n, total, gone = self.store.prune_oldest('metallib/', int(limit_gb * 2**30))
+        return f'Metal cache: {n - gone:,} libraries, {total / 2**30:.1f} GB in {self.store.path}' + (f' ({gone:,} unused the longest removed, limit {limit_gb:g} GB, DMSH_MTLCACHE_GB)' if gone else '')
 
     def compile_split(self, target, msl, libs, split):
         """msl → the libraries libs cut from its one compile, split(the library's bytes) → their bytes, in order: clones of what the same source gave before, or a compile (then the pieces
@@ -70,7 +119,9 @@ class Cache:
         paths = [p] + [f'{p[:-len(".metallib")]}_x{i if i > 1 else ""}.metallib' for i in range(1, len(libs))]
         if all(self.store.has(x) for x in paths):
             for src, dst in zip(paths, libs): self.store.to_file(src, dst)
-            self.count((target, 'reused')); return
+            self.count((target, 'reused'))
+            for x, dst in zip(paths, libs): self.mark(x, dst)
+            return
         whole = f'{libs[0]}.tmp-{os.getpid()}-{threading.get_ident()}'
         self._compile(target, msl, whole)
         try:
@@ -83,6 +134,7 @@ class Cache:
         with self.store.batch():
             for path, lib in zip(paths, libs): self.store.put_file(path, lib)
         self.count((target, 'compiled'))
+        for x, dst in zip(paths, libs): self.mark(x, dst)
 
     def _check(self, target, d, stems, mac_dir):
         """None if folder d was built with the current convention and compiler, else why not"""

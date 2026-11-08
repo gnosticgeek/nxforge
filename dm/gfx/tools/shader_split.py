@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # All of Mario's shaders → the "package directory" dmsh_build.py understands + the shader map + the translation query answer table (thread group / shared memory of compute shaders).
-# Sources (a full scan, not relying on file names): every file under RomFS (a zstd file is decompressed first, whatever its name: Mario's .zs, Paper Mario: The Thousand-Year Door's .zst; Yaz0 is decompressed, SARC is expanded member by member) and ExeFS main (NSO, lz4-decompressed), looking for
+# Sources (a full scan, not relying on file names): every file under RomFS (a zstd file is decompressed first, whatever its name: Mario's .zs, Paper Mario: The Thousand-Year Door's .zst; Yaz0 is decompressed, so is HAL Laboratory's .cmp (a u32 size + one zstd or LZ4 frame, Kirby's Return to Dream Land Deluxe), SARC is expanded member by member) and ExeFS main (NSO, lz4-decompressed), looking for
 #   · BNSH ('BNSH\0\0\0\0', carried by bfsha / particle effect esetb / UI layout blarc / embedded in main):
 #       +0x60 grsc block; +0x7c variation count u32; +0x80 variation table pointer (pointers are relative to the BNSH start). A variation is 0x40 bytes; the binary program is at +0x10;
 #       the binary program has 6 stage pointers from +0x08: vertex, hull, domain, geometry, pixel, compute; the stage code descriptor has +0x08 control pointer, +0x10 code area pointer, +0x18 code area length, +0x1c control length.
@@ -1485,6 +1485,41 @@ def gfpak_members(d, label):
         if len(data) != usz: red(f'{label}#{i}: {len(data):#x} bytes, the entry says {usz:#x}')
         yield f'#{i}', data
 
+YCD, YCD_PAK = b'YCD\0', bytes.fromhex('4196c753a4bfda00')
+def ycd_members(d, label):
+    """Yacht Club Games' YCD container (Mina the Hollower: the RomFS's 107 '.yc' files, 100 of them paks): 'YCD\0', u32 version 8, u64 header length 0xc0, +0x10 u64 type hash
+    (YCD_PAK for a pak, a directory of files; the sound banks, colour maps and every asset inside a pak have others), +0x28 u64 table offset, +0x30 u64 data offset, +0x38 u64 length.
+    A pak's table: u32 16 × count, u32 4 × count, then a self-relative pointer {u32, u32 offset from the pointer} to count 0x20-byte records {u32 0, u32 name length, pointer to the name,
+    u32 length, u32 alignment, pointer to the data}. Entries are stored whole (no compression); none of the game's paks holds another pak, but one would be walked too. → (name, data) of each file"""
+    if d[0x10:0x18] != YCD_PAK: return
+    table = struct.unpack_from('<Q', d, 0x28)[0]
+    n, n4, _, rec = struct.unpack_from('<4I', d, table)
+    if n % 16 or n4 * 4 != n: red(f'{label}: YCD table counts {n:#x} / {n4:#x} disagree')
+    rec += table + 8
+    for i in range(n // 16):
+        r = rec + 0x20 * i
+        nlen, _, noff, size, _, _, doff = struct.unpack_from('<4x7I', d, r)
+        name, at = d[r + 8 + noff:r + 8 + noff + nlen].decode(), r + 0x18 + doff
+        if at + size > len(d): red(f'{label}/{name}: entry out of bounds')
+        m = d[at:at + size]
+        if m[:4] == YCD and m[0x10:0x18] == YCD_PAK: yield from ((f'{name}/{k}', v) for k, v in ycd_members(m, f'{label}/{name}'))
+        else: yield name, m
+
+def ycd_shaders(d, label):
+    """The shaders of a YCD pak (Mina the Hollower: 114 in shaders.pak.yc, one stage each, a shaders/<name>.bin beside its shaders/<name>.meta reflection and shaders/shader.db): each .bin is
+    {u32 control length, u32 code length, control section, code area}. Separate programs, paired as single-stage programs (separable_pairs)"""
+    out = []
+    for name, m in ycd_members(d, label):
+        if not name.endswith('.bin') or len(m) < 8 or m[8:12] != CTL_MAGIC: continue
+        nctl, ncode = struct.unpack_from('<II', m, 0)
+        if 8 + nctl + ncode != len(m): red(f'{label}/{name}: control {nctl:#x} + code {ncode:#x} is not the entry\'s length {len(m) - 8:#x}')
+        ctl, code = m[8:8 + nctl], m[8 + nctl:]
+        st = glslc_stage(ctl, code)
+        why = check(label, st, ctl, code) if st else 'no stage in the code area'
+        if why: red(f'{label}/{name}: {why}')
+        out.append((f'{label}/{name}#YCD', st, ctl, code))
+    return out
+
 NLG_DICT = bytes.fromhex('5824f3a9')
 def nlg_dict(d, label):
     """Next Level Games' archive index (Luigi's Mansion 3: '<name>.dict' beside '<name>.data', every RomFS file but the Wwise banks): u32 magic 0xa9f32458, u8 4, u8 1, u8 compressed,
@@ -2827,12 +2862,14 @@ def unzs_dict(d, did, where):
     return zstd.decompress(d, zstd_dict=_ZD[did])
 
 def unzs(path):
-    """A zstd file decompressed: frames without a dictionary through the zstd command as before (fed the bytes: inside a RomFS image the path is not a file the command can open),
-    frames that name one with that dictionary from ZDICTS"""
-    d = open(path, 'rb').read()
+    """Decompress in-process, with the frame's dictionary when named. Feeding the CLI through stdin while capturing stdout can deadlock on macOS:
+    a worker's blocking pipe write waits for zstd to read, while zstd's output writer waits for that worker to drain stdout (Ocarina's sound archives).
+    The library already used for dictionary frames removes both pipes and also reads bounded RomFS image entries."""
+    with open(path, 'rb') as stream: d = stream.read()
     did = zs_dict_id(d)
-    if not did: return subprocess.run(['zstd', '-d', '-c', '-q'], input=d, capture_output=True, check=True).stdout
-    return unzs_dict(d, did, path)
+    zstd = zstd_mod()
+    try: return unzs_dict(d, did, path) if did else zstd.decompress(d)
+    except zstd.ZstdError as e: red(f'{path}: invalid zstd stream ({e})')
 
 def frame_size(f):
     """The uncompressed size a zstd or LZ4 frame header records, None when it records none"""
@@ -2990,6 +3027,20 @@ def unity_text_glslc(x, base):
         if b'\x91\x68\x86\x19' in b: out += glslc_shaders(b, f'{base}#{name}', need=False)
     return out
 
+def narc_members(d, label):
+    """The members of a NARC (cra.py), each unpacked: red() for a damaged or cut one, where cra.py raises (a header, table or member past the end, a packed member that does not
+    unpack) instead of the declared rejection. An LZ4 member's unpacked size is in its header and allocated before it is read: more than LZ4's largest ratio (about 255) of the
+    NARC's length is a damaged header, not a member"""
+    import cra
+    import lz4.block
+    try: members = cra.narc_members(d, label)
+    except (cra.Error, struct.error) as e: red(f'{label}: {e}' if str(e).startswith(label) else f'{label}: a NARC header or table past the end ({e})')
+    for i, m in enumerate(members):
+        if m[:1] == b'\x94' and len(m) >= 8 and struct.unpack_from('<I', m, 4)[0] > 256 * len(d): red(f'{label}/{i}: an LZ4 member larger than LZ4 can pack into the file')
+        try: m = cra.undo(m)
+        except (cra.Error, struct.error, IndexError, lz4.block.LZ4BlockError, zlib.error, cra.zstd_mod().ZstdError) as e: red(f'{label}/{i}: a packed member that does not unpack ({e})')
+        yield m
+
 NEST = 16   # archives in archives scan_blob opens (SARC, PlatinumGames' DAT): real files nest a few. A damaged or crafted one could nest one per header's length, or have every
             # member point at the same inner archive, its work doubling with each level. Two budgets of NEST times the file bound the work: left[0], the members a file's archives open,
             # each counted by what it takes up in its archive, and left[1], what its Yaz0 members expand to. Counting a Yaz0 member by what it expands to in the first budget paid twice
@@ -3020,8 +3071,7 @@ def scan_blob(d, label, out, depth=0, left=None):
         for nm, m in sarc_members(d, label): scan_blob(m, f'{label}/{nm}', out, depth + 1, left)
         return
     if d[:4] == b'NARC':   # Camelot's containers (cra.py): each member packed by its first byte, so its size says nothing about the budget above
-        import cra
-        for i, m in enumerate(cra.narc_members(d, label)): scan_blob(cra.undo(m), f'{label}/{i}', out, depth + 1)
+        for i, m in enumerate(narc_members(d, label)): scan_blob(m, f'{label}/{i}', out, depth + 1)
         return
     if d[:4] == b'BAHS': out.extend(bahs_shaders(d, label)); return
     if d[:4] == RGXD: out.extend(rgxd_shaders(d, label)); return
@@ -3068,7 +3118,7 @@ def pixel_input_cover(shaders):
         k = min(ins, key=lambda k: (-len(ins[k] & left), k)); cover.append(k); left -= ins[k]
     return cover
 
-SINGLE_STAGE = ('#GLSLC@', '#VIPER', '#UE', '#MTSPK@', '#MGFX@', '#NLG', '#PGSO', '#RAW@', '#TFXO@', '#NEEDLE@', '#SNOWDROP@', '#PHYRE@', '#SUMO@', '#NVNSH@', '#D3@', '#SHAD@')   # sources whose every shader is a program of one stage: GLSLC outputs, Unreal's shader records, MT Framework's shader package (BNSH variations, Unity programs, MSHD and SDF pair theirs);
+SINGLE_STAGE = ('#GLSLC@', '#VIPER', '#UE', '#MTSPK@', '#MGFX@', '#NLG', '#PGSO', '#RAW@', '#TFXO@', '#NEEDLE@', '#SNOWDROP@', '#PHYRE@', '#SUMO@', '#NVNSH@', '#D3@', '#SHAD@', '#YCD')   # sources whose every shader is a program of one stage: GLSLC outputs, Unreal's shader records, MT Framework's shader package (BNSH variations, Unity programs, MSHD and SDF pair theirs);
 # Unreal Engine 3's shader caches (ue3_shaders, '#UE3@'); MonoGame's effects, whose passes may name no vertex shader and keep the one bound (Celeste: 10 of its 13 effects draw through SpriteBatch's vertex shader, which is in main); Next Level Games'
 # archives (Luigi's Mansion 3 makes 5,317 programs of one stage each at boot); PlatinumGames' shader objects (Bayonetta 3: one stage each, pg_shader); control sections loose in main
 # (Advance Wars 1+2: Re-Boot Camp's Bink shaders, raw_shaders), which no file pairs; YEBIS's effect file (tfxo_shaders); and Sumo's Ninty_NX descriptors and NVNsh records, one stage
@@ -3315,6 +3365,10 @@ def scan_file_in(args):
     if head[:8] == GFPAK:   # a Game Freak archive (gfpak_members): each entry scanned as a file of its own (the shaders are BNSH entries)
         for nm, m in gfpak_members(open(path, 'rb').read(), '/' + rel): scan_blob(m, f'/{rel}{nm}', found)
         return rel, uniq_keys(found), var_pairs(found), trees
+    if head[:4] == YCD:   # a Yacht Club Games container (ycd_shaders): only paks hold files; the sound banks (0.77 GB) and colour maps are left unread
+        with open(path, 'rb') as f: f.seek(0x10); pak = f.read(8) == YCD_PAK
+        if pak: found += ycd_shaders(open(path, 'rb').read(), '/' + rel)
+        return rel, uniq_keys(found), var_pairs(found), trees
     if head[:4] == b'SRYK':
         import vbf
         with open(path, 'rb') as f:
@@ -3388,6 +3442,16 @@ def pooled(ex, jobs, total, start=0, chunk=1):
         if not pending or time.monotonic() - shown >= 0.5: print(f'progress: {done}/{total}', flush=True); shown = time.monotonic()
     return [r for f in futures for r in f.result()]
 
+
+def unread_packed(files):
+    """RomFS files that open with a compressed stream the scan does not unpack where it starts (an LZ4 frame or a zlib stream at 0, as in HAL's .cmp before unsized read them at +4):
+    any shaders inside them are missed, which shows only as a black scene at run time. → {extension: (count, bytes)}"""
+    out = collections.defaultdict(lambda: [0, 0])
+    for p, _ in files:
+        with open(p, 'rb') as f: h = f.read(4)
+        if h[:4] == LZ4_FRAME_MAGIC or (len(h) >= 2 and h[0] == 0x78 and h[1] in (0x01, 0x5e, 0x9c, 0xda)):
+            e = out[os.path.splitext(p)[1].lower() or '(none)']; e[0] += 1; e[1] += os.path.getsize(p)
+    return out
 
 def main():
     romfs_l, main_l, pkg, mapout, factsout = sys.argv[1:6]
@@ -3533,6 +3597,9 @@ def main():
             f.write('# kind: evidence  supplemental vertex / pixel shader pairs (BAHS program variations and legacy Unity pass-input covers) for vertex output padding and the pipeline prebuild (generated by dm/gfx/tools/shader_split.py, do not edit): vertex key <TAB> pixel key\n')
             for a, b in sorted(prog - pairs): f.write(f'{a}\t{b}\n')
     print(f'shaders: {len(rows)} (' + ', '.join(f'{STAGE_NAME[s]} {n}' for s, n in sorted(stat.items())) + '); sources ' + ', '.join(f'{g} {n}' for g, n in per_src.most_common()) + f'; compute shader answers {len(facts)} rows' + (f'; variation pairs {len(pairs)}' if pairsout else ''))
+    if packed := unread_packed(files):
+        print('[RED] RomFS files open with an LZ4 frame or a zlib stream, which the split does not unpack: shaders inside them are missed (' +
+              ', '.join(f'{e} {n:,} files {b / 2**20:.0f} MB' for e, (n, b) in sorted(packed.items(), key=lambda x: -x[1][0])) + ')', flush=True)
 
 if __name__ == '__main__':
     import nso

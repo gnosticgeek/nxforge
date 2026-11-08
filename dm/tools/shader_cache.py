@@ -170,6 +170,24 @@ class Store(_Files):
         self._run('PRAGMA incremental_vacuum')
         return len(gone), sum(size.get(d, 0) for d in gone)
 
+    def touch(self, name):   # NXForge: an entry's mtime set to now, so that prune_oldest() keeps what is used
+        self._run('UPDATE entry SET mtime=? WHERE name=?', time.time(), name)
+
+    def prune_oldest(self, prefix, limit):
+        """NXForge: removes the entries starting with prefix unused the longest until their bytes are under limit, and the bytes nothing names any more.
+        Returns (entries, their bytes before, entries removed)"""
+        rows = sorted(self._run('SELECT e.name, e.mtime, length(b.data) FROM entry e JOIN blob b ON b.id=e.blob WHERE e.name>=? AND e.name<?', prefix, prefix + '\U0010ffff'), key=lambda r: r[1])
+        total = left = sum(r[2] for r in rows); gone = []
+        for name, _, size in rows:
+            if left <= limit: break
+            gone.append(name); left -= size
+        if gone:
+            with self.lock, self.batch():
+                self.db.executemany('DELETE FROM entry WHERE name=?', ((g,) for g in gone))
+                self.db.execute('DELETE FROM blob WHERE id NOT IN (SELECT blob FROM entry)')
+            self._run('PRAGMA incremental_vacuum')
+        return len(rows), total, len(gone)
+
     def delete_prefix(self, prefix):
         """Remove every entry whose name starts with prefix, and the bytes nothing names any more, giving their pages back (dmsh_build.py's staged outputs once its image is written)"""
         with self.lock:
@@ -258,7 +276,7 @@ class Served:
     where that worker's thread stood when the build finished its shaders in threads, on the one connection and under its lock. A worker's batch is that thread's batch, so it is whole
     or absent as before, and is rolled back when the worker dies inside it.
     Made before the fork; start() here once every worker is forked (it starts threads); worker() in each worker gives its store (get, has, names, put, put_file, to_file, delete_prefix, batch, full)"""
-    OPS = ('get', 'has', 'names', 'put', 'delete_prefix')
+    OPS = ('get', 'has', 'names', 'put', 'delete_prefix', 'touch')   # touch: NXForge's shared Metal cache (dmsh_mtlcache.py)
 
     def __init__(self, store, n):
         ctx = multiprocessing.get_context('fork')
@@ -316,6 +334,7 @@ class Remote(_Files):
     def names(self, prefix): return self._call('names', prefix)
     def put(self, name, data, when=None): self._call('put', name, data, when)
     def delete_prefix(self, prefix): self._call('delete_prefix', prefix)
+    def touch(self, name): self._call('touch', name)   # NXForge: Store.touch
 
     @contextlib.contextmanager
     def batch(self):   # as Store.batch: nests, and the lock is held for all of it

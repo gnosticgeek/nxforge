@@ -252,16 +252,32 @@ def write_script(path, configuration):
     finally: part.unlink(missing_ok=True)
 
 
+_DIGESTS = {}   # (library folder, name) → SHA-256 of the library's bytes: the libraries do not change during a run, and the archive key, the batch keys and the base keys all read them
+
+
+def lib_digest(lib_dir, name):
+    k = (str(lib_dir), name)
+    if k not in _DIGESTS:
+        lib = hashlib.sha256()
+        with romfs.open(os.path.join(lib_dir, f'{name}.metallib'), 'rb') as f:
+            while chunk := f.read(1 << 20): lib.update(chunk)
+        _DIGESTS[k] = lib.digest()
+    return _DIGESTS[k]
+
+
 def library_digest(lib_dir, bases, computes=()):
     """The bytes metal-tt consumes: a profile/chain stamp does not change when the same shaders are rebuilt by another Metal compiler."""
     h = hashlib.sha256()
     for name in sorted({lib for vl, _, fl, _ in bases for lib in (vl, fl)} | {lib for lib, _ in computes}):
         h.update(name.encode() + b'\0')
-        lib = hashlib.sha256()
-        with romfs.open(os.path.join(lib_dir, f'{name}.metallib'), 'rb') as f:
-            while chunk := f.read(1 << 20): lib.update(chunk)
-        h.update(lib.digest())
+        h.update(lib_digest(lib_dir, name))
     return h.hexdigest()
+
+
+def base_key(lib_dir, base):
+    """NXForge: one render base's identity: its libraries' names and bytes and its entry points (every other part of its descriptor is the same for all bases)"""
+    vl, ve, fl, fe = base
+    return hashlib.sha256(b'\0'.join((vl.encode(), ve.encode(), lib_digest(lib_dir, vl), fl.encode(), fe.encode(), lib_digest(lib_dir, fl)))).hexdigest()[:32]
 
 
 def space_needed(bases):   # what metal-tt is let start with, an estimate: its temporary files (TMPDIR, one .airp per base) and the archive (about 41 KB per base at 15,767 bases); Cruis'n Blast's 33,858 bases failed with 366 MB free
@@ -424,6 +440,37 @@ def compile_batch(lib_dir, bases, work, arch, platform, osmin, toolchain, comput
     return dst, False
 
 
+ASSIGN = 'assign.json'   # in batches.<arch>/: which bases each batch holds (base_key), so that a later run keeps the batches whose bases are still wanted
+
+
+def assignment_context(arch, platform, osmin, toolchain, batch_size):   # what every batch of an assignment shares; a different one starts the batches over
+    return hashlib.sha256(json.dumps(['assign 1', arch, platform, osmin, toolchain, batch_size]).encode()).hexdigest()
+
+
+def plan_batches(root, keys, ctx, batch_size):
+    """NXForge: which batches of the last run to keep and which bases to compile, so that a change to a few shaders compiles only their bases, not every batch they are spread over.
+    keys: the base keys of this run, in order. A batch of the last run is kept as it is (its archive file, unchanged) while its archive is still there and at least half its bases are still
+    wanted; the bases it holds that are no longer wanted (a changed shader's old library, a pair no longer listed) stay in the merged archive as dead entries, which the host never looks up,
+    since it matches libraries by content. Every other base goes into new batches. When the dead entries outnumber a batch and a quarter of the bases, everything is grouped again from scratch
+    (positionally, as before this change, so the first such run still reuses the batches of an older one).
+    Returns ({index: {'members', 'key'}} kept, [base keys to compile], dead entries kept)"""
+    try:
+        state = json.loads((root / ASSIGN).read_text())
+        if state.get('context') != ctx: state = None
+    except (OSError, ValueError): state = None
+    if not state: return {}, list(keys), 0
+    live, placed, kept, dead = set(keys), set(), {}, 0
+    for idx, b in sorted(((int(i), b) for i, b in state.get('batches', {}).items())):
+        d = root / f'{idx:05d}'; kf = d / f'key.{state["arch"]}'
+        try: ok = (d / f'{state["arch"]}.mtl4a').stat().st_size > 0 and kf.read_text().strip() == b['key']
+        except OSError: ok = False
+        alive = [k for k in b['members'] if k in live and k not in placed]
+        if ok and alive and len(alive) * 2 >= len(b['members']):
+            kept[idx] = b; placed.update(alive); dead += len(b['members']) - len(alive)
+    if dead > max(batch_size, len(keys) // 4): return {}, list(keys), 0
+    return kept, [k for k in keys if k not in placed], dead
+
+
 def groups_of(bases, computes, batch_size, compute_size=COMPUTE_BATCH):
     """The groups compile_batches compiles, [(folder name, bases, compute pipelines)]: the bases in groups of batch_size (00001, ...), then the compute pipelines in groups of compute_size
     of their own (c00001, ...), so that a change to either leaves the other's groups as they are. 0: one group of each"""
@@ -443,21 +490,43 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
     On M2, merged archives passed archive-only lookups of two synthetic pipelines and all 32,864 Odyssey bases.
     Other workloads and compiler versions can have different resource use.
     The groups of bases run one after the other, as before; the compute groups, small, jobs at a time, each in its own folder (its TMPDIR).
+    NXForge: the batches of bases are kept from run to run by the bases they hold (plan_batches): only the bases whose libraries changed are compiled again.
     """
-    groups = groups_of(bases, computes, batch_size, compute_size); total = len(groups); names = {name for name, _, _ in groups}
-    failed = ([], [])   # what the groups left out (compile_isolating), returned
-    for old in [*(work / f'batches.{arch}').glob('[0-9]*'), *(work / f'batches.{arch}').glob('c[0-9]*')]:   # the groups of a longer list than this one
-        if old.name not in names: shutil.rmtree(old)
+    root = work / f'batches.{arch}'; root.mkdir(parents=True, exist_ok=True)
+    keys = [base_key(lib_dir, b) for b in bases]; by_key = dict(zip(keys, bases))
+    ctx = assignment_context(arch, platform, osmin, toolchain, batch_size)
+    kept, todo, dead = plan_batches(root, keys, ctx, batch_size)
+    first = max(kept, default=0) + 1
+    size = batch_size or len(todo) or 1
+    bgroups = {first + i: todo[start:start + size] for i, start in enumerate(range(0, len(todo), size))}
+    cgroups = [g for g in groups_of([], computes, batch_size, compute_size)]
+    names = {f'{i:05d}' for i in (*kept, *bgroups)} | {name for name, _, _ in cgroups}
+    for old in [*root.glob('[0-9]*'), *root.glob('c[0-9]*')]:   # groups neither kept nor written again
+        if old.is_dir() and old.name not in names: shutil.rmtree(old)
+    total = len(bgroups) + len(cgroups)
+    print(f'pso_offline: {arch}: {len(bases)} bases: {len(kept)} batches kept ({sum(len(b["members"]) for b in kept.values()) - dead} bases, {dead} dead entries), '
+          f'{len(todo)} bases to compile or check in {len(bgroups)} batches; {len(computes)} compute pipelines in {len(cgroups)} groups', flush=True)
+    state = {'context': ctx, 'arch': arch, 'batches': {str(i): b for i, b in kept.items()}}
+    def save():
+        tmp = root / (ASSIGN + '.partial'); tmp.write_text(json.dumps(state) + '\n'); os.replace(tmp, root / ASSIGN)
+    save()   # the batches dropped above are gone from the record before any new one is written
+    failed = ([], [])   # what the groups left out (compile_isolating), returned: a kept batch's from its folder, the others' as they are compiled
+    for i in kept: fb, fc = read_failed(root / f'{i:05d}', arch); failed[0].extend(fb); failed[1].extend(fc)
     def one(index, name, group, cgroup):
         print(f'pso_offline: {arch}: batch {index}/{total}: {f"{len(group)} bases" if group else f"{len(cgroup)} compute pipelines"}, compiling or checking cache', flush=True)
-        piece, reused = compile_batch(lib_dir, group, work / f'batches.{arch}' / name, arch, platform, osmin, toolchain, cgroup)
+        piece, reused = compile_batch(lib_dir, group, root / name, arch, platform, osmin, toolchain, cgroup)
         print(f'pso_offline: {arch}: batch {index}/{total}: ready ({"reused" if reused else "compiled"})', flush=True)
         fb, fc = read_failed(work / f'batches.{arch}' / name, arch); failed[0].extend(fb); failed[1].extend(fc)
         return piece
-    pieces = [one(i, *g) for i, g in enumerate(groups, 1) if g[1]]
+    for n, (index, group) in enumerate(sorted(bgroups.items()), 1):
+        one(n, f'{index:05d}', [by_key[k] for k in group], [])
+        state['batches'][str(index)] = {'members': group, 'key': (root / f'{index:05d}' / f'key.{arch}').read_text().strip()}; save()
+    # the newest batches first: a base a later batch compiled again comes before the dead entry of its old library
+    pieces = [root / f'{i:05d}' / f'{arch}.mtl4a' for i in sorted(map(int, state['batches']), reverse=True)]
     with concurrent.futures.ThreadPoolExecutor(max(1, jobs)) as pool:   # a failed group stops the build once the others under way have finished (their pieces stay cached)
-        futures = [pool.submit(one, i, *g) for i, g in enumerate(groups, 1) if not g[1]]
+        futures = [pool.submit(one, len(bgroups) + i, *g) for i, g in enumerate(cgroups, 1)]
         pieces += [f.result() for f in futures]
+    total = len(pieces)
     part.unlink(missing_ok=True)
     need, free = max(2 << 30, sum(p.stat().st_size for p in pieces)), shutil.disk_usage(work).free
     if free < need: sys.exit(f'[RED] pso_offline: {free / 2**30:.1f} GB free before merging; need at least {need / 2**30:.1f} GB')
@@ -472,6 +541,21 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
     return failed
 
 
+def check(lib_dir, bases, computes, work, archs, keys, a, osmin, tv):
+    """NXForge --check: what a run would do, nothing compiled. Exit 0 when every archive is reused, 3 when one would be made, with how many bases would compile"""
+    redo = []
+    for arch in archs:
+        kf = work / f'key.{arch}'
+        if (Path(a.out) / f'{arch}.mtl4a').is_file() and kf.is_file() and kf.read_text().strip() == keys[arch]: print(f'pso_offline: {arch}: would be reused'); continue
+        if a.batch_size and len(groups_of(bases, computes, a.batch_size)) > 1:
+            bk = [base_key(lib_dir, b) for b in bases]
+            _, todo, _ = plan_batches(work / f'batches.{arch}', bk, assignment_context(arch, a.platform, osmin, tv, a.batch_size), a.batch_size)
+            n = len(todo)
+        else: n = len(bases)
+        print(f'pso_offline: {arch}: would compile {n} of {len(bases)} bases ({len(computes)} compute pipelines checked by their own groups)'); redo.append(arch)
+    return 3 if redo else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description='Build the pipeline archive of a game\'s shader pairs offline (metal-tt)')
     ap.add_argument('--msl', required=True, help='the shader libraries, b-<chain version> (with their reflection <key>_b.json)')
@@ -484,12 +568,14 @@ def main(argv=None):
     ap.add_argument('--platform', choices=('ios', 'macos'), default='ios')
     ap.add_argument('--os-min', help='minimum OS of the archives (default: iOS, the SDK\'s major version; macOS, this Mac\'s)')
     ap.add_argument('--script-only', action='store_true', help='write the script and the stamp, run no metal-tt')
+    ap.add_argument('--check', action='store_true', help='say what a run would compile and change nothing: exit 0 when every archive would be reused, 3 otherwise')
     ap.add_argument('--batch-size', type=int, default=BATCH, help=f'compile sequential groups of at most N bases and merge with metal-pack, when there are more (default {BATCH}; 0: one compiler invocation)')
     ap.add_argument('--shader-map', action='append', help='shader_map.tsv: its compute shaders get pipelines (default: the profile\'s)')
     ap.add_argument('--manifest', action='append', help='pso_manifest.tsv: its C rows first (default: the profile\'s)')
     ap.add_argument('--no-compute', action='store_true', help='no compute pipelines, the bases alone')
     ap.add_argument('--jobs', type=int, default=JOBS, help=f'metal-tt runs at a time for the compute pipelines (default {JOBS}, half the logical CPUs)')
     a = ap.parse_args(argv)
+    _DIGESTS.clear()   # one run's view of the libraries
     if a.batch_size < 0: ap.error('--batch-size must be zero or positive')
     if a.game:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'games')); import game
@@ -529,6 +615,7 @@ def main(argv=None):
     libraries = library_digest(lib_dir, bases, computes)
     keys = {arch: archive_key(configuration, libraries, arch, a.platform, osmin, tv) for arch in archs}
     del configuration   # the compiler reads the script from disk
+    if a.check: return check(lib_dir, bases, computes, work, archs, keys, a, osmin, tv)
     failed_bases, failed_computes = [], []   # what metal-tt could not compile for some architecture (compile_isolating): those pairs go to the device with rest
     for arch, key in keys.items():
         dst, kf = out / f'{arch}.mtl4a', work / f'key.{arch}'

@@ -3,6 +3,7 @@ Exercise the builder's real key/restore functions without game files or Xcode.
 """
 import ast
 import collections
+import concurrent.futures
 import concurrent.futures as cf
 import hashlib
 import importlib.util
@@ -47,7 +48,8 @@ class ShaderCache(unittest.TestCase):
                        DUAL_WANT=set(), BF_WANT=set(), STORE=shader_cache.Store(root / 'cas.db'), out=str(root / 'out'),
                        CHAIN='test-chain', clone=shutil.copyfile, shader_rule_source=lambda name: b'',
                        STAGE='stage/test', want=set(), OUT_KEY=re.compile(r'([0-9a-f]{16})_b'), OLD_IMAGE={}, shader_lib=shader_lib, romfs=romfs, shutil=shutil,
-                       STAMP_BEFORE=None, INPUTS='inputs')
+                       STAMP_BEFORE=None, INPUTS='inputs',
+                       spawn=lambda *a, **k: subprocess.run(*a, **k))   # noqa: PLW0108  (looked up per call, so a test that patches subprocess.run sees it)
         (root / 'out').mkdir()
         names = {'tool_fingerprint', 'shader_key', 'cache_path', 'cache_outputs', 'restore_cache', 'publish_cache', 'atomic_json', 'cache_meta_path',
                  'vs_pad', 'partner_inputs', 'label_dir', 'output', 'commit', 'publish_library', 'submit', 'results'}
@@ -447,6 +449,66 @@ class MetalPrefill(unittest.TestCase):
         with self.assertRaises(ValueError): self.cache.compile_split('mac', str(msl), [str(a), str(b)], lambda lib: (lib,))   # fewer pieces than libraries
         self.assertEqual(sorted(p.name for p in self.root.glob('a.metallib*')), [])
         self.assertFalse(b.exists()); self.assertEqual(self.cache.stats['mac', 'compiled'], 0)
+
+
+class SharedMetalCache(unittest.TestCase):
+    """NXForge: one Metal compile cache for every game (dmsh_mtlcache.SHARED), a shader_cache.Store of its own"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name); self.compiles = 0
+        def compile_current(msl, air, lib):
+            self.compiles += 1; Path(lib).write_bytes(b'LIB ' + Path(msl).read_bytes())
+        self.store = shader_cache.Store(self.root / 'metallib.db'); self.addCleanup(self.store.close)
+        with mock.patch.object(dmsh_mtlcache, 'compiler_id', return_value='tested compiler and SDK'):
+            self.cache = dmsh_mtlcache.Cache(self.store, {'mac': ('macosx', 'flags', compile_current)}, str(self.root))
+
+    def source(self, name, text):
+        p = self.root / name; p.write_text(text); return str(p)
+
+    def test_identical_sources_compile_once_across_threads(self):
+        msls = [self.source(f's{i}.metal', 'same MSL') for i in range(16)]
+        with concurrent.futures.ThreadPoolExecutor(8) as ex:
+            list(ex.map(lambda i: self.cache.compile('mac', msls[i], str(self.root / f'o{i}.metallib')), range(16)))
+        self.assertEqual(self.compiles, 1)
+        self.assertEqual({(self.root / f'o{i}.metallib').read_bytes() for i in range(16)}, {b'LIB same MSL'})
+
+    def test_library_pruned_by_another_build_is_compiled_again(self):
+        msl = self.source('a.metal', 'MSL')
+        self.cache.compile('mac', msl, str(self.root / 'first.metallib'))
+        other = shader_cache.Store(self.root / 'metallib.db')   # another build's connection to the same file
+        other._run('DELETE FROM entry WHERE name=?', self.cache.path('mac', b'MSL')); other.close()
+        self.cache.compile('mac', msl, str(self.root / 'again.metallib'))
+        self.assertEqual(self.compiles, 2)
+        self.assertEqual((self.root / 'again.metallib').read_bytes(), b'LIB MSL')
+
+    def test_prune_removes_the_libraries_unused_the_longest(self):
+        for i, text in enumerate(('old', 'used', 'new')):
+            self.cache.compile('mac', self.source(f'{text}.metal', text * 5000), str(self.root / f'{text}.metallib'))
+            self.store._run('UPDATE entry SET mtime=? WHERE name=?', 1000 + i, self.cache.path('mac', (text * 5000).encode()))
+        self.cache.compile('mac', str(self.root / 'used.metal'), str(self.root / 'reuse.metallib'))   # a use refreshes it
+        self.cache.used.pop(self.cache.path('mac', (b'old' * 5000)))   # as if an earlier build had compiled it
+        size = len(b'LIB ' + b'old' * 5000)
+        line = self.cache.prune(2.5 * size / 2**30)
+        self.assertFalse(self.store.has(self.cache.path('mac', b'old' * 5000)))
+        self.assertTrue(self.store.has(self.cache.path('mac', b'used' * 5000)))
+        self.assertTrue(self.store.has(self.cache.path('mac', b'new' * 5000)))
+        self.assertIn('1 unused the longest removed', line)
+
+    def test_prune_keeps_every_library_this_build_used(self):   # NXForge: Ocarina of Time's libraries outgrew the limit and pruned themselves
+        for text in ('one', 'two', 'six'):
+            self.cache.compile('mac', self.source(f'{text}.metal', text * 5000), str(self.root / f'{text}.metallib'))
+        line = self.cache.prune(len(b'LIB ' + b'one' * 5000) / 2**30)   # room for one
+        for text in ('one', 'two', 'six'): self.assertTrue(self.store.has(self.cache.path('mac', (text * 5000).encode())))
+        self.assertNotIn('removed', line)
+
+    def test_adopt_moves_the_old_shared_folder_with_every_target(self):
+        old = self.root / 'NXForge/metallib'
+        for target in ('mac', 'ios'):
+            (old / target / 'ab').mkdir(parents=True); (old / target / 'ab' / 'abcd.metallib').write_bytes(target.encode())
+        self.assertEqual(self.cache.adopt_folder(str(old)), 2)
+        self.assertFalse(old.exists())
+        self.assertEqual(self.store.get('metallib/ios/abcd.metallib'), b'ios')
+        self.assertEqual(self.cache.adopt_folder(str(old)), 0)
 
 
 if __name__ == '__main__':
