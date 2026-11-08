@@ -133,8 +133,7 @@ enum BuildDiagnosis {
         l.append("")
         if let g = game { l.append("Game: \(g)") }
         if let e = engine { l.append("Engine: \(e)") }
-        let info = Bundle.main.infoDictionary
-        if let v = info?["CFBundleShortVersionString"] as? String { l.append("Converter: \(v)") }
+        l.append("Converter: \(CONVERTER_VERSION)")
         l.append("macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)")
         if let chip = sysctl("machdep.cpu.brand_string") { l.append("Mac: \(chip), \(ProcessInfo.processInfo.physicalMemory >> 30) GB") }
         if let x = xcode { l.append("Xcode: \(x)") }

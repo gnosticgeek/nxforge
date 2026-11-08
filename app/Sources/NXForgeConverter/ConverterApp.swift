@@ -48,6 +48,16 @@ struct ConverterApp: App {
         .defaultSize(width: 1200, height: 860)
         .windowToolbarStyle(.unified)
         .commands {
+            // About shows the Converter's own version (converter-vX.Y.Z); the engine's NXForge release is its build number
+            CommandGroup(replacing: .appInfo) {
+                Button("About NXForge Converter") {
+                    NSApp.orderFrontStandardAboutPanel(options: [
+                        .applicationName: "NXForge Converter",
+                        .applicationVersion: CONVERTER_VERSION,
+                        .version: model.engine.map { "engine NXForge \($0.short)" } ?? "",
+                    ])
+                }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Choose Game Folder…") {
                     if let d = model.chooseGame(start: model.settings.gameDir) { model.openDropped([d.url]) }
