@@ -37,6 +37,11 @@ struct ConvertPage: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             ActivityCard(model: model)
+            // what the engine's profile says about this game, before a long build (idea 8)
+            if !model.run.running, let dir = model.settings.gameDir, let tid = GameNeeds.titleID(Source.folder(of: dir)) ?? model.library?.games.first(where: { $0.path == dir })?.titleID,
+               let repo = model.env?.repo, let n = GameInsights.notes(repo: repo, titleID: tid) {
+                NotesCard(notes: n, verified: model.verified[tid])
+            }
             LogView(lines: model.run.done.map(\.line) + model.run.log, running: model.run.running, file: model.run.logFile,
                     placeholder: model.settings.gameDir == nil ? "Choose a game to see its build steps…" : "The build's output shows here.") { copyToClipboard(model.logText) }
         }
@@ -516,14 +521,7 @@ struct BuildFailure: View {
         .onChange(of: error) { copied = false }
     }
 
-    func summary(_ d: Diagnosis) -> String {
-        let run = model.run
-        let failed = run.done.last { !$0.ok }.map(\.line) ?? (run.stage.name.isEmpty ? nil : "[\(run.stage.k)/\(run.stage.n)] \(run.stage.name)")
-        let title = model.settings.gameDir.flatMap { dir in Engine.apps(in: dir).first.flatMap { VerifiedGames.titleID(ofApp: $0.app) } }
-        let game = model.game.map { g in title.map { "\(g.name) (\($0))" } ?? g.name }
-        return BuildDiagnosis.summary(d, error: error, log: run.log, failedStep: failed, game: game, engine: model.engine?.label,
-                                      xcode: model.checks?.first { $0.name == "Xcode" }?.detail, keysPath: model.settings.keys)
-    }
+    func summary(_ d: Diagnosis) -> String { model.errorSummary(error, diagnosis: d) }
 }
 
 /// Under a freshly built app: its first launch is slow, so a quiet minute does not look like a hang.

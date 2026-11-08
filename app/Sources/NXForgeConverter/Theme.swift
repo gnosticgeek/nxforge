@@ -68,7 +68,7 @@ struct HeroHeader: View {
 /// Dusk over hills with a dish on the ridge (Convert), or snowy peaks at last light (Toolchain),
 /// fading into the page on the left and at the bottom.
 struct HeroBanner: View {
-    enum Backdrop { case dish, peaks }
+    enum Backdrop { case dish, peaks, aurora, moon }
     var scene: Backdrop = .dish
 
     var body: some View {
@@ -89,7 +89,11 @@ struct HeroBanner: View {
                 let r = 0.4 + rng.next() * 0.9
                 ctx.fill(Path(ellipseIn: CGRect(x: p.x, y: p.y, width: r, height: r)), with: .color(.white.opacity(0.35 + rng.next() * 0.5)))
             }
-            if scene == .peaks {
+            if scene == .aurora {
+                aurora(ctx, w: w, h: h)
+            } else if scene == .moon {
+                moon(ctx, w: w, h: h)
+            } else if scene == .peaks {
                 peaks(ctx, w: w, h: h)
             } else {
                 // far hills, then the near ridge the dish stands on
@@ -107,6 +111,92 @@ struct HeroBanner: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// Library: green and violet curtains of light over a night sky, a line of pines below.
+    func aurora(_ ctx: GraphicsContext, w: CGFloat, h: CGFloat) {
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: w, height: h)), with: .linearGradient(
+            Gradient(colors: [Color(red: 0.03, green: 0.06, blue: 0.14), Color(red: 0.05, green: 0.13, blue: 0.20), Color(red: 0.08, green: 0.22, blue: 0.26)]),
+            startPoint: .zero, endPoint: CGPoint(x: 0, y: h)))
+        var rng = SplitMix(seed: 41)
+        for _ in 0..<60 {
+            let p = CGPoint(x: rng.next() * w, y: rng.next() * h * 0.7)
+            let r = 0.4 + rng.next() * 1.0
+            ctx.fill(Path(ellipseIn: CGRect(x: p.x, y: p.y, width: r, height: r)), with: .color(.white.opacity(0.3 + rng.next() * 0.5)))
+        }
+        // curtains: soft vertical bands along a wave, brightest at their foot
+        let bands: [(base: CGFloat, amp: CGFloat, phase: CGFloat, color: Color)] = [
+            (0.42, 0.10, 0.4, Color(red: 0.35, green: 0.95, blue: 0.65)),
+            (0.34, 0.08, 2.1, Color(red: 0.55, green: 0.45, blue: 0.95)),
+            (0.50, 0.07, 4.0, Color(red: 0.30, green: 0.85, blue: 0.80)),
+        ]
+        var c = ctx
+        c.addFilter(.blur(radius: 10))
+        for b in bands {
+            let n = 90
+            for i in 0..<n {
+                let t = CGFloat(i) / CGFloat(n)
+                let x = t * w
+                let foot = h * (b.base + b.amp * sin(t * 2.6 * .pi + b.phase))
+                let tall = h * (0.18 + 0.14 * (0.5 + 0.5 * sin(t * 7.3 * .pi + b.phase * 1.3)))
+                let rect = CGRect(x: x, y: foot - tall, width: w / CGFloat(n) + 1.5, height: tall)
+                c.fill(Path(rect), with: .linearGradient(Gradient(colors: [b.color.opacity(0), b.color.opacity(0.22), b.color.opacity(0.45)]),
+                                                         startPoint: CGPoint(x: x, y: rect.minY), endPoint: CGPoint(x: x, y: rect.maxY)))
+            }
+        }
+        // the pines
+        var trees = Path()
+        trees.move(to: CGPoint(x: 0, y: h))
+        var x: CGFloat = 0
+        var r2 = SplitMix(seed: 5)
+        while x < w {
+            let tw = 10 + r2.next() * 14, th = h * (0.10 + r2.next() * 0.14)
+            let ground = h * (0.93 - 0.03 * sin(x / w * 3 * .pi))
+            trees.addLine(to: CGPoint(x: x, y: ground))
+            trees.addLine(to: CGPoint(x: x + tw / 2, y: ground - th))
+            trees.addLine(to: CGPoint(x: x + tw, y: ground))
+            x += tw * (0.6 + r2.next() * 0.5)
+        }
+        trees.addLine(to: CGPoint(x: w, y: h))
+        trees.closeSubpath()
+        ctx.fill(trees, with: .color(Color(red: 0.02, green: 0.04, blue: 0.08)))
+    }
+
+    /// Builds: a low moon over a calm sea, its light on the water, a headland in silhouette.
+    func moon(_ ctx: GraphicsContext, w: CGFloat, h: CGFloat) {
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: w, height: h)), with: .linearGradient(
+            Gradient(colors: [Color(red: 0.05, green: 0.07, blue: 0.18), Color(red: 0.16, green: 0.16, blue: 0.36), Color(red: 0.34, green: 0.30, blue: 0.52)]),
+            startPoint: .zero, endPoint: CGPoint(x: 0, y: h * 0.7)))
+        var rng = SplitMix(seed: 19)
+        for _ in 0..<45 {
+            let p = CGPoint(x: rng.next() * w, y: rng.next() * h * 0.55)
+            let r = 0.4 + rng.next() * 0.9
+            ctx.fill(Path(ellipseIn: CGRect(x: p.x, y: p.y, width: r, height: r)), with: .color(.white.opacity(0.3 + rng.next() * 0.5)))
+        }
+        let horizon = h * 0.70
+        let mc = CGPoint(x: w * 0.72, y: h * 0.36), mr = h * 0.13
+        var glow = ctx
+        glow.addFilter(.blur(radius: 28))
+        glow.fill(Path(ellipseIn: CGRect(x: mc.x - mr * 2, y: mc.y - mr * 2, width: mr * 4, height: mr * 4)), with: .color(Color(red: 1, green: 0.93, blue: 0.80).opacity(0.25)))
+        ctx.fill(Path(ellipseIn: CGRect(x: mc.x - mr, y: mc.y - mr, width: mr * 2, height: mr * 2)), with: .color(Color(red: 1, green: 0.96, blue: 0.86)))
+        ctx.fill(Path(CGRect(x: 0, y: horizon, width: w, height: h - horizon)), with: .linearGradient(
+            Gradient(colors: [Color(red: 0.12, green: 0.13, blue: 0.30), Color(red: 0.04, green: 0.06, blue: 0.14)]),
+            startPoint: CGPoint(x: 0, y: horizon), endPoint: CGPoint(x: 0, y: h)))
+        // the moon's path on the water: short bright strokes, wider and fainter nearer
+        for i in 0..<16 {
+            let t = CGFloat(i) / 16
+            let y = horizon + 3 + t * (h - horizon - 6)
+            let half = mr * (0.4 + t * 1.2) * (0.6 + 0.4 * rng.next())
+            ctx.fill(Path(roundedRect: CGRect(x: mc.x - half + (rng.next() - 0.5) * 10, y: y, width: half * 2, height: 1.6), cornerRadius: 0.8),
+                     with: .color(Color(red: 1, green: 0.94, blue: 0.82).opacity(0.55 - t * 0.35)))
+        }
+        // a headland on the left
+        var land = Path()
+        land.move(to: CGPoint(x: w * 0.30, y: horizon + 1))
+        land.addCurve(to: CGPoint(x: w * 0.48, y: horizon - h * 0.16), control1: CGPoint(x: w * 0.38, y: horizon), control2: CGPoint(x: w * 0.42, y: horizon - h * 0.14))
+        land.addCurve(to: CGPoint(x: w * 0.60, y: horizon + 1), control1: CGPoint(x: w * 0.53, y: horizon - h * 0.17), control2: CGPoint(x: w * 0.56, y: horizon - h * 0.02))
+        land.closeSubpath()
+        ctx.fill(land, with: .color(Color(red: 0.04, green: 0.05, blue: 0.11)))
     }
 
     /// Three ranges of sharp peaks, the far ones lit and snow-capped, the nearest dark.

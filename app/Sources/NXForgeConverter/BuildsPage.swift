@@ -29,7 +29,9 @@ struct BuildsPage: View {
         let list = builds
         let selected = list.first { $0.app == model.selectedBuild } ?? list.first
         VStack(alignment: .leading, spacing: 0) {
-            PageHeader(title: "Builds", subtitle: "Your native Mac apps, ready to play.") {
+            HeroHeader(symbol: "macwindow.stack", title: "Builds", subtitle: "Your native Mac apps, ready to play.")
+                .padding(.horizontal, 20).padding(.top, 14)
+            PageHeader(title: "Builds", subtitle: "") {
                 let outdated = model.outdatedBuilds
                 if !outdated.isEmpty || !model.rebuildQueue.isEmpty {
                     Button { model.rebuildAll() } label: {
@@ -90,13 +92,37 @@ struct BuildsPage: View {
                     .listStyle(.inset)
                     .alternatingRowBackgrounds(.disabled)
                     .onDeleteCommand { if let s = selected { trashBuild(model, s, name(s)) } }
-                    .contextMenu(forSelectionType: String.self) { _ in } primaryAction: { apps in
-                        if let a = apps.first { model.openApp(a) }   // double-click opens the app
+                    .contextMenu(forSelectionType: String.self) { apps in
+                        if let a = apps.first {
+                            Button("Game Page") { model.openGame(GameRef(libraryID: nil, app: a)) }
+                            Button("Quick Look") { model.preview = GameRef(libraryID: nil, app: a) }
+                            Button("Play") { model.openApp(a) }
+                            Divider()
+                            Button("Show in Finder") { reveal(a) }
+                        }
+                    } primaryAction: { apps in
+                        if let a = apps.first { model.openGame(GameRef(libraryID: nil, app: a)) }   // double-click opens the game's page
+                    }
+                    // Space: a quick look; Return: the game's page
+                    .onKeyPress(.space) {
+                        guard let s = selected else { return .ignored }
+                        model.preview = model.preview == nil ? GameRef(libraryID: nil, app: s.app) : nil
+                        return .handled
+                    }
+                    .onKeyPress(.return) {
+                        guard let s = selected else { return .ignored }
+                        model.openGame(GameRef(libraryID: nil, app: s.app)); return .handled
                     }
                     .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
                     if let s = selected {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 16) {
+                                if model.offlineVolume(s.gameDir) != nil || !FileManager.default.fileExists(atPath: s.gameDir) { OfflineBanner(model: model, build: s) }
+                                HStack {
+                                    Spacer()
+                                    Button { model.openGame(GameRef(libraryID: nil, app: s.app)) } label: { Label("Game Page", systemImage: "rectangle.portrait.and.arrow.right") }
+                                        .buttonStyle(.glass).help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
+                                }
                                 BuildDetail(model: model, build: s, name: name(s))
                                 PreviousBuilds(model: model, build: s)
                                 SaveSnapshotsCard(model: model, build: s)
@@ -381,6 +407,7 @@ struct SaveSnapshotsCard: View {
     @State private var message: (ok: Bool, text: String)?
     @State private var busy = false
     @State private var tick = 0
+    @State private var importing: SaveImport?
 
     var body: some View {
         let _ = (model.revision, tick)
@@ -399,6 +426,26 @@ struct SaveSnapshotsCard: View {
                     Button { make(loc) } label: { Label("Snapshot now", systemImage: "camera") }
                         .buttonStyle(.glass).disabled(busy || !SaveSnapshots.hasSave(loc))
                         .help("Copies the save beside it, in save-snapshots, and checks every file of the copy")
+                    Menu {
+                        Button("Import Save…") { pickImport(loc) }
+                        Button("Export Save…") { export(loc) }.disabled(!SaveSnapshots.hasSave(loc))
+                        Divider()
+                        if model.settings.saveBackupRepo != nil {
+                            Button("Back Up to Git Now") { model.backUpSave(app: build.app, name: gameName) }.disabled(!SaveSnapshots.hasSave(loc))
+                        } else {
+                            Button("Set Up Git Backup…") { model.chooseSaveBackupRepo() }
+                        }
+                    } label: { Label("Move", systemImage: "arrow.up.arrow.down.square") }
+                    .menuStyle(.button).buttonStyle(.glass).fixedSize().disabled(busy)
+                    .help("Bring a save in from another Mac or an emulator, take this one out as a zip, or back it up to a Git repository")
+                }
+                if let b = model.backupStatus[id] {
+                    HStack(spacing: 6) {
+                        StatusIcon(ok: b.ok, size: 14)
+                        Text("Git backup: \(b.text)").font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                } else if let repo = model.settings.saveBackupRepo {
+                    Text("Backed up to \(repo.tildePath) each time the game quits\(model.settings.saveBackupPush ? ", and pushed" : "").").font(.caption).foregroundStyle(.secondary)
                 }
                 if let m = message {
                     HStack(spacing: 6) {
@@ -439,7 +486,79 @@ struct SaveSnapshotsCard: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .sheet(item: $importing) { importSheet($0) }
         }
+    }
+
+    var gameName: String { build.app.url.deletingPathExtension().lastPathComponent }
+
+    /// A zip, a folder holding save/ (and save_device/), a snapshot, or a save folder itself; then a preview of both sides.
+    private func pickImport(_ loc: SaveLocation) {
+        if SaveSnapshots.isRunning(app: build.app) {
+            _ = model.confirm("Quit the game first", "The game is running: it would write over the imported save. Quit it, then import.", action: "OK")
+            return
+        }
+        let p = NSOpenPanel()
+        p.canChooseFiles = true; p.canChooseDirectories = true; p.allowsMultipleSelection = false
+        p.message = "Choose a save: an exported .zip, a folder with save (and save_device) in it, or the save folder itself"
+        guard p.runModal() == .OK, let src = p.url?.path else { return }
+        busy = true; message = nil
+        Task.detached {
+            let r: Result<SaveImport, Error> = Result { try SaveTransfer.prepare(src, loc: loc) }
+            await MainActor.run {
+                busy = false
+                switch r {
+                case .success(let i): importing = i
+                case .failure(let e): message = (false, "\(e)")
+                }
+            }
+        }
+    }
+
+    private func export(_ loc: SaveLocation) {
+        let p = NSOpenPanel()
+        p.canChooseFiles = false; p.canChooseDirectories = true; p.canCreateDirectories = true
+        p.prompt = "Export Here"; p.message = "Choose where the save's zip goes"
+        p.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+        guard p.runModal() == .OK, let folder = p.url?.path else { return }
+        let name = gameName
+        work {
+            let zip = try SaveTransfer.export(loc, name: name, to: folder)
+            DispatchQueue.main.async { reveal(zip) }
+            return "Exported to \(zip.tildePath)"
+        }
+    }
+
+    func importSheet(_ i: SaveImport) -> some View {
+        let newer: String? = {
+            guard let a = i.from.newest, let b = i.to.newest else { return nil }
+            return a > b ? "The save you are importing is newer." : a < b ? "The save on this Mac is newer: importing goes back to an older save." : nil
+        }()
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Import this save?").font(.title3.weight(.bold))
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+                GridRow {
+                    Text("From").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) { Text(i.source.lastComponent).fontWeight(.medium); Text(i.from.text).foregroundStyle(.secondary) }
+                }
+                GridRow {
+                    Text("Replaces").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) { Text("This Mac's save").fontWeight(.medium); Text(i.to.text).foregroundStyle(.secondary) }
+                }
+            }
+            if let newer { Label(newer, systemImage: newer.contains("older") ? "exclamationmark.triangle.fill" : "checkmark.circle").foregroundStyle(newer.contains("older") ? .orange : .green) }
+            Text("The save is checked first and kept as a snapshot; the save it replaces is kept as one too.").font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { if let t = i.temp { try? FileManager.default.removeItem(atPath: t) }; importing = nil }.keyboardShortcut(.cancelAction)
+                Button("Import") {
+                    importing = nil
+                    work { try SaveTransfer.apply(i) }
+                }
+                .keyboardShortcut(.defaultAction).disabled(i.from.files == 0)
+            }
+        }
+        .padding(22).frame(width: 480)
     }
 
     private func make(_ loc: SaveLocation) {

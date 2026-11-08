@@ -21,10 +21,11 @@ struct SaveInventory: Codable, Equatable {
 }
 
 enum SnapshotReason: String, Codable, CaseIterable {
-    case manual, beforeRestore, beforeRebuild, beforeAppRestore
+    case manual, beforeRestore, beforeRebuild, beforeAppRestore, imported
     var label: String {
         switch self {
         case .manual: "Snapshot"
+        case .imported: "Imported"
         case .beforeRestore: "Before a restore"
         case .beforeRebuild: "Before a rebuild"
         case .beforeAppRestore: "Before restoring an older app"
@@ -254,6 +255,25 @@ enum SaveSnapshots {
             }
         }
         return safety
+    }
+
+    /// A save from elsewhere (an exported zip, another Mac's save folder, a snapshot) made into a checked snapshot of this game,
+    /// which restore() then puts in place: so an import is checked like any restore, and the imported save stays as a snapshot.
+    @discardableResult
+    static func importSnapshot(parts: [(name: String, path: String)], into loc: SaveLocation) throws -> SaveSnapshot {
+        let fm = FileManager.default
+        let inv = try inventory(parts)
+        guard !inv.files.isEmpty else { throw ConverterError("there is no save in it: no files") }
+        try fm.createDirectory(atPath: loc.snapshots, withIntermediateDirectories: true)
+        try enoughSpace(loc.snapshots, for: inv)
+        let id = snapshotID()
+        let stage = "\(loc.snapshots)/.making-\(UUID().uuidString)"
+        defer { try? fm.removeItem(atPath: stage) }
+        try copyChecked(inv, from: parts, to: stage + "/data")
+        let m = SnapshotManifest(id: id, titleID: loc.titleID, created: Date(), reason: .imported, inventory: inv)
+        try encoder.encode(m).write(to: URL(fileURLWithPath: stage + "/manifest.json"), options: .atomic)
+        try fm.moveItem(atPath: stage, toPath: "\(loc.snapshots)/\(id)")
+        return SaveSnapshot(id: id, path: "\(loc.snapshots)/\(id)", created: m.created, reason: .imported, files: inv.files.count, bytes: inv.bytes)
     }
 
     static func trash(_ s: SaveSnapshot) throws { try FileManager.default.trashItem(at: s.path.url, resultingItemURL: nil) }

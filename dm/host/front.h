@@ -45,6 +45,13 @@ void mtl_present_aa_set(int mode);
 // The CRT filters' scanline height (and the LCD grid's cell) in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
 int mtl_present_scanline(void);
 void mtl_present_scanline_set(int rows);
+// Picture size (nvn_mtl.m nxforge/present_filters.inc; the Mac sidebar's Display section, or DM_PRESENT_SCALE=fit|stretch|integer): Fit keeps the shape with bars, Stretch fills the
+// window, Pixel-perfect (integer) enlarges the game's pixels by the largest whole number that fits. Taken at every present. Any thread
+enum { DM_PSCALE_FIT, DM_PSCALE_STRETCH, DM_PSCALE_INTEGER, DM_PSCALE_N };   // the saved choice is the number
+int mtl_present_scale(void);
+void mtl_present_scale_set(int mode);
+// The time between the last presents (nvn_mtl.m, up to 254), oldest first, in ms; returns how many. age: ms since the newest (-1: none yet). The sidebar's frame-time graph. Any thread
+int mtl_present_times(double *ms, int max, double *age);
 // Frames put on screen so far (nvn_mtl.m, NVN and the Vulkan layer alike; frames the display link merged away are not counted): the front ends' frame-rate counters. Any thread
 uint64_t mtl_present_count(void);
 // Recording (nvn_mtl.m; the Mac front end's video recorder, capture_mac.m): while a recorder is set, every present also draws the frame as it is presented (the filter too) into a texture

@@ -53,3 +53,27 @@ void front_qs_controls_reload(void);
 const char *front_qs_capture_folder(int video);
 int front_qs_capture_custom(void);
 void front_qs_capture_folder_set(const char *dir);
+// The cheat's section (hle_cheats.c: the name of the [--SectionStart:…--] it is under, "" outside one), for the Cheats page's groups. Main thread
+const char *dm_cheat_section_at(int i);
+// Pause while open (General page): whether the game is paused now, and the switch (saved per game; applies at once while the sidebar is up). Main thread
+int front_qs_paused(void);
+void front_qs_pause_set(int on);
+// The game's sound after a change to the volume, mute or "quieter while open" settings (front_mac.m reads them from the user defaults). Main thread
+void front_qs_volume_apply(void);
+// Full screen (Display section). Main thread
+int front_qs_fullscreen(void);
+void front_qs_fullscreen_toggle(void);
+// The settings file (front_mac_settings_file.inc): this game's ("" when there is none) and my defaults; save the settings now as my defaults, or read my defaults into this game. Main thread
+const char *front_qs_settings_path(void);
+const char *front_qs_defaults_path(void);
+int front_qs_defaults_exist(void);
+void front_qs_defaults_save(void);
+void front_qs_defaults_use(void);
+// A screenshot or recording was saved (front_mac.m): the Capture page lists it. Main thread
+void dm_qs_captures_changed(void);
+// SHA-256 for the save backups' checks (quick_settings_mac.swift), from libSystem
+#include <CommonCrypto/CommonDigest.h>
+// This game's title ID (DM_GAME_ID, 16 hex digits). Any thread
+const char *front_qs_title_id(void);
+// A toast over the game picture (front_mac.m toast). Main thread
+void front_qs_toast_text(const char *msg);

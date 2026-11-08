@@ -9,17 +9,20 @@ struct RootView: View {
     @State private var width: CGFloat = 1200
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: Binding(get: { model.couchMode ? .detailOnly : .all }, set: { v in if model.couchMode && v != .detailOnly { model.toggleCouch() } })) {
             List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
                 ForEach(Page.allCases) { p in
                     Label(p.rawValue, systemImage: p.symbol).font(.system(size: 15)).padding(.vertical, 3).tag(p)
                 }
             }
-            .safeAreaInset(edge: .top) { SidebarBrand() }
+            .safeAreaInset(edge: .top) { VStack(alignment: .leading, spacing: 0) { SidebarBrand(); UpdateCapsule(model: model) } }
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
             .safeAreaInset(edge: .bottom) { ToolchainFooter(model: model) }
         } detail: {
             Group {
+                if let r = model.gameDetail, model.page == .library || model.page == .builds {
+                    GamePage(model: model, ref: r, wide: width > 860)
+                } else {
                 switch model.page {
                 case .convert: ScrollView { ConvertPage(model: model, wide: width > 860).padding(20) }
                 case .library: LibraryPage(model: model)
@@ -27,12 +30,15 @@ struct RootView: View {
                 case .storage: StoragePage(model: model)
                 case .toolchain: ScrollView { ToolchainPage(model: model).padding(20) }
                 }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             // the page sits on the navy; Convert's banner sits behind its heading, up under the toolbar
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     Theme.background
+                    if model.gameDetail == nil && model.page == .library { HeroBanner(scene: .aurora).frame(height: model.couchMode ? 320 : 230) }
+                    if model.gameDetail == nil && model.page == .builds { HeroBanner(scene: .moon).frame(height: 230) }
                     if model.page == .convert || model.page == .storage { HeroBanner(scene: .dish).frame(height: 230) }
                     if model.page == .toolchain { HeroBanner(scene: .peaks).frame(height: 230) }
                 }
@@ -57,6 +63,11 @@ struct RootView: View {
                 }
             }
         }
+        .onChange(of: model.page) { model.gameDetail = nil }
+        .sheet(item: $model.whatsNew) { WhatsNewSheet(model: model, news: $0) }
+        .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }
+        .sheet(isPresented: $model.commandPalette) { CommandPalette(model: model) }
+        .task { ControllerNav.shared.start(model) }
     }
 }
 
@@ -85,7 +96,7 @@ struct PageHeader<Trailing: View>: View {
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        Text(subtitle).foregroundStyle(.secondary)
+        Text(subtitle).foregroundStyle(.secondary).opacity(subtitle.isEmpty ? 0 : 1).frame(height: subtitle.isEmpty ? 0 : nil)
             .toolbar { ToolbarItemGroup(placement: .primaryAction) { trailing } }
     }
 }

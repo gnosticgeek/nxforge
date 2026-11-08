@@ -81,3 +81,46 @@ static void pfx_params(float fx[4], const MTLViewport *vp, NSUInteger cw, NSUInt
     int rows = mtl_present_scanline(); if (!rows) rows = (int)fmax(1, floor(ch / 240.0 + 0.5));
     fx[0] = g_pfx_k; fx[1] = cw ? (float)(vp->width / cw) : 1; fx[2] = ch ? (float)(vp->height / ch) : 1; fx[3] = (float)rows;
 }
+// Picture size (front.h mtl_present_scale; the sidebar's Display section, or DM_PRESENT_SCALE=fit|stretch|integer): Fit keeps the game's shape with black bars (as before),
+// Stretch fills the window, Pixel-perfect enlarges the game's own pixels by a whole number (the largest that fits), so pixel art keeps every pixel the same size; where not even
+// one whole step fits it fits as before. present_fit asks here first (one line in nvn_mtl.m)
+static _Atomic int g_pscale = -1;
+int mtl_present_scale(void) {
+    int s = g_pscale;
+    if (s >= 0) return s;
+    const char *e = getenv("DM_PRESENT_SCALE"); int want = DM_PSCALE_FIT;
+    if (e && *e) { if (!strcasecmp(e, "stretch")) want = DM_PSCALE_STRETCH; else if (!strcasecmp(e, "integer") || !strcasecmp(e, "pixel")) want = DM_PSCALE_INTEGER;
+                   else if (strcasecmp(e, "fit")) MLOG("[RED] DM_PRESENT_SCALE=%s: must be fit, stretch or integer; using fit", e); }
+    int none = -1; atomic_compare_exchange_strong(&g_pscale, &none, want);
+    return g_pscale;
+}
+void mtl_present_scale_set(int mode) {
+    mode = mode < 0 || mode >= DM_PSCALE_N ? DM_PSCALE_FIT : mode;
+    if (g_pscale != mode) { g_pscale = mode; MLOG("present: picture size %s", mode == DM_PSCALE_STRETCH ? "stretch" : mode == DM_PSCALE_INTEGER ? "pixel-perfect" : "fit"); }
+}
+// 1 with *vp set when the picture size is not Fit: pw x ph is the shape (present_shape), src the game's texture whose pixels Pixel-perfect counts
+static int nxf_present_scale_fit(id<MTLTexture> src, double pw, double ph, double dw, double dh, MTLViewport *vp) {
+    int m = mtl_present_scale();
+    if (m == DM_PSCALE_STRETCH) { *vp = (MTLViewport){0, 0, dw, dh, 0, 1}; return 1; }
+    if (m != DM_PSCALE_INTEGER || !src.width || !src.height || pw <= 0 || ph <= 0) return 0;
+    // the game's pixels in the shape it is shown in: a 1280x720 texture shown 16:9 is 1280x720; an anamorphic one keeps its height and takes the shape's width
+    double sh = src.height, sw = sh * pw / ph, k = floor(fmin(dw / sw, dh / sh));
+    if (k < 1) return 0;
+    double w = round(sw * k), h = sh * k;
+    *vp = (MTLViewport){floor((dw - w) / 2), floor((dh - h) / 2), w, h, 0, 1};
+    return 1;
+}
+// Present times for the sidebar's frame-time graph (front.h mtl_present_times): the uptime of the last 256 presents, written by the present thread (one line in present_now)
+#define NXF_PT_N 256
+static _Atomic uint64_t g_nxf_pt[NXF_PT_N], g_nxf_pt_n;
+static void nxf_present_tick(void) { uint64_t n = atomic_load_explicit(&g_nxf_pt_n, memory_order_relaxed); atomic_store_explicit(&g_nxf_pt[n % NXF_PT_N], clock_gettime_nsec_np(CLOCK_UPTIME_RAW), memory_order_relaxed); atomic_store_explicit(&g_nxf_pt_n, n + 1, memory_order_release); }
+int mtl_present_times(double *ms, int max, double *age) {
+    uint64_t n = atomic_load_explicit(&g_nxf_pt_n, memory_order_acquire); int k = 0;
+    if (max > NXF_PT_N - 2) max = NXF_PT_N - 2;
+    if (age) *age = n ? (clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - atomic_load_explicit(&g_nxf_pt[(n - 1) % NXF_PT_N], memory_order_relaxed)) / 1e6 : -1;
+    for (uint64_t i = n > (uint64_t)max + 1 ? n - max - 1 : 0; i + 1 < n; i++) {
+        uint64_t a = atomic_load_explicit(&g_nxf_pt[i % NXF_PT_N], memory_order_relaxed), b = atomic_load_explicit(&g_nxf_pt[(i + 1) % NXF_PT_N], memory_order_relaxed);
+        ms[k++] = b > a ? (b - a) / 1e6 : 0;
+    }
+    return k;
+}

@@ -3,13 +3,26 @@
 // folder first), for checking the layout without a screen capture.
 import AppKit
 import SwiftUI
+import UserNotifications
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         // run straight from the build folder (not a bundle), the process must ask to be a regular app
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().delegate = self
+            Notify.registerCategories()
+        }
     }
+    /// A notification's button (Play, Show in Finder, Copy Error Summary) or the notification itself
+    func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse) async {
+        let action = r.actionIdentifier, cat = r.notification.request.content.categoryIdentifier
+        let path = r.notification.request.content.userInfo["path"] as? String
+        await MainActor.run { if let m = AppModel.shared { Notify.handle(action, category: cat, path: path, model: m) } }
+    }
+    /// Shown while the converter is in front too
+    func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions { [.banner, .sound] }
     /// Closing the window while a build runs leaves the build going (the Dock icon shows its progress and a notification
     /// says when it ends); otherwise the app quits with its window.
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool {
@@ -74,19 +87,37 @@ struct ConverterApp: App {
             }
             CommandGroup(replacing: .help) {
                 Button("NXForge Converter Help") { NSWorkspace.shared.open(helpURL) }
+                Button("What's New in NXForge Converter") { model.showWhatsNew() }
+                if model.converterUpdate != nil {
+                    Button("Update NXForge Converter…") { model.updateConverter() }
+                }
             }
             CommandMenu("Build") {
                 Button("Build Mac App") { model.build() }.keyboardShortcut("b").disabled(!model.ready)
                 Button("Rebuild") { model.rebuildCurrent() }.keyboardShortcut("r").disabled(model.run.running || !model.allOK)
                 Button("Rebuild All on Older Engines") { model.rebuildAll() }.disabled(model.run.running || !model.allOK || model.outdatedBuilds.isEmpty)
+                Button("Build iPhone and iPad IPA…") { model.buildIPA() }.keyboardShortcut("b", modifiers: [.command, .option]).disabled(!model.ready)
                 Divider()
                 Button("Stop Build…") { model.stopBuild() }.keyboardShortcut(".").disabled(!model.run.running)
+            }
+            CommandGroup(after: .sidebar) {
+                Divider()
+                Button("Go to Anything…") { model.commandPalette = true }.keyboardShortcut("k")
+                Button(model.couchMode ? "Leave Couch Mode" : "Couch Mode") { model.toggleCouch() }.keyboardShortcut("f", modifiers: [.command, .shift])
+                Button("Back") { model.goBack() }.keyboardShortcut("[").disabled(model.gameDetail == nil)
             }
         }
         // Settings… (⌘,) in the app menu
         SwiftUI.Settings {
             SettingsPage(model: model)
         }
+        // the build's progress in the menu bar while one runs (a preview builds nothing, so it shows none)
+        MenuBarExtra(isInserted: Binding(get: { model.run.running && !model.run.planning }, set: { _ in })) {
+            MenuBarProgress(model: model)
+        } label: {
+            MenuBarLabel(model: model)
+        }
+        .menuBarExtraStyle(.window)
     }
 
     @MainActor

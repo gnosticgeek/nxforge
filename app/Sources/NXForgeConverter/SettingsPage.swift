@@ -88,6 +88,24 @@ struct SettingsPage: View {
                     .labelsHidden().fixedSize()
                 }
             }
+            Section("Saves") {
+                setting("Save backup repository", "A clone of a private Git repository: each game's save is committed to it when the game quits.") {
+                    Text(model.settings.saveBackupRepo?.tildePath ?? "Off").foregroundStyle(model.settings.saveBackupRepo == nil ? .secondary : .primary)
+                        .lineLimit(1).truncationMode(.middle).frame(maxWidth: 220, alignment: .trailing)
+                    Button("Choose…") { model.chooseSaveBackupRepo() }
+                    if model.settings.saveBackupRepo != nil { Button("Turn Off") { model.settings.saveBackupRepo = nil } }
+                }
+                setting("Push after each backup", "Sends each commit to the repository's remote, so the saves leave this Mac.") {
+                    Toggle("", isOn: $model.settings.saveBackupPush).toggleStyle(.switch).labelsHidden().disabled(model.settings.saveBackupRepo == nil)
+                }
+            }
+            Section("NXForge Converter") {
+                setting("Version", model.converterUpdate.map { "Converter \($0.version) is ready to install from the engine checkout." } ?? "Up to date with the engine checkout.") {
+                    Text(CONVERTER_VERSION).monospacedDigit().foregroundStyle(.secondary)
+                    Button("What's New") { model.showWhatsNew() }
+                    if model.converterUpdate != nil { Button("Update…") { model.updateConverter() }.disabled(model.converterUpdating) }
+                }
+            }
             Section("Storage") {
                 setting("Build cache", model.buildCache.map { "\($0.tildePath). Reusable files can be regenerated on the next build." } ?? "Choose a game folder to see its cache.") {
                     Button { if let c = model.buildCache { reveal(c) } } label: { Label("Show in Finder", systemImage: "doc.text") }

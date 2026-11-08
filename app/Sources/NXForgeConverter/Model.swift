@@ -9,7 +9,7 @@ enum Page: String, CaseIterable, Identifiable {
     case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain"
     var id: String { rawValue }
     /// drawn with its own banner and big heading (HeroHeader) instead of the window title
-    var hasHero: Bool { self == .convert || self == .toolchain || self == .storage }
+    var hasHero: Bool { true }
     var symbol: String {
         switch self {
         case .convert: "macwindow.badge.plus"
@@ -106,6 +106,33 @@ final class AppModel {
     var diskWarning: String?
     /// a fix ran in Terminal: check the tools again when the converter is the active app again
     var fixPending = false
+    /// the converter's own What's New, shown as a sheet (ConverterUpdate)
+    var whatsNew: WhatsNew?
+    /// a newer converter in the engine checkout or on its update branch, and the update running
+    var converterUpdate: ConverterUpdateInfo?
+    var converterUpdating = false
+    /// the game page open over the Library or Builds (GamePage), and the quick preview (Space)
+    var gameDetail: GameRef?
+    var preview: GameRef?
+    /// the game the keyboard or a controller is on, in the Library (and the grid's columns, for up and down)
+    var libraryFocus: String?
+    var libraryColumns = 1
+    /// the couch: the Library's covers full screen, driven by a controller (ControllerNav)
+    var couchMode = false
+    var commandPalette = false
+    /// the last Library move, to undo (files moved into a folder of their own, or beside their game)
+    var lastMove: LibraryMove?
+    /// play sessions running now, by process ID (PlayTracker)
+    var playing: [pid_t: PlayingNow] = [:]
+    /// the last save backup of each game, by title ID (SaveBackup)
+    var backupStatus: [String: (ok: Bool, text: String)] = [:]
+    /// Build selected waiting to start: at a time, or once the Mac is on power (and the activity keeping it awake meanwhile)
+    var batchStart: BatchStart?
+    var batchWait: Task<Void, Never>?
+    var batchActivity: NSObjectProtocol?
+    /// the summary a failed build's notification copies (Copy error summary)
+    var lastErrorSummary: String?
+    var playObservers: [NSObjectProtocol] = []
     private var diskWatch: Task<Void, Never>?
     private var activeObserver: NSObjectProtocol?
     /// the window's model, for the Dock (a folder dropped on its icon) and the menu commands
@@ -124,6 +151,8 @@ final class AppModel {
         applyAppearance()
         recheck()
         watchMounts()
+        trackPlay()
+        restoreBatchQueue()
         if settings.gameDir != nil { validate() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -174,6 +203,8 @@ final class AppModel {
                 if repoChanged { self.measure() }   // the game's profile (GameNeeds) is in the engine checkout
                 // once per launch: look for a newer engine (a fetch; quiet when offline)
                 if !self.checkedForUpdates, ver != nil { self.checkedForUpdates = true; self.engineAction(update: false) }
+                self.showWhatsNewIfNeeded()
+                self.learnRemounts()
             }
         }
     }
@@ -260,7 +291,11 @@ final class AppModel {
             } catch { msg = (false, "\(error)") }
             let ver = Engine.current(repo)
             let note = msg.1.contains("available") ? target.flatMap { Engine.upstreamNote(repo, target: $0) } : nil
-            await MainActor.run { self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note }
+            let found = target
+            await MainActor.run {
+                self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note
+                self.checkConverterUpdate(target: update ? nil : found)
+            }
         }
     }
 
@@ -378,6 +413,10 @@ final class AppModel {
 
     /// Rebuild a recorded app: its own game folder becomes the chosen one first.
     func rebuild(_ b: BuildRecord) {
+        guard offlineGuard(b.gameDir) else {
+            if !rebuildQueue.isEmpty || queueMessage == "" { queueMessage = "Rebuild all stopped: \(b.app.lastComponent)'s game files are offline."; rebuildQueue = [] }
+            return
+        }
         if settings.gameDir != b.gameDir { setGameDir(b.gameDir) }
         page = .convert
         Task {
@@ -467,14 +506,20 @@ final class AppModel {
     private func buildEnded(_ r: Result<String, ConverterError>) {
         diskWatch?.cancel(); diskWatch = nil; diskWarning = nil
         if run.planning { return }   // a preview: it stays on Convert, with its plan
+        if case .failure(let e) = r { lastErrorSummary = errorSummary(e.description) }
+        if run.ipa != nil { ipaEnded(r); return }
         if batchCurrent != nil { batchBuildEnded(r) }
         let name = game?.name ?? "The game"
         if settings.notify, Bundle.main.bundleIdentifier != nil {
             let c = UNMutableNotificationContent()
             let took = run.startedAt.map { " in \(duration(Date().timeIntervalSince($0)))" } ?? ""
             switch r {
-            case .success: c.title = "\(name) is ready"; c.body = "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."
-            case .failure(let e): c.title = e.description.hasPrefix("Stopped: only") ? "Build stopped: disk almost full" : "Build failed"; c.body = e.description
+            case .success(let msg):
+                if run.ipa != nil { c.title = "\(name)'s IPA is ready"; c.body = msg; c.categoryIdentifier = Notify.ipa; c.userInfo = ["path": run.ipa ?? ""] }
+                else { c.title = "\(name) is ready"; c.body = "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
+            case .failure(let e):
+                c.title = e.description.hasPrefix("Stopped: only") ? "Build stopped: disk almost full" : "Build failed"; c.body = e.description
+                if e.description != "stopped" { c.categoryIdentifier = Notify.failed }
             }
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }

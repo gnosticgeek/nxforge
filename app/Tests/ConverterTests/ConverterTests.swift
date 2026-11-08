@@ -520,3 +520,77 @@ import Testing
         #expect(files["control.nacp"] == [1, 2, 3] && files["icon_AmericanEnglish.dat"] == [0xFF, 0xD8, 0xFF])
     }
 }
+
+// Converter 0.2.0: What's New, profile notes, launch settings, playtime and Build later.
+@Suite struct ConverterTwo {
+    let log = """
+    # NXForge Converter changelog
+
+    ## 0.3.0 (2026-12-01)
+
+    - Third.
+
+    ## 0.2.0 (2026-11-08)
+
+    - Second.
+
+    ## 0.1.0 (2026-11-07)
+
+    - First.
+    """
+
+    @Test func versionsCompare() {
+        #expect(ConverterUpdate.newer("0.10.0", than: "0.9.1"))
+        #expect(!ConverterUpdate.newer("0.2.0", than: "0.2.0"))
+        #expect(!ConverterUpdate.newer("0.1.9", than: "0.2.0"))
+    }
+
+    @Test func whatsNewListsUnseenEntries() {
+        let w = ConverterUpdate.whatsNew(log: log, version: "0.3.0", seen: "0.1.0")
+        #expect(w?.entries.map(\.version) == ["0.3.0", "0.2.0"])
+        #expect(ConverterUpdate.whatsNew(log: log, version: "0.3.0", seen: "0.3.0")?.entries.map(\.version) == ["0.3.0"])
+    }
+
+    @Test func profileNotes() {
+        let readme = """
+        # Some Game (`0100ABCDEF000000`)
+
+        Version 1.2.0, Unity. Plays to the credits.
+
+        ## Issues
+
+        - **Resolved:** crash at the title.
+        - **Open:** shadows flicker in the [forest](x.md).
+        """
+        let n = GameInsights.parse(readme, titleID: "0100ABCDEF000000", readme: "/r")
+        #expect(n.title == "Some Game")
+        #expect(n.summary == "Version 1.2.0, Unity. Plays to the credits.")
+        #expect(n.open == ["Open: shadows flicker in the forest."])
+        #expect(n.resolved == 1)
+    }
+
+    @Test func rangeSettingsAccept() throws {
+        let json = #"{"env":"X","kind":"range","label":"l","note":"n","def":"1","min":0.5,"max":2,"step":0.5}"#
+        let s = try JSONDecoder().decode(LaunchSetting.self, from: Data(json.utf8))
+        #expect(s.accepts("1.5"))
+        #expect(!s.accepts("3"))
+        #expect(!s.accepts("0x1"))
+        #expect(s.isDefault("1.0"))
+    }
+
+    @Test func weeklyPlaytime() {
+        let now = Date()
+        let r = PlayRecord(name: "g", app: "/a.app", sessions: [PlaySession(start: now.addingTimeInterval(-60), seconds: 600)])
+        let w = Playtime.weekly(r, weeks: 4, now: now)
+        #expect(w.count == 4)
+        #expect(w.last?.minutes == 10)
+        #expect(Playtime.text(3900) == "1 h 5 min")
+    }
+
+    @Test func tonightIsAhead() {
+        let now = Date()
+        let t = BatchSchedule.tonight(now: now)
+        #expect(t > now && t.timeIntervalSince(now) <= 86400)
+        #expect(Calendar.current.component(.hour, from: t) == 2)
+    }
+}
