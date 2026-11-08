@@ -35,7 +35,7 @@ struct RebuildAdvice {
 
 enum GameInsights {
     static func notes(repo: String, titleID: String) -> ProfileNotes? {
-        let path = "\(repo)/dm/games/\(titleID.uppercased())/README.md"
+        let path = Layer.file(repo, "dm/games/\(titleID.uppercased())/README.md")
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
         return parse(text, titleID: titleID, readme: path)
     }
@@ -84,7 +84,7 @@ enum GameInsights {
             guard let head = lines.first else { continue }
             let p = head.split(separator: "\u{1f}", omittingEmptySubsequences: false).map(String.init)
             guard p.count == 3 else { continue }
-            let files = lines.dropFirst().filter { !$0.isEmpty }
+            let files = Layer.enginePaths(lines.dropFirst().filter { !$0.isEmpty })
             guard files.contains(where: { Engine.affects($0, titleID: titleID) }) else { continue }
             let own = titleID.map { t in files.contains { $0.uppercased().hasPrefix("DM/GAMES/\(t.uppercased())/") } } ?? false
             result.append(EngineChange(hash: p[0], subject: p[1], date: p[2], ownProfile: own))

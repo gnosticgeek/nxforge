@@ -1,4 +1,5 @@
-# Nightly check of upstream nxnative (seedds/nxnative, main): how many commits NXForge's main is behind, and whether a merge would conflict.
+# Nightly check of upstream nxnative (seedds/nxnative, main): how many commits it is past the commit NXForge's main is built on (layer/ENGINE), and which of
+# NXForge's patches would apply to it, which nxnative already has and which conflict (scripts/layer.py try).
 # It keeps one open issue labelled "upstream" up to date with the count, the newest upstream commits and the files a test merge conflicts in,
 # and closes it once main has caught up (with issues turned off for the repository, each run's summary holds the report instead). Nothing is pushed: the merge itself is a thread of work with a Mac build (UPSTREAM.md).
 # A second job watches the games in .github/upstream-watch.tsv: upstream pull requests about them (open or updated in the last 14 days), and which NXForge branches already hold each one,
@@ -32,38 +33,31 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - name: Fetch upstream and try the merge
+      - name: Fetch upstream and try the layer on it
         id: merge
         run: |
-          git remote add upstream "$UPSTREAM"
-          git fetch --quiet upstream main
-          behind=$(git rev-list --count HEAD..upstream/main)
-          base=$(git merge-base HEAD upstream/main)
+          git config user.name "upstream-check"; git config user.email "upstream-check@users.noreply.github.com"
+          pin=$(sed -n 's/^commit //p' layer/ENGINE)
+          git fetch --quiet "$UPSTREAM" "+refs/heads/main:refs/nxnative/main"
+          behind=$(git rev-list --count "$pin..refs/nxnative/main")
           echo "behind=$behind" >> "$GITHUB_OUTPUT"
           {
-            echo "NXForge \`main\` ($(git rev-parse --short HEAD)) is **$behind commit(s)** behind [seedds/nxnative](https://github.com/seedds/nxnative) \`main\` ($(git rev-parse --short upstream/main)); the last merge base is \`$(git rev-parse --short "$base")\` ($(git log -1 --format=%cs "$base"))."
+            echo "NXForge \`main\` ($(git rev-parse --short HEAD)) is built on nxnative \`${pin:0:10}\` ([layer/ENGINE](layer/ENGINE), $(git log -1 --format=%cs "$pin")), **$behind commit(s)** behind [seedds/nxnative](https://github.com/seedds/nxnative) \`main\` ($(git rev-parse --short refs/nxnative/main))."
             echo
           } > body.md
           if [ "$behind" = 0 ]; then exit 0; fi
-          git config user.name "upstream-check"; git config user.email "upstream-check@users.noreply.github.com"
-          if git merge --no-commit --no-ff upstream/main > merge.log 2>&1; then
-            echo "A test merge applies **without conflicts**." >> body.md
-          else
-            conflicts=$(git diff --name-only --diff-filter=U)
-            echo "A test merge **conflicts in $(echo "$conflicts" | grep -c .) file(s)**:" >> body.md
-            echo >> body.md
-            echo "$conflicts" | sed 's/^/- `/; s/$/`/' >> body.md
-          fi
-          git merge --abort 2>/dev/null || true
+          echo "NXForge's patches (\`scripts/layer.py try\`) on nxnative's main:" >> body.md
+          echo >> body.md
+          python3 scripts/layer.py try 2>&1 | sed '1d; s/^  /- /' >> body.md || true
           {
             echo
-            echo "<details><summary>Upstream commits not in NXForge (newest 30)</summary>"
+            echo "<details><summary>Upstream commits since the pin (newest 30)</summary>"
             echo
-            git log --format='- [`%h`](https://github.com/seedds/nxnative/commit/%H) %s (%cs)' -30 HEAD..upstream/main
+            git log --format='- [`%h`](https://github.com/seedds/nxnative/commit/%H) %s (%cs)' -30 "$pin..refs/nxnative/main"
             echo
             echo "</details>"
             echo
-            echo "_Updated by the nightly [upstream-check]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/upstream-check.yml) run of $(date -u '+%Y-%m-%d %H:%M UTC'). The merge itself goes on a branch of its own with a Mac build ([UPSTREAM.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/UPSTREAM.md))._"
+            echo "_Updated by the nightly [upstream-check]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/upstream-check.yml) run of $(date -u '+%Y-%m-%d %H:%M UTC'). The update itself (\`scripts/layer.py update\`) goes on a branch of its own with a Mac build ([UPSTREAM.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/UPSTREAM.md))._"
           } >> body.md
           cat body.md >> "$GITHUB_STEP_SUMMARY"
       - name: Open, update or close the issue
@@ -98,6 +92,9 @@ jobs:
         run: |
           git remote add upstream "$UPSTREAM"
           git fetch --quiet upstream main
+          # main's engine as builds see it: the pinned nxnative commit plus NXForge's patches and files (scripts/layer.py)
+          git checkout --quiet origin/main && python3 scripts/layer.py assemble >/dev/null
+          git update-ref refs/remotes/origin/nxforge-tree "$(git -C tree rev-parse HEAD)"
           since=$(date -u -d '14 days ago' +%F)
           : > prs.tsv
           declare -A skip   # pull requests left out on purpose: "skip", the number, the reason
@@ -147,7 +144,7 @@ jobs:
                 #    merged into the branch, change nothing. A clean merge that does change something means it is not in; a conflict means partly, or moved.
                 base=$(git merge-base "refs/upr/$num" upstream/main)
                 clean=0; conflicts=0
-                for b in $([ "$branch" != - ] && echo "$branch") main; do
+                for b in $([ "$branch" != - ] && echo "$branch") nxforge-tree; do   # nxforge-tree: main's assembled engine (below)
                   git rev-parse --verify --quiet "origin/$b" >/dev/null || continue
                   if tree=$(git merge-tree --write-tree --no-messages --merge-base="$base" "origin/$b" "refs/upr/$num" 2>/dev/null); then
                     if [ "$(echo "$tree" | head -1)" = "$(git rev-parse "origin/$b^{tree}")" ]; then where="changes in \`$b\`"; break; fi

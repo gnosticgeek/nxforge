@@ -24,6 +24,7 @@ from datetime import date
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+ENGINE = REPO / 'tree' if (REPO / 'layer/ENGINE').is_file() else REPO   # the assembled engine (scripts/layer.py) from 0.19.0
 PERF = REPO / 'docs/perf'
 COLUMNS = ['title_id', 'route', 'mac', 'macos', 'date', 'runs', 'fps', 'frame_p50', 'frame_p99', 'frame_max', 'over_budget', 'gpu_p50', 'red_lines']
 METRICS = COLUMNS[6:]
@@ -85,8 +86,8 @@ def run(a: argparse.Namespace) -> int:
     for b in a.builds:
         build = Path(b).expanduser().resolve()
         gid = build.name.split('_')[0].upper()
-        cmd = [sys.executable, str(REPO / 'scripts/bench.py'), str(build), '--runs', str(a.runs), '--no-hud']
-        if not (REPO / 'dm/games' / gid / 'bench.tsv').is_file(): cmd += ['--idle', str(a.seconds)]
+        cmd = [sys.executable, str(ENGINE / 'scripts/bench.py'), str(build), '--runs', str(a.runs), '--no-hud']
+        if not (ENGINE / 'dm/games' / gid / 'bench.tsv').is_file(): cmd += ['--idle', str(a.seconds)]
         with tempfile.TemporaryDirectory() as tmp:
             cmd += ['--out', tmp]
             print('$', ' '.join(cmd), flush=True)

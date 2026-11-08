@@ -10,10 +10,10 @@ import json, os, struct, sys
 from pathlib import Path
 from typing import Any
 
-here = Path(__file__).resolve().parent
-repo = here.parent
-sys.path.insert(0, str(here)); sys.path.insert(0, str(repo / 'dm/tools')); sys.path.insert(0, str(repo / 'dm/games'))
-import pack_dump, pack_nup   # noqa: E402
+repo = Path(__file__).resolve().parents[1]
+engine = repo / 'tree' if (repo / 'layer/ENGINE').is_file() else repo   # the assembled engine (scripts/layer.py) from 0.19.0
+sys.path.insert(0, str(engine / 'scripts')); sys.path.insert(0, str(engine / 'dm/tools')); sys.path.insert(0, str(engine / 'dm/games'))
+import pack_dump, pack_nup   # noqa: E402  # pyright: ignore[reportMissingImports]  # the engine's dm/tools, on sys.path above
 
 PACKAGE_SUFFIXES = ('.nsp', '.xci', '.nsz', '.xcz')   # build_ipa_from_nsp.py's: a folder with any of these is a folder of game packages, read with prod.keys
 
@@ -41,7 +41,7 @@ def zbic_flag(head):   # NSO flags (0x0C) bit 7: its compressed segments are ZBI
 
 def profile_name(tid):
     try:
-        import game
+        import game  # pyright: ignore[reportMissingImports]  # the engine's dm/games
         g = game.by_title(tid)
         return (g.get('name') or g.id) if g else None
     except Exception: return None   # a profile that does not load is the build's to report
@@ -49,7 +49,7 @@ def profile_name(tid):
 
 def nacp_name(data):
     if not data: return ''
-    import nacp, tempfile
+    import nacp, tempfile  # pyright: ignore[reportMissingImports]  # the engine's dm/tools
     with tempfile.NamedTemporaryFile(suffix='.nacp') as f:
         f.write(data); f.flush()
         return nacp.name(f.name)

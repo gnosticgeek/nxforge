@@ -137,8 +137,10 @@ final class BuildRun {
             defer { lock.release() }
             guard let repo = job.env.repo else { throw ConverterError("no NXForge engine checkout") }
             guard let engine = Engine.current(repo) else { throw ConverterError("cannot read the engine's git commit") }
+            if let e = Layer.assemble(repo, python: job.env.python) { throw ConverterError("the engine tree is not assembled: \(e)") }   // the checkout may have moved since the checks
+            let tree = Layer.tree(repo)
             if job.plan {   // nothing is moved, built or recorded
-                guard let src = try? String(contentsOfFile: repo + "/" + scriptPath, encoding: .utf8), src.contains("'--plan'") else {
+                guard let src = try? String(contentsOfFile: tree + "/" + scriptPath, encoding: .utf8), src.contains("'--plan'") else {
                     throw ConverterError("this engine has no --plan: update the engine to preview a build")
                 }
                 return .success(try build(job, repo: repo, run: r))
@@ -234,14 +236,15 @@ final class BuildRun {
         guard let py = job.env.python else { throw ConverterError("no Python with the script's modules") }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: py)
-        var args = ["-u", repo + "/" + scriptPath, job.gameDir, "--platform", job.ios ? "ios" : "mac-app", "--progress", "json"]
+        let tree = Layer.tree(repo)
+        var args = ["-u", tree + "/" + scriptPath, job.gameDir, "--platform", job.ios ? "ios" : "mac-app", "--progress", "json"]
         if let k = job.keys { args += ["-k", k] }
         if job.plan { args.append("--plan") }
         if !job.ios, let id = job.sign { args += ["--mac-sign", id] }
         if !job.ios, let o = job.rebuild ?? job.out { args += ["-o", o] }
         if job.cleanup != .off { args += ["--cleanup", job.cleanup.rawValue] }
         p.arguments = args
-        p.currentDirectoryURL = URL(fileURLWithPath: repo)
+        p.currentDirectoryURL = URL(fileURLWithPath: tree)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = job.env.path
         env["PYTHONUNBUFFERED"] = "1"

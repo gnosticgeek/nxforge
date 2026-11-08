@@ -230,7 +230,7 @@ enum Engine {
         let key = "\(commit) \(head.commit)"
         if !head.dirty, let c = changedCache[key] { return c }
         guard let out = git(repo, ["diff", "--name-only", "--no-renames", commit, "--"]) else { return nil }
-        let files = out.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        let files = Layer.enginePaths(out.split(separator: "\n").map(String.init).filter { !$0.isEmpty })
         if !head.dirty { changedCache[key] = files }
         return files
     }

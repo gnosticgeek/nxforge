@@ -7,12 +7,10 @@ name: lint-c
 
 on:
   pull_request:
-    paths: ['dm/host/**', 'dm/gfx/**.[chm]', 'dm/gfx/**.mm', 'dm/gfx/**.cpp', 'dm/gfx/**/Makefile', .clang-tidy, dm/tools/lint_c.py,
-            dm/tools/lint_c_baseline.tsv, .github/workflows/lint-c.yml]
+    paths: ['layer/**', scripts/layer.py, .github/workflows/lint-c.yml]   # the engine's sources are assembled from the layer
   push:   # main, and the release branch commits land on during the day (release-X.Y.Z), so a break shows before its release pull request opens
     branches: [main, 'release-*']
-    paths: ['dm/host/**', 'dm/gfx/**.[chm]', 'dm/gfx/**.mm', 'dm/gfx/**.cpp', 'dm/gfx/**/Makefile', .clang-tidy, dm/tools/lint_c.py,
-            dm/tools/lint_c_baseline.tsv, .github/workflows/lint-c.yml]
+    paths: ['layer/**', scripts/layer.py, .github/workflows/lint-c.yml]   # the engine's sources are assembled from the layer
   workflow_dispatch:
 
 permissions:
@@ -44,10 +42,16 @@ jobs:
     name: clang-tidy (ratchet)
     runs-on: xcode-27
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: tree   # the assembled engine (scripts/layer.py)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Assemble the engine (nxnative at layer/ENGINE plus NXForge's patches and files, scripts/layer.py)
+        working-directory: .
+        run: python3 scripts/layer.py assemble
       - name: LLVM ${{ env.LLVM_VERSION }} (clang-tidy)
         run: |
           name="LLVM-$LLVM_VERSION-macOS-ARM64"
@@ -64,16 +68,13 @@ jobs:
           xcodebuild -version
       - name: Compile database (dry runs of the Makefiles)
         run: python3 dm/tools/lint_c.py compdb
-      - name: Base branch's baseline (pull requests)
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
       - name: clang-tidy against the baseline
         run: |
           mkdir -p logs
-          python3 dm/tools/lint_c.py tidy -j "$(sysctl -n hw.ncpu)" --report logs/clang-tidy.txt ${{ github.event_name == 'pull_request' && '--against FETCH_HEAD' || '' }}
+          python3 dm/tools/lint_c.py tidy -j "$(sysctl -n hw.ncpu)" --report logs/clang-tidy.txt   # against the baseline in the layer (0007-dev-tools.patch)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: lint-c
-          path: logs
+          path: tree/logs
           retention-days: 7

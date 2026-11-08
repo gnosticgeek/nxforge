@@ -57,7 +57,20 @@ def settings(): return load_json(support_dir() / 'settings.json', {})
 def records(): return load_json(support_dir() / 'builds.json', [])
 
 
-def is_repo(p): return bool(p) and (Path(p) / SCRIPT).is_file() and (Path(p) / 'dm/tools/nx_extract/Program.cs').is_file()
+def layered(p): return bool(p) and (Path(p) / 'layer/ENGINE').is_file() and (Path(p) / 'scripts/layer.py').is_file()
+def is_repo(p): return layered(p) or (bool(p) and (Path(p) / SCRIPT).is_file() and (Path(p) / 'dm/tools/nx_extract/Program.cs').is_file())
+
+
+def tree_of(repo):
+    """Where the engine's files are and builds run: tree/ of a layered checkout (0.19.0 on: scripts/layer.py), else the checkout"""
+    return str(Path(repo) / 'tree') if layered(repo) else repo
+
+
+def ensure_tree(repo):
+    """Assemble tree/ from the layer (a quick no-op while it matches); Refused when it cannot be"""
+    if not layered(repo): return
+    r = subprocess.run([sys.executable, '-I', str(Path(repo) / 'scripts/layer.py'), 'assemble'], capture_output=True, text=True, cwd=repo, timeout=1800)
+    if r.returncode: raise Refused('engine tree not assembled: ' + (r.stderr or r.stdout).strip().removeprefix('layer.py: '))
 
 
 def find_repo(s=None):
@@ -271,7 +284,7 @@ def find_metal_cache(ctx):
     if root.is_file() or root.suffix == '.db':
         size = sum(size_of(Path(f'{root}{x}')) for x in ('', '-wal', '-shm'))
         if size <= limit * 2**30: return [], [f'Metal cache {size / 2**30:.1f} GB, under its {limit:g} GB limit'] if size else []
-        if not ctx['repo'] or not (Path(ctx['repo']) / 'dm/tools/shader_cache.py').is_file(): return [], ['[RED] Metal cache over its limit, but the engine has no shader_cache.py to trim it with']
+        if not ctx['repo'] or not (Path(tree_of(ctx['repo'])) / 'dm/tools/shader_cache.py').is_file(): return [], ['[RED] Metal cache over its limit, but the engine has no shader_cache.py to trim it with']
         return [{'path': str(root), 'bytes': size - int(limit * 2**30), 'why': f'trim the {size / 2**30:.1f} GB cache to {limit:g} GB (entries unused the longest)', 'db_limit': int(limit * 2**30)}], []
     files, total = [], 0
     for t in ('mac', 'ios'):
@@ -410,6 +423,7 @@ def worktree_state(ctx, wt):
     if wt not in [c.resolve() for c in checkouts(ctx)]: return False, 'not a worktree of the engine', info
     if wt == main_wt: return False, 'the main checkout', info
     if ctx['repo'] and wt == Path(ctx['repo']).resolve(): return False, 'the converter engine (settings "repo") runs from it', info
+    if ctx['repo'] and layered(ctx['repo']) and wt == Path(tree_of(ctx['repo'])).resolve(): return False, 'the engine tree builds run in (scripts/layer.py assemble makes it)', info
     if git(wt, 'status', '--porcelain'): return False, 'it has uncommitted or untracked changes', info
     head = git(wt, 'rev-parse', 'HEAD')
     if head and git(wt, 'branch', '-r', '--contains', head) == '': return False, 'its commit is not on any remote branch (unpushed work)', info
@@ -485,7 +499,7 @@ def delete(item, ctx):
     if 'db_limit' in item:   # the shared cache's SQLite file, trimmed by the engine's own shader_cache.Store (it also gives the pages back)
         code = ('import sys; sys.path.insert(0, sys.argv[1]); import shader_cache; s = shader_cache.Store(sys.argv[2]); '
                 "n, total, gone = s.prune_oldest('metallib/', int(sys.argv[3])); s.close(); print(n, total, gone)")
-        r = subprocess.run([sys.executable, '-I', '-c', code, f'{ctx["repo"]}/dm/tools', item['path'], str(item['db_limit'])], capture_output=True, text=True, timeout=1800)
+        r = subprocess.run([sys.executable, '-I', '-c', code, f'{tree_of(ctx["repo"])}/dm/tools', item['path'], str(item['db_limit'])], capture_output=True, text=True, timeout=1800)
         if r.returncode: raise OSError(f'trim failed: {(r.stderr or r.stdout).strip()[-300:]}')
         return
     if 'dirs' in item:   # many folders inside one cache folder
@@ -570,7 +584,7 @@ def jobs_dir():
 
 
 def script_has(repo, py, opt):
-    r = subprocess.run([py, f'{repo}/{SCRIPT}', '--help'], capture_output=True, text=True, cwd=repo, env=tool_env(repo), timeout=120)
+    r = subprocess.run([py, f'{tree_of(repo)}/{SCRIPT}', '--help'], capture_output=True, text=True, cwd=tree_of(repo), env=tool_env(repo), timeout=120)
     return opt in r.stdout
 
 
@@ -578,6 +592,7 @@ def build_command(game_dir, *, plan=False, rebuild=None, out=None, keys=None, cl
     s = settings()
     repo = find_repo(s)
     if not repo: raise Refused('no NXForge engine checkout found (settings "repo")')
+    ensure_tree(repo)
     py, miss = find_python(s, repo)
     if not py or miss: raise Refused(f'no Python with the script\'s modules ({", ".join(miss)}): run doctor')
     gd = Path(game_dir).expanduser().resolve()
@@ -588,7 +603,7 @@ def build_command(game_dir, *, plan=False, rebuild=None, out=None, keys=None, cl
     keys = keys or (str(gd / 'prod.keys') if (gd / 'prod.keys').is_file() else s.get('default_keys') or s.get('keys'))
     if not keys or not Path(keys).expanduser().is_file(): raise Refused('no prod.keys: put one in the game folder or pass --keys')
     if plan and not script_has(repo, py, '--plan'): raise Refused(f'the engine at {repo} has no --plan yet (update it)')
-    args = [py, '-u', f'{repo}/{SCRIPT}', str(gd), '-k', str(Path(keys).expanduser()), '--platform', 'mac-app', '--progress', 'json']
+    args = [py, '-u', f'{tree_of(repo)}/{SCRIPT}', str(gd), '-k', str(Path(keys).expanduser()), '--platform', 'mac-app', '--progress', 'json']
     if plan: args.append('--plan')
     if sign := sign or s.get('sign_identity'): args += ['--mac-sign', sign]
     if o := rebuild or out or s.get('out_dir'): args += ['-o', str(Path(o).expanduser())]
@@ -621,7 +636,7 @@ def run_build(game_dir, *, plan=False, rebuild=None, events=None, **kw):
     eng = engine(repo)
     backup = None
     if rebuild and not plan and Path(rebuild).exists(): backup = back_up(rebuild, eng)
-    p = subprocess.Popen(args, cwd=repo, env=dict(tool_env(repo), PYTHONUNBUFFERED='1'), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    p = subprocess.Popen(args, cwd=tree_of(repo), env=dict(tool_env(repo), PYTHONUNBUFFERED='1'), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     app = red = None
     for line in p.stdout or ():
         line = line.rstrip('\n')
@@ -719,6 +734,7 @@ def update(apply=False):
             exists = git(repo, 'rev-parse', '--verify', '--quiet', f'refs/heads/{name}') is not None
             if git(repo, *(['switch', '--quiet', name] if exists else ['switch', '--quiet', '--track', tgt])) is None: raise Refused(f'cannot switch to {name}')
         if git(repo, 'merge', '--ff-only', '--quiet', tgt, timeout=300) is None: raise Refused(f'{tgt} cannot be fast-forwarded to (local commits?)')
+        ensure_tree(repo)
         res.update(applied=True, engine=engine(repo))
     return res
 
@@ -752,7 +768,7 @@ def game_needs(game_dir, repo):
     if any(n.lower().endswith(('.nsz', '.xcz')) for n in names): out['nsz'] = 'this folder has compressed .nsz or .xcz files'
     tid = next((n[:16].upper() for n in names if n.endswith('_build') and len(n) == 22), None)
     if not tid and (m := next((m for n in names if (m := re.search(r'\[([0-9A-Fa-f]{16})\]', n))), None)): tid = m.group(1)[:13].upper() + '000'
-    prof = Path(repo) / 'dm/games' / tid if repo and tid else None
+    prof = Path(tree_of(repo)) / 'dm/games' / tid if repo and tid else None
     try: tsv = (prof / 'game.tsv').read_text(errors='replace') if prof else ''
     except OSError: tsv = ''
     if tid and tid.startswith('04'): out['zbic'] = 'Switch 2 games are built with system 22 or later, whose code is ZBIC-compressed'

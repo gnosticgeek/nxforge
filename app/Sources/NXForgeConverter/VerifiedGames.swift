@@ -34,7 +34,7 @@ enum VerifiedGames {
     }
 
     static func load(_ repo: String?) -> [String: VerifiedGame] {
-        guard let repo, let text = try? String(contentsOfFile: repo + "/" + file, encoding: .utf8) else { return [:] }
+        guard let repo, let text = try? String(contentsOfFile: Layer.file(repo, file), encoding: .utf8) else { return [:] }
         return parse(text)
     }
 

@@ -2,6 +2,16 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.19.0 (2026-11-08)
+
+The engine-and-layer release: nxnative's engine is no longer merged into NXForge commit by commit. NXForge pins an untouched nxnative commit and keeps its own changes as a layer on top ([UPSTREAM.md](UPSTREAM.md#engine-and-layer-from-0190)).
+
+- **The engine is pinned, not merged.** `layer/ENGINE` names the nxnative commit (now `c78d737`, nxnative's `main` of 2026-11-08). NXForge's changes to nxnative's files are nine patches by theme in `layer/patches/` (player, host threads, video, Metal, shader tools, packing, dev tools, game profiles, docs), and the files NXForge adds are in `layer/files/`. `python3 scripts/layer.py assemble` puts them together in `tree/`, where builds run; the Converter and the `nxforge` command line do it for you before a build.
+- **Taking nxnative's changes is one step:** `scripts/layer.py update` moves the pin to nxnative's newest `main` and carries the patches over; `scripts/layer.py try` first shows which patches would need a hand.
+- **Up to nxnative `c78d737`** (14 commits past 0.18's engine), with nxnative's own versions of two things NXForge carried copies of: the mesh-shader prewarm fix (nxnative #1368) and the pipeline archive compaction (NXForge keeps its higher file limit, 24, its 5-minute flush spacing and the flush at exit). Shader chain `98747cde2289`: every game's shaders are translated again on its next build.
+- **NXForge Converter 0.4.0** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): works with the new layout.
+- The repository's root is now NXForge's own: the Converter (`app/`), its scripts and tests, its docs and changelogs. nxnative's README, docs and tools are in `tree/` once assembled, and on [nxnative's GitHub](https://github.com/seedds/nxnative).
+
 ## 0.18.1 (2026-11-08)
 
 - **NXForge Converter 0.3.1:** the sidebar's pages can be clicked again (0.3.0 left the list unable to select any page).
@@ -26,7 +36,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 ## 0.15.0 (2026-11-07)
 
-The thin-fork release: NXForge is now the Converter plus a Mac player layer on nxnative's engine ([UPSTREAM.md](UPSTREAM.md#thin-fork-from-0150)). Merges nxnative's `main` up to `bd979ce` (19 commits since `d777f0a` and the picks). The shader chain changes (`4f4abb1e5355`), so every NVN game's shaders rebuild once.
+The thin-fork release: NXForge is now the Converter plus a Mac player layer on nxnative's engine ([UPSTREAM.md](UPSTREAM.md#engine-and-layer-from-0190)). Merges nxnative's `main` up to `bd979ce` (19 commits since `d777f0a` and the picks). The shader chain changes (`4f4abb1e5355`), so every NVN game's shaders rebuild once.
 
 **From upstream `main`**
 - Pikmin 4 and DRAGON BALL Sparking! ZERO play at 60 fps, and up to 120 on the Mac (Unreal's fixed frame rate). DRAGON BALL's encrypted IoStore containers split their shaders.

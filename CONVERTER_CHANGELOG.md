@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.4.0 (2026-11-08)
+
+For NXForge's new layout (an untouched nxnative engine plus NXForge's layer). Ships in NXForge 0.19.0.
+
+- **Builds use the assembled engine.** Before a build, and in the tool check, the converter runs `scripts/layer.py assemble`, then builds in `tree/`. If assembling fails, the tool check says why and how to fix it.
+- **Game notes, profiles and the library read the engine's files** from `tree/` (or `layer/files/` before the first assemble).
+- **Updates:** "what changed" for a game understands a new engine pin and changed patches, the sidebar's version is read from its new place, and the upstream count is counted from the pinned commit.
+- A checkout from before 0.19.0 still works as it did.
+
 ## 0.3.1 (2026-11-08)
 
 A fix for 0.3.0. Ships in NXForge 0.18.1.
