@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## Unreleased
+## 0.19.0 (2026-11-08)
 
 The engine-and-layer release: nxnative's engine is no longer merged into NXForge commit by commit. NXForge pins an untouched nxnative commit and keeps its own changes as a layer on top ([UPSTREAM.md](UPSTREAM.md#engine-and-layer-from-0190)).
 
