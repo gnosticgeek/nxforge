@@ -12,8 +12,10 @@ struct RootView: View {
         NavigationSplitView(columnVisibility: Binding(get: { model.couchMode ? .detailOnly : .all }, set: { v in if model.couchMode && v != .detailOnly { model.toggleCouch() } })) {
             List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
                 ForEach(Page.allCases) { p in
-                    Label(p.rawValue, systemImage: p.symbol).font(.system(size: 15)).padding(.vertical, 3).tag(p)
+                    // the tag goes last: a tag under .badge is not the row's, so the list could not select any page
+                    Label(p.rawValue, systemImage: p.symbol).font(.system(size: 15)).padding(.vertical, 3)
                         .badge(p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : 0)
+                        .tag(p)
                 }
             }
             .safeAreaInset(edge: .top) { VStack(alignment: .leading, spacing: 0) { SidebarBrand(); UpdateCapsule(model: model) } }
