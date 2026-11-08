@@ -559,7 +559,7 @@ static id<MTLSamplerState> tex_sampler(tex_t *t) {
     d.lodMaxClamp = mips ? k.lv : 0;
     d.sAddressMode = wrap_of(k.ws); d.tAddressMode = wrap_of(k.wt); d.rAddressMode = wrap_of(k.wr);
     d.borderColor = k.b == 2.f ? MTLSamplerBorderColorOpaqueWhite : k.b == 1.f ? MTLSamplerBorderColorOpaqueBlack : MTLSamplerBorderColorTransparentBlack;
-    d.maxAnisotropy = (NSUInteger)fmaxf(1, fminf(16, k.aniso));
+    d.maxAnisotropy = mtl_aniso_pick(k.aniso, d.minFilter == MTLSamplerMinMagFilterLinear && d.mipFilter != MTLSamplerMipFilterNotMipmapped && !k.cmp);
     if (k.cmp) d.compareFunction = (MTLCompareFunction)(k.cmp - GL_NEVER);
     id<MTLSamplerState> s = [g_dev newSamplerStateWithDescriptor:d];
     if (n < 256) { cache[n].k = k; cache[n].s = s; n++; } else RED1("more than 256 distinct sampler parameter sets");
@@ -1108,14 +1108,21 @@ GLB(glClear, void, GLbitfield mask) {
             if (nc < 16) { ck[nc] = key; cache[nc++] = pso; }
         }
         if (!pso) return;
-        MTLDepthStencilDescriptor *dd = [MTLDepthStencilDescriptor new];
-        if ((bits & GL_DEPTH_BUFFER_BIT) && P.dpf) { dd.depthCompareFunction = MTLCompareFunctionAlways; dd.depthWriteEnabled = YES; }
-        if ((bits & GL_STENCIL_BUFFER_BIT) && P.spf) {
-            MTLStencilDescriptor *s = [MTLStencilDescriptor new]; s.stencilCompareFunction = MTLCompareFunctionAlways; s.depthStencilPassOperation = MTLStencilOperationReplace;
-            s.writeMask = S.swmask & 0xff; dd.frontFaceStencil = s; dd.backFaceStencil = s;
+        // NXForge: the clear's depth / stencil state, made once per (depth, stencil, stencil write mask) instead of at every partial clear
+        static __strong id<MTLDepthStencilState> dss_cache[2][2][256];
+        int cd = (bits & GL_DEPTH_BUFFER_BIT) && P.dpf, cs = (bits & GL_STENCIL_BUFFER_BIT) && P.spf, cw = cs ? (int)(S.swmask & 0xff) : 0;
+        id<MTLDepthStencilState> dss = dss_cache[cd][cs][cw];
+        if (!dss) {
+            MTLDepthStencilDescriptor *dd = [MTLDepthStencilDescriptor new];
+            if (cd) { dd.depthCompareFunction = MTLCompareFunctionAlways; dd.depthWriteEnabled = YES; }
+            if (cs) {
+                MTLStencilDescriptor *s = [MTLStencilDescriptor new]; s.stencilCompareFunction = MTLCompareFunctionAlways; s.depthStencilPassOperation = MTLStencilOperationReplace;
+                s.writeMask = (uint32_t)cw; dd.frontFaceStencil = s; dd.backFaceStencil = s;
+            }
+            dss = dss_cache[cd][cs][cw] = [g_dev newDepthStencilStateWithDescriptor:dd];
         }
         id<MTLRenderCommandEncoder> e = g_enc;
-        [e setRenderPipelineState:pso]; [e setDepthStencilState:[g_dev newDepthStencilStateWithDescriptor:dd]];
+        [e setRenderPipelineState:pso]; [e setDepthStencilState:dss];
         [e setCullMode:MTLCullModeNone]; [e setStencilReferenceValue:S.clear_s & 0xff];
         [e setViewport:(MTLViewport){0, 0, P.w, P.h, 0, 1}];
         int sc[4] = {0, 0, (int)P.w, (int)P.h};

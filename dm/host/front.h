@@ -1,5 +1,6 @@
 // Host front end (Mac: front_mac.m; iOS: dm/ios separately implements the same-named interface).
 #pragma once
+#include <stdint.h>
 #include <stdlib.h>
 // Metal reads HUD switches when the first device is made. Called before host preload and again after the launcher applies its settings; explicit environment values win.
 static inline void front_hud_env(void) {
@@ -15,6 +16,7 @@ void front_run(void (*guest)(void));
 void *front_metal_layer(void);
 // The highest refresh rate of the window's screen in Hz, 0 = not known (Mac front_mac.m; none on iOS, whose screens run at multiples of 60 Hz). Any thread
 int front_screen_max_fps(void);
+int front_fullscreen(void);   // 1 while the window is in fullscreen (Mac; 0 elsewhere)
 // The pixel size of the display the game is shown on: on the Mac the window's screen in its current mode (the main display before the window is up) (a scaled Retina mode's pixels), an iPhone's or iPad's screen (nativeBounds).
 // Returns 0 and leaves w, h alone when not known (no front end: graphics unit tests). Any thread
 int front_display_pixels(int *w, int *h);
@@ -23,6 +25,75 @@ int front_screen_variable_refresh(void);
 // The frame rate the display link paces the game at (60, 30, 120; nvn_mtl.m link_sync): in fullscreen, a screen whose refresh rate is not a multiple of it is switched, while the game runs,
 // to a mode of the same size whose rate is, and back when the window leaves fullscreen or that screen (front_mac.m; none on iOS). Called from the present thread
 void front_screen_match(int fps);
+// Present filter (implemented by the graphics backend, nvn_mtl.m; set by the Mac front end's Graphics menu and panel, or DM_PRESENT_FILTER / DM_PRESENT_FILTER_STRENGTH): how the game picture
+// is drawn into the window, taken at every present. Strength 0 to 1. Any thread
+enum { DM_PFX_OFF, DM_PFX_SHARPEN, DM_PFX_PIXEL, DM_PFX_CRT, DM_PFX_LOTTES, DM_PFX_LCD, DM_PFX_N };   // in the order they were added: the saved choice is the number
+int mtl_present_filter(float *strength);
+void mtl_present_filter_set(int mode, float strength);
+// Anisotropic filtering floor (nvn_mtl.m; the Mac front end's sidebar, or DM_ANISO): 0 = the game's own, else 2, 4, 8 or 16 taps at least for the game's filtered, mipmapped
+// samplers. Taken when the game makes its first sampler, so mtl_aniso_set must come before the guest runs; later calls only log that the change applies at the next launch. Any thread
+int mtl_aniso(void);
+void mtl_aniso_set(int n);
+// Present upscaling (nvn_mtl.m; the Mac front end's Quick settings, or DM_PRESENT_UPSCALE): 1 = MetalFX's spatial scaler where the picture is shown larger than the game renders it,
+// 0 = bilinear. Taken at every present; a GPU without the Metal 4 scaler scales bilinearly whatever is chosen. mtl_present_upscale answers the choice. Any thread
+int mtl_present_upscale(void);
+void mtl_present_upscale_set(int on);
+// Present anti-aliasing (nvn_mtl.m; Quick settings per game, or DM_PRESENT_AA): FXAA over the game's finished picture before upscaling and the filter. Taken at every present. Any thread
+enum { DM_PAA_OFF, DM_PAA_FXAA, DM_PAA_N };   // the saved choice is the number
+int mtl_present_aa(void);
+void mtl_present_aa_set(int mode);
+// NXForge: EDR highlights (nvn_mtl.m nxforge/present_edr.inc; Quick settings per game, or DM_PRESENT_EDR=on|off, DM_PRESENT_EDR_STRENGTH=0 to 100): on a screen with extended dynamic
+// range the window presents in extended linear sRGB and the picture's brightest parts rise above SDR white, up to 1 + (headroom - 1) x strength. Taken at every present. Any thread.
+// mtl_present_edr_headroom: the screen's potential headroom (1 = SDR), for the sidebar's note
+int mtl_present_edr(void);
+void mtl_present_edr_set(int on);
+int mtl_present_edr_strength(void);
+void mtl_present_edr_strength_set(int strength);
+float mtl_present_edr_headroom(void);
+// Frame interpolation to 120 fps (NXForge, frame_interp.inc): 0 off, 1 on, 2 auto (on where the screen runs at 120 Hz or more); DM_PRESENT_INTERP=off|on|auto read the first time.
+// mtl_present_interp_active: whether it applies now (on, or auto on a 120 Hz screen)
+int mtl_present_interp(void);
+void mtl_present_interp_set(int mode);
+int mtl_present_interp_active(void);
+// Pixel art (NXForge, nvn_mtl.m nxforge/pixel_art.inc; DM_PIXEL_ART=off|sharp|smooth|auto read the first time, off when unset): crisp, even pixels for 2D games. Sharp scales the picture
+// sharply, takes the art back to its own pixel grid where it finds one (DM_PIXEL_GRID), and leaves out MetalFX, FXAA, frame interpolation and EDR highlights while on; Smooth adds
+// MMPX's 2x enlargement of the art; Auto is off until the picture shows a steady pixel grid, then Sharp for the run. Taken at every present. Any thread.
+// mtl_present_pixel_active: the mode in effect now (DM_PIXEL_OFF, SHARP or SMOOTH); mtl_present_pixel_grid: 1 with the art's size and the picture texels per art pixel while a grid holds
+enum { DM_PIXEL_OFF, DM_PIXEL_SHARP, DM_PIXEL_SMOOTH, DM_PIXEL_AUTO, DM_PIXEL_N };   // the saved choice is the number
+int mtl_present_pixel(void);
+void mtl_present_pixel_set(int mode);
+int mtl_present_pixel_active(void);
+int mtl_present_pixel_grid(float *art_w, float *art_h, float *scale);
+// The CRT filters' scanline height (and the LCD grid's cell) in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
+int mtl_present_scanline(void);
+void mtl_present_scanline_set(int rows);
+// Picture size (nvn_mtl.m nxforge/present_filters.inc; the Mac sidebar's Display section, or DM_PRESENT_SCALE=fit|stretch|integer): Fit keeps the shape with bars, Stretch fills the
+// window, Pixel-perfect (integer) enlarges the game's pixels by the largest whole number that fits. Taken at every present. Any thread
+enum { DM_PSCALE_FIT, DM_PSCALE_STRETCH, DM_PSCALE_INTEGER, DM_PSCALE_N };   // the saved choice is the number
+int mtl_present_scale(void);
+void mtl_present_scale_set(int mode);
+// The time between the last presents (nvn_mtl.m, up to 254), oldest first, in ms; returns how many. age: ms since the newest (-1: none yet). The sidebar's frame-time graph. Any thread
+int mtl_present_times(double *ms, int max, double *age);
+// Frames put on screen so far (nvn_mtl.m, NVN and the Vulkan layer alike; frames the display link merged away are not counted): the front ends' frame-rate counters. Any thread
+uint64_t mtl_present_count(void);
+// Recording (nvn_mtl.m; the Mac front end's video recorder, capture_mac.m): while a recorder is set, every present also draws the frame as it is presented (the filter too) into a texture
+// next() hands out (an id<MTLTexture> of the system default device, bridged; NULL skips the frame), on a command buffer of its own as the whole-window screenshot does, and done() gets the same
+// texture back with the frame's present time (now_ns) once the GPU has drawn it. NULL stops; done() may still come for frames already drawn. Any thread
+typedef struct { void *(*next)(void *ctx); void (*done)(void *ctx, void *tex, uint64_t ns); void *ctx; } mtl_recorder;
+void mtl_record_set(const mtl_recorder *r);
+// The whole-window screenshot (nvn_mtl.m): at the next present the frame as presented, at the drawable's size, comes to cb on a GPU completion thread (NULL when it could not be drawn)
+#ifdef __OBJC__
+#include <CoreGraphics/CoreGraphics.h>
+void mtl_grab_next_present(void (^cb)(CGImageRef img));
+#endif
+// The share of the window's width (0 to 0.9) kept free on the right for a panel: the game picture fits and centres in the rest (nvn_mtl.m; the Mac's Quick settings sidebar). Any thread
+void mtl_present_inset(float share);
+// Host volume (hle_audio.c; the Mac's Quick settings): a gain 0 to 1 on everything the game plays, on top of its own volumes. Any thread
+void dm_audio_volume_set(float v);
+float dm_audio_volume(void);
+// Audio tap (hle_audio.c; the video recorder): the 48 kHz 16-bit PCM of the first output playing, as it goes to the sound card before the host volume, ch channels interleaved. fn runs on the
+// real-time audio thread: it must not block or allocate. NULL stops
+void dm_audio_tap_set(void (*fn)(void *ctx, const int16_t *pcm, uint32_t frames, int ch), void *ctx);
 // The shape of the picture the game presents (nvn_mtl.m present_now, present_shape: the layer's, not the crop's, w x h), called when its width / height changes: the front end
 // lays the picture out in that shape instead of 16:9, so a profile with screen_aspect under DM_SCREEN_ASPECT (1920x1344) fills a 1.43:1 screen and touches map onto the picture
 // as drawn. Before the first call the picture is 16:9. Called from the present thread; the front end switches to its main thread and does not block
@@ -68,9 +139,15 @@ void front_save_failed(int err);
 
 // GPU lost (called by the graphics backend's nvn_mtl.m gpu_lost_check, once): the first command buffer came back MTL4CommandQueueErrorAccessRevoked, so macOS runs none of the process's GPU work
 // any more and nothing is drawn again. By then presents have stopped and the game's waits for the GPU are released, so the game runs on with nothing on screen until the front end ends it.
-// The Mac front end leaves full screen, says why in an alert and quits with exit status 70; without a window it ends the run as the default weak implementation (nvn_mtl.m) does, which the iOS
+// The Mac front end leaves full screen, says why in an alert and quits as ⌘Q does; without a window it ends the run as the default weak implementation (nvn_mtl.m) does, which the iOS
 // front end keeps: a FATAL line and an abort. Called on Metal's feedback queue; the front end switches to the main thread itself and must not block
 void front_gpu_lost(void);
+
+// GPU memory nearly full (called by the graphics backend's nvn_mtl.m guard_stop, once): the game's GPU memory reached about 95% of Metal's working set, the most the driver can wire, and nothing more
+// could be let go. Past the working set the submit thread would wait in the kernel, unkillable, with the Mac frozen. The Mac front end stops the game's GPU work and sound, leaves full screen, says
+// why in an alert and quits as ⌘Q does, so the launcher's work after the game runs; without a window, and on iOS, the run ends with the host's graceful exit (the weak default in nvn_mtl.m).
+// used_mb, limit_mb: what is allocated, and the working set. Any thread; the front end switches to its main thread and must not block
+void front_gpu_memory_stop(unsigned long long used_mb, unsigned long long limit_mb);
 
 // Offline HTML pages (the web applet's offline pages; hle_web.c): a web view over the game picture (web_apple.m, Mac and iPhone). Called from guest threads; the front end works on its main
 // thread. front_web_open: dir = the folder the document path is relative to (an HtmlDocument's html-document), path = the document path with its query, callback = the URL prefix whose

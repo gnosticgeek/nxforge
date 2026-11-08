@@ -698,7 +698,8 @@ VKB(vkCreateSampler, VkResult, VkDevice d, const VkSamplerCreateInfo *ci, const 
         sd.magFilter = ci->magFilter == VK_FILTER_LINEAR ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
         sd.mipFilter = ci->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
         sd.sAddressMode = addr_mode(ci->addressModeU); sd.tAddressMode = addr_mode(ci->addressModeV); sd.rAddressMode = addr_mode(ci->addressModeW);
-        sd.maxAnisotropy = ci->anisotropyEnable ? (NSUInteger)fminf(fmaxf(ci->maxAnisotropy, 1), 16) : 1;
+        sd.maxAnisotropy = mtl_aniso_pick(ci->anisotropyEnable ? ci->maxAnisotropy : 1, ci->minFilter == VK_FILTER_LINEAR && ci->maxLod > 0 && !ci->compareEnable &&
+                                          !ci->unnormalizedCoordinates);   // maxLod > 0: the sampler reaches past level 0 (Vulkan has no "no mips" mode)
         if (ci->compareEnable) sd.compareFunction = (MTLCompareFunction)ci->compareOp;   // VkCompareOp and MTLCompareFunction share their values
         sd.borderColor = ci->borderColor >= VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE ? MTLSamplerBorderColorOpaqueWhite :
                          ci->borderColor >= VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK ? MTLSamplerBorderColorOpaqueBlack : MTLSamplerBorderColorTransparentBlack;
@@ -1242,7 +1243,7 @@ static id<MTLBlitCommandEncoder> blit(rs_t *s, uint32_t op) {
 // The occlusion query running counts the render encoder there is, each from a slot of its own in the submit's visibility buffer. It may have begun outside a render pass (Vulkan lets a query span
 // from before a pass to after it: Super Mario 3D All-Stars' Sunshine, Hagi's GX) and a pass's encoder may be split for a copy: every encoder started while it runs gets a slot
 static void occ_start(rs_t *s) {
-    subq_t *q = s->sq; if (!s->aq || !s->re) return;
+    subq_t *q = s->sq; if (!q || !s->aq || !s->re) return;
     if (q->nvis == q->cap) { RED1("occlusion query: more encoders than the visibility buffer has slots"); return; }
     q->occ[q->nvis] = (occ_t){s->aq, s->aq_first, q->nvis};
     [s->re setVisibilityResultMode:MTLVisibilityResultModeCounting offset:q->nvis * 8]; q->nvis++;

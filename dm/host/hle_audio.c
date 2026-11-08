@@ -3,6 +3,7 @@
 //       iOS defaults to real audio output (the product must have sound), tests that want silence set DM_AUDIO=0 explicitly; Mac defaults to the silent sink (replay / gate checks are silent), DM_AUDIO=1 for real audio output.
 // The contents of AudioOut / AudioOutBuffer / AudioOutParameter are read and written only through the interfaces below; the host defines its own internal layout and only writes the front part of the structs (AudioOut: the SDK's own fields, au_info).
 #include "hle.h"
+#include "front.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <TargetConditionals.h>
 #include <dispatch/dispatch.h>
@@ -150,6 +151,12 @@ static void pull_device(aout *a, uint8_t *dst, uint64_t bytes) {
     }
 }
 
+// Host volume and the recorder's tap (front.h): the gain as float bits, 1.0 by default; the tap and the output it listens to (the first one to play after it was set; -1 none yet)
+static _Atomic uint32_t g_host_vol = 0x3f800000u;
+void dm_audio_volume_set(float v) { v = v < 0 ? 0 : v > 1 ? 1 : v; uint32_t b; memcpy(&b, &v, 4); atomic_store(&g_host_vol, b); }
+float dm_audio_volume(void) { uint32_t b = atomic_load(&g_host_vol); float v; memcpy(&v, &b, 4); return v; }
+static void (*_Atomic g_tap_fn)(void *, const int16_t *, uint32_t, int); static void *_Atomic g_tap_ctx; static _Atomic int g_tap_id = -1;
+void dm_audio_tap_set(void (*fn)(void *ctx, const int16_t *pcm, uint32_t frames, int ch), void *ctx) { atomic_store(&g_tap_fn, NULL); atomic_store(&g_tap_ctx, ctx); atomic_store(&g_tap_id, -1); atomic_store(&g_tap_fn, fn); }
 static _Atomic uint64_t g_render_calls;   // Cumulative sound card callbacks (lifecycle verification: must keep growing after resume)
 uint64_t dm_audio_render_calls(void) { return atomic_load_explicit(&g_render_calls, memory_order_relaxed); }
 static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioTimeStamp *ts, UInt32 bus, UInt32 frames, AudioBufferList *bl) {
@@ -172,6 +179,11 @@ static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioT
         memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize);
     } else {
         pull_device(a, bl->mBuffers[0].mData, bl->mBuffers[0].mDataByteSize);
+        { int16_t *pcm = bl->mBuffers[0].mData; uint32_t n = bl->mBuffers[0].mDataByteSize / (2u * device_channels(a));   // NXForge: the capture tap and the host volume
+          void (*tap)(void *, const int16_t *, uint32_t, int) = atomic_load(&g_tap_fn);
+          if (tap) { int want = -1; if (atomic_compare_exchange_strong(&g_tap_id, &want, a->id) || want == a->id) tap(atomic_load(&g_tap_ctx), pcm, n, device_channels(a)); }
+          uint32_t vb = atomic_load_explicit(&g_host_vol, memory_order_relaxed);
+          if (vb != 0x3f800000u) { float v; memcpy(&v, &vb, 4); for (uint32_t i = 0; i < n * (uint32_t)device_channels(a); i++) pcm[i] = (int16_t)(pcm[i] * v); } }
         if (a->mute) memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize);
     }
     return noErr;
@@ -720,7 +732,8 @@ HLE_FORCE("_ZN2nn5audio25GetOutputStreamStatisticsEPNS0_16OutputStreamTypeEb", "
     (void)g; (void)reset; os_stats s = {0}; return s;
 }
 // SDK 21's input streams (a microphone, GameChat; Star Fox imports them), as AudioIn above: no device is listed and an open fails, so the calls that need an open stream are never reached;
-// they still answer without touching the guest object, in case a game ignores the open's result
+// they still answer without touching the guest object, in case a game ignores the open's result. The Legend of Zelda: Ocarina of Time (0400486024DEC000) lists the virtual input devices
+// at boot and aborted on the refused auddmg:u connection (Result 0xa99); its PR's own copy of this hook made a duplicate entry the loader refuses (exit 134 before nnMain)
 HLE_FORCE("_ZN2nn5audio23ListVirtualInputDevicesEPNS0_15AudioDeviceNameEi", "connect to auddmg:u; the host has no microphone: no device", int, h_is_List, void *names, int n) { (void)names; (void)n; return 0; }
 HLE_FORCE("_ZN2nn5audio31GetVirtualInputDevicePropertiesEPNS0_23VirtualDevicePropertiesERKNS0_15AudioDeviceNameE", "connect to auddmg:u; no such device", Result, h_is_Props, void *props, const char *name) { (void)props; (void)name; return RES_FAIL; }
 HLE_FORCE("_ZN2nn5audio15OpenInputStreamEPNS0_15InputStreamTypeEPvmRKNS0_15AudioDeviceNameERKNS0_12StreamFormatEi", "connect to auddmg:u; no microphone on the host: fails", Result, h_is_Open,

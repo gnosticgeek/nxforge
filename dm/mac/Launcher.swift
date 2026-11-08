@@ -263,14 +263,14 @@ private final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate 
         app.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         app.addItem(withTitle: "Quit \(name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.submenu = app; menu.addItem(item); NSApp.mainMenu = menu
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 660), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         w.title = name; w.isReleasedWhenClosed = false; w.delegate = self
-        w.contentMinSize = NSSize(width: 520, height: 0)
+        w.contentMinSize = NSSize(width: 720, height: 0)
         window = w
         if let screen = w.screen ?? NSScreen.main {
             w.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.midX - w.frame.width / 2, y: screen.visibleFrame.maxY))
         }
-        let host = NSHostingView(rootView: LauncherView(m: model, done: { [weak self] in self?.finish($0) }, fit: { [weak self] in self?.fit($0) }))
+        let host = NSHostingView(rootView: NXFLauncherView(m: model, done: { [weak self] in self?.finish($0) }, fit: { [weak self] in self?.fit($0) }))
         host.sizingOptions = []   // the Form's measured scroll content owns the height, including after collapse
         w.contentView = host
         host.layoutSubtreeIfNeeded()

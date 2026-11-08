@@ -227,7 +227,10 @@ void hid_keys_init(void) {
 //   saves a host texture's level 0 raw, every slice (a cube's six faces, a 3D texture's depth slices) (nvn_mtl.m dm_gfx_texraw), "addr <hex address>" logs what the host knows of a guest
 //   address (nvn_mtl.m dm_gfx_addr_note: its memory pool, a texture's storage, a recorded GPU write, the raw memory table, a sparse pool's page), "drag <x0> <y0> <x1> <y1> [seconds=0.3]" moves one finger in a straight line between the two normalized picture
 //   points over that time and lifts it (the touch screen's pans and swipes, hle_touch.c gesture_sample), "dump" logs what each guest thread waits on and the graphics wait points
-//   (crash_dump_now, as the iOS app's DM_LOG_PORT dump; scripts/regress.py asks for it before stopping a hung game), "program <n>" makes oe::ExecuteProgram(n) with no parameters (a multi-program application's way between its programs, headless), "webshot <path>" saves the offline page shown as a PNG, "#…" is ignored.
+//   (crash_dump_now, as the iOS app's DM_LOG_PORT dump; scripts/regress.py asks for it before stopping a hung game), "focus <1 | 2 | 3>" sets the focus state as the window's changes do (dm_focus_set), "program <n>" makes oe::ExecuteProgram(n) with no parameters (a multi-program application's way between its programs, headless), "webshot <path>" saves the offline page shown as a PNG, "#…" is ignored.
+//   "poolstat" logs the resident memory pools and how much of them is texture storage (each sampled texture has a Metal copy of its own, so those pool bytes are resident twice), with the
+//   largest pools (nvn_mtl.m dm_gfx_poolstat), "texstat" the host textures by kind: those made from guest memory by frames since their last use, render targets by shape with how many
+//   distinct guest storage addresses (and over what span) and live serials name them (nvn_mtl.m dm_gfx_texstat); "restop" what the residency set holds, by kind, with the largest
 //   Look at a screen, decide, press, look again: menus whose timing moves from run to run (loading) need no blind timed script
 static void *ctl_main(void *arg) {
     const char *path = arg; long off = 0; char line[1100];
@@ -243,6 +246,7 @@ static void *ctl_main(void *arg) {
                 if (!n || line[0] == '#') continue;
                 if (!strcmp(line, "dump")) { crash_dump_now("DM_CTL dump"); continue; }
                 if (!strncmp(line, "atrace ", 7)) { void probe_atrace(uint64_t lo, uint64_t n); char *e2; uint64_t a = strtoull(line + 7, &e2, 16); probe_atrace(a, strtoull(e2, NULL, 0)); continue; }   // probe.c
+                if (!strncmp(line, "focus ", 6)) { dm_focus_set(atoi(line + 6)); continue; }
                 if (!strncmp(line, "program ", 8)) { void dm_oe_execute(int index, const void *param, size_t n); LOG("DM_CTL: oe::ExecuteProgram(%d)", atoi(line + 8)); dm_oe_execute(atoi(line + 8), NULL, 0); continue; }
                 if (!strncmp(line, "webshot ", 8)) { void front_web_shot(const char *path); front_web_shot(line + 8); continue; }
                 if (!strncmp(line, "shot ", 5)) { dm_gfx_shot_at(1, line + 5); LOG("DM_CTL: screenshot of the next frame → %s", line + 5); continue; }
@@ -250,6 +254,8 @@ static void *ctl_main(void *arg) {
                 if (!strcmp(line, "restop")) { void dm_gfx_restop(void); dm_gfx_restop(); continue; }   // what the residency set holds (nvn_mtl.m res_top)
                 if (!strncmp(line, "addr ", 5)) { void dm_gfx_addr_note(uint64_t a, char *note, size_t n); char note[600]; uint64_t a = strtoull(line + 5, NULL, 16);   // what the host knows of a guest address
                     dm_gfx_addr_note(a, note, sizeof note); LOG("DM_CTL: addr %#llx:%s", (unsigned long long)a, note[0] ? note : " nothing known"); continue; }
+                if (!strcmp(line, "poolstat")) { void dm_gfx_poolstat(void); dm_gfx_poolstat(); continue; }   // texture storage inside the resident memory pools (nvn_mtl.m)
+                if (!strcmp(line, "texstat")) { void dm_gfx_texstat(void); dm_gfx_texstat(); continue; }   // host textures by kind, last use and render-target shape (nvn_mtl.m)
                 if (!strncmp(line, "texraw ", 7)) { void dm_gfx_texraw(uint64_t serial, const char *path); char *e2; uint64_t s = strtoull(line + 7, &e2, 10); while (*e2 == ' ') e2++; dm_gfx_texraw(s, e2); continue; }
                 if (!strncmp(line, "bufsnap ", 8)) {   // bufsnap <shader key> <hex address> <bytes> <path>: guest memory as the GPU left it right after that shader's next dispatch (nvn_mtl.m dm_gfx_bufsnap)
                     void dm_gfx_bufsnap(const char *key, uint64_t a, size_t n, const char *path); char key[32] = {0}, path[512] = {0}; unsigned long long a = 0, n = 0;
@@ -1561,7 +1567,9 @@ static void vib_send(const uint32_t *handles, const dm_vibration *values, int n)
     }
     dm_haptics_send(updates, count);
 }
-HLE_FORCE("_ZN2nn3hid20IsVibrationPermittedEv", "vibration permission: enabled and an output available", unsigned, h_hid_VibPermit, void) { return dm_haptics_available() != 0; }
+// Permission does not wait for a controller: games ask once at startup, often before the front end has seen one (Bloodstained: Curse of the Moon,
+// a Bluetooth controller about a second after nnMain), and never ask again, so it answers from the rumble setting and an output sink alone.
+HLE_FORCE("_ZN2nn3hid20IsVibrationPermittedEv", "vibration permission: rumble enabled and an output sink present", unsigned, h_hid_VibPermit, void) { return dm_haptics_enabled(); }
 // Games can cache handles once at startup, before GameController routes the pad's haptics (Unicorn Overlord kept an empty answer and sent every value to handle 0).
 // On Horizon handles are computed from npad id and style (libnx _hidGetVibrationDeviceHandles); vib_send checks for an output at each send. With rumble off they are handed out too,
 // as on a Switch whose vibration setting is off (IsVibrationPermitted answers false and nothing is felt), so turning it on while the game runs works in a game that asked only once.

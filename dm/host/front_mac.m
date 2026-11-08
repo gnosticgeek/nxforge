@@ -1,12 +1,13 @@
 // Mac front end: with DM_WINDOW=1 open a window (CAMetalLayer, for the graphics backend to present frames) + keyboard and controllers → dm_input; the guest runs on a large-stack thread instead and the main thread belongs to AppKit.
 // Without DM_WINDOW: the guest runs directly on the current thread, behaving the same as with no front end (windowless tests use this).
-// The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN=1 starts it that way. ⌘Q quits, and so does a controller's Home button held for 2 s and
-// confirmed with A (home_quit.h); the left mouse button is the touchscreen.
+// The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN=1 starts it that way. ⌘Q quits; the left mouse button is the touchscreen.
+// Esc (or ⇧⌘G, or the Graphics menu) opens the Quick settings sidebar over the game (DmSettings): the present filter, a frame-rate counter and mods, kept per game.
+// Holding a controller's Home button for 2 s and confirming with A quits only with DM_HOME_QUIT=1 (home_quit.h): in NXForge Home opens the sidebar.
 // Cheats (hle_cheats.c): the Cheats menu's rows toggle, reload (⌘R) and open the cheats folder; its first item "Show Cheats
 // Window" (⌘⇧C, or DM_CHEATS_WINDOW=1 at launch) opens a Cheats panel beside the game: sections, search, the master switch,
 // safe mode, values, details and the import of cheat files (see the code below).
-// Key map (Nintendo layout): WASD left stick, arrow keys D-pad (with Shift held: the right stick, for the camera), J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller.
-// Controllers: face buttons as on the iPhone, by position (right A, bottom B, top X, left Y) or on a Nintendo pad by its labels (pad_apple.h), shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
+// Key map (Nintendo layout): WASD left stick, arrow keys D-pad (with Shift held: the right stick, for the camera), J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller; the sidebar's Controls section remaps it and the controllers' buttons per game (controls_load).
+// Controllers: face buttons as on the iPhone, by position (right A, bottom B, top X, left Y) or on a Nintendo pad by its labels (pad_apple.h) while the face buttons are not remapped, shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
 // Each controller is a player of its own (local co-op): the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (pad_slots.h);
 // DM_PAD_MERGE=1 merges every controller into player 1 instead, DM_KBD_PLAYER=own makes the keyboard player 1 on its own, with the controllers from player 2 on.
 #import <Cocoa/Cocoa.h>
@@ -16,6 +17,10 @@
 #include "dm.h"
 #include "dm_input.h"
 #include "front.h"
+#include "quick_settings_mac.h"
+_Static_assert(QS_CHEAT_LABEL == DM_CHEAT_LABEL && QS_CHEAT_SECTION_START == DM_CHEAT_SECTION_START && QS_CHEAT_SECTION_END == DM_CHEAT_SECTION_END && QS_CHEAT_PAIR_ON == DM_CHEAT_PAIR_ON
+               && QS_CHEAT_PAIR_OFF == DM_CHEAT_PAIR_OFF && QS_CHEAT_ONCE == DM_CHEAT_ONCE, "quick_settings_mac.h's cheat flags follow dm.h's");
+#include "capture_mac.h"
 #include "hle.h"
 #include "pad_slots.h"
 #include "haptics_apple.h"
@@ -33,6 +38,9 @@ static void merge_rumble_to_s2(int on);
 #include "ctrl_prompt.h"
 #include <signal.h>
 #include <math.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 static CAMetalLayer *g_layer;
@@ -40,8 +48,14 @@ static uint64_t g_btn;
 static int g_w, g_a, g_s, g_d;
 static int g_rl, g_ru, g_rr, g_rd;   // arrow keys pressed with Shift held: the right stick (each goes back up as it went down, whatever Shift does meanwhile)
 static int g_input_on = 1;   // main thread: the game window is key, so its keyboard, mouse and controllers reach the game (input_release / input_resume)
+static int g_menu_open;   // main thread: the Quick settings sidebar is up (the window's focus notifications leave the game out of focus meanwhile)
+static void (*g_menu_toggle)(void);   // opens or closes it (DmSettings toggle:), for the controller's Home button
+static int g_open_by_pad;   // the sidebar is being opened from a controller: it starts with a selection and the controller's button glyphs
+static NSString *opt_key(NSString *what);
 
 void *front_metal_layer(void) { return (__bridge void *)g_layer; }
+static _Atomic int g_fullscreen;   // the window is in fullscreen (set on NSWindowDidEnter/ExitFullScreenNotification); the present path does without the display link there, or sets its latency (nvn_mtl.m link_sync)
+int front_fullscreen(void) { return g_fullscreen; }
 static _Atomic int g_screen_fps;   // the window's screen's maximumFramesPerSecond, kept up to date when the window moves to another screen
 int front_screen_max_fps(void) { return g_screen_fps; }
 static _Atomic CGDirectDisplayID g_screen_id;   // the window's screen (screen_refresh); 0 until the window is up, then the main display stands in
@@ -59,11 +73,9 @@ static void screen_refresh(NSScreen *screen) {   // main thread: refresh capabil
     g_screen_id = [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue];
     g_screen_variable_refresh = screen.minimumRefreshInterval > 0 && screen.maximumRefreshInterval > screen.minimumRefreshInterval;
 }
-static _Atomic int g_fullscreen;   // the window is in fullscreen (set when it has entered and when it has left)
 // The software keyboard input box is up (front_text_input). The game window is not key then, which is not a focus change the game should see: on hardware the inline keyboard is drawn inside
 // the game, which keeps its focus, and ShowKeyboard's applet sends its own out-of-focus / in-focus pair (DM_APPLET). Monster Hunter Rise dropped the hunter's name after the round trip and asked again. Main thread only
 static int g_text_box;
-int front_fullscreen(void) { return g_fullscreen; }   // nvn_mtl.m link_latency: frame latency 2 in variable-refresh fullscreen
 // The screen's refresh rate matched to the game's frame rate in fullscreen (front_screen_match, from PR #79; DM_SCREEN_MATCH=0 turns it off). 60 fps on a 144 Hz screen cannot be paced
 // evenly: the display link counts a tick on the refresh nearest each 1/60 s slot (nvn_mtl.m link_range), so frames stay up 2 and 3 refreshes in turn (13.9 / 20.8 ms) and Apple's HUD shows
 // the frame interval jumping between them. In fullscreen, a screen whose rate is not a multiple of the game's switches to the mode of the same size with the highest rate that is (144 → 120 Hz
@@ -146,15 +158,25 @@ static void push(void) {
     int32_t rx = (g_rr - g_rl) * 32767, ry = (g_ru - g_rd) * 32767;
     dm_input_set(g_btn, lx, ly, rx, ry);
 }
-static int key_bit(unsigned short code) {
-    switch (code) {
-        case 38: return 0;  case 40: return 1;  case 32: return 2;  case 34: return 3;    // J K U I → A B X Y
-        case 3: return 4;   case 5: return 5;                                            // F G → press stick
-        case 12: return 6;  case 14: return 7;  case 6: return 8;   case 8: return 9;    // Q E Z C → L R ZL ZR
-        case 36: return 10; case 48: return 11;                                          // Return Tab → + −
-        case 123: return 12; case 126: return 13; case 124: return 14; case 125: return 15; // ← ↑ → ↓
-    }
-    return -1;
+// Key and controller map (the sidebar's Controls section, quick_settings_mac.swift; saved per game). Actions 0–15 are the NpadButton bits (dm_input.h: A B X Y, the stick presses,
+// L R ZL ZR, + −, the D-pad), 16–19 the left stick (up, left, down, right) and 20 shaking the controller. The keyboard map holds a key code per action (0xffff: none), the controller map a
+// GameController input name (GCInputButtonA…, a key of the controller's physicalInputProfile.buttons) per button 0–11; a controller's D-pad and sticks stay where they are. The defaults are
+// the fixed map from before: WASD left stick, arrow keys D-pad, J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F / G the stick presses, Return=+ Tab=−, Space shakes; buttons by position
+enum { ACT_STICK_UP = 16, ACT_STICK_LEFT, ACT_STICK_DOWN, ACT_STICK_RIGHT, ACT_SHAKE, ACT_N, PAD_N = 12, KEY_NONE = 0xffff };
+static const unsigned short g_key_default[ACT_N] = {38, 40, 32, 34, 3, 5, 12, 14, 6, 8, 36, 48, 123, 126, 124, 125, 13, 0, 1, 2, 49};
+static unsigned short g_keys[ACT_N];
+static NSString *g_pad[PAD_N];
+static int g_pad_face_set;   // the saved map moves a face button (0–3): then it holds for every pad, a Nintendo one too
+static NSString *pad_default(int i) {
+    NSString *d[PAD_N] = {GCInputButtonB, GCInputButtonA, GCInputButtonY, GCInputButtonX, GCInputLeftThumbstickButton, GCInputRightThumbstickButton,
+                          GCInputLeftShoulder, GCInputRightShoulder, GCInputLeftTrigger, GCInputRightTrigger, GCInputButtonMenu, GCInputButtonOptions};
+    return d[i];
+}
+static void controls_load(void) {   // main thread: the saved map over the defaults (at start, and when the sidebar changes it)
+    NSDictionary *k = [NSUserDefaults.standardUserDefaults dictionaryForKey:opt_key(@"keys")], *p = [NSUserDefaults.standardUserDefaults dictionaryForKey:opt_key(@"pad")];
+    for (int i = 0; i < ACT_N; i++) { NSNumber *n = k[@(i).stringValue]; g_keys[i] = n ? n.unsignedShortValue : g_key_default[i]; }
+    for (int i = 0; i < PAD_N; i++) { NSString *n = p[@(i).stringValue]; g_pad[i] = [n isKindOfClass:NSString.class] ? n : pad_default(i); }
+    g_pad_face_set = 0; for (int i = 0; i < 4; i++) if (![g_pad[i] isEqualToString:pad_default(i)]) g_pad_face_set = 1;
 }
 // fn held with a letter: the arrow and function keys carry the same modifier flag, so the key must be a letter for this to be a Globe shortcut
 static int fn_shortcut(NSEvent *e) {
@@ -165,22 +187,24 @@ static ctrl_prompt g_cp; static int g_cp_confirm, g_cp_cancel;   // the controll
 static int cp_poll(void);
 static void on_key(NSEvent *e, int down) {
     if (!g_input_on) return;
-    unsigned short c = e.keyCode;
+    unsigned short c = e.keyCode; uint64_t m = 0;
     if (cp_blocks_input(g_cp.phase)) {   // the prompt has the keyboard: Return or J (A) is done, Escape or K (B) closes it, no key reaches the game
         if (down && g_cp.phase == CP_OPEN) { if (c == 53 || c == 40) g_cp_cancel = 1; else if (c == 36 || c == 38) g_cp_confirm = 1; cp_poll(); }
         return;
     }
-    switch (c) { case 13: g_w = down; break; case 0: g_a = down; break; case 1: g_s = down; break; case 2: g_d = down; break; }
     // An arrow key pressed with Shift held is the right stick until it is released; without Shift, the D-pad. The keyboard had no right stick: a 3D game's camera
     // could be turned only with a controller (Donkey Kong Bananza)
     int *rs = c == 123 ? &g_rl : c == 126 ? &g_ru : c == 124 ? &g_rr : c == 125 ? &g_rd : NULL;
     if (rs && (down ? (e.modifierFlags & NSEventModifierFlagShift) != 0 : *rs)) { *rs = down; push(); return; }
-    int b = key_bit(c);
-    uint64_t m = b >= 0 ? 1ull << b : c == 49 ? DM_BTN_SHAKE : 0;   // Space: shaken while held
+    for (int i = 0; i < ACT_N; i++) if (g_keys[i] == c) {
+        if (i < 16) m |= 1ull << i; else if (i == ACT_SHAKE) m |= DM_BTN_SHAKE;   // shaken while held
+        else if (i == ACT_STICK_UP) g_w = down; else if (i == ACT_STICK_LEFT) g_a = down; else if (i == ACT_STICK_DOWN) g_s = down; else g_d = down;
+    }
     g_btn = down ? (g_btn | m) : (g_btn & ~m);
     if (down && (m || c == 13 || c == 0 || c == 1 || c == 2)) cursor_hide_for_input();   // a key the game takes (WASD: the left stick)
     push();
 }
+#include "nxforge/front_mac_controls.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
 
 // Physical controllers (GameController) go to dm_pad_set_player, mapped as the iPhone's (DmGamepad.m read_pad, same layout); player 1's is ORed with the keyboard, a stick takes
 // whichever is deflected more (hle_hid.c). DM_KEYS uses player 1's path, so player 1's controller touched during a script takes it over.
@@ -191,6 +215,7 @@ static pad_slots g_slots;
 static GCController *g_held[DM_PLAYERS];   // the controller of each slot, kept alive while it holds it (the slot table keys on its pointer)
 static int g_merge, g_kbd_own;
 static int32_t pad_axis(float v) { return (int32_t)(fmaxf(-1.f, fminf(1.f, v)) * DM_STICK_MAX); }
+static int g_pad_quiet;   // the sidebar just closed: controllers stay silent until every button is up, so the press that closed it does not reach the game
 // A controller's state for player p, GameController or raw HID: a pressed button or a stick past 15% hides the pointer (cursor_hide_for_input), a resting stick's drift does not
 static void pad_set(int p, uint64_t m, int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
     const int32_t dead = DM_STICK_MAX * 15 / 100;
@@ -208,10 +233,10 @@ static void pad_read(GCExtendedGamepad *g) {
     hq_poll(); if (hq_blocks_input(g_hq.phase)) return;
     int p = g_merge ? 0 : pad_slot_of(&g_slots, (__bridge const void *)g.controller);
     if (p < 0 && (!g_press_to_join || hidpad_gc_unread(g.controller))) return;   // a model read from its HID reports: GameController's controller of it stays unread
-    uint64_t m = dm_pad_face(g);   // by position, a Nintendo pad by its labels
+    uint64_t m = 0; int i0 = 0; GCPhysicalInputProfile *pf = g.controller.physicalInputProfile;
+    if (!g_pad_face_set && dm_pad_labelled(g.controller)) { m = dm_pad_face(g); i0 = 4; }   // face buttons not remapped: a Nintendo pad by its labels (pad_apple.h), any other by position
+    for (int i = i0; i < PAD_N; i++) if (g_pad[i].length && pf.buttons[g_pad[i]].isPressed) m |= 1ull << i;   // the map (default by position: right A, bottom B, top X, left Y); a button a pad lacks: not pressed
     #define K(btn, bit) if (btn.isPressed) m |= bit
-    K(g.leftShoulder, DM_BTN_L); K(g.rightShoulder, DM_BTN_R); K(g.leftTrigger, DM_BTN_ZL); K(g.rightTrigger, DM_BTN_ZR);
-    K(g.buttonMenu, DM_BTN_PLUS); K(g.buttonOptions, DM_BTN_MINUS); K(g.leftThumbstickButton, DM_BTN_LS); K(g.rightThumbstickButton, DM_BTN_RS);   // nil on pads without them: not pressed
     K(g.dpad.left, DM_BTN_LEFT); K(g.dpad.up, DM_BTN_UP); K(g.dpad.right, DM_BTN_RIGHT); K(g.dpad.down, DM_BTN_DOWN);
     #undef K
     if (p < 0) {   // DM_PAD_PRESS_TO_JOIN=1: it joins at its first button
@@ -221,6 +246,7 @@ static void pad_read(GCExtendedGamepad *g) {
     if (cp_poll()) return;   // the controller applet's prompt has the controllers (front_ctrl_support)
     if (g_merge_s2_rumble && m) merge_rumble_to_s2(0);   // DM_PAD_MERGE: a button on this controller takes player 1's rumble back from a Switch 2 pad
     dm_haptics_apple_controller(p, g.controller);
+    if (g_pad_quiet) { if (m) { dm_pad_set_player(p, 0, 0, 0, 0, 0); return; } g_pad_quiet = 0; }
     pad_set(p, m, pad_axis(g.leftThumbstick.xAxis.value), pad_axis(g.leftThumbstick.yAxis.value), pad_axis(g.rightThumbstick.xAxis.value), pad_axis(g.rightThumbstick.yAxis.value));
 }
 // Home and Capture: without this macOS takes them as system gestures (Home opens the Games app). Capture has no function in the host, Home quits when it is held (hq_poll).
@@ -229,6 +255,7 @@ static void pad_keep_system_buttons(GCController *c) {
     for (NSString *b in @[GCInputButtonHome, GCInputButtonShare]) c.physicalInputProfile.buttons[b].preferredSystemGestureState = GCSystemGestureStateDisabled;
     c.extendedGamepad.buttonHome.pressedChangedHandler = ^(GCControllerButtonInput *b, float v, BOOL down) { (void)b; (void)v; (void)down; if (g_input_on) hq_poll(); };
 }
+#include "nxforge/front_mac_pad_nav.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
 static const char *pad_name(GCController *c) { return c.vendorName.UTF8String ?: "?"; }
 static void npad_name(int p, char *out, size_t cap) { uint32_t id = dm_player_npad(p); if (id == 0x20) snprintf(out, cap, "handheld"); else snprintf(out, cap, "%u", id); }
 static void pro_players_changed(GCController *gone) {
@@ -260,7 +287,7 @@ static void pads_changed(GCController *gone) {
     if (g_merge) {
         int any = 0;
         for (GCController *c in GCController.controllers) if (c.extendedGamepad && c != gone) {
-            any = 1; pad_keep_system_buttons(c); c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { (void)el; pad_read(g); };
+            any = 1; pad_keep_system_buttons(c); c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { pad_event(g, el); };   // Home opens the sidebar instead of the system's game overlay
             dm_motion_attach(c, 0);   // every controller is player 1: the last one moved drives its six-axis sensor
             pad_read(c.extendedGamepad);
         }
@@ -289,8 +316,8 @@ static void pads_changed(GCController *gone) {
         }
         int p = pad_slot_take(&g_slots, (__bridge const void *)c, pad_name(c));
         if (p < 0) { LOG("controller '%s' connected: all %d players are taken, not used", pad_name(c), DM_PLAYERS); continue; }
-        g_held[p] = c; pad_keep_system_buttons(c);
-        c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { (void)el; pad_read(g); };
+        g_held[p] = c; pad_keep_system_buttons(c);   // Home opens the sidebar instead of the system's game overlay
+        c.extendedGamepad.valueChangedHandler = ^(GCExtendedGamepad *g, GCControllerElement *el) { pad_event(g, el); };
         dm_motion_attach(c, p);
         npad_name(p, nb, sizeof nb); LOG("controller '%s' connected: player %d (npad %s)%s", pad_name(c), p + 1, nb, c.motion.hasRotationRate ? ", with motion (gyro)" : "");
         pad_read(c.extendedGamepad);
@@ -444,12 +471,12 @@ static NSTimer *g_hq_timer;   // while Home is held: the time runs on without a 
 static NSView *g_hq_hold, *g_hq_prompt; static CAShapeLayer *g_hq_ring;
 static char g_hq_text[HQ_TEXTS][256];
 static void hq_start(void) {
-    g_hq_on = hq_enabled(getenv("DM_HOME_QUIT"));
+    { const char *hq = getenv("DM_HOME_QUIT"); g_hq_on = hq && hq_enabled(hq); }   // NXForge: off unless DM_HOME_QUIT=1, since Home opens the Quick settings sidebar
     char title[256]; snprintf(title, sizeof title, "Quit %s?", DM_GAME_NAME);
     const char *def[HQ_TEXTS] = {"Keep holding to quit", title, "Unsaved progress will be lost.", "Quit", "Cancel"};
     const char *text = getenv("DM_HOME_QUIT_TEXT");   // a front end's, in the player's language: one line per text, in home_quit.h's order
     for (int i = 0; i < HQ_TEXTS; i++) hq_text_line(text, i, def[i], g_hq_text[i], sizeof g_hq_text[i]);
-    LOG("front end: hold the Home button to quit %s", g_hq_on ? "is on" : "is off (DM_HOME_QUIT=0)");
+    LOG("front end: hold the Home button to quit %s", g_hq_on ? "is on" : "is off (NXForge: DM_HOME_QUIT=1 turns it on)");
 }
 // The Home button setting for apps (macOS 27), once, when the first controller is there (GameController reads it only while one is connected): "system" in the log
 // explains a hold that does nothing, since the system keeps Home whatever the host asks. A front end reads the setting itself (GCControllerHomeButtonSettingsManager)
@@ -646,12 +673,14 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect = 
 - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self fitDrawable]; }
 @end
 
+#include "nxforge/front_mac_quick_settings.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
 // AppKit reports a refused fullscreen request only to the window delegate (there is no notification for it)
 static void (^g_fs_failed)(void);
 @interface DmWinDelegate : NSObject <NSWindowDelegate> @end
 @implementation DmWinDelegate
 - (void)windowDidFailToEnterFullScreen:(NSWindow *)w { (void)w; if (g_fs_failed) g_fs_failed(); }
 @end
+#include "nxforge/front_mac_fullscreen.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
 
 typedef struct { void (*fn)(void); } guest_arg;
 static void *guest_tramp(void *p) {
@@ -662,6 +691,18 @@ static void *guest_tramp(void *p) {
 
 // Metal reads MTL_HUD_ENABLED when the process makes its first device, which can be before the window: set from DM_METAL_HUD before main (set in front_run, the HUD did not show)
 __attribute__((constructor)) static void hud_env(void) { front_hud_env(); }
+// NXForge packs apps as org.nxforge.<title ID> (before the rename org.nxnative.<title ID>), and the defaults domain follows the bundle ID:
+// once, before anything reads it, copy the saved Quick settings (filter, volume, mods, FPS counter) from the old ID
+__attribute__((constructor)) static void prefs_from_old_id(void) {
+    @autoreleasepool {
+        NSString *bid = NSBundle.mainBundle.bundleIdentifier, *pre = @"org.nxforge.";
+        if (![bid hasPrefix:pre]) return;
+        NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+        if ([d persistentDomainForName:bid].count) return;
+        NSDictionary *old = [d persistentDomainForName:[@"org.nxnative." stringByAppendingString:[bid substringFromIndex:pre.length]]];
+        if (old.count) [d setPersistentDomain:old forName:bid];
+    }
+}
 
 // ---------- Cheats: the menu and the panel (hle_cheats.c holds every state; these only show it and call it) ----------
 
@@ -1511,8 +1552,10 @@ static NSArray<NSURL *> *found_cheat_files(NSString *build) {
 void front_run(void (*guest)(void)) {
     // A game: tell macOS its work is latency-critical, so the system does not trade its frame time for power while the frame rate is capped
     static id activity; activity = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"game"];
+    (void)activity;   // held for the process's life, never read
     if (!getenv("DM_WINDOW")) { guest(); return; }
     @autoreleasepool {
+        frame_times_begin();   // before the first present opens DM_NVN_TSV
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
         NSRect r = NSMakeRect(0, 0, 1280, 720);
@@ -1523,6 +1566,7 @@ void front_run(void (*guest)(void)) {
         // Fullscreen: without FullScreenPrimary the green button only zooms the window. The present path already scales
         // the game picture to fit the drawable with black bars around it, so fullscreen keeps the game's aspect ratio.
         win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
+        nxf_fullscreen_window(win);   // NXForge: full screen hides the menu bar and title bar (nxforge/front_mac_fullscreen.inc)
         NSView *v = win.contentView = [[DmGameView alloc] initWithFrame:r];
         v.wantsLayer = YES;
         g_layer = [CAMetalLayer layer];
@@ -1563,6 +1607,8 @@ void front_run(void (*guest)(void)) {
             dispatch_async(dispatch_get_main_queue(), ^{ [g_cheats_menu showPanel:nil]; });
         [[bar addItemWithTitle:@"Window" action:nil keyEquivalent:@""] setSubmenu:wm];
         [wm addItemWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"].keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagCommand;
+        graphics_start();
+        static DmSettings *opts; opts = [DmSettings new]; [opts menuIn:bar];
         NSApp.mainMenu = bar;
         const char *fs = getenv("DM_FULLSCREEN");   // 1 (or any value but 0): start in fullscreen; 0, the settings window's Window, or unset: a window
         if (fs && strcmp(fs, "0")) {
@@ -1589,6 +1635,22 @@ void front_run(void (*guest)(void)) {
                 (void)n; want = 0; entering = 0; g_fs_failed = nil; }];   // startup succeeded: later manual refusals have no startup request to retry
             dispatch_async(dispatch_get_main_queue(), enter);
         }
+        // The pointer hides after DM_CURSOR_HIDE seconds (3 by default, 0 keeps it) without movement over the game, and comes back with the next movement, click or scroll. macOS
+        // hides it only for a game that asks (a game window does not, and a pointer left over a fullscreen game stays on the picture); it is also shown whenever the window is
+        // not key, the pointer is outside the game view or Quick settings is open, so the title bar, the sidebar and other windows keep theirs (NX2Apple's patch 0032, upstream #755)
+        const char *ch = getenv("DM_CURSOR_HIDE"); double idle = ch && *ch ? atof(ch) : 3.0;
+        if (idle > 0) {
+            win.acceptsMouseMovedEvents = YES;
+            __block double last = CACurrentMediaTime(); __block int hidden = 0;
+            void (^show)(void) = ^{ if (hidden) { hidden = 0; [NSCursor unhide]; } };
+            [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged | NSEventMaskOtherMouseDragged |
+                NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown | NSEventMaskScrollWheel handler:^NSEvent *(NSEvent *e) { last = CACurrentMediaTime(); show(); return e; }];
+            [NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *t) {
+                (void)t; NSView *cv = win.contentView;
+                int over = win.isKeyWindow && NSApp.isActive && !g_menu_open && NSPointInRect([cv convertPoint:win.mouseLocationOutsideOfEventStream fromView:nil], cv.bounds);
+                if (hidden && !over) show();
+                else if (!hidden && over && CACurrentMediaTime() - last >= idle) { hidden = 1; [NSCursor hide]; } }];
+        }
         for (NSNotificationName nm in @[GCControllerDidConnectNotification, GCControllerDidDisconnectNotification])
             [NSNotificationCenter.defaultCenter addObserverForName:nm object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
                 GCController *c = n.object; int conn = n.name == GCControllerDidConnectNotification;
@@ -1601,7 +1663,16 @@ void front_run(void (*guest)(void)) {
         [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent *(NSEvent *e) {
             if (e.window != win) return e;   // Only swallow keys for the game window; other windows such as the software keyboard input box receive typing as usual
             if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
+            if (assign_key(e)) return nil;   // a key being assigned in the Controls section
             if (e.type == NSEventTypeKeyDown && fn_shortcut(e)) return e;   // fn (Globe) + a letter is the system's (fn+F full screen, GitHub issue #873), not the game's F
+            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
+            if (g_menu_open) {   // the arrow keys, Return and Space move through the sidebar as a controller does; other keys go to its controls
+                int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK
+                        : e.keyCode == 48 ? (e.modifierFlags & NSEventModifierFlagShift ? NAV_PREV : NAV_NEXT) : 0;   // Tab / Shift-Tab: the next / previous page
+                if (!nav) return e;
+                if (e.type == NSEventTypeKeyDown) { dm_qs_input(0, NULL, NULL, NULL, NULL); dm_qs_nav(nav); }
+                return nil;
+            }
             if (!e.isARepeat) on_key(e, e.type == NSEventTypeKeyDown);
             return nil;   // Swallow it to avoid the system beep
         }];
@@ -1620,7 +1691,7 @@ void front_run(void (*guest)(void)) {
         // another app taking the key window during an unattended run read as a hang (no frame after the last focus change)
         static int keep = -1; if (keep < 0) keep = getenv("DM_FOCUS_KEEP") && atoi(getenv("DM_FOCUS_KEEP"));
         [nc addObserverForName:NSWindowDidResignKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); if (!win.miniaturized && !g_text_box && !keep) dm_focus_set(2); }];
-        [nc addObserverForName:NSWindowDidBecomeKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_resume(); dm_focus_set(1); }];
+        [nc addObserverForName:NSWindowDidBecomeKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; if (g_menu_open) return; input_resume(); dm_focus_set(1); }];   // the sidebar keeps the game out of focus until it closes
         [nc addObserverForName:NSWindowDidMiniaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); dm_focus_set(3); dm_audio_suspend(1); dm_gfx_suspend(1); }];
         [nc addObserverForName:NSWindowDidDeminiaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; dm_gfx_suspend(0); dm_audio_suspend(0); dm_focus_set(2); }];
         display_awake(win.isKeyWindow);   // the window may have become key (makeKeyAndOrderFront above) before these observers were installed
@@ -1704,28 +1775,23 @@ int front_text_input(const char *title, const char *sub, const char *guide, cons
     return 1;
 }
 
-// GPU lost (front.h): macOS runs none of the game's GPU work any more and nothing is drawn again. In full screen the frozen game held the whole screen (#1326: WindowServer froze for 40 s
-// and its watchdog killed it), so the window leaves full screen first and the alert comes once it has, or after 3 s if it has not. Then the app quits with exit status 70
-// (EX_SOFTWARE), so a launcher or script that runs it sees a failed run: exit() runs the same atexit handlers as ⌘Q's terminate (the one will-terminate
-// observer, haptics_apple.m's, is an atexit handler too), whose exit status is 0
-void front_gpu_lost(void) {
-    if (!g_layer) die("GPU access revoked: macOS runs none of this process's GPU work any more");
-    LOG("front end: the GPU no longer runs the game's work; telling the player and quitting");
+// The game stops over a GPU problem. A stopped game in full screen holds the whole screen (GitHub issue #1326: WindowServer froze for 40 s and its watchdog killed it), so the window leaves
+// full screen first and the alert comes once it has, or after 3 s if it has not. Then the app quits as ⌘Q does. Any thread
+static void front_stop_alert(NSString *title, NSString *text) {
     dispatch_async(dispatch_get_main_queue(), ^{
         __block int told = 0;
         void (^tell)(void) = ^{
             if (told++) return;
             NSAlert *a = [NSAlert new];
             a.alertStyle = NSAlertStyleCritical;
-            a.messageText = [@"The GPU stopped running " stringByAppendingString:@(DM_GAME_NAME)];   // @(): the name is UTF-8, which %s would not read as such
-            a.informativeText = [NSString stringWithFormat:@"After a GPU error, macOS stopped running the game's GPU work, so nothing more can be drawn and the game quits. The log has the details. "
-                                                           "Please report it on GitHub with python3 scripts/bug_report.py %@, which collects the log.", @(DM_GAME_ID)];
+            a.messageText = title;
+            a.informativeText = text;
             [a addButtonWithTitle:@"Quit"];
             // An app opened in the background would leave the alert behind other apps' windows, and DM_WINDOW_TOP's floating game window would cover it
             [NSApp activateIgnoringOtherApps:YES];
             [a layout]; NSWindow *game = g_win; if (game && a.window.level <= game.level) a.window.level = game.level + 1;
             [a runModal];
-            exit(70);
+            [NSApp terminate:nil];   // as ⌘Q
         };
         NSWindow *win = g_win;
         if (!(win.styleMask & NSWindowStyleMaskFullScreen)) { tell(); return; }
@@ -1733,4 +1799,21 @@ void front_gpu_lost(void) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), tell);
         [win toggleFullScreen:nil];
     });
+}
+// GPU memory nearly full (front.h). The gate first, off the calling thread: dm_gfx_suspend waits for the submission in progress, which may be the caller, and no more GPU work may grow what is held
+void front_gpu_memory_stop(unsigned long long used_mb, unsigned long long limit_mb) {
+    if (!g_layer) { kill(getpid(), SIGTERM); return; }
+    LOG("front end: GPU memory is nearly full; telling the player and quitting");
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ dm_audio_suspend(1); dm_gfx_suspend(1); });
+    front_stop_alert([@(DM_GAME_NAME) stringByAppendingString:@" stopped: GPU memory is nearly full"],   // @(): the name is UTF-8, which %s would not read as such
+                     [NSString stringWithFormat:@"The game reached %llu MB of the %llu MB macOS can keep in GPU memory. Going on could freeze this Mac, so the game stops here; progress since your last save is lost. The log has the details. "
+                                                 "Please report it on GitHub with python3 scripts/bug_report.py %@, which collects the log.", used_mb, limit_mb, @(DM_GAME_ID)]);
+}
+// GPU lost (front.h): macOS runs none of the game's GPU work any more and nothing is drawn again (#1332)
+void front_gpu_lost(void) {
+    if (!g_layer) die("GPU access revoked: macOS runs none of this process's GPU work any more");
+    LOG("front end: the GPU no longer runs the game's work; telling the player and quitting");
+    front_stop_alert([@"The GPU stopped running " stringByAppendingString:@(DM_GAME_NAME)],   // @(): the name is UTF-8, which %s would not read as such
+                     [NSString stringWithFormat:@"After a GPU error, macOS stopped running the game's GPU work, so nothing more can be drawn and the game quits. The log has the details. "
+                                                 "Please report it on GitHub with python3 scripts/bug_report.py %@, which collects the log.", @(DM_GAME_ID)]);
 }

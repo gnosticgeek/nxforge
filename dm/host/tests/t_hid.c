@@ -54,6 +54,9 @@ void dm_gfx_texlist(int target) { (void)target; }
 // the guest address space (hle_svc.c): the unit test has none, so every stack is a host stack and the big-stack take-overs (the controller applet) run on it directly (hle_bigstack.c)
 int dm_guest_as_contains(uintptr_t a) { (void)a; return 0; }
 void dm_gfx_restop(void) {}
+void dm_gfx_poolstat(void) {}
+void dm_gfx_texstat(void) {}
+void dm_focus_set(int st) { (void)st; }   // DM_CTL "focus"
 void dm_gfx_texraw(uint64_t serial, const char *path) { (void)serial; (void)path; }
 void dm_ctl_peek(uint64_t a, int n) { (void)a; (void)n; }
 void crash_dump_now(const char *why) { (void)why; }
@@ -340,18 +343,18 @@ static void t_vibration(void) {
     g_mode = 1; ids((uint32_t[]){0, 1, NPAD_HANDHELD}, 3); dm_pad_players(3);
     CHECK(!h_hid_VibPermit() && !h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY), "no sink: no vibration devices");
     dm_haptics_init(vibration_sink, 1);
-    CHECK(!h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY) == 2,
-          "startup handles do not wait for a routed haptics output");
+    CHECK(h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY) == 2, "handles at startup, before any controller output is routed");
     CHECK(!h_hid_VibMounted(&h[0]), "no routed output: device not mounted");
-    h_hid_SendVib(&h[0], &v);
+    vibration_calls = 0; h_hid_SendVib(&h[0], &v);
+    CHECK(!vibration_calls, "a send before a controller output is routed is dropped");
     CHECK(dm_haptics_actual(0, 0).amplitude_low == 0, "a value before routing is not retained");
     dm_haptics_route(0, 1); dm_haptics_route(1, 1);
-    h_hid_SendVib(&h[0], &v);
-    CHECK(!memcmp(&vibration[0].motor[0], &v, sizeof v), "cached startup handles reach an output routed later");
+    vibration_calls = 0; h_hid_SendVib(&h[0], &v);
+    CHECK(vibration_calls == 1 && vibration[0].motor[0].amplitude_low == 0.25f, "a startup handle reaches a controller that connects later");
     CHECK(h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY) == 2, "two vibration motors available");
     CHECK(h[0] == 3 && h[1] == 0x10003, "SDK vibration handle bytes: style 3, npad 0, motors 0 and 1");
     CHECK(!h_hid_VibHandles(h, 2, &id, STYLE_HANDHELD), "wrong controller style gets no motors");
-    CHECK(!h_hid_VibHandles(h, 2, &(uint32_t){2}, STYLE_FULLKEY), "disconnected player gets no motors");
+    CHECK(!h_hid_VibHandles(h, 2, &(uint32_t){DM_PLAYERS}, STYLE_FULLKEY), "an npad id past the players gets no motors");
     CHECK(h_hid_VibHandles(h, 1, &id, STYLE_FULLKEY) == 1, "handle count respects caller capacity");
     h_hid_SendVib(&h[0], &v); h_hid_VibActual(&got, &h[0]);
     CHECK(!memcmp(&got, &v, sizeof v) && vibration[1].motor[0].amplitude_low == 0, "game value is retained for the addressed player only");
@@ -380,7 +383,8 @@ static void t_vibration(void) {
     { int m; CHECK(!vib_targets(3, &m), "old docked handle is not valid in handheld mode"); }
     CHECK(!h_hid_VibMounted(&(uint32_t){3}) && h_hid_VibMounted(&h[0]), "mounted follows the connected controller's style");
     dm_haptics_route(1, 0);
-    CHECK(!h_hid_VibPermit(), "disconnecting the last output disables vibration");
+    vibration_calls = 0; h_hid_SendVib(&h[0], &v);
+    CHECK(h_hid_VibPermit() && !vibration_calls, "permission stays after the last output disconnects; sends are dropped");
     dm_haptics_init(vibration_sink, 0); dm_haptics_route(0, 1);
     CHECK(!h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_HANDHELD) == 2, "rumble disabled: not permitted, but the handles exist, as on a Switch");
     dm_haptics_set_enabled(1);
