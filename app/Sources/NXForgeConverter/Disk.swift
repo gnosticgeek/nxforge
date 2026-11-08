@@ -19,6 +19,36 @@ enum Disk {
         return v?.volumeAvailableCapacityForImportantUsage
     }
 
+    /// The output folder (Settings.outDir), kept here by the model for buildHome.
+    static var outDir: String?
+
+    /// Whether a path is on a network share. macOS mounts an SMB share with quarantine: every file written to it is marked, so
+    /// the tools a build compiles into its build folder (nx_extract, the Mac host) are killed by Gatekeeper ("Apple could not
+    /// verify nx_extract", exit -9). A game there is built in a folder on a local drive instead (buildHome).
+    static func isNetwork(_ path: String) -> Bool {
+        (try? path.url.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) == false
+    }
+
+    /// The folder that holds a game's <title ID>_build (and _survey): the game folder itself, or for a game on a network share
+    /// "NXForge Builds/<game folder's name>" in the output folder when that is on a local drive, else in ~/Documents.
+    static func buildHome(_ gameFolder: String) -> String {
+        guard isNetwork(gameFolder) else { return gameFolder }
+        let base = outDir.flatMap { isNetwork($0) ? nil : $0 } ?? NSHomeDirectory() + "/Documents"
+        return "\(base)/NXForge Builds/\(gameFolder.lastComponent)"
+    }
+
+    /// The build folder to pass as --work-dir: nil for a game built beside its files, else the existing _build in buildHome or
+    /// <buildHome>/<title ID>_build.
+    static func workDir(_ gameFolder: String) -> String? {
+        let home = buildHome(gameFolder)
+        guard home != gameFolder else { return nil }
+        if let b = ((try? FileManager.default.contentsOfDirectory(atPath: home)) ?? []).first(where: { $0.hasSuffix("_build") }) { return "\(home)/\(b)" }
+        return "\(home)/\(GameNeeds.titleID(gameFolder) ?? "game")_build"
+    }
+
+    /// Where the app goes when no -o is given: the output folder, else beside the build folder.
+    static func appHome(_ gameFolder: String) -> String { outDir ?? buildHome(gameFolder) }
+
     static func volumeName(_ path: String) -> String {
         (try? path.url.resourceValues(forKeys: [.volumeLocalizedNameKey]).volumeLocalizedName) ?? "the disk"
     }
@@ -67,18 +97,20 @@ enum Disk {
     /// A first build: about twice the game files plus 10 GB (the extract, the shaders and the app, as the README says).
     /// A rebuild: room for a second copy of the app (the old one stays until the new one is complete) and the shader cache's
     /// growth. Either way plus what the shared Metal cache may still grow by. Each volume is checked for its own share: the
-    /// build folder (<title ID>_build beside the game files) on the game folder's, the app on the output folder's, the Metal
+    /// build folder (<title ID>_build, in buildHome) on its own, the app on the output folder's, the Metal
     /// cache on the home folder's; the one with the least room to spare is returned.
     /// firstBuild: a Switch 2 game's own first-build need (Source.firstBuildBytes); gameBytes: the game files' size.
     static func need(gameDir: String, outDir: String?, app: String?, firstBuild: Int64? = nil, gameBytes: Int64? = nil) -> Need? {
-        let cached = ((try? FileManager.default.contentsOfDirectory(atPath: gameDir)) ?? []).contains { $0.hasSuffix("_build") }
+        let home = buildHome(gameDir)
+        let cached = ((try? FileManager.default.contentsOfDirectory(atPath: home)) ?? []).contains { $0.hasSuffix("_build") }
         let bytes = gameBytes ?? Estimates.gameBytes(gameDir)
         let total: Int64 = cached ? (app.map(size) ?? bytes) + (firstBuild != nil ? 10 << 30 : 4 << 30) : firstBuild ?? bytes * 2 + (10 << 30)
         // the app's share: a second copy of the old app on a rebuild, about the game files' size on a first build
         let appBytes = min(total, cached ? (app.map(size) ?? bytes) : bytes)
         var shares: [(path: String, bytes: Int64)] = []
-        if let o = outDir, volumeID(o) != volumeID(gameDir) { shares = [(gameDir, total - appBytes), (o, appBytes)] }
-        else { shares = [(gameDir, total)] }
+        let appDir = outDir ?? home
+        if volumeID(appDir) != volumeID(home) { shares = [(home, total - appBytes), (appDir, appBytes)] }
+        else { shares = [(home, total)] }
         let metal = max(0, metalCacheLimit - size(metalCache))
         if let i = shares.firstIndex(where: { volumeID($0.path) == volumeID(cacheDir) }) { shares[i].bytes += metal }
         else if metal > 0 { shares.append((cacheDir, metal)) }
@@ -95,7 +127,7 @@ enum Disk {
     /// the home folder's (the shared Metal cache and the script's temporary files there).
     static func watched(gameDir: String, outDir: String?) -> [String] {
         var seen = Set<String>()
-        return [gameDir, outDir, NSHomeDirectory()].compactMap { $0 }.filter { seen.insert(volumeID($0)).inserted }
+        return [buildHome(gameDir), outDir, NSHomeDirectory()].compactMap { $0 }.filter { seen.insert(volumeID($0)).inserted }
     }
 
     /// The lowest free space among the watched volumes: (path, bytes free).

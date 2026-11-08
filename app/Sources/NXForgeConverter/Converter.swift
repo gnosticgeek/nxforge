@@ -201,8 +201,8 @@ final class BuildRun {
 
     /// The build's stages and messages to <id>_build/logs/converter-<time>.log (beside the tools' own logs), for the Builds page
     /// and for a failed build's report; nil when there is no build folder to put it in.
-    nonisolated private static func writeLog(_ dir: String, run r: BuildRun) -> String? {
-        let fm = FileManager.default
+    nonisolated private static func writeLog(_ gameDir: String, run r: BuildRun) -> String? {
+        let fm = FileManager.default, dir = Disk.buildHome(gameDir)
         guard let b = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).first(where: { $0.hasSuffix("_build") }) else { return nil }
         let logs = "\(dir)/\(b)/logs"
         try? fm.createDirectory(atPath: logs, withIntermediateDirectories: true)
@@ -215,8 +215,8 @@ final class BuildRun {
     }
 
     /// The stage keys (sha256 of each stage's inputs, <id>_build/**/*.key) that let the script reuse a stage.
-    nonisolated private static func forgetStageKeys(_ dir: String) {
-        let fm = FileManager.default
+    nonisolated private static func forgetStageKeys(_ gameDir: String) {
+        let fm = FileManager.default, dir = Disk.buildHome(gameDir)
         for b in ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).filter({ $0.hasSuffix("_build") }) {
             let root = "\(dir)/\(b)"
             for case let rel as String in fm.enumerator(atPath: root) ?? NSEnumerator() where rel.hasSuffix(".key") && !rel.hasPrefix("extract/") {
@@ -243,6 +243,10 @@ final class BuildRun {
         if !job.ios, let id = job.sign { args += ["--mac-sign", id] }
         if !job.ios, let o = job.rebuild ?? job.out { args += ["-o", o] }
         if job.cleanup != .off { args += ["--cleanup", job.cleanup.rawValue] }
+        if let w = Disk.workDir(job.folder) {   // a game on a network share: build on a local drive (Disk.isNetwork)
+            try? FileManager.default.createDirectory(atPath: (w as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            args += ["--work-dir", w]
+        }
         p.arguments = args
         p.currentDirectoryURL = URL(fileURLWithPath: tree)
         var env = ProcessInfo.processInfo.environment

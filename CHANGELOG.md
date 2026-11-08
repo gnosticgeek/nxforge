@@ -5,6 +5,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 ## 0.20.1 (2026-11-08)
 
 - **NXForge Converter 0.4.1** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): no more false "0.0 GB free" for a game on a network share or an output folder on an exFAT drive, and each drive a build writes to is checked for its own share.
+- **Games on a network share build again.** The Converter builds them in a folder on a local drive, since Gatekeeper kills tools compiled on an SMB share; with `--work-dir`, `build_ipa_from_nsp.py` now puts a game's `<title ID>_survey/` beside the build folder too, so nothing is written to the game folder.
 
 ## 0.20.0 (2026-11-08)
 

@@ -10,7 +10,8 @@ struct GameInfo: Hashable {
     static func read(_ path: String, source: SourceInfo? = nil) -> GameInfo {
         let fm = FileManager.default
         let dir = Source.folder(of: path)
-        let build = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).first { $0.hasSuffix("_build") }.map { "\(dir)/\($0)" }
+        let home = Disk.buildHome(dir)
+        let build = ((try? fm.contentsOfDirectory(atPath: home)) ?? []).first { $0.hasSuffix("_build") }.map { "\(home)/\($0)" }
         // the newest extracted version's icon (nx_extract writes <version>/icon.jpg)
         let icon = build.flatMap { b -> URL? in
             let ex = b + "/extract"

@@ -45,7 +45,7 @@ final class AppModel {
             guard settings != oldValue else { return }
             settings.save()
             if settings.appearance != oldValue.appearance { applyAppearance() }
-            if settings.outDir != oldValue.outDir { measure() }   // the app's drive is checked for room too
+            if settings.outDir != oldValue.outDir { Disk.outDir = settings.outDir; measure() }   // the app's drive is checked for room too
         }
     }
     var checks: [Check]?
@@ -153,6 +153,7 @@ final class AppModel {
 
     init() {
         AppModel.shared = self
+        Disk.outDir = settings.outDir
         run.onChange = { [weak self] in
             guard let self else { return }
             DockProgress.show(self.run)
@@ -265,7 +266,7 @@ final class AppModel {
     func measure() {
         guard let dir = gameFolder else { needs = [:]; diskNeed = nil; expected = [:]; return }
         let repo = env?.repo, out = settings.outDir, src = source
-        let app = Engine.apps(in: out ?? dir).first?.app ?? Engine.apps(in: dir).first?.app
+        let app = Engine.apps(in: Disk.appHome(dir)).first?.app ?? Engine.apps(in: dir).first?.app
         let builds = Engine.builds()
         Task.detached {
             let n = GameNeeds.detect(dir: dir, repo: repo)
@@ -338,7 +339,7 @@ final class AppModel {
     var updatesAvailable: Bool { engineUpdate != nil }
 
     /// The folder new apps go to: the setting, else beside the game files.
-    var outputFolder: String? { settings.outDir ?? gameFolder }
+    var outputFolder: String? { settings.outDir ?? gameFolder.map(Disk.buildHome) }
 
     /// Build the chosen game, or with plan only say what a build would reuse and redo (--plan).
     func build(rebuild: String? = nil, plan: Bool = false) {
@@ -501,7 +502,7 @@ final class AppModel {
         guard !run.running else { return }
         let builds = Engine.builds()
         if page == .builds, let b = builds.first(where: { $0.app == selectedBuild }) ?? builds.max(by: { $0.builtAt < $1.builtAt }) { rebuildAsked(b); return }
-        if let dir = gameFolder, let a = Engine.apps(in: settings.outDir ?? dir).first ?? Engine.apps(in: dir).first, ready { build(rebuild: a.app) }
+        if let dir = gameFolder, let a = Engine.apps(in: Disk.appHome(dir)).first ?? Engine.apps(in: dir).first, ready { build(rebuild: a.app) }
     }
 
     /// A folder (or a game file in it) dropped on the window or the Dock icon becomes the game folder.
@@ -598,7 +599,7 @@ final class AppModel {
 
     /// The game's build cache, <game folder>/<title ID>_build.
     var buildCache: String? {
-        guard let dir = gameFolder else { return nil }
+        guard let dir = gameFolder.map(Disk.buildHome) else { return nil }
         return ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).first { $0.hasSuffix("_build") }.map { "\(dir)/\($0)" }
     }
 
