@@ -7,6 +7,7 @@ The screen before the game starts shows the settings the game supports. A settin
 - [Controls](#controls): [Touch feedback](#touch-feedback), [Game rumble](#game-rumble), [Rumble strength](#rumble-strength), [Rumble cutoff](#rumble-cutoff), [Press a button to join](#press-a-button-to-join)
 - [Performance](#performance): [Frame buffering](#frame-buffering), [Metal 4 pipelines](#metal-4-pipelines), [Pipeline prebuild](#pipeline-prebuild), [Encode thread](#encode-thread), [Hold frames when late](#hold-frames-when-late), [Performance HUD](#performance-hud), [Reset to tested defaults](#reset-to-tested-defaults)
 - [The Mac settings window](#the-mac-settings-window): [Display mode](#display-mode)
+- [Quick settings on the Mac](#quick-settings-on-the-mac)
 - [In-game menu](#in-game-menu)
 - [TV](#tv)
 - [Settings in a file](#settings-in-a-file)
@@ -43,7 +44,7 @@ Hades II goes up to 300 %: it renders its whole picture, the HUD and text includ
 
 ### Upscaling
 
-A game that renders below the screen's resolution is scaled up to the screen. **Standard**, the default, scales smoothly; **MetalFX** uses Apple's MetalFX upscaler, which sharpens edges and text as it scales.
+A game that renders below the screen's resolution is scaled up to the screen. **Standard** scales smoothly; **MetalFX** uses Apple's MetalFX upscaler, which sharpens edges and text as it scales. Standard is the default on an iPhone or iPad, MetalFX on a Mac.
 
 ```mermaid
 flowchart LR
@@ -58,7 +59,7 @@ Breath of the Wild renders 1280x720 in handheld mode. Docked it renders its worl
 
 - **When to change it:** turn it on if the picture looks soft and the device has GPU time to spare: on a Mac, or on an iPhone in handheld mode at 30 fps. For long sessions at 60 fps on an iPhone leave it at Standard.
 - **Cost:** more GPU time each frame, which can increase heat on an iPhone. [Breath of the Wild's measurements](../dm/games/01007EF00011E000/README.md#upscaling-current) cover Mac and iPhone; the matching iPhone Standard run and MetalFX's share of the thermal cost remain unmeasured. Nothing changes while the game's picture is as large as the screen. Unsupported devices and sizes use Standard scaling.
-- **On the Mac:** choose **MetalFX** under **Upscaling** in the [settings window](#the-mac-settings-window)'s Advanced settings, or set `DM_PRESENT_UPSCALE=metalfx` in its `env.txt` (off by default). It helps in a large window or on a 4K screen.
+- **On the Mac:** MetalFX is on unless you choose **Standard** under **Upscaling** in the [settings window](#the-mac-settings-window), turn off **MetalFX upscaling** in Quick settings (Esc) while the game runs, or set `DM_PRESENT_UPSCALE=off` in its `env.txt`. Both places save the same choice. It helps in a large window, full screen on a Retina display or on a 4K screen. With the **CRT** filter on, the picture is scaled the standard way, since the filter needs the game's own pixels. (Of the filters only `DM_PRESENT_FILTER` reaches, Sharpen works on the MetalFX-scaled picture; Pixel-perfect, CRT-Lottes and LCD Grid scale the standard way too.)
 
 ### Game's upscaler
 
@@ -221,11 +222,17 @@ Sets every setting back to the game's tested default; **Play** then forgets your
 
 ## The Mac settings window
 
-A Mac app ([A Mac app](development.md#a-mac-app)) shows its settings in a window before the game starts. They are the same settings as on the iPhone, with the same defaults. The window shows the most used ones first: **Frame rate**, **Render scale**, **Console mode**, **Game language**, **Display mode** and **Game rumble**, when the game has them. **Render scale** shows the picture's size in pixels beside the percentage for the chosen **Console mode**, when the game's profile has it (Breath of the Wild: 1600 × 900 docked, 1280 × 720 handheld at 100 %). The others are under **Advanced settings**, in the usual sections, with **Reset to tested defaults**. The window remembers whether Advanced settings is open. **Frame-rate counter** and **Touch feedback** are only on the iPhone.
+A Mac app ([A Mac app](development.md#a-mac-app)) shows its settings in a window before the game starts. They are the same settings as on the iPhone, with the same defaults. A header shows the game's icon, name and version over its artwork (the app's `Resources/dm/banner.jpg` or `.png` when it has one, otherwise its icon, enlarged). Under it are three tabs, each with its settings in boxes side by side:
+
+- **General**: the most used settings, when the game has them. **Game** (**Console mode**, **Game language**, **Display mode**), **Controls** (**Game rumble**, **Rumble strength**, **Rumble cutoff**, **Press a button to join**, **Switch 2 controllers**) and **Cloud saves** ([Cloud saves](#cloud-saves)).
+- **Graphics**: every picture setting. **Resolution** (**Render scale**, **Dynamic resolution**, **Upscaling**, **Game's upscaler**, **Picture shape**, **Anti-aliasing**), **Frame rate** (**Frame rate**, **120 fps frame interpolation**) and **HDR** (**HDR highlights** and its boost).
+- **Advanced**: the performance settings, in **Pipelines** (**Metal 4 pipelines**, **Pipeline prebuild**, **Encode thread**) and **Display** (**Frame buffering**, **Hold frames when late**, **Performance HUD**), with **Reset to tested defaults** under them.
+
+**Render scale** shows the picture's size in pixels beside the percentage for the chosen **Console mode**, when the game's profile has it (Breath of the Wild: 1600 × 900 docked, 1280 × 720 handheld at 100 %). The window remembers which tab was open. **Frame-rate counter** and **Touch feedback** are only on the iPhone.
 
 Click **Play** (or press Return) to start the game. **Quit**, ⌘Q or closing the window ends the app without the game. The app remembers your choices for that game, and a game started without the window, from a front end or with the window turned off, uses them too ([Saved choices](frontends.md#saved-choices)). A setting fixed by an `env.txt` or by the program that started the app is shown greyed out.
 
-Turn off **Show this window at launch** to start the game at once with your choices. Hold Option while the app opens to see the window again. `DM_LAUNCHER=0` in the app's `env.txt` (`~/Library/Application Support/nxnative/<title ID>/env.txt`) or in its environment, or opening it with `open <app> --args --no-launcher`, also skips the window; your choices still apply. `DM_SAVED_CHOICES=0` starts with the tested defaults instead.
+Turn off **Show at launch** to start the game at once with your choices. Hold Option while the app opens to see the window again. `DM_LAUNCHER=0` in the app's `env.txt` (`~/Library/Application Support/nxnative/<title ID>/env.txt`) or in its environment, or opening it with `open <app> --args --no-launcher`, also skips the window; your choices still apply. `DM_SAVED_CHOICES=0` starts with the tested defaults instead.
 
 ### Display mode
 
@@ -248,6 +255,40 @@ When the game starts, it brings the save from iCloud Drive in if only that one c
 A save that is replaced, on the device or in iCloud Drive, is kept first, beside the save in a folder named after it with `-backups` (on the iPhone `save-backups` in the Files app, under the app's name; on the Mac `~/Library/Application Support/nxnative/<title ID>/save-backups`): `<date> local` holds this device's save, `<date> cloud` the one that was in iCloud Drive. The newest 10 of each kind stay, and older ones are removed; other folders you put there are left alone.
 
 iCloud Drive takes a moment to carry a file from one device to the other. Quit the game on one device and give it a few seconds before you start it on the other. **Play** waits for the save in iCloud Drive to download, with **Play Without It** to go on at once; without a connection, or when it has not come in a minute, it says so and offers this device's save or another try. The game then plays on with the save it has and sends it later. If the save in iCloud Drive changed meanwhile, the game sends nothing that session, and the next start decides between the two as above. The game log says what came in and what went out (lines starting with `save sync:`).
+
+## Quick settings on the Mac
+
+A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧⌘G, the Graphics menu, or Home or − / + on a controller). At the top are Screenshot, Record, the FPS counter, the volume and mute; under them are seven pages (General, Graphics, FPS, Capture, Mods, Cheats, Controls), which L and R on a controller or Tab and Shift-Tab on the keyboard turn, and at the bottom a legend shows which buttons or keys work on the selected item. Its changes apply at once, except anisotropic filtering, recording frame times and mods, which apply from the next launch: those rows carry a **Next launch** tag, orange while the choice differs from the running game, and the footer counts them and offers **Restart game** (pressed twice), which quits and starts the game again. A dot before a setting marks one changed from its default, and Graphics and FPS each have a Reset button. Like the settings window, a setting that an `env.txt` or the launch environment fixes is not saved. Every setting a Mac app has, and where it is changed and kept:
+
+| Setting | Settings window | Quick settings | `env.txt` / environment | Saved in the app's preferences as |
+|---|---|---|---|---|
+| Frame rate, Render scale, Dynamic resolution, Console mode, Game language | Graphics › Frame rate, Graphics › Resolution, General › Game | – | `DM_FPS_TARGET`, `DM_RENDER_SCALE`, `DM_DYNAMIC_RESOLUTION`, `DM_OPMODE`, `DM_LANG` | `launcher.<variable>` |
+| Display mode | General › Game | – (⌃⌘F while playing) | `DM_FULLSCREEN` | `launcher.DM_FULLSCREEN` |
+| Upscaling (MetalFX) | Graphics › Resolution › Upscaling | Graphics › MetalFX upscaling | `DM_PRESENT_UPSCALE` | `launcher.DM_PRESENT_UPSCALE`, shared by both; MetalFX, the Mac default, is not stored |
+| Game rumble, Rumble strength, Rumble cutoff | General › Controls | – | `DM_RUMBLE`, `DM_RUMBLE_GAIN`, `DM_RUMBLE_MIN` | `launcher.<variable>` |
+| Performance rows (Frame buffering, Metal 4 pipelines, …) | Advanced › Pipelines, Display | – | as in [Settings in a file](#settings-in-a-file) | `launcher.<variable>` |
+| Cloud saves folder | General › Cloud saves | – | `DM_SAVE_SYNC` | `cloudSaves.folder` |
+| Picture filter and its strength (Quick settings and the Graphics menu offer off and CRT; the environment also takes the engine's other filters) | – | Graphics › CRT filter, Strength | `DM_PRESENT_FILTER`, `DM_PRESENT_FILTER_STRENGTH` | `DMPresentFilter.mode.<game>`, `DMPresentFilter.strength.<game>` |
+| Picture size (Fit, Stretch, Pixel-perfect) | – | Graphics › Picture size | `DM_PRESENT_SCALE` (`fit`, `stretch`, `integer`) | `DMQuickSettings.scale.<game>` |
+| Pixel art (Auto, Off, Sharp pixels, Smooth edges) | Graphics › Pixel art | Graphics › Pixel art | `DM_PIXEL_ART` (`auto`, `off`, `sharp`, `smooth`), `DM_PIXEL_GRID` | `DMQuickSettings.pixel.<game>`; the window's `launcher.DM_PIXEL_ART` follows it (below) |
+| CRT line size | – | Graphics › Line size | `DM_PRESENT_SCANLINE` | `DMPresentFilter.scanline.<game>` |
+| Anti-aliasing (FXAA) | Graphics › Resolution › Anti-aliasing | Graphics › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>`; the window's `launcher.DM_PRESENT_AA` follows it (below) |
+| HDR highlights and Brightness boost (off, 50 %) | Graphics › HDR | Graphics › HDR highlights, Brightness boost | `DM_PRESENT_EDR`, `DM_PRESENT_EDR_STRENGTH` (`0` to `100`, or `0.0` to `1.0`) | `DMQuickSettings.edr.<game>`, `DMQuickSettings.edrStrength.<game>`; the window's `launcher.<variable>` follow them (below) |
+| Anisotropic filtering (16× by default) | – | Graphics › Anisotropic filtering | `DM_ANISO` | `DMQuickSettings.aniso.<game>` |
+| Frame-rate counter, its corner and milliseconds | – | FPS › Show FPS (and FPS at the top), Show milliseconds | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>`, `DMQuickSettings.fpsMs.<game>` |
+| 120 fps frame interpolation (Off, On, Auto: on a screen of 120 Hz or more) | Graphics › Frame rate › 120 fps frame interpolation | FPS › Frame interpolation | `DM_PRESENT_INTERP` (`off`, `on`, `auto`) | `DMQuickSettings.interp.<game>`; the window's `launcher.DM_PRESENT_INTERP` follows it (below) |
+| Record frame times (from the next launch) | – | FPS › Record frame times | `DM_FRAME_TIMES` (a `DM_NVN_TSV` wins) | `DMQuickSettings.frameTimes.<game>` |
+| Volume and mute | – | the slider and speaker at the top | – | `DMQuickSettings.volume.<game>`, `DMQuickSettings.muted.<game>` |
+| Pause the game, quieter sound while the sidebar is open | – | General | – | `DMQuickSettings.pauseOpen.<game>` (unset: on), `DMQuickSettings.duckOpen.<game>` |
+| Screenshot and recording folder | – | Capture | – | `DMQuickSettings.captureDir.<game>` (unset: the game folder) |
+| Mods that are on, and their load order | – | Mods | `DM_ROMFS_OVERLAY` replaces them | `DMQuickSettings.mods.<game>`, `DMQuickSettings.modOrder.<game>` |
+| Cheats that are on | – | Cheats (and the Cheats menu) | `DM_CHEATS_ON` | not in the preferences: `<build ID>.enabled` beside the cheat file |
+| Keys and buttons | – | Controls | – | `DMQuickSettings.keys.<game>`, `DMQuickSettings.pad.<game>` (the maps), `DMQuickSettings.keyNames.<game>`, `DMQuickSettings.padNames.<game>` (their labels) |
+| Show at launch | the window's checkbox | – | `DM_LAUNCHER=0` skips it | `window.show` |
+
+`<game>` is the game's profile name; each game app has preferences of its own (`org.nxforge.<title ID>`). The sidebar's settings are also kept as plain text in `NXForge settings.txt` in the game folder (`name = value` a line; `DM_SETTINGS_FILE=0` turns it off), which wins at launch, so an edit made with the game closed applies; General › Make these my defaults writes the shared ones to `~/Library/Application Support/NXForge/Sidebar defaults.txt`, where a game without a settings file of its own starts. `dm/tools/tests/test_settings_table.py` checks that every key Quick settings saves is in this table.
+
+Anti-aliasing, HDR highlights, its brightness boost and frame interpolation are in both the settings window and the sidebar, so every Mac game can have them before it starts. The sidebar's keys stay the record; the game copies each one into the window's `launcher.<variable>` (and notes what it copied in `nxforge.mirror.<variable>`), and at launch it takes a `launcher.<variable>` that differs from that note, as the window (or the converter's game page) changed it since. So the window shows what the sidebar last chose, a choice made in the window reaches the sidebar and `NXForge settings.txt`, and Restart game keeps a change made in the sidebar. As for upscaling, only an `env.txt` or the launch environment fixes them; the window's own choices do not grey out the sidebar.
 
 ## In-game menu
 

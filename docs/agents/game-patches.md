@@ -21,7 +21,7 @@ A patch's binding is what its correctness is anchored to, from the loosest. A pa
 
 ## Gaps
 
-Every patch bound tighter than it could be: the open gaps, then the blocked, kept and unreviewed ones; in each, those reaching the most games first (the games whose profiles register the builds it touches), then those farthest from their goal.
+Every patch bound tighter than it could be: the open gaps, then the blocked, kept and unreviewed ones; in each, those reaching the most games first (the games whose profiles register the builds it touches), then those farthest from their goal. 1 patch has no reviewed goal yet.
 
 | Now → goal | Patch | Purpose | Status | Evidence | Games | Where | Why |
 |---|---|---|---|---|---|---|---|
@@ -36,6 +36,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `game` | task ring push and pop barriers | race | gap | judgement | 1 | [Batman: Arkham Knight](../../dm/games/0100ACD0163D0000/README.md) | a data race in the game's own task ring |
 | `build` → `game` | UE3's GMalloc setup skipped, the host allocator in (hle_uemalloc.c) | address space | gap | judgement | 1 | [Batman: Arkham Knight](../../dm/games/0100ACD0163D0000/README.md) | UE3 inlines the allocator's constructor into the GMalloc setup and has its own vtable layout (25 slots, 32-bit sizes), so the Unreal 4/5 discovery does not apply |
 | `build` → `game` | unused 272-byte slot pool: 4,194,304 → 65,536 slots | address space | gap | judgement | 1 | [Mario + Rabbids® Sparks of Hope](../../dm/games/0100317013770000/README.md) | Sparks of Hope's own init (Kingdom Battle has none) |
+| `build` → `sdk` | Mina the Hollower's row (cb82ed52, SDK 21.4.3; NXForge) | address space | blocked: drop it once a Mina build rewritten with the rules alone matches this one | judgement | 1 | [sdk_patches.py](../../dm/tools/sdk_patches.py) | SDK 20.5.22's constructor layout, which the rules now cover; the row came before the rules |
 | `build` → `sdk` | VammManager node area and alignment, SDK 4.4.0 (9de92bad) | address space | blocked: one game ships it | judgement | 1 | [sdk_patches.py](../../dm/tools/sdk_patches.py) | an older implementation no rule covers (its large regions aligned to 32 MB, not the rules' 2 MB); a rule once a second game ships it |
 | `build` → `engine` | Criterion's 60 fps mode, frame ticks and game step at fixed addresses | frame rate | blocked: one game on that engine here | judgement | 1 | [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | the studio's engine, which its other games ship |
 | `build` → `engine` | Frostbite's frame regulator at a fixed pointer | frame rate | blocked: one Frostbite game here | judgement | 1 | [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md) | engine code other Frostbite games ship (the simulation's own rate is already set by name) |
@@ -50,6 +51,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `game` | 60 fps frame step (112 sites) | frame rate | kept: 1.0.1 (2019) is the last update; a function match would serve no other build of this game | checked: nso_fnmap of its 112 sites into those four mains (2026-11-09) | 1 | [ASTRAL CHAIN](../../dm/games/01007300020FA000/README.md) | the game's own clock and timers (a community 60 fps mod on the host's frame step). PlatinumGames' other games do not share them: none of its 15 functions has an exact match in Bayonetta, Bayonetta 2, Bayonetta 3 or NieR:Automata |
 | `build` → `game` | 60 fps frame step and render scale (ksys::VFR) | frame rate | kept: 44 sites in 34 functions to fingerprint for an update that may not come (1.9.0, the Switch 2 Edition release); convert when a new build appears | checked: nso_fnmap of its 44 sites into those 13 mains (2026-11-09) | 1 | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | the game's own frame code; the frame-step state page is general. No engine sibling shares it: none of its 34 functions has an exact match in Tears of the Kingdom, SMO, MK8D, ACNH, Splatoon 2 / 3, Kirby, Mario Party, Ocarina, Smash, Metroid Dread or Origami King (only the widescreen stubs' sead::PerspectiveProjection functions recur) |
 | `build` → `game` | Hagi coroutine stack region 1 GB → 64 MB | memory | kept: 1.1.4 is the last update; a match over Hagi would serve no other build of this game | checked: the final build 1.1.4 (the only one the profile packs), 2026-11-04 | 1 | [Super Mario 3D All-Stars: Super Mario Sunshine](../../dm/games/010049900F546002/README.md) | a size inside Hagi's own code: nothing the host sees tells a 1 GB reservation it can shrink from one it cannot |
+| `build` → unreviewed | malloc StandardAllocator 16 GB → 2 GB and two engine heaps' first segments 4 GB → 1 GB | address space | unreviewed | judgement | 1 | [Mina the Hollower](../../dm/games/0100DCD01F306000/README.md) | the game's own sizes at fixed offsets, from before the host's StandardAllocator cap (docs/reference/memory.md), which may make the malloc cut unnecessary as it did Pokémon Scarlet's |
 
 ## Summary
 
@@ -68,6 +70,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Luigi's Mansion 3](#luigis-mansion-3) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Mario + Rabbids® Sparks of Hope](#mario--rabbids-sparks-of-hope) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Mario Kart World](#mario-kart-world) | 0 | 0 | 1 | 0 | 0 | `game` |
+| [Mina the Hollower](#mina-the-hollower) | 3 | 0 | 0 | 0 | 0 | `build` → unreviewed |
 | [Monster Hunter Rise](#monster-hunter-rise) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Need For Speed™ Hot Pursuit Remastered](#need-for-speed-hot-pursuit-remastered) | 1 | 0 | 0 | 0 | 5 | `build` → `game`, `build` → `engine` |
 | [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](#nierautomata-the-end-of-yorha-edition-010056b015fe8000) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
@@ -361,6 +364,17 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 - **function-matched frame step** (`main` of builds without FRAME_STEP): frame interval from the host's step: a function of 0x290 bytes, `+0xa0` in it
 - **function-matched frame step** (`main` of builds without FRAME_STEP): frame interval from the host's step: a function of 0x28c bytes, `+0xa4` in it
 
+### Mina the Hollower
+
+[Mina the Hollower](../../dm/games/0100DCD01F306000/README.md), `0100DCD01F306000`, [patches.py](../../dm/games/0100DCD01F306000/patches.py).
+
+- **`build` → unreviewed**, address space, unreviewed, judgement: malloc StandardAllocator 16 GB → 2 GB and two engine heaps' first segments 4 GB → 1 GB. The game's own sizes at fixed offsets, from before the host's StandardAllocator cap (docs/reference/memory.md), which may make the malloc cut unnecessary as it did Pokémon Scarlet's
+
+- **1.0.5 `main`** `2bc48452…` ([patches.py:12](../../dm/games/0100DCD01F306000/patches.py#L12))
+  - cut `+0x103d9c`: nninitStartup: malloc StandardAllocator address space mov x1,#0x400000000 → mov x1,#0x80000000 (16 GB → 2 GB)
+  - cut `+0x6d8ac`: nnMain: first engine heap, first segment mov x1,#0x100000000 → mov x1,#0x40000000 (4 GB → 1 GB)
+  - cut `+0x6dc0c`: nnMain: second engine heap, first segment mov x1,#0x100000000 → mov x1,#0x40000000 (4 GB → 1 GB)
+
 ### Monster Hunter Rise
 
 [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), `0100B04011742000`.
@@ -610,12 +624,16 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 Cuts of Nintendo SDK `sdk` builds ([sdk_patches.py](../../dm/tools/sdk_patches.py)), applied to every game that ships the build. They fit the SDK's address-space layout into an iPhone's guest block. The games listed are those whose profile registers the build.
 
 - **`sdk`**, address space, at goal, checked: 20 registered builds rewritten byte-identical with the rules alone, 2026-10-29 and 2026-10-30; the 2 MB alignment on every sdk build on the drive, 2026-10-30: node area 1 GB → 62 MB and regions of 4 MB and more aligned to 2 MB, as SDK 20: the SDK-wide rules. One rule per reviewed implementation; every sdk build without CUTS gets them
+- **`build` → `sdk`**, address space, blocked: drop it once a Mina build rewritten with the rules alone matches this one, judgement: Mina the Hollower's row (cb82ed52, SDK 21.4.3; NXForge). SDK 20.5.22's constructor layout, which the rules now cover; the row came before the rules
 - **`build` → `sdk`**, address space, blocked: one game ships it, judgement: VammManager node area and alignment, SDK 4.4.0 (9de92bad). An older implementation no rule covers (its large regions aligned to 32 MB, not the rules' 2 MB); a rule once a second game ships it
 
 - **sdk** `9de92bad…` ([sdk_patches.py:9](../../dm/tools/sdk_patches.py#L9)): Mario + Rabbids Kingdom Battle 1.9.589692
   - cut `+0x93dfc`: VammManager node area limit: 1 GB to 64 MB
   - cut `+0x93e8c`: VammManager occupied node area: 1 GB to 64 MB
   - cut `+0x93fe0`: AllocateAddressRegion: align regions of 1 GB and more to 32 MB
+- **sdk** `cb82ed52…` ([sdk_patches.py:17](../../dm/tools/sdk_patches.py#L17)): Mina the Hollower 1.0.5
+  - cut `+0x14fbf0`: AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000
+  - cut `+0x14fc5c`: AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000
 
 ### SDK-wide function-matched rules
 
