@@ -49,6 +49,10 @@ struct Settings: Codable, Equatable {
     var saveBackupPush = false
     /// each network volume's address to mount it again ("Gaming" → smb://nas/Gaming), learned while it was mounted
     var remounts: [String: String] = [:]
+    /// Updates: update the engine and the converter without asking (at launch, and on an hourly check)
+    var autoUpdate = false
+    /// the versions the launch sheet offered when Skip This Version was pressed ("engine 0.17.1 converter 0.2.2")
+    var skippedUpdate: String?
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
@@ -56,6 +60,7 @@ struct Settings: Codable, Equatable {
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
+        case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
     }
 
     init() {}
@@ -84,6 +89,8 @@ struct Settings: Codable, Equatable {
         saveBackupRepo = try? c.decodeIfPresent(String.self, forKey: .saveBackupRepo)
         saveBackupPush = (try? c.decodeIfPresent(Bool.self, forKey: .saveBackupPush)) ?? false
         remounts = (try? c.decodeIfPresent([String: String].self, forKey: .remounts)) ?? [:]
+        autoUpdate = (try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)) ?? false
+        skippedUpdate = try? c.decodeIfPresent(String.self, forKey: .skippedUpdate)
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

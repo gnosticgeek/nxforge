@@ -107,17 +107,37 @@ enum Engine {
         return git(repo, ["merge-base", "--is-ancestor", "HEAD", main]) != nil ? main : up
     }
 
-    /// After a fetch: how many commits the update target has that HEAD lacks, and the target ("origin/main").
-    static func checkUpdates(_ repo: String) throws -> (count: Int, target: String) {
-        guard git(repo, ["fetch", "--quiet", "origin"]) != nil else { throw ConverterError("git fetch failed") }
-        guard let up = updateTarget(repo) else { throw ConverterError("this branch has no upstream branch to update from, and is not merged into main") }
-        return (Int(git(repo, ["rev-list", "--count", "HEAD..\(up)"]) ?? "0") ?? 0, up)
+    /// What Check for updates found: the commits the engine lacks, where they are, and the release they make.
+    struct Update: Equatable {
+        /// commits the engine checkout lacks (0: up to date)
+        let count: Int
+        /// the update target ("origin/main", or a branch with work main lacks)
+        let target: String
+        /// the ref an update fast-forwards to: the newest vX.Y.Z tag on main ("v0.17.1"), else the target itself
+        let ref: String
+        /// "0.17.1" when the update is a release
+        let release: String?
     }
 
-    /// Fast-forward to the update target, first switching to main when that is it (a merged release branch);
-    /// refuses when that would need a merge.
-    static func update(_ repo: String) throws {
+    /// Fetch origin with its tags, then: on main (or a merged release branch, which follows main), the newest vX.Y.Z release
+    /// tag on it, so an update never stops between a release PR's merge and its tag; on a branch with work main lacks, the
+    /// branch's head as before. The newest release is never older than the engine: a checkout ahead of it is up to date.
+    static func checkUpdates(_ repo: String) throws -> Update {
+        guard git(repo, ["fetch", "--quiet", "--tags", "origin"]) != nil else { throw ConverterError("git fetch failed") }
         guard let up = updateTarget(repo) else { throw ConverterError("this branch has no upstream branch to update from, and is not merged into main") }
+        let main = git(repo, ["rev-parse", "--abbrev-ref", "origin/HEAD"]) ?? "origin/main"
+        if up == main, let tag = Releases.newest(repo: repo, prefix: "v", in: up) {
+            return Update(count: Int(git(repo, ["rev-list", "--count", "HEAD..\(tag)"]) ?? "0") ?? 0, target: up, ref: tag,
+                          release: Releases.version(tag: tag, prefix: "v"))
+        }
+        return Update(count: Int(git(repo, ["rev-list", "--count", "HEAD..\(up)"]) ?? "0") ?? 0, target: up, ref: up, release: nil)
+    }
+
+    /// Fetch, then fast-forward to what checkUpdates finds (the newest release on main), first switching to main when that is
+    /// the target (a merged release branch); refuses when that would need a merge. Returns what it updated to.
+    @discardableResult static func update(_ repo: String) throws -> Update {
+        let u = try checkUpdates(repo)
+        let up = u.target
         let branch = git(repo, ["symbolic-ref", "--short", "HEAD"]) ?? ""
         let name = String(up.split(separator: "/", maxSplits: 1).last ?? "")
         if git(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"]) != up, branch != name {
@@ -125,7 +145,11 @@ enum Engine {
             guard git(repo, exists ? ["switch", "--quiet", name] : ["switch", "--quiet", "--track", up]) != nil
             else { throw ConverterError("the engine cannot switch to \(name) (local changes in the way)") }
         }
-        guard git(repo, ["merge", "--ff-only", "--quiet", up]) != nil else { throw ConverterError("the engine cannot fast-forward (local changes or diverged branch)") }
+        // the commit, not the tag: merging an annotated tag would make a merge commit
+        guard let sha = git(repo, ["rev-parse", "\(u.ref)^{commit}"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+              git(repo, ["merge-base", "--is-ancestor", sha, "HEAD"]) != nil || git(repo, ["merge", "--ff-only", "--quiet", sha]) != nil
+        else { throw ConverterError("the engine cannot fast-forward (local changes or diverged branch)") }
+        return u
     }
 
     private static var buildsFile: URL { Settings.supportDir.appending(path: "builds.json") }
@@ -171,7 +195,9 @@ enum Engine {
         let lines = log.split(separator: "\n").map { String($0) }
         guard let h = lines.firstIndex(where: { $0.hasPrefix("## ") }) else { return nil }
         let title = lines[h].dropFirst(3).split(separator: " (").first.map(String.init) ?? ""
-        let first = lines[(h + 1)...].first { $0.hasPrefix("- ") }.map { String($0.dropFirst(2)).replacingOccurrences(of: "**", with: "") } ?? ""
+        let first = lines[(h + 1)...].first { $0.hasPrefix("- ") }.map { String($0.dropFirst(2)).replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)   // [text](link) → text
+        } ?? ""
         let note = first.count > 110 ? String(first.prefix(110)) + "…" : first
         return note.isEmpty ? title : "\(title) · \(note)"
     }

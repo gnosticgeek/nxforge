@@ -13,6 +13,7 @@ struct RootView: View {
             List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
                 ForEach(Page.allCases) { p in
                     Label(p.rawValue, systemImage: p.symbol).font(.system(size: 15)).padding(.vertical, 3).tag(p)
+                        .badge(p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : 0)
                 }
             }
             .safeAreaInset(edge: .top) { VStack(alignment: .leading, spacing: 0) { SidebarBrand(); UpdateCapsule(model: model) } }
@@ -29,6 +30,7 @@ struct RootView: View {
                 case .builds: BuildsPage(model: model)
                 case .storage: StoragePage(model: model)
                 case .toolchain: ScrollView { ToolchainPage(model: model).padding(20) }
+                case .updates: ScrollView { UpdatesPage(model: model).padding(20) }
                 }
                 }
             }
@@ -40,7 +42,7 @@ struct RootView: View {
                     if model.gameDetail == nil && model.page == .library { HeroBanner(scene: .aurora).frame(height: model.couchMode ? 320 : 230) }
                     if model.gameDetail == nil && model.page == .builds { HeroBanner(scene: .moon).frame(height: 230) }
                     if model.page == .convert || model.page == .storage { HeroBanner(scene: .dish).frame(height: 230) }
-                    if model.page == .toolchain { HeroBanner(scene: .peaks).frame(height: 230) }
+                    if model.page == .toolchain || model.page == .updates { HeroBanner(scene: .peaks).frame(height: 230) }
                 }
                 .ignoresSafeArea()
             }
@@ -65,6 +67,7 @@ struct RootView: View {
         }
         .onChange(of: model.page) { model.gameDetail = nil }
         .sheet(item: $model.whatsNew) { WhatsNewSheet(model: model, news: $0) }
+        .sheet(item: $model.updateOffer) { UpdateOfferSheet(model: model, offer: $0) }
         .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }
         .sheet(isPresented: $model.commandPalette) { CommandPalette(model: model) }
         .task { ControllerNav.shared.start(model) }

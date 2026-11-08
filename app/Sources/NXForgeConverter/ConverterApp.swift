@@ -88,6 +88,7 @@ struct ConverterApp: App {
             CommandGroup(replacing: .help) {
                 Button("NXForge Converter Help") { NSWorkspace.shared.open(helpURL) }
                 Button("What's New in NXForge Converter") { model.showWhatsNew() }
+                Button("Check for Updates…") { model.page = .updates; model.engineAction(update: false) }.disabled(model.engineBusy || model.engine == nil)
                 if model.converterUpdate != nil {
                     Button("Update NXForge Converter…") { model.updateConverter() }
                 }
