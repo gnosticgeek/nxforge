@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.3.1 (2026-11-08)
+
+A fix for 0.3.0. Ships in NXForge 0.18.1.
+
+- **The pages in the sidebar can be clicked again.** 0.3.0's Updates count badge took the rows' tags, so the list could not select any page.
+
 ## 0.3.0 (2026-11-08)
 
 One updater for everything. Ships in NXForge 0.18.0.
