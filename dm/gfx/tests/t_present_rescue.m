@@ -101,22 +101,18 @@ static void lifecycle(void) {
     CHECK("rescue invalidates the link before releasing the layer", link.invalidated && !g_link && !g_link_owns_layer);
     g_link_started = 0;
 }
-static void latency(void) {   // Only variable-refresh fullscreen needs the latency-2 workaround; a new link takes the current policy as link_main does.
+static void latency(void) {   // frame latency 1 in a window, no link in fullscreen (NXForge), DM_PRESENT_LATENCY (1 or 2) in both; a new link takes the current one as link_main does
     reset(); test_fullscreen = 0; test_variable_refresh = 1; g_present_latency = 0;
     SilentDisplayLink *link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency();
     g_link = link; g_link_started = 1;
     link_sync(); CHECK("a window keeps frame latency 1", link.preferredFrameLatency == 1);
-    test_fullscreen = 1; link_sync(); CHECK("entering fullscreen sets frame latency 2", link.preferredFrameLatency == 2);
-    test_fullscreen = 0; link_sync(); CHECK("leaving fullscreen sets frame latency 1 again", link.preferredFrameLatency == 1);
-    test_fullscreen = 1; link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency(); g_link = link;
-    link_sync(); CHECK("a link created in fullscreen keeps frame latency 2", link.preferredFrameLatency == 2);
-    test_variable_refresh = 0; link_sync(); CHECK("moving fullscreen to a fixed-rate screen sets latency 1", link.preferredFrameLatency == 1);
-    test_variable_refresh = 1; link_sync(); CHECK("moving fullscreen back to variable refresh restores latency 2", link.preferredFrameLatency == 2);
-    test_variable_refresh = 0; link_sync(); CHECK("switching the screen to a fixed-rate mode sets latency 1", link.preferredFrameLatency == 1);
-    link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency(); g_link = link;
-    link_sync(); CHECK("a link created on a fixed-rate fullscreen screen keeps latency 1", link.preferredFrameLatency == 1);
-    test_fullscreen = 0; link_sync();
-    test_fullscreen = 1; link_sync(); CHECK("entering fullscreen on a fixed-rate screen keeps latency 1", link.preferredFrameLatency == 1);
+    // NXForge: fullscreen goes without the display link (pacing mode 0, link_sync), unless DM_PRESENT_LATENCY keeps it at that latency; upstream's latency 2 is not used then
+    test_fullscreen = 1; link_sync(); CHECK("NXForge: entering fullscreen leaves the display link (pacing mode 0)", g_link_mode == 0);
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, false);
+    test_fullscreen = 0; reset(); link = [SilentDisplayLink new]; link.preferredFrameLatency = link_latency(); g_link = link; g_link_started = 1;
+    link_sync(); CHECK("back in a window the link has frame latency 1", g_link_mode == 1 && link.preferredFrameLatency == 1);
+    test_fullscreen = 1; g_present_latency = 2; link_sync(); CHECK("DM_PRESENT_LATENCY keeps the link in fullscreen, at that latency", g_link_mode == 1 && link.preferredFrameLatency == 2);
+    test_fullscreen = 0; link_sync(); CHECK("DM_PRESENT_LATENCY wins in a window", link.preferredFrameLatency == 2);
     for (int lat = 1; lat <= 2; lat++) for (int variable = 0; variable <= 1; variable++) for (int full = 0; full <= 1; full++) {
         g_present_latency = lat; test_variable_refresh = variable; test_fullscreen = full; link_sync();
         CHECK("DM_PRESENT_LATENCY wins for every screen and window mode", link.preferredFrameLatency == lat);
@@ -135,7 +131,8 @@ static void latency(void) {   // Only variable-refresh fullscreen needs the late
     g_present_latency = 0; test_fullscreen = test_variable_refresh = 0; link_sync(); g_link = nil; g_link_started = 0;
 }
 static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except in fullscreen on a fixed-rate screen, where it stays at 60 Hz and the present interval paces the 30.
-    reset(); test_fullscreen = 0; test_variable_refresh = 0; test_game_fps = 30;
+    // NXForge leaves the link in fullscreen unless DM_PRESENT_LATENCY is set (latency() checks that), so these run with it set: upstream's fullscreen pacing (#1555) applies where the link runs
+    reset(); test_fullscreen = 0; test_variable_refresh = 0; test_game_fps = 30; g_present_latency = 2;
     SilentDisplayLink *link = [SilentDisplayLink new]; g_link = link; g_link_started = 1;
     link_sync(); CHECK("a window at 30 fps takes the 30 Hz link", g_link_mode == 3 && link.preferredFrameRateRange.preferred == 30 && mtl_link_rate() == 30);
     test_fullscreen = 1; link_sync(); CHECK("fullscreen on a fixed-rate screen at 30 fps keeps the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
@@ -143,10 +140,11 @@ static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except i
     test_variable_refresh = 0; link_sync(); CHECK("back on a fixed-rate screen: the 60 Hz link again", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60);
     test_fullscreen = 0; link_sync(); CHECK("leaving fullscreen: the 30 Hz link again", g_link_mode == 3 && link.preferredFrameRateRange.preferred == 30);
     test_game_fps = 60; link_sync(); CHECK("60 fps in a window: the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60);
-    g_link = nil; g_link_started = 0;
+    g_present_latency = 0; g_link = nil; g_link_started = 0;
 }
 static void vrr120(void) {   // 60 fps in fullscreen on a variable-refresh screen at a multiple of 120 Hz takes the 120 Hz link (a frame every other tick); everything else keeps the 60 Hz one.
-    reset(); test_fullscreen = 0; test_variable_refresh = 1; test_screen_hz = 120; test_game_fps = 60; g_present_latency = 0; g_present_link_env = 0;
+    // NXForge leaves the link in fullscreen unless DM_PRESENT_LATENCY is set (latency() checks that), so these run with it set at upstream's latency 2: upstream's 120 Hz link (#1967) applies where the link runs
+    reset(); test_fullscreen = 0; test_variable_refresh = 1; test_screen_hz = 120; test_game_fps = 60; g_present_latency = 2; g_present_link_env = 0;
     SilentDisplayLink *link = [SilentDisplayLink new]; g_link = link; g_link_started = 1;
     link_sync(); CHECK("a window on a 120 Hz variable-refresh screen keeps the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
     test_fullscreen = 1; link_sync();
@@ -164,7 +162,7 @@ static void vrr120(void) {   // 60 fps in fullscreen on a variable-refresh scree
     test_game_fps = 60; link_sync(); CHECK("back at 60 fps: the 120 Hz link", g_link_mode == 2);
     test_fullscreen = 0; link_sync(); CHECK("leaving fullscreen: the 60 Hz link again", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
     g_dm_present_link = 2; link_sync(); CHECK("DM_PRESENT_LINK=2 keeps the 120 Hz link in a window", g_link_mode == 2 && test_match_fps == 120);
-    g_dm_present_link = 1; test_screen_hz = 0; test_variable_refresh = 0; link_sync(); g_link = nil; g_link_started = 0;
+    g_dm_present_link = 1; test_screen_hz = 0; test_variable_refresh = 0; link_sync(); g_present_latency = 0; g_link = nil; g_link_started = 0;
 }
 static void metal_lifecycle(void) {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();

@@ -112,6 +112,90 @@ int main(void) { @autoreleasepool {
     }
 #endif
 #ifndef CROP_LEGACY_HEADER
+    {
+        // Present filters (front.h mtl_present_filter_set): the quadrant picture 8x8 → 32x32. Bilinear blends about four columns and rows around the middle seam; the pixel filter
+        // (sharp bilinear) blends at most one of each, every other pixel one quadrant's colour exactly
+        int mixed[DM_PFX_N]={0}; float k=-1;
+        for(int m=0;m<DM_PFX_N;m++) {
+            mtl_present_filter_set(m,1);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:32 height:32 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            EXPECT("filtered encode succeeds",1,ENCODE(cb,src,dst,zero));[cb commit];[cb waitUntilCompleted];
+            static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
+            for(int i=0;i<32*32;i++){int pure=0;for(int q=0;q<4;q++)pure|=memcmp(o+4*i,colors[q],3)==0;mixed[m]+=!pure;}
+        }
+        printf("pixels between two colours: off %d, sharpen %d, pixel %d, crt %d, lottes %d, lcd %d\n",mixed[0],mixed[1],mixed[2],mixed[3],mixed[4],mixed[5]);
+        EXPECT("bilinear blends the seam over more than one column and row",1,mixed[DM_PFX_OFF]>2*32);
+        EXPECT("pixel filter blends at most one column and one row",1,mixed[DM_PFX_PIXEL]<=2*32);
+        // On one flat colour sharpening changes nothing, and the CRT filter's scanlines make a source row's edge darker than its centre (4 output rows per source row)
+        uint8_t flat[8*8*4];for(int i=0;i<64;i++){flat[4*i]=flat[4*i+1]=flat[4*i+2]=128;flat[4*i+3]=255;}
+        id<MTLTexture> fl=[g_dev newTextureWithDescriptor:d];[fl replaceRegion:MTLRegionMake2D(0,0,8,8) mipmapLevel:0 withBytes:flat bytesPerRow:32];
+        for(int m=DM_PFX_SHARPEN;m<=DM_PFX_CRT;m+=DM_PFX_CRT-DM_PFX_SHARPEN) {
+            mtl_present_filter_set(m,1);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:32 height:32 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            ENCODE(cb,fl,dst,zero);[cb commit];[cb waitUntilCompleted];
+            static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
+            if(m==DM_PFX_SHARPEN){int bad=0;for(int i=0;i<32*32;i++)bad+=abs(o[4*i]-128)>1||abs(o[4*i+1]-128)>1||abs(o[4*i+2]-128)>1;EXPECT("sharpen leaves a flat colour as it is, 1024 pixels",0,bad);}
+            else{int edge=0,mid=0;for(int x=0;x<32;x++){edge+=o[4*(0*32+x)]+o[4*(0*32+x)+1]+o[4*(0*32+x)+2];mid+=o[4*(2*32+x)]+o[4*(2*32+x)+1]+o[4*(2*32+x)+2];}
+                printf("crt row sums: edge %d, centre %d\n",edge,mid);EXPECT("CRT scanline: a source row's edge darker than its centre",1,edge<mid);}
+        }
+        {   // scanlines every 2 source rows: 8 output rows per line on the 4x picture, so output row 0 is a line's edge and row 4 its centre
+            mtl_present_filter_set(DM_PFX_CRT,1);mtl_present_scanline_set(2);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:32 height:32 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            ENCODE(cb,fl,dst,zero);[cb commit];[cb waitUntilCompleted];
+            static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
+            int r0=0,r2=0,r4=0;for(int x=0;x<32;x++){r0+=o[4*(0*32+x)];r2+=o[4*(2*32+x)];r4+=o[4*(4*32+x)];}
+            printf("crt 2-row scanline red sums: rows 0 %d, 2 %d, 4 %d\n",r0,r2,r4);
+            EXPECT("CRT scanline set to 2 rows: the line's centre (row 4) brighter than its quarter (row 2) and its edge (row 0)",1,r4>r2&&r2>r0);
+            mtl_present_scanline_set(0);EXPECT("scanline back to auto",0,mtl_present_scanline());
+        }
+        // CRT-Lottes and LCD Grid on the flat colour, 4 output pixels per cell: Lottes' beam is darker at a row's edge (output row 0) than at its centre (row 2), and the LCD grid's gap
+        // darkens a cell's edge row; CRT at 1:1 (a line one output pixel high) fades its scanlines out, every row the same
+        for(int m=DM_PFX_LOTTES;m<=DM_PFX_LCD;m++) {
+            mtl_present_filter_set(m,1);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:32 height:32 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            EXPECT(m==DM_PFX_LOTTES?"CRT-Lottes encode succeeds":"LCD Grid encode succeeds",1,ENCODE(cb,fl,dst,zero));[cb commit];[cb waitUntilCompleted];
+            static uint8_t o[32*32*4];[dst getBytes:o bytesPerRow:128 fromRegion:MTLRegionMake2D(0,0,32,32) mipmapLevel:0];
+            int edge=0,mid=0;for(int x=0;x<32;x++)for(int q=0;q<3;q++){edge+=o[4*(0*32+x)+q];mid+=o[4*(2*32+x)+q];}
+            printf("%s row sums: edge %d, centre %d\n",m==DM_PFX_LOTTES?"lottes":"lcd",edge,mid);
+            EXPECT(m==DM_PFX_LOTTES?"CRT-Lottes: a cell row's edge darker than its centre":"LCD Grid: a cell's edge row darker than its centre",1,edge<mid&&mid>0);
+        }
+        {
+            mtl_present_filter_set(DM_PFX_CRT,1);
+            MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:8 height:8 mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
+            id<MTLTexture> dst=[g_dev newTextureWithDescriptor:od];id<MTLCommandBuffer> cb=[g_q commandBuffer];
+            ENCODE(cb,fl,dst,zero);[cb commit];[cb waitUntilCompleted];
+            uint8_t o[8*8*4];[dst getBytes:o bytesPerRow:32 fromRegion:MTLRegionMake2D(0,0,8,8) mipmapLevel:0];
+            int spread=0;for(int y=1;y<8;y++)for(int x=0;x<8;x++)spread=MAX(spread,abs(o[4*(y*8+x)]-o[4*x]));
+            printf("crt at 1:1: largest difference from row 0 %d\n",spread);
+            EXPECT("CRT at 1:1: scanlines faded out, every row as row 0",1,spread<=1);
+        }
+        mtl_present_filter_set(99,7);
+        int m=mtl_present_filter(&k);
+        EXPECT("an unknown filter is off",DM_PFX_OFF,m);EXPECT("strength clamped to 1 (x100)",100,(int)(k*100+0.5f));
+        mtl_present_filter_set(DM_PFX_OFF,0.5f);
+        check(src,"filter off again: the default whole frame as before, 64 pixels",zero,8,8,-1);
+        // Anisotropic filtering floor (front.h mtl_aniso_set, mtl_aniso_pick): raises eligible samplers only, never lowers the game's own, and is taken at the first sampler
+        g_aniso=-1;g_aniso_latched=0;unsetenv("DM_ANISO");
+        EXPECT("anisotropic floor: off by default",0,mtl_aniso());
+        mtl_aniso_set(16);
+        EXPECT("anisotropic floor 16: an eligible 1x sampler gets 16",16,(int)mtl_aniso_pick(1,1));
+        EXPECT("anisotropic floor 16: an ineligible sampler keeps the game's 2",2,(int)mtl_aniso_pick(2,0));
+        EXPECT("anisotropic floor 16: the game's value is clamped to 16",16,(int)mtl_aniso_pick(64,0));
+        mtl_aniso_set(4);
+        EXPECT("after the first sampler a new floor waits for the next launch",16,mtl_aniso());
+        g_aniso=-1;g_aniso_latched=0;mtl_aniso_set(4);
+        EXPECT("anisotropic floor 4: a game asking 8 keeps 8",8,(int)mtl_aniso_pick(8,1));
+        EXPECT("anisotropic floor 4: NaN or 0 from the game counts as 1 (ineligible)",1,(int)mtl_aniso_pick(nanf(""),0));
+        g_aniso=-1;g_aniso_latched=0;setenv("DM_ANISO","8x",1);
+        EXPECT("DM_ANISO=8x",8,mtl_aniso());
+        g_aniso=-1;setenv("DM_ANISO","3",1);
+        EXPECT("DM_ANISO=3 is refused: the game's own",0,mtl_aniso());
+        g_aniso=-1;g_aniso_latched=0;unsetenv("DM_ANISO");mtl_aniso_set(0);
+    }
     {   // DM_PRESENT_UPSCALE: which content MetalFX scales, and to which size (the picture's rectangle on the canvas)
         const struct { unsigned cw,ch,dw,dh,w,h; int upscale; } sizes[] = {
             {1280,720,2868,1320,2347,1320,1},   // handheld, letterboxed on an iPhone
@@ -156,6 +240,40 @@ int main(void) { @autoreleasepool {
         #undef PX
         }
         atomic_store(&g_origin_ll,0);g_fx_mode=1;
+        // MetalFX with the present filters: Sharpen follows the scaler on the scaled picture; the filters that need the game's pixel grid keep the bilinear present
+        mtl_present_filter_set(DM_PFX_SHARPEN,0.5f);
+        EXPECT("MetalFX with Sharpen: the scaler still runs",PRESENT_METALFX,present_offscreen_wait(big,crops[0],out));
+        mtl_present_filter_set(DM_PFX_CRT,0.5f);
+        EXPECT("MetalFX with CRT: the bilinear present",PRESENT_STANDARD,present_offscreen_wait(big,crops[0],out));
+        mtl_present_filter_set(DM_PFX_OFF,0.5f);
+        // FXAA in the present (DM_PRESENT_AA): flat areas keep their exact colours, a hard edge is blended, and MetalFX still runs on its output
+        g_aa=-1;setenv("DM_PRESENT_AA","FXAA",1);
+        EXPECT("DM_PRESENT_AA=FXAA",DM_PAA_FXAA,mtl_present_aa());
+        g_aa=-1;setenv("DM_PRESENT_AA","msaa",1);
+        EXPECT("DM_PRESENT_AA=msaa is refused: off",DM_PAA_OFF,mtl_present_aa());
+        unsetenv("DM_PRESENT_AA");mtl_present_aa_set(7);
+        EXPECT("an unknown anti-aliasing mode is off",DM_PAA_OFF,mtl_present_aa());
+        mtl_present_aa_set(DM_PAA_FXAA);
+        EXPECT("FXAA then MetalFX",PRESENT_METALFX,present_offscreen_wait(big,crops[0],out));
+        {   // a diagonal staircase (white where x > y) at 16x16, presented 1:1: FXAA blends some stair pixels and leaves the flat corners exact
+            g_fx_mode=0;const int S=16;
+            MTLTextureDescriptor *sd=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:S height:S mipmapped:NO];sd.storageMode=MTLStorageModeShared;sd.usage=MTLTextureUsageShaderRead;
+            id<MTLTexture> st=[g_dev newTextureWithDescriptor:sd];uint8_t sp[16*16*4];
+            for(int y=0;y<S;y++)for(int x=0;x<S;x++){uint8_t v=x>y?255:0;uint8_t q[4]={v,v,v,255};memcpy(sp+4*(y*S+x),q,4);}
+            [st replaceRegion:MTLRegionMake2D(0,0,S,S) mipmapLevel:0 withBytes:sp bytesPerRow:S*4];res_add(st);res_commit();
+            MTLTextureDescriptor *nd=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:S height:S mipmapped:NO];
+            nd.storageMode=MTLStorageModeShared;nd.usage=MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead;id<MTLTexture> same=[g_dev newTextureWithDescriptor:nd];
+            for (int on=0;on<2;on++) {
+                mtl_present_aa_set(on?DM_PAA_FXAA:DM_PAA_OFF);
+                EXPECT("staircase at the game's size: the standard present",PRESENT_STANDARD,present_offscreen_wait(st,zero,same));
+                uint8_t o[16*16*4];[same getBytes:o bytesPerRow:S*4 fromRegion:MTLRegionMake2D(0,0,S,S) mipmapLevel:0];
+                int mid=0;for(int i=0;i<S*S;i++)mid+=o[4*i+1]>8&&o[4*i+1]<247;
+                EXPECT(on?"  FXAA blends stair pixels (any)":"  without FXAA every pixel is black or white",on,mid>0);
+                EXPECT("  flat corners keep their exact colours",1,o[4*(S-1)*S+1]==0&&o[4*(S-1)+1]==255);
+            }
+            res_remove(st);
+        }
+        mtl_present_aa_set(DM_PAA_OFF);g_fx_mode=1;
         MTLTextureDescriptor *smallD=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:32 height:32 mipmapped:NO];
         smallD.storageMode=MTLStorageModePrivate;smallD.usage=MTLTextureUsageRenderTarget;
         id<MTLTexture> small=[g_dev newTextureWithDescriptor:smallD];int whole[4]={0},invalidCrop[4]={63,0,2,2};

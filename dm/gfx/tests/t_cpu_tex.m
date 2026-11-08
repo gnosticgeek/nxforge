@@ -103,6 +103,38 @@ static void finalized_upload(int write_after_record) {
     CHECK(!tex_cpu_written(serial), "pool finalization drops retired CPU classification");
     defer_drain(); munmap(mem,len);
 }
+// A texture whose serial left the CPU-written set while its packaged entry is still the texture table's (tex_from_storage is then false): tex_mtl gave the NvPkg itself out as the
+// MTLTexture, and tex_by_id's base.buffer threw "-[NvPkg buffer]: unrecognized selector" (upstream #1299, a crash under a mesh task draw). It hands out the entry's texture, as tex_made does
+static void packaged_entry_outside_the_set(void) {
+    const size_t len = 262144;
+    uint8_t *mem = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+    if (mem == MAP_FAILED) abort();
+    pool_t pool = {0}; pool_builder_t pb = {.mem=mem, .size=len, .flags=NVN_MEMORY_POOL_FLAGS_CPU_CACHED | NVN_MEMORY_POOL_FLAGS_GPU_CACHED};
+    CHECK(h_nvnMemoryPoolInitialize((NVNmemoryPool *)&pool, (const NVNmemoryPoolBuilder *)&pb), "CPU-cached pool initialized");
+    NVNtextureBuilder tb; NVNtexture tex = {0}; h_nvnTextureBuilderSetDefaults(&tb);
+    h_nvnTextureBuilderSetWidth(&tb, 4); h_nvnTextureBuilderSetHeight(&tb, 4); h_nvnTextureBuilderSetFormat(&tb, NVN_FORMAT_RGBA8);
+    h_nvnTextureBuilderSetStorage(&tb, (NVNmemoryPool *)&pool, 65536);
+    CHECK(h_nvnTextureInitialize(&tex, &tb), "texture initialized");
+    uint64_t serial = ((tex_t *)&tex)->serial;
+    uint8_t pixels[64]; for (int i=0;i<64;i++) pixels[i]=(uint8_t)(i+32);
+    NVNcopyRegion region = {0,0,0,4,4,1};
+    h_nvnTextureWriteTexels(&tex, NULL, &region, pixels);
+    mtl_reg_tex(1, (const tex_t *)&tex, NULL);
+    mtl_sub_begin();
+    id<MTLTexture> first = tex_by_id(1);
+    CHECK(first && first.width == 4, "the packaged texture resolves");
+    id held = tex_get(serial);
+    CHECK([held isKindOfClass:[NvPkg class]], "its table entry is an NvPkg");
+    pthread_mutex_lock(&g_cpu_tex_mu); nvn_hm_del(&g_cpu_tex, &serial); pthread_mutex_unlock(&g_cpu_tex_mu);   // the serial leaves the set, its entry stays (cpu_unc_drop between its deletes and its tex_put)
+    CHECK(!tex_cpu_written(serial), "the serial is no longer CPU-written");
+    id<MTLTexture> again = tex_mtl((const tex_t *)&tex);
+    CHECK(again && ![(id)again isKindOfClass:[NvPkg class]], "tex_mtl does not hand out the NvPkg");
+    CHECK(again && again.width == 4 && again.height == 4, "it hands out the entry's texture");
+    CHECK(mtl_wait(mtl_sub_commit(),5000000000ull), "submission completed");
+    // finalized before its memory goes: a texture left registered (nvn_ft_poll's list) would have the later poll tests read the unmapped pages
+    mtl_reg_tex(1,NULL,NULL); h_nvnTextureFinalize(&tex); h_nvnMemoryPoolFinalize((NVNmemoryPool *)&pool);
+    defer_drain(); munmap(mem,len);
+}
 // nvnMemoryPoolFinalize on a game thread while the submit thread walks the texture IDs (pool_gpu, holding g_rmu): the finalize dropped the pool's CPU-written classification before it
 // marked the pool's IDs gone, so a walk in between found a live ID, a pool still set and a texture no longer CPU-written, and tex_mtl_ handed out its packaged entry (an NvPkg) as the
 // texture: "-[NvPkg buffer]: unrecognized selector" in tex_by_id (Ocarina of Time, reference/nvn-objects.md). Here the test holds g_rmu as the walk does while another thread finalizes
@@ -358,6 +390,6 @@ int main(int argc, const char **argv) { @autoreleasepool {
     own.serial = 900002; mtl_tex_init(&own); moved = own; own.magic = 0; mtl_tex_release(&moved);
     CHECK(!own_tex_live(moved.serial), "a copy outliving the object it was initialized in ends the texture");
     retired_classification(); descriptor_replacement();
-    if (argc > 1 && !strcmp(argv[1], "--metal")) { mtl_init(); finalized_upload(0); finalized_upload(1); finalize_during_walk(); poll_asks_again(); poll_beside(); handover_holders(); retire_after_completion(); retire_across_threads(); }
+    if (argc > 1 && !strcmp(argv[1], "--metal")) { mtl_init(); finalized_upload(0); finalized_upload(1); packaged_entry_outside_the_set(); finalize_during_walk(); poll_asks_again(); poll_beside(); handover_holders(); retire_after_completion(); retire_across_threads(); }
     printf("t_cpu_tex: %d checks, %d failed\n", checks, failed); return failed != 0;
 } }

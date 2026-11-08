@@ -51,7 +51,7 @@ int main(void) { @autoreleasepool {
                 mtl_sub_fill((uint64_t)args, 4, GROUPS); mtl_sub_fill((uint64_t)args + 4, 8, 1);
                 dp = (p_dispatch){.x = 99, .y = 99, .z = 99, .ind = (uint64_t)args};
             }
-            dispatch(&dp);
+            dispatch(&dp, NULL);
             uint64_t fence = mtl_sub_commit(); CHECK(mtl_wait(fence, 5000000000ull), "dispatch completes"); mtl_drain();
             CHECK(!mtl_last_commit_error(), "no GPU error");
             const uint32_t *out = (const uint32_t *)mem; long bad = 0, missing = 0;

@@ -105,7 +105,7 @@ static void image_case(int tid) {
     os_unfair_lock_unlock(&g_rmu);
     run2(pipe_of(@"#include <metal_stdlib>\nusing namespace metal;\nkernel void store(texture2d<float, access::write> t [[texture(0)]], uint i [[thread_position_in_grid]]) { t.write(float4(0.25, 0.5, 0.75, 0.125), uint2(i, 0)); }\n", @"store"), img, nil);
     uint8_t px[8]; [base getBytes:px bytesPerRow:8 fromRegion:MTLRegionMake2D(0, 0, 2, 1) mipmapLevel:0];
-    for (int i = 0; i < 8; i++) CHECK(abs((int)px[i] - (int[4]){64, 128, 191, 32}[i % 4]) <= 1, "the image write is stored as written");
+    for (int i = 0; i < 8; i++) CHECK(abs((int)px[i] - (int[4]){64, 128, 191, 32}[i % 4]) <= 1, "the image write is stored as written");   // NOLINT(clang-analyzer-osx.cocoa.RetainCount): base is held by g_by_serial (serial_put, hm_put_id's CFBridgingRetain); the image view path through tex_upgrade hides that from the analyzer
     read_check(tid, view, (const float[8]){px[0]/255.f, px[1]/255.f, px[2]/255.f, 1, px[4]/255.f, px[5]/255.f, px[6]/255.f, 1}, 0.001f);
 }
 // A plain texture filled once from its pool (tex_init_fill): guest bits uploaded in Metal's order, so it reads right with no swap, and a later Metal render into part of it

@@ -160,6 +160,8 @@ id own_alias_get_locked(const alias_key *k) { return hm_get_id(&g_alias, k); }
 id own_alias_peek(const alias_key *k) { pthread_mutex_lock(&g_smu); id o = hm_get_id(&g_alias, k); pthread_mutex_unlock(&g_smu); return o; }
 void own_alias_put_locked(const alias_key *k, id o, uint64_t seen) { alias_put(k, o, seen); }
 int own_alias_del_locked(const alias_key *k) { return alias_del(k); }
+uint64_t own_alias_seen_locked(const alias_key *k) { return (uint64_t)(uintptr_t)nvn_hm_get(&g_alias_seen, k); }
+void own_alias_seen_set_locked(const alias_key *k, uint64_t now) { if (nvn_hm_get(&g_alias, k)) alias_seen(k, now); }
 // On memory pool Finalize, the textures built on that pool leave the sharing table (the keys collected first, then deleted: deletion shifts entries back). The sharing table used not to
 // evict: Mario's pools stay for good, so entries are bounded; Engage frees pools on scene changes and rebuilds on new ones, so the old pools' render targets and other private textures
 // stayed in the table forever (about 0.8 GB more GPU memory over 850 s of the title demo), and linear textures built directly on a pool also kept the whole pool buffer alive. Also, when a

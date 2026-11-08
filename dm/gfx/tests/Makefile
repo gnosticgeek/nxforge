@@ -13,7 +13,7 @@ GAME_H = ../../host/gen/$(GAME)/game_profile.h
 MSL_H = ../../host/gen/msl-macosx/host_msl_gen.h
 CFLAGS=-O1 -g -Wall -Wno-unused-function -I../nvn/include -I$(dir $(GAME_H)) -I$(dir $(MSL_H))
 GFX=$(filter-out ../nvn/hle_nvn.c,$(sort $(wildcard ../nvn/*.c ../nvn/*.m ../nvn/*.S ../tex/*.c ../tex/*.m)))
-GFX_H=$(wildcard ../nvn/*.h ../nvn/*.inc ../nvn/include/*.h ../tex/*.h) $(GAME_H) $(MSL_H)
+GFX_H=$(wildcard ../nvn/*.h ../nvn/*.inc ../nvn/nxforge/*.inc ../nvn/nxforge/*.h ../nvn/include/*.h ../tex/*.h) $(GAME_H) $(MSL_H)
 .DEFAULT_GOAL := t_nvn   # the profile header rule comes first, so keep the default goal as before
 # Regenerated on every make (host_msl_force), by the host Makefile: a header from an older game.py lacks newer defines; game.py writes it only when it changes, so an unchanged header rebuilds no test
 $(GAME_H): host_msl_force
@@ -118,10 +118,25 @@ check_t_perf_order: t_perf_order
 	MTL_DEBUG_LAYER=1 ./t_perf_order
 	DM_NVN_ENC_THREAD=1 MTL_DEBUG_LAYER=1 ./t_perf_order
 	DM_NVN_FAST_WAKE=0 DM_NVN_SLICE_MERGE=0 DM_NVN_CS_HOIST=0 MTL_DEBUG_LAYER=1 ./t_perf_order
+# Failed GPU work named (DM_TEST_GPU_HANG, set by the test): the segment that hung, its shader keys and the segment before it; with the encode thread too, which labels through its record
+t_gpu_hang_names: t_gpu_hang_names.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_gpu_hang_names.m $(MTL_T_SRC) $(FW)
+.PHONY: check_t_gpu_hang_names
+check_t_gpu_hang_names: t_gpu_hang_names
+	MTL_DEBUG_LAYER=1 ./t_gpu_hang_names
+	DM_NVN_ENC_THREAD=1 MTL_DEBUG_LAYER=1 ./t_gpu_hang_names
 t_link_ticks: t_link_ticks.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_link_ticks.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
 t_cpu_tex: t_cpu_tex.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_cpu_tex.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
+t_deferred_release: t_deferred_release.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_deferred_release.m $(MTL_T_SRC) $(FW)
+t_res_guard: t_res_guard.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_res_guard.m $(MTL_T_SRC) $(FW)
+.PHONY: check_t_res_guard
+check_t_res_guard: t_res_guard
+	MTL_DEBUG_LAYER=1 ./t_res_guard
+	MTL_DEBUG_LAYER=1 ./t_res_guard stuck
 .PHONY: check_t_cpu_tex
 check_t_cpu_tex: t_cpu_tex
 	MTL_DEBUG_LAYER=1 ./t_cpu_tex --metal
@@ -200,6 +215,16 @@ t_present_rescue: t_present_rescue.m t_present_rescue_focus.c $(MTL_T_DEP)
 .PHONY: check_t_present_rescue
 check_t_present_rescue: t_present_rescue
 	MTL_DEBUG_LAYER=1 ./t_present_rescue --metal
+t_frame_interp: t_frame_interp.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_frame_interp.m $(MTL_T_SRC) $(FW)
+.PHONY: check_t_frame_interp
+check_t_frame_interp: t_frame_interp
+	MTL_DEBUG_LAYER=1 ./t_frame_interp
+t_pixel_art: t_pixel_art.m ../nvn/nxforge/pixel_art.inc ../nvn/nxforge/pixel_grid.h $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_pixel_art.m $(MTL_T_SRC) $(FW)
+.PHONY: check_t_pixel_art
+check_t_pixel_art: t_pixel_art
+	MTL_DEBUG_LAYER=1 ./t_pixel_art
 t_present_alloc: t_present_alloc.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_present_alloc.m $(MTL_T_SRC) $(FW)
 .PHONY: check_t_present_alloc
@@ -482,6 +507,13 @@ t_srgb_alias: t_srgb_alias.m $(MTL_T_DEP)
 check_t_srgb_alias: RUN_ENV = MTL_DEBUG_LAYER=1
 t_image_alias: t_image_alias.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_image_alias.m $(MTL_T_SRC) $(FW)
+t_pool_heap: t_pool_heap.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_heap.m $(MTL_T_SRC) $(FW)
+.PHONY: check_t_pool_heap
+check_t_pool_heap: t_pool_heap
+	DM_NVN_ENC_THREAD=0 MTL_DEBUG_LAYER=1 ./t_pool_heap
+	DM_NVN_ENC_THREAD=1 MTL_DEBUG_LAYER=1 ./t_pool_heap
+	MTL_DEBUG_LAYER=1 ./t_pool_heap off
 .PHONY: check_t_image_alias
 check_t_image_alias: t_image_alias
 	DM_NVN_ENC_THREAD=0 MTL_DEBUG_LAYER=1 ./t_image_alias
@@ -496,6 +528,9 @@ check_t_rt_recycle: t_rt_recycle
 # A game's upscaler drawn by MetalFX (any profile; the profile's upscaler shaders, from its shader map, when it has some); with and without the switch, and on the encoding thread
 t_upscaler_mfx: t_upscaler_mfx.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_upscaler_mfx.m $(MTL_T_SRC) $(FW)
+t_ndve_movie: t_ndve_movie.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_ndve_movie.m $(MTL_T_SRC) $(FW)
+check_t_ndve_movie: RUN_ENV = MTL_DEBUG_LAYER=1
 .PHONY: check_t_upscaler_mfx
 # (MetalFX's Metal 4 scaler stops under Metal validation on a barrier-stage setting of its own that has no public API, "_outputTextureBarrierStages not set": its run is without it)
 check_t_upscaler_mfx: t_upscaler_mfx
@@ -513,6 +548,9 @@ check_t_dlss_mfx: t_dlss_mfx
 t_image_usage: t_image_usage.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_image_usage.m $(MTL_T_SRC) $(FW)
 check_t_image_usage: RUN_ENV = MTL_DEBUG_LAYER=1
+t_image_srgb: t_image_srgb.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_image_srgb.m $(MTL_T_SRC) $(FW)
+check_t_image_srgb: RUN_ENV = MTL_DEBUG_LAYER=1
 t_image_type: t_image_type.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_image_type.m $(MTL_T_SRC) $(FW)
 check_t_image_type: RUN_ENV = MTL_DEBUG_LAYER=1
