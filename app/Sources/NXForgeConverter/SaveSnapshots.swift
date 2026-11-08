@@ -150,7 +150,7 @@ enum SaveSnapshots {
     }
 
     private static func enoughSpace(_ dir: String, for inv: SaveInventory) throws {
-        let free = (try? dir.url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage) ?? .max
+        let free = Disk.free(dir) ?? .max
         guard free >= inv.bytes + (64 << 20) else { throw ConverterError("not enough free space for a copy of the save (\(inv.bytes >> 20) MB); nothing was changed") }
     }
 

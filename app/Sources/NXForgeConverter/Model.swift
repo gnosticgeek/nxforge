@@ -45,6 +45,7 @@ final class AppModel {
             guard settings != oldValue else { return }
             settings.save()
             if settings.appearance != oldValue.appearance { applyAppearance() }
+            if settings.outDir != oldValue.outDir { measure() }   // the app's drive is checked for room too
         }
     }
     var checks: [Check]?
