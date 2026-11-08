@@ -11,7 +11,8 @@ the layer files as one last commit ("NXForge layer files"). Builds, the converte
   layer.py status               the pin, how far nxnative's main is ahead of it, and whether tree/ is current
   layer.py update [REF]         move the pin to REF (default: nxnative's main, fetched) and assemble. A patch nxnative now has
                                 is dropped; a patch that no longer applies stops in tree/ (git am) for you to fix, then
-                                `git -C tree am --continue` (or --skip to drop it) and `layer.py export`
+                                `layer.py continue` (or `continue --skip` to drop it) and `layer.py export`
+  layer.py continue [--skip]    after fixing a stopped patch (files `git -C tree add`ed): finish it and apply the patches after it
   layer.py export               write tree/'s commits back to the layer: patch commits to layer/patches (an edited or new commit
                                 after the pin), changed layer files to layer/files
   layer.py try [REF]            dry run of update: which patches apply to REF (default: nxnative's main), which nxnative already
@@ -160,8 +161,8 @@ def assemble(force: bool = False, log=print) -> bool:
     url, commit = read_engine()
     if TREE.exists() and (TREE / '.git').exists():
         if in_am():
-            raise LayerError('tree/ is in the middle of applying patches (git am): finish with `git -C tree am --continue` or '
-                             '--skip, then `layer.py export`; or `layer.py assemble --force` to start again')
+            raise LayerError('tree/ is in the middle of applying patches (git am): finish with `layer.py continue` (or '
+                             '`continue --skip`), then `layer.py export`; or `layer.py assemble --force` to start again')
         if not force and is_current():
             return False
         if not force and dirty():
@@ -180,8 +181,18 @@ def assemble(force: bool = False, log=print) -> bool:
             git('am', '--abort', cwd=TREE, check=False)
         log(f'tree/: nxnative {commit[:10]}')
         git('checkout', '--quiet', '--detach', '--force', commit, cwd=TREE)
-    patches = patch_files()
-    for p in patches:
+    _apply(patch_files(), commit, log)
+    return True
+
+
+def rest_file() -> Path:
+    return gitdir() / 'nxforge-layer-rest'
+
+
+def _apply(patches: list[Path], commit: str, log=print) -> None:
+    """Apply patches in order, then the layer files. On a conflict, records the patches after the stopped one (for `continue`)."""
+    rest_file().unlink(missing_ok=True)
+    for i, p in enumerate(patches):
         r = git('am', '-3', '--quiet', '--keep-cr', str(p), cwd=TREE, check=False, env=IDENT)
         if r.returncode:
             out = (r.stdout + r.stderr)
@@ -190,10 +201,11 @@ def assemble(force: bool = False, log=print) -> bool:
                 log(f'  {p.name}: nxnative already has it; it can be dropped (delete the file, or `layer.py export`)')
                 continue
             conflicts = git('diff', '--name-only', '--diff-filter=U', cwd=TREE, check=False).stdout.split()
+            rest_file().write_text(''.join(f'{q.name}\n' for q in patches[i + 1:]))
             raise LayerError(f'{p.name} does not apply to nxnative {commit[:10]}'
                              + (f' (conflicts in {", ".join(conflicts)})' if conflicts else '') +
-                             '.\nFix it in tree/, `git -C tree add` the files and `git -C tree am --continue` (or `--skip` to drop the '
-                             'patch), then `scripts/layer.py export`.')
+                             '.\nFix it in tree/, `git -C tree add` the files and `scripts/layer.py continue` (or `continue --skip` '
+                             'to drop the patch), then `scripts/layer.py export`.')
         log(f'  {p.name}')
     files = layer_files()
     for rel in files:
@@ -208,7 +220,21 @@ def assemble(force: bool = False, log=print) -> bool:
         git('commit', '--quiet', '--allow-empty', '-m', FILES_SUBJECT, cwd=TREE, env=IDENT)
         log(f'  {len(files)} layer files')
     (gitdir() / 'nxforge-layer').write_text(f'{stamp()} {tree_head()}\n')
-    return True
+
+
+def continue_(skip: bool = False, log=print) -> None:
+    """Finish the stopped patch (or drop it), then apply the patches after it and the layer files."""
+    rest = rest_file()
+    if in_am():
+        r = git('am', '--skip' if skip else '--continue', cwd=TREE, check=False, env=IDENT)
+        if r.returncode:
+            raise LayerError('git am could not go on: ' + (r.stdout + r.stderr).strip())
+    elif not rest.exists():
+        raise LayerError('nothing to continue: tree/ is not stopped on a patch')
+    names = rest.read_text().split() if rest.exists() else []
+    _, commit = read_engine()
+    _apply([PATCHES / n for n in names], commit, log)
+    log('tree/: all patches applied; now `layer.py export`')
 
 
 def slug(subject: str) -> str:
@@ -218,7 +244,10 @@ def slug(subject: str) -> str:
 
 def export(log=print) -> None:
     if in_am():
-        raise LayerError('tree/ is still applying patches: finish `git -C tree am --continue` first')
+        raise LayerError('tree/ is still applying patches: finish with `layer.py continue` first')
+    if rest_file().exists():
+        raise LayerError('patches after the stopped one are not applied yet: run `layer.py continue` first '
+                         '(exporting now would drop them)')
     if dirty():
         raise LayerError('tree/ has uncommitted changes: commit them first')
     _, commit = read_engine()
@@ -254,7 +283,7 @@ def export(log=print) -> None:
 
 def update(ref: str | None, log=print) -> None:
     url, old = read_engine()
-    if TREE.exists() and (TREE / '.git').exists() and (dirty() or unexported() or in_am()):
+    if TREE.exists() and (TREE / '.git').exists() and (dirty() or unexported() or in_am() or rest_file().exists()):
         raise LayerError('tree/ has work that is not exported: run `layer.py export` first')
     git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}')
     target = ref or MAIN_REF
@@ -320,8 +349,8 @@ def status(log=print) -> None:
     log(f'layer: {len(patch_files())} patch(es), {len(layer_files())} file(s)')
     if not (TREE / '.git').exists():
         log('tree/: not assembled (run `layer.py assemble`)')
-    elif in_am():
-        log('tree/: stopped in git am (a patch did not apply)')
+    elif in_am() or rest_file().exists():
+        log('tree/: stopped on a patch that did not apply (fix it, then `layer.py continue`)')
     elif is_current():
         log('tree/: current')
     else:
@@ -335,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser('status'); sub.add_parser('export'); sub.add_parser('path')
     a_up = sub.add_parser('update'); a_up.add_argument('ref', nargs='?')
     a_try = sub.add_parser('try'); a_try.add_argument('ref', nargs='?')
+    a_co = sub.add_parser('continue'); a_co.add_argument('--skip', action='store_true')
     a = ap.parse_args(argv)
     try:
         if a.cmd == 'path':
@@ -347,6 +377,8 @@ def main(argv: list[str] | None = None) -> int:
             export()
         elif a.cmd == 'update':
             update(a.ref)
+        elif a.cmd == 'continue':
+            continue_(a.skip)
         elif a.cmd == 'try':
             return 1 if any(state == 'conflicts' for _, state, _ in try_update(a.ref)) else 0
     except LayerError as e:

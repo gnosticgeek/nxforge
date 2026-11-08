@@ -19,7 +19,7 @@ NXForge is the NXForge Converter plus a Mac player layer on an **untouched** nxn
 - `assemble`: make `tree/` match the layer (a quick no-op when it already does). The converter and the CLI run it before a build.
 - `status`: the pin, how far nxnative's `main` is past it, whether `tree/` is current.
 - `try [REF]`: a dry run against nxnative's `main` (or REF): which patches apply, which nxnative already has, which conflict and where. Changes nothing. The nightly `upstream-check` workflow posts this.
-- `update [REF]`: move the pin to nxnative's `main` (or REF) and reassemble. A patch nxnative now has is dropped; a patch that no longer applies stops in `tree/` (`git am`) for fixing, then `git -C tree am --continue` and `layer.py export`.
+- `update [REF]`: move the pin to nxnative's `main` (or REF) and reassemble. A patch nxnative now has is dropped; a patch that no longer applies stops in `tree/` (`git am`) for fixing, then `layer.py continue` (which also applies the patches after it; `continue --skip` drops the stopped patch) and `layer.py export`.
 - `export`: write `tree/`'s commits back to the layer. To change a patch, edit in `tree/` and fold the change into that patch's commit (`git -C tree commit --fixup <commit>`, `git -C tree rebase -i --autosquash <pin>`); a new commit becomes a new patch. Layer files can be edited in `layer/files/` or in `tree/` (export copies them back).
 
 Rules:
