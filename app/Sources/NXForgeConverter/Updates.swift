@@ -136,7 +136,8 @@ extension AppModel {
             let cur = Releases.sidebarVersion(repo: repo, commit: nil)
             var by: [String: String] = [:]
             for b in builds { by[b.app] = Releases.sidebarVersion(repo: repo, commit: b.engine.commit) ?? "" }
-            await MainActor.run { self.sidebarCurrent = cur; self.sidebarBuilds = by }
+            let found = by
+            await MainActor.run { self.sidebarCurrent = cur; self.sidebarBuilds = found }
         }
     }
 
