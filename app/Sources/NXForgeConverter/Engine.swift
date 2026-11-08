@@ -195,7 +195,9 @@ enum Engine {
         let lines = log.split(separator: "\n").map { String($0) }
         guard let h = lines.firstIndex(where: { $0.hasPrefix("## ") }) else { return nil }
         let title = lines[h].dropFirst(3).split(separator: " (").first.map(String.init) ?? ""
-        let first = lines[(h + 1)...].first { $0.hasPrefix("- ") }.map { String($0.dropFirst(2)).replacingOccurrences(of: "**", with: "") } ?? ""
+        let first = lines[(h + 1)...].first { $0.hasPrefix("- ") }.map { String($0.dropFirst(2)).replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)   // [text](link) → text
+        } ?? ""
         let note = first.count > 110 ? String(first.prefix(110)) + "…" : first
         return note.isEmpty ? title : "\(title) · \(note)"
     }
