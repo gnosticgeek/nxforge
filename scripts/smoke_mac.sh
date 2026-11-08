@@ -11,6 +11,8 @@
 #   --out: where the logs and results go (default ~/Library/Logs/NXForge/smoke/<date-time>). Exit status 0 when everything passed.
 set -uo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
+engine="$repo"   # the engine's files: tree/ assembled from the layer (scripts/layer.py) from 0.19.0
+if [ -f "$repo/layer/ENGINE" ]; then python3 "$repo/scripts/layer.py" assemble >/dev/null || exit 1; engine="$repo/tree"; fi
 game=010015100B514000 seconds=60 out="" builds=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,14 +45,14 @@ step() {   # step <name> <log name> <command...>: runs it, records ✓ or ✗
   else echo "| $name | ✗ (exit $?) | $(basename "$log") |" >> "$summary"; echo "   ✗ see $log"; tail -20 "$log"; failed=1; fi
 }
 
-step "Host unit tests ($game)" host-tests make -C "$repo/dm/host/tests" GAME="$game" -j8 run
-step "GPU graphics tests ($game)" gfx-tests make -C "$repo/dm/gfx/tests" GAME="$game" -j8 run
+step "Host unit tests ($game)" host-tests make -C "$engine/dm/host/tests" GAME="$game" -j8 run
+step "GPU graphics tests ($game)" gfx-tests make -C "$engine/dm/gfx/tests" GAME="$game" -j8 run
 step "Converter unit tests" converter-tests swift test --package-path "$repo/app"
 
 for b in ${builds[@]+"${builds[@]}"}; do   # bash 3.2 (macOS) with set -u: an empty array is unbound
   id="$(basename "$b" | sed -n 's/^\([0-9A-Fa-f]\{16\}\)_build$/\1/p')"
   [ -n "$id" ] || { echo "| $b | ✗ not an <id>_build folder | |" >> "$summary"; failed=1; continue; }
-  step "$id runs ${seconds} s" "game-$id" python3 "$repo/scripts/bench.py" "$b" --idle "$seconds" --runs 1 --no-hud --out "$out/game-$id"
+  step "$id runs ${seconds} s" "game-$id" python3 "$engine/scripts/bench.py" "$b" --idle "$seconds" --runs 1 --no-hud --out "$out/game-$id"
   if [ -f "$out/game-$id/results.json" ]; then
     python3 - "$out/game-$id/results.json" >> "$summary" <<'PY'
 import json, sys

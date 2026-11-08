@@ -4,7 +4,7 @@ from pathlib import Path
 import importlib.util
 import unittest
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('release_check', REPO / 'scripts/release_check.py')
 assert spec and spec.loader
 rc = importlib.util.module_from_spec(spec)

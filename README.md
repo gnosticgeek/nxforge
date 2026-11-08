@@ -1,18 +1,18 @@
 # NXForge
 
-NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It is two things on top of nxnative's engine: the **NXForge Converter**, a Mac app that finds your games and builds and rebuilds them, and a **Mac player layer**: the in-game Quick settings sidebar with a CRT filter, FXAA, anisotropic filtering, cheats, mods, screenshots and recordings, and control remapping. The engine itself is nxnative's and follows it closely ([UPSTREAM.md](UPSTREAM.md#thin-fork-from-0150)). Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
+NXForge is a Mac-focused downstream of **[nxnative](https://github.com/seedds/nxnative)** by seedds and its contributors. It is two things on top of nxnative's engine: the **NXForge Converter**, a Mac app that finds your games and builds and rebuilds them, and a **Mac player layer**: the in-game Quick settings sidebar with a CRT filter, FXAA, anisotropic filtering, cheats, mods, screenshots and recordings, and control remapping. The engine itself is nxnative's, untouched: this repository pins one nxnative commit and keeps NXForge's changes beside it as a small set of patches and files, so nxnative's updates come in whole ([UPSTREAM.md](UPSTREAM.md#engine-and-layer-from-0190)). Everything below works as it does in nxnative; [Upstream](#upstream-nxnative) says how the two projects relate.
 
 Play your own Nintendo Switch games natively on Mac, iPhone and iPad. Bring your game (its NSP files) and your `prod.keys`; one script turns them into an IPA that you sideload.
 
 It is not an emulator: the game's own code runs directly on the Apple chip, with Switch graphics rebuilt on Metal. Nothing from any game is in this repository, and the project is not affiliated with Nintendo or any game publisher.
 
-Switch 2 games have started too: [Donkey Kong Bananza](dm/games/040074A01BF12000/README.md), [Splatoon Raiders](dm/games/0400380020056000/README.md), [Fire Emblem Fortune's Weave](dm/games/04007EF01F8AE000/README.md), [Pokémon Pokopia](dm/games/0400A3A01EE4C000/README.md), [Hyrule Warriors: Age of Imprisonment](dm/games/04003F40232DE000/README.md), [Mario Kart World](dm/games/0400C3F00006E000/README.md) and [Mario Tennis Fever](dm/games/0400D4201C6EA000/README.md) play on the Mac, packed from one [`.nup` file](#switch-2-games) or a dump of the game; iPhone and iPad are untested.
+Switch 2 games have started too: [Donkey Kong Bananza](https://github.com/seedds/nxnative/blob/main/dm/games/040074A01BF12000/README.md), [Splatoon Raiders](https://github.com/seedds/nxnative/blob/main/dm/games/0400380020056000/README.md), [Fire Emblem Fortune's Weave](https://github.com/seedds/nxnative/blob/main/dm/games/04007EF01F8AE000/README.md), [Pokémon Pokopia](https://github.com/seedds/nxnative/blob/main/dm/games/0400A3A01EE4C000/README.md), [Hyrule Warriors: Age of Imprisonment](https://github.com/seedds/nxnative/blob/main/dm/games/04003F40232DE000/README.md), [Mario Kart World](https://github.com/seedds/nxnative/blob/main/dm/games/0400C3F00006E000/README.md) and [Mario Tennis Fever](https://github.com/seedds/nxnative/blob/main/dm/games/0400D4201C6EA000/README.md) play on the Mac, packed from one [`.nup` file](#switch-2-games) or a dump of the game; iPhone and iPad are untested.
 
 ## Upstream: nxnative
 
-NXForge exists because of **[nxnative](https://github.com/seedds/nxnative)**, created by **seedds** and built up by its community of contributors: the engine, the rewriter, the host, the NVN, Vulkan and OpenGL layers on Metal, the game profiles and the packing scripts all come from there. Its history, with every contributor's commits, is kept in this repository, and its MIT license and copyright notice stay in [LICENSE](LICENSE); [NOTICE](NOTICE) records the attribution.
+NXForge exists because of **[nxnative](https://github.com/seedds/nxnative)**, created by **seedds** and built up by its community of contributors: the engine, the rewriter, the host, the NVN, Vulkan and OpenGL layers on Metal, the game profiles and the packing scripts all come from there. NXForge builds on an exact nxnative commit (`layer/ENGINE`), so every contributor's work comes in as they wrote it, and its MIT license and copyright notice stay in [LICENSE](LICENSE); [NOTICE](NOTICE) records the attribution.
 
-NXForge stays a downstream, not a replacement. It merges nxnative's main branch regularly, and fixes that help every platform go back to nxnative as small pull requests; [UPSTREAM.md](UPSTREAM.md) has the policy. Please report problems that also happen with plain nxnative there, and problems with NXForge's own features here.
+NXForge stays a downstream, not a replacement. It moves to nxnative's latest main branch regularly (`scripts/layer.py update`), and fixes that help every platform go back to nxnative as small pull requests; [UPSTREAM.md](UPSTREAM.md) has the policy. Please report problems that also happen with plain nxnative there, and problems with NXForge's own features here.
 
 ## How to play
 
@@ -33,6 +33,7 @@ The shaders are built with Xcode 27.2's Metal compiler. Select it before step 1:
 ```
 xcodebuild -downloadComponent MetalToolchain
 git clone https://github.com/gnosticgeek/nxforge.git && cd nxforge
+python3 scripts/layer.py assemble && cd tree   # the engine: nxnative plus NXForge's layer (UPSTREAM.md)
 brew install xcodegen zstd glslang
 brew install --cask dotnet-sdk
 python3 -m pip install lz4 "capstone>=5,<6" fonttools nsz zbic "backports.zstd; python_version < '3.14'"
@@ -56,19 +57,19 @@ python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys
 
 The IPA appears in the game's folder. The first build takes 30–60 minutes and needs free disk space of about twice the game's size plus 10 GB; building again is much faster.
 
-To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game to open from Finder, with a settings window before the game (frame rate, render scale, docked or handheld, language, MetalFX upscaling, rumble) and its save in a `Saves` folder beside it. In the game, Esc opens Quick settings: a CRT filter, anisotropic filtering, the frame-rate counter, volume, controls, mods, cheats, screenshots and recordings ([A Mac app](docs/development.md#a-mac-app)). All options: [The packing script in detail](docs/development.md#the-packing-script-in-detail).
+To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game to open from Finder, with a settings window before the game (frame rate, render scale, docked or handheld, language, MetalFX upscaling, rumble) and its save in a `Saves` folder beside it. In the game, Esc opens Quick settings: a CRT filter, anisotropic filtering, the frame-rate counter, volume, controls, mods, cheats, screenshots and recordings ([A Mac app](https://github.com/seedds/nxnative/blob/main/docs/development.md#a-mac-app)). All options: [The packing script in detail](https://github.com/seedds/nxnative/blob/main/docs/development.md#the-packing-script-in-detail).
 
 ### Install
 
 Install the IPA on your iPhone or iPad with a sideloading tool such as AltStore, Sideloadly or LiveContainer. If your tool offers **Increased Memory Limit**, turn it on: the bigger games need it.
 
-Game too big to install? Build again with `--romfs separate`, and run the command the script prints once to copy the game files to your phone ([Quick reinstalls](docs/development.md#quick-reinstalls)).
+Game too big to install? Build again with `--romfs separate`, and run the command the script prints once to copy the game files to your phone ([Quick reinstalls](https://github.com/seedds/nxnative/blob/main/docs/development.md#quick-reinstalls)).
 
-Controls, saves and settings: [Playing](docs/playing.md). Known issues are in each [game's note](dm/games/README.md#games); there are no amiibo and no online features.
+Controls, saves and settings: [Playing](https://github.com/seedds/nxnative/blob/main/docs/playing.md). Known issues are in each [game's note](https://github.com/seedds/nxnative/blob/main/dm/games/README.md#games); there are no amiibo and no online features.
 
 ### Switch 2 games
 
-A Switch 2 game is built from one [NUP](https://github.com/a55uka/nup) container (a `.nup` file) or a folder of its files, not from NSPs. Neither needs `prod.keys`. A game this project has no profile for is surveyed and gets a provisional profile, as NSPs do ([Port another game](docs/development.md#port-another-game)), which may not boot. You get a Mac app; iPhone and iPad are untested.
+A Switch 2 game is built from one [NUP](https://github.com/a55uka/nup) container (a `.nup` file) or a folder of its files, not from NSPs. Neither needs `prod.keys`. A game this project has no profile for is surveyed and gets a provisional profile, as NSPs do ([Port another game](https://github.com/seedds/nxnative/blob/main/docs/development.md#port-another-game)), which may not boot. You get a Mac app; iPhone and iPad are untested.
 
 **From a `.nup` file**, which holds the base game, its updates and DLC in one file. Give the file, or a folder that holds it:
 
@@ -76,7 +77,7 @@ A Switch 2 game is built from one [NUP](https://github.com/a55uka/nup) container
 python3 scripts/build_ipa_from_nsp.py ~/Games/DonkeyKongBananza.nup --platform mac-app
 ```
 
-[Hyrule Warriors: Age of Imprisonment](dm/games/04003F40232DE000/README.md) is played this way: its 47 GB NUP unpacks in under five minutes. A NUP that carries the game's control data (its NACP) and icon gives the app the game's name and icon; otherwise the name comes from the game's profile and the app has no icon.
+[Hyrule Warriors: Age of Imprisonment](https://github.com/seedds/nxnative/blob/main/dm/games/04003F40232DE000/README.md) is played this way: its 47 GB NUP unpacks in under five minutes. A NUP that carries the game's control data (its NACP) and icon gives the app the game's name and icon; otherwise the name comes from the game's profile and the app has no icon.
 
 A NUP without the base game also works, when its base package is empty or it has none and its updates are marked `standalone_update`: the update is taken as the whole game, and the script says so. If the game then stops on missing files, that update holds only what changed: pack a NUP with the base game. The newest update is selected by default; `--package v<N>` selects another version in the container. Such a container has no `v0` (base game) to select.
 
@@ -99,7 +100,7 @@ An update's folder alone will do (no `base/`), and so will `exefs/` and `romfs/`
 
 ## Games
 
-Games tested on Mac or iPhone. See the [per-game notes](dm/games/README.md#games) for tested platforms, progress and known issues:
+Games tested on Mac or iPhone. See the [per-game notes](https://github.com/seedds/nxnative/blob/main/dm/games/README.md#games) for tested platforms, progress and known issues:
 
 Needs iOS / iPadOS 26 or later on an iPhone 15 Pro or newer (A17 Pro chip or later) or an iPad with an M1 chip or later: the games' textures are BC-compressed, and older iPhones can't read that format. Other games aren't supported yet. For them the script writes a survey and still tries its best to pack an IPA, guessing the game's settings; such an IPA may not start.
 
@@ -352,7 +353,7 @@ Under a game, "60 fps with 1.2.0" means it runs at 60 fps (30 on the console) wi
 
 ### For developers
 
-<sub>[How it works](docs/development.md) · [Game notes](dm/games/README.md#games) · [Bring-up and debugging](docs/agents/README.md) · [Front ends](docs/frontends.md) · [Contributing](CONTRIBUTING.md) · [Working with upstream](UPSTREAM.md)</sub>
+<sub>[How it works](https://github.com/seedds/nxnative/blob/main/docs/development.md) · [Game notes](https://github.com/seedds/nxnative/blob/main/dm/games/README.md#games) · [Bring-up and debugging](https://github.com/seedds/nxnative/blob/main/docs/agents/README.md) · [Front ends](https://github.com/seedds/nxnative/blob/main/docs/frontends.md) · [Contributing](CONTRIBUTING.md) · [Working with upstream](UPSTREAM.md)</sub>
 
 ### Acknowledgements
 
@@ -360,18 +361,18 @@ This project is built on other people's work:
 
 - **[nxnative](https://github.com/seedds/nxnative)** (MIT) by seedds and its contributors, which NXForge is a downstream of (see [above](#upstream-nxnative)).
 - **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** (MIT) developed this native-execution approach, for Diablo II: Resurrected. nxnative started as a copy of its generic parts: the NSO rewriter, the host that stands in for Horizon, the NVN-on-Metal layer and the iOS app shell. Fixes go both ways.
-- **Ryujinx** (MIT): its shader translator (`Ryujinx.Graphics.Shader`, `Ryujinx.Common` and `Spv.Generator` 1.3.2, in `dm/third_party/ryujinx` with a few fixes listed in [its README](dm/third_party/ryujinx/README.md)) turns the games' Maxwell shaders into SPIR-V. Its emulation of the kernel and system services is also a reference when the host's behaviour is in doubt.
+- **Ryujinx** (MIT): its shader translator (`Ryujinx.Graphics.Shader`, `Ryujinx.Common` and `Spv.Generator` 1.3.2, in `dm/third_party/ryujinx` with a few fixes listed in [its README](https://github.com/seedds/nxnative/blob/main/dm/third_party/ryujinx/README.md)) turns the games' Maxwell shaders into SPIR-V. Its emulation of the kernel and system services is also a reference when the host's behaviour is in doubt.
 - **[Atmosphère](https://github.com/Atmosphere-NX/Atmosphere)**: its kernel, mesosphère, is the reference for Horizon's synchronization semantics (address arbiter, condition variables).
 - **yuzu**: Maxwell instruction encodings for the shader reference tool, and a cross-check for kernel behaviour.
 - **[LibHac](https://github.com/Thealexbarney/LibHac)**: reads NSPs and layers updates over the base game in `dm/tools/nx_extract`. **hactool** did the first extractions.
 - **[SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)**: SPIR-V to Metal Shading Language. **[glslang](https://github.com/KhronosGroup/glslang)** compiles the GLSL of OpenGL games to SPIR-V for it.
 - **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)** (MIT): the GPU widening of 8-bit indices and in-pass clears in `dm/gfx/nvn/nvn_mtl.m`, and the visibility-counter lowering in the shader translator.
 - **deko3d** (zlib): its texture layout size algorithm is ported in `dm/gfx/nvn/nvn_tex.c`.
-- **libvpx** (VP9 movies), **stb_vorbis** (movie sound), the **Vulkan headers** and **NVIDIA FLIP** ship in `dm/third_party` with their licenses ([list](dm/third_party/README.md)).
+- **libvpx** (VP9 movies), **stb_vorbis** (movie sound), the **Vulkan headers** and **NVIDIA FLIP** ship in `dm/third_party` with their licenses ([list](https://github.com/seedds/nxnative/blob/main/dm/third_party/README.md)).
 - **Capstone**, **lz4**, **fontTools** and **XcodeGen** are used by the build.
 - Other nxnative front ends (all MIT) gave NXForge ideas, reimplemented here: **[NX Play](https://github.com/varyform/nx-native-wrapper)** (Keep This Build), the **[NxNative Launcher](https://github.com/rennan101/nxnative_Launcher)** (quitting from the controller, Atmosphere-layout mods) and **[NX2Apple](https://github.com/LNPANDY/NX2Apple)** (issue forms; in 0.10.0 the newer Metal compiler check and the pointer hiding, taken from its patches 0034 by LNPANDY and 0032 by v0lumehi, and ports of its build-input check for older builds, frame-time recording and dropped files). **[LumaNX](https://github.com/Xc1Ym/LumaNX)** gave the converter's failure explanations and its checked save snapshots.
 - **[ns2ios-shell](https://github.com/xinerqu/ns2ios-shell)** (MIT) by xinerqu: the closed standard input for `vk_shaders.py`'s child processes (0.13.0).
 
 ### License
 
-MIT (see [LICENSE](LICENSE)), the license nxnative is published under; the copyright notice for seedds stays with it, and [NOTICE](NOTICE) lists where NXForge's code comes from. Third-party code keeps its own license; see [dm/third_party](dm/third_party/README.md).
+MIT (see [LICENSE](LICENSE)), the license nxnative is published under; the copyright notice for seedds stays with it, and [NOTICE](NOTICE) lists where NXForge's code comes from. Third-party code keeps its own license; see [dm/third_party](https://github.com/seedds/nxnative/blob/main/dm/third_party/README.md).

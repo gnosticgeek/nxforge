@@ -4,7 +4,7 @@ import importlib.util, io, json, os, sys, tempfile, time, unittest
 from pathlib import Path
 from unittest import mock
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'scripts'))
 spec = importlib.util.spec_from_file_location('nxforge', REPO / 'scripts/nxforge.py')
 assert spec is not None and spec.loader is not None

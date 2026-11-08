@@ -171,7 +171,7 @@ extension AppModel {
 
     func hasProfile(_ g: LibraryGame) -> Bool {
         guard let repo = env?.repo, let t = g.titleID else { return false }
-        return FileManager.default.fileExists(atPath: "\(repo)/dm/games/\(t)")
+        return FileManager.default.fileExists(atPath: Layer.file(repo, "dm/games/\(t)"))
     }
 
     /// The folder holds a newer update than the one the build was made from.

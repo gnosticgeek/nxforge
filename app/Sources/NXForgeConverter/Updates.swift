@@ -11,7 +11,7 @@ import SwiftUI
 
 enum Releases {
     static let upstreamURL = "https://github.com/seedds/nxnative.git"
-    static let sidebarFile = "dm/host/quick_settings_mac.swift"
+    static let sidebarFile = "dm/host/quick_settings_mac.swift"   // an engine path: layer/files/ holds it from 0.19.0 (Layer)
     private static let sidebarPattern = try! NSRegularExpression(pattern: #"(?m)^let SIDEBAR_VERSION = "(\d+\.\d+\.\d+)""#)
 
     static func git(_ repo: String, _ args: [String]) -> String? { ConverterUpdate.git(repo, args) }
@@ -47,12 +47,12 @@ enum Releases {
     /// checkout does not have the commit. With no commit, the checkout's working tree.
     static func sidebarVersion(repo: String, commit: String?) -> String? {
         guard let c = commit else {
-            return (try? String(contentsOfFile: "\(repo)/\(sidebarFile)", encoding: .utf8)).flatMap(parseSidebar)
+            return (try? String(contentsOfFile: Layer.file(repo, sidebarFile), encoding: .utf8)).flatMap(parseSidebar)
         }
         lock.lock(); let hit = sidebarCache[c]; lock.unlock()
         if let hit { return hit }
         guard git(repo, ["cat-file", "-e", "\(c)^{commit}"]) != nil else { return nil }
-        let v = git(repo, ["show", "\(c):\(sidebarFile)"]).flatMap(parseSidebar) ?? ""
+        let v = (git(repo, ["show", "\(c):layer/files/\(sidebarFile)"]) ?? git(repo, ["show", "\(c):\(sidebarFile)"])).flatMap(parseSidebar) ?? ""
         lock.lock(); sidebarCache[c] = v; lock.unlock()
         return v
     }
@@ -71,14 +71,16 @@ enum Releases {
     }
 
     /// Fetches upstream nxnative's main (the checkout's "upstream" remote when it is nxnative, else the address into a ref
-    /// of its own) and counts the commits on it that NXForge's main has not merged yet.
+    /// of its own) and counts the commits on it that NXForge's main is not built on yet: past the pinned commit (layer/ENGINE)
+    /// from 0.19.0, else past what main merged.
     static func upstreamStatus(repo: String) -> UpstreamStatus? {
         let remote = git(repo, ["remote", "get-url", "upstream"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let viaRemote = remote.lowercased().contains("seedds/nxnative")
         let ref = viaRemote ? "refs/remotes/upstream/main" : "refs/nxforge/upstream-main"
         guard git(repo, ["fetch", "--quiet", "--no-tags", viaRemote ? "upstream" : upstreamURL, "+refs/heads/main:\(ref)"]) != nil else { return nil }
         let main = git(repo, ["rev-parse", "--abbrev-ref", "origin/HEAD"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "origin/main"
-        guard let n = git(repo, ["rev-list", "--count", "--no-merges", "\(main)..\(ref)"]).flatMap({ Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) else { return nil }
+        let base = Layer.pin(repo: repo, ref: main, git: git) ?? main
+        guard let n = git(repo, ["rev-list", "--count", "--no-merges", "\(base)..\(ref)"]).flatMap({ Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) else { return nil }
         let last = git(repo, ["log", "-1", "--format=%cs%x1f%s", ref])?.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\u{1f}").map(String.init) ?? []
         return UpstreamStatus(count: n, date: last.first ?? "", subject: last.count > 1 ? last[1] : "")
     }

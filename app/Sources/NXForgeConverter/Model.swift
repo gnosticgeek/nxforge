@@ -425,7 +425,8 @@ final class AppModel {
         var parts = ["export PATH=\(shq(env?.path ?? ""))"]
         if let d = env?.dotnetRoot { parts.append("export DOTNET_ROOT=\(shq(d))") }
         if let repo = env?.repo {
-            parts.append("cd \(shq(repo))")
+            if Layer.isLayered(repo) { parts.append("python3 \(shq(repo + "/" + Layer.script)) assemble") }
+            parts.append("cd \(shq(Layer.tree(repo)))")
             var cmd = "\(shq(env?.python ?? "python3")) -u \(scriptPath)"
             if let dir = settings.gameDir { cmd += " \(shq(dir))" } else { cmd += " <game folder>" }
             if let k = settings.keys { cmd += " -k \(shq(k))" }

@@ -9,10 +9,11 @@ import tempfile
 import unittest
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[2]
-sys.path.insert(0, str(HERE)); sys.path.insert(0, str(REPO / 'scripts'))
+REPO = HERE.parent
+ENGINE = REPO / 'tree' if (REPO / 'layer/ENGINE').is_file() else REPO   # scripts/layer.py assemble makes tree/
+sys.path.insert(0, str(ENGINE / 'dm/tools/tests')); sys.path.insert(0, str(REPO / 'scripts'))
 import source_info  # pyright: ignore[reportMissingImports]  # scripts/ is on sys.path above
-import test_nsp_nup as t
+import test_nsp_nup as t  # pyright: ignore[reportMissingImports]  # the engine's dm/tools/tests
 
 
 def nso(flags):   # an NSO header, flags at 0x0C

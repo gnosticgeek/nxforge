@@ -34,6 +34,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Assemble the engine (nxnative at layer/ENGINE plus NXForge's patches and files, scripts/layer.py)
+        run: python3 scripts/layer.py assemble
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
@@ -42,6 +44,7 @@ jobs:
       - name: Install the pinned packages
         run: python -m pip install -r .github/requirements/fuzz.txt
       - name: Run each harness
+        working-directory: tree
         env:
           SECONDS_EACH: ${{ github.event.inputs.seconds || '60' }}
         run: |
@@ -61,6 +64,6 @@ jobs:
         with:
           name: fuzz-findings
           path: |
-            findings
-            logs
+            tree/findings
+            tree/logs
           retention-days: 30

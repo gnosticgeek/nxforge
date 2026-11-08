@@ -25,7 +25,10 @@ struct Check: Identifiable, Hashable {
 
 /// Everything resolved while checking, which the conversion then uses.
 struct ToolEnv: Hashable {
+    /// the NXForge checkout (git: versions, updates, build records)
     var repo: String?
+    /// where the engine's files are and builds run: tree/ of a layered checkout, else the checkout (Layer.tree)
+    var tree: String?
     var python: String?
     var path = ""
     /// the folder of the dotnet the script finds: the shader translator's launcher (an apphost) finds the
@@ -35,6 +38,7 @@ struct ToolEnv: Hashable {
 
 enum Toolchain {
     static func isRepo(_ p: String) -> Bool {
+        if Layer.isLayered(p) { return true }   // the engine is assembled into tree/ (Layer)
         let fm = FileManager.default
         return fm.fileExists(atPath: p + "/" + scriptPath) && fm.fileExists(atPath: p + "/dm/tools/nx_extract/Program.cs")
     }
@@ -90,7 +94,9 @@ enum Toolchain {
     static func checkAll(_ s: Settings) -> ([Check], ToolEnv) {
         var v: [Check] = []
         let repo = findRepo(s)
-        let path = scriptPATH(repo)
+        let assembleError = repo.flatMap { Layer.assemble($0) }   // tree/ from the layer, before anything reads the engine's files
+        let tree = repo.map(Layer.tree)
+        let path = scriptPATH(tree)
         let env = ["PATH": path]
 
         #if arch(arm64)
@@ -100,9 +106,10 @@ enum Toolchain {
         #endif
 
         let cloneTo = Settings.supportDir.appending(path: "nxforge").path
-        v.append(Check(name: Toolchain.engineCheckName, why: "the conversion script, rewriter, host and shader tools", ok: repo != nil,
-                       detail: repo ?? "not found: choose its folder, or clone it", fix: "git clone \(forkURL) \(shq(cloneTo))",
-                       short: repo?.tildePath ?? "Not found", symbol: "shippingbox"))
+        v.append(Check(name: Toolchain.engineCheckName, why: "the conversion script, rewriter, host and shader tools", ok: repo != nil && assembleError == nil,
+                       detail: repo.map { r in assembleError.map { "\(r): engine tree not assembled: \($0)" } ?? r } ?? "not found: choose its folder, or clone it",
+                       fix: repo.map { r in assembleError != nil ? "python3 \(shq(r + "/" + Layer.script)) assemble" : "git clone \(forkURL) \(shq(cloneTo))" } ?? "git clone \(forkURL) \(shq(cloneTo))",
+                       short: repo.map { assembleError != nil ? "Tree not assembled" : $0.tildePath } ?? "Not found", symbol: "shippingbox"))
 
         let xb = which("xcodebuild", path).flatMap { run($0, ["-version"], env: env) }
         v.append(Check(name: "Xcode", why: "the Metal compiler, clang and the macOS SDK", ok: xb?.ok == true,
@@ -131,8 +138,8 @@ enum Toolchain {
                        group: .build, short: versions.last { $0.hasPrefix("10.") } ?? (versions.last.map { "\($0) (needs 10)" } ?? "Not found"), symbol: "chevron.left.forwardslash.chevron.right"))
 
         // the translator's launcher must start: it finds .NET only through DOTNET_ROOT (which the conversion sets)
-        if let repo {
-            let x = repo + "/dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate"
+        if let tree {
+            let x = tree + "/dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate"
             var xenv = env
             if let dotnetRoot { xenv["DOTNET_ROOT"] = dotnetRoot }
             let r = run(x, ["--source-sha"], env: xenv)
@@ -152,6 +159,7 @@ enum Toolchain {
         if let p = s.python { cands.append(p) }
         cands.append(Settings.supportDir.appending(path: "venv/bin/python3").path)
         if let repo { cands.append(repo + "/.venv/bin/python3") }
+        if let tree, tree != repo { cands.append(tree + "/.venv/bin/python3") }
         cands += path.split(separator: ":").map { "\($0)/python3" }
         var seen = Set<String>()
         cands = cands.filter { FileManager.default.isExecutableFile(atPath: $0) && seen.insert(URL(fileURLWithPath: $0).resolvingSymlinksInPath().path).inserted }
@@ -204,7 +212,7 @@ enum Toolchain {
                        detail: zbic ? "installed" : "not installed in that Python",
                        fix: python.map { "\(shq($0)) -m pip install zbic==1.0.1.post1" }, group: .optional, short: "Newer Switch 2 game code", symbol: "doc.zipper"))
 
-        return (v, ToolEnv(repo: repo, python: python, path: path, dotnetRoot: dotnetRoot))
+        return (v, ToolEnv(repo: repo, tree: tree, python: python, path: path, dotnetRoot: dotnetRoot))
     }
 
     /// Run a command in a new Terminal window, so the user sees it and can type a password.

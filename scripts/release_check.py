@@ -32,7 +32,7 @@ HEADING = re.compile(r'^## (?P<version>\d+\.\d+\.\d+) \((?P<date>\d{4}-\d{2}-\d{
 UNRELEASED = '## Unreleased'
 BACKLOG_DATE = re.compile(r'Last updated (\d{4}-\d{2}-\d{2})')
 SIDEBAR_LOG = 'SIDEBAR_CHANGELOG.md'
-SIDEBAR_SWIFT = 'dm/host/quick_settings_mac.swift'
+SIDEBAR_SWIFT = 'layer/files/dm/host/quick_settings_mac.swift'   # an NXForge file in the engine tree (scripts/layer.py)
 
 
 class Component:

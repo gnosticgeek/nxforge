@@ -4,7 +4,7 @@ import importlib.util
 import tempfile
 import unittest
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('perf_release', REPO / 'scripts/perf_release.py')
 assert spec and spec.loader
 pr = importlib.util.module_from_spec(spec)

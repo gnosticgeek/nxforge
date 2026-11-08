@@ -120,6 +120,27 @@ import Testing
     }
 }
 
+@Suite struct LayeredEngine {
+    @Test func layerPathsAreEnginePaths() {
+        let p = Layer.enginePaths(["layer/files/dm/games/0100D2F00D5C0000/game.tsv", "layer/files/dm/games/0100F2C0115B6000/game.tsv",
+                                   "layer/ENGINE", "layer/patches/0004-gfx-metal.patch", "app/Sources/NXForgeConverter/Model.swift", "CHANGELOG.md"])
+        #expect(p.map { Engine.affects($0, titleID: "0100D2F00D5C0000") } == [true, false, true, true, false, false])
+    }
+
+    @Test func pinParses() {
+        let sha = String(repeating: "a", count: 40)
+        #expect(Layer.parsePin("# comment\nurl https://github.com/seedds/nxnative.git\ncommit \(sha)\n") == sha)
+        #expect(Layer.parsePin("commit abc\n") == nil)
+    }
+
+    @Test func thisCheckoutIsLayered() {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().path
+        #expect(Layer.isLayered(repo))
+        #expect(Layer.tree(repo) == repo + "/tree")
+        #expect(Layer.file(repo, "dm/host/quick_settings_mac.swift").hasSuffix("/dm/host/quick_settings_mac.swift"))
+    }
+}
+
 @Suite struct FrameTimeRecordings {
     @Test func parseAndSum() {
         var text = "# kind: nvn-per-frame\nframe\tname\tvalue\n"

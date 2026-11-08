@@ -14,6 +14,8 @@ the layer files as one last commit ("NXForge layer files"). Builds, the converte
                                 `git -C tree am --continue` (or --skip to drop it) and `layer.py export`
   layer.py export               write tree/'s commits back to the layer: patch commits to layer/patches (an edited or new commit
                                 after the pin), changed layer files to layer/files
+  layer.py try [REF]            dry run of update: which patches apply to REF (default: nxnative's main), which nxnative already
+                                has, which conflict and in what files. Changes nothing (a temporary worktree)
   layer.py path                 print tree/'s path
 
 To change a patch: edit in tree/, commit (`git -C tree commit --fixup <patch commit>` then `git -C tree rebase -i --autosquash
@@ -93,6 +95,13 @@ def stamp() -> str:
     return h.hexdigest()
 
 
+def gitdir() -> Path:
+    d = tree_gitdir()
+    if d is None:
+        raise LayerError('tree/ is not assembled')
+    return d
+
+
 def tree_gitdir() -> Path | None:
     if not (TREE / '.git').exists():
         return None
@@ -115,6 +124,9 @@ def tree_head() -> str:
 
 def ensure_commit(url: str, commit: str) -> None:
     if git('cat-file', '-e', f'{commit}^{{commit}}', check=False).returncode == 0:
+        return
+    if git('rev-parse', '--is-shallow-repository').stdout.strip() == 'true':   # a CI checkout: just that commit
+        git('fetch', '--quiet', '--depth=1', url, commit)
         return
     git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=False)
     if git('cat-file', '-e', f'{commit}^{{commit}}', check=False).returncode:
@@ -195,7 +207,7 @@ def assemble(force: bool = False, log=print) -> bool:
             git('add', '--force', '--', *files[i:i + 200], cwd=TREE)
         git('commit', '--quiet', '--allow-empty', '-m', FILES_SUBJECT, cwd=TREE, env=IDENT)
         log(f'  {len(files)} layer files')
-    (tree_gitdir() / 'nxforge-layer').write_text(f'{stamp()} {tree_head()}\n')
+    (gitdir() / 'nxforge-layer').write_text(f'{stamp()} {tree_head()}\n')
     return True
 
 
@@ -236,7 +248,7 @@ def export(log=print) -> None:
             shutil.copy2(src, FILES / rel)
             changed += 1
     log(f'layer/files: {changed} file(s) updated from tree/')
-    (tree_gitdir() / 'nxforge-layer').unlink(missing_ok=True)
+    (gitdir() / 'nxforge-layer').unlink(missing_ok=True)
     assemble(force=True, log=lambda *_: None)
 
 
@@ -261,6 +273,45 @@ def update(ref: str | None, log=print) -> None:
     export(log=log)
 
 
+def try_update(ref: str | None, log=print) -> list[tuple[str, str, list[str]]]:
+    """[(patch, 'applies' | 'in nxnative' | 'conflicts', files)] for the patches on REF, in a throwaway worktree."""
+    import tempfile
+    url, old = read_engine()
+    git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=False)
+    target = ref or MAIN_REF
+    if git('rev-parse', '--verify', '--quiet', f'{target}^{{commit}}', check=False).returncode:
+        git('fetch', '--quiet', url, target)
+        target = 'FETCH_HEAD'
+    new = git('rev-parse', f'{target}^{{commit}}').stdout.strip()
+    ensure_commit(url, old)
+    n = git('rev-list', '--count', f'{old}..{new}', check=False).stdout.strip() or '?'
+    log(f'nxnative {old[:10]} -> {new[:10]} ({n} commit(s))')
+    out = []
+    with tempfile.TemporaryDirectory(prefix='nxforge-layer-try-') as tmp:
+        w = Path(tmp) / 'tree'
+        git('worktree', 'add', '--quiet', '--detach', str(w), new)
+        try:
+            for p in patch_files():
+                r = git('am', '-3', '--quiet', '--keep-cr', str(p), cwd=w, check=False, env=IDENT)
+                text = r.stdout + r.stderr
+                if not r.returncode:
+                    out.append((p.name, 'applies', []))
+                elif 'No changes' in text or 'already applied' in text or 'Patch is empty' in text:
+                    out.append((p.name, 'in nxnative', []))
+                    git('am', '--skip', cwd=w, check=False, env=IDENT)
+                else:
+                    files = git('diff', '--name-only', '--diff-filter=U', cwd=w, check=False).stdout.split()
+                    out.append((p.name, 'conflicts', files))
+                    git('am', '--skip', cwd=w, check=False, env=IDENT)
+                    git('checkout', '--quiet', '--force', 'HEAD', cwd=w, check=False)
+        finally:
+            git('worktree', 'remove', '--force', str(w), check=False)
+            git('worktree', 'prune', check=False)
+    for name, state, files in out:
+        log(f'  {name}: {state}' + (f' ({", ".join(files)})' if files else ''))
+    return out
+
+
 def status(log=print) -> None:
     url, commit = read_engine()
     git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=False)
@@ -283,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     a_as = sub.add_parser('assemble'); a_as.add_argument('--force', action='store_true')
     sub.add_parser('status'); sub.add_parser('export'); sub.add_parser('path')
     a_up = sub.add_parser('update'); a_up.add_argument('ref', nargs='?')
+    a_try = sub.add_parser('try'); a_try.add_argument('ref', nargs='?')
     a = ap.parse_args(argv)
     try:
         if a.cmd == 'path':
@@ -295,6 +347,8 @@ def main(argv: list[str] | None = None) -> int:
             export()
         elif a.cmd == 'update':
             update(a.ref)
+        elif a.cmd == 'try':
+            return 1 if any(state == 'conflicts' for _, state, _ in try_update(a.ref)) else 0
     except LayerError as e:
         print(f'layer.py: {e}', file=sys.stderr)
         return 1

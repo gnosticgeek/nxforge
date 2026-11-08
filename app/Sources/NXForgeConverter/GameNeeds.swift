@@ -26,7 +26,7 @@ enum GameNeeds {
             out["nsz"] = "this folder has compressed .nsz or .xcz files"
         }
         let id = titleID(dir)
-        let profile = (repo != nil && id != nil) ? "\(repo!)/dm/games/\(id!)" : nil
+        let profile = (repo != nil && id != nil) ? Layer.file(repo!, "dm/games/\(id!)") : nil
         let tsv = profile.flatMap { try? String(contentsOfFile: $0 + "/game.tsv", encoding: .utf8) } ?? ""
         if id?.hasPrefix("04") == true {
             out["zbic"] = "Switch 2 games are built with system 22 or later, whose code is ZBIC-compressed"
