@@ -5,6 +5,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 ## Unreleased
 
 - **NXForge Sidebar 0.2.0** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): pause while the sidebar is open, a save backup button, Full screen and Picture size (Fit, Stretch, Pixel-perfect), control swaps, mod load order, mute, recent captures, a frame-time graph, defaults for every game, cheat sections and search, and each game's settings in a plain text file (`NXForge settings.txt` in the game folder).
+- **NXForge Converter 0.2.0** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a page per game (launch settings, playtime, whether a rebuild is worth it, the profile's notes, save import, export and Git backup, frame-rate history), the Library as covers with Continue Playing, keyboard and controller navigation and a couch mode, Go to Anything (⌘K), Build selected later (tonight, at a time or on power), Undo for tidying, offline-drive handling, menu bar progress, notification actions, an iPhone and iPad IPA build, and What's New with self-update.
 
 ## 0.16.0 (2026-11-07)
 

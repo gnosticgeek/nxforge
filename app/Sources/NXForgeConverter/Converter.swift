@@ -24,6 +24,8 @@ struct Job {
     var gameFiles: String?
     /// --plan: say what a build would reuse and redo, and build nothing
     var plan = false
+    /// "ios": an unsigned IPA for iPhone and iPad (--platform ios), beside the game files; nothing is recorded or replaced
+    var ios = false
 
     /// the folder holding the game's files, where <id>_build, the lock and the app go
     var folder: String { Source.folder(of: gameDir) }
@@ -63,6 +65,8 @@ final class BuildRun {
     var done: [StageDone] = []
     var log: [String] = []
     var app: String?
+    /// the IPA an iPhone and iPad build made (Job.ios)
+    var ipa: String?
     var backup: String?
     var result: Result<String, ConverterError>?
     /// the run is a --plan (Preview build): its result is the plan, and nothing was built
@@ -85,7 +89,7 @@ final class BuildRun {
     var onChange: (() -> Void)?
 
     func start(_ job: Job, expected: [String: Double] = [:]) {
-        running = true; stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil; planning = job.plan; stopNote = nil; logFile = nil
+        running = true; stage = Stage(); done = []; log = []; app = nil; ipa = nil; backup = nil; result = nil; planning = job.plan; stopNote = nil; logFile = nil
         startedAt = Date(); stageStartedAt = nil; lastActivity = Date(); self.expected = job.plan ? [:] : expected
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "Building a Mac app")
         Thread.detachNewThread { [weak self] in
@@ -104,7 +108,7 @@ final class BuildRun {
     /// Back to the state before any build (after a successful one has been handed to Builds).
     func reset() {
         guard !running else { return }
-        stage = Stage(); done = []; log = []; app = nil; backup = nil; result = nil; planning = false; stopNote = nil; logFile = nil; startedAt = nil; stageStartedAt = nil
+        stage = Stage(); done = []; log = []; app = nil; ipa = nil; backup = nil; result = nil; planning = false; stopNote = nil; logFile = nil; startedAt = nil; stageStartedAt = nil
     }
 
     /// Ask the script to stop as Ctrl-C would (it ends the stage and exits with 130).
@@ -138,6 +142,13 @@ final class BuildRun {
                     throw ConverterError("this engine has no --plan: update the engine to preview a build")
                 }
                 return .success(try build(job, repo: repo, run: r))
+            }
+            if job.ios {   // an IPA beside the game files: no app is replaced or recorded
+                let ipa = try build(job, repo: repo, run: r)
+                _ = writeLog(job.folder, run: r)
+                DispatchQueue.main.async { r.ipa = ipa }
+                let gb = ((try? FileManager.default.attributesOfItem(atPath: ipa)[.size] as? NSNumber)?.doubleValue ?? 0) / 1_073_741_824
+                return .success(String(format: "%@ (%.1f GB): install it with AltStore, Sideloadly or Xcode", ipa.lastComponent, gb))
             }
             var backup: String?
             if let app = job.rebuild {
@@ -223,11 +234,11 @@ final class BuildRun {
         guard let py = job.env.python else { throw ConverterError("no Python with the script's modules") }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: py)
-        var args = ["-u", repo + "/" + scriptPath, job.gameDir, "--platform", "mac-app", "--progress", "json"]
+        var args = ["-u", repo + "/" + scriptPath, job.gameDir, "--platform", job.ios ? "ios" : "mac-app", "--progress", "json"]
         if let k = job.keys { args += ["-k", k] }
         if job.plan { args.append("--plan") }
-        if let id = job.sign { args += ["--mac-sign", id] }
-        if let o = job.rebuild ?? job.out { args += ["-o", o] }
+        if !job.ios, let id = job.sign { args += ["--mac-sign", id] }
+        if !job.ios, let o = job.rebuild ?? job.out { args += ["-o", o] }
         if job.cleanup != .off { args += ["--cleanup", job.cleanup.rawValue] }
         p.arguments = args
         p.currentDirectoryURL = URL(fileURLWithPath: repo)
@@ -252,7 +263,7 @@ final class BuildRun {
         }
         var appPath: String?, plan: String?
         for line in Lines(out.fileHandleForReading) {
-            if let a = event(line, run: r) { appPath = a }
+            if let a = event(line, run: r, ext: job.ios ? ".ipa" : ".app") { appPath = a }
             if job.plan, let m = planMessage(line) { plan = m }
         }
         p.waitUntilExit()
@@ -266,8 +277,8 @@ final class BuildRun {
             throw ConverterError(red ?? "the script exited with \(p.terminationStatus)")
         }
         if job.plan { return plan ?? "the script printed no plan" }
-        guard let appPath else { throw ConverterError("the script finished but named no app") }
-        DispatchQueue.main.async { r.app = appPath }
+        guard let appPath else { throw ConverterError("the script finished but named no \(job.ios ? "IPA" : "app")") }
+        if !job.ios { DispatchQueue.main.async { r.app = appPath } }
         return appPath
     }
 
@@ -279,7 +290,7 @@ final class BuildRun {
     }
 
     /// One stdout line of the script; returns the app's path from its "done: <path>.app (…)" message.
-    nonisolated private static func event(_ line: String, run r: BuildRun) -> String? {
+    nonisolated private static func event(_ line: String, run r: BuildRun, ext: String = ".app") -> String? {
         guard let v = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], let ev = v["ev"] as? String else {
             DispatchQueue.main.async { r.log.append(line); r.lastActivity = Date(); r.onChange?() }
             return nil
@@ -287,7 +298,7 @@ final class BuildRun {
         let str = { (k: String) in v[k] as? String ?? "" }
         let num = { (k: String) in (v[k] as? NSNumber)?.doubleValue }
         var app: String?
-        if ev == "say", let msg = v["msg"] as? String, let i = msg.range(of: "done: "), let j = msg[i.upperBound...].range(of: ".app") {
+        if ev == "say", let msg = v["msg"] as? String, let i = msg.range(of: "done: "), let j = msg[i.upperBound...].range(of: ext) {
             app = String(msg[i.upperBound..<j.upperBound])
         }
         DispatchQueue.main.async {

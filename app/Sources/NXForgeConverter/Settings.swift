@@ -5,6 +5,10 @@ import Foundation
 
 enum Appearance: String, Codable, CaseIterable { case system = "System", light = "Light", dark = "Dark" }
 enum LogDetail: String, Codable, CaseIterable { case standard = "Standard", detailed = "Detailed" }
+/// The Library as rows or as a grid of covers
+enum LibraryLayout: String, Codable, CaseIterable { case list, grid }
+/// The Library's order
+enum LibrarySort: String, Codable, CaseIterable { case name = "Name", recent = "Recently played", size = "Size" }
 /// --cleanup: what the script deletes from <id>_build after a successful build
 enum Cleanup: String, Codable, CaseIterable {
     case off, unused, all
@@ -35,11 +39,23 @@ struct Settings: Codable, Equatable {
     var logDetail: LogDetail = .standard
     /// what a successful build deletes from <id>_build (--cleanup)
     var cleanup: Cleanup = .off
+    /// the converter version whose What's New was last shown (nil: never; the first start of a versioned converter shows it)
+    var lastSeenVersion: String?
+    var libraryLayout: LibraryLayout = .list
+    var librarySort: LibrarySort = .name
+    /// a clone of a private Git repository: each game's save is copied there and committed when the game quits (SaveBackup)
+    var saveBackupRepo: String?
+    /// push the save backup commit as well
+    var saveBackupPush = false
+    /// each network volume's address to mount it again ("Gaming" → smb://nas/Gaming), learned while it was mounted
+    var remounts: [String: String] = [:]
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
         case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root"
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
+        case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
+        case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
     }
 
     init() {}
@@ -62,6 +78,12 @@ struct Settings: Codable, Equatable {
         keepBackups = (try? c.decodeIfPresent(Bool.self, forKey: .keepBackups)) ?? true
         logDetail = (try? c.decodeIfPresent(LogDetail.self, forKey: .logDetail)) ?? .standard
         cleanup = (try? c.decodeIfPresent(Cleanup.self, forKey: .cleanup)) ?? .off
+        lastSeenVersion = try? c.decodeIfPresent(String.self, forKey: .lastSeenVersion)
+        libraryLayout = (try? c.decodeIfPresent(LibraryLayout.self, forKey: .libraryLayout)) ?? .list
+        librarySort = (try? c.decodeIfPresent(LibrarySort.self, forKey: .librarySort)) ?? .name
+        saveBackupRepo = try? c.decodeIfPresent(String.self, forKey: .saveBackupRepo)
+        saveBackupPush = (try? c.decodeIfPresent(Bool.self, forKey: .saveBackupPush)) ?? false
+        remounts = (try? c.decodeIfPresent([String: String].self, forKey: .remounts)) ?? [:]
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

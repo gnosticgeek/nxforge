@@ -215,6 +215,7 @@ extension AppModel {
     @discardableResult func moveToOwnFolder(_ g: LibraryGame) -> String? {
         do {
             let p = try GameLibrary.moveToOwnFolder(g)
+            noteMove(LibraryMove(label: "Move \(g.displayName) into Its Own Folder", files: g.files.map { (from: "\(g.path)/\($0)", to: "\(p)/\($0)") }, madeFolder: p))
             updateGame(g) { $0.path = p; $0.shared = false }
             return p
         } catch {
@@ -228,7 +229,9 @@ extension AppModel {
         let n = g.stray?.count ?? 0
         guard n > 0, confirm("Move \(n) file\(n == 1 ? "" : "s") beside \(g.displayName)?", "The build reads only the game's own folder, so the update and DLC files in its subfolders are not used. They move into \(g.path.lastComponent); nothing is copied or deleted.", action: "Move") else { return }
         do {
+            let moved = (g.stray ?? []).filter { !FileManager.default.fileExists(atPath: "\(g.path)/\($0.lastComponent)") }
             try GameLibrary.moveStray(g)
+            noteMove(LibraryMove(label: "Move Update and DLC Beside \(g.displayName)", files: moved.map { (from: $0, to: "\(g.path)/\($0.lastComponent)") }, madeFolder: nil))
             updateGame(g) { x in
                 x.files = (x.files + (x.stray ?? []).map(\.lastComponent)).sorted()
                 x.notes = x.notes.filter { !$0.contains("not used: the build reads") }
@@ -293,6 +296,8 @@ extension AppModel {
         }
         let g = batchQueue.removeFirst()
         batchCurrent = g
+        keepAwake(true)
+        saveBatchQueue()
         run.reset()
         setGameDir(g.path)
         page = .convert
@@ -326,6 +331,8 @@ extension AppModel {
 
     func finishBatch() {
         batchCurrent = nil
+        BatchSchedule.save([], start: nil)
+        keepAwake(false)
         let ok = batchResults.filter(\.ok).count
         if batchMessage == nil { batchMessage = "Build selected finished: \(ok) of \(batchResults.count) built." }
         if settings.notify, Bundle.main.bundleIdentifier != nil {
@@ -344,6 +351,7 @@ extension AppModel {
         guard confirm("Stop Build selected?", "\(run.running ? "The build of \(batchCurrent?.displayName ?? "this game") stops; its finished steps are kept for the next try. " : "")\(rest == 0 ? "No other game was waiting." : "\(rest) game\(rest == 1 ? "" : "s") still to build \(rest == 1 ? "is" : "are") not started.")", action: "Stop") else { return }
         batchMessage = "Build selected stopped." + (rest > 0 ? " \(batchQueue.map(\.displayName).joined(separator: ", ")) not built." : "")
         batchQueue = []
+        BatchSchedule.save([], start: nil)
         if run.running { run.cancel() } else { finishBatch() }
     }
 }

@@ -87,6 +87,26 @@ enum FrameTimes {
         return files.max { date($0) < date($1) }
     }
 
+    /// Every recording of a built app, oldest first, with its summary (idea 19: the game page's performance history).
+    static func all(app: String, titleID: String?) -> [(file: URL, date: Date, summary: Summary)] {
+        let fm = FileManager.default
+        let files = folders(app: app, titleID: titleID).flatMap { dir in
+            ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []).filter { $0.pathExtension == "tsv" }
+        }
+        return files.compactMap { f -> (URL, Date, Summary)? in
+            let date = (try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if let c = cache[f.path], c.date == date { return c.summary.map { (f, date, $0) } }
+            let s = (try? String(contentsOf: f, encoding: .utf8)).flatMap { Summary(parse($0)) }
+            cache[f.path] = (date, s)
+            return s.map { (f, date, $0) }
+        }.sorted { $0.1 < $1.1 }
+    }
+
+    /// The history as text, for Copy report.
+    static func report(name: String, _ runs: [(file: URL, date: Date, summary: Summary)]) -> String {
+        (["\(name): frame-time recordings (NXForge Converter \(CONVERTER_VERSION))"] + runs.map { "\(relativeDay($0.date)) · \($0.summary.line) · \($0.file.lastPathComponent)" }).joined(separator: "\n")
+    }
+
     private static var cache: [String: (date: Date, summary: Summary?)] = [:]   // path → its summary at that modification date
     /// The newest recording and its summary; nil when there is none or it holds no frames. A recording is read once per change
     /// (a long session's file is several MB), since the Builds page asks on every redraw.
