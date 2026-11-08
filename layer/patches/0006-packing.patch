@@ -56,7 +56,7 @@ index 66a9d8b3b6be77a8b0395805e6ee0170723d9ade..489b7f5d18194574817c13b53f8a2e71
 -print('DM_FRAMEWORKS = ' + ' '.join(f'-framework {f}' for f in fws if f != 'Cocoa'))
 +print('DM_FRAMEWORKS = ' + ' '.join(f'-framework {f}' for f in fws if f not in ('Cocoa', 'SwiftUI')))   # SwiftUI: the Mac sidebar's (quick_settings_mac.swift)
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 56f82c5ef52f468db60cf7a637cdf2620c4277ad..61d12a5fd1f6d65c71fd84de94f3a1ce02d8e1da 100755
+index 796060e787f1e73bc1873d82ef7416a6aacaeeb2..6a3da193afb7432b9fb82d6783566bf440cbd7c9 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
 @@ -26,6 +26,12 @@ MSL_FILES = ('*.metallib', '*.json', '*.tsv')   # what the host reads from msl/
@@ -80,7 +80,7 @@ index 56f82c5ef52f468db60cf7a637cdf2620c4277ad..61d12a5fd1f6d65c71fd84de94f3a1ce
 +    p = {'CFBundleName': a.name, 'CFBundleDisplayName': a.name, 'CFBundleIdentifier': a.bundle_id or f'org.nxforge.{a.title_id.lower()}',
           'CFBundleVersion': a.version or '1.0', 'CFBundleShortVersionString': a.version or '1.0', 'CFBundlePackageType': 'APPL', 'CFBundleExecutable': EXE,
           'CFBundleInfoDictionaryVersion': '6.0', 'LSMinimumSystemVersion': minos, 'LSArchitecturePriority': ['arm64'], 'NSHighResolutionCapable': True,
-          'LSApplicationCategoryType': a.category or 'public.app-category.games', 'LSSupportsGameMode': False, 'DMTitleID': a.title_id.upper(), 'DMRomfsMarker': a.marker or '', 'DMLanguage': a.lang or 'en-US'}
+          'LSApplicationCategoryType': a.category or 'public.app-category.games', 'LSSupportsGameMode': False, 'DMTitleID': a.title_id.upper(), 'DMRomfsMarker': a.marker or '', 'DMLanguage': a.lang or 'en-US', 'DMSaveSyncChoice': 1}
 @@ -163,11 +169,17 @@ def sign(app, identity, codesign):   # the inner host first, then the bundle (it
      strip_detritus(app)   # codesign sets an attribute on what it signs, which is a "._name" file again on exFAT: the signature still verifies without it, and a later --force would refuse it
  
@@ -433,7 +433,7 @@ index 2ca5f84590087c18e0da3dac70c0a026a60fe399..d847555ad7700cbd912d9989cf16202d
          with self.assertRaisesRegex(pack_dump.Error, 'the base is'): pack_dump.pack_version(self.dump / f'updates/{VER}', TID + 0x2000, self.out(), say=lambda s: None)
  
 diff --git a/dm/tools/tests/test_nsp_mac_app.py b/dm/tools/tests/test_nsp_mac_app.py
-index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f82a62203 100644
+index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..22ce7446844d3a3380d1bae80918ea8d9b583b35 100644
 --- a/dm/tools/tests/test_nsp_mac_app.py
 +++ b/dm/tools/tests/test_nsp_mac_app.py
 @@ -1,5 +1,5 @@
@@ -443,9 +443,9 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
  code returned and SIGTERM forwarded to it, an alert when the game data is missing; the script's options and its pack_app.py command line; --seen-shaders' keys and partial library.
  No game files, keys or Xcode needed: a stand-in host compiled here records what it was given (temporary files only in a temporary folder)."""
  import contextlib
-@@ -176,6 +176,30 @@ class PackReuse(unittest.TestCase):
-         self.assertTrue(any('--sign' in c for c in self.commands))
-         self.assertTrue(self.key.is_file())
+@@ -182,6 +182,30 @@ class PackReuse(unittest.TestCase):
+         self.assertIs(type(info['DMSaveSyncChoice']), int)
+         self.assertEqual(info['DMSaveSyncChoice'], 1)   # the host follows DM_SAVE_SYNC_CHOICE (docs/frontends.md, The cloud saves folder)
  
 +    def test_game_data_bundle_is_signed_once_and_kept(self):
 +        """NXForge: the RomFS, shader libraries and pipeline archive go into Contents/PlugIns/GameData.bundle, signed on its own and linked from Contents/Resources; with --data-cache
@@ -474,7 +474,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
      def test_retargeted_input_symlink_repacks(self):
          msl = self.tmp / 'msl'
          for name in ('left.metallib', 'right.metallib'): (msl / name).write_bytes(b'same library')
-@@ -497,7 +521,7 @@ class App(unittest.TestCase):
+@@ -503,7 +527,7 @@ class App(unittest.TestCase):
  
      def test_info_plist(self):
          p = plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())
@@ -483,7 +483,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
          self.assertEqual((p['DMTitleID'], p['DMLanguage'], p['DMRomfsMarker'], p['CFBundleIconFile']), (TID, 'fr', 'region_common/audio/edward.bfsar', 'AppIcon'))
          self.assertIs(p['LSSupportsGameMode'], False)   # macOS's Game Mode holds the GPU at its lowest clock (frame-rate.md)
          self.assertEqual(p['DMSettings'], [])   # launcher.json's settings, as the saved choices they accept: none here
-@@ -589,10 +613,12 @@ class App(unittest.TestCase):
+@@ -595,10 +619,12 @@ class App(unittest.TestCase):
          self.assertEqual((r['DM_ROMFS'], r['DM_MSL_DIR'], r['DM_NVN_SHMAP'], r['DM_FONT_DIR'], r['DM_AOC_DIR']),
                           (str(res / 'romfs'), str(res / 'msl'), str(res / 'dm/shader_map.tsv'), str(res / 'dm/font'), str(res / 'aoc')))
          self.assertEqual(r['DM_PSO_BUNDLE'], str(res / 'pso'))   # the pipeline archive made offline, as the iOS app's main.m sets it
@@ -498,7 +498,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
          self.assertIn('standin host output', (logs / f'{TID}.log').read_text())
          p = self.launch(); p.communicate(timeout=30)
          self.assertIn('standin host output', (logs / f'{TID}.prev.log').read_text())
-@@ -610,7 +636,7 @@ class App(unittest.TestCase):
+@@ -616,7 +642,7 @@ class App(unittest.TestCase):
      def test_missing_data(self):
          broken = self.tmp / 'Broken.app'; shutil.rmtree(broken, ignore_errors=True)
          subprocess.run(['/bin/cp', '-R', self.app, broken], check=True)
@@ -507,7 +507,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
          (self.tmp / 'home/alert.txt').unlink(missing_ok=True)
          p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(self.tmp / 'home'), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'), capture_output=True, text=True, timeout=30)
          self.assertEqual(p.returncode, 1)
-@@ -635,7 +661,7 @@ class App(unittest.TestCase):
+@@ -641,7 +667,7 @@ class App(unittest.TestCase):
          title = 'Game "Test" \\ Edition'
          plist = broken / 'Contents/Info.plist'
          info = plistlib.loads(plist.read_bytes()); info['CFBundleName'] = title; plist.write_bytes(plistlib.dumps(info))
@@ -516,7 +516,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
          home = self.tmp / 'home'
          (home / 'alert.scpt').unlink(missing_ok=True)
          p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(home), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'),
-@@ -646,6 +672,32 @@ class App(unittest.TestCase):
+@@ -652,6 +678,32 @@ class App(unittest.TestCase):
          self.assertEqual(args[2], title)   # data is passed separately from the compiled script
          self.assertIn('game data inside this app is missing', args[3])
  
@@ -549,7 +549,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
      def test_relocated(self):   # run with the entire build folder unavailable
          with tempfile.TemporaryDirectory(dir=TEST_ROOT) as dst:
              dst = Path(dst).resolve(); moved = dst / self.app.name; home = dst / 'home'; home.mkdir()
-@@ -726,12 +778,13 @@ class Script(unittest.TestCase):
+@@ -732,12 +784,13 @@ class Script(unittest.TestCase):
              ran.append([str(c) for c in cmd])
              if str(cmd[1]).endswith('dm/games/settings.py'):   # the launcher settings, before the packer
                  self.settings_env = env; Path(cmd[-1]).write_text('{}'); return
@@ -564,7 +564,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
              (out / 'Contents/MacOS').mkdir(parents=True); (out / 'Contents/MacOS/dmhost').write_bytes(b'x')
              on_line('step: launcher and host (clones of the game files)')
              on_line(f'app: {out}')
-@@ -741,7 +794,7 @@ class Script(unittest.TestCase):
+@@ -747,7 +800,7 @@ class Script(unittest.TestCase):
          with mock.patch.object(nsp, 'run', fake_run), mock.patch.object(nsp, 'PROG', self.prog), mock.patch.object(nsp, 'chain_of', lambda repo: '0123456789ab'), \
               mock.patch.object(nsp, 'mac_gpu_arch', lambda *a: 'applegpu_g14s'), mock.patch.object(nsp, 'say', self.said.append):
              nsp.mac_app(sys.executable, REPO, out, 0x01008CF01BAAC000, tmp, tmp / 'ex', tmp / 'patched', tmp / 'dmhost', tmp / 'font', tmp / 'shader/cache' if gfx == 'nvn' else tmp / 'shader',
@@ -573,7 +573,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
          self.pso_cmd = next((c for c in ran if c[1].endswith('pso_offline.py')), None)   # before the packer
          self.settings_cmd = next(c for c in ran if c[1].endswith('dm/games/settings.py'))
          c = ran[-1]; return {c[i]: c[i + 1] for i in range(3, len(c) - 1) if c[i].startswith('--')}, tmp
-@@ -749,9 +802,9 @@ class Script(unittest.TestCase):
+@@ -755,9 +808,9 @@ class Script(unittest.TestCase):
      def test_pack_command(self):
          o, tmp = self.pack_cmd('nvn')
          self.assertNotIn('--pso-pairs', o)   # no split copy
@@ -585,7 +585,7 @@ index bdc3dee3d536e69e22364c66f34de88187150115..aae0c0a3c3a2da4836eea6c710e6cc2f
          o, tmp = self.pack_cmd('nvn')
          self.assertEqual((o['--msl'], o['--romfs'], o['--tables'], o['--title-id'], o['--sign'], o['--marker']),
                           (str(tmp / 'shader/cache/b-0123456789ab'), str(tmp / 'ex/RomFS'), str(tmp / 'profile'), TID, '-', 'a/b'))
-@@ -905,6 +958,14 @@ class SeenShaders(unittest.TestCase):   # --seen-shaders: the keys, the partial
+@@ -911,6 +964,14 @@ class SeenShaders(unittest.TestCase):   # --seen-shaders: the keys, the partial
              self.build()
          self.assertFalse(any('--seen-shaders' in m for m in self.said))
  

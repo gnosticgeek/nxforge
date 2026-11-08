@@ -109,7 +109,7 @@ index 9ef6f8738fd6aeee052099b621a7fe2cab26fc15..0ed9ffa60816b4eafe97ea37ad190fb4
  ### SDK-wide function-matched rules
  
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0ee432ec2 100644
+index 7b6233d6b3e9de1e8299f75e6162610f74a881ab..070e892e0282112506869bccef6b22d6f1a06fc7 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
 @@ -27,6 +27,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
@@ -159,7 +159,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - an abort in `nn::codec` (the SDK's own decoder client, which opens a service the host does not have) when a movie starts in a game built with SDK 19 for the Switch 2. → [SDK 19's decoder forms](../reference/movies.md#sdk-19s-decoder-forms)
  
  ## Audio
-@@ -475,6 +483,8 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -476,6 +484,8 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - a `regress.py` run of an NVN game stays at 20 fps from the start (`frame N not reached`, a NEW-FAIL) in some runs only: `frame step: hold 1 → 2` and `2 → 3 vsyncs` in the first 15 presents, then `display link recovered: stalled 1017 ms` about once a second to the end, and no trial back to a shorter hold. → [A game window another process starts opens behind other windows](../reference/frame-rate.md#a-game-window-another-process-starts-opens-behind-other-windows)
  - asked for 60 Hz, the system fires the display link on every third refresh of a 165 Hz screen, 55 Hz, so games paced by it ran at 55 fps (27.5 at 30). → [Virtual 60 Hz ticks on screens that are not a multiple of 60](../reference/frame-rate.md#virtual-60-hz-ticks-on-screens-that-are-not-a-multiple-of-60)
  - virtual ticks keep the average, but a frame still stays up two or three refreshes in turn (13.9 / 20.8 ms at 144 Hz), and Apple's HUD showed the frame interval jumping between them. → [Fullscreen switches the screen to a rate the frame rate divides](../reference/frame-rate.md#fullscreen-switches-the-screen-to-a-rate-the-frame-rate-divides)
@@ -168,7 +168,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - a Mac game in fullscreen holds 60 fps for 45 s to 3 minutes, then the same work takes about twice the GPU time (Tears of the Kingdom 10.5 → 19.7 ms) and the frame step falls to 30 fps. `powermetrics` shows the GPU at its lowest clock (338 MHz on an M4 Pro) while it is 72–98% busy, with thermal pressure nominal. Probes back to 60 fail, because the clock does not rise within a probe. `gamepolicyd` logs `Game mode enabled` and `Set DPS to 2`. → [macOS Game Mode holds the GPU at its lowest clock](../reference/frame-rate.md#macos-game-mode-holds-the-gpu-at-its-lowest-clock)
  - a Mac game started with `DM_FULLSCREEN=1` from an app that is itself in fullscreen (the launcher's console mode) came up as a window. → [A game opened from a fullscreen app stays a window](../reference/frame-rate.md#a-game-opened-from-a-fullscreen-app-stays-a-window)
  - on a ProMotion built-in screen, only in fullscreen, the frame step went 1 → 2 → 3 vsyncs on frames costing 0.1–0.6 vsyncs (`3 late frames; cost 0.32 vsyncs`) and the game presented 15 frames a second; a window, or the screen set to a fixed 60 Hz, did not do it. The `DM_NVN_TSV` rows show presents shown one 120 Hz refresh late (`@pres_at_ms` − `@link_target_ms` = 8.3 ms) with a skipped tick after each (`@link_gap_ms` 33 ms), and `@link_lead_ms` about 16 ms against about 50 ms in a window. → [Frame latency 2 for the display link in fullscreen](../reference/frame-rate.md#frame-latency-2-for-the-display-link-in-fullscreen)
-@@ -486,6 +496,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -487,6 +497,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - the submit thread waits on the texture / sampler registry lock while a lower-priority registration thread is preempted holding it. → [Registry lock priority inheritance](../reference/frame-rate.md#registry-lock-priority-inheritance)
  - in a replay profile, `_platform_memcmp` is most of the time spent in serial lookups (`tex_mtl` through `g_by_serial`). → [Hash-table lookups of 8-byte keys](../reference/frame-rate.md#hash-table-lookups-of-8-byte-keys)
  - the GPU sits idle each frame while the host translates the submission (a game that does not submit frame N+1 until frame N's GPU work is done). → [Submissions handed to the GPU in segments](../reference/frame-rate.md#submissions-handed-to-the-gpu-in-segments)
@@ -176,7 +176,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - one frame in 50 or so takes 25-40 ms in a scene where the frame normally fits, with the host on time: `@sync_ms` is high, `@sub_wall_ms` is not, and the frame before has a GPU span (`@gpu_end_ms - @gpu_beg_ms`) of 25-40 ms while the summed `@gpu_ms` has not moved. Runs fall into two states, and on the same code one can have 5 long frames and the next 60. A bad run also shows 186 % CPU against 133 %, and the previous frame still running when the next starts (p50 4 ms, p90 10 ms, against about 0 in a good run). → [The GPU idles with the next command buffer already committed](../reference/frame-rate.md#the-gpu-idles-with-the-next-command-buffer-already-committed)
  - the submit thread's CPU samples half in `__CFBasicHashFindBucket_Linear` under `CFSetContainsValue` (from `tex_mtl_` and `tex_by_id`), a few hundred thousand to over a million instructions of translation per draw, the submission growing with the game's CPU-written textures. → [The set of CPU-written textures hashed by serial](../reference/frame-rate.md#the-set-of-cpu-written-textures-hashed-by-serial)
  - several milliseconds of CPU translation and geometry preparation separate one frame's GPU end from the next frame's GPU start, even though the frame already contains complete geometry passes. → [Geometry boundaries submit prepared work early](../reference/frame-rate.md#geometry-boundaries-submit-prepared-work-early)
-@@ -591,6 +602,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -592,6 +603,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - red stub lines for NVN calls. → [NVN calls that were red stubs](../reference/nvn-objects.md#nvn-calls-that-were-red-stubs)
  - `nvnWindowGetPresentInterval`, `nvnCommandBufferSetCopyImageStride` missing. → [SDK 8 window and copy-stride entry points](../reference/nvn-objects.md#sdk-8-window-and-copy-stride-entry-points)
  - `[RED] texture bound to an image slot lacks the shader-write usage`, and compute image writes go to a dummy texture. → [Image bindings supply shader-write intent](../reference/nvn-objects.md#image-bindings-supply-shader-write-intent)
@@ -184,7 +184,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - `[RED] NVN unimplemented function called` for each. → [`nvnTextureBuilderGetViewOffset`, `nvnTextureViewCompare`, `nvnBlendStateSetAdvancedNormalizedDst`](../reference/nvn-objects.md#nvntexturebuildergetviewoffset-nvntextureviewcompare-nvnblendstatesetadvancednormalizeddst)
  - a pool walk makes gigabytes of textures from far fewer images: Ocarina of Time's 32,768 IDs name 3,607 storages, and one texture per ID came to 2 GB. → [Texture IDs of one storage share one packaged texture](../reference/nvn-objects.md#texture-ids-of-one-storage-share-one-packaged-texture)
  - after 15 to 45 minutes of play, a segment command buffer fails with `kIOGPUCommandBufferCallbackErrorPageFault` and every later submission is refused (`SubmissionsIgnored`): the picture freezes, or turns pink, while the audio goes on. With `DM_RES_CHECK=1`, `missing residency` lines name 260x260 textures before the fault. → [A texture shared by its packaged texture's serials left the residency set with one of them](../reference/nvn-objects.md#a-texture-shared-by-its-packaged-textures-serials-left-the-residency-set-with-one-of-them)
-@@ -621,6 +633,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -622,6 +634,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - translucent UI (frosted text bands, button guides, dialog headers) yellow and white. → [Integer views for images a shader declares uint or int](../reference/rendering.md#integer-views-for-images-a-shader-declares-uint-or-int)
  - a compute pass's image stores are lost with no red line: the levels or layers it writes stay as they were. With `DM_NVN_PASSDUMP`, its `W` lines read `target=3 shader wants target 2` (a 2D array in a slot the shader declares 2D). → [Image views of the type a shader declares](../reference/rendering.md#image-views-of-the-type-a-shader-declares)
  - flat-coloured objects with no texture detail in an otherwise correct scene: the UVs and colours a vertex factory fetches from buffers read 0. Then `texture buffers bound as 2D rows … N times, about N made` in the log, a Metal texture for nearly every bind. → [Buffer textures behind handles in uniform buffers, and rows of finalized descriptors](../reference/rendering.md#buffer-textures-behind-handles-in-uniform-buffers-and-rows-of-finalized-descriptors)
@@ -192,7 +192,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - `texture type mismatch: shader declares 2, texture is 9`; the slot read 0. → [Buffer textures read by 1D integer fetches (row wrap)](../reference/rendering.md#buffer-textures-read-by-1d-integer-fetches-row-wrap)
  - none of its own seen here. Pull request #984 reports GPU hangs from huge light counts on its build of the same game. → [Integer buffer textures read through float slots](../reference/rendering.md#integer-buffer-textures-read-through-float-slots)
  - none visible on an M6, where at most 0.23 % of pixels differ between paired runs. GitHub issue #783 reports wrong light offsets on an M2. → [Integer textures read through float slots](../reference/rendering.md#integer-textures-read-through-float-slots)
-@@ -644,6 +657,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -645,6 +658,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - while the game makes many textures (Ocarina of Time's cutscenes), frames of hundreds of milliseconds up to a second, all of it in `submit+present` (the `[longframe]` lines); `sample` of the process names `alias_take_over` the submit thread's hottest function. → [A storage takeover walked the serial table for each entry](../reference/rendering.md#a-storage-takeover-walked-the-serial-table-for-each-entry)
  - a command buffer fails with a GPU page fault on the same frames in every run, in a compute or draw command buffer whose shaders sample through the texture pool. Ocarina of Time with `DM_NVN_RT_RECLAIM=1` (PR #1588): f3,677 and f4,851, compute shader 9e6b00b050e30801, each run. → [A texture ID with no texture kept its cached view](../reference/rendering.md#a-texture-id-with-no-texture-kept-its-cached-view)
  - GPU memory grows as resolution changes or rooms load, although almost every retained texture still has a live NVN descriptor; reclaiming unused sharing-table entries cannot recover it. → [Live resolution variants share physical image storage](../reference/rendering.md#live-resolution-variants-share-physical-image-storage)
@@ -200,7 +200,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - the whole picture came out darker and more saturated on the Mac and the iPhone: comparing with a Switch screenshot, every channel at every level equalled the Switch value decoded from sRGB once more (0.55 → 0.26, 0.75 → 0.52). → [Render-target views that change the format](../reference/rendering.md#render-target-views-that-change-the-format)
  - a movie (or another picture the game converts each frame) does not show: the screen keeps the last 3D frame while the decoder delivers every picture. A pass dump shows a pass writing one serial and the composite sampling another serial of the same size, the two Metal formats `RGBA8Unorm` (70) and `RGBA8Unorm_sRGB` (71). → [Textures of an sRGB / linear pair over the same storage](../reference/rendering.md#textures-of-an-srgb--linear-pair-over-the-same-storage)
  - a clear of, or a format-converting copy into, a texture made without render-target use is declined. → [Render-target use added on demand](../reference/rendering.md#render-target-use-added-on-demand)
-@@ -678,6 +692,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -679,6 +693,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - after a GPU hang or GPU page faults, every upload, segment, submission and display command buffer comes back `kIOGPUCommandBufferCallbackErrorSubmissionsIgnored` ("Ignored (for causing prior/excessive GPU errors)"). Nothing is drawn again while the game's sound and logic go on, until the game aborts itself (`game called nn::diag abort`, about 70 s later); in full screen, WindowServer froze for 40 s and its watchdog killed it. With the fix the log has `[RED] GPU access revoked: the … command buffer was ignored`, and a Mac app shows an alert and quits. → [A GPU whose access macOS revoked stops the game](../reference/rendering.md#a-gpu-whose-access-macos-revoked-stops-the-game)
  - an abort at the first present: `[RED] upload batches belong to the submit thread only: up_begin called on thread 'nvn-present-link'`, with `pkg_upload`, `tex_mtl` and `present_now` in the backtrace. → [A CPU-written window texture resolved where the present is queued](../reference/rendering.md#a-cpu-written-window-texture-resolved-where-the-present-is-queued)
  - a game that renders below the screen's resolution looks soft on a phone, in a large Mac window or on a 4K screen. → [The present upscales through MetalFX](../reference/rendering.md#the-present-upscales-through-metalfx)
@@ -208,7 +208,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - in handheld mode the picture fills only two thirds of the screen's width and height, in the bottom-left corner (the top-left with the upper-left origin), the rest black. → [The NVN present crops by the vi layer crop](../reference/rendering.md#the-nvn-present-crops-by-the-vi-layer-crop)
  - a scene turns narrow, with black bars at its sides, while the swapchain or window textures keep their size; circles come out as tall ovals. The log has `vi::SetLayerCrop 0,0 1200x960` and `present upscaling: ... 1200x960 → 1800x1440` in a 2560x1440 window. → [A crop only picks texels; the picture has the layer's shape](../reference/rendering.md#a-crop-only-picks-texels-the-picture-has-the-layers-shape)
  - one-draw passes on one target, hundreds of times a frame, with the same attachments each time (a `DM_NVN_GPUPROF` frame: `load` and `store` of the whole target in every line); a low frame rate that follows the target's size. → [Setting the same targets again continues the pass](../reference/rendering.md#setting-the-same-targets-again-continues-the-pass)
-@@ -711,6 +726,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -712,6 +727,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - a red line: the 8-bit index buffer had GPU-side writes in the submission (indices read stale). → [8-bit indices widened on the GPU after a write in the same submission](../reference/rendering.md#8-bit-indices-widened-on-the-gpu-after-a-write-in-the-same-submission)
  - indirect draws whose record the GPU writes earlier in the frame cannot be read on the CPU at replay; GPU-driven effects drawn as indirect quads, which Metal has no primitive for. → [Indirect draws and dispatches read by the GPU](../reference/rendering.md#indirect-draws-and-dispatches-read-by-the-gpu)
  - an empty G-buffer pass (the title screen showed only the UI); later, the submitting thread waiting for the GPU before each such draw (36–54 fps in Kamura Village on an iPhone). MIO also reported missing level geometry with maxima of 4,594 and 8,192 draws. → [Indirect-count multi-draws](../reference/rendering.md#indirect-count-multi-draws)
@@ -216,7 +216,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - a hitch of a second or more as a level opens: a few frames of 330–540 ms whose submission takes 2–3 times its CPU time, and the wait ledger (`DM_NVN_WAITS=1`) shows thousands of indirect-count multi-draw waits for those frames only. → [CPU reads after a drain wait only for later writes](../reference/rendering.md#cpu-reads-after-a-drain-wait-only-for-later-writes)
  - a black screen while the frame loop runs at full rate, with `[RED] NVN unimplemented function called: nvnCommandBufferDrawTexture`; once drawn, the picture alternates frame by frame between the right image and another texture's (a solid colour, a still image). → [`nvnCommandBufferDrawTexture`](../reference/rendering.md#nvncommandbufferdrawtexture)
  - the HUD and sky render but the battle's characters and terrain are absent; the replay logs `draw skipped: rasterizer discard` between model draws. → [Rasterizer discard preserves vertex storage writes](../reference/rendering.md#rasterizer-discard-preserves-vertex-storage-writes)
-@@ -732,6 +748,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -733,6 +749,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - a Switch 2 game calls `nvnCommandBufferEvaluateDlss` and its builder functions, which the host did not have. → [NVN2's DLSS on MetalFX](../reference/rendering.md#nvn2s-dlss-on-metalfx)
  - `[RED] NVN unimplemented function called: nvnDlssNetworkResize (x0=… x1=0x300 x2=0x1b0)` at the title. → [The DLSS network resized](../reference/rendering.md#the-dlss-network-resized)
  - a Switch 2 game's frame in its heavy scenes is dominated by one compute dispatch between the render-resolution passes and the output-resolution ones: Donkey Kong Bananza's upscaler takes 3.5-5 ms of a 24 ms GPU frame on an M1 in handheld mode (960x540 → 1920x1080, `DM_NVN_GPUPROF`), and the game cannot reach its 60 fps interval there. → [A game's own upscaler drawn by MetalFX](../reference/rendering.md#a-games-own-upscaler-drawn-by-metalfx)
@@ -224,7 +224,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - with `DM_UPSCALER=metalfx`, a game's picture is washed out wherever it upscales: lifted shadows and low contrast, the scene only, with the UI drawn after it correct; with `DM_UPSCALER=game`, or at a size the game does not upscale, it is right. → [An upscaler's colour read from its code](../reference/rendering.md#an-upscalers-colour-read-from-its-code)
  - tall blue / textured panels that flickered frame to frame: the fountain's vertex shader pushed the water surface to the top of the screen. → [Metal 4 does not order operations inside one encoder](../reference/rendering.md#metal-4-does-not-order-operations-inside-one-encoder)
  - a buffer copy, inline update or fill completes, but a following copy through another Metal buffer over the same allocation reads stale bytes. → [Buffer copies through aliased Metal addresses](../reference/rendering.md#buffer-copies-through-aliased-metal-addresses)
-@@ -749,6 +766,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -750,6 +767,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - no ambient occlusion (Mac); on a device the result depends on whatever that memory holds. → [Depth-stencil copies carry the stencil](../reference/rendering.md#depth-stencil-copies-carry-the-stencil)
  - `DM_NVN_GPUPROF=every:1` prints no per-frame reports and fills its timestamp heap across frames. → [Periodic GPU profiles close at frame boundaries](../reference/rendering.md#periodic-gpu-profiles-close-at-frame-boundaries)
  - with `DM_NVN_GPUPROF`, the host aborts minutes in on `-[AGXG16XFamilyComputeContext_mtlnext writeTimestampWithGranularity:afterStage:intoHeap:atIndex:]: unrecognized selector`, `up_flush` on the stack; or a profiled render pass with a wrong GPU time. → [GPU profiles stamp only the encoder they began](../reference/rendering.md#gpu-profiles-stamp-only-the-encoder-they-began)
@@ -232,7 +232,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - the 3D scene black (targets cleared again before they are read); `[RED] SetRenderEnableConditional: the host draws anyway`; with a game that skips clears under render conditions, scenes black behind the HUD (Mario vs. Donkey Kong's levels, 1.0.1). → [Conditional rendering evaluated at replay](../reference/rendering.md#conditional-rendering-evaluated-at-replay)
  - with `render_cond`, GPU time spent on objects the game's occlusion queries culled: a pass dump shows `conditional render … (unknown, drawn)` on query records whose submission completed long before. → [Occlusion conditions read once landed](../reference/rendering.md#occlusion-conditions-read-once-landed)
  - with `render_cond`, a 3D scene black or missing behind the HUD, only in scenes with many occlusion queries; a pass dump shows conditions reading `values 1 / 0` on a record a report of the same submission has just written, and clear-only passes on targets just drawn to. Scenes with fewer queries are fine. → [Report tables that dropped entries](../reference/rendering.md#report-tables-that-dropped-entries)
-@@ -793,6 +811,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -794,6 +812,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - the split leaves out archives whose members do not overlap: `[RED] <file>/<member>.szs/#7: the archive members add up to more than 16 times the file (members that overlap)`, then `[RED] <n> file(s) could not be read`, and a registered profile's build stops there. → [A Yaz0 member that expands is not overlap](../reference/shaders.md#a-yaz0-member-that-expands-is-not-overlap)
  - the shader build fails one agl or terrain shader no run ever asks for, with `Ampere instruction 481 at 0x0 (000000000000000000000000020c0481) is not implemented` (a vertex shader's SPH read as an instruction); in the map, a shader whose control stage disagrees with its code (a compute control with a vertex SPH, a pixel control with a vertex SPH) and whose stored control section is longer than the file's real ones (0x200, 0x1100, 0x1400 against 0xe0). Also: no `pso_pairs.tsv` rows from a file whose lowest such entry hides its binary array. → [A control section's words read as a BAHS entry](../reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry)
  - `shader_split.py` finds 0 shaders in a RomFS of zstd files named `.zst`. → [Zstd files recognised by their magic](../reference/shaders.md#zstd-files-recognised-by-their-magic)
@@ -240,7 +240,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - the game asks for shaders the map does not have (`[RED] shader ... is not in the shader map`, hundreds of lines), and the split finds far fewer shaders than the game uses (121 against 27,288 on Kirby and the Forgotten Land). → [HAL's `.cmp` containers: a size-prefixed frame](../reference/shaders.md#hals-cmp-containers-a-size-prefixed-frame)
  - the split finds almost no shaders and reports `[RED] /Archive/<name>.bea: entry 0 @0x4854535341 is not an ASST entry (its shaders are left out)` for every archive (`… file(s) could not be read`); the "offset" is the bytes `ASSTH`. → [Bezel Engine 2.9 archives keep their entries inline](../reference/shaders.md#bezel-engine-29-archives-keep-their-entries-inline)
  - a provisional split finds only a fraction of the shaders (3,126 of Pokémon Sword's 41,516). → [BNSH entries of GFPAK archives](../reference/shaders.md#bnsh-entries-of-gfpak-archives)
-@@ -808,6 +827,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -809,6 +828,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - only movies render, while the 3D scene reports missing shaders and programs without a vertex stage; the shader split finds loose programs but misses those in `Shaders/Shaders.arc.gz`. → [Gzip-wrapped shader archives](../reference/shaders.md#gzip-wrapped-shader-archives)
  - the NSP script stops at its GLSLC capture with `captured only 0 run-time shaders`, after the game ran the whole capture normally, on a game whose `main` imports `glslcCompile`, with a `.vert` or `.frag` file in its RomFS. → [Encrypted `.vert` and `.frag` files are no run-time GLSL](../reference/shaders.md#encrypted-vert-and-frag-files-are-no-run-time-glsl)
  - every frame black, the title screen included, while the game runs at full rate and draws (about 19,000 NVN calls a frame), with `[RED] shader … is not in the shader map` (26 keys in the first minute) and `program has no vertex shader`; the dumped shaders (`DM_NVN_SHDUMP`) match no file byte for byte, and some differ from a split shader only in the control section's compile information (+0x7d0), which is a sign of another GLSLC compile of the same source, not of a shared section. → [Gust's chunked zlib `.gz` files](../reference/shaders.md#gusts-chunked-zlib-gz-files)
@@ -248,7 +248,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - the split finds no shaders in a RomFS made of `.sdfdata`, `.sdftoc` and `.sdfver` files. → [Shader records in Snowdrop SDF data slices](../reference/shaders.md#shader-records-in-snowdrop-sdf-data-slices)
  - the survey finds no shader container in a RomFS of `.toc` and `.cas` files (`Data/NX`, `Patch/NX`, `Data/layout.toc`, `Data/initfs_NX`); the split reads every file loosely and finds nothing. → [CompiledBytecode resources in Frostbite superbundles](../reference/shaders.md#compiledbytecode-resources-in-frostbite-superbundles)
  - `[RED] ... PKZ version 0x10000: only 0x20000 is known` stops the shader split. → [PKZ version 1 archives](../reference/shaders.md#pkz-version-1-archives)
-@@ -859,6 +879,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -860,6 +880,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - making a pipeline archive prints `Max Unstruct ID 758 in function agc.main in shader 13941 exceeds supported limit`, and one pipeline takes many minutes, in `metal-tt` offline or in the host's prebuild on the device (`Preparing pipelines` holding one count for minutes). The line is a note, not an error: `metal-tt` goes on, exits 0 and writes that pipeline into the archive. → [Front end at -O1: Apple's control-flow lowering](../reference/shaders.md#front-end-at--o1-apples-control-flow-lowering)
  - the shader build prints `fatal error: bracket nesting level exceeded maximum of 256` and `<key>.metal: does not compile`, and the shader is left out. → [Bracket nesting past the front end's 256](../reference/shaders.md#bracket-nesting-past-the-front-ends-256)
  - the half of Mario facing the camera's left was white (GitHub issue 72, on an iPhone). → [min, max and clamp with a NaN operand](../reference/shaders.md#min-max-and-clamp-with-a-nan-operand)
@@ -256,7 +256,7 @@ index 827bb630e5308ecace866073947f2f690f63ba51..8cca3780878702a2d9a23bfce265b3f0
  - a pipeline red line for a float output meeting an integer attachment (the red line prints the row to add); a BC encoder's pipeline fails. → [Integer fragment outputs declared by hand](../reference/shaders.md#integer-fragment-outputs-declared-by-hand)
  - a pixel shader that writes depth and only some components of a colour target writes the wrong depth: in the translated MSL, `gl_FragDepth` takes a value the shader computes a step before its last one, or a colour. → [A pixel shader's depth after a partly written target](../reference/shaders.md#a-pixel-shaders-depth-after-a-partly-written-target)
  - `failed to create render pipeline … output of type float4 is not compatible with a MTLPixelFormatR32Uint color attachment` (or `MTLPixelFormatRGBA16Uint`); every draw into the target skipped. → [Integer entry points for integer colour outputs](../reference/shaders.md#integer-entry-points-for-integer-colour-outputs)
-@@ -868,6 +889,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -869,6 +890,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - `SPIRV-Cross threw an exception: Subgroup builtins are not available in this type of function`. → [Subgroup operations rewritten for a one-lane subgroup](../reference/shaders.md#subgroup-operations-rewritten-for-a-one-lane-subgroup)
  - the tone mapper read an empty LUT and the screen came out a flat blue. → [Geometry shaders that only pick the layer](../reference/shaders.md#geometry-shaders-that-only-pick-the-layer)
  - `[RED] NVN unimplemented function called: nvnCommandBufferDrawMeshTasks`, and a build that fails with `Ampere instruction 927 ... is not implemented` in shaders the map calls vertex or domain; what they draw is missing. → [NVN2 task and mesh shaders](../reference/shaders.md#nvn2-task-and-mesh-shaders)
@@ -426,7 +426,7 @@ index 6cebcbdc6dd09088eb852a88a88fe17fc717b0a3..90a7f362fa2baac05b39989811e98692
  On iOS the standard is the pipeline archive made on the Mac and shipped in the app. Otherwise the device builds the bases on first start behind the "Preparing pipelines" screen; [Breath of the Wild's note](../dm/games/01007EF00011E000/README.md#pipelines-on-a-cold-start) records the build times, sizes and startup measurements. `build_ipa.sh` makes them on the Mac and puts them into the app (`dm/gfx/tools/pso_offline.py`). Only the Metal 4 path reads them, so by default it does this for a game whose profile sets `pso_mtl4 on` (the path is on for it on iOS), and for no other:
  1. It writes a Metal 4 pipelines script (`metal4-pipelines-script(5)`) with the base of every pair in `shader_pairs.tsv` and `pso_pairs.tsv`, by the prebuild's rules (`pre_desc` in `nvn_mtl.m`): the pulling vertex library `<key>_bp` (a vertex shader without stage inputs: its own `<key>_b`), the vertex entry for the depth mode, the pixel shader's entry, no vertex descriptor, one sample, every colour attachment unspecialized. Pairs the prebuild leaves to the draws are left out the same way. A pair whose functions declare function constants is left to the device (`rest_pairs.tsv`): `metal-tt` makes no specialized function from a library ("cannot find private metadata"), and the host specializes such functions with an empty set. If every eligible pair needs this specialization, the tool writes the remainder list without running `metal-tt` or shipping an archive, and the device builds them all.
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 980355d440637c35bbf89cfd54ad832bbb8927c8..65795e0c23bb10c8d383cf7122e55a28368bd36d 100644
+index e9928f69347a0dc6026950742fdddcc3bf81f7e4..f27b1e085f7bb868dd92d6645392a8c08e8506b6 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -3,6 +3,7 @@ DM_AB	diagnostic	`=<frames>` splits the run into phases of that many frames and
@@ -556,7 +556,7 @@ index 980355d440637c35bbf89cfd54ad832bbb8927c8..65795e0c23bb10c8d383cf7122e55a28
  DM_PSO_BUNDLE	path	The pipeline archive made offline (`<GPU architecture>.mtl4a`, `prebuilt.tsv`), read only; the iOS app and Mac launcher set it to their `pso/` folder; `off` ignores it
  DM_PSO_GPUS	switch	`build_ipa.sh`: the GPU architectures, comma-separated, to build the offline pipeline archive for (`none` builds none); unset, a profile with `pso_mtl4 on` gets its `pso_gpu` list or `g18p` when absent; profiles with `pso_mtl4 off` get none
  DM_PSO_HYBRID	switch	`0`: a draw whose pipeline is not built yet waits for it instead of drawing with its shader pair's pulling pipeline meanwhile (on by default with the Metal 4 path)
-@@ -317,12 +340,13 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+@@ -318,12 +341,13 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
  DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
  DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
  DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz)
@@ -571,7 +571,7 @@ index 980355d440637c35bbf89cfd54ad832bbb8927c8..65795e0c23bb10c8d383cf7122e55a28
  DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log only for dropped frames (kept in a ring of the last 16 frames, judged 8 frames late)
  DM_SPIN	switch	`0` makes the rewriter's spin gate return at once, so guest poll loops spin with no sleep; the gate stays (on by default)
  DM_SPIN_LIST	diagnostic	`=1` makes `patch_nso.py` print every guest poll loop it found and sends through a spin gate
-@@ -340,6 +364,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
+@@ -341,6 +365,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
  DM_TEST_FS_FAILAT	diagnostic	`=<point>[:<count>][,…]` makes steps of the save transaction (`mountclone`, `reclone`, `guestname`, `renameback`) fail with ENOSPC
  DM_TEST_GEOMETRY	test	Path of the native `t_geometry` executable; `test_dmsh_geometry.py` runs its native geometry emitter checks only when it is set
  DM_TEST_GEOMETRY_PRIMITIVE_ID	test	Path to the native t_geometry_primitive_id replay executable used by test_dmsh_geometry.py with DMSH_TEST_GPU=1.
@@ -579,7 +579,7 @@ index 980355d440637c35bbf89cfd54ad832bbb8927c8..65795e0c23bb10c8d383cf7122e55a28
  DM_TEST_GPU_LOST	diagnostic	`=<n>` imitates the GPU access macOS revoked from the nth submission on: each submission's feedback reports `MTL4CommandQueueErrorAccessRevoked` and the GPU does not signal its fence, so the host stops presenting and the front end ends the game
  DM_TEST_KEYRACE	diagnostic	`=<n>` creates up to n (at most 512) pthread keys on a thread of its own while the host starts up
  DM_TEST_KILL_AT	diagnostic	`=write:<n>` exits the process (`_exit(9)`) at the nth save write, imitating a kill mid-write
-@@ -364,6 +389,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
+@@ -365,6 +390,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
  DM_VK_CAPTURE	path	`=<dir>` (Mac) writes every SPIR-V module the game creates to `<dir>/<key>.spv`; the NSP script's Vulkan shader capture stage sets it
  DM_VK_LOG	diagnostic	`=1` logs Vulkan object creation in the Vulkan-on-Metal layer
  DM_VSYNC_HZ	switch	`=<Hz>`: rate at which a host thread fires the vi vsync event when the display link does not drive it (default 60)
@@ -588,10 +588,10 @@ index 980355d440637c35bbf89cfd54ad832bbb8927c8..65795e0c23bb10c8d383cf7122e55a28
  DM_WATCH_SAMPLE	diagnostic	`=<path>` (Mac): when the stall watchdog fires, samples the process for 1 s with `/usr/bin/sample` and writes the thread stacks to that path
  DM_WATCH_STALL	diagnostic	`=<s>`: when the frame loop makes no progress for that long (default 15 with `DM_WATCH`), logs a red line, dumps the threads and exits
 diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
-index cb361c3591cfa453d09c4a6022660f5f93e19446..0480171f3abf281827f2abae04290d1ffaeda7da 100644
+index 74a2c6af6999f58e39f586bf49c20253c3050f98..7bc120116de06948b7943a64db481cf9f1045300 100644
 --- a/docs/reference/frame-rate.md
 +++ b/docs/reference/frame-rate.md
-@@ -327,6 +327,25 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
+@@ -335,6 +335,25 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
  - **Check:** here (a built-in 120 Hz screen, a multiple of every link rate) a harness drove `front_mac.m` asked for 50 fps: no switch in the window, 120 → 50 Hz in fullscreen, 120 Hz again on leaving it, and 120 Hz after quitting in fullscreen; at 60 fps and with `DM_SCREEN_MATCH=0` nothing switched.
  - **Not checked:** the link's new range after a switch has not run here (Hades windowed and fullscreen paced at 60 as before).
  
@@ -617,7 +617,7 @@ index cb361c3591cfa453d09c4a6022660f5f93e19446..0480171f3abf281827f2abae04290d1f
  ### macOS Game Mode holds the GPU at its lowest clock
  
  - **Symptom:** a Mac game in fullscreen holds 60 fps for 45 s to 3 minutes, then the same work takes about twice the GPU time (Tears of the Kingdom 10.5 → 19.7 ms) and the frame step falls to 30 fps. `powermetrics` shows the GPU at its lowest clock (338 MHz on an M4 Pro) while it is 72–98% busy, with thermal pressure nominal. Probes back to 60 fail, because the clock does not rise within a probe. `gamepolicyd` logs `Game mode enabled` and `Set DPS to 2`.
-@@ -427,6 +446,14 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
+@@ -435,6 +454,14 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
  - **Note:** MacNativeGames moved its cut to 30 draws for the first segment and 40 after (`2fa27d7`; uncapped Tears of the Kingdom in a shrine, 10.77 → 10.60 ms a frame). At this repository's 60 fps cap the size changes nothing where the GPU finishes inside the frame: Breath of the Wild outdoors on an M4 Pro (2026-10-26, the outdoor seed of the [BotW Mac routes](../../dm/games/01007EF00011E000/README.md#mac-routes), frames 3,001–5,700, cut 64) waited on its fence 0.02 ms a frame on average (`@sync_ms`), with GPU span 10.8 ms. The default stays 64; a GPU-bound device (an iPhone) is where a smaller cut could show, through `DM_NVN_CUT`.
  
  
@@ -927,7 +927,7 @@ index ffe39a489d82576626e08de5e59d72cf4862de98..e1fae7ac34a145e613ab11c7909122a3
  
  ### 64-bit bounds check of the index
 diff --git a/docs/reference/services.md b/docs/reference/services.md
-index b5c7d59648e5ff5a56dcf22ec14153f913fd3cc3..07550a00a14ecbae54aaa7834e1af6621d664686 100644
+index f10d14526320cc97230426b3f9458449284e6638..8370c253b5f874e41eeba460d04595c146f0ec20 100644
 --- a/docs/reference/services.md
 +++ b/docs/reference/services.md
 @@ -405,7 +405,8 @@ Most service calls can be found before they crash, before the first boot or the
@@ -1060,7 +1060,7 @@ index 5e84c4cead611c1d093e95243d113fc1ba6d2429..e0b3cb2fac98c6f8e7c29971709efff8
  
  ### File system calls are service requests
 diff --git a/docs/settings.md b/docs/settings.md
-index 65a2792a3c4e83ecea1920423bc1b94dbe5e2b1c..37ba00239ed89a46601467e825b3e4cb0bb0ce47 100644
+index 606b9d1768474d02aa0d82591f628bd8a2267868..8ca1c1626671cbcc5c31bc38450a8142ffb9826d 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -7,6 +7,7 @@ The screen before the game starts shows the settings the game supports. A settin
@@ -1091,7 +1091,7 @@ index 65a2792a3c4e83ecea1920423bc1b94dbe5e2b1c..37ba00239ed89a46601467e825b3e4cb
  
 @@ -243,6 +244,35 @@ A save that is replaced, on the device or in iCloud Drive, is kept first, beside
  
- iCloud Drive takes a moment to carry a file from one device to the other. Quit the game on one device and give it a few seconds before you start it on the other. Without a connection the game plays on with the save it has and sends it later. The game log says what came in and what went out (lines starting with `save sync:`).
+ iCloud Drive takes a moment to carry a file from one device to the other. Quit the game on one device and give it a few seconds before you start it on the other. Without a connection, or when the save in iCloud Drive has not arrived in time, the game plays on with the save it has and sends it later. If the save in iCloud Drive changed meanwhile, the game sends nothing that session, and the next start decides between the two as above. The game log says what came in and what went out (lines starting with `save sync:`).
  
 +## Quick settings on the Mac
 +

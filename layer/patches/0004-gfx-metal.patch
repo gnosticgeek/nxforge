@@ -195,10 +195,10 @@ index 5bfdfeac47934b224905a7ad9b1d62dcc0d91215..3aedeb63526f1e9c3db7af583c56aaa5
 +  return float4(saturate(col * (1.0f + 0.3f * vis)), 1);
 +}
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 03af842ce82c77a8303a68c7b1eb643de116c687..eec5b4f593936e9ec6c56b8044c7a80c7b64be8c 100644
+index c3c949576231f0bf244188a69c27777fa6d5bc01..d7d32a8814f13fe2a01b7a184bfbd2816e6c5fdb 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -1623,7 +1623,10 @@ __attribute__((weak)) int dm_thermal_now(void) { return -1; }   // Default (Mac)
+@@ -1624,7 +1624,10 @@ __attribute__((weak)) int dm_thermal_now(void) { return -1; }   // Default (Mac)
  __attribute__((weak)) int dm_low_power_now(void) { return 0; }   // Low Power Mode (iOS front_ios.m); off on the Mac
  // Per-frame ring for the long-frame log (GPU time only arrives 8 frames late, so store first and judge later)
  #define LFN 16
@@ -210,7 +210,7 @@ index 03af842ce82c77a8303a68c7b1eb643de116c687..eec5b4f593936e9ec6c56b8044c7a80c
  static lf_rec g_lf[LFN];
  __attribute__((weak)) void dm_longframe_note(const char *what) { LOG("[longframe] %s", what); }   // Default (graphics unit tests); the strong definition in the host's diag.c adds scene context and writes perf.txt
  extern void mtl_create_ns(uint64_t *lib_ns, uint64_t *pso_ns); extern void mtl_hybrid_stats(uint64_t *draws, uint64_t *made, uint64_t *none); extern uint64_t mtl_upload_bytes(void); extern void mtl_pkg_stats(uint64_t *uploads, uint64_t *reuploads);
-@@ -2133,7 +2136,8 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
+@@ -2139,7 +2142,8 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
      if (prev_in) {
          double fr = (t0 - prev_in) / 1e6, wk = (t0 - prev_out) / 1e6, nv = atomic_exchange(&g_nvn_ns, 0) / 1e6;
          tpush(0, fr); tpush(1, wk); tpush(2, nv);
@@ -220,7 +220,7 @@ index 03af842ce82c77a8303a68c7b1eb643de116c687..eec5b4f593936e9ec6c56b8044c7a80c
          // Slow-frame attribution (taken only when DM_NVN_TSV is on): this frame's present-thread CPU time (−1 if the thread changed), CPU of all threads in the process, acquire wait accumulated per frame, present call time (same base as the GPU / on-screen present times: ms since process start)
          trow(f, "@wait_ms", g_acq_wait_ns / 1e6); trow(f, "@pq_wait_ms", g_pq_wait_ns / 1e6);
          if (frame_rec()) {
-@@ -2156,10 +2160,11 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
+@@ -2162,10 +2166,11 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
          static uint64_t pdo; uint64_t do_ = mtl_ds_omit(); trow(f, "@ds_omit", (double)(do_ - pdo)); pdo = do_;
          trow(f, "@use_call", (double)(uc_ - puc)); trow(f, "@use_skip", (double)(us_ - pus)); puc = uc_; pus = us_;
          static uint64_t pfa, pre_; uint64_t fa_, pr_, up_, re_; nvn_dirty_stats(&fa_, &pr_); mtl_pkg_stats(&up_, &re_);
@@ -234,7 +234,7 @@ index 03af842ce82c77a8303a68c7b1eb643de116c687..eec5b4f593936e9ec6c56b8044c7a80c
          trow(f, "@upload_gpu_ms", mtl_upload_gpu_ns_take() / 1e6);
          // Accounting: number of synchronous creations on the submit thread this frame + a timestamp on the same clock as UIMSG (offline, frames are split into front end / loading / in-run by the loading screen intervals)
          static uint64_t plib, ppso; uint64_t lib_, pso_; mtl_create_stats(&lib_, &pso_);
-@@ -2169,11 +2174,16 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
+@@ -2175,11 +2180,16 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
              lf_rec *r = &g_lf[f % LFN]; r->f = f; r->fr = fr; r->nv = nv; r->t_s = (now_ns() - g_t0_ns) / 1e9; r->pso = (unsigned)(pso_ - ppso); r->lib = (unsigned)(lib_ - plib);
              r->make_ms = ((lns - plns) + (pns - ppns)) / 1e6; r->up = (unsigned)(up - pup); r->rup = (unsigned)(rup - prup); r->up_mb = (ub - pub) / 1048576.0; r->up_ms = up_ms;
              r->hy = (unsigned)(hy - phy); plns = lns; ppns = pns; pup = up; prup = rup; pub = ub; phy = hy;
@@ -253,7 +253,7 @@ index 03af842ce82c77a8303a68c7b1eb643de116c687..eec5b4f593936e9ec6c56b8044c7a80c
      } else atomic_store(&g_nvn_ns, 0);
      g_acq_wait_ns = g_pq_wait_ns = 0;
      if (f >= 8) { double g = mtl_gpu_ms(f - 8); if (g >= 0) { tpush(3, g); trow(f - 8, "@gpu_ms", g); g_hr[g_hn++ % HRN] = g; }   // GPU time is taken 8 frames late (already completed)
-@@ -2183,9 +2193,15 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
+@@ -2189,9 +2199,15 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
            // "Long" is relative to recent conditions: when running steadily at 30 fps (menus / windowless host) or under sustained overload, every frame is > 20 ms; those are not long frames and must not flood the log - a frame has to be 40% above the sliding mean of the last 16 frames to count
            static double ef = 16.7, eg = 8; int lf = r->fr > 20.0 && r->fr > 1.4 * ef, lg = g > 16.7 && g > 1.3 * eg;
            if (r->f == f - 8) { ef += ((r->fr < 3 * ef ? r->fr : 3 * ef) - ef) / 16; eg += ((g < 3 * eg ? g : 3 * eg) - eg) / 16; }
@@ -271,7 +271,7 @@ index 03af842ce82c77a8303a68c7b1eb643de116c687..eec5b4f593936e9ec6c56b8044c7a80c
                // Visibility: during the time a long frame "comes out late", what stays on screen is the previous frame; if the previous frame was a loading screen (or this frame itself is one), all the player sees is the loading screen staying a bit longer, with no motion interrupted
                dm_longframe_note(b); } }
          uint64_t g0, g1; if (frame_rec() && mtl_gpu_span(f - 8, &g0, &g1)) { trow(f - 8, "@gpu_beg_ms", (g0 - g_t0_ns) / 1e6); trow(f - 8, "@gpu_end_ms", (g1 - g_t0_ns) / 1e6); } }
-@@ -2248,21 +2264,21 @@ NVN(nvnBufferInitialize, NVNboolean, NVNbuffer *buf, const NVNbufferBuilder *b)
+@@ -2254,21 +2270,21 @@ NVN(nvnBufferInitialize, NVNboolean, NVNbuffer *buf, const NVNbufferBuilder *b)
  }
  NVN(nvnBufferFinalize, void, NVNbuffer *buf) { ((buf_t *)buf)->magic = 0; }
  NVN(nvnBufferSetDebugLabel, void, NVNbuffer *buf, const char *s) { (void)buf; (void)s; }
@@ -301,7 +301,7 @@ index 03af842ce82c77a8303a68c7b1eb643de116c687..eec5b4f593936e9ec6c56b8044c7a80c
  NVN(nvnMemoryPoolInvalidateMappedRange, void, const NVNmemoryPool *p, ptrdiff_t off, size_t n) { (void)p; (void)off; (void)n; }
  NVN(nvnMemoryPoolSetDebugLabel, void, NVNmemoryPool *p, const char *s) { (void)p; (void)s; }
  // Debug labels: only for NVN debugging tools, unused by the host
-@@ -2738,6 +2754,13 @@ NVN_NOPROTO(nvnCommandBufferEvaluateDlss, void, NVNcommandBuffer *c, const dlss_
+@@ -2744,6 +2760,13 @@ NVN_NOPROTO(nvnCommandBufferEvaluateDlss, void, NVNcommandBuffer *c, const dlss_
          o->tex[k] = tex_snap(o, SNAP_OFF(p_dlss), k, p->tex[k], (uint64_t)__builtin_return_address(0));
          memcpy(o->base[k], p->base[k], sizeof o->base[k]);
      }
