@@ -11,13 +11,13 @@ Subject: games: Game profiles and notes
  dm/games/0100B99019412000/README.md        |    1 +
  dm/games/0400486024DEC000/README.md        |    4 +
  dm/games/040074A01BF12000/README.md        |    2 +-
- dm/games/0400C3F00006E000/README.md        |   15 +-
- dm/games/0400C3F00006E000/game.tsv         |   11 +
+ dm/games/0400C3F00006E000/README.md        |   17 +-
+ dm/games/0400C3F00006E000/game.tsv         |   15 +
  dm/games/0400E88025B1A000/README.md        |    7 +-
  dm/games/README.md                         |    4 +-
  dm/games/profile_guess.py                  |    8 +-
  dm/games/settings.tsv                      |    2 +-
- 13 files changed, 2973 insertions(+), 11 deletions(-)
+ 13 files changed, 2979 insertions(+), 11 deletions(-)
 
 diff --git a/dm/games/010014E00DB56000/README.md b/dm/games/010014E00DB56000/README.md
 index ab12954e0eb151145a32595fd27f95457b4ae0d3..5ef90fc6145af4c7e0b69bc70f1ef9c49c186a9c 100644
@@ -3044,7 +3044,7 @@ index 9be693eb7de8d0f4e5196e6df71927b5b83b27ba..a2b88253419bb27313ca9058d89d5e6c
  - The terrain's stores through loaded pointers keep reaching memory pools the host learns only afterwards (12 in a 17,700-frame session); each such miss is checked against the uniform shadows that relied on it, and none so far covered a written page ([Global memory at an address loaded from memory](../../../docs/reference/shaders.md#global-memory-at-an-address-loaded-from-memory), Open).
  - **Frame rate in busy scenes:** the game picks its own present interval: 3 (20 fps) in its cutscenes, and 1 ↔ 2 (60 ↔ 30 fps) by its frame-rate controller (`main+0x204a18`; settings at `0x703f72b200`: interval 1 to 3, margin -0.2, 2 late frames to go up, 6 to come back). It measures each frame from its start (`+0xf0`) to the later of its submission and the GPU's end (`+0x128`, ticks) and wants interval 2 from 1.2 vsyncs (20 ms). On the Mac (M4 Pro) that measure sits at 17 ms a frame (p90 24): the host's translation (CPU, 5-9 ms) before the GPU's 10-13 ms. The upscaler's HMMA through `simdgroup_matrix` ([Ampere HMMA through simdgroup_matrix](../../../docs/reference/shaders.md#ampere-hmma-through-simdgroup_matrix)) cut the switches by about a fifth; the geometry runs' dependency check, quadratic in the run's length ([Geometry dependency checks skip read-only pairs](../../../docs/reference/shaders.md#geometry-dependency-checks-skip-read-only-pairs)), was about 8 % of the submitting thread, and making it linear cut them from 30 to 12 on the same scripted route. Entering a level stalled for 1.3 s on GPU drains, one or two per geometry draw ([CPU reads after a drain wait only for later writes](../../../docs/reference/rendering.md#cpu-reads-after-a-drain-wait-only-for-later-writes)); one CPU-bound build frame of 195-280 ms remains. Measured without `sample` attached: it suspends the process and makes the submitting thread look stalled. Its geometry draws are mesh draws ([Mesh geometry groups sized to the vertex output](../../../docs/reference/shaders.md#mesh-geometry-groups-sized-to-the-vertex-output)): translation 9.9 → 7.2 ms a frame, GPU p50 11.8 → 9.0 ms on the scripted route. Open: the rest of the translation time in the busiest views (argument encoding, render pass setup), where translation and the GPU together still miss a vsync now and then.
 diff --git a/dm/games/0400C3F00006E000/README.md b/dm/games/0400C3F00006E000/README.md
-index fc7aaf5dbeb711d87029ad63dc03e11fb416356a..4885cbe578a9e3585a8bc313f12d537658704bcb 100644
+index fc7aaf5dbeb711d87029ad63dc03e11fb416356a..1963533a4de0c7acd52b9ffd888fb8be79b1c163 100644
 --- a/dm/games/0400C3F00006E000/README.md
 +++ b/dm/games/0400C3F00006E000/README.md
 @@ -9,6 +9,7 @@ A Switch 2 game. Brought up on the base game (v0), SDK 19.3.3 built for the Swit
@@ -3064,10 +3064,12 @@ index fc7aaf5dbeb711d87029ad63dc03e11fb416356a..4885cbe578a9e3585a8bc313f12d5376
  ## Rendering
  
  The game draws into the top left 2048x1152 of a 3840x2160 window texture and crops the window to it, so screenshots are taken with `DM_NVN_SHOT_OUT=1920x1080` (`play.sh` in the work folder does).
-@@ -62,6 +65,14 @@ On the 16 GB M6 (2026-11-04, a host on the older chain `475a55e74858`, the Mac a
+@@ -62,6 +65,16 @@ On the 16 GB M6 (2026-11-04, a host on the older chain `475a55e74858`, the Mac a
  
  Game speed: the framework picks each frame's interval, 1 or 2 vsyncs, which the game steps by (the function at `main+0x3a9e28` on v0, its mode at `[x19+0x210]`: 1 = 60 fps, 2 = the game's 30 fps mode, 0 = chosen from the frame's CPU time alone). Frames that waited on the GPU kept interval 1 and played in slow motion, as the user saw on a slower Mac. With `fps_target 60` the interval is the host's frame step, at most 2, and the game's own 30 fps mode stays its own ([A fixed frame step plays in slow motion on a slow Mac](../../../docs/reference/frame-rate.md#a-fixed-frame-step-plays-in-slow-motion-on-a-slow-mac)), a stub placed by its function's fingerprint ([`patches.py`](patches.py)). Mac runs on the 16 GB M6 (2026-11-08, a test host on the libraries of chain `1d619d0f520b`): the user's session held 60 fps (game time 0.977 in the one window with 3-vsync holds, where the game steps 2, else 0.999); at `DM_FPS_TARGET=30` every frame was held 2 vsyncs, game time 0.996 of real time, into a Grand Prix race. Those figures are the stub's own count; the Grand Prix shows no race clock, and a check against Time Trials' clock has not been run.
  
++Late frames are not held (`fps_hold off`, NXForge). With the default hold, three frames 16 to 28% over budget (19 to 21 ms, the submit thread blocked, often while the Mac swaps) raised the hold to 2 or 3 vsyncs, and the probes back to 1 failed for seconds: a 27-minute session on an M4 Pro (24 GB, 2026-11-09) played at 30 or 20 fps for about 40 s in 16 stretches, once 11 s on end. With `DM_FPS_HOLD=off` the next session (66 minutes) had no 5-second window under 47 fps apart from three where the window was covered, and a slow frame shows as a single hitch while the frame step's paid-back vsyncs keep the game time.
++
 +Dynamic resolution needs the profile's `gpu_timestamps segment` ([GPU timestamps per submission segment](../../../docs/reference/frame-rate.md#gpu-timestamps-per-submission-segment)), as on Donkey Kong Bananza (same engine): the game takes its GPU time as the difference of timestamp reports in one submission, which read about 0 when every report of a submission carries one time, so the scene stayed at 2048x1152 however long the GPU took. On a 16 GB M1 Pro (2026-11-04, main `777a5f6c`) the scene of the first race steps down from 2048x1152 to 1328x748, and that race (frames from 160 to 196 s, two alternating runs each, `DM_NVN_GPU_TS=submission` for the old behaviour) went from 33.4–33.6 to 42.2–42.3 fps, the GPU p50 from 26.8–28.3 to 20.8–22.4 ms. A GPU within budget, as the M6's 8.3 to 9.3 ms should be, keeps full size; not run on the M6.
 +
 +## Memory in free roam
@@ -3079,7 +3081,7 @@ index fc7aaf5dbeb711d87029ad63dc03e11fb416356a..4885cbe578a9e3585a8bc313f12d5376
  ## Terrain and movies
  
  The flat ground with blocky seams behind the title and the menu was terrain tiles the CPU wrote with no flush, read as zeros: [Uncompressed storage the CPU wrote, in a pool the GPU has not written](../../../docs/reference/nvn-objects.md#uncompressed-storage-the-cpu-wrote-in-a-pool-the-gpu-has-not-written). The title now shows real terrain, with hills, lawns and road edges.
-@@ -98,7 +109,7 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
+@@ -98,7 +111,7 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
  
  - [A fixed frame step plays in slow motion on a slow Mac](../../../docs/reference/frame-rate.md#a-fixed-frame-step-plays-in-slow-motion-on-a-slow-mac): the interval chosen from CPU time.
  - [Frame-step stubs placed by their function](../../../docs/reference/rewriter.md#frame-step-stubs-placed-by-their-function)
@@ -3088,7 +3090,7 @@ index fc7aaf5dbeb711d87029ad63dc03e11fb416356a..4885cbe578a9e3585a8bc313f12d5376
  - [A NUP with complete standalone updates stops at "no base game"](../../../docs/reference/packing.md#a-nup-with-complete-standalone-updates-stops-at-no-base-game) (packing reproduced with the base dump; 1.8.0 gameplay remains untested)
  - [Large sparse textures as Metal placement sparse textures](../../../docs/reference/nvn-objects.md#large-sparse-textures-as-metal-placement-sparse-textures)
  - [Physical pages mapped at several places of a placement sparse texture](../../../docs/reference/nvn-objects.md#physical-pages-mapped-at-several-places-of-a-placement-sparse-texture)
-@@ -117,7 +128,9 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
+@@ -117,7 +130,9 @@ Update 1.8.0 (v917504, SDK 21.4.0) is not on this Mac. Pull request #1116 ported
  - [Compute shared memory past 32 KB](../../../docs/reference/shaders.md#compute-shared-memory-past-32-kb)
  - [Uniform references past the first kilobyte](../../../docs/reference/shaders.md#uniform-references-past-the-first-kilobyte)
  - [A control section's words read as a BAHS entry](../../../docs/reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry) (resolved, [issue #1592](https://github.com/seedds/nxnative/issues/1592)): `cs_lib.bin` 74, `797e77c2ec4341c5` at `agl_common.sharcb#BAHS@0x5c778`, was no shader. Dropping it and its fact moved the 69 `cs_lib.bin` rows after it (`agl_common`, `agl_ndsr`, `agl_technique_pfx`, gsys `common`) down one index, as the reporter's split of the base game has them; not split again here, as the game's files are not on this Mac.
@@ -3099,10 +3101,10 @@ index fc7aaf5dbeb711d87029ad63dc03e11fb416356a..4885cbe578a9e3585a8bc313f12d5376
  - [The controller applet waits for players](../../../docs/reference/services.md#the-controller-applet-waits-for-players) (1.8.0, pull request #1596; GitHub issue #1640: the player screen closed when the second controller had not pressed yet)
  - 1.8.0, by pull request #1116: [The camera through the graphics system](../../../docs/reference/services.md#the-camera-through-the-graphics-system), [Layer HDR metadata](../../../docs/reference/services.md#layer-hdr-metadata), the SDK 21 forms in [The Joy-Con mouse pointer](../../../docs/reference/services.md#the-joy-con-mouse-pointer) and [GameChat at boot](../../../docs/reference/services.md#gamechat-at-boot)
 diff --git a/dm/games/0400C3F00006E000/game.tsv b/dm/games/0400C3F00006E000/game.tsv
-index f6bc6a36ac9f6831df3bd5b72c33b5277a1aa4d6..f2f941f6d8c781b6fdfa01575de4d16d840d313f 100644
+index f6bc6a36ac9f6831df3bd5b72c33b5277a1aa4d6..9b1828ad731972e6c7790729fba17c4a4acb83fc 100644
 --- a/dm/games/0400C3F00006E000/game.tsv
 +++ b/dm/games/0400C3F00006E000/game.tsv
-@@ -32,11 +32,18 @@ mem_reserve	0x320000000
+@@ -32,18 +32,33 @@ mem_reserve	0x320000000
  mem_alias	0x100000000
  mem_stack	0x10000000
  app_pool	0x240000000
@@ -3121,7 +3123,14 @@ index f6bc6a36ac9f6831df3bd5b72c33b5277a1aa4d6..f2f941f6d8c781b6fdfa01575de4d16d
  
  # ---- Frame rate ----
  # The framework picks each frame's interval (1 or 2 vsyncs, which the game steps by) from the frame's CPU time alone, so frames that wait on the GPU kept interval 1 and played in
-@@ -47,3 +54,7 @@ fps_target	60
+ # slow motion. The interval takes the host's frame step instead (MATCH_FRAME_STEP in patches.py, found by its function on any build that keeps it), at most 2; the game's own
+ # 30 fps mode stays its own
+ fps_target	60
++# Late frames are not held (NXForge): three frames 16-28% over budget (19-21 ms, submit thread blocked) raised the hold to 2 or 3 vsyncs, and the probes back to 1 failed
++# for seconds, so a session played 30 or 20 fps for about 40 s of 27 min, once 11 s on end (M4 Pro, 24 GB, 2026-11-09). Unheld, a slow frame shows as a single hitch and the
++# step's paid-back vsyncs keep the game time; the next 66-minute session had no window under 47 fps, none held
++fps_hold	off
+ 
  # ---- Graphics ----
  # agl wraps its clears in render conditions on Donkey Kong Bananza and Splatoon Raiders; the same library here, to be confirmed on this game
  render_cond	on

@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.23.2 (2026-11-09)
+
+- **Mario Kart World no longer drops to 30 fps for seconds after a few slow frames.** Its profile now sets `fps_hold off`. With the hold on, three frames a little over budget (19 to 21 ms) raised the hold to 2 or 3 vsyncs (30 or 20 fps), and the tries back to 60 failed for seconds: a 27-minute session on an M4 Pro played at 30 or 20 fps for about 40 s in 16 stretches, once 11 s on end. With the hold off, a 66-minute session had no 5-second stretch under 47 fps apart from moments the window was covered; a slow frame is now a single hitch, and the game keeps its speed. Takes effect on the game's next build; until then, **Hold frames when late** off in the launcher's Performance section does the same.
+- Not the drive: a game played from a fast external exFAT drive reads its RomFS at 0.2 ms a 64 KB read and 2.3 GB/s for large reads (Mario Kart World on a USB4 NVMe drive), and nothing in the logs waits on it. The hitches left are the submit thread blocked for 30 to 80 ms, more as the session goes on and the Mac swaps: close large apps (local AI models, virtual machines) before a long session.
+
 ## 0.23.1 (2026-11-09)
 
 - **Ocarina of Time is no longer stopped by a false "GPU memory is nearly full".** The memory guard measured the larger of the residency set and Metal's `currentAllocatedSize`, and the device's figure counts every no-copy buffer whole, even where several (large-pool lookup chunks, pool-table segments, sparse-run buffers) lie over the same game pages. Eleven minutes into a session on a 24 GB M4 Pro it read 17,582 of 18,186 MB and stopped the game, while the residency set held 6,734 MB and the game's footprint was about 11.5 GB. The guard now measures the residency set after its next commit, with pending removals taken off, as upstream does in its open pull request [#1615](https://github.com/seedds/nxnative/pull/1615) (new patch `0011-upstream-pr-1615`, dropped once nxnative lands it). `DM_NVN_GUARD_DEVICE=1` in `env.txt` brings the old measure back. Takes effect on a game's next build.
