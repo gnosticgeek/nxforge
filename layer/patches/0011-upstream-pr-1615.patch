@@ -19,7 +19,7 @@ set holds after its next commit. DM_NVN_GUARD_DEVICE=1 keeps the old measure.
  3 files changed, 16 insertions(+), 3 deletions(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 483e00cdefd1cb22b053d0a7406f253b844384d9..45178a3fa2b844481dc0c38ff10456af46521d32 100644
+index 0a1106699f08e23efb179295d9f4ebf9553df751..8a9c5d8bb140fed562fc6e3751bc98e8cc45a8b1 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -321,6 +321,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {

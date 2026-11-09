@@ -48,7 +48,7 @@ private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods =
 enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
     case pauseOpen, duckOpen, backup, backupShow, settingsShow, settingsOpen, defaultsSave, defaultsUse
-    case fullscreen, scale, crt, strength, scanlines, upscale, aa, aniso, resetGraphics
+    case fullscreen, scale, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
@@ -58,7 +58,7 @@ enum Nav: Hashable {
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .fullscreen, .scale, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .fps, .fpsQuick, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .fullscreen, .scale, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
@@ -182,6 +182,9 @@ final class QuickSettings: ObservableObject {
     @Published var shotDir = ""
     @Published var upscale = false   // MetalFX where the picture is shown larger than the game renders it
     @Published var aa = 0            // the present's anti-aliasing (DM_PAA_*)
+    @Published var edr = false       // EDR highlights (front.h mtl_present_edr)
+    @Published var edrStrength = 0.5
+    @Published var edrHeadroom: Float = 1   // the screen's potential EDR headroom, 1 = SDR
     @Published var aniso = 0      // the chosen anisotropic filtering floor (0: the game's own)
     @Published var anisoRun = 0   // the one this launch took
     @Published var scale = 0      // picture size (DM_PSCALE_*)
@@ -235,6 +238,7 @@ final class QuickSettings: ObservableObject {
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
         upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale())
+        edr = mtl_present_edr() != 0; edrStrength = Double(mtl_present_edr_strength()) / 100; edrHeadroom = mtl_present_edr_headroom()
         shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
         settingsPath = String(cString: front_qs_settings_path()); defaultsExist = front_qs_defaults_exist() != 0
         let kn = d.dictionary(forKey: optKey("keyNames")) as? [String: String] ?? [:], pn = d.dictionary(forKey: optKey("padNames")) as? [String: String] ?? [:]
@@ -346,18 +350,27 @@ final class QuickSettings: ObservableObject {
     func setAA(_ n: Int) {
         aa = n; mtl_present_aa_set(Int32(n)); if env["DM_PRESENT_AA"] == nil { UserDefaults.standard.set(n, forKey: optKey("aa")) }
     }
+    func setEDR(_ on: Bool) {   // at once, from the next frame
+        guard env["DM_PRESENT_EDR"] == nil else { return }
+        edr = on; mtl_present_edr_set(on ? 1 : 0); UserDefaults.standard.set(on, forKey: optKey("edr"))
+    }
+    func setEDRStrength(_ k: Double) {
+        guard env["DM_PRESENT_EDR_STRENGTH"] == nil else { return }
+        edrStrength = k; mtl_present_edr_strength_set(Int32((k * 100).rounded())); UserDefaults.standard.set(k, forKey: optKey("edrStrength"))
+    }
     func setScanline(_ r: Int) {
         mtl_present_scanline_set(Int32(r)); scanline = r
         if env["DM_PRESENT_SCANLINE"] == nil { UserDefaults.standard.set(r, forKey: pfxKey("scanline")) }
     }
     func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); UserDefaults.standard.set(n, forKey: optKey("scale")) }
     func toggleFullscreen() { front_qs_fullscreen_toggle() }
-    var graphicsChanged: Bool { filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 }
+    var graphicsChanged: Bool { filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
         setUpscale(true); setScale(0)
         if env["DM_PRESENT_AA"] == nil { setAA(0) }
+        setEDR(false); setEDRStrength(0.5)
         if env["DM_ANISO"] == nil { setAniso(anisoDefault) }
     }
     func setFps(_ on: Bool) { fps = on; if env["DM_SHOW_FPS"] == nil { UserDefaults.standard.set(on, forKey: optKey("fps")) }; fpsChanged() }
@@ -509,7 +522,7 @@ final class QuickSettings: ObservableObject {
         switch p {
         case pGeneral:
             return [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
-        case pGraphics: return [[.fullscreen], [.scale], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.resetGraphics]]
+        case pGraphics: return [[.fullscreen], [.scale], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
@@ -565,6 +578,8 @@ final class QuickSettings: ObservableObject {
         case .strength: if crtOn { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
         case .scanlines: if crtOn { setScanline(min(max(scanline + d, 0), 8)) }
         case .upscale: setUpscale(d > 0)
+        case .edr: setEDR(d > 0)
+        case .edrStrength: if edr { setEDRStrength(min(max(edrStrength + 0.05 * Double(d), 0), 1)) }
         case .aa: if env["DM_PRESENT_AA"] == nil { setAA(min(max(aa + d, 0), aaNames.count - 1)) }
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[min(max(i + d, 0), anisoSteps.count - 1)]) }
         case .fps, .fpsQuick: setFps(d > 0)
@@ -597,6 +612,7 @@ final class QuickSettings: ObservableObject {
         case .crt: setCRT(!crtOn)
         case .scanlines: if crtOn { setScanline((scanline + 1) % 9) }
         case .upscale: setUpscale(!upscale)
+        case .edr: setEDR(!edr)
         case .aa: if env["DM_PRESENT_AA"] == nil { setAA((aa + 1) % aaNames.count) }
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[(i + 1) % anisoSteps.count]) }
         case .resetGraphics: resetGraphics()
@@ -921,6 +937,21 @@ struct QuickSettingsView: View {
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(env["DM_ANISO"] != nil)
             }.nav(m, .aniso)
             if env["DM_ANISO"] != nil { note("Set by DM_ANISO for this run") }
+            // HDR highlights (EDR): the picture's brightest parts glow above SDR white on an XDR or HDR screen, an estimate from the game's SDR picture
+            Row(title: "HDR highlights", changed: m.edr) {
+                Toggle("HDR highlights", isOn: Binding(get: { m.edr }, set: { on in withAnimation(motion) { m.setEDR(on) } })).toggleStyle(.switch).labelsHidden().disabled(env["DM_PRESENT_EDR"] != nil)
+            }.nav(m, .edr)
+            if m.edr {
+                Row(title: "Brightness boost", changed: abs(m.edrStrength - 0.5) > 0.001) {
+                    HStack(spacing: 10) {
+                        Slider(value: Binding(get: { m.edrStrength }, set: { m.setEDRStrength($0) }), in: 0...1).disabled(env["DM_PRESENT_EDR_STRENGTH"] != nil)
+                        Text("\(Int((m.edrStrength * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
+                    }
+                }.nav(m, .edrStrength)
+            }
+            note(env["DM_PRESENT_EDR"] != nil ? "Set by DM_PRESENT_EDR for this run"
+                 : m.edrHeadroom <= 1.01 ? "Needs an XDR or HDR screen; this one shows SDR, so the picture stays the same"
+                 : "Sun, lava and shiny things glow brighter than white. White HUD text brightens too")
             resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
         }
     }
