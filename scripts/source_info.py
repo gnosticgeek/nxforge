@@ -123,7 +123,9 @@ _VREG, _VDIR = 1, 2
 
 
 def _bulk_walk(d, want):
-    ctypes, getattrlistbulk = _bulk()
+    lib = _bulk()
+    if not isinstance(lib, tuple): raise OSError('getattrlistbulk is not available')
+    ctypes, getattrlistbulk = lib
     al = struct.pack('<HHIIIII', 5, 0, _ATTR_CMN_RETURNED_ATTRS | _ATTR_CMN_NAME | _ATTR_CMN_OBJTYPE, 0, 0, _ATTR_FILE_DATALENGTH, 0)
     alist = ctypes.create_string_buffer(al, len(al))
     buf = ctypes.create_string_buffer(256 * 1024)
