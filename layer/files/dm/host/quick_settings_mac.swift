@@ -613,6 +613,7 @@ final class QuickSettings: ObservableObject {
         case .scanlines: if crtOn { setScanline((scanline + 1) % 9) }
         case .upscale: setUpscale(!upscale)
         case .edr: setEDR(!edr)
+        case .edrStrength: if edr { setEDRStrength(edrStrength >= 0.999 ? 0 : min(edrStrength + 0.25, 1)) }
         case .aa: if env["DM_PRESENT_AA"] == nil { setAA((aa + 1) % aaNames.count) }
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[(i + 1) % anisoSteps.count]) }
         case .resetGraphics: resetGraphics()
