@@ -4,7 +4,7 @@
 // After LumaNX's Worker/recovery.py (MIT, github.com/Xc1Ym/LumaNX).
 //
 // Where the save is (dm/mac/launcher.c): <game folder>/Saves/save beside the app, or ~/Library/Application Support/nxnative/<title ID>/save
-// when the game folder is no place for it (or before the launcher has copied it in); the device save is the same path with _device.
+// when the game folder is no place for it (or on a drive that is not APFS, or before the launcher has copied it in); the device save is the same path with _device.
 // Snapshots go beside it: <save's folder>/save-snapshots/<id>/{manifest.json, data/save, data/save_device}. (save-backups/ there is
 // Cloud saves' own, dm/host/save_sync.c.)
 import AppKit
@@ -73,11 +73,19 @@ enum SaveSnapshots {
         let library = "\(home)/Library/Application Support/nxnative/\(titleID)/save"
         let parent = app.url.deletingLastPathComponent().path
         let usable = !parent.contains("/AppTranslocation/") && parent != "/Applications" && parent != "\(home)/Applications"
-            && FileManager.default.isWritableFile(atPath: parent)
+            && FileManager.default.isWritableFile(atPath: parent) && canHoldSave(parent)
         let inFolder = parent + "/Saves/save"
         if usable && hasData(inFolder) { return SaveLocation(save: inFolder, titleID: titleID) }
         if hasData(library) || !usable { return SaveLocation(save: library, titleID: titleID) }
         return SaveLocation(save: inFolder, titleID: titleID)
+    }
+
+    /// Whether a save can live on dir's drive (the launcher's save_capable): the host's save transaction clones the save folder and swaps
+    /// it in on commit, which only APFS does. On an exFAT, FAT or HFS+ drive the save stays in the Library. True when the drive cannot be asked.
+    static func canHoldSave(_ dir: String) -> Bool {
+        guard let v = try? URL(fileURLWithPath: dir).resourceValues(forKeys: [.volumeSupportsFileCloningKey, .volumeSupportsSwapRenamingKey]),
+              let clone = v.volumeSupportsFileCloning, let swap = v.volumeSupportsSwapRenaming else { return true }
+        return clone && swap
     }
 
     /// A folder with anything in it besides Finder's .DS_Store (the launcher's has_data).

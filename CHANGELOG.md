@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.23.0 (2026-11-09)
+
+- **A game on an exFAT (or FAT, HFS+) drive keeps its save on the Mac again.** Since 0.14 the save goes beside the app (`Saves/save`), but the host's save transaction clones the save folder and swaps it in on commit, which only APFS can do. On Mario Kart World built to an exFAT USB drive the save mounted read-only, the game's save manager spun on a full core, and the game never got past its first screen, so the controller looked dead. The launcher now asks the game folder's drive whether it can clone and swap folders; when it can't, the save stays in `~/Library/Application Support/nxnative/<title ID>/save` (screenshots and recordings still go beside the game), and a save an older build left beside the app is copied back once, without the `._` files macOS writes on such drives. Takes effect on a game's next build.
+- **NXForge Converter 0.5.2** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): save snapshots look for the save where the launcher now puts it.
+
 ## 0.22.0 (2026-11-09)
 
 - **Up to nxnative `d9cd9de`** (51 commits past 0.20's engine `028a263`). Among them: Switch 2 controllers over Bluetooth on the Mac (Joy-Con 2 and Pro Controller 2, off by default: `DM_SW2=1` or the settings window), with rumble and the Joy-Con 2 mouse sensor; Ocarina of Time's mist no longer flickers, its foliage, shadows and enemies keep their pipelines in the archive, the mesh-shader fix for its models' lighting, dynamic resolution that climbs to full size, and a pipeline archive with an index per file and compaction by size tier; OCTOPATH TRAVELER and Hyrule Warriors: Age of Calamity at 60 fps; Super Mario Odyssey's sampler cache; Sparking! ZERO's first load; exclusive accesses get ordering; `--icon` for the NSP script; folders with brackets in their names no longer hide files from the tools; a program's DLC are numbered from the application's title ID (Metal Gear Solid Peace Walker). Shader chain `9109b4de8f3e`: every game's shaders are translated again on its next build.

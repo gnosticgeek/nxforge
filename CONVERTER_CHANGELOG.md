@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.5.2 (2026-11-09)
+
+Ships in NXForge 0.23.0.
+
+- **Save snapshots follow a save kept off a non-APFS drive.** For a game whose folder is on an exFAT, FAT or HFS+ drive the launcher now keeps the save in the Library (NXForge 0.23.0), and the Saves tools look there too.
+
 ## 0.5.1 (2026-11-09)
 
 Fixes for 0.5.0. Ships in NXForge 0.22.0.

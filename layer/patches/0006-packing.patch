@@ -14,14 +14,14 @@ Subject: packing: Packing: converter support in build_ipa_from_nsp,
  dm/tools/tests/test_launcher_settings.py |  13 +-
  dm/tools/tests/test_nsp_chain.py         |  68 ++++
  dm/tools/tests/test_nsp_dump.py          |   8 +
- dm/tools/tests/test_nsp_mac_app.py       |  81 ++++-
+ dm/tools/tests/test_nsp_mac_app.py       | 106 ++++++-
  dm/tools/tests/test_nsp_nup.py           |   9 +
  dm/tools/tests/test_nsp_scan.py          |  40 +++
  dm/tools/tests/test_nsp_work_dir.py      |   6 +
  dm/tools/tests/test_romfs_image.py       |  15 +
  scripts/build_ipa_from_nsp.py            | 388 ++++++++++++++++++++---
  scripts/pack_dump.py                     |   8 +-
- 16 files changed, 678 insertions(+), 78 deletions(-)
+ 16 files changed, 703 insertions(+), 78 deletions(-)
 
 diff --git a/dm/ios/tools/build_ipa.sh b/dm/ios/tools/build_ipa.sh
 index 57a16dbc237f775926c9863079f26a1a625e52ba..91d5d54c178d892b590d87e00dbd33f8b74bee6e 100755
@@ -433,7 +433,7 @@ index 5b2c981244ba4564601e0010deababc7df527360..76ec42f302f039004814ceb14f37a2b8
          with self.assertRaisesRegex(pack_dump.Error, 'the base is'): pack_dump.pack_version(self.dump / f'updates/{VER}', TID + 0x2000, self.out(), say=lambda s: None)
  
 diff --git a/dm/tools/tests/test_nsp_mac_app.py b/dm/tools/tests/test_nsp_mac_app.py
-index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..22ce7446844d3a3380d1bae80918ea8d9b583b35 100644
+index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39dacbaf24 100644
 --- a/dm/tools/tests/test_nsp_mac_app.py
 +++ b/dm/tools/tests/test_nsp_mac_app.py
 @@ -1,5 +1,5 @@
@@ -516,7 +516,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..22ce7446844d3a3380d1bae80918ea8d
          home = self.tmp / 'home'
          (home / 'alert.scpt').unlink(missing_ok=True)
          p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(home), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'),
-@@ -652,6 +678,32 @@ class App(unittest.TestCase):
+@@ -652,6 +678,57 @@ class App(unittest.TestCase):
          self.assertEqual(args[2], title)   # data is passed separately from the compiled script
          self.assertIn('game data inside this app is missing', args[3])
  
@@ -546,10 +546,35 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..22ce7446844d3a3380d1bae80918ea8d
 +        finally:
 +            ro.chmod(0o755); shutil.rmtree(ro)
 +
++    def test_save_off_apfs(self):   # a game folder on exFAT (no folder cloning or swapping, which the host's save transaction needs): the save stays in the Library,
++        # a save an older NXForge put beside the app is copied back once (without the ._ files macOS writes there), the captures still go to the game folder
++        home = self.tmp / 'home'; sup = home / f'Library/Application Support/nxnative/{TID}'; logs = home / 'Library/Logs/nxnative'
++        shutil.rmtree(sup / 'save', ignore_errors=True)
++        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as d:
++            img, mnt = Path(d) / 'exfat.dmg', Path(d) / 'mnt'; mnt.mkdir()
++            made = subprocess.run(['hdiutil', 'create', '-size', '64m', '-fs', 'ExFAT', '-volname', 'NXFTEST', img], capture_output=True)
++            if made.returncode or subprocess.run(['hdiutil', 'attach', '-nobrowse', '-mountpoint', mnt, img], capture_output=True).returncode:
++                self.skipTest('no exFAT disk image here (hdiutil)')
++            try:
++                game = mnt / 'Game'; game.mkdir(); subprocess.run(['cp', '-RL', self.app, game], check=True)
++                there = game / 'Saves/save'; (there / 'Play').mkdir(parents=True); (there / 'Play/account.sav').write_bytes(b'progress')
++                (there / '._Play').write_bytes(b'appledouble')
++                p = self.launch(app=game / self.app.name); p.communicate(timeout=30)
++                r = self.host_run()
++                self.assertEqual(r['DM_SAVE'], str(sup / 'save')); self.assertEqual(r['DM_GAME_FOLDER'], str(game.resolve()))
++                self.assertEqual((sup / 'save/Play/account.sav').read_bytes(), b'progress'); self.assertFalse((sup / 'save/._Play').exists())
++                self.assertEqual((there / 'Play/account.sav').read_bytes(), b'progress')   # left as it was
++                self.assertIn('cannot hold a save', (logs / f'{TID}.log').read_text())
++                (sup / 'save/Play/account.sav').write_bytes(b'newer')   # the next launch keeps the Library's save
++                p = self.launch(app=game / self.app.name); p.communicate(timeout=30)
++                self.assertEqual((sup / 'save/Play/account.sav').read_bytes(), b'newer')
++            finally:
++                subprocess.run(['hdiutil', 'detach', '-force', mnt], capture_output=True)
++
      def test_relocated(self):   # run with the entire build folder unavailable
          with tempfile.TemporaryDirectory(dir=TEST_ROOT) as dst:
              dst = Path(dst).resolve(); moved = dst / self.app.name; home = dst / 'home'; home.mkdir()
-@@ -732,12 +784,13 @@ class Script(unittest.TestCase):
+@@ -732,12 +809,13 @@ class Script(unittest.TestCase):
              ran.append([str(c) for c in cmd])
              if str(cmd[1]).endswith('dm/games/settings.py'):   # the launcher settings, before the packer
                  self.settings_env = env; Path(cmd[-1]).write_text('{}'); return
@@ -564,7 +589,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..22ce7446844d3a3380d1bae80918ea8d
              (out / 'Contents/MacOS').mkdir(parents=True); (out / 'Contents/MacOS/dmhost').write_bytes(b'x')
              on_line('step: launcher and host (clones of the game files)')
              on_line(f'app: {out}')
-@@ -747,7 +800,7 @@ class Script(unittest.TestCase):
+@@ -747,7 +825,7 @@ class Script(unittest.TestCase):
          with mock.patch.object(nsp, 'run', fake_run), mock.patch.object(nsp, 'PROG', self.prog), mock.patch.object(nsp, 'chain_of', lambda repo: '0123456789ab'), \
               mock.patch.object(nsp, 'mac_gpu_arch', lambda *a: 'applegpu_g14s'), mock.patch.object(nsp, 'say', self.said.append):
              nsp.mac_app(sys.executable, REPO, out, 0x01008CF01BAAC000, tmp, tmp / 'ex', tmp / 'patched', tmp / 'dmhost', tmp / 'font', tmp / 'shader/cache' if gfx == 'nvn' else tmp / 'shader',
@@ -573,7 +598,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..22ce7446844d3a3380d1bae80918ea8d
          self.pso_cmd = next((c for c in ran if c[1].endswith('pso_offline.py')), None)   # before the packer
          self.settings_cmd = next(c for c in ran if c[1].endswith('dm/games/settings.py'))
          c = ran[-1]; return {c[i]: c[i + 1] for i in range(3, len(c) - 1) if c[i].startswith('--')}, tmp
-@@ -755,9 +808,9 @@ class Script(unittest.TestCase):
+@@ -755,9 +833,9 @@ class Script(unittest.TestCase):
      def test_pack_command(self):
          o, tmp = self.pack_cmd('nvn')
          self.assertNotIn('--pso-pairs', o)   # no split copy
@@ -585,7 +610,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..22ce7446844d3a3380d1bae80918ea8d
          o, tmp = self.pack_cmd('nvn')
          self.assertEqual((o['--msl'], o['--romfs'], o['--tables'], o['--title-id'], o['--sign'], o['--marker']),
                           (str(tmp / 'shader/cache/b-0123456789ab'), str(tmp / 'ex/RomFS'), str(tmp / 'profile'), TID, '-', 'a/b'))
-@@ -911,6 +964,14 @@ class SeenShaders(unittest.TestCase):   # --seen-shaders: the keys, the partial
+@@ -911,6 +989,14 @@ class SeenShaders(unittest.TestCase):   # --seen-shaders: the keys, the partial
              self.build()
          self.assertFalse(any('--seen-shaders' in m for m in self.said))
  

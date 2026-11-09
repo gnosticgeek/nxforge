@@ -3,4 +3,4 @@
 // describe) and from the in-game sidebar's sidebar-vX.Y.Z. scripts/release_check.py reads the line below: keep its form.
 import Foundation
 
-let CONVERTER_VERSION = "0.5.1"
+let CONVERTER_VERSION = "0.5.2"
