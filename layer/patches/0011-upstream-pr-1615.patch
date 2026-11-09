@@ -67,7 +67,7 @@ index 0a1106699f08e23efb179295d9f4ebf9553df751..8a9c5d8bb140fed562fc6e3751bc98e8
      if (!g_res) return;
      if (ws && !(e && !lim)) { g_guard.wall = MAX(ws, lim); g_guard.stop = lim ? lim : ws / 100 * 95; g_guard.evict = g_guard.stop / 95 * 80;
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 4147afd6d89feef2749e44340dae199fe57a8fda..c52640ef9aa1b0ecd629815ac239bad25773eaf6 100644
+index b1f78000a4e1c8b99cbf32fd7ad82a6c3b7b977c..11d632cf0f006ceddf79e67f0731e95629b9e8e0 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -168,6 +168,7 @@ DM_NVN_GEO_MESH_RUN	switch	`0` dispatches every mesh geometry draw on its own; b

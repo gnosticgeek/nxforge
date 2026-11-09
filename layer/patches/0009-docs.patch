@@ -8,7 +8,7 @@ Subject: docs: Engine docs for the changes above
  docs/agents/game-patches.md   | 20 ++++++++++-
  docs/agents/symptoms.md       | 22 ++++++++++++
  docs/development.md           | 48 ++++++++++++++++----------
- docs/env_switches.tsv         | 30 ++++++++++++++--
+ docs/env_switches.tsv         | 32 +++++++++++++++--
  docs/reference/frame-rate.md  | 27 +++++++++++++++
  docs/reference/memory.md      | 48 +++++++++++++++++++++++++-
  docs/reference/movies.md      |  8 +++++
@@ -19,8 +19,8 @@ Subject: docs: Engine docs for the changes above
  docs/reference/services.md    | 17 ++++++++-
  docs/reference/shaders.md     | 34 ++++++++++++++++++
  docs/reference/threads.md     |  1 +
- docs/settings.md              | 34 ++++++++++++++++--
- 16 files changed, 342 insertions(+), 33 deletions(-)
+ docs/settings.md              | 35 +++++++++++++++++--
+ 16 files changed, 345 insertions(+), 33 deletions(-)
 
 diff --git a/docs/agents/01-extract.md b/docs/agents/01-extract.md
 index 5fb737e2e83bee8f92eef2a20c633c9a243c5d46..087ebe00aebf9834121cd1837ba7cd88bb37273b 100644
@@ -425,7 +425,7 @@ index 955a0260d6fb71db2fc5368ab217fff00918c594..142473c6f95d7dbdcd8af298066d7151
  On iOS the standard is the pipeline archive made on the Mac and shipped in the app. Otherwise the device builds the bases on first start behind the "Preparing pipelines" screen; [Breath of the Wild's note](../dm/games/01007EF00011E000/README.md#pipelines-on-a-cold-start) records the build times, sizes and startup measurements. `build_ipa.sh` makes them on the Mac and puts them into the app (`dm/gfx/tools/pso_offline.py`). Only the Metal 4 path reads them, so by default it does this for a game whose profile sets `pso_mtl4 on` (the path is on for it on iOS), and for no other:
  1. It writes a Metal 4 pipelines script (`metal4-pipelines-script(5)`) with the base of every pair in `shader_pairs.tsv` and `pso_pairs.tsv`, by the prebuild's rules (`pre_desc` in `nvn_mtl.m`): the pulling vertex library `<key>_bp` (a vertex shader without stage inputs: its own `<key>_b`), the vertex entry for the depth mode, the pixel shader's entry, no vertex descriptor, one sample, every colour attachment unspecialized. Pairs the prebuild leaves to the draws are left out the same way. A pair whose functions declare function constants is left to the device (`rest_pairs.tsv`): `metal-tt` makes no specialized function from a library ("cannot find private metadata"), and the host specializes such functions with an empty set. If every eligible pair needs this specialization, the tool writes the remainder list without running `metal-tt` or shipping an archive, and the device builds them all.
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 399702b374f24a01e26dd134497c18bef9f59db8..4147afd6d89feef2749e44340dae199fe57a8fda 100644
+index 399702b374f24a01e26dd134497c18bef9f59db8..b1f78000a4e1c8b99cbf32fd7ad82a6c3b7b977c 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -3,6 +3,7 @@ DM_AB	diagnostic	`=<frames>` splits the run into phases of that many frames and
@@ -520,11 +520,13 @@ index 399702b374f24a01e26dd134497c18bef9f59db8..4147afd6d89feef2749e44340dae199f
  DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover the whole target, as before; by default a draw pass that loads what it keeps stops at the far corner of its scissor when that is at most half the target
  DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render targets, as before; by default SetRenderTargets naming the open pass's targets continues the pass
  DM_NVN_RT_RANGE	switch	`=1` (experimental, off by default; with `DM_NVN_TBDR=1`) keeps the pass open when the game sets the same colour and depth target again with a view that differs only in its level count
-@@ -242,13 +258,18 @@ DM_PHONE_MOTION	switch	On iOS, whether the phone's own device motion drives play
+@@ -242,13 +258,20 @@ DM_PHONE_MOTION	switch	On iOS, whether the phone's own device motion drives play
  DM_PICTURE_FIT	player	`fill` scales the 16:9 picture on the iPhone and iPad until it covers the screen in landscape and crops the edges (a portrait or tabletop split and a TV stay fitted); `fit` or unset, the largest 16:9 rectangle with black bars. Launcher and in-game menu setting
  DM_PREEMPT	switch	`0` / `1` overrides the profile's `core_preempt`: also check already-runnable higher-priority peers on the caller's core after every thread SVC
  DM_PRELOAD	diagnostic	Set: on the Mac, runs the host's early background loading (`dm_host_preload_start`) as the iOS app does, to exercise that path
 +DM_PRESENT_AA	player	`fxaa` or `off` (the default): FXAA over the game's finished picture before upscaling and the present filter, smoothing jagged edges (small HUD text softens a little); on the Mac the Quick settings sidebar picks it per game, and this wins and is not saved
++DM_PRESENT_EDR	player	`on` or `off` (the default; Mac only): HDR highlights. The window presents in extended linear sRGB (RGBA16Float) and an inverse tone map lifts the brightest parts of the picture (above about 60 % linear) up to the screen's EDR headroom, capped at 4x SDR white; the rest of the picture is unchanged. Needs an HDR or XDR screen to show; on the Mac the Quick settings sidebar switches it per game (Graphics › HDR highlights), and this wins and is not saved
++DM_PRESENT_EDR_STRENGTH	player	`=0..100`: how far HDR highlights lift the brightest parts toward the headroom (50 by default)
  DM_PRESENT_FIFO	switch	`0` makes the display link take the newest queued frame each tick, as before; by default it shows frames in order, at most one tick behind
 +DM_PRESENT_FILTER	player	`off`, `sharpen`, `pixel`, `crt`, `lottes` or `lcd`: how the game picture is drawn into the window or screen (on the Mac the Quick settings sidebar picks it per game; this wins and is not saved)
 +DM_PRESENT_FILTER_STRENGTH	player	`=0..1`: the present filter's strength (0.5 by default; Pixel-perfect has none)
@@ -540,7 +542,7 @@ index 399702b374f24a01e26dd134497c18bef9f59db8..4147afd6d89feef2749e44340dae199f
  DM_PREV_PROGRAM	switch	What `oe::GetPreviousProgramIndex` answers (default -1, started from HOME); `oe::ExecuteProgram` sets it for the program it starts
  DM_PROBE	diagnostic	`=module:offset,…` (Mac only): puts a `brk` at each guest address and on every hit prints the thread, registers, strings they point to and a backtrace, then runs the original instruction
  DM_PROBE_ALL	diagnostic	Set: probe hits (`DM_PROBE`) also print x8–x18
-@@ -321,12 +342,13 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+@@ -321,12 +344,13 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
  DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
  DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
  DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz)
@@ -555,7 +557,7 @@ index 399702b374f24a01e26dd134497c18bef9f59db8..4147afd6d89feef2749e44340dae199f
  DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log only for dropped frames (kept in a ring of the last 16 frames, judged 8 frames late)
  DM_SPIN	switch	`0` makes the rewriter's spin gate return at once, so guest poll loops spin with no sleep; the gate stays (on by default)
  DM_SPIN_LIST	diagnostic	`=1` makes `patch_nso.py` print every guest poll loop it found and sends through a spin gate
-@@ -351,6 +373,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
+@@ -351,6 +375,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
  DM_TEST_FS_FAILAT	diagnostic	`=<point>[:<count>][,…]` makes steps of the save transaction (`mountclone`, `reclone`, `guestname`, `renameback`) fail with ENOSPC
  DM_TEST_GEOMETRY	test	Path of the native `t_geometry` executable; `test_dmsh_geometry.py` runs its native geometry emitter checks only when it is set
  DM_TEST_GEOMETRY_PRIMITIVE_ID	test	Path to the native t_geometry_primitive_id replay executable used by test_dmsh_geometry.py with DMSH_TEST_GPU=1.
@@ -563,7 +565,7 @@ index 399702b374f24a01e26dd134497c18bef9f59db8..4147afd6d89feef2749e44340dae199f
  DM_TEST_GPU_LOST	diagnostic	`=<n>` imitates the GPU access macOS revoked from the nth submission on: each submission's feedback reports `MTL4CommandQueueErrorAccessRevoked` and the GPU does not signal its fence, so the host stops presenting and the front end ends the game
  DM_TEST_KEYRACE	diagnostic	`=<n>` creates up to n (at most 512) pthread keys on a thread of its own while the host starts up
  DM_TEST_KILL_AT	diagnostic	`=write:<n>` exits the process (`_exit(9)`) at the nth save write, imitating a kill mid-write
-@@ -375,6 +398,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
+@@ -375,6 +400,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
  DM_VK_CAPTURE	path	`=<dir>` (Mac) writes every SPIR-V module the game creates to `<dir>/<key>.spv`; the NSP script's Vulkan shader capture stage sets it
  DM_VK_LOG	diagnostic	`=1` logs Vulkan object creation in the Vulkan-on-Metal layer
  DM_VSYNC_HZ	switch	`=<Hz>`: rate at which a host thread fires the vi vsync event when the display link does not drive it (default 60)
@@ -1043,7 +1045,7 @@ index 0a3d571b5cba54e32ed29a52f984dabb3be72703..760deb168f878f4b3ccb7f77df9b28bc
  
  ### File system calls are service requests
 diff --git a/docs/settings.md b/docs/settings.md
-index a826eeeacf3c10a87522625fd30d7a259f10e708..86a2b4fd8790a1807e85d506dbb7cacc19cd2b74 100644
+index a826eeeacf3c10a87522625fd30d7a259f10e708..cd862dc5b06cc5e22ee431540264b468d68dcf45 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -7,6 +7,7 @@ The screen before the game starts shows the settings the game supports. A settin
@@ -1072,7 +1074,7 @@ index a826eeeacf3c10a87522625fd30d7a259f10e708..86a2b4fd8790a1807e85d506dbb7cacc
  
  ### Game's upscaler
  
-@@ -247,6 +248,35 @@ A save that is replaced, on the device or in iCloud Drive, is kept first, beside
+@@ -247,6 +248,36 @@ A save that is replaced, on the device or in iCloud Drive, is kept first, beside
  
  iCloud Drive takes a moment to carry a file from one device to the other. Quit the game on one device and give it a few seconds before you start it on the other. Without a connection, or when the save in iCloud Drive has not arrived in time, the game plays on with the save it has and sends it later. If the save in iCloud Drive changed meanwhile, the game sends nothing that session, and the next start decides between the two as above. The game log says what came in and what went out (lines starting with `save sync:`).
  
@@ -1092,6 +1094,7 @@ index a826eeeacf3c10a87522625fd30d7a259f10e708..86a2b4fd8790a1807e85d506dbb7cacc
 +| Picture size (Fit, Stretch, Pixel-perfect) | – | Graphics › Picture size | `DM_PRESENT_SCALE` (`fit`, `stretch`, `integer`) | `DMQuickSettings.scale.<game>` |
 +| CRT line size | – | Graphics › Line size | `DM_PRESENT_SCANLINE` | `DMPresentFilter.scanline.<game>` |
 +| Anti-aliasing (FXAA) | – | Graphics › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>` |
++| HDR highlights and Brightness boost (off, 50 %) | – | Graphics › HDR highlights, Brightness boost | `DM_PRESENT_EDR`, `DM_PRESENT_EDR_STRENGTH` | `DMQuickSettings.edr.<game>`, `DMQuickSettings.edrStrength.<game>` |
 +| Anisotropic filtering (16× by default) | – | Graphics › Anisotropic filtering | `DM_ANISO` | `DMQuickSettings.aniso.<game>` |
 +| Frame-rate counter, its corner and milliseconds | – | FPS › Show FPS (and FPS at the top), Show milliseconds | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>`, `DMQuickSettings.fpsMs.<game>` |
 +| Record frame times (from the next launch) | – | FPS › Record frame times | `DM_FRAME_TIMES` (a `DM_NVN_TSV` wins) | `DMQuickSettings.frameTimes.<game>` |
