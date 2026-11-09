@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.24.1 (2026-11-09)
+
+- **`nxforge build --rebuild <app>` with a relative path puts the new app where the old one was.** The path was handed to the build as it was typed, and the build runs in the engine's `tree/`, so `--rebuild "SUPER MARIO ODYSSEY.app"` from the game folder backed the old app up and then wrote the new one into `tree/`. `--rebuild`, `--out` and `--keys` are now taken from the folder the command runs in.
+
 ## 0.24.0 (2026-11-09)
 
 - **HDR highlights on HDR and XDR screens, for every game.** A new Graphics row in the sidebar, **HDR highlights** (off by default), with a **Brightness boost** slider (50 % by default). The window then presents in extended linear sRGB (16-bit float), and an inverse tone map lifts the brightest parts of the picture (above about 60 % linear: sun, sky, lava, specular glints, explosions) toward the screen's EDR headroom, capped at 4x SDR white; everything below stays as the game drew it (white HUD text is lifted with the highlights). Every present filter keeps working; captures and recordings stay SDR. `DM_PRESENT_EDR=on|off` and `DM_PRESENT_EDR_STRENGTH=0..100` set it from the environment, and the settings file takes `hdr_highlights` and `hdr_strength`. It is a highlight boost, not true HDR: the games render SDR, so the extra range comes from the tone map. Works without a rebuild of the game data; the host comes with the game's next build.
