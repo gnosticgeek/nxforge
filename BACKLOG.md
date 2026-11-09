@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-09 (0.22.0: engine up to nxnative d9cd9de, Converter 0.5.1 clash list; 0.21.0: Converter 0.5.0 Get Upstream Now, `layer.py local`; 0.20.0: engine up to nxnative 028a263, `layer.py continue`; 0.17.1: Converter 0.2.1 launch-hang fix; 0.17.0: Converter 0.2.0 and Sidebar 0.2.0; 0.16.0: sidebar versioned on its own; 0.15.0: thin fork, upstream main up to bd979ce).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-09 (0.23.1: GPU memory guard measures the residency set, upstream PR #1615 as a patch; 0.22.0: engine up to nxnative d9cd9de, Converter 0.5.1 clash list; 0.21.0: Converter 0.5.0 Get Upstream Now, `layer.py local`; 0.20.0: engine up to nxnative 028a263, `layer.py continue`; 0.17.1: Converter 0.2.1 launch-hang fix; 0.17.0: Converter 0.2.0 and Sidebar 0.2.0; 0.16.0: sidebar versioned on its own; 0.15.0: thin fork, upstream main up to bd979ce).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).
@@ -21,6 +21,7 @@ Status key: **Upstream PR open**, **On fork main**, **On branch**, **Next**,
 | Rewriter jump-table fix (49a670a) | Superseded by upstream | Upstream follows the copy to the function start (Mario + Rabbids Kingdom Battle's GLSLC, the same code as Curse of the Moon's); the 0.6.0 merge takes theirs. Nothing to send. |
 | Filters + Quick settings sidebar | On hold for upstream | Tom holds the upstream PR until the sidebar is finished (see the next section). |
 | Cheats engine | Replaced by upstream's (0.9.0) | Upstream's `hle_cheats.c` (PR #406) took over from NXForge's Markdown engine; the sidebar's Cheats section now shows upstream's rows, and `dm/tools/cheats_md.py txt` converts old Markdown files. |
+| GPU memory guard measures the residency set ([#1615](https://github.com/seedds/nxnative/pull/1615)) | Upstream PR open, carried as patch 0011 (0.23.1) | Ocarina of Time was stopped at a false 17.5 GB (residency set 6.7 GB). Drop `layer/patches/0011-upstream-pr-1615.patch` when nxnative lands #1615. |
 | Merge upstream main | On fork main (0.14.0) | Last merges: seedds/nxnative main at d777f0a plus picks up to 32335650, and open Mario Kart World pull requests (#1594, #1229, #1179, #1230). Choices are in CHANGELOG 0.14.0. |
 | China-region profanity check (Cruis'n Blast) | Closed upstream ([#789](https://github.com/seedds/nxnative/pull/789)), its fix landed there | Branch `contrib/ngc-china-profanity`, from c86bc9b. |
 | pso_offline free-space check | Closed upstream ([#790](https://github.com/seedds/nxnative/pull/790)), its fix landed there | Branch `contrib/pso-offline-free-space`, from fde1e63. |
