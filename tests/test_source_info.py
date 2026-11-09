@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -87,6 +88,20 @@ class Dump(unittest.TestCase):
             self.assertEqual((i['kind'], i['source'], i['folder'], i['title_id'], i['base'], i['updates'], i['dlc']), ('dump', str(d), str(d), '040074A01BF12000', True, [t.VER], 0))
             self.assertTrue(i['zbic'])   # the newest version's main module
             self.assertEqual(i['romfs_bytes'], 1000)
+            self.assertEqual(i['file_bytes'], sum(f.stat().st_size for f in d.rglob('*') if f.is_file()))
+            with unittest.mock.patch.dict('os.environ', {'NXF_SOURCE_SIZES': '0'}):   # the Converter's quick read
+                q = source_info.info(d)
+            self.assertEqual((q['romfs_bytes'], q['file_bytes'], q['title_id'], q['zbic']), (-1, -1, '040074A01BF12000', True))
+
+    def test_tree_bytes_one_walk(self):   # getattrlistbulk on macOS, os.scandir elsewhere: the same sizes, nested folders included
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td).resolve()
+            (d / 'a/b/c').mkdir(parents=True); (d / 'e').mkdir()
+            for f, n in (('x', 7), ('a/y', 300), ('a/b/z', 50), ('a/b/c/w', 9)): (d / f).write_bytes(b'.' * n)
+            (d / 'a/link').symlink_to(d / 'x')
+            sizes = source_info.tree_bytes(d, [d / 'a/b', d / 'e'])
+            self.assertEqual((sizes[str(d)], sizes[str(d / 'a/b')], sizes[str(d / 'e')]), (366, 59, 0))
+            self.assertEqual(source_info._scandir_walk(str(d), {}), 366)
 
     def test_empty_folder_refused(self):
         with tempfile.TemporaryDirectory() as td, self.assertRaisesRegex(source_info.Fail, 'neither'): source_info.info(Path(td))

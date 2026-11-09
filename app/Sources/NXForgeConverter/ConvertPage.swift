@@ -85,7 +85,7 @@ struct SourceFilesCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.game?.name ?? "Game").font(.title3.weight(.semibold))
                     if let s = model.source {
-                        Text("Switch 2 game · \(s.form)\(s.romfsBytes > 0 ? String(format: " · %.1f GB of game files", Double(s.romfsBytes) / 1e9) : "")").foregroundStyle(.secondary)
+                        Text("Switch 2 game · \(s.form)\(s.romfsBytes > 0 ? String(format: " · %.1f GB of game files", Double(s.romfsBytes) / 1e9) : model.sizing ? " · measuring the game files…" : "")").foregroundStyle(.secondary)
                     } else {
                         Text("\(v.files.count) game file\(v.files.count == 1 ? "" : "s") detected.").foregroundStyle(.secondary)
                     }
