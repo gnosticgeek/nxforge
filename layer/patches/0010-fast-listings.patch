@@ -19,12 +19,13 @@ files up to 1 MB ahead on 16 threads. Each walk of the dump: 17 s.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_016qteK3AQaSqMoGPyBgeeFe
 ---
- dm/tools/romfs_image.py       | 132 ++++++++++++++++++++++++++++++++--
- scripts/build_ipa_from_nsp.py |  14 +---
- 2 files changed, 129 insertions(+), 17 deletions(-)
+ dm/tools/romfs_image.py            | 144 ++++++++++++++++++++++++++++-
+ dm/tools/tests/test_romfs_image.py |  15 +++
+ scripts/build_ipa_from_nsp.py      |  14 +--
+ 3 files changed, 156 insertions(+), 17 deletions(-)
 
 diff --git a/dm/tools/romfs_image.py b/dm/tools/romfs_image.py
-index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..3a24abad2e514b6ec83db45eac3e8df03aa3bc76 100755
+index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..bd50b77c6fb3e04cd99f7b80ef0d67f6dd5069ca 100755
 --- a/dm/tools/romfs_image.py
 +++ b/dm/tools/romfs_image.py
 @@ -14,7 +14,7 @@
@@ -36,7 +37,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..3a24abad2e514b6ec83db45eac3e8df0
  from pathlib import Path
  
  MAGIC = b'DMROMFS1'
-@@ -29,11 +29,98 @@ def guest(parent, name):
+@@ -29,11 +29,110 @@ def guest(parent, name):
      return r.stdout.rstrip('\n') if r.returncode == 0 else name
  
  
@@ -100,7 +101,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..3a24abad2e514b6ec83db45eac3e8df0
 +    return out
 +
 +
-+def listing(path):   # a folder's entries: [(name, 'dir' | 'file' | 'link' | 'other', file_identity or None)]
++def _listing(path):
 +    if _bulk():
 +        try: return _bulk_listing(path)
 +        except OSError: pass   # a file system without getattrlistbulk: as below
@@ -111,6 +112,18 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..3a24abad2e514b6ec83db45eac3e8df0
 +            k = 'dir' if e.is_dir(follow_symlinks=False) else 'link' if e.is_symlink() else 'file' if e.is_file(follow_symlinks=False) else 'other'
 +            out.append((e.name, k, None))
 +    return out
++
++
++def listing(path):   # a folder's entries: [(name, 'dir' | 'file' | 'link' | 'other', file_identity or None)], without the files macOS adds on other file systems
++    ents = _listing(path)
++    names = {e[0] for e in ents}
++    return [e for e in ents if not macos_litter(e[0], names)]
++
++
++def macos_litter(name, names):
++    """Files macOS writes beside a game's own on a drive that is not APFS or HFS+ (exFAT, FAT, SMB): ._<name>, the AppleDouble file holding <name>'s extended attributes
++    (a Mario Kart World dump copied to an exFAT drive had 140,640, and the image's format check refused them), and .DS_Store. A RomFS has neither."""
++    return name == '.DS_Store' or (name.startswith('._') and name[2:] in names)
 +
 +
 +def tree_size(d):   # (files, bytes) under d, symbolic links counted as themselves; (0, 0) when it does not exist yet
@@ -137,7 +150,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..3a24abad2e514b6ec83db45eac3e8df0
      out.sort()
      return out
  
-@@ -61,7 +148,7 @@ def source_digest(src, ents):
+@@ -61,7 +160,7 @@ def source_digest(src, ents):
      h.update(os.fsencode(os.path.realpath(src)) + b'\0')
      for name, path, isdir, _, _ in ents:
          h.update(struct.pack('<I?', len(name), isdir)); h.update(name)
@@ -146,7 +159,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..3a24abad2e514b6ec83db45eac3e8df0
      return h.hexdigest()
  
  
-@@ -114,12 +201,47 @@ def copy_file(path, out):
+@@ -114,12 +213,47 @@ def copy_file(path, out):
      return n
  
  
@@ -195,6 +208,32 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..3a24abad2e514b6ec83db45eac3e8df0
      # A changing source must not publish a mixed image or a reuse stamp for stale data.
      if source_digest(src, entries(src)) != digest:
          os.unlink(part)
+diff --git a/dm/tools/tests/test_romfs_image.py b/dm/tools/tests/test_romfs_image.py
+index 55759f39843085774650655ac53ba42083d6cc3e..6a7313c3ec2c5e260176778e22cdafa79e4e6e3e 100644
+--- a/dm/tools/tests/test_romfs_image.py
++++ b/dm/tools/tests/test_romfs_image.py
+@@ -250,6 +250,21 @@ else: sys.exit(f'fake afcclient: no command {cmd}')
+ '''
+ 
+ 
++class Listings(unittest.TestCase):   # romfs_image.listing: one call per folder on macOS (getattrlistbulk), os.scandir elsewhere
++    def test_identities_sizes_and_macos_files(self):
++        with tempfile.TemporaryDirectory() as td:
++            d = Path(td)
++            (d / 'a/b').mkdir(parents=True)
++            for f, n in (('x', 7), ('a/y', 300), ('a/b/z', 50), ('._x', 4096), ('a/._y', 4096), ('a/._alone', 3), ('.DS_Store', 6)): (d / f).write_bytes(b'.' * n)
++            # ._<name> beside <name> and .DS_Store are macOS's on a drive that is not APFS: left out; a ._ file with no such sibling is the game's
++            self.assertEqual(sorted(n for n, _, _ in image.listing(d / 'a')), ['._alone', 'b', 'y'])
++            self.assertEqual(image.tree_size(d), (4, 360))
++            ents = image.entries(os.fspath(d))
++            self.assertEqual([e[0] for e in ents], [b'', b'a', b'x', b'._alone', b'b', b'y', b'z'])
++            for e in ents[1:]:   # the identity the listing gave equals os.stat's, so a stamp made either way still matches
++                if not e[2]: self.assertEqual(image._IDS.pop(e[1], None) or image.file_identity(e[1]), image.file_identity(e[1]))
++
++
+ class DlcTransfers(unittest.TestCase):
+     """The DLC set replaces Documents/aoc over AFC, and nothing else in the app's data container: devicectl's --remove-existing-content empties the whole
+     container (CoreDevice 651.32, docs/reference/packing.md), saves included, so the script never passes it."""
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
 index 22d10e87fae749d5b5154e7df9e19d8cd115f95d..09617e25e3cc4615b0cbb1c24131bf2642f308c4 100755
 --- a/scripts/build_ipa_from_nsp.py
