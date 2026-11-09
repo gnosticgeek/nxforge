@@ -88,20 +88,25 @@ enum Layer {
     }
 
     /// `layer.py local` (take upstream nxnative's newest main on this Mac, when every patch still applies) or `local --off`
-    /// (back to the pinned engine). ok and the script's last lines: on a clash, the patches and files that clash.
+    /// (back to the pinned engine). ok and the script's last line; on a failure all of its output, since run() hands back
+    /// stdout (the per-patch check, "0004-gfx-metal.patch: conflicts (…)") rather than the error on stderr.
     static func local(_ repo: String, off: Bool) -> (ok: Bool, text: String) {
         let py = FileManager.default.isExecutableFile(atPath: "/usr/bin/python3") ? "/usr/bin/python3" : "python3"
         let path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         guard let r = run(py, ["-I", repo + "/" + script, "local"] + (off ? ["--off"] : []), env: ["PATH": path], cwd: repo) else { return (false, "cannot start \(py)") }
         let lines = r.out.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
         let last = lines.last.map { $0.replacingOccurrences(of: "layer.py: ", with: "") } ?? (r.ok ? "" : "scripts/layer.py local failed")
-        return (r.ok, last)
+        return (r.ok, r.ok ? last : lines.joined(separator: "\n"))
     }
 
-    /// The patches a failed `layer.py local` named ("0004-gfx-metal.patch clashes in a, b; 0006-packing.patch clashes in c"),
-    /// as theme names: ["gfx-metal", "packing"].
+    /// The patches a failed `layer.py local` named, from its check ("0004-gfx-metal.patch: conflicts (a, b)") or its error
+    /// ("0004-gfx-metal.patch clashes in a, b"), as theme names in order, each once: ["gfx-metal", "packing"].
     static func clashes(_ text: String) -> [String] {
-        guard let r = try? NSRegularExpression(pattern: #"\d{4}-([a-z0-9-]+)\.patch clashes"#) else { return [] }
-        return r.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { m in Range(m.range(at: 1), in: text).map { String(text[$0]) } }
+        guard let r = try? NSRegularExpression(pattern: #"\d{4}-([a-z0-9-]+)\.patch(?: clashes|: conflicts)"#) else { return [] }
+        var seen: [String] = []
+        for m in r.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            if let g = Range(m.range(at: 1), in: text), !seen.contains(String(text[g])) { seen.append(String(text[g])) }
+        }
+        return seen
     }
 }
