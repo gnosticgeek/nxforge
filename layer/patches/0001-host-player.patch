@@ -832,7 +832,7 @@ index ba25f6862ef212f48398beb5ddd25b748999c550..9f6886a5e4cebe326b20e5d44c394aec
              if (![d writeToFile:p atomically:YES]) LOG("[RED] webshot: nothing written to %s (%s)", p.UTF8String, e.localizedDescription.UTF8String ?: "-");
          }];
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 1268b1837c21b029ad234f7091ed65e984255940..2c701ffc993236b28d59b83170f1da89b1f17871 100644
+index 1268b1837c21b029ad234f7091ed65e984255940..db258a6688114a400a77d899bfc3b037d1a881c3 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
 @@ -2,7 +2,10 @@
@@ -919,7 +919,7 @@ index 1268b1837c21b029ad234f7091ed65e984255940..2c701ffc993236b28d59b83170f1da89
 +    if (!has_data(from)) { mkdirs(to); return 1; }
 +    char tmp[PATH_MAX], dir[PATH_MAX]; snprintf(dir, sizeof dir, "%s", to); *strrchr(dir, '/') = 0; mkdirs(dir);
 +    snprintf(tmp, sizeof tmp, "%s/.save-copy-%d", dir, (int)getpid());
-+    copyfile_state_t cs = copyfile_state_alloc(); copyfile_state_set(cs, COPYFILE_STATE_RECURSIVE_CB, (const void *)skip_appledouble);
++    copyfile_state_t cs = copyfile_state_alloc(); copyfile_state_set(cs, COPYFILE_STATE_STATUS_CB, (const void *)skip_appledouble);
 +    int failed = copyfile(from, tmp, cs, COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_CLONE); copyfile_state_free(cs);
 +    if (failed || (rmdir(to) && errno != ENOENT) || rename(tmp, to)) {
 +        fprintf(stderr, "[RED] launcher: could not copy the save from %s to %s (%s): using it where it is this time\n", from, to, strerror(errno));

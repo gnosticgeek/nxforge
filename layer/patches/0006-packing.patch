@@ -433,7 +433,7 @@ index 5b2c981244ba4564601e0010deababc7df527360..76ec42f302f039004814ceb14f37a2b8
          with self.assertRaisesRegex(pack_dump.Error, 'the base is'): pack_dump.pack_version(self.dump / f'updates/{VER}', TID + 0x2000, self.out(), say=lambda s: None)
  
 diff --git a/dm/tools/tests/test_nsp_mac_app.py b/dm/tools/tests/test_nsp_mac_app.py
-index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..0351d74319aa9c5a6f776bb511d0f7dcaae89ffa 100644
+index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39dacbaf24 100644
 --- a/dm/tools/tests/test_nsp_mac_app.py
 +++ b/dm/tools/tests/test_nsp_mac_app.py
 @@ -1,5 +1,5 @@
@@ -561,7 +561,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..0351d74319aa9c5a6f776bb511d0f7dc
 +                (there / '._Play').write_bytes(b'appledouble')
 +                p = self.launch(app=game / self.app.name); p.communicate(timeout=30)
 +                r = self.host_run()
-+                self.assertEqual(r['DM_SAVE'], str(sup / 'save')); self.assertEqual(r['DM_GAME_FOLDER'], str(game))
++                self.assertEqual(r['DM_SAVE'], str(sup / 'save')); self.assertEqual(r['DM_GAME_FOLDER'], str(game.resolve()))
 +                self.assertEqual((sup / 'save/Play/account.sav').read_bytes(), b'progress'); self.assertFalse((sup / 'save/._Play').exists())
 +                self.assertEqual((there / 'Play/account.sav').read_bytes(), b'progress')   # left as it was
 +                self.assertIn('cannot hold a save', (logs / f'{TID}.log').read_text())
