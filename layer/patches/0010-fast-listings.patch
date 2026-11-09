@@ -19,12 +19,12 @@ files up to 1 MB ahead on 16 threads. Each walk of the dump: 17 s.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_016qteK3AQaSqMoGPyBgeeFe
 ---
- dm/tools/romfs_image.py       | 130 ++++++++++++++++++++++++++++++++--
+ dm/tools/romfs_image.py       | 132 ++++++++++++++++++++++++++++++++--
  scripts/build_ipa_from_nsp.py |  14 +---
- 2 files changed, 127 insertions(+), 17 deletions(-)
+ 2 files changed, 129 insertions(+), 17 deletions(-)
 
 diff --git a/dm/tools/romfs_image.py b/dm/tools/romfs_image.py
-index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..55d807c1feb82b9b1b92e2d7dd403b82fc368ffb 100755
+index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..3a24abad2e514b6ec83db45eac3e8df03aa3bc76 100755
 --- a/dm/tools/romfs_image.py
 +++ b/dm/tools/romfs_image.py
 @@ -14,7 +14,7 @@
@@ -36,7 +36,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..55d807c1feb82b9b1b92e2d7dd403b82
  from pathlib import Path
  
  MAGIC = b'DMROMFS1'
-@@ -29,11 +29,96 @@ def guest(parent, name):
+@@ -29,11 +29,98 @@ def guest(parent, name):
      return r.stdout.rstrip('\n') if r.returncode == 0 else name
  
  
@@ -68,7 +68,9 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..55d807c1feb82b9b1b92e2d7dd403b82
 +
 +
 +def _bulk_listing(path):   # [(name, kind, identity or None)]; identity only for a regular file that returned all four fields
-+    ctypes, f, al = _bulk()
++    lib = _bulk()
++    if not isinstance(lib, tuple): raise OSError('getattrlistbulk is not available')
++    ctypes, f, al = lib
 +    buf = ctypes.create_string_buffer(256 * 1024)
 +    out = []
 +    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
@@ -135,7 +137,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..55d807c1feb82b9b1b92e2d7dd403b82
      out.sort()
      return out
  
-@@ -61,7 +146,7 @@ def source_digest(src, ents):
+@@ -61,7 +148,7 @@ def source_digest(src, ents):
      h.update(os.fsencode(os.path.realpath(src)) + b'\0')
      for name, path, isdir, _, _ in ents:
          h.update(struct.pack('<I?', len(name), isdir)); h.update(name)
@@ -144,7 +146,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..55d807c1feb82b9b1b92e2d7dd403b82
      return h.hexdigest()
  
  
-@@ -114,12 +199,47 @@ def copy_file(path, out):
+@@ -114,12 +201,47 @@ def copy_file(path, out):
      return n
  
  
