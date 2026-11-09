@@ -1,6 +1,8 @@
 // Updates (Converter 0.3.0): one place for the three parts NXForge ships with versions of their own (UPSTREAM.md, Versions).
 // - The engine: the NXForge checkout, updated to the newest vX.Y.Z release tag on main (Engine.checkUpdates), with how far
-//   upstream nxnative's main is ahead of what NXForge has merged, for information only.
+//   upstream nxnative's main is ahead of what NXForge has merged. Get Upstream Now (Converter 0.5.0) takes that main on this Mac
+//   before NXForge releases it, when every NXForge patch still applies (scripts/layer.py local), and runs the host unit tests
+//   on it; Back to <release> undoes it, and the next engine update to a release ends it by itself.
 // - The converter: rebuilt from that checkout and relaunched in place (ConverterUpdate), offered in a sheet at launch, or done
 //   without asking when Update automatically is on.
 // - The in-game sidebar: compiled into each game app, so a newer one reaches a game by rebuilding it (the build reuses its
@@ -79,10 +81,29 @@ enum Releases {
         let ref = viaRemote ? "refs/remotes/upstream/main" : "refs/nxforge/upstream-main"
         guard git(repo, ["fetch", "--quiet", "--no-tags", viaRemote ? "upstream" : upstreamURL, "+refs/heads/main:\(ref)"]) != nil else { return nil }
         let main = git(repo, ["rev-parse", "--abbrev-ref", "origin/HEAD"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "origin/main"
-        let base = Layer.pin(repo: repo, ref: main, git: git) ?? main
+        let base = Layer.localCommit(repo, git: git) ?? Layer.pin(repo: repo, ref: main, git: git) ?? main
         guard let n = git(repo, ["rev-list", "--count", "--no-merges", "\(base)..\(ref)"]).flatMap({ Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) else { return nil }
         let last = git(repo, ["log", "-1", "--format=%cs%x1f%s", ref])?.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\u{1f}").map(String.init) ?? []
         return UpstreamStatus(count: n, date: last.first ?? "", subject: last.count > 1 ? last[1] : "")
+    }
+
+    /// The host unit tests in the assembled engine, for the profile CI and smoke_mac.sh use (Super Mario Bros. Wonder).
+    static func hostTests(_ repo: String) -> (ok: Bool, text: String) {
+        let path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        guard let r = run("/usr/bin/make", ["-C", Layer.tree(repo) + "/dm/host/tests", "GAME=010015100B514000", "-j8", "run"], env: ["PATH": path]) else {
+            return (false, "make could not start (the Toolchain page lists what is missing)")
+        }
+        let tail = r.out.split(separator: "\n").suffix(2).joined(separator: " ")
+        return (r.ok, String(tail.prefix(240)))
+    }
+
+    /// What a failed `layer.py local` said, for people.
+    static func clashMessage(_ text: String) -> String {
+        let themes = Layer.clashes(text)
+        guard !themes.isEmpty else { return text }
+        let one = themes.count == 1
+        return "Not switched: NXForge's \(themes.joined(separator: ", ")) patch\(one ? "" : "es") clash\(one ? "es" : "") with upstream, "
+            + "so the engine stays on its release. NXForge has to update \(one ? "it" : "them") first; the daily sync does that."
     }
 }
 
@@ -149,6 +170,43 @@ extension AppModel {
         Task.detached {
             let s = Releases.upstreamStatus(repo: repo)
             await MainActor.run { if s != nil { self.upstream = s } }
+        }
+    }
+
+    /// Get Upstream Now: upstream nxnative's newest main on this Mac when every NXForge patch still applies, then the host
+    /// unit tests on it. Nothing changes when a patch clashes; the message names the patches.
+    func takeUpstream() { localEngine(off: false) }
+
+    /// Back to the engine the release pins.
+    func backToRelease() { localEngine(off: true) }
+
+    private func localEngine(off: Bool) {
+        guard let repo = env?.repo, !engineBusy, !run.running, !batchRunning, localUpstream?.running != true else { return }
+        engineBusy = true
+        let release = engine?.short ?? "the release"
+        localUpstream = (true, true, off ? "Going back to \(release)'s engine…" : "Checking NXForge's patches against upstream nxnative…")
+        Task.detached {
+            let r = Layer.local(repo, off: off)
+            var result: (Bool, String)
+            if off {
+                result = r.ok ? (true, "Back on \(release)'s engine. Games built on upstream need a rebuild to match it.") : (false, r.text)
+            } else if !r.ok {
+                result = (false, Releases.clashMessage(r.text))
+            } else if r.text.contains("nothing to take") {
+                result = (true, "Upstream nxnative has nothing \(release) lacks.")
+            } else {
+                await MainActor.run { self.localUpstream = (true, true, "On upstream nxnative. Running the host unit tests…") }
+                let t = Releases.hostTests(repo)
+                result = t.ok ? (true, "On upstream nxnative on this Mac, and the host unit tests pass. Rebuild a game to play it on this engine.")
+                              : (false, "On upstream nxnative, but the host unit tests failed (\(t.text)). Going back to \(release) is the safe choice.")
+            }
+            let ver = Engine.current(repo)
+            let outcome = result
+            await MainActor.run {
+                self.engine = ver; self.engineBusy = false; self.revision += 1
+                self.localUpstream = (false, outcome.0, outcome.1)
+                self.checkUpstream()
+            }
         }
     }
 
@@ -255,7 +313,7 @@ struct UpdatesPage: View {
         let failed = model.engineMessage?.ok == false
         return UpdateRow(symbol: "gearshape.fill", colors: [.purple, .indigo], title: "NXForge engine",
                          detail: "The engine checkout in \(model.env?.repo?.tildePath ?? "?"), on NXForge's release tags.",
-                         installed: model.engine.map { "\($0.short)\($0.dirty ? "+changes" : "")" } ?? "None",
+                         installed: model.engine.map { "\($0.short)\($0.dirty ? "+changes" : "")\($0.local != nil ? " + upstream" : "")" } ?? "None",
                          badge: failed ? ("Check failed", .red) : u.map { ("\($0.release ?? "\($0.count) new commits") available", .blue) } ?? ("Up to date", .green)) {
             if u != nil {
                 Button { model.engineAction(update: true) } label: { Label("Update", systemImage: "arrow.down.circle") }
@@ -267,12 +325,46 @@ struct UpdatesPage: View {
             if let n = model.updateNote { Label("New: \(n)", systemImage: "sparkles").font(.callout).foregroundStyle(.blue) }
             if failed, let m = model.engineMessage { Text(m.text).font(.callout).foregroundStyle(.red) }
             if let m = model.engineMessage, m.ok, m.text.hasPrefix("Updated") { Text(m.text).font(.callout).foregroundStyle(.secondary) }
-            if let s = model.upstream {
-                Label(s.count == 0 ? "Upstream nxnative: nothing new beyond what NXForge has merged."
-                                   : "Upstream nxnative: \(s.count) commit\(s.count == 1 ? "" : "s") not in NXForge yet (newest \(s.date)). They arrive with the next NXForge release.",
-                      systemImage: "arrow.triangle.branch")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .help(s.subject.isEmpty ? "" : "Newest upstream commit: \(s.subject)")
+            upstreamLine
+        }
+    }
+
+    /// Upstream nxnative: how far it is ahead, Get Upstream Now, and while this Mac runs it, Back to the release.
+    @ViewBuilder var upstreamLine: some View {
+        let local = model.engine?.local
+        let release = model.engine?.short ?? "the release"
+        let busy = model.engineBusy || model.run.running || model.batchRunning || model.localUpstream?.running == true
+        if local != nil || model.upstream != nil {
+            HStack(spacing: 10) {
+                if let l = local {
+                    Label("This Mac runs upstream nxnative \(l.prefix(7)), ahead of \(release)'s engine."
+                          + (model.upstream.map { $0.count > 0 ? " Upstream has \($0.count) newer commit\($0.count == 1 ? "" : "s")." : "" } ?? ""),
+                          systemImage: "arrow.triangle.branch")
+                        .font(.callout).foregroundStyle(.orange)
+                } else if let s = model.upstream {
+                    Label(s.count == 0 ? "Upstream nxnative: nothing new beyond what NXForge has merged."
+                                       : "Upstream nxnative: \(s.count) commit\(s.count == 1 ? "" : "s") not in NXForge yet (newest \(s.date)). They arrive with the next NXForge release, or now on this Mac.",
+                          systemImage: "arrow.triangle.branch")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .help(s.subject.isEmpty ? "" : "Newest upstream commit: \(s.subject)")
+                }
+                Spacer(minLength: 8)
+                if let s = model.upstream, s.count > 0 {
+                    Button { model.takeUpstream() } label: { Label("Get Upstream Now", systemImage: "arrow.down.to.line") }
+                        .buttonStyle(.glass).disabled(busy || model.engine?.dirty == true)
+                        .help(model.engine?.dirty == true ? "The checkout has local changes: commit or stash them first."
+                              : "Take upstream nxnative's newest commits on this Mac, if every NXForge patch still applies, and run the host unit tests. Games use it once rebuilt; Back to \(release) undoes it.")
+                }
+                if local != nil {
+                    Button { model.backToRelease() } label: { Label("Back to \(release)", systemImage: "arrow.uturn.backward") }
+                        .buttonStyle(.glass).disabled(busy)
+                }
+            }
+        }
+        if let m = model.localUpstream {
+            HStack(spacing: 6) {
+                if m.running { ProgressView().controlSize(.small) }
+                Text(m.text).font(.callout).foregroundStyle(m.running ? Color.secondary : m.ok ? Color.green : Color.red)
             }
         }
     }

@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.5.0 (2026-11-09)
+
+Ships in NXForge 0.21.0.
+
+- **Get Upstream Now.** The Updates page's upstream line has a button that takes upstream nxnative's newest commits on this Mac, without waiting for an NXForge release. It first checks that every NXForge patch still applies to them; if one clashes, nothing changes and the page names the patches (NXForge has to update them first, which the daily sync does). If they all apply, the engine is assembled on upstream and the host unit tests run on it. The engine row then reads "+ upstream", games count as built on another engine until rebuilt, and **Back to <release>** returns to the release's engine. Updating the engine to a newer release ends it by itself.
+
 ## 0.4.1 (2026-11-08)
 
 A fix for 0.4.0. Ships in NXForge 0.20.1.

@@ -133,6 +133,23 @@ import Testing
         #expect(Layer.parsePin("commit abc\n") == nil)
     }
 
+    @Test func localEngineParsesOnlyOnItsPin() {
+        let up = String(repeating: "b", count: 40), pin = String(repeating: "a", count: 40)
+        #expect(Layer.parseLocal("\(up) \(pin)\n", pin: pin) == up)
+        #expect(Layer.parseLocal("\(up) \(pin)\n", pin: String(repeating: "c", count: 40)) == nil)   // a release moved the pin
+        #expect(Layer.parseLocal("\(pin) \(pin)\n", pin: pin) == nil)
+        #expect(Layer.parseLocal("\(up)\n", pin: pin) == nil)
+        #expect(Layer.parseLocal("\(up) \(pin)", pin: nil) == nil)
+    }
+
+    @Test func localClashesNameThePatches() {
+        let text = "not switched: 0004-gfx-metal.patch clashes in dm/gfx/nvn/nvn_mtl.m; 0006-packing.patch clashes in dm/tools/sdk_patches.py. The engine stays on the pin; NXForge has to update the patch first."
+        #expect(Layer.clashes(text) == ["gfx-metal", "packing"])
+        #expect(Releases.clashMessage(text).hasPrefix("Not switched: NXForge's gfx-metal, packing patches clash with upstream"))
+        #expect(Layer.clashes("cannot start python3").isEmpty)
+        #expect(Releases.clashMessage("cannot start python3") == "cannot start python3")
+    }
+
     @Test func thisCheckoutIsLayered() {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().path
         #expect(Layer.isLayered(repo))

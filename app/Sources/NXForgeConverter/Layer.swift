@@ -66,4 +66,42 @@ enum Layer {
         }
         return out
     }
+
+    // MARK: Upstream on this Mac (`layer.py local`; Converter 0.5.0)
+
+    static let localName = "nxforge-local-engine"
+
+    /// "<commit> <pin>" from the checkout's git folder: the newer nxnative commit tree/ is assembled on, and the pin it was
+    /// taken on. Only while the pin is still that one (layer.py drops it at its next run otherwise).
+    static func parseLocal(_ text: String, pin: String?) -> String? {
+        let parts = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard parts.count == 2, parts[0].count == 40, parts[0].allSatisfy(\.isHexDigit), let pin, parts[1] == pin, parts[0] != pin else { return nil }
+        return parts[0]
+    }
+
+    /// The upstream nxnative commit this Mac's engine runs on instead of the pinned one, nil when it runs on the pin.
+    static func localCommit(_ repo: String, git: (String, [String]) -> String?) -> String? {
+        guard isLayered(repo), let rel = git(repo, ["rev-parse", "--git-path", localName])?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        let path = rel.hasPrefix("/") ? rel : repo + "/" + rel
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return parseLocal(text, pin: pin(repo: repo, ref: "HEAD", git: git))
+    }
+
+    /// `layer.py local` (take upstream nxnative's newest main on this Mac, when every patch still applies) or `local --off`
+    /// (back to the pinned engine). ok and the script's last lines: on a clash, the patches and files that clash.
+    static func local(_ repo: String, off: Bool) -> (ok: Bool, text: String) {
+        let py = FileManager.default.isExecutableFile(atPath: "/usr/bin/python3") ? "/usr/bin/python3" : "python3"
+        let path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        guard let r = run(py, ["-I", repo + "/" + script, "local"] + (off ? ["--off"] : []), env: ["PATH": path], cwd: repo) else { return (false, "cannot start \(py)") }
+        let lines = r.out.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        let last = lines.last.map { $0.replacingOccurrences(of: "layer.py: ", with: "") } ?? (r.ok ? "" : "scripts/layer.py local failed")
+        return (r.ok, last)
+    }
+
+    /// The patches a failed `layer.py local` named ("0004-gfx-metal.patch clashes in a, b; 0006-packing.patch clashes in c"),
+    /// as theme names: ["gfx-metal", "packing"].
+    static func clashes(_ text: String) -> [String] {
+        guard let r = try? NSRegularExpression(pattern: #"\d{4}-([a-z0-9-]+)\.patch clashes"#) else { return [] }
+        return r.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { m in Range(m.range(at: 1), in: text).map { String(text[$0]) } }
+    }
 }

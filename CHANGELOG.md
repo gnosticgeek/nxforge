@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.21.0 (2026-11-09)
+
+- **NXForge Converter 0.5.0** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Get Upstream Now on the Updates page takes upstream nxnative's newest commits on your Mac before NXForge releases them, when every NXForge patch still applies, and runs the host unit tests on them; Back to the release undoes it.
+- **`scripts/layer.py local [REF]` and `local --off`**, which the button runs: `tree/` is assembled on a newer nxnative commit without changing `layer/` (kept in `.git/nxforge-local-engine`), or nothing changes and the clashing patches are named. `export` refuses while it is on, and a new pin ends it.
+
 ## 0.20.1 (2026-11-08)
 
 - **NXForge Converter 0.4.1** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): no more false "0.0 GB free" for a game on a network share or an output folder on an exFAT drive, and each drive a build writes to is checked for its own share.

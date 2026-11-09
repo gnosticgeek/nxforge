@@ -12,10 +12,12 @@ struct EngineVersion: Codable, Hashable {
     var dirty: Bool
     /// git describe from the nearest vX.Y.Z release tag (nil before tags, and in records made before them)
     var version: String? = nil
+    /// the upstream nxnative commit tree/ ran on instead of the pinned one (`layer.py local`, the Updates page's Get Upstream Now); nil: the pin
+    var local: String? = nil
 
     /// The release it is, for people: "0.1.0" at a release tag, "0.1.0+3" three commits after it, "pre-0.1.0" before the first one; the commit when no release is known
     var short: String { version.map(Engine.releaseName) ?? String(commit.prefix(7)) }
-    var label: String { "\(short)\(dirty ? "+changes" : "") · \(subject) · \(date)" }
+    var label: String { "\(short)\(dirty ? "+changes" : "")\(local.map { " + nxnative \($0.prefix(7))" } ?? "") · \(subject) · \(date)" }
 }
 
 struct BuildRecord: Codable, Hashable, Identifiable {
@@ -87,7 +89,8 @@ enum Engine {
         guard p.count == 3 else { return nil }
         let branch = git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]) ?? ""
         let dirty = !(git(repo, ["status", "--porcelain", "--untracked-files=no"]) ?? "").isEmpty
-        return EngineVersion(commit: p[0], subject: p[1], date: p[2], branch: branch, dirty: dirty, version: versionOf(p[0], repo: repo))
+        return EngineVersion(commit: p[0], subject: p[1], date: p[2], branch: branch, dirty: dirty, version: versionOf(p[0], repo: repo),
+                             local: Layer.localCommit(repo, git: git))
     }
 
     /// The branch the engine updates from: the branch's upstream while it has work main lacks; else origin's default
