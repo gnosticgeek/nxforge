@@ -11,6 +11,7 @@ static const char *const sf_filter[] = {"off", "sharpen", "pixel", "crt", "lotte
 static const char *const sf_lines[] = {"auto", "1", "2", "3", "4", "5", "6", "7", "8"};
 static const char *const sf_aa[] = {"off", "fxaa"};
 static const char *const sf_size[] = {"fit", "stretch", "pixel-perfect"};   // DM_PSCALE_*
+static const char *const sf_interp[] = {"off", "on", "auto"};   // front.h mtl_present_interp
 static const char *const sf_corner[] = {"top-left", "top-right", "bottom-left", "bottom-right"};
 // key: the user defaults key's middle part (pfx: DMPresentFilter.<key>.<game>, else DMQuickSettings.<key>.<game>); aniso and upscale are handled by name
 static const sf_entry g_sf[] = {
@@ -30,6 +31,7 @@ static const sf_entry g_sf[] = {
     {"fps_counter", "fps", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"fps_corner", "fpsPos", 0, SF_PICK, sf_corner, 4, 1, "top-left"},
     {"fps_milliseconds", "fpsMs", 0, SF_BOOL, NULL, 0, 1, "off"},
+    {"frame_interpolation", "interp", 0, SF_PICK, sf_interp, 3, 1, "off"},
     {"record_frame_times", "frameTimes", 0, SF_BOOL, NULL, 0, 0, "off"},
     {"mods_on", "mods", 0, SF_LIST, NULL, 0, 0, ""},
     {"mod_order", "modOrder", 0, SF_LIST, NULL, 0, 0, ""},

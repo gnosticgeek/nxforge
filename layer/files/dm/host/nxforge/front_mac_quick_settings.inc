@@ -301,6 +301,8 @@ static void settings_apply(int start) {
     // EDR highlights: off unless this game's saved choice says on; strength 50 % unless saved (present_edr.inc)
     if (!getenv("DM_PRESENT_EDR")) mtl_present_edr_set([d boolForKey:opt_key(@"edr")]);
     if (!getenv("DM_PRESENT_EDR_STRENGTH")) mtl_present_edr_strength_set([d objectForKey:opt_key(@"edrStrength")] ? (int)lround([d doubleForKey:opt_key(@"edrStrength")] * 100) : 50);
+    // Frame interpolation: off unless this game's saved choice says on or auto (frame_interp.inc)
+    if (!getenv("DM_PRESENT_INTERP")) mtl_present_interp_set((int)[d integerForKey:opt_key(@"interp")]);
     if (!getenv("DM_PRESENT_SCALE")) mtl_present_scale_set([d objectForKey:opt_key(@"scale")] ? (int)[d integerForKey:opt_key(@"scale")] : DM_PSCALE_FIT);
     qs_volume_apply();
     if (!getenv("DM_PRESENT_SCANLINE")) mtl_present_scanline_set([d objectForKey:pfx_key(@"scanline")] ? (int)[d integerForKey:pfx_key(@"scanline")] : 0);
