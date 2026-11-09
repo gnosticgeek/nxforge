@@ -38,7 +38,7 @@ class QuickSettingsTable(unittest.TestCase):
     def test_every_mac_setting_is_documented(self):
         rows = [ln.split('\t') for ln in (REPO / 'dm/games/settings.tsv').read_text().splitlines() if ln.startswith('DM_')]
         mac = [r[0] for r in rows if len(r) > 4 and r[4] != 'platform:ios']
-        missing = [v for v in mac if f'`{v}`' not in self.doc]
+        missing = [v for v in mac if f'`{v}`' not in self.doc and f'`{v}=' not in self.doc]   # `DM_X` or `DM_X=1`
         self.assertEqual(missing, [], 'Mac settings (dm/games/settings.tsv) named nowhere in docs/settings.md')
 
 

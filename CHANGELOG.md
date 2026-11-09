@@ -2,6 +2,14 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.22.0 (2026-11-09)
+
+- **Up to nxnative `cfbdd93`** (49 commits past 0.20's engine `028a263`). Among them: Switch 2 controllers over Bluetooth on the Mac (Joy-Con 2 and Pro Controller 2, off by default: `DM_SW2=1` or the settings window), with rumble and the Joy-Con 2 mouse sensor; Ocarina of Time's mist no longer flickers, its foliage, shadows and enemies keep their pipelines in the archive, the mesh-shader fix for its models' lighting, dynamic resolution that climbs to full size, and a pipeline archive with an index per file and compaction by size tier; OCTOPATH TRAVELER and Hyrule Warriors: Age of Calamity at 60 fps; Super Mario Odyssey's sampler cache; Sparking! ZERO's first load; exclusive accesses get ordering; `--icon` for the NSP script. Shader chain `9109b4de8f3e`: every game's shaders are translated again on its next build.
+- **NXForge's pipeline archive overrides are gone:** nxnative's own compaction (by size tier, at 8 files) and flushing replace NXForge's 24-file limit, 5-minute flush spacing and flush at exit.
+- **The pool-mirroring heap (`DM_NVN_POOL_HEAP`) is off by default.** nxnative now places render targets in heaps of their own and recycles them (`rh_texture`), and found that a heap mirroring the whole pool corrupts the picture under dynamic resolution. `DM_NVN_POOL_HEAP=1` turns it back on.
+- **NXForge Converter 0.5.1** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): when Get Upstream Now can't switch, the Updates page names every clashing patch, not only the last one.
+- **`scripts/layer.py export` no longer writes a patch twice.** A commit that touched only NXForge's own files was exported again as a copy of the newest patch touching the same paths.
+
 ## 0.21.0 (2026-11-09)
 
 - **NXForge Converter 0.5.0** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Get Upstream Now on the Updates page takes upstream nxnative's newest commits on your Mac before NXForge releases them, when every NXForge patch still applies, and runs the host unit tests on them; Back to the release undoes it.

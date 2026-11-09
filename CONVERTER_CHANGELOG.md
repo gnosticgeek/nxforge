@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.5.1 (2026-11-09)
+
+A fix for 0.5.0. Ships in NXForge 0.22.0.
+
+- **Get Upstream Now names every clashing patch.** When upstream's commits clash with NXForge's patches, the page listed only the last one the check reported (for example "0009-docs.patch: conflicts") although others clashed too. It now reads the whole report and lists each patch once.
+
 ## 0.5.0 (2026-11-09)
 
 Ships in NXForge 0.21.0.

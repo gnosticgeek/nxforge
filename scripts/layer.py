@@ -296,8 +296,8 @@ def export(log=print) -> None:
         subject = git('log', '-1', '--format=%s', c, cwd=TREE).stdout.strip()
         if subject == FILES_SUBJECT:
             continue
-        text = git('format-patch', '-1', '--stdout', '--zero-commit', '--full-index', '--no-signature', '--keep-subject',
-                   c, '--', '.', *excludes, cwd=TREE).stdout
+        text = git('format-patch', '--stdout', '--zero-commit', '--full-index', '--no-signature', '--keep-subject',   # c^..c: with -1 and a pathspec, git took the newest commit touching the paths
+                   f'{c}^..{c}', '--', '.', *excludes, cwd=TREE).stdout
         if '\ndiff --git ' not in text:
             continue
         new.append((slug(subject), text))
