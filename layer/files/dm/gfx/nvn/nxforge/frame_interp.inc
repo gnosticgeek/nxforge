@@ -58,11 +58,11 @@ static const char *const g_fi_src =
 "}\n"
 "static float4 search(texture2d<float> L, sampler s, float2 uv, float2 v0, int R) {\n"
 "  float2 t = 1.0 / float2(L.get_width(), L.get_height());\n"
-"  float best = cost(L, s, uv, 0, t) * 0.9 - 0.001, c; float2 bv = 0;\n"   // a still pixel wins ties: the HUD and still scenery keep zero motion
+"  float best = cost(L, s, uv, float2(0), t) * 0.9 - 0.001, c; float2 bv = float2(0);\n"   // a still pixel wins ties: the HUD and still scenery keep zero motion
 "  for (int y = -R; y <= R; y++) for (int x = -R; x <= R; x++) { float2 v = v0 + float2(x, y) * t; c = cost(L, s, uv, v, t) + 0.0015 * length(float2(x, y)); if (c < best) { best = c; bv = v; } }\n"
 "  return float4(bv, best, 1);\n"
 "}\n"
-"fragment float4 fi_top(V in [[stage_in]], texture2d<float> L [[texture(0)]], sampler s [[sampler(0)]]) { return search(L, s, in.uv, 0, 4); }\n"
+"fragment float4 fi_top(V in [[stage_in]], texture2d<float> L [[texture(0)]], sampler s [[sampler(0)]]) { return search(L, s, in.uv, float2(0), 4); }\n"
 "fragment float4 fi_flow(V in [[stage_in]], texture2d<float> L [[texture(0)]], texture2d<float> F [[texture(1)]], sampler s [[sampler(0)]]) { return search(L, s, in.uv, F.sample(s, in.uv).xy, 2); }\n"
 // vector median: of the 3x3 neighbours' motions, the one that matches best here
 "fragment float4 fi_vm(V in [[stage_in]], texture2d<float> L [[texture(0)]], texture2d<float> F [[texture(1)]], sampler s [[sampler(0)]]) {\n"
