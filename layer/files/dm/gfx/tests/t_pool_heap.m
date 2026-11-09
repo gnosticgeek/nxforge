@@ -56,7 +56,7 @@ int main(int argc, char **argv) { @autoreleasepool {
     tex_t a = target(&pool, 995000, 0, 512, 512, NVN_TEXTURE_FLAGS_COMPRESSIBLE);
     id<MTLTexture> ma = tex_mtl(&a);
     if (off) {
-        CHECK(ma && !ma.heap, "DM_NVN_POOL_HEAP=0: a render target keeps an allocation of its own");
+        CHECK(ma && (!ma.heap || ma.heap.size < (NSUInteger)(POOL * POOL_HEAP_SCALE) / 2), "DM_NVN_POOL_HEAP=0: a render target is not placed in a heap the pool's size (nxnative's rh_texture may give it a heap of its own)");
     } else {
         CHECK(ma.heap != nil, "a render target of a CPU_NO_ACCESS pool is placed in the pool's heap");
         CHECK(ma.heap.size <= (NSUInteger)(POOL * POOL_HEAP_SCALE) + (2 << 20), "the heap is about the pool's size, scaled");

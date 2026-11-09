@@ -15,13 +15,14 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/nvn/nvn_mtl.m            | 1185 +++++++++++++++++++++++++++----
  dm/gfx/tests/Makefile           |   30 +-
  dm/gfx/tests/t_cpu_tex.m        |   34 +-
+ dm/gfx/tests/t_dispatch_own.m   |    2 +-
  dm/gfx/tests/t_dlss_mfx.m       |    2 +-
  dm/gfx/tests/t_present_crop.m   |  118 +++
  dm/gfx/tests/t_present_rescue.m |   25 +-
  dm/gfx/tests/t_sbw.m            |   12 +-
  dm/gfx/tests/t_upscaler_mfx.m   |    2 +-
  dm/gfx/tests/t_view_swizzle.m   |    2 +-
- 16 files changed, 1396 insertions(+), 205 deletions(-)
+ 17 files changed, 1397 insertions(+), 206 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index c1508018090d0ca302653206545137b01c0a2c71..5bd25023780d90f64abb43785a4d116ec89e6f07 100644
@@ -2809,6 +2810,19 @@ index 2d24b85b3a0e16c4ac7b24250b0cf3a0bb6b8b45..7a70163b9c768114f6e25e38ae80a752
 +    if (argc > 1 && !strcmp(argv[1], "--metal")) { mtl_init(); finalized_upload(0); finalized_upload(1); packaged_entry_outside_the_set(); finalize_during_walk(); poll_asks_again(); poll_beside(); handover_holders(); }
      printf("t_cpu_tex: %d checks, %d failed\n", checks, failed); return failed != 0;
  } }
+diff --git a/dm/gfx/tests/t_dispatch_own.m b/dm/gfx/tests/t_dispatch_own.m
+index b7179fe579609fc12637bdb43cd41aa531f626b4..59463e273c0065ea37bc21090b272284f970296c 100644
+--- a/dm/gfx/tests/t_dispatch_own.m
++++ b/dm/gfx/tests/t_dispatch_own.m
+@@ -53,7 +53,7 @@ int main(void) { @autoreleasepool {
+             mtl_sub_fill((uint64_t)mem, 1024, 0);
+             p_dispatch dp = {.x=(int)counts[0], .y=(int)counts[1], .z=(int)counts[2]};
+             if (indirect) { dp.ind = (uint64_t)mem + 2048; dp.x = dp.y = dp.z = 99; }
+-            dispatch(&dp);
++            dispatch(&dp, NULL);
+             uint64_t fence = mtl_sub_commit(); CHECK(mtl_wait(fence, 2000000000ull), "dispatch completes"); mtl_drain();
+             CHECK(!mtl_last_commit_error(), "no GPU error");
+             const uint32_t *out = mem; int pixels = 1, dimensions = 1;
 diff --git a/dm/gfx/tests/t_dlss_mfx.m b/dm/gfx/tests/t_dlss_mfx.m
 index 292762ac2d5efb1cdde85d378b11db62fe1165d1..205a33b9f38ff2c951f570674f000ccb45324eff 100644
 --- a/dm/gfx/tests/t_dlss_mfx.m
