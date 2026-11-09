@@ -4,6 +4,14 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.3.0 (2026-11-09)
+
+HDR highlights. Ships in NXForge 0.24.0.
+
+- **HDR highlights** (Graphics page, off by default): on an HDR or XDR screen, the brightest parts of the picture are lifted above SDR white, up to the screen's headroom (at most 4x). White HUD text brightens with them. On a screen without EDR headroom the row's note says the picture stays the same.
+- **Brightness boost** (shown while HDR highlights is on): how far the highlights are lifted, 0 to 100 %, 50 by default. Left and right change it in steps of 5 %, A steps it by 25 %.
+- Both are saved per game, reset with the Graphics page's Reset button, and set from the settings file (`hdr_highlights`, `hdr_strength`) or the environment (`DM_PRESENT_EDR`, `DM_PRESENT_EDR_STRENGTH`, not saved).
+
 ## 0.2.0 (2026-11-07)
 
 Ten quality-of-life improvements and a settings file. Ships in NXForge 0.17.0.

@@ -20,6 +20,8 @@ static const sf_entry g_sf[] = {
     {"anti_aliasing", "aa", 0, SF_PICK, sf_aa, 2, 1, "off"},
     {"anisotropic_filtering", "aniso", 0, SF_TEXT, NULL, 0, 1, "16"},
     {"metalfx_upscaling", "upscale", 0, SF_BOOL, NULL, 0, 1, "on"},
+    {"hdr_highlights", "edr", 0, SF_BOOL, NULL, 0, 1, "off"},
+    {"hdr_strength", "edrStrength", 0, SF_PERCENT, NULL, 0, 1, "50"},
     {"picture_size", "scale", 0, SF_PICK, sf_size, 3, 1, "fit"},
     {"volume", "volume", 0, SF_PERCENT, NULL, 0, 1, "100"},
     {"muted", "muted", 0, SF_BOOL, NULL, 0, 1, "off"},

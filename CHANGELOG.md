@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.24.0 (2026-11-09)
+
+- **HDR highlights on HDR and XDR screens, for every game.** A new Graphics row in the sidebar, **HDR highlights** (off by default), with a **Brightness boost** slider (50 % by default). The window then presents in extended linear sRGB (16-bit float), and an inverse tone map lifts the brightest parts of the picture (above about 60 % linear: sun, sky, lava, specular glints, explosions) toward the screen's EDR headroom, capped at 4x SDR white; everything below stays as the game drew it (white HUD text is lifted with the highlights). Every present filter keeps working; captures and recordings stay SDR. `DM_PRESENT_EDR=on|off` and `DM_PRESENT_EDR_STRENGTH=0..100` set it from the environment, and the settings file takes `hdr_highlights` and `hdr_strength`. It is a highlight boost, not true HDR: the games render SDR, so the extra range comes from the tone map. Works without a rebuild of the game data; the host comes with the game's next build.
+- **NXForge Sidebar 0.3.0** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): the HDR highlights rows.
+- Super Mario Odyssey 1.4.1 (build B424BE150A8E7D78) has tested higher-resolution cheats: 1440p (2560x1440 internal, 60 fps, GPU about 5 ms a frame on an M4 Pro) and full-screen 16:10 at 2304x1440 (59.7 fps). 1800p and 4K hang before the first frame, even with the game's graphics heaps raised. The codes are kept with the game's other cheats, not in this repository.
+
 ## 0.23.2 (2026-11-09)
 
 - **Mario Kart World no longer drops to 30 fps for seconds after a few slow frames.** Its profile now sets `fps_hold off`. With the hold on, three frames a little over budget (19 to 21 ms) raised the hold to 2 or 3 vsyncs (30 or 20 fps), and the tries back to 60 failed for seconds: a 27-minute session on an M4 Pro played at 30 or 20 fps for about 40 s in 16 stretches, once 11 s on end. With the hold off, a 66-minute session had no 5-second stretch under 47 fps apart from moments the window was covered; a slow frame is now a single hitch, and the game keeps its speed. Takes effect on the game's next build; until then, **Hold frames when late** off in the launcher's Performance section does the same.
