@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: seedds <seedds@gmail.com>
+Date: Mon, 9 Nov 2026 14:23:52 +0000
+Subject: upstream-pr-1615: The GPU memory guard measures the residency set,
+ not the device's allocated size
+
+From seedds/nxnative#1615 (open; commits 174b2b6c, 3a26ebc6, fa6da9d3), taken early for Ocarina of Time
+(rule 2 in UPSTREAM.md). Drop this patch when nxnative lands it.
+
+The device's currentAllocatedSize counts every no-copy buffer whole, and several (large-pool lookup
+chunks, pool-table segments, sparse-run buffers) lie over the same guest pages. Ocarina of Time on a
+24 GB M4 Pro was stopped with "GPU memory is nearly full: 17582 MB of 18186 MB" while its residency set
+held 6734 MB and the game's footprint was about 11.5 GB. A pending removal now also comes off what the
+set holds after its next commit. DM_NVN_GUARD_DEVICE=1 keeps the old measure.
+---
+ dm/gfx/nvn/nvn_mtl.m     | 16 ++++++++++++++--
+ docs/env_switches.tsv    |  1 +
+ docs/reference/memory.md |  2 +-
+ 3 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 483e00cdefd1cb22b053d0a7406f253b844384d9..45178a3fa2b844481dc0c38ff10456af46521d32 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -321,6 +321,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {
+     [g_res removeAllocation:(id<MTLAllocation>)r];
+     [g_res_objects removeObject:r];
+     g_res_dirty = 1; g_rs_rm++;
++    // what the set holds after its next commit (guard_used) leaves this out, as res_add_at counts what it adds: a load that retires and replaces buffers in one burst counted
++    // only the additions, and PRAGMATA's guard stopped the game at 5,555 MB with the committed set never past 4,220 MB (8 GB Mac)
++    { uint64_t was = atomic_load_explicit(&g_guard_set, memory_order_relaxed), sz = r.allocatedSize;
++      while (!atomic_compare_exchange_weak_explicit(&g_guard_set, &was, was > sz ? was - sz : 0, memory_order_relaxed, memory_order_relaxed)) {} }
+     pthread_mutex_unlock(&g_res_mu);
+ } }
+ @interface NvImageHeap : NSObject { @public id<MTLHeap> heap; int pool_heap; } @end   // pool_heap: a GPU-only pool's whole heap (NvPoolHeap), never a resolution family's
+@@ -448,7 +452,14 @@ enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TI
+ static struct { uint64_t evict, stop, wall; } g_guard;   // bytes, all 0 with the guard off: the eviction level, the stop level, the size no commit grows past
+ static _Atomic int g_guard_lv;   // the highest level met since the submit thread last looked (guard_act)
+ static int guard_level(uint64_t used) { return !g_guard.stop ? GUARD_OK : used >= g_guard.wall ? GUARD_WALL : used >= g_guard.stop ? GUARD_STOP : used >= g_guard.evict ? GUARD_EVICT : GUARD_OK; }
+-static uint64_t guard_used(void) { return MAX(atomic_load_explicit(&g_guard_set, memory_order_relaxed), (uint64_t)g_dev.currentAllocatedSize); }
++// What the guard measures: the residency set after its next commit (g_guard_set: its size at the last commit and what res_add added since), not the device's currentAllocatedSize.
++// The device counts every no-copy buffer whole, and with large pools in lookup chunks, pool-table segments and sparse-run buffers several of them lie over the same guest pages:
++// PRAGMATA's boot load read 8,134 MB there with the set near 3 GB on an 8 GB Mac, and the wall refused the commits its textures needed. DM_NVN_GUARD_DEVICE=1: the larger of the two
++static int g_guard_dev;   // DM_NVN_GUARD_DEVICE (guard_init)
++static uint64_t guard_used(void) {
++    uint64_t set = atomic_load_explicit(&g_guard_set, memory_order_relaxed);
++    return g_guard_dev ? MAX(set, (uint64_t)g_dev.currentAllocatedSize) : set;
++}
+ static void guard_raise(int lv) { int cur = atomic_load(&g_guard_lv); while (lv > cur && !atomic_compare_exchange_weak(&g_guard_lv, &cur, lv)) {} }
+ static void guard_act(uint64_t fence);
+ static void res_commit(void) {
+@@ -457,7 +468,7 @@ static void res_commit(void) {
+         uint64_t used = guard_used(); int lv = guard_level(used);
+         if (lv) guard_raise(lv);
+         if (lv == GUARD_WALL && g_res_grew) {   // removals alone always go through: they are what brings the set down
+-            static uint64_t refused; if (!refused++) MLOG("[RED] GPU memory guard: %llu MB at Metal's working set of %llu MB: this residency commit and any after it that add to the set are not made", (unsigned long long)(used >> 20), (unsigned long long)(g_guard.wall >> 20));
++            static uint64_t refused; if (!refused++) MLOG("[RED] GPU memory guard: %llu MB at Metal's working set of %llu MB (residency set after this commit %llu MB, device allocated %llu MB): this residency commit and any after it that add to the set are not made", (unsigned long long)(used >> 20), (unsigned long long)(g_guard.wall >> 20), (unsigned long long)(atomic_load(&g_guard_set) >> 20), (unsigned long long)(g_dev.currentAllocatedSize >> 20));
+             pthread_mutex_unlock(&g_res_mu); return;
+         }
+         uint64_t t0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); [g_res commit]; g_res_dirty = g_res_grew = 0; g_rs_commits++; uint64_t d_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t0; g_rs_commit_ns += d_; atomic_fetch_add(&g_rs_commit_total_ns, d_);
+@@ -672,6 +683,7 @@ static void guard_tick(void) {
+     if (lv == GUARD_WALL || over >= GUARD_TICKS) guard_stop(used);
+ }
+ static void guard_init(void) {
++    { const char *d = getenv("DM_NVN_GUARD_DEVICE"); g_guard_dev = d && atoi(d); }
+     const char *e = getenv("DM_NVN_RES_LIMIT_MB"); uint64_t ws = g_dev.recommendedMaxWorkingSetSize, lim = e ? strtoull(e, NULL, 0) << 20 : 0;
+     if (!g_res) return;
+     if (ws && !(e && !lim)) { g_guard.wall = MAX(ws, lim); g_guard.stop = lim ? lim : ws / 100 * 95; g_guard.evict = g_guard.stop / 95 * 80;
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 4147afd6d89feef2749e44340dae199fe57a8fda..c52640ef9aa1b0ecd629815ac239bad25773eaf6 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -168,6 +168,7 @@ DM_NVN_GEO_MESH_RUN	switch	`0` dispatches every mesh geometry draw on its own; b
+ DM_NVN_GPUPROF	diagnostic	`=<f>`, `<f1>-<f2>` or `every:<n>`: logs the GPU start and duration of every encoder of those frames (`[gpuprof]` lines from Metal 4 counter heap timestamps)
+ DM_NVN_GPU_TS	switch	`segment` or `submission`: what timestamp reports record (GPU start / end of the segment holding each report, or one time for the whole submission), instead of the profile's `gpu_timestamps`
+ DM_NVN_GPU_WATCHDOG	switch	`=<seconds>` (default 4): a submission the GPU has not finished in that time is reported with the shaders it ran and the process stops before the Mac's GPU hangs; `0` off
++DM_NVN_GUARD_DEVICE	diagnostic	`1`: the GPU memory guard measures the larger of the residency set and the device's `currentAllocatedSize` (#1391's first form); default: the residency set after its next commit only, as the device counts overlapping no-copy buffers over the same pages once each
+ DM_NVN_HILITE	diagnostic	`=<fragment shader key>,…`: those draws use a solid colour instead (magenta, green, cyan, yellow, blue, white in order), to tell wrong geometry from wrong shading
+ DM_NVN_INDLOG	diagnostic	`=<n>`: the first n indirect draws (and those of pass-dumped frames) log their arguments at encode and as the GPU left them once the submission completed, with the first indices
+ DM_NVN_IXCLOG	diagnostic	`=<n>` logs the first n indirect draw and dispatch conversions (record to arguments) once the GPU has run them
+diff --git a/docs/reference/memory.md b/docs/reference/memory.md
+index 547de17fe66d973729db021a96b5c389124b2d72..7004d5d7ba7dcb35d9628a9f431f61f8dec41a80 100644
+--- a/docs/reference/memory.md
++++ b/docs/reference/memory.md
+@@ -470,7 +470,7 @@ The guest address space, heaps, pools, virtual address memory and the allocators
+ 
+ - **Symptom:** a game ends stuck after `[RED] GPU out of memory`, or the Mac itself freezes until the power button; on an 8 GB Mac, WindowServer's watchdog restarts the desktop. Now: `[RED] GPU memory guard: ... stopping the game before the driver cannot wire more`, the report of what the residency set holds, and an alert before the app quits.
+ - **Cause:** GPU memory is wired, and the driver refuses to wire past `recommendedMaxWorkingSetSize`: IOGPUScheduler's `freeToWireMemory` fails there (aCidcOde, GitHub issue #1326). The submit thread then waits in the kernel, where the process cannot be killed: 7 minutes in that report. Nothing in the host looked at the working set.
+-- **Fix:** `res_commit` (`nvn_mtl.m`) looks before each commit, at the larger of what the commit would leave and the device's `currentAllocatedSize`. The set's `allocatedSize` leaves out what was never committed (measured: +0 MB for a new 64 MB texture until its commit), so what `res_add` added since counts too. The device's size counts a resource from its creation, in a set or not.
++- **Fix:** `res_commit` (`nvn_mtl.m`) looks before each commit, at what the set holds after it: its size at the last commit, plus what `res_add` added and less what `res_remove` took out since (`g_guard_set`). Not the device's `currentAllocatedSize`, which counts every no-copy buffer whole: where several lie over the same guest pages (a large pool's chunks and table segments), PRAGMATA's boot read 8,134 MB there with the set near 3 GB, and the wall refused the commits its textures needed (`DM_NVN_GUARD_DEVICE=1` takes the larger of the two again). Before the removals came off, a load that retired and replaced buffers in one burst looked like growth only: the guard stopped PRAGMATA at 5,555 MB with the committed set never past 4,220 MB. The set's `allocatedSize` leaves out what was never committed (measured: +0 MB for a new 64 MB texture until its commit), so what `res_add` added since counts too. The device's size counts a resource from its creation, in a set or not.
+   - From 80% of the working set the submit thread lets go of what can go, at most every 30 frames (`guard_evict`): idle sharing entries nothing holds, finished deferred releases, finished spares, the staging the upload slots keep.
+   - From 95% it first waits for that to land, then looks again. Still over: `guard_stop` logs the report (by kind, distinct pages under the shared buffers, textures by format, the largest objects) and calls `front_gpu_memory_stop`. The Mac app closes the graphics gate (`dm_gfx_suspend`), so no more GPU work grows what is held, leaves full screen, shows an alert and quits as ⌘Q does, so the launcher's work after the game runs. Without a window the host takes its graceful exit.
+   - A commit that adds to the set is not made at all at the working set itself. Commits that only remove go through.

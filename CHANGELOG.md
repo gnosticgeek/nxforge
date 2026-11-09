@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.23.1 (2026-11-09)
+
+- **Ocarina of Time is no longer stopped by a false "GPU memory is nearly full".** The memory guard measured the larger of the residency set and Metal's `currentAllocatedSize`, and the device's figure counts every no-copy buffer whole, even where several (large-pool lookup chunks, pool-table segments, sparse-run buffers) lie over the same game pages. Eleven minutes into a session on a 24 GB M4 Pro it read 17,582 of 18,186 MB and stopped the game, while the residency set held 6,734 MB and the game's footprint was about 11.5 GB. The guard now measures the residency set after its next commit, with pending removals taken off, as upstream does in its open pull request [#1615](https://github.com/seedds/nxnative/pull/1615) (new patch `0011-upstream-pr-1615`, dropped once nxnative lands it). `DM_NVN_GUARD_DEVICE=1` in `env.txt` brings the old measure back. Takes effect on a game's next build.
+
 ## 0.23.0 (2026-11-09)
 
 - **A game on an exFAT (or FAT, HFS+) drive keeps its save on the Mac again.** Since 0.14 the save goes beside the app (`Saves/save`), but the host's save transaction clones the save folder and swaps it in on commit, which only APFS can do. On Mario Kart World built to an exFAT USB drive the save mounted read-only, the game's save manager spun on a full core, and the game never got past its first screen, so the controller looked dead. The launcher now asks the game folder's drive whether it can clone and swap folders; when it can't, the save stays in `~/Library/Application Support/nxnative/<title ID>/save` (screenshots and recordings still go beside the game), and a save an older build left beside the app is copied back once, without the `._` files macOS writes on such drives. Takes effect on a game's next build.
