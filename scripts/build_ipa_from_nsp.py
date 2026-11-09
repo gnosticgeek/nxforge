@@ -314,18 +314,8 @@ def progress_mode(want):   # auto: redraw in a terminal or in Spyder (IPython ha
     return 'bar' if in_ipython() or (sys.stdout and sys.stdout.isatty()) else 'lines'
 
 
-def tree_size(d):   # (files, bytes) under d; (0, 0) when it does not exist yet
-    n = b = 0; todo = [str(d)]
-    while todo:
-        try: it = rfs.os.scandir(todo.pop())
-        except OSError: continue
-        with it:
-            for e in it:
-                try:
-                    if e.is_dir(follow_symlinks=False): todo.append(e.path)
-                    else: n += 1; b += e.stat(follow_symlinks=False).st_size
-                except OSError: pass
-    return n, b
+def tree_size(d):   # (files, bytes) under d; (0, 0) when it does not exist yet. romfs_image's listing: one call per folder on macOS, not a stat per file
+    return romfs_image.tree_size(d)
 
 
 def in_ipython():   # Spyder (and Jupyter) run this file inside IPython: input works there, and sys.exit must not be called (it piles an error onto the console)

@@ -259,6 +259,21 @@ else: sys.exit(f'fake afcclient: no command {cmd}')
 '''
 
 
+class Listings(unittest.TestCase):   # romfs_image.listing: one call per folder on macOS (getattrlistbulk), os.scandir elsewhere
+    def test_identities_sizes_and_macos_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / 'a/b').mkdir(parents=True)
+            for f, n in (('x', 7), ('a/y', 300), ('a/b/z', 50), ('._x', 4096), ('a/._y', 4096), ('a/._alone', 3), ('.DS_Store', 6)): (d / f).write_bytes(b'.' * n)
+            # ._<name> beside <name> and .DS_Store are macOS's on a drive that is not APFS: left out; a ._ file with no such sibling is the game's
+            self.assertEqual(sorted(n for n, _, _ in image.listing(d / 'a')), ['._alone', 'b', 'y'])
+            self.assertEqual(image.tree_size(d), (4, 360))
+            ents = image.entries(os.fspath(d))
+            self.assertEqual([e[0] for e in ents], [b'', b'a', b'x', b'._alone', b'b', b'y', b'z'])
+            for e in ents[1:]:   # the identity the listing gave equals os.stat's, so a stamp made either way still matches
+                if not e[2]: self.assertEqual(image._IDS.pop(e[1], None) or image.file_identity(e[1]), image.file_identity(e[1]))
+
+
 class DlcTransfers(unittest.TestCase):
     """The DLC set replaces Documents/aoc over AFC, and nothing else in the app's data container: devicectl's --remove-existing-content empties the whole
     container (CoreDevice 651.32, docs/reference/packing.md), saves included, so the script never passes it."""
