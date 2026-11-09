@@ -905,6 +905,8 @@ def main(argv=None):
             else: res = clean(cats, a.dry_run, ctx, a.worktree)
         elif a.cmd == 'build':
             kw = {k: getattr(a, k) for k in ('plan', 'rebuild', 'out', 'keys', 'cleanup', 'sign')}
+            for k in ('rebuild', 'out', 'keys'):   # the build runs in the engine's tree/: a relative path means the caller's folder
+                if kw[k]: kw[k] = str(Path(kw[k]).expanduser().absolute())
             if a.background: res = start_job(a.game_dir, **kw)
             else:
                 show = (lambda ev: print(json.dumps(ev), flush=True)) if a.events else (lambda ev: ev.get('msg') and print(ev['msg'], flush=True)) if not a.json else None
