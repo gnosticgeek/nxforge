@@ -125,8 +125,20 @@ enum Engine {
     /// Fetch origin with its tags, then: on main (or a merged release branch, which follows main), the newest vX.Y.Z release
     /// tag on it, so an update never stops between a release PR's merge and its tag; on a branch with work main lacks, the
     /// branch's head as before. The newest release is never older than the engine: a checkout ahead of it is up to date.
+    /// git fetch with tags. A checkout whose remote fetches named branches only (`git remote set-branches`) fails outright once one
+    /// of them is deleted on GitHub ("couldn't find remote ref"), so that fetch is tried again with every branch, and git's own
+    /// message is what a failure shows.
+    static func fetch(_ repo: String) throws {
+        if git(repo, ["fetch", "--quiet", "--tags", "origin"]) != nil { return }
+        let all = run("/usr/bin/env", ["git", "-C", repo, "fetch", "--quiet", "--tags", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*"],
+                      env: ["PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"])
+        guard let all else { throw ConverterError("git fetch failed: cannot run git") }
+        if all.ok { return }
+        throw ConverterError("git fetch failed: \(all.out.split(separator: "\n").last ?? "no output")")
+    }
+
     static func checkUpdates(_ repo: String) throws -> Update {
-        guard git(repo, ["fetch", "--quiet", "--tags", "origin"]) != nil else { throw ConverterError("git fetch failed") }
+        try fetch(repo)
         guard let up = updateTarget(repo) else { throw ConverterError("this branch has no upstream branch to update from, and is not merged into main") }
         let main = git(repo, ["rev-parse", "--abbrev-ref", "origin/HEAD"]) ?? "origin/main"
         if up == main, let tag = Releases.newest(repo: repo, prefix: "v", in: up) {

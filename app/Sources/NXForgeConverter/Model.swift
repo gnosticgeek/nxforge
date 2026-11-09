@@ -57,6 +57,8 @@ final class AppModel {
     var validatedFor: (String, String?)?
     /// the chosen game when it needs no keys (a NUP or a dump folder), as the engine read it
     var source: SourceInfo?
+    /// a dump folder's sizes are being read after its quick read (Source.read quick:)
+    var sizing = false
     var game: GameInfo?
     var engine: EngineVersion?
     /// docs/nxforge-games.tsv of the engine checkout, by title ID: the Builds page's "On NXForge" row
@@ -238,13 +240,28 @@ final class AppModel {
         validatedFor = (dir, keys)
         refreshGame()
         let env = self.env
+        sizing = false
         Task.detached {
-            let (v, info) = Source.validate(dir, keys: keys, env: env)
+            // a dump folder first without its sizes, which take a walk of every file (minutes on an exFAT drive before 0.22.0)
+            let (v, read) = Source.validate(dir, keys: keys, env: env, quick: true)
+            let info = read.map { $0.sized ? $0 : Source.cachedSizes($0) ?? $0 }
+            let sized = info?.sized ?? true
             await MainActor.run {
                 guard self.validatedFor?.0 == dir else { return }   // another game was chosen meanwhile
-                self.validation = v; self.source = info; self.validating = false
+                self.validation = v; self.source = info; self.validating = false; self.sizing = !sized
                 self.refreshGame()
                 if info != nil { self.measure() }   // a Switch 2 game's size and needs come from what it read
+            }
+            guard !sized, let env, case .success(let full) = Source.read(dir, env: env) else {
+                if !sized { await MainActor.run { if self.validatedFor?.0 == dir { self.sizing = false } } }
+                return
+            }
+            Source.remember(full)
+            await MainActor.run {
+                guard self.validatedFor?.0 == dir, var s = self.source else { return }
+                s.romfsBytes = full.romfsBytes; s.fileBytes = full.fileBytes
+                self.source = s; self.sizing = false
+                self.measure()
             }
         }
         measure()
@@ -272,7 +289,7 @@ final class AppModel {
         let builds = Engine.builds()
         Task.detached {
             let n = GameNeeds.detect(dir: dir, repo: repo)
-            let bytes = src.map { max($0.fileBytes, $0.romfsBytes) } ?? Estimates.gameBytes(dir)
+            let bytes = src.map { max($0.fileBytes, $0.romfsBytes, 0) } ?? Estimates.gameBytes(dir)
             let e = Estimates.expected(gameDir: dir, gameBytes: bytes, builds: builds)
             await MainActor.run { if self.gameFolder == dir { self.needs = n; self.expected = e } }
             let d = Disk.need(gameDir: dir, outDir: out, app: app, firstBuild: src.map(Source.firstBuildBytes), gameBytes: bytes)
@@ -361,7 +378,7 @@ final class AppModel {
     }
 
     /// The game's size in bytes: a Switch 2 game's files as source_info.py read them, else the packages in the folder.
-    var gameBytes: Int64 { source.map { max($0.fileBytes, $0.romfsBytes) } ?? gameFolder.map(Estimates.gameBytes) ?? 0 }
+    var gameBytes: Int64 { source.map { max($0.fileBytes, $0.romfsBytes, 0) } ?? gameFolder.map(Estimates.gameBytes) ?? 0 }
 
     /// While the build runs, every 15 s: warn when a volume it writes to gets low, and stop it before one fills up (the stage in
     /// progress is lost; the finished ones are reused by the next build).

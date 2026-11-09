@@ -1,0 +1,261 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 9 Nov 2026 09:43:10 +0000
+Subject: fast-listings: a folder's entries in one call, and RomFS files read
+ ahead
+
+On an exFAT drive (macOS's FSKit driver) a stat or an open by name costs
+5-12 ms in a large folder: Mario Kart World's dump (411,696 files, 107,232
+in romfs/Tex) was walked four times at a stat per file before its image
+was written, over 10 minutes a walk, and its files were read one at a time.
+
+romfs_image.listing() lists a folder with getattrlistbulk on macOS (name,
+type, inode, size, mtime, ctime in one call per folder; os.scandir
+elsewhere). children() keeps each file's identity for source_digest, which
+matches os.stat exactly (checked on the dump), so existing stamps stay
+valid. tree_size() in build_ipa_from_nsp.py uses it too. pack() reads
+files up to 1 MB ahead on 16 threads. Each walk of the dump: 17 s.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_016qteK3AQaSqMoGPyBgeeFe
+---
+ dm/tools/romfs_image.py            | 144 ++++++++++++++++++++++++++++-
+ dm/tools/tests/test_romfs_image.py |  15 +++
+ scripts/build_ipa_from_nsp.py      |  14 +--
+ 3 files changed, 156 insertions(+), 17 deletions(-)
+
+diff --git a/dm/tools/romfs_image.py b/dm/tools/romfs_image.py
+index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..bd50b77c6fb3e04cd99f7b80ef0d67f6dd5069ca 100755
+--- a/dm/tools/romfs_image.py
++++ b/dm/tools/romfs_image.py
+@@ -14,7 +14,7 @@
+ # Names are the guest names: a host name chosen on a case collision (.dm-case-N) is replaced by the one in its xattr, as hle_fs.c's guest_name does.
+ # Usage: romfs_image.py [--reuse] <RomFS folder> <out image>   (written to <out>.part, renamed at the end)
+ # --reuse checks the source tree's names and file metadata, the packer's version and the image's identity before keeping a previous image.
+-import argparse, hashlib, json, os, struct, subprocess
++import argparse, hashlib, json, os, struct, subprocess, sys
+ from pathlib import Path
+ 
+ MAGIC = b'DMROMFS1'
+@@ -29,11 +29,110 @@ def guest(parent, name):
+     return r.stdout.rstrip('\n') if r.returncode == 0 else name
+ 
+ 
+-def children(path):
++# A folder's entries with their metadata in one call per folder (macOS getattrlistbulk), not a stat per file: on an exFAT drive (macOS's FSKit driver) a
++# stat costs about a millisecond, and a dump of Mario Kart World's 411,696 files was walked four times before its image was written. Elsewhere os.scandir.
++_IDS = {}   # host path → file_identity, from the listing children() made; source_digest takes each one out
++_ATTR_CMN_NAME, _ATTR_CMN_OBJTYPE, _ATTR_CMN_MODTIME, _ATTR_CMN_CHGTIME, _ATTR_CMN_FILEID = 0x1, 0x8, 0x400, 0x800, 0x02000000
++_ATTR_CMN_RETURNED_ATTRS, _ATTR_FILE_DATALENGTH = 0x80000000, 0x200
++_VREG, _VDIR, _VLNK = 1, 2, 5
++_bulk_fn = None
++
++
++def _bulk():
++    global _bulk_fn
++    if _bulk_fn is None:
++        _bulk_fn = False
++        if sys.platform == 'darwin':
++            try:
++                import ctypes
++                f = ctypes.CDLL(None, use_errno=True).getattrlistbulk
++                f.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint64]
++                f.restype = ctypes.c_int
++                common = _ATTR_CMN_RETURNED_ATTRS | _ATTR_CMN_NAME | _ATTR_CMN_OBJTYPE | _ATTR_CMN_MODTIME | _ATTR_CMN_CHGTIME | _ATTR_CMN_FILEID
++                al = struct.pack('<HHIIIII', 5, 0, common, 0, 0, _ATTR_FILE_DATALENGTH, 0)
++                _bulk_fn = (ctypes, f, ctypes.create_string_buffer(al, len(al)))
++            except (OSError, AttributeError): pass
++    return _bulk_fn
++
++
++def _bulk_listing(path):   # [(name, kind, identity or None)]; identity only for a regular file that returned all four fields
++    lib = _bulk()
++    if not isinstance(lib, tuple): raise OSError('getattrlistbulk is not available')
++    ctypes, f, al = lib
++    buf = ctypes.create_string_buffer(256 * 1024)
++    out = []
++    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
++    try:
++        while True:
++            n = f(fd, al, buf, len(buf), 0)
++            if n < 0: raise OSError(ctypes.get_errno(), os.strerror(ctypes.get_errno()), path)
++            if n == 0: break
++            raw = buf.raw; p = 0
++            for _ in range(n):
++                length, common, _vol, _dir, file = struct.unpack_from('<IIIII', raw, p)
++                q = p + 24
++                name = kind = mtime = ctime = ino = size = None
++                if common & _ATTR_CMN_NAME:
++                    off, nlen = struct.unpack_from('<iI', raw, q); name = raw[q + off:q + off + nlen].split(b'\0', 1)[0]; q += 8
++                if common & _ATTR_CMN_OBJTYPE: kind, = struct.unpack_from('<I', raw, q); q += 4
++                if common & _ATTR_CMN_MODTIME: sec, ns = struct.unpack_from('<qq', raw, q); mtime = sec * 10**9 + ns; q += 16
++                if common & _ATTR_CMN_CHGTIME: sec, ns = struct.unpack_from('<qq', raw, q); ctime = sec * 10**9 + ns; q += 16
++                if common & _ATTR_CMN_FILEID: ino, = struct.unpack_from('<Q', raw, q); q += 8
++                if file & _ATTR_FILE_DATALENGTH: size, = struct.unpack_from('<q', raw, q)
++                p += length
++                if name is None: continue
++                k = 'dir' if kind == _VDIR else 'file' if kind == _VREG else 'link' if kind == _VLNK else 'other'
++                ident = [ino, size, mtime, ctime] if k == 'file' and None not in (ino, size, mtime, ctime) else None
++                out.append((os.fsdecode(name), k, ident))
++    finally: os.close(fd)
++    return out
++
++
++def _listing(path):
++    if _bulk():
++        try: return _bulk_listing(path)
++        except OSError: pass   # a file system without getattrlistbulk: as below
+     out = []
+     with os.scandir(path) as it:
+         for e in it:
+-            out.append((guest(path, e.name).encode(), e.path, e.is_dir(follow_symlinks=True)))
++            k = 'dir' if e.is_dir(follow_symlinks=False) else 'link' if e.is_symlink() else 'file' if e.is_file(follow_symlinks=False) else 'other'
++            out.append((e.name, k, None))
++    return out
++
++
++def listing(path):   # a folder's entries: [(name, 'dir' | 'file' | 'link' | 'other', file_identity or None)], without the files macOS adds on other file systems
++    ents = _listing(path)
++    names = {e[0] for e in ents}
++    return [e for e in ents if not macos_litter(e[0], names)]
++
++
++def macos_litter(name, names):
++    """Files macOS writes beside a game's own on a drive that is not APFS or HFS+ (exFAT, FAT, SMB): ._<name>, the AppleDouble file holding <name>'s extended attributes
++    (a Mario Kart World dump copied to an exFAT drive had 140,640, and the image's format check refused them), and .DS_Store. A RomFS has neither."""
++    return name == '.DS_Store' or (name.startswith('._') and name[2:] in names)
++
++
++def tree_size(d):   # (files, bytes) under d, symbolic links counted as themselves; (0, 0) when it does not exist yet
++    n = b = 0; todo = [os.fspath(d)]
++    while todo:
++        path = todo.pop()
++        try: ents = listing(path)
++        except OSError: continue
++        for name, kind, ident in ents:
++            p = os.path.join(path, name)
++            if kind == 'dir': todo.append(p); continue
++            n += 1
++            try: b += ident[1] if ident else os.lstat(p).st_size
++            except OSError: pass
++    return n, b
++
++
++def children(path):
++    out = []
++    for name, kind, ident in listing(path):
++        p = os.path.join(path, name)
++        if ident is not None: _IDS[p] = ident
++        out.append((guest(path, name).encode(), p, kind == 'dir' or (kind == 'link' and os.path.isdir(p))))
+     out.sort()
+     return out
+ 
+@@ -61,7 +160,7 @@ def source_digest(src, ents):
+     h.update(os.fsencode(os.path.realpath(src)) + b'\0')
+     for name, path, isdir, _, _ in ents:
+         h.update(struct.pack('<I?', len(name), isdir)); h.update(name)
+-        h.update(json.dumps(file_identity(path)).encode() + b'\0')
++        h.update(json.dumps(_IDS.pop(path, None) or file_identity(path)).encode() + b'\0')
+     return h.hexdigest()
+ 
+ 
+@@ -114,12 +213,47 @@ def copy_file(path, out):
+     return n
+ 
+ 
++class Prefetch:
++    """copy() for write() that reads the small files ahead on a few threads, in the order write() asks for them: each file read costs a round trip to the file
++    system (most on an exFAT drive or a network share), and a RomFS is mostly small files. Files over SMALL, or of unknown size, are copied as copy_file does."""
++    SMALL, WINDOW, THREADS = 1 << 20, 512, 16   # Mario Kart World's Tex/ (107,232 files) on an exFAT drive: 12 ms a file read in turn, 2.3 ms on 16 threads
++
++    def __init__(self, paths, sizes):
++        import collections
++        from concurrent.futures import ThreadPoolExecutor
++        self.paths, self.sizes, self.next = paths, sizes, 0
++        self.pool = ThreadPoolExecutor(self.THREADS)
++        self.ahead = collections.deque()
++        self.fill()
++
++    def fill(self):
++        while len(self.ahead) < self.WINDOW and self.next < len(self.paths):
++            p = self.paths[self.next]; self.next += 1
++            small = self.sizes.get(p) is not None and self.sizes[p] <= self.SMALL
++            self.ahead.append((p, self.pool.submit(Path(p).read_bytes) if small else None))
++
++    def copy(self, path, out):
++        if not self.ahead or self.ahead[0][0] != path: return copy_file(path, out)   # not the order planned: no read ahead
++        _, f = self.ahead.popleft(); self.fill()
++        if f is None: return copy_file(path, out)
++        data = f.result(); out.write(data)
++        return len(data)
++
++    def close(self):
++        for _, f in self.ahead:
++            if f: f.cancel()
++        self.pool.shutdown(wait=True)
++
++
+ def pack(src, dst, reuse=False):
+     src, dst = os.fspath(src), os.fspath(dst)
+     ents = entries(src)
++    sizes = {e[1]: _IDS[e[1]][1] for e in ents if not e[2] and e[1] in _IDS}
+     digest = source_digest(src, ents)
+     if reuse and reusable(dst, digest): return len(ents)
+-    part = write(ents, dst, copy_file)
++    pre = Prefetch([e[1] for e in ents if not e[2]], sizes)
++    try: part = write(ents, dst, pre.copy)
++    finally: pre.close()
+     # A changing source must not publish a mixed image or a reuse stamp for stale data.
+     if source_digest(src, entries(src)) != digest:
+         os.unlink(part)
+diff --git a/dm/tools/tests/test_romfs_image.py b/dm/tools/tests/test_romfs_image.py
+index 55759f39843085774650655ac53ba42083d6cc3e..6a7313c3ec2c5e260176778e22cdafa79e4e6e3e 100644
+--- a/dm/tools/tests/test_romfs_image.py
++++ b/dm/tools/tests/test_romfs_image.py
+@@ -250,6 +250,21 @@ else: sys.exit(f'fake afcclient: no command {cmd}')
+ '''
+ 
+ 
++class Listings(unittest.TestCase):   # romfs_image.listing: one call per folder on macOS (getattrlistbulk), os.scandir elsewhere
++    def test_identities_sizes_and_macos_files(self):
++        with tempfile.TemporaryDirectory() as td:
++            d = Path(td)
++            (d / 'a/b').mkdir(parents=True)
++            for f, n in (('x', 7), ('a/y', 300), ('a/b/z', 50), ('._x', 4096), ('a/._y', 4096), ('a/._alone', 3), ('.DS_Store', 6)): (d / f).write_bytes(b'.' * n)
++            # ._<name> beside <name> and .DS_Store are macOS's on a drive that is not APFS: left out; a ._ file with no such sibling is the game's
++            self.assertEqual(sorted(n for n, _, _ in image.listing(d / 'a')), ['._alone', 'b', 'y'])
++            self.assertEqual(image.tree_size(d), (4, 360))
++            ents = image.entries(os.fspath(d))
++            self.assertEqual([e[0] for e in ents], [b'', b'a', b'x', b'._alone', b'b', b'y', b'z'])
++            for e in ents[1:]:   # the identity the listing gave equals os.stat's, so a stamp made either way still matches
++                if not e[2]: self.assertEqual(image._IDS.pop(e[1], None) or image.file_identity(e[1]), image.file_identity(e[1]))
++
++
+ class DlcTransfers(unittest.TestCase):
+     """The DLC set replaces Documents/aoc over AFC, and nothing else in the app's data container: devicectl's --remove-existing-content empties the whole
+     container (CoreDevice 651.32, docs/reference/packing.md), saves included, so the script never passes it."""
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index 22d10e87fae749d5b5154e7df9e19d8cd115f95d..09617e25e3cc4615b0cbb1c24131bf2642f308c4 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -311,18 +311,8 @@ def progress_mode(want):   # auto: redraw in a terminal or in Spyder (IPython ha
+     return 'bar' if in_ipython() or (sys.stdout and sys.stdout.isatty()) else 'lines'
+ 
+ 
+-def tree_size(d):   # (files, bytes) under d; (0, 0) when it does not exist yet
+-    n = b = 0; todo = [str(d)]
+-    while todo:
+-        try: it = rfs.os.scandir(todo.pop())
+-        except OSError: continue
+-        with it:
+-            for e in it:
+-                try:
+-                    if e.is_dir(follow_symlinks=False): todo.append(e.path)
+-                    else: n += 1; b += e.stat(follow_symlinks=False).st_size
+-                except OSError: pass
+-    return n, b
++def tree_size(d):   # (files, bytes) under d; (0, 0) when it does not exist yet. romfs_image's listing: one call per folder on macOS, not a stat per file
++    return romfs_image.tree_size(d)
+ 
+ 
+ def in_ipython():   # Spyder (and Jupyter) run this file inside IPython: input works there, and sys.exit must not be called (it piles an error onto the console)

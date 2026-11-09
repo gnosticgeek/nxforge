@@ -3008,21 +3008,21 @@ index 187cb8de1847dc8ecdc89077cf53c713945334cc..bc4a1354aba1a194c4df60ca03bd4842
  
  ## Open
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 2e2c6a829b105b43b51c8805ca251de2061bf0b2..1a9654b5b830891ed57d26fdfe3894adaa570380 100644
+index e6329de8ee6ebb7d16924fa9f03acb7521a28515..d574f212cf49ade95c17d9f461081b6eee9a6022 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
-@@ -42,6 +42,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
- - Resolved: Kakariko Village at 30-70 ms a frame with 1,502 `background render pipeline creation failed … MDB_MAP_FULL` lines after a compacting prewarm of 40,000 rows put 8,693 bases into one archive period: [Metal's archiver store filled by one flush period](../../../docs/reference/rendering.md#metals-archiver-store-filled-by-one-flush-period).
+@@ -43,6 +43,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
  - The title movie's network took 14.8 ms of compute a frame here (median from frame 3,000), so the title held 60 fps with almost nothing to spare, and slower GPUs fell below it: [issue 1375](https://github.com/seedds/nxnative/issues/1375), 35 ms on an M1 Max. Since [HMMA chains keep their matrices in the SIMD-group](../../../docs/reference/shaders.md#hmma-chains-keep-their-matrices-in-the-simd-group), 11.4 ms, and the GPU span 11.9 ms instead of 15.6 (26.7 → 18.9 ms of compute on an M4 with 8 GPU cores). Not measured on an M1 Max since.
+ - [Extended products behind spirv-cross's optnone helper](../../../docs/reference/shaders.md#extended-products-behind-spirv-crosss-optnone-helper): measured with `scripts/bench.py` on an M4 Pro with a 20-core GPU (2026-11-09), three runs a variant, medians, each variant with its own warmed pipeline archive and no red lines. Main `c78d7375` (chain `89f44f9b6bb0`) against [PR #1741](https://github.com/seedds/nxnative/pull/1741)'s literal-only rewrite (`e82b21a8fa3b`) and the overloads (`a5eef48f7122`). On `kokiri-deck` (default settings), GPU time was 15.55 / 15.54 / 14.76 ms, frame rate 54.0 / 55.6 / 59.1 fps, and frames over 1.5 vsyncs 210 / 149 / 29 in the 45 s window. On `title-movie` (empty save, `DM_OPMODE=1 DM_UPSCALER=game DM_PRESENT_UPSCALE=off`), GPU time was 12.96 / 12.48 / 12.44 ms, and all three held 60 fps. The shots match. On the PR author's M1 Pro, the title movie went from 26.57 to 28.40 fps with the literal-only rewrite. Not measured on the iPhone.
  - In a run that takes shots, each shot costs its frame 60–100 ms, and `DM_NVN_GPUPROF` and pass dumps slow the frames they cover.
 +- Current: on the M3 Pro (18 GB) at 1120x630 with the byte-store change of [PR 1503](https://github.com/seedds/nxnative/pull/1503): Kokiri Forest 20.8 ms p50, 22.0 ms p95 with `present_interval game`; the frame interval p99 was 37-43 ms and 127 of every 300 frames stayed on screen for two refreshes (48 fps on the 60 Hz tick). With `DM_PRESENT_INTERVAL=display DM_PRESENT_LATENCY=1` on the same route: 17.5 ms p50, interval p99 19.7 ms, 1 dropped frame in 300, enqueue-to-display 46 ms against 58. The game's speed under display pacing has not been checked by eye, so the profile keeps `game`.
 +- Resolved: frames of 2.2-4.4 s on entering a new area, four in a 25-minute session: [compute pipelines built on the submit thread at their first dispatch](../../../docs/reference/frame-rate.md#compute-pipelines-built-on-the-submit-thread-at-their-first-dispatch).
  - Open: frames of 100–650 ms when an area first loads (640 first uploads, 321 MB, in one frame of 294 ms; another 640 ms of submit with 68 MB).
  - `DM_NVN_TBDR=1` was tried and does not help: p95 19 ms on the same walk, against 17.8.
  - The first long run on a new chain is slower (p50 60–114 ms), while `MTLCompilerService` compiles pipelines; the next run is not.
-@@ -115,7 +117,9 @@ From an empty save: at about 45 s `A` (title), `A` (New Game), then the movie. F
- - [A control section's words read as a BAHS entry](../../../docs/reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry): six map rows that were no shaders, one of them failing the build; `tera_common` gave its variation pairs once its row was gone.
+@@ -132,7 +134,9 @@ From an empty save: at about 45 s `A` (title), `A` (New Game), then the movie. F
  - [Freeing a memory pool during a texture ID walk](../../../docs/reference/nvn-objects.md#freeing-a-memory-pool-during-a-texture-id-walk): the `-[NvPkg buffer]: unrecognized selector` crash after a save or a scene change.
+ - [Extended products behind spirv-cross's optnone helper](../../../docs/reference/shaders.md#extended-products-behind-spirv-crosss-optnone-helper): 348,587 constant divisions left as unoptimized calls; the Kokiri Forest deck 54.0 → 59.1 fps on an M4 Pro.
  - [HMMA chains keep their matrices in the SIMD-group](../../../docs/reference/shaders.md#hmma-chains-keep-their-matrices-in-the-simd-group): the NDVE movie networks behind the title and the opening, 14.8 → 11.4 ms of compute a frame on this M6.
 +- [Compute pipelines built on the submit thread at their first dispatch](../../../docs/reference/frame-rate.md#compute-pipelines-built-on-the-submit-thread-at-their-first-dispatch): frames of 2-4 s on entering a new area; 155 s of the title on a cold Metal cache.
  - [Raw global memory lookups that start from their last entry](../../../docs/reference/shaders.md#raw-global-memory-lookups-that-start-from-their-last-entry): the foliage, vertex and compute shaders read structures word by word through loaded addresses; about 2 ms less GPU a frame at the spawn point.
@@ -3031,10 +3031,10 @@ index 2e2c6a829b105b43b51c8805ca251de2061bf0b2..1a9654b5b830891ed57d26fdfe3894ad
  - [The 30 Hz display link in fullscreen on a fixed-rate screen](../../../docs/reference/frame-rate.md#the-30-hz-display-link-in-fullscreen-on-a-fixed-rate-screen): 66.7 ms frames at a 30 fps cap in fullscreen on a MacBook Air M4, with the frame-delta change that applies the cap.
  - [Pool tables and readback buffers made anew each frame](../../../docs/reference/memory.md#pool-tables-and-readback-buffers-made-anew-each-frame): about 1,500 residency changes per 300 frames.
 diff --git a/dm/games/040074A01BF12000/README.md b/dm/games/040074A01BF12000/README.md
-index 234a2019565953567428de956bc3c81fecd49511..1cafc56892feef8f7fd9f23bc3a2dc9df932eeb2 100644
+index 9be693eb7de8d0f4e5196e6df71927b5b83b27ba..a2b88253419bb27313ca9058d89d5e6c43b7786d 100644
 --- a/dm/games/040074A01BF12000/README.md
 +++ b/dm/games/040074A01BF12000/README.md
-@@ -58,7 +58,7 @@ Each step below stopped the boot before its fix:
+@@ -66,7 +66,7 @@ Each step below stopped the boot before its fix:
  - **Video decoding:** the guide movies are VP9 and play (a 180-picture clip on loop in the tutorial's panel, read back as NV12). The player also imports the VP8, H.264 and AV1 decoders: VP8 and H.264 are served too (checked by `t_codec_video` only), AV1 is not ([`nn::codec` video decoders taken over](../../../docs/reference/movies.md#nncodec-video-decoders-taken-over)).
  - **The gameplay picture:** the mining tunnel matches a YouTube capture of the same spot ([Rendering](#rendering) 7); nothing past the tunnel's first minute has been compared.
  - Full shader build (about 75 minutes on the Mac from an empty cache): 22,852 of 22,852 shaders on chain 6f41726ef36d (SUATOM decoded; 22,850 on chain 3c66991eb439). Chain 9a0726336e9d had 22,834: the Metal compiler refused 11 (too deeply nested jump tables) and 5 used BRXU or REDUX ([Ampere shader code](../../../docs/reference/shaders.md#ampere-shader-code-switch-2)); 2 still do not translate (0x593).
@@ -3162,7 +3162,7 @@ index 3ab9c521e8ee8694e84cd71c9119728f89e97625..95777dce5635018046164f5a88855a40
  - The game's wake-up eventfd fails (the host refuses `nn::socket::EventFd`), so its HTTP thread polls without a wake-up; harmless offline.
  - A `pso_manifest.tsv` has not been recorded; `render_cond` not tried; the later levels and combat, and iOS, not tested.
 diff --git a/dm/games/README.md b/dm/games/README.md
-index d0032043821a202868076da7cfba63fd00e90119..8f9a3dfe6d97417bf45aa361122715555b92c0ef 100644
+index 768c38df37575b3edc94b790a35bf1df90d74670..f220af0c77918006fd8ad8996198026aa21d5bd0 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
 @@ -120,6 +120,7 @@ One row per profile; the notes are each profile's `README.md`.
@@ -3217,7 +3217,7 @@ index a26f2e07be9f10704f2cc94e1b4690918c48ec4c..2a5c078d2d121f296f7f98f7d3ede3fa
          if mag in PACKED: R['extc'][ext] += 1
      return F
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index c87e8239c36cb765ed88303c244c9ad29d129ca5..31e1a2c6f4ea46712b16eda7015e64a777326c9e 100644
+index 15f4824107e0ddf9f48a2fe633ef49b7a0a5558a..006840ba8537e35b219a4a7a112c079d273decfb 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -18,7 +18,7 @@ DM_FPS_TARGET	choice	30=30 fps,60=60 fps,120=120 fps?DM_GAME_FPS_MAX==120&platfo

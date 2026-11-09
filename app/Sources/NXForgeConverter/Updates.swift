@@ -100,7 +100,7 @@ enum Releases {
     /// What a failed `layer.py local` said, for people.
     static func clashMessage(_ text: String) -> String {
         let themes = Layer.clashes(text)
-        guard !themes.isEmpty else { return text }
+        guard !themes.isEmpty else { return text.split(separator: "\n").last.map { String($0).replacingOccurrences(of: "layer.py: ", with: "") } ?? text }
         let one = themes.count == 1
         return "Not switched: NXForge's \(themes.joined(separator: ", ")) patch\(one ? "" : "es") clash\(one ? "es" : "") with upstream, "
             + "so the engine stays on its release. NXForge has to update \(one ? "it" : "them") first; the daily sync does that."

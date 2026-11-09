@@ -2,7 +2,7 @@
 # What the NXForge Converter shows about a game it needs no keys for: a NUP container (a .nup file, or a folder holding one and no game package) or a dump folder (scripts/pack_dump.py's
 # layout), the two ways Switch 2 games come. Reads only the container's index and a few small files (main.npdm, the main module's NSO header, the NACP); nothing is unpacked.
 # Prints one JSON object: {"kind": "nup" | "dump", "source": the path to give build_ipa_from_nsp.py, "folder": where <title ID>_build and the app go, "title_id", "name", "base": bool,
-#   "updates": [versions], "dlc": count, "romfs_bytes": the newest version's RomFS, uncompressed, "file_bytes": the .nup's size or the dump's files, "zbic": whether the newest main module
+#   "updates": [versions], "dlc": count, "romfs_bytes": the newest version's RomFS, uncompressed, "file_bytes": the .nup's size or the dump's files (a dump's two are -1 with NXF_SOURCE_SIZES=0, the quick read), "zbic": whether the newest main module
 #   has ZBIC segments (system 22.0.0 on: needs the zbic package), "zbic_installed", "profile": the dm/games profile's name or null, "notes": [...]}
 # Exit 1 with {"error": "..."} when the path is neither (a folder of NSPs is the Converter's own check, with prod.keys).
 # Usage: source_info.py <game.nup | folder>
@@ -75,13 +75,89 @@ def from_nup(path):
                     romfs_bytes=romfs, file_bytes=path.stat().st_size, zbic=zb, notes=notes)
 
 
-def tree_bytes(d):
+def tree_bytes(d, inner=()):
+    """The size of the files under d, and of each folder in inner that sits under it, in one walk: {d: bytes, inner folder: bytes}. On macOS
+    one getattrlistbulk call per folder gives every entry's size with the folder's listing, so there is no stat per file: Mario Kart World's
+    dump (411,696 files) on an exFAT drive took over five minutes of os.lstat and takes 18 s. Elsewhere, os.scandir and a stat per file."""
+    want = {str(Path(i)): 0 for i in inner}
+    walk = _bulk_walk if sys.platform == 'darwin' and _bulk() else _scandir_walk
+    try: total = walk(str(d), want)
+    except OSError:
+        want = {k: 0 for k in want}; total = _scandir_walk(str(d), want)
+    return {str(d): total, **want}
+
+
+def _scandir_walk(d, want):
     total = 0
-    for root, _, files in os.walk(d):
-        for f in files:
-            try: total += os.lstat(os.path.join(root, f)).st_size
-            except OSError: pass
+    try: entries = list(os.scandir(d))
+    except OSError: return 0
+    for e in entries:
+        try:
+            if e.is_dir(follow_symlinks=False): total += _scandir_walk(e.path, want)
+            elif e.is_file(follow_symlinks=False): total += e.stat(follow_symlinks=False).st_size   # regular files only, as getattrlistbulk counts
+        except OSError: pass
+    if d in want: want[d] = total
     return total
+
+
+_libc = None
+
+
+def _bulk():
+    global _libc
+    if _libc is None:
+        try:
+            import ctypes
+            lib = ctypes.CDLL(None, use_errno=True)
+            f = lib.getattrlistbulk
+            f.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint64]
+            f.restype = ctypes.c_int
+            _libc = (ctypes, f)
+        except (OSError, AttributeError): _libc = False
+    return _libc
+
+
+# <sys/attr.h>: the entry's returned-attributes set, its name and type; a file's data length
+_ATTR_CMN_NAME, _ATTR_CMN_OBJTYPE, _ATTR_CMN_RETURNED_ATTRS, _ATTR_FILE_DATALENGTH = 0x1, 0x8, 0x80000000, 0x200
+_VREG, _VDIR = 1, 2
+
+
+def _bulk_walk(d, want):
+    lib = _bulk()
+    if not isinstance(lib, tuple): raise OSError('getattrlistbulk is not available')
+    ctypes, getattrlistbulk = lib
+    al = struct.pack('<HHIIIII', 5, 0, _ATTR_CMN_RETURNED_ATTRS | _ATTR_CMN_NAME | _ATTR_CMN_OBJTYPE, 0, 0, _ATTR_FILE_DATALENGTH, 0)
+    alist = ctypes.create_string_buffer(al, len(al))
+    buf = ctypes.create_string_buffer(256 * 1024)
+
+    def walk(fd, path):
+        total = 0
+        while True:
+            n = getattrlistbulk(fd, alist, buf, len(buf), 0)
+            if n < 0: raise OSError(ctypes.get_errno(), f'getattrlistbulk: {path}')
+            if n == 0: break
+            raw = buf.raw; p = 0
+            for _ in range(n):
+                length, = struct.unpack_from('<I', raw, p)
+                file_set, = struct.unpack_from('<I', raw, p + 16)   # attribute_set_t: common, vol, dir, file, fork
+                off, nlen = struct.unpack_from('<iI', raw, p + 24)
+                name = raw[p + 24 + off:p + 24 + off + nlen].rstrip(b'\0')
+                kind, = struct.unpack_from('<I', raw, p + 32)
+                if kind == _VREG and file_set & _ATTR_FILE_DATALENGTH: total += struct.unpack_from('<q', raw, p + 36)[0]
+                elif kind == _VDIR:
+                    sub = os.path.join(path, os.fsdecode(name))
+                    try: cfd = os.open(name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=fd)
+                    except OSError: pass
+                    else:
+                        try: total += walk(cfd, sub)
+                        finally: os.close(cfd)
+                p += length
+        if path in want: want[path] = total
+        return total
+
+    fd = os.open(d, os.O_RDONLY | os.O_DIRECTORY)
+    try: return walk(fd, d)
+    finally: os.close(fd)
 
 
 def from_dump(folder):
@@ -96,8 +172,14 @@ def from_dump(folder):
     zb = False
     if main.is_file():
         with open(main, 'rb') as f: zb = zbic_flag(f.read(0x10))
+    if os.environ.get('NXF_SOURCE_SIZES') == '0': romfs_bytes = file_bytes = -1   # the Converter's first, quick read: sizes come in a second one
+    else:   # one walk of the folder gives both when the RomFS is inside it, as it is in a dump
+        inside = romfs is not None and folder.resolve() in romfs.resolve().parents
+        sizes = tree_bytes(folder, [romfs] if inside else [])
+        file_bytes = sizes[str(folder)]
+        romfs_bytes = sizes[str(romfs)] if inside else tree_bytes(romfs)[str(romfs)] if romfs else 0
     return dict(kind='dump', source=str(folder), folder=str(folder), title_id=f'{app:016X}', name='', base=base is not None, updates=sorted(vers), dlc=len(dlc),
-                romfs_bytes=tree_bytes(romfs) if romfs else 0, file_bytes=tree_bytes(folder), zbic=zb, notes=[])
+                romfs_bytes=romfs_bytes, file_bytes=file_bytes, zbic=zb, notes=[])
 
 
 def info(path):

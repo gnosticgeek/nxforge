@@ -28,6 +28,9 @@ struct SourceInfo: Decodable, Hashable {
         case titleID = "title_id", romfsBytes = "romfs_bytes", fileBytes = "file_bytes", zbicInstalled = "zbic_installed"
     }
 
+    /// false after the quick read of a dump folder (NXF_SOURCE_SIZES=0): its sizes come from a second read, in the background
+    var sized: Bool { romfsBytes >= 0 && fileBytes >= 0 }
+
     /// "a NUP container" / "a dump folder"
     var form: String { kind == .nup ? "NUP container" : "dump folder" }
 
@@ -69,13 +72,14 @@ enum Source {
 
     static func needsKeys(_ p: String) -> Bool { kind(of: p) == .packages }
 
-    /// The game's description from scripts/source_info.py, run with the script's Python.
-    static func read(_ p: String, env: ToolEnv) -> Result<SourceInfo, ConverterError> {
+    /// The game's description from scripts/source_info.py, run with the script's Python. quick: a dump folder's sizes are left out (-1),
+    /// so its read takes a second instead of a walk of every file (Mario Kart World's dump: 411,696 files); an older script ignores it.
+    static func read(_ p: String, env: ToolEnv, quick: Bool = false) -> Result<SourceInfo, ConverterError> {
         guard let repo = env.repo, let py = env.python else { return .failure(ConverterError("no engine checkout or Python yet: see Toolchain")) }
         guard FileManager.default.fileExists(atPath: repo + "/" + helper) else {
             return .failure(ConverterError("this engine has no \(helper): update the engine to build a .nup or a dump folder"))
         }
-        guard let r = run(py, ["-u", repo + "/" + helper, p], env: ["PATH": env.path], cwd: repo) else { return .failure(ConverterError("cannot start \(py)")) }
+        guard let r = run(py, ["-u", repo + "/" + helper, p], env: ["PATH": env.path, "NXF_SOURCE_SIZES": quick ? "0" : "1"], cwd: repo) else { return .failure(ConverterError("cannot start \(py)")) }
         let data = Data(r.out.split(separator: "\n").last.map(String.init)?.utf8 ?? "".utf8)
         if let e = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String { return .failure(ConverterError(e)) }
         guard r.ok, let info = try? JSONDecoder().decode(SourceInfo.self, from: data) else {
@@ -85,13 +89,13 @@ enum Source {
     }
 
     /// The check the Convert page shows: prod.keys against the packages, or the NUP or dump read by the engine.
-    static func validate(_ p: String, keys: String?, env: ToolEnv?) -> (Validation, SourceInfo?) {
+    static func validate(_ p: String, keys: String?, env: ToolEnv?, quick: Bool = false) -> (Validation, SourceInfo?) {
         if needsKeys(p) {
             guard let keys else { return (Validation(ok: false, keysSummary: "", summary: [CheckLine(ok: false, text: "choose the keys file (prod.keys)")], files: []), nil) }
             return (GameFiles.validate(dir: p.url, keysURL: keys.url), nil)
         }
         guard let env else { return (Validation(ok: false, keysSummary: "", summary: [CheckLine(ok: false, text: "the toolchain check has not finished")], files: []), nil) }
-        switch read(p, env: env) {
+        switch read(p, env: env, quick: quick) {
         case .failure(let e):
             return (Validation(ok: false, keysSummary: "", summary: [CheckLine(ok: false, text: e.description)], files: []), nil)
         case .success(let i):
@@ -121,5 +125,25 @@ enum Source {
 
     /// Free space a first build needs: the newest version's RomFS is unpacked into one image and then cloned into the app, with the
     /// shader cache and the pipeline archive beside it (Ocarina of Time, a 26 GB .nup: about 76 GB at its peak, 35 GB of app).
-    static func firstBuildBytes(_ i: SourceInfo) -> Int64 { max(i.romfsBytes, i.fileBytes) * 2 + (Int64(20) << 30) }
+    static func firstBuildBytes(_ i: SourceInfo) -> Int64 { max(i.romfsBytes, i.fileBytes, 0) * 2 + (Int64(20) << 30) }
+
+    /// A dump folder's sizes from the full read, by path, so choosing the game again (or a toolchain check validating it again) does not
+    /// walk its files again while the folder's modification date is unchanged.
+    nonisolated(unsafe) private static var sizes: [String: (date: Date?, romfs: Int64, files: Int64)] = [:]
+    private static let sizesLock = NSLock()
+
+    static func modified(_ p: String) -> Date? { (try? FileManager.default.attributesOfItem(atPath: p))?[.modificationDate] as? Date }
+
+    static func cachedSizes(_ i: SourceInfo) -> SourceInfo? {
+        sizesLock.lock(); defer { sizesLock.unlock() }
+        guard let c = sizes[i.folder], c.date == modified(i.folder) else { return nil }
+        var s = i; s.romfsBytes = c.romfs; s.fileBytes = c.files
+        return s
+    }
+
+    static func remember(_ i: SourceInfo) {
+        guard i.sized else { return }
+        sizesLock.lock(); defer { sizesLock.unlock() }
+        sizes[i.folder] = (modified(i.folder), i.romfsBytes, i.fileBytes)
+    }
 }

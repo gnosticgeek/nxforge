@@ -146,6 +146,9 @@ import Testing
         let text = "not switched: 0004-gfx-metal.patch clashes in dm/gfx/nvn/nvn_mtl.m; 0006-packing.patch clashes in dm/tools/sdk_patches.py. The engine stays on the pin; NXForge has to update the patch first."
         #expect(Layer.clashes(text) == ["gfx-metal", "packing"])
         #expect(Releases.clashMessage(text).hasPrefix("Not switched: NXForge's gfx-metal, packing patches clash with upstream"))
+        let check = "  0004-gfx-metal.patch: conflicts (dm/gfx/nvn/nvn_mtl.m)\n  0008-games.patch: applies\n  0009-docs.patch: conflicts (docs/development.md)"
+        #expect(Layer.clashes(check) == ["gfx-metal", "docs"])
+        #expect(Layer.clashes(check + "\n" + text) == ["gfx-metal", "docs", "packing"])
         #expect(Layer.clashes("cannot start python3").isEmpty)
         #expect(Releases.clashMessage("cannot start python3") == "cannot start python3")
     }
@@ -398,6 +401,9 @@ import Testing
         let exp = Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 2_000_000_000, builds: [b])
         #expect(exp["Mac shaders"] == 1200)
         #expect(exp["rewrite"] == nil)   // a reused stage says nothing about how long the work takes
+        // a game far smaller (or larger) says nothing: 1 GB's 600 s is not 24 GB's 4 h
+        #expect(Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 24_000_000_000, builds: [b]).isEmpty)
+        #expect(Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 200_000_000, builds: [b]).isEmpty)
     }
 
     @Test func timeLeftWords() {

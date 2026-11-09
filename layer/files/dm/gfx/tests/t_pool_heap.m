@@ -1,6 +1,6 @@
 // A CPU_NO_ACCESS pool's render targets share one placement heap (nvn_mtl.m pool_heap_texture): textures over the same storage share memory, storage apart stays apart,
 // a texture made over memory another has used leaves it as it is, and what is not a render target, or not in such a pool, keeps an allocation of its own.
-// "./t_pool_heap off" runs with DM_NVN_POOL_HEAP=0: no texture is placed.
+// It runs with DM_NVN_POOL_HEAP=1 (off by default since NXForge 0.22.0); "./t_pool_heap off" runs with DM_NVN_POOL_HEAP=0: no texture is placed.
 #include "../nvn/nvn_mtl.m"
 void *front_metal_layer(void) { return NULL; }
 module_t *module_of(const void *p) { (void)p; return NULL; }
@@ -43,7 +43,7 @@ static int zeros(id<MTLTexture> t) {
 
 int main(int argc, char **argv) { @autoreleasepool {
     int off = argc > 1 && !strcmp(argv[1], "off");
-    if (off) setenv("DM_NVN_POOL_HEAP", "0", 1);
+    setenv("DM_NVN_POOL_HEAP", off ? "0" : "1", 1);   // the heap is off by default since NXForge 0.22.0
     mtl_init();
     uint8_t *mem = aligned_alloc(1 << 16, POOL); memset(mem, 0xa5, POOL);   // storage the GPU-only pool's textures must not take their content from
     uint8_t *cpu_mem = aligned_alloc(1 << 16, 4 << 20); memset(cpu_mem, 0, 4 << 20);
@@ -56,7 +56,7 @@ int main(int argc, char **argv) { @autoreleasepool {
     tex_t a = target(&pool, 995000, 0, 512, 512, NVN_TEXTURE_FLAGS_COMPRESSIBLE);
     id<MTLTexture> ma = tex_mtl(&a);
     if (off) {
-        CHECK(ma && !ma.heap, "DM_NVN_POOL_HEAP=0: a render target keeps an allocation of its own");
+        CHECK(ma && (!ma.heap || ma.heap.size < (NSUInteger)(POOL * POOL_HEAP_SCALE) / 2), "DM_NVN_POOL_HEAP=0: a render target is not placed in a heap the pool's size (nxnative's rh_texture may give it a heap of its own)");
     } else {
         CHECK(ma.heap != nil, "a render target of a CPU_NO_ACCESS pool is placed in the pool's heap");
         CHECK(ma.heap.size <= (NSUInteger)(POOL * POOL_HEAP_SCALE) + (2 << 20), "the heap is about the pool's size, scaled");
