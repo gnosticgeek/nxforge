@@ -29,11 +29,13 @@ enum Estimates {
     /// How long each stage (by stageKey) should take for the game in this folder, in seconds; empty when nothing is known.
     static func expected(gameDir: String, gameBytes: Int64, builds: [BuildRecord]) -> [String: Double] {
         var out: [String: Double] = [:]
-        // other games' builds, scaled by the game files' size: the median seconds per byte of each stage that did its work
+        // other games' builds, scaled by the game files' size: the median seconds per byte of each stage that did its work. Only
+        // games within 4× this one's size: a stage's time is far from proportional to size, so a 47 MB game's 93 s made a 24 GB
+        // game (Mario Kart World) look like an 8 h build.
         if gameBytes > 0 {
             var rates: [String: [Double]] = [:]
             for b in builds where b.gameDir != gameDir {
-                guard let bytes = b.gameBytes, bytes > 0, let stages = b.stages else { continue }
+                guard let bytes = b.gameBytes, bytes > 0, let stages = b.stages, bytes * 4 >= gameBytes, bytes <= gameBytes * 4 else { continue }
                 for s in stages where s.ok && !s.reused && s.seconds > 0 { rates[stageKey(s.name), default: []].append(Double(s.seconds) / Double(bytes)) }
             }
             for (k, r) in rates { out[k] = r.sorted()[r.count / 2] * Double(gameBytes) }

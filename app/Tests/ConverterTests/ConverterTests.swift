@@ -401,6 +401,9 @@ import Testing
         let exp = Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 2_000_000_000, builds: [b])
         #expect(exp["Mac shaders"] == 1200)
         #expect(exp["rewrite"] == nil)   // a reused stage says nothing about how long the work takes
+        // a game far smaller (or larger) says nothing: 1 GB's 600 s is not 24 GB's 4 h
+        #expect(Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 24_000_000_000, builds: [b]).isEmpty)
+        #expect(Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 200_000_000, builds: [b]).isEmpty)
     }
 
     @Test func timeLeftWords() {

@@ -10,6 +10,7 @@ Fixes for 0.5.0. Ships in NXForge 0.22.0.
 
 - **A Switch 2 dump folder is read in seconds.** "Reading the game's container…" walked every file of the dump twice, one `stat` at a time, to size it: Mario Kart World's dump (411,696 files) on an exFAT drive took over five minutes. The game now shows as soon as its code and title are read, the Convert page says "measuring the game files…" while its size comes in the background, and that measure is one walk that gets each folder's sizes with its listing (`getattrlistbulk`): 18 s for the same dump. Choosing the game again reuses the measure while the folder is unchanged.
 - **Check for updates survives a deleted branch.** An engine checkout whose remote fetches only named branches failed every check ("Check failed") once one of those branches was deleted on GitHub, since git refuses the whole fetch. The check now fetches again with every branch, and a failure shows git's own message.
+- **No more 8-hour estimates for a big game.** A build's time left was scaled from other games' builds by size, however far apart: Bloodstained's 93 s for 47 MB made Mario Kart World's 24 GB look like 8 h 42 min. Only games within four times the size count now.
 - **Get Upstream Now names every clashing patch.** When upstream's commits clash with NXForge's patches, the page listed only the last one the check reported (for example "0009-docs.patch: conflicts") although others clashed too. It now reads the whole report and lists each patch once.
 
 ## 0.5.0 (2026-11-09)
