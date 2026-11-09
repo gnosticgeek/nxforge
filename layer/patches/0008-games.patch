@@ -3008,7 +3008,7 @@ index 187cb8de1847dc8ecdc89077cf53c713945334cc..bc4a1354aba1a194c4df60ca03bd4842
  
  ## Open
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 3e301890e360eeb47cb24f0ebbb9d84136e9f2f7..a0e461e9ee2aa3e33b2198df9d27b3a6910e6150 100644
+index e6329de8ee6ebb7d16924fa9f03acb7521a28515..d574f212cf49ade95c17d9f461081b6eee9a6022 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -43,6 +43,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
@@ -3020,7 +3020,7 @@ index 3e301890e360eeb47cb24f0ebbb9d84136e9f2f7..a0e461e9ee2aa3e33b2198df9d27b3a6
  - Open: frames of 100–650 ms when an area first loads (640 first uploads, 321 MB, in one frame of 294 ms; another 640 ms of submit with 68 MB).
  - `DM_NVN_TBDR=1` was tried and does not help: p95 19 ms on the same walk, against 17.8.
  - The first long run on a new chain is slower (p50 60–114 ms), while `MTLCompilerService` compiles pipelines; the next run is not.
-@@ -131,7 +133,9 @@ From an empty save: at about 45 s `A` (title), `A` (New Game), then the movie. F
+@@ -132,7 +134,9 @@ From an empty save: at about 45 s `A` (title), `A` (New Game), then the movie. F
  - [Freeing a memory pool during a texture ID walk](../../../docs/reference/nvn-objects.md#freeing-a-memory-pool-during-a-texture-id-walk): the `-[NvPkg buffer]: unrecognized selector` crash after a save or a scene change.
  - [Extended products behind spirv-cross's optnone helper](../../../docs/reference/shaders.md#extended-products-behind-spirv-crosss-optnone-helper): 348,587 constant divisions left as unoptimized calls; the Kokiri Forest deck 54.0 → 59.1 fps on an M4 Pro.
  - [HMMA chains keep their matrices in the SIMD-group](../../../docs/reference/shaders.md#hmma-chains-keep-their-matrices-in-the-simd-group): the NDVE movie networks behind the title and the opening, 14.8 → 11.4 ms of compute a frame on this M6.

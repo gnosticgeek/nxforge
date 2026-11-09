@@ -836,7 +836,7 @@ index 9d20f630422f6b1672710ac8cb465cd73d4407a8..0fa66b6632de2d843ed5f4de9a83686d
          dst, kf = out / f'{arch}.mtl4a', work / f'key.{arch}'
          if dst.is_file() and kf.is_file() and kf.read_text().strip() == key: print(f'pso_offline: {arch}: reused ({dst.stat().st_size / 2**20:.0f} MB)'); continue
 diff --git a/dm/gfx/tools/shader_split.py b/dm/gfx/tools/shader_split.py
-index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1d1c0b067 100644
+index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d054ab92f 100644
 --- a/dm/gfx/tools/shader_split.py
 +++ b/dm/gfx/tools/shader_split.py
 @@ -1,6 +1,6 @@
@@ -847,7 +847,7 @@ index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1
  #   · BNSH ('BNSH\0\0\0\0', carried by bfsha / particle effect esetb / UI layout blarc / embedded in main):
  #       +0x60 grsc block; +0x7c variation count u32; +0x80 variation table pointer (pointers are relative to the BNSH start). A variation is 0x40 bytes; the binary program is at +0x10;
  #       the binary program has 6 stage pointers from +0x08: vertex, hull, domain, geometry, pixel, compute; the stage code descriptor has +0x08 control pointer, +0x10 code area pointer, +0x18 code area length, +0x1c control length.
-@@ -1214,6 +1214,41 @@ def gfpak_members(d, label):
+@@ -1221,6 +1221,41 @@ def gfpak_members(d, label):
          if len(data) != usz: red(f'{label}#{i}: {len(data):#x} bytes, the entry says {usz:#x}')
          yield f'#{i}', data
  
@@ -889,7 +889,7 @@ index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1
  NLG_DICT = bytes.fromhex('5824f3a9')
  def nlg_dict(d, label):
      """Next Level Games' archive index (Luigi's Mansion 3: '<name>.dict' beside '<name>.data', every RomFS file but the Wwise banks): u32 magic 0xa9f32458, u8 4, u8 1, u8 compressed,
-@@ -2550,12 +2585,14 @@ def unzs_dict(d, did, where):
+@@ -2557,12 +2592,14 @@ def unzs_dict(d, did, where):
      return zstd.decompress(d, zstd_dict=_ZD[did])
  
  def unzs(path):
@@ -909,7 +909,7 @@ index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1
  
  def frame_size(f):
      """The uncompressed size a zstd or LZ4 frame header records, None when it records none"""
-@@ -2713,6 +2750,20 @@ def unity_text_glslc(x, base):
+@@ -2720,6 +2757,20 @@ def unity_text_glslc(x, base):
          if b'\x91\x68\x86\x19' in b: out += glslc_shaders(b, f'{base}#{name}', need=False)
      return out
  
@@ -930,7 +930,7 @@ index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1
  NEST = 16   # archives in archives scan_blob opens (SARC, PlatinumGames' DAT): real files nest a few. A damaged or crafted one could nest one per header's length, or have every
              # member point at the same inner archive, its work doubling with each level. Two budgets of NEST times the file bound the work: left[0], the members a file's archives open,
              # each counted by what it takes up in its archive, and left[1], what its Yaz0 members expand to. Counting a Yaz0 member by what it expands to in the first budget paid twice
-@@ -2743,8 +2794,7 @@ def scan_blob(d, label, out, depth=0, left=None):
+@@ -2750,8 +2801,7 @@ def scan_blob(d, label, out, depth=0, left=None):
          for nm, m in sarc_members(d, label): scan_blob(m, f'{label}/{nm}', out, depth + 1, left)
          return
      if d[:4] == b'NARC':   # Camelot's containers (cra.py): each member packed by its first byte, so its size says nothing about the budget above
@@ -940,7 +940,7 @@ index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1
          return
      if d[:4] == b'BAHS': out.extend(bahs_shaders(d, label)); return
      if d[:4] == b'NDSR': out.extend(ndsr_shaders(d, label)); return
-@@ -2789,11 +2839,11 @@ def pixel_input_cover(shaders):
+@@ -2796,11 +2846,11 @@ def pixel_input_cover(shaders):
          k = min(ins, key=lambda k: (-len(ins[k] & left), k)); cover.append(k); left -= ins[k]
      return cover
  
@@ -955,7 +955,7 @@ index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1
  def separable_pairs(keys):
      """Single-stage programs (13 Sentinels: each GLSLC output becomes a program with one stage, and BindProgram's stage bits combine vertex and pixel programs per draw; Unreal combines its shaders per draw
      from the pipeline state) have their real pairs only at draw time. vs_pad uses only the union of the locations the paired pixel shaders read, so every single-stage vertex shader is paired with
-@@ -3022,6 +3072,10 @@ def scan_file_in(args):
+@@ -3029,6 +3079,10 @@ def scan_file_in(args):
      if head[:8] == GFPAK:   # a Game Freak archive (gfpak_members): each entry scanned as a file of its own (the shaders are BNSH entries)
          for nm, m in gfpak_members(open(path, 'rb').read(), '/' + rel): scan_blob(m, f'/{rel}{nm}', found)
          return rel, uniq_keys(found), var_pairs(found), trees
@@ -966,7 +966,7 @@ index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1
      if head[:4] == b'SRYK':
          import vbf
          with open(path, 'rb') as f:
-@@ -3096,6 +3150,16 @@ def pooled(ex, jobs, total, start=0, chunk=1):
+@@ -3103,6 +3157,16 @@ def pooled(ex, jobs, total, start=0, chunk=1):
      return [r for f in futures for r in f.result()]
  
  
@@ -983,7 +983,7 @@ index bb81d5a96a75d2c00d5f8fd562f29c4a8f9a5375..c3e0f3b8740f8499868c985847cf23c1
  def main():
      romfs_l, main_l, pkg, mapout, factsout = sys.argv[1:6]
      pairsout = sys.argv[6] if len(sys.argv) > 6 else None
-@@ -3236,6 +3300,9 @@ def main():
+@@ -3243,6 +3307,9 @@ def main():
              f.write('# kind: evidence  supplemental vertex / pixel shader pairs (BAHS program variations and legacy Unity pass-input covers) for vertex output padding and the pipeline prebuild (generated by dm/gfx/tools/shader_split.py, do not edit): vertex key <TAB> pixel key\n')
              for a, b in sorted(prog - pairs): f.write(f'{a}\t{b}\n')
      print(f'shaders: {len(rows)} (' + ', '.join(f'{STAGE_NAME[s]} {n}' for s, n in sorted(stat.items())) + '); sources ' + ', '.join(f'{g} {n}' for g, n in per_src.most_common()) + f'; compute shader answers {len(facts)} rows' + (f'; variation pairs {len(pairs)}' if pairsout else ''))
