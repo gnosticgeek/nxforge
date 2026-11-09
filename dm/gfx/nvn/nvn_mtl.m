@@ -325,6 +325,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {
     [g_res removeAllocation:(id<MTLAllocation>)r];
     [g_res_objects removeObject:r];
     g_res_dirty = 1; g_rs_rm++;
+    // what the set holds after its next commit (guard_used) leaves this out, as res_add_at counts what it adds: a load that retires and replaces buffers in one burst counted
+    // only the additions, and PRAGMATA's guard stopped the game at 5,555 MB with the committed set never past 4,220 MB (8 GB Mac)
+    { uint64_t was = atomic_load_explicit(&g_guard_set, memory_order_relaxed), sz = r.allocatedSize;
+      while (!atomic_compare_exchange_weak_explicit(&g_guard_set, &was, was > sz ? was - sz : 0, memory_order_relaxed, memory_order_relaxed)) {} }
     pthread_mutex_unlock(&g_res_mu);
 } }
 // Recycled texture memory (GitHub issues #1831, #1823). An engine that keeps its render targets in a GPU-only pool and moves or resizes them with its dynamic resolution names new
@@ -474,7 +478,14 @@ enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TI
 static struct { uint64_t evict, stop, wall; } g_guard;   // bytes, all 0 with the guard off: the eviction level, the stop level, the size no commit grows past
 static _Atomic int g_guard_lv;   // the highest level met since the submit thread last looked (guard_act)
 static int guard_level(uint64_t used) { return !g_guard.stop ? GUARD_OK : used >= g_guard.wall ? GUARD_WALL : used >= g_guard.stop ? GUARD_STOP : used >= g_guard.evict ? GUARD_EVICT : GUARD_OK; }
-static uint64_t guard_used(void) { return MAX(atomic_load_explicit(&g_guard_set, memory_order_relaxed), (uint64_t)g_dev.currentAllocatedSize); }
+// What the guard measures: the residency set after its next commit (g_guard_set: its size at the last commit and what res_add added since), not the device's currentAllocatedSize.
+// The device counts every no-copy buffer whole, and with large pools in lookup chunks, pool-table segments and sparse-run buffers several of them lie over the same guest pages:
+// PRAGMATA's boot load read 8,134 MB there with the set near 3 GB on an 8 GB Mac, and the wall refused the commits its textures needed. DM_NVN_GUARD_DEVICE=1: the larger of the two
+static int g_guard_dev;   // DM_NVN_GUARD_DEVICE (guard_init)
+static uint64_t guard_used(void) {
+    uint64_t set = atomic_load_explicit(&g_guard_set, memory_order_relaxed);
+    return g_guard_dev ? MAX(set, (uint64_t)g_dev.currentAllocatedSize) : set;
+}
 static void guard_raise(int lv) { int cur = atomic_load(&g_guard_lv); while (lv > cur && !atomic_compare_exchange_weak(&g_guard_lv, &cur, lv)) {} }
 static void guard_act(uint64_t fence);
 static void res_commit(void) {
@@ -483,7 +494,7 @@ static void res_commit(void) {
         uint64_t used = guard_used(); int lv = guard_level(used);
         if (lv) guard_raise(lv);
         if (lv == GUARD_WALL && g_res_grew) {   // removals alone always go through: they are what brings the set down
-            static uint64_t refused; if (!refused++) MLOG("[RED] GPU memory guard: %llu MB at Metal's working set of %llu MB: this residency commit and any after it that add to the set are not made", (unsigned long long)(used >> 20), (unsigned long long)(g_guard.wall >> 20));
+            static uint64_t refused; if (!refused++) MLOG("[RED] GPU memory guard: %llu MB at Metal's working set of %llu MB (residency set after this commit %llu MB, device allocated %llu MB): this residency commit and any after it that add to the set are not made", (unsigned long long)(used >> 20), (unsigned long long)(g_guard.wall >> 20), (unsigned long long)(atomic_load(&g_guard_set) >> 20), (unsigned long long)(g_dev.currentAllocatedSize >> 20));
             pthread_mutex_unlock(&g_res_mu); return;
         }
         uint64_t t0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); [g_res commit]; g_res_dirty = g_res_grew = 0; g_rs_commits++; uint64_t d_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t0; g_rs_commit_ns += d_; atomic_fetch_add(&g_rs_commit_total_ns, d_);
@@ -715,6 +726,7 @@ static void guard_tick(void) {
     if (lv == GUARD_WALL || over >= GUARD_TICKS) guard_stop(used);
 }
 static void guard_init(void) {
+    { const char *d = getenv("DM_NVN_GUARD_DEVICE"); g_guard_dev = d && atoi(d); }
     const char *e = getenv("DM_NVN_RES_LIMIT_MB"); uint64_t ws = g_dev.recommendedMaxWorkingSetSize, lim = e ? strtoull(e, NULL, 0) << 20 : 0;
     if (!g_res) return;
     if (ws && !(e && !lim)) { g_guard.wall = MAX(ws, lim); g_guard.stop = lim ? lim : ws / 100 * 95; g_guard.evict = g_guard.stop / 95 * 80;
