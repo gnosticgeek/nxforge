@@ -258,7 +258,7 @@ struct MacAppCard: View {
             Divider()
             if !model.run.planning, case .failure(let e)? = model.run.result { BuildFailure(model: model, error: e.description) }
             if let (app, b) = latestApp {
-                let current = b.map { $0.engine.commit == model.engine?.commit && model.engine?.dirty == false } ?? false
+                let current = b.map { $0.engine.commit == model.engine?.commit && $0.engine.local == model.engine?.local && model.engine?.dirty == false } ?? false
                 HStack(alignment: .top, spacing: 10) {
                     StatusDot(color: current ? .green : .orange).padding(.top, 5)
                     VStack(alignment: .leading, spacing: 2) {

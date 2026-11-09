@@ -15,6 +15,10 @@ the layer files as one last commit ("NXForge layer files"). Builds, the converte
   layer.py continue [--skip]    after fixing a stopped patch (files `git -C tree add`ed): finish it and apply the patches after it
   layer.py export               write tree/'s commits back to the layer: patch commits to layer/patches (an edited or new commit
                                 after the pin), changed layer files to layer/files
+  layer.py local [REF]          try nxnative's newest main (or REF) on this Mac before NXForge releases it: when every patch
+                                still applies, tree/ is assembled on it (layer/ stays as it is; the choice is kept in .git);
+                                when one does not, nothing changes and the clashing patches are named
+  layer.py local --off          back to the pinned engine. A new pin (an NXForge release) ends it by itself
   layer.py try [REF]            dry run of update: which patches apply to REF (default: nxnative's main), which nxnative already
                                 has, which conflict and in what files. Changes nothing (a temporary worktree)
   layer.py path                 print tree/'s path
@@ -77,6 +81,34 @@ def write_engine(url: str, commit: str, path: Path = ENGINE) -> None:
                     f'url {url}\ncommit {commit}\n', encoding='utf-8')
 
 
+def local_file() -> Path:
+    """Where `layer.py local` keeps its nxnative commit: in the checkout's git folder, so it is never committed."""
+    return ROOT / git('rev-parse', '--git-path', 'nxforge-local-engine').stdout.strip()
+
+
+def local_commit() -> str | None:
+    """The local engine commit, while the pin is still the one it was taken on (an engine update to a new release ends it:
+    the release brings upstream itself) and does not include it; else the file is dropped. The file: "<commit> <pin>"."""
+    f = local_file()
+    if not f.is_file():
+        return None
+    parts = f.read_text().split()
+    c, on = (parts + ['', ''])[:2]
+    _, pin = read_engine()
+    if not re.fullmatch(r'[0-9a-f]{40}', c) or on != pin or c == pin or (
+            git('cat-file', '-e', f'{c}^{{commit}}', check=False).returncode == 0
+            and git('merge-base', '--is-ancestor', c, pin, check=False).returncode == 0):
+        f.unlink(missing_ok=True)
+        return None
+    return c
+
+
+def engine() -> tuple[str, str]:
+    """(url, commit) tree/ is built on: the local commit when one is set, else the pin."""
+    url, pin = read_engine()
+    return url, local_commit() or pin
+
+
 def patch_files() -> list[Path]:
     return sorted(PATCHES.glob('*.patch'))
 
@@ -88,6 +120,9 @@ def layer_files() -> list[str]:
 
 def stamp() -> str:
     h = hashlib.sha256(ENGINE.read_bytes())
+    local = local_commit()
+    if local:
+        h.update(b'L' + local.encode())
     for p in patch_files():
         h.update(b'P' + p.name.encode() + b'\0' + p.read_bytes())
     for rel in layer_files():
@@ -158,7 +193,7 @@ def unexported() -> list[str]:
 
 def assemble(force: bool = False, log=print) -> bool:
     """Make tree/ match the layer. True when it changed. Raises LayerError when a patch does not apply (tree/ is left in git am)."""
-    url, commit = read_engine()
+    url, commit = engine()
     if TREE.exists() and (TREE / '.git').exists():
         if in_am():
             raise LayerError('tree/ is in the middle of applying patches (git am): finish with `layer.py continue` (or '
@@ -232,7 +267,7 @@ def continue_(skip: bool = False, log=print) -> None:
     elif not rest.exists():
         raise LayerError('nothing to continue: tree/ is not stopped on a patch')
     names = rest.read_text().split() if rest.exists() else []
-    _, commit = read_engine()
+    _, commit = engine()
     _apply([PATCHES / n for n in names], commit, log)
     log('tree/: all patches applied; now `layer.py export`')
 
@@ -243,6 +278,9 @@ def slug(subject: str) -> str:
 
 
 def export(log=print) -> None:
+    if local_commit():
+        raise LayerError('tree/ is on a local nxnative commit (`layer.py local`): `layer.py local --off` first, or move the pin '
+                         'with `layer.py update`')
     if in_am():
         raise LayerError('tree/ is still applying patches: finish with `layer.py continue` first')
     if rest_file().exists():
@@ -285,6 +323,7 @@ def update(ref: str | None, log=print) -> None:
     url, old = read_engine()
     if TREE.exists() and (TREE / '.git').exists() and (dirty() or unexported() or in_am() or rest_file().exists()):
         raise LayerError('tree/ has work that is not exported: run `layer.py export` first')
+    local_file().unlink(missing_ok=True)   # the pin moves anyway
     git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}')
     target = ref or MAIN_REF
     if git('rev-parse', '--verify', '--quiet', f'{target}^{{commit}}', check=False).returncode:
@@ -302,16 +341,50 @@ def update(ref: str | None, log=print) -> None:
     export(log=log)
 
 
-def try_update(ref: str | None, log=print) -> list[tuple[str, str, list[str]]]:
-    """[(patch, 'applies' | 'in nxnative' | 'conflicts', files)] for the patches on REF, in a throwaway worktree."""
-    import tempfile
-    url, old = read_engine()
+def resolve(url: str, ref: str | None) -> str:
+    """The nxnative commit REF names (default: nxnative's main, fetched)."""
     git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=False)
     target = ref or MAIN_REF
     if git('rev-parse', '--verify', '--quiet', f'{target}^{{commit}}', check=False).returncode:
         git('fetch', '--quiet', url, target)
         target = 'FETCH_HEAD'
-    new = git('rev-parse', f'{target}^{{commit}}').stdout.strip()
+    return git('rev-parse', f'{target}^{{commit}}').stdout.strip()
+
+
+def local(ref: str | None, off: bool = False, log=print) -> None:
+    """Assemble tree/ on nxnative's newest main (or REF) without changing layer/, or (off) go back to the pin."""
+    if TREE.exists() and (TREE / '.git').exists() and (dirty() or unexported() or in_am() or rest_file().exists()):
+        raise LayerError('tree/ has work that is not exported: run `layer.py export` (or `assemble --force`) first')
+    url, pin = read_engine()
+    if off:
+        had = local_commit()
+        local_file().unlink(missing_ok=True)
+        assemble(force=True, log=log)
+        log(f'engine: back to the pinned nxnative {pin[:10]}' if had else f'engine: already on the pinned nxnative {pin[:10]}')
+        return
+    new = resolve(url, ref)
+    ensure_commit(url, pin)
+    if new == pin or git('merge-base', '--is-ancestor', new, pin, check=False).returncode == 0:
+        local_file().unlink(missing_ok=True)
+        assemble(log=log)
+        log(f'engine: the pin {pin[:10]} already has nxnative {new[:10]}; nothing to take')
+        return
+    results = try_update(new, log=log)
+    bad = [(n, f) for n, state, f in results if state == 'conflicts']
+    if bad:
+        raise LayerError('not switched: ' + '; '.join(f'{n} clashes' + (f' in {", ".join(f)}' if f else '') for n, f in bad)
+                         + '. The engine stays on the pin; NXForge has to update the patch first.')
+    local_file().write_text(f'{new} {pin}\n')
+    assemble(force=True, log=log)
+    n = git('rev-list', '--count', f'{pin}..{new}', check=False).stdout.strip() or '?'
+    log(f'engine: nxnative {new[:10]} (local, {n} commit(s) past the pin {pin[:10]}); `layer.py local --off` goes back')
+
+
+def try_update(ref: str | None, log=print) -> list[tuple[str, str, list[str]]]:
+    """[(patch, 'applies' | 'in nxnative' | 'conflicts', files)] for the patches on REF, in a throwaway worktree."""
+    import tempfile
+    url, old = read_engine()
+    new = resolve(url, ref)
     ensure_commit(url, old)
     n = git('rev-list', '--count', f'{old}..{new}', check=False).stdout.strip() or '?'
     log(f'nxnative {old[:10]} -> {new[:10]} ({n} commit(s))')
@@ -346,6 +419,10 @@ def status(log=print) -> None:
     git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=False)
     ahead = git('rev-list', '--count', f'{commit}..{MAIN_REF}', check=False).stdout.strip()
     log(f'engine: {url} {commit[:10]}' + (f' (nxnative main is {ahead} commit(s) ahead)' if ahead else ''))
+    lc = local_commit()
+    if lc:
+        n = git('rev-list', '--count', f'{commit}..{lc}', check=False).stdout.strip() or '?'
+        log(f'local: tree/ is on nxnative {lc[:10]} ({n} commit(s) past the pin; `layer.py local --off` goes back)')
     log(f'layer: {len(patch_files())} patch(es), {len(layer_files())} file(s)')
     if not (TREE / '.git').exists():
         log('tree/: not assembled (run `layer.py assemble`)')
@@ -365,6 +442,7 @@ def main(argv: list[str] | None = None) -> int:
     a_up = sub.add_parser('update'); a_up.add_argument('ref', nargs='?')
     a_try = sub.add_parser('try'); a_try.add_argument('ref', nargs='?')
     a_co = sub.add_parser('continue'); a_co.add_argument('--skip', action='store_true')
+    a_lo = sub.add_parser('local'); a_lo.add_argument('ref', nargs='?'); a_lo.add_argument('--off', action='store_true')
     a = ap.parse_args(argv)
     try:
         if a.cmd == 'path':
@@ -379,6 +457,8 @@ def main(argv: list[str] | None = None) -> int:
             update(a.ref)
         elif a.cmd == 'continue':
             continue_(a.skip)
+        elif a.cmd == 'local':
+            local(a.ref, a.off)
         elif a.cmd == 'try':
             return 1 if any(state == 'conflicts' for _, state, _ in try_update(a.ref)) else 0
     except LayerError as e:

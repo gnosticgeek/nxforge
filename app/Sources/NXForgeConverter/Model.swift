@@ -118,6 +118,8 @@ final class AppModel {
     var lastUpdateCheck: Date?
     /// upstream nxnative's commits NXForge has not merged yet
     var upstream: UpstreamStatus?
+    /// Get Upstream Now / Back to the release (Updates.swift): running, and how the last one went
+    var localUpstream: (running: Bool, ok: Bool, text: String)?
     /// the sidebar version in the engine checkout, and in each built app ("" before the sidebar had one), by app path
     var sidebarCurrent: String?
     var sidebarBuilds: [String: String] = [:]
@@ -472,6 +474,7 @@ final class AppModel {
     /// checkout cannot compare with counts as older.
     func isCurrent(_ b: BuildRecord) -> Bool {
         guard let e = engine else { return false }
+        if b.engine.local != e.local { return false }   // on upstream nxnative (Get Upstream Now) or back: the whole engine moved
         if b.engine.commit == e.commit && !e.dirty { return true }
         guard let repo = env?.repo, let files = Engine.changedFiles(since: b.engine.commit, repo: repo, head: e) else { return false }
         let title = VerifiedGames.titleID(ofApp: b.app)
@@ -479,7 +482,7 @@ final class AppModel {
     }
 
     /// Built on the engine in use now, commit for commit (isCurrent also takes an older engine with nothing changed for the build).
-    func isSameEngine(_ b: BuildRecord) -> Bool { b.engine.commit == engine?.commit && engine?.dirty == false }
+    func isSameEngine(_ b: BuildRecord) -> Bool { b.engine.commit == engine?.commit && b.engine.local == engine?.local && engine?.dirty == false }
 
     /// The recorded apps built on another engine than today's, except the ones kept as they are.
     var outdatedBuilds: [BuildRecord] {
