@@ -18,12 +18,12 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/tests/t_dispatch_own.m   |    2 +-
  dm/gfx/tests/t_dlss_mfx.m       |    2 +-
  dm/gfx/tests/t_present_crop.m   |  118 ++++
- dm/gfx/tests/t_present_rescue.m |   25 +-
+ dm/gfx/tests/t_present_rescue.m |   30 +-
  dm/gfx/tests/t_sbw.m            |   12 +-
  dm/gfx/tests/t_tg_spill.m       |    2 +-
  dm/gfx/tests/t_upscaler_mfx.m   |    2 +-
  dm/gfx/tests/t_view_swizzle.m   |    2 +-
- 18 files changed, 1398 insertions(+), 203 deletions(-)
+ 18 files changed, 1401 insertions(+), 205 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index c1508018090d0ca302653206545137b01c0a2c71..5bd25023780d90f64abb43785a4d116ec89e6f07 100644
@@ -408,7 +408,7 @@ index c72746fa71652218dcf1e5db91d719e23850e373..260c6dcb2df37760078882aa2dedabb8
  void mtl_set_depth_zero(int on);          // NVN depth mode: 1 = near is 0 (D3D / Metal), 0 = near is -w (GL, NVN's default); picks the vertex shaders' entry point (see shader_load in nvn_mtl.m)
  void mtl_set_origin_lower_left(int on);   // NVN window origin: 1 = lower left (GL, NVN's default), 0 = upper left (D3D / Metal); see nvn_mtl.m
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 3e04b41bdbb9d4ee25eab45e745f39d76fd7f111..32207d3bfd0cd3ee44a1eaa54901a8636547a1ee 100644
+index 3e04b41bdbb9d4ee25eab45e745f39d76fd7f111..46253e74e2cacd56c17b76a7cd78c77d0b075829 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3,6 +3,13 @@
@@ -1785,7 +1785,7 @@ index 3e04b41bdbb9d4ee25eab45e745f39d76fd7f111..32207d3bfd0cd3ee44a1eaa54901a863
 +            int tid = (int)((image ? S.img[1][b->reg] : tex_slot_h(S.tex[1], S.img[1], b->reg)) & 0xfffff); if (!tid || tid >= g_ntreg || !g_treg[tid].ok) continue;
 +            uint64_t ser = g_treg[tid].t.serial; for (int q = 0; q < nr; q++) hit |= rs[q] == ser; }
 +        os_unfair_lock_unlock(&g_rmu);
-+        if (!hit) { g_fb_wmask |= wm; return; }
++        if (!hit) { g_fb_wmask |= wm; g_fb_dwrote |= (uint32_t)dsw; return; }
 +    }
      uint64_t tile[4]; int ntile = fb_tile_plan(pr, wm, tile);
      for (int i = 0; i < fs->rf.nb && g_fb_n < 4; i++) {
@@ -2919,7 +2919,7 @@ index ee10e11145bee243158929e764fdb6316ba687a7..e470211589e08e4dd429520e663ac5f6
          smallD.storageMode=MTLStorageModePrivate;smallD.usage=MTLTextureUsageRenderTarget;
          id<MTLTexture> small=[g_dev newTextureWithDescriptor:smallD];int whole[4]={0},invalidCrop[4]={63,0,2,2};
 diff --git a/dm/gfx/tests/t_present_rescue.m b/dm/gfx/tests/t_present_rescue.m
-index 249f579f905319ffd475c170973515bf8b3190c4..a835c1da4257a2ea018ea343f6332d928a4e8bce 100644
+index 249f579f905319ffd475c170973515bf8b3190c4..4ebbd4b3e57b228001fdef18a93832e756a4bc59 100644
 --- a/dm/gfx/tests/t_present_rescue.m
 +++ b/dm/gfx/tests/t_present_rescue.m
 @@ -101,22 +101,18 @@ static void lifecycle(void) {
@@ -2963,7 +2963,7 @@ index 249f579f905319ffd475c170973515bf8b3190c4..a835c1da4257a2ea018ea343f6332d92
      SilentDisplayLink *link = [SilentDisplayLink new]; g_link = link; g_link_started = 1;
      link_sync(); CHECK("a window at 30 fps takes the 30 Hz link", g_link_mode == 3 && link.preferredFrameRateRange.preferred == 30 && mtl_link_rate() == 30);
      test_fullscreen = 1; link_sync(); CHECK("fullscreen on a fixed-rate screen at 30 fps keeps the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
-@@ -143,7 +140,7 @@ static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except i
+@@ -143,10 +140,11 @@ static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except i
      test_variable_refresh = 0; link_sync(); CHECK("back on a fixed-rate screen: the 60 Hz link again", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60);
      test_fullscreen = 0; link_sync(); CHECK("leaving fullscreen: the 30 Hz link again", g_link_mode == 3 && link.preferredFrameRateRange.preferred == 30);
      test_game_fps = 60; link_sync(); CHECK("60 fps in a window: the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60);
@@ -2971,7 +2971,21 @@ index 249f579f905319ffd475c170973515bf8b3190c4..a835c1da4257a2ea018ea343f6332d92
 +    g_present_latency = 0; g_link = nil; g_link_started = 0;
  }
  static void vrr120(void) {   // 60 fps in fullscreen on a variable-refresh screen at a multiple of 120 Hz takes the 120 Hz link (a frame every other tick); everything else keeps the 60 Hz one.
-     reset(); test_fullscreen = 0; test_variable_refresh = 1; test_screen_hz = 120; test_game_fps = 60; g_present_latency = 0; g_present_link_env = 0;
+-    reset(); test_fullscreen = 0; test_variable_refresh = 1; test_screen_hz = 120; test_game_fps = 60; g_present_latency = 0; g_present_link_env = 0;
++    // NXForge leaves the link in fullscreen unless DM_PRESENT_LATENCY is set (latency() checks that), so these run with it set at upstream's latency 2: upstream's 120 Hz link (#1967) applies where the link runs
++    reset(); test_fullscreen = 0; test_variable_refresh = 1; test_screen_hz = 120; test_game_fps = 60; g_present_latency = 2; g_present_link_env = 0;
+     SilentDisplayLink *link = [SilentDisplayLink new]; g_link = link; g_link_started = 1;
+     link_sync(); CHECK("a window on a 120 Hz variable-refresh screen keeps the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
+     test_fullscreen = 1; link_sync();
+@@ -164,7 +162,7 @@ static void vrr120(void) {   // 60 fps in fullscreen on a variable-refresh scree
+     test_game_fps = 60; link_sync(); CHECK("back at 60 fps: the 120 Hz link", g_link_mode == 2);
+     test_fullscreen = 0; link_sync(); CHECK("leaving fullscreen: the 60 Hz link again", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
+     g_dm_present_link = 2; link_sync(); CHECK("DM_PRESENT_LINK=2 keeps the 120 Hz link in a window", g_link_mode == 2 && test_match_fps == 120);
+-    g_dm_present_link = 1; test_screen_hz = 0; test_variable_refresh = 0; link_sync(); g_link = nil; g_link_started = 0;
++    g_dm_present_link = 1; test_screen_hz = 0; test_variable_refresh = 0; link_sync(); g_present_latency = 0; g_link = nil; g_link_started = 0;
+ }
+ static void metal_lifecycle(void) {
+     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
 diff --git a/dm/gfx/tests/t_sbw.m b/dm/gfx/tests/t_sbw.m
 index 2b60296305ef5924e3a835d0cc581254fa3344e3..249ab48146cb3fb7bed5757c1623abac972bbbd7 100644
 --- a/dm/gfx/tests/t_sbw.m
