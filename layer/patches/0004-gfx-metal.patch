@@ -20,9 +20,10 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/tests/t_present_crop.m   |  118 ++++
  dm/gfx/tests/t_present_rescue.m |   25 +-
  dm/gfx/tests/t_sbw.m            |   12 +-
+ dm/gfx/tests/t_tg_spill.m       |    2 +-
  dm/gfx/tests/t_upscaler_mfx.m   |    2 +-
  dm/gfx/tests/t_view_swizzle.m   |    2 +-
- 17 files changed, 1397 insertions(+), 202 deletions(-)
+ 18 files changed, 1398 insertions(+), 203 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index c1508018090d0ca302653206545137b01c0a2c71..5bd25023780d90f64abb43785a4d116ec89e6f07 100644
@@ -2994,6 +2995,19 @@ index 2b60296305ef5924e3a835d0cc581254fa3344e3..249ab48146cb3fb7bed5757c1623abac
      pend_reset();uint64_t wide=0x7100000000ull,big=0x2000000;
      sbw_note(wide,big,SBW_GPU);gw_commit(done+1001);
      CHECK("a running 32 MB write is seen inside",gw_live(wide+0x1000000,wide+0x1000010));
+diff --git a/dm/gfx/tests/t_tg_spill.m b/dm/gfx/tests/t_tg_spill.m
+index 3465fd103484edd67b6e8334ea31ac4f885b27f4..88aa91bea89a6934fb12a0e7e8d00283a87676e6 100644
+--- a/dm/gfx/tests/t_tg_spill.m
++++ b/dm/gfx/tests/t_tg_spill.m
+@@ -51,7 +51,7 @@ int main(void) { @autoreleasepool {
+                 mtl_sub_fill((uint64_t)args, 4, GROUPS); mtl_sub_fill((uint64_t)args + 4, 8, 1);
+                 dp = (p_dispatch){.x = 99, .y = 99, .z = 99, .ind = (uint64_t)args};
+             }
+-            dispatch(&dp);
++            dispatch(&dp, NULL);
+             uint64_t fence = mtl_sub_commit(); CHECK(mtl_wait(fence, 5000000000ull), "dispatch completes"); mtl_drain();
+             CHECK(!mtl_last_commit_error(), "no GPU error");
+             const uint32_t *out = (const uint32_t *)mem; long bad = 0, missing = 0;
 diff --git a/dm/gfx/tests/t_upscaler_mfx.m b/dm/gfx/tests/t_upscaler_mfx.m
 index f7875d36a3e4055a4712ca0bc4b8bdeab6e9b5de..576bf2ea897de38bc1d6ce9902f713a1b593da8e 100644
 --- a/dm/gfx/tests/t_upscaler_mfx.m
