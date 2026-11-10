@@ -19,10 +19,10 @@ set holds after its next commit. DM_NVN_GUARD_DEVICE=1 keeps the old measure.
  3 files changed, 16 insertions(+), 3 deletions(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 0a1106699f08e23efb179295d9f4ebf9553df751..8a9c5d8bb140fed562fc6e3751bc98e8cc45a8b1 100644
+index 32207d3bfd0cd3ee44a1eaa54901a8636547a1ee..870c007acf25f21fb515c0c9cd08f789543f5aaf 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -321,6 +321,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {
+@@ -324,6 +324,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {
      [g_res removeAllocation:(id<MTLAllocation>)r];
      [g_res_objects removeObject:r];
      g_res_dirty = 1; g_rs_rm++;
@@ -33,7 +33,7 @@ index 0a1106699f08e23efb179295d9f4ebf9553df751..8a9c5d8bb140fed562fc6e3751bc98e8
      pthread_mutex_unlock(&g_res_mu);
  } }
  @interface NvImageHeap : NSObject { @public id<MTLHeap> heap; int pool_heap; } @end   // pool_heap: a GPU-only pool's whole heap (NvPoolHeap), never a resolution family's
-@@ -448,7 +452,14 @@ enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TI
+@@ -451,7 +455,14 @@ enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TI
  static struct { uint64_t evict, stop, wall; } g_guard;   // bytes, all 0 with the guard off: the eviction level, the stop level, the size no commit grows past
  static _Atomic int g_guard_lv;   // the highest level met since the submit thread last looked (guard_act)
  static int guard_level(uint64_t used) { return !g_guard.stop ? GUARD_OK : used >= g_guard.wall ? GUARD_WALL : used >= g_guard.stop ? GUARD_STOP : used >= g_guard.evict ? GUARD_EVICT : GUARD_OK; }
@@ -49,7 +49,7 @@ index 0a1106699f08e23efb179295d9f4ebf9553df751..8a9c5d8bb140fed562fc6e3751bc98e8
  static void guard_raise(int lv) { int cur = atomic_load(&g_guard_lv); while (lv > cur && !atomic_compare_exchange_weak(&g_guard_lv, &cur, lv)) {} }
  static void guard_act(uint64_t fence);
  static void res_commit(void) {
-@@ -457,7 +468,7 @@ static void res_commit(void) {
+@@ -460,7 +471,7 @@ static void res_commit(void) {
          uint64_t used = guard_used(); int lv = guard_level(used);
          if (lv) guard_raise(lv);
          if (lv == GUARD_WALL && g_res_grew) {   // removals alone always go through: they are what brings the set down
@@ -58,7 +58,7 @@ index 0a1106699f08e23efb179295d9f4ebf9553df751..8a9c5d8bb140fed562fc6e3751bc98e8
              pthread_mutex_unlock(&g_res_mu); return;
          }
          uint64_t t0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); [g_res commit]; g_res_dirty = g_res_grew = 0; g_rs_commits++; uint64_t d_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t0; g_rs_commit_ns += d_; atomic_fetch_add(&g_rs_commit_total_ns, d_);
-@@ -672,6 +683,7 @@ static void guard_tick(void) {
+@@ -692,6 +703,7 @@ static void guard_tick(void) {
      if (lv == GUARD_WALL || over >= GUARD_TICKS) guard_stop(used);
  }
  static void guard_init(void) {
@@ -67,11 +67,11 @@ index 0a1106699f08e23efb179295d9f4ebf9553df751..8a9c5d8bb140fed562fc6e3751bc98e8
      if (!g_res) return;
      if (ws && !(e && !lim)) { g_guard.wall = MAX(ws, lim); g_guard.stop = lim ? lim : ws / 100 * 95; g_guard.evict = g_guard.stop / 95 * 80;
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index b1f78000a4e1c8b99cbf32fd7ad82a6c3b7b977c..11d632cf0f006ceddf79e67f0731e95629b9e8e0 100644
+index a55af5cecf86e541b0eb586fe42012304ceb8da4..89f3fc1dc1c19bf05cd04e8ab4284465b7485cf0 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -168,6 +168,7 @@ DM_NVN_GEO_MESH_RUN	switch	`0` dispatches every mesh geometry draw on its own; b
- DM_NVN_GPUPROF	diagnostic	`=<f>`, `<f1>-<f2>` or `every:<n>`: logs the GPU start and duration of every encoder of those frames (`[gpuprof]` lines from Metal 4 counter heap timestamps)
+@@ -175,6 +175,7 @@ DM_NVN_GPUPROF	diagnostic	`=<f>`, `<f1>-<f2>` or `every:<n>`: logs the GPU start
+ DM_NVN_GPU_STORAGE	switch	`0` stops what the GPU writes into a GPU texture in storage the CPU can read from being written into that storage on the GPU (on by default; `tex_storage_gpu`, `gsb_store`), to measure it
  DM_NVN_GPU_TS	switch	`segment` or `submission`: what timestamp reports record (GPU start / end of the segment holding each report, or one time for the whole submission), instead of the profile's `gpu_timestamps`
  DM_NVN_GPU_WATCHDOG	switch	`=<seconds>` (default 4): a submission the GPU has not finished in that time is reported with the shaders it ran and the process stops before the Mac's GPU hangs; `0` off
 +DM_NVN_GUARD_DEVICE	diagnostic	`1`: the GPU memory guard measures the larger of the residency set and the device's `currentAllocatedSize` (#1391's first form); default: the residency set after its next commit only, as the device counts overlapping no-copy buffers over the same pages once each
@@ -79,10 +79,10 @@ index b1f78000a4e1c8b99cbf32fd7ad82a6c3b7b977c..11d632cf0f006ceddf79e67f0731e956
  DM_NVN_INDLOG	diagnostic	`=<n>`: the first n indirect draws (and those of pass-dumped frames) log their arguments at encode and as the GPU left them once the submission completed, with the first indices
  DM_NVN_IXCLOG	diagnostic	`=<n>` logs the first n indirect draw and dispatch conversions (record to arguments) once the GPU has run them
 diff --git a/docs/reference/memory.md b/docs/reference/memory.md
-index 547de17fe66d973729db021a96b5c389124b2d72..7004d5d7ba7dcb35d9628a9f431f61f8dec41a80 100644
+index fe243a4a5721d907dce3bc77c47f60360f428684..52ca294009741b019731264b7188dbbe1a95dda8 100644
 --- a/docs/reference/memory.md
 +++ b/docs/reference/memory.md
-@@ -470,7 +470,7 @@ The guest address space, heaps, pools, virtual address memory and the allocators
+@@ -486,7 +486,7 @@ The guest address space, heaps, pools, virtual address memory and the allocators
  
  - **Symptom:** a game ends stuck after `[RED] GPU out of memory`, or the Mac itself freezes until the power button; on an 8 GB Mac, WindowServer's watchdog restarts the desktop. Now: `[RED] GPU memory guard: ... stopping the game before the driver cannot wire more`, the report of what the residency set holds, and an alert before the app quits.
  - **Cause:** GPU memory is wired, and the driver refuses to wire past `recommendedMaxWorkingSetSize`: IOGPUScheduler's `freeToWireMemory` fails there (aCidcOde, GitHub issue #1326). The submit thread then waits in the kernel, where the process cannot be killed: 7 minutes in that report. Nothing in the host looked at the working set.

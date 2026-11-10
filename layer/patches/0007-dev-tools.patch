@@ -239,7 +239,7 @@ index e63bbbbfc910a747b11fd3b090be67f1a2343341..dc069829654dc6341e8be1e963b0702c
      for d in dirs:
          if d.is_symlink() or not d.is_dir(): continue
 diff --git a/scripts/regress.py b/scripts/regress.py
-index 8c9db30bc1eb1c46ea5171f238f43aaf0acd2a57..33801d1e8b5df027d589056cdd264fc3f43d7e18 100644
+index 468c86def46da3fb3f32488c712e1d1d939eb84b..ddc5cec8b5d79f259eb8c3af0912b253689c06e0 100644
 --- a/scripts/regress.py
 +++ b/scripts/regress.py
 @@ -251,7 +251,8 @@ class Game:

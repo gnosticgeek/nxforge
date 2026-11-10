@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.25.0 (2026-11-10)
+
+- **Up to nxnative `c4ffb9d`** (47 commits past 0.22's engine `d9cd9de`). Among them: the Mac host builds at -O2 (Donkey Kong Bananza's heaviest close-ups 55.6 to 58.6 fps); fullscreen on a ProMotion screen holds 60 fps; Red Dead Redemption plays on the Mac, at 60 fps; TUNIC at 60 fps; Hades II renders up to 3840x2160 and registers its update 1.0.141667; Ocarina of Time's terrain tiles, castle town wall and cliff no longer vanish or show the wrong surface, its prewarm list has more task and mesh pipelines, and its title movie's network runs as the host's own Metal kernels; Star Fox's sRGB picture and its 7-10 s frames at scene changes fixed; Drag x Drive no longer crashes as a Joy-Con 2 joins; building no longer needs .NET (the shader translator is a native executable). Shader chain `758c28e99807`: every game's shaders are translated again on its next build.
+- **Upstream now drains retired pool buffers between submissions itself** (nxnative #1392), so NXForge's own version of that fix (the guard timer's drain) is gone.
+- The packing, Metal, shader-tool, player, games and docs patches were carried over by hand; upstream PR #1615 (the GPU memory guard measures the residency set) is still carried as a patch until nxnative merges it.
+
 ## 0.24.1 (2026-11-09)
 
 - **`nxforge build --rebuild <app>` with a relative path puts the new app where the old one was.** The path was handed to the build as it was typed, and the build runs in the engine's `tree/`, so `--rebuild "SUPER MARIO ODYSSEY.app"` from the game folder backed the old app up and then wrote the new one into `tree/`. `--rebuild`, `--out` and `--keys` are now taken from the folder the command runs in.
