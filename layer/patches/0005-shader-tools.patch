@@ -7,38 +7,35 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
 ---
  dm/gfx/nvn/dmsh_chain.h                       |   2 +-
  dm/gfx/tests/test_dmsh_ampere_mem.py          |   2 +-
- dm/gfx/tests/test_dmsh_gather_offsets.py      |   4 +-
  dm/gfx/tests/test_dmsh_raw_last.py            |   4 +-
  dm/gfx/tools/c1_guard.py                      |  22 ++--
  dm/gfx/tools/cb_extent.py                     |  10 +-
  dm/gfx/tools/dmsh_build.py                    |  78 ++++++++++---
- dm/gfx/tools/dmsh_fetch.py                    |   1 -
  dm/gfx/tools/dmsh_mtlcache.py                 |  75 +++++++++++--
  dm/gfx/tools/dmsh_pch.py                      |  52 ++++++++-
  dm/gfx/tools/own_compilers.py                 |  41 ++++++-
  dm/gfx/tools/pso_offline.py                   | 106 ++++++++++++++++--
  dm/gfx/tools/shader_split.py                  |  89 +++++++++++++--
  dm/gfx/tools/vk_shaders.py                    |  12 +-
- dm/tools/fuzz/fuzz_shader_split.py            |  14 ++-
+ dm/tools/fuzz/fuzz_shader_split.py            |  12 +-
  dm/tools/shader_cache.py                      |  18 +++
- dm/tools/tests/test_dmsh_abi.py               |   2 +-
  dm/tools/tests/test_own_compilers.py          |  33 ++++++
  dm/tools/tests/test_pso_offline.py            |  54 ++++++++-
  dm/tools/tests/test_shader_pch.py             |  16 ++-
  dm/tools/tests/test_shader_toolchain_cache.py |  64 ++++++++++-
- 21 files changed, 601 insertions(+), 98 deletions(-)
+ 18 files changed, 596 insertions(+), 94 deletions(-)
 
 diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
-index 97ad3742c7e3b1d794fc2e5211c6ce61b2386107..329a3584a10ad27b5c134cdb5bf8c74987c8c6b9 100644
+index ae4f248573770e55058f7e7f9bda84379fa12eec..ad4862c43f87a225144423463508490b62b36166 100644
 --- a/dm/gfx/nvn/dmsh_chain.h
 +++ b/dm/gfx/nvn/dmsh_chain.h
 @@ -1,3 +1,3 @@
  // Generated file (dm/gfx/tools/dmsh_chain.py --header): the B shader library translation chain version this source tree expects (default options), one for every game;
  // the host loads only <library dir>/b-<V>/. Run dmsh_chain.py --header after changing the chain's tools and commit this file with the change
--#define DMSH_CHAIN "dedc9391c30b"
-+#define DMSH_CHAIN "9109b4de8f3e"
+-#define DMSH_CHAIN "cb2e91c138e3"
++#define DMSH_CHAIN "758c28e99807"
 diff --git a/dm/gfx/tests/test_dmsh_ampere_mem.py b/dm/gfx/tests/test_dmsh_ampere_mem.py
-index 7651bb650fd6c31b7a80995bb1752f8ed83a21f9..5869f9e86e4d01020b512dc5fdca4adda2f4c7df 100644
+index dfc9be6f740568c7bbcd90219a1f357c14314030..bea2d35320968437e44bdbc7b8351b0d7a4a2db5 100644
 --- a/dm/gfx/tests/test_dmsh_ampere_mem.py
 +++ b/dm/gfx/tests/test_dmsh_ampere_mem.py
 @@ -284,7 +284,7 @@ class StageMemory(Translated):
@@ -50,23 +47,6 @@ index 7651bb650fd6c31b7a80995bb1752f8ed83a21f9..5869f9e86e4d01020b512dc5fdca4add
  
      def test_a_byte_goes_through_its_word_atomically(self):   # neighbouring threads write neighbouring bytes; the shader build makes the helper's loop one byte store (test_dmsh_shared_store.py)
          self.assertIn('atomic_compare_exchange', self.msl(self.INDEX))
-diff --git a/dm/gfx/tests/test_dmsh_gather_offsets.py b/dm/gfx/tests/test_dmsh_gather_offsets.py
-index d7fc708fb5f4bc971bffce73c1ad7d8b16135ee7..fffadd9fe8ef94db7ce75b524f3aba61023441d4 100644
---- a/dm/gfx/tests/test_dmsh_gather_offsets.py
-+++ b/dm/gfx/tests/test_dmsh_gather_offsets.py
-@@ -11,10 +11,10 @@ import unittest
- TOOLS = Path(__file__).resolve().parents[1] / 'tools'
- tree = ast.parse((TOOLS / 'dmsh_build.py').read_text())
- selected = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name == 'gather_offsets')
--            or (isinstance(n, ast.Assign) and any(getattr(t, 'id', None) in ('GATHER4', 'MAC_METAL') for t in n.targets))]
-+            or (isinstance(n, ast.Assign) and any(getattr(t, 'id', None) in ('GATHER4', 'MAC_METAL', '_XCRUN_METAL') for t in n.targets))]
- scope = {'re': re}
- exec(compile(ast.Module(body=selected, type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), scope)
--gather_offsets, MAC_METAL = scope['gather_offsets'], scope['MAC_METAL']
-+gather_offsets, MAC_METAL = scope['gather_offsets'], scope['_XCRUN_METAL'] if '_XCRUN_METAL' in scope else scope['MAC_METAL']   # PR #1520: xcrun's launch, the one a test can name
- 
- HEAD = '''#include <metal_stdlib>
- using namespace metal;
 diff --git a/dm/gfx/tests/test_dmsh_raw_last.py b/dm/gfx/tests/test_dmsh_raw_last.py
 index 9fa2fd6331f35902866c1f10b1bf598e652ee03a..57b18f42168a12b3ab5b2646439fc617faa05b0e 100644
 --- a/dm/gfx/tests/test_dmsh_raw_last.py
@@ -84,7 +64,7 @@ index 9fa2fd6331f35902866c1f10b1bf598e652ee03a..57b18f42168a12b3ab5b2646439fc617
  LDG = (0x000ea200081e890f, 0x0000000405067981)   # LDG.E R6, [R5.64 + UR4]: R5 the thread index, an address the translator traces to no storage buffer
  HELPER = re.compile(r'(?m)^int (_\d+)\(thread const int& _\d+, thread const int& _\d+, const device (_\d+)& \w+, thread uint& (_\d+)\)\n\{\n')
 diff --git a/dm/gfx/tools/c1_guard.py b/dm/gfx/tools/c1_guard.py
-index c088626b4ed57bc10413c3b80f2b70a3a2c4abb1..f4711f27b6b8e63ecaaefd0b8456b7edc9ae5d91 100755
+index 6d5cafb1082a419fa85fdf3d80190ccc352d3290..352df53d56b1fa184ed70029bdea11e1a4ec0fa8 100755
 --- a/dm/gfx/tools/c1_guard.py
 +++ b/dm/gfx/tools/c1_guard.py
 @@ -7,7 +7,6 @@
@@ -131,10 +111,10 @@ index c088626b4ed57bc10413c3b80f2b70a3a2c4abb1..f4711f27b6b8e63ecaaefd0b8456b7ed
  
  
 diff --git a/dm/gfx/tools/cb_extent.py b/dm/gfx/tools/cb_extent.py
-index 878932666fed6a57b8a003b2915c2b09a93bae62..280c0a0efdc61aeb3063a1b55b7bfa4d276dccc6 100644
+index 916196cbeb3ac6a5289778ce1daa1c1531423c7a..ec632822761f93800b105a99ef225310714fc0ee 100644
 --- a/dm/gfx/tools/cb_extent.py
 +++ b/dm/gfx/tools/cb_extent.py
-@@ -6,7 +6,6 @@
+@@ -7,7 +7,6 @@
  # The host (nvn_mtl.m cb_ext) reads only that much of a binding when it has to copy one: a uniform block the game updates in part inside a render pass (ubp_get). Breath of the Wild binds
  # a 64 KiB block to the vertex stage and updates its first 64 bytes 221 times a frame, while its vertex shaders read at most 544 bytes of it.
  # The host loads the table only when its header names its library's chain version and inputs stamp (like c1_full.tsv); dmsh_build.py makes it after each full build
@@ -142,7 +122,7 @@ index 878932666fed6a57b8a003b2915c2b09a93bae62..280c0a0efdc61aeb3063a1b55b7bfa4d
  import json
  import multiprocessing
  import os
-@@ -14,7 +13,7 @@ import re
+@@ -15,7 +14,7 @@ import re
  import sys
  
  sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -151,22 +131,22 @@ index 878932666fed6a57b8a003b2915c2b09a93bae62..280c0a0efdc61aeb3063a1b55b7bfa4d
  import dmsh_abi as abi   # noqa: E402
  sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
  import romfs   # noqa: E402
-@@ -91,12 +90,7 @@ def main():
+@@ -104,12 +103,7 @@ def main():
      paths = [os.path.join(version_dir, n) for n in outputs(version_dir, "json") if n.endswith("_b.json")]
      with multiprocessing.Pool() as pool: rows = [r for r in pool.map(row, paths, chunksize=64) if r]
-     slots, ro = sum(r.count(":") for r in rows), sum(len(re.findall(r"\bs\d+", r.split("\t", 1)[1])) for r in rows)
+     slots, ro = sum(len(re.findall(r"(?<![fs\w])\d+:", r.split("\t", 1)[1])) for r in rows), sum(len(re.findall(r"\bs\d+", r.split("\t", 1)[1])) for r in rows)
 -    os.makedirs(os.path.dirname(output), exist_ok=True)
 -    with open(output, "w", encoding="utf-8", newline="") as stream:
 -        stamp = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 -        stream.write(f"{shader_lib.table_head(lib)} {stamp}\n")   # the library's chain version and the profile inputs it was built from
--        stream.write("# shader key, then reg:bytes for each uniform slot whose reads stay inside its first bytes, and s<reg> for each storage slot it never writes (cb_extent.py)\n")
+-        stream.write("# shader key, then reg:bytes for each uniform slot whose reads stay inside its first bytes, f<reg>:<bytes> for each other slot up to its highest fixed-offset read, and s<reg> for each storage slot it never writes (cb_extent.py)\n")
 -        for line in rows: stream.write(line + "\n")
-+    write_table(lib, output, ["# shader key, then reg:bytes for each uniform slot whose reads stay inside its first bytes, and s<reg> for each storage slot it never writes (cb_extent.py)", *rows])
++    write_table(lib, output, ["# shader key, then reg:bytes for each uniform slot whose reads stay inside its first bytes, f<reg>:<bytes> for each other slot up to its highest fixed-offset read, and s<reg> for each storage slot it never writes (cb_extent.py)", *rows])
      print(f"bounded uniform reads: {slots} slots; storage slots never written: {ro}; {len(rows)} shaders")
  
  
 diff --git a/dm/gfx/tools/dmsh_build.py b/dm/gfx/tools/dmsh_build.py
-index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac4003ec861de 100644
+index 483a874fa816234b9ead94a3179b0fca1dd667fb..5ddb3e67ed83876f51424d7a2029052a8c929fc7 100644
 --- a/dm/gfx/tools/dmsh_build.py
 +++ b/dm/gfx/tools/dmsh_build.py
 @@ -7,7 +7,7 @@
@@ -178,10 +158,10 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
  # Build output: <key>_b.metallib, <key>_b.json (replay reflection, including drv_reads, the runtime read offsets into driver segments c0 / c2), <key>_b.metal (MSL)
  # Environment IOSOUT=dir: the same MSL also goes through dm/ios/tools/ios_metal.compile to produce an iphoneos metallib + reflection (chain_metal records the iOS compile convention)
  # Final summary: success / failure counts and the distribution of reasons; distribution of driver segment read offsets (those outside the range the replay layer can fill are listed separately);
-@@ -346,6 +346,34 @@ template<typename V, typename T, typename... A> static inline __attribute__((alw
-     return r;
- }}
- '''
+@@ -51,6 +51,34 @@ DUAL_WANT_FILE = str(GAME.table('dual_want.tsv'))   # pixel shaders a pipeline b
+ DUAL_WANT = {line.split()[0] for line in open(DUAL_WANT_FILE) if line.strip() and not line.lstrip().startswith('#')} if os.path.exists(DUAL_WANT_FILE) else set()
+ XC = ['--msl', '--msl-version', '20300', '--msl-argument-buffers', '--msl-texture-buffer-native', '--msl-pad-fragment-output']
+ 
 +# Two game profile switches for Apple's M1 (game.tsv; shader_* keys are part of every shader's cache key). On the M1 Pro's compiler, a per-sample uniform branch (border_emu's dm_bs)
 +# and the translator's NaN select on sample coordinates each keep a shader's samples from overlapping. Mario Kart World's cube prefilter (4744589bb8f9f7dd, 192 cube samples a pixel) took
 +# 2.2 ms a chain as built and 0.67 ms with neither; with only one of them gone it was no faster (the branch kept: 2.1 ms) or slower (the select kept: 3.4 ms).
@@ -210,10 +190,10 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
 +    def cube(v, ty): return f'float4({v}.xyz, fmax({v}.w, -FLT_MAX))' if ty == 'float4' else v   # a cube array's coordinates end with the layer
 +    tmp = {m.start(2) for m in re.finditer(r'(_\d+) = (select\((_\d+), float[234]\(0\.0\), isnan\(\3\)\))', msl) if m.group(1) in temps}
 +    return NAN_COORD.sub(lambda m: cube(m.group(1), m.group(2)) if m.start() in inline or m.start() in tmp else f'fmax({m.group(1)}, {m.group(2)}(-FLT_MAX))', msl)
- def border_emu(msl):
-     """The samples of the argument buffer's textures through its sampler members, T.sample(S, args) → dm_bs(T.sample(S, args), block, bit, T, S_w, args) (see BORDER_HELPERS);
-     the source unchanged when it samples through none. Only samples of float textures: an integer texture is not filtered, and its border colour is Maxwell's integer one, which
-@@ -457,7 +485,11 @@ METAL_DEPTH = ['-fbracket-depth=1024']
+ STORE = shader_cache.Store(os.environ.get('DMSH_CAS', os.path.join(cache_root, 'cas.db')))
+ atexit.register(STORE.close)   # folds its log into the one file
+ CAS_LOCKS, CAS_LOCKS_GUARD = {}, threading.Lock()
+@@ -80,7 +108,11 @@ METAL_DEPTH = ['-fbracket-depth=1024']
  METAL_FP = dmsh_mtlcache.compiler_id('macosx') + ('\0iphoneos\0' + dmsh_mtlcache.compiler_id('iphoneos') if IOSOUT else '')
  def mac_compile(msl, air, lib):   # same interface as ios_metal.compile; the precompiled header and METAL_DEPTH change no output, so MAC_RECORD does not name them (dmsh_pch.py)
      dmsh_pch.compile(MAC_RUN + METAL_DEPTH, msl, air)
@@ -223,10 +203,10 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
 +def ios_compile(msl, air, lib):   # ios_metal.compile's commands, without a fork
 +    spawn([*ios_metal.METAL, msl, '-o', air], check=True)
 +    spawn([*ios_metal.METALLIB, air, '-o', lib], check=True)
- # The NVN driver's constant segments have one layout in every game, which dm/gfx/nvn/dmsh_abi.h holds for the host and this build (through dmsh_abi.py); nvn_mtl.m fills them the same way at run time.
- #   c2 C2_TEX + 8 r: handles bound with nvnCommandBufferBindTexture (combined texture and sampler), slot r. The driver has 32 such slots, but a game may bind higher ones, whose words lie in the
- #     image table (Hades II binds slot 34, and no image), so a texture instruction's handle anywhere below the separate texture table names a combined slot. In the image
-@@ -496,7 +528,7 @@ def shader_rule_source(name):
+ 
+ def record_index(path):   # → (an open descriptor, {a record's key: its bytes' (start, end)}): shader_split.py writes each record's key at +0x08, its bytes from its marker to the next one
+     # Scanned through a read-only mapping that is closed again, so no package stays in this process. Pokopia's ps_rdb.bin (4.25 GB) read and cut into its 105,118
+@@ -108,7 +140,7 @@ def shader_rule_source(name):
      return b''.join(inspect.getsource(f).encode() for f, applies in RULES if applies(name))
  
  def tool_fingerprint():
@@ -235,7 +215,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
      return ('lock\0' + open(dmsh_chain.LOCK).read() + '\0options\0' + dmsh_chain.options() +
              '\0xlate\0' + dmsh_chain.xlate_source_sha() + '\0spirv-cross\0' + sc.stdout + sc.stderr +
              '\0xc\0' + repr(XC) + '\0mac\0' + MAC_RECORD + '\0ios\0' + (ios_metal.RECORD if IOSOUT else '') + '\0metal\0' + METAL_FP)
-@@ -1348,7 +1380,7 @@ def gs_slice(spv):
+@@ -577,7 +609,7 @@ def gs_slice(spv):
      grading LUT the tone mapper reads, and without it the screen came out a flat blue). Metal has no geometry stage, so the host drops such a shader and draws with the vertex shader's
      layer entry points instead (vs_layer_entry), which write that component as the layer. Read from the SPIR-V as GLSL (SPIRV-Cross writes no MSL for a geometry stage).
      → {'loc': input location, 'comp': component} or None (any other geometry shader: one-pass cube shadows emit six transformed triangles)"""
@@ -244,7 +224,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
      g = r.stdout
      if r.returncode or 'layout(triangles) in;' not in g or 'layout(max_vertices = 3, triangle_strip) out;' not in g or g.count('EmitVertex();') != 3 or 'EndPrimitive' in g: return None
      ins = {m.group(2): int(m.group(1)) for m in re.finditer(r'layout\(location = (\d+)\) in vec4 (\w+)\[3\];', g)}
-@@ -1571,14 +1603,14 @@ def geometry_finish(key, w, j, c1):
+@@ -671,14 +703,14 @@ def geometry_finish(key, w, j, c1):
      dmsh_geometry.output_layout(code, 0)   # validate before running the translator
      jobs = [{**j, 'key': key + '_g' + str(t), 'geometry_topology': t} for t in range(5)]
      jp = os.path.join(w, key + '_geometry.json'); atomic_json(jp, jobs)
@@ -259,18 +239,18 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
 -        r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
 +        r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
          if r.returncode: return 'geometry MSL failed', r.stderr.strip()[:160], None
-         plain = dmsh_geometry.topology_pointer(pool_arrays(precise(dmsh_atomic.check_msl(r.stdout))))
+         plain = dmsh_geometry.topology_pointer(dmsh_reflect.pool_arrays(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout))))
          src = dmsh_geometry.capture_input(plain)
-@@ -1608,7 +1640,7 @@ def geometry_finish(key, w, j, c1):
+@@ -708,7 +740,7 @@ def geometry_finish(key, w, j, c1):
              base = {**refl, 'key': key + '_b'}
              save('_b', src, base)
              spv = os.path.join(w, k + '.reader.spv'); dmsh_geometry.flatten_sets(spv)
 -            r = subprocess.run([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
 +            r = spawn([SPIRV_CROSS, *dmsh_atomic.cross_args(XC, spv), spv], capture_output=True, text=True)
              if r.returncode: return 'geometry reader failed', r.stderr.strip()[:160], None
-             reader = vs_layer(vs_init(dmsh_geometry.reader(pool_arrays(precise(dmsh_atomic.check_msl(r.stdout))))))
-             analysis, full = vs_depth(reader)
-@@ -1636,17 +1668,17 @@ def finish(key, w, j, c1):
+             reader = dmsh_entry.vs_layer(dmsh_entry.vs_init(dmsh_geometry.reader(dmsh_reflect.pool_arrays(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout))))))
+             analysis, full = dmsh_entry.vs_depth(reader)
+@@ -735,17 +767,17 @@ def finish(key, w, j, c1):
          try: return geometry_finish(key, w, j, c1)
          except (ValueError, subprocess.CalledProcessError) as e: return 'geometry failed', str(e)[:160], None
      if j['stage'] == 'vs': spv_single_lane(os.path.join(w, key + '.spv'))   # one-lane subgroups (see spv_single_lane)
@@ -279,7 +259,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
      if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
      src = open(msl).read()
      if j['stage'] == 'vs':   # second pass: re-translate with inputs that are only used as integers reported as uint (see int_inputs)
-         extra = {l: t for l, t in int_inputs(src).items() if l not in j['attr']}
+         extra = {l: t for l, t in dmsh_entry.int_inputs(src).items() if l not in j['attr']}
          if extra:
              j['attr'].update(extra); jp = os.path.join(w, f'job1_{key}.json'); json.dump([j], open(jp, 'w'))
 -            rx = subprocess.run([XLATE, jp, w], capture_output=True, text=True)
@@ -291,17 +271,17 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
              if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
              src = open(msl).read()
      try: src = dmsh_atomic.check_msl(src)
-@@ -1662,7 +1694,8 @@ def finish(key, w, j, c1):
-     try: src = pool_arrays(src)   # handles traced to no slot read the pools the replay keeps (see pool_arrays)
+@@ -761,7 +793,8 @@ def finish(key, w, j, c1):
+     try: src = dmsh_reflect.pool_arrays(src)   # handles traced to no slot read the pools the replay keeps (see pool_arrays)
      except ValueError as e: return 'pool rewrite failed', str(e)[:160], None
      src = dmsh_wide.wide_loads(src)   # storage words the translator split, read whole again (see dmsh_wide.py)
--    src = border_emu(src)   # border colours Metal lacks (see border_emu)
+-    src = dmsh_rewrite.border_emu(src)   # border colours Metal lacks (see border_emu)
 +    if NAN_COORD_FMAX: src = nan_coord_fmax(src)   # the profile's switch (see nan_coord_fmax)
-+    if BORDER_EMU: src = border_emu(src)   # border colours Metal lacks (see border_emu)
-     if j['stage'] == 'ps': src = frag_z_snap(src)[0]   # gl_FragCoord.z against a depth of its own surface (see frag_z_snap)
++    if BORDER_EMU: src = dmsh_rewrite.border_emu(src)   # border colours Metal lacks (see border_emu)
+     if j['stage'] == 'ps': src = dmsh_rewrite.frag_z_snap(src)[0]   # gl_FragCoord.z against a depth of its own surface (see frag_z_snap)
      open(msl, 'w').write(src)
      first, spill = [], 0
-@@ -1756,8 +1789,9 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
+@@ -856,8 +889,9 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
      os.makedirs(_d, exist_ok=True)
      for _n in os.listdir(_d):   # a partial build over a folder (an older chain's, or one a stopped build left)
          _m = OUT_KEY.match(_n)
@@ -313,7 +293,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
  STORE.delete_prefix(STAGE + '/')   # what a stopped build of this folder staged
  
  def sweep_work(root):
-@@ -1778,7 +1812,10 @@ _work = os.environ.get('WORK') or tempfile.gettempdir()
+@@ -878,7 +912,10 @@ _work = os.environ.get('WORK') or tempfile.gettempdir()
  sweep_work(_work)
  w = tempfile.mkdtemp(prefix='dmsh_', dir=_work)
  with open(os.path.join(w, 'pid'), 'w') as _f: _f.write(str(os.getpid()))
@@ -325,7 +305,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
  # first take the libraries earlier chain versions left on disk: the b-*/ and b-*.img beside the output (iOS: the folder of the same name) and the roots DMSH_PREFILL lists
  for _spec in [cache_root + ('=' + os.path.dirname(IOSOUT) if IOSOUT else '')] + [x for x in os.environ.get('DMSH_PREFILL', '').split(os.pathsep) if x]:
      _mac, _, _ios = _spec.partition('=')
-@@ -1835,6 +1872,7 @@ def xlate_errors(r):
+@@ -935,6 +972,7 @@ def xlate_errors(r):
      for ln in r.stderr.splitlines():
          m = re.match(r'\[RED\] (\w+): (.*)', ln)
          if m: xerr[m.group(1)] = m.group(2)[:160]
@@ -333,7 +313,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
  def translate(batch):
      """A batch's misses translated into a working folder of its own (removed once the batch is finished) → that folder"""
      wb = tempfile.mkdtemp(prefix='batch_', dir=w)
-@@ -1842,9 +1880,12 @@ def translate(batch):
+@@ -942,9 +980,12 @@ def translate(batch):
      for k in miss: jobs[k], c1s[k] = job_for(k, loc[k][0], rec_of(k)[1], wb)
      def xl(ch):
          jp = os.path.join(wb, f'job_{abs(hash(ch[0]))}.json'); json.dump([jobs[k] for k in ch], open(jp, 'w'))
@@ -348,7 +328,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
      return wb
  def restored(key, wb):
      """A cache hit's outputs back on disk while it is finished. When another build pruned them since the look (cache_lookup), the shader is translated now, in the batch's folder: False"""
-@@ -1852,7 +1893,7 @@ def restored(key, wb):
+@@ -952,7 +993,7 @@ def restored(key, wb):
      PRE_STATS['hit'] -= 1; PRE_STATS['miss'] += 1; PRE_STATS['pruned meanwhile'] += 1
      jobs[key], c1s[key] = job_for(key, loc[key][0], rec_of(key)[1], wb)
      jp = os.path.join(wb, f'job1_{key}.json'); json.dump([jobs[key]], open(jp, 'w'))
@@ -357,7 +337,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
      return False
  DONE = collections.Counter()
  def fin(key, wb):
-@@ -1923,6 +1964,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
+@@ -1023,6 +1064,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
        f'{PULL_STATS["no stage input"]} vertex shaders without stage inputs (none needed)')
  print('mesh libraries (<vertex>_<geometry>_m3, dmsh_mesh.py): ' + (', '.join(f'{k} {v}' for k, v in MESH_STATS.items()) or 'none'))
  print(MTL.summary())
@@ -365,7 +345,7 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
  for lvl in [k for k in st if k != 'ok']:
      for e, n in collections.Counter(r[2] for r in res if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
  ok = [r[3] for r in res if r[1] == 'ok']
-@@ -1958,7 +2000,7 @@ if PROGRESS:
+@@ -1058,7 +1100,7 @@ if PROGRESS:
      except FileNotFoundError: pass
  if not want:
      for _tool, _table in (('c1_guard.py', 'c1_full.tsv'), ('cb_extent.py', 'cb_extent.tsv')):
@@ -374,18 +354,6 @@ index e0dae07533e3bf0470ddef1a9b7a5e05a9e0867c..cfd6358151217ada2fb78937e43ac400
          if _r.returncode: sys.exit(f'[RED] {_tool} failed ({_r.returncode}): {_r.stderr.strip()[-500:]}')
          print(f'{_table}: {(_r.stdout.strip().splitlines() or [""])[-1]}', flush=True)
  elif STAMP_BEFORE != INPUTS: print(f'no library stamp: the profile\'s inputs changed since the last full build ({STAMP_BEFORE} → {INPUTS}), and a partial build does not rebuild the rest', flush=True)
-diff --git a/dm/gfx/tools/dmsh_fetch.py b/dm/gfx/tools/dmsh_fetch.py
-index def90a46ddf24bf0b11f4a19b643f5a9d63fa0e9..979962cd743027c73f0450115800e000b22add83 100644
---- a/dm/gfx/tools/dmsh_fetch.py
-+++ b/dm/gfx/tools/dmsh_fetch.py
-@@ -200,7 +200,6 @@ def fold(msl, bindings, om_only_ok=False):
-     tex = {m.group(1) for m in re.finditer(r'texture2d<float> (\w+) \[\[id\(\d+\)\]\];', src)}
-     locn = {m.group(1): int(m.group(2)) for m in re.finditer(r'float4 (m_\d+) \[\[user\(locn(\d+)\)\]\];', src.split('struct main0_in', 1)[-1].split('};', 1)[0])}
-     reg = {b['msl_name']: b['reg'] for b in bindings if b.get('kind') == abi.KIND_TEX and b.get('msl_name') and b.get('reg') is not None}
--    # A sample the border colour correction wrapped (dmsh_build.py border_emu) is taken whole: a tile read replaces the corrected sample, never feeds the correction
-     pat = re.compile(r'(dm_bs\()?spvDescriptorSet0\.(\w+)\.sample\(spvDescriptorSet0\.(\w+)Smplr, select\((_\d+), float2\(0\.0\), isnan\(\4\)\)\)'
-                      r'(?(1), spvDescriptorSet0\.%s, \d+u, spvDescriptorSet0\.\2, spvDescriptorSet0\.\3Smplr%s, select\(\4, float2\(0\.0\), isnan\(\4\)\)\))' % (abi.BORDER_MEMBER, abi.BORDER_TWIN))
-     calls, out_parts, pos = [], [], 0
 diff --git a/dm/gfx/tools/dmsh_mtlcache.py b/dm/gfx/tools/dmsh_mtlcache.py
 index 22504ce4c81fc02ce7fd6124496c3229fe687fac..607df489ecea327ecca7af502421cdff4adf1b26 100644
 --- a/dm/gfx/tools/dmsh_mtlcache.py
@@ -663,10 +631,10 @@ index d0e967d44b0abc96e900d16478803a594ce3a862..415bdd1bc10a2cb892d029559cde2dcc
  
  if __name__ == '__main__':
 diff --git a/dm/gfx/tools/pso_offline.py b/dm/gfx/tools/pso_offline.py
-index 9d20f630422f6b1672710ac8cb465cd73d4407a8..0fa66b6632de2d843ed5f4de9a83686d7241fefd 100644
+index e38af916c6c4aeebe4072e0a8e6d409997b619bc..a2f94d14da04448134ce5e5112f5c9995aa0ec24 100644
 --- a/dm/gfx/tools/pso_offline.py
 +++ b/dm/gfx/tools/pso_offline.py
-@@ -192,18 +192,34 @@ def write_script(path, configuration):
+@@ -188,18 +188,34 @@ def write_script(path, configuration):
      finally: part.unlink(missing_ok=True)
  
  
@@ -705,7 +673,7 @@ index 9d20f630422f6b1672710ac8cb465cd73d4407a8..0fa66b6632de2d843ed5f4de9a83686d
  def space_needed(bases):   # what metal-tt is let start with, an estimate: its temporary files (TMPDIR, one .airp per base) and the archive (about 41 KB per base at 15,767 bases); Cruis'n Blast's 33,858 bases failed with 366 MB free
      return max(2 << 30, bases * (96 << 10))
  
-@@ -295,6 +311,37 @@ def compile_batch(lib_dir, bases, work, arch, platform, osmin, toolchain, comput
+@@ -291,6 +307,37 @@ def compile_batch(lib_dir, bases, work, arch, platform, osmin, toolchain, comput
      return dst, False
  
  
@@ -743,7 +711,7 @@ index 9d20f630422f6b1672710ac8cb465cd73d4407a8..0fa66b6632de2d843ed5f4de9a83686d
  def groups_of(bases, computes, batch_size, compute_size=COMPUTE_BATCH):
      """The groups compile_batches compiles, [(folder name, bases, compute pipelines)]: the bases in groups of batch_size (00001, ...), then the compute pipelines in groups of compute_size
      of their own (c00001, ...), so that a change to either leaves the other's groups as they are. 0: one group of each"""
-@@ -314,19 +361,40 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
+@@ -310,19 +357,40 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
      On M2, merged archives passed archive-only lookups of two synthetic pipelines and all 32,864 Odyssey bases.
      Other workloads and compiler versions can have different resource use.
      The groups of bases run one after the other, as before; the compute groups, small, jobs at a time, each in its own folder (its TMPDIR).
@@ -790,7 +758,7 @@ index 9d20f630422f6b1672710ac8cb465cd73d4407a8..0fa66b6632de2d843ed5f4de9a83686d
      part.unlink(missing_ok=True)
      need, free = max(2 << 30, sum(p.stat().st_size for p in pieces)), shutil.disk_usage(work).free
      if free < need: sys.exit(f'[RED] pso_offline: {free / 2**30:.1f} GB free before merging; need at least {need / 2**30:.1f} GB')
-@@ -340,6 +408,21 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
+@@ -336,6 +404,21 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
          sys.exit(f'[RED] pso_offline: metal-pack failed for {arch} (exit {r.returncode}): {log_path.read_text()[-2000:]}')
  
  
@@ -812,7 +780,7 @@ index 9d20f630422f6b1672710ac8cb465cd73d4407a8..0fa66b6632de2d843ed5f4de9a83686d
  def main(argv=None):
      ap = argparse.ArgumentParser(description='Build the pipeline archive of a game\'s shader pairs offline (metal-tt)')
      ap.add_argument('--msl', required=True, help='the shader libraries, b-<chain version> (with their reflection <key>_b.json)')
-@@ -352,12 +435,14 @@ def main(argv=None):
+@@ -348,12 +431,14 @@ def main(argv=None):
      ap.add_argument('--platform', choices=('ios', 'macos'), default='ios')
      ap.add_argument('--os-min', help='minimum OS of the archives (default: iOS, the SDK\'s major version; macOS, this Mac\'s)')
      ap.add_argument('--script-only', action='store_true', help='write the script and the stamp, run no metal-tt')
@@ -827,7 +795,7 @@ index 9d20f630422f6b1672710ac8cb465cd73d4407a8..0fa66b6632de2d843ed5f4de9a83686d
      if a.batch_size < 0: ap.error('--batch-size must be zero or positive')
      if a.game:
          sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'games')); import game
-@@ -397,6 +482,7 @@ def main(argv=None):
+@@ -393,6 +478,7 @@ def main(argv=None):
      libraries = library_digest(lib_dir, bases, computes)
      keys = {arch: archive_key(configuration, libraries, arch, a.platform, osmin, tv) for arch in archs}
      del configuration   # the compiler reads the script from disk
@@ -836,7 +804,7 @@ index 9d20f630422f6b1672710ac8cb465cd73d4407a8..0fa66b6632de2d843ed5f4de9a83686d
          dst, kf = out / f'{arch}.mtl4a', work / f'key.{arch}'
          if dst.is_file() and kf.is_file() and kf.read_text().strip() == key: print(f'pso_offline: {arch}: reused ({dst.stat().st_size / 2**20:.0f} MB)'); continue
 diff --git a/dm/gfx/tools/shader_split.py b/dm/gfx/tools/shader_split.py
-index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d054ab92f 100644
+index 202c5da2a0a6eded238e4c05c8f272dfd66260e8..5126253e7f86d1e9934ea83e095d9c8173c7da1d 100644
 --- a/dm/gfx/tools/shader_split.py
 +++ b/dm/gfx/tools/shader_split.py
 @@ -1,6 +1,6 @@
@@ -847,7 +815,7 @@ index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d
  #   · BNSH ('BNSH\0\0\0\0', carried by bfsha / particle effect esetb / UI layout blarc / embedded in main):
  #       +0x60 grsc block; +0x7c variation count u32; +0x80 variation table pointer (pointers are relative to the BNSH start). A variation is 0x40 bytes; the binary program is at +0x10;
  #       the binary program has 6 stage pointers from +0x08: vertex, hull, domain, geometry, pixel, compute; the stage code descriptor has +0x08 control pointer, +0x10 code area pointer, +0x18 code area length, +0x1c control length.
-@@ -1221,6 +1221,41 @@ def gfpak_members(d, label):
+@@ -1290,6 +1290,41 @@ def gfpak_members(d, label):
          if len(data) != usz: red(f'{label}#{i}: {len(data):#x} bytes, the entry says {usz:#x}')
          yield f'#{i}', data
  
@@ -889,7 +857,7 @@ index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d
  NLG_DICT = bytes.fromhex('5824f3a9')
  def nlg_dict(d, label):
      """Next Level Games' archive index (Luigi's Mansion 3: '<name>.dict' beside '<name>.data', every RomFS file but the Wwise banks): u32 magic 0xa9f32458, u8 4, u8 1, u8 compressed,
-@@ -2557,12 +2592,14 @@ def unzs_dict(d, did, where):
+@@ -2626,12 +2661,14 @@ def unzs_dict(d, did, where):
      return zstd.decompress(d, zstd_dict=_ZD[did])
  
  def unzs(path):
@@ -909,7 +877,7 @@ index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d
  
  def frame_size(f):
      """The uncompressed size a zstd or LZ4 frame header records, None when it records none"""
-@@ -2720,6 +2757,20 @@ def unity_text_glslc(x, base):
+@@ -2789,6 +2826,20 @@ def unity_text_glslc(x, base):
          if b'\x91\x68\x86\x19' in b: out += glslc_shaders(b, f'{base}#{name}', need=False)
      return out
  
@@ -930,7 +898,7 @@ index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d
  NEST = 16   # archives in archives scan_blob opens (SARC, PlatinumGames' DAT): real files nest a few. A damaged or crafted one could nest one per header's length, or have every
              # member point at the same inner archive, its work doubling with each level. Two budgets of NEST times the file bound the work: left[0], the members a file's archives open,
              # each counted by what it takes up in its archive, and left[1], what its Yaz0 members expand to. Counting a Yaz0 member by what it expands to in the first budget paid twice
-@@ -2750,8 +2801,7 @@ def scan_blob(d, label, out, depth=0, left=None):
+@@ -2819,8 +2870,7 @@ def scan_blob(d, label, out, depth=0, left=None):
          for nm, m in sarc_members(d, label): scan_blob(m, f'{label}/{nm}', out, depth + 1, left)
          return
      if d[:4] == b'NARC':   # Camelot's containers (cra.py): each member packed by its first byte, so its size says nothing about the budget above
@@ -939,8 +907,8 @@ index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d
 +        for i, m in enumerate(narc_members(d, label)): scan_blob(m, f'{label}/{i}', out, depth + 1)
          return
      if d[:4] == b'BAHS': out.extend(bahs_shaders(d, label)); return
-     if d[:4] == b'NDSR': out.extend(ndsr_shaders(d, label)); return
-@@ -2796,11 +2846,11 @@ def pixel_input_cover(shaders):
+     if d[:4] == RGXD: out.extend(rgxd_shaders(d, label)); return
+@@ -2866,11 +2916,11 @@ def pixel_input_cover(shaders):
          k = min(ins, key=lambda k: (-len(ins[k] & left), k)); cover.append(k); left -= ins[k]
      return cover
  
@@ -955,7 +923,7 @@ index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d
  def separable_pairs(keys):
      """Single-stage programs (13 Sentinels: each GLSLC output becomes a program with one stage, and BindProgram's stage bits combine vertex and pixel programs per draw; Unreal combines its shaders per draw
      from the pipeline state) have their real pairs only at draw time. vs_pad uses only the union of the locations the paired pixel shaders read, so every single-stage vertex shader is paired with
-@@ -3029,6 +3079,10 @@ def scan_file_in(args):
+@@ -3105,6 +3155,10 @@ def scan_file_in(args):
      if head[:8] == GFPAK:   # a Game Freak archive (gfpak_members): each entry scanned as a file of its own (the shaders are BNSH entries)
          for nm, m in gfpak_members(open(path, 'rb').read(), '/' + rel): scan_blob(m, f'/{rel}{nm}', found)
          return rel, uniq_keys(found), var_pairs(found), trees
@@ -966,7 +934,7 @@ index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d
      if head[:4] == b'SRYK':
          import vbf
          with open(path, 'rb') as f:
-@@ -3103,6 +3157,16 @@ def pooled(ex, jobs, total, start=0, chunk=1):
+@@ -3179,6 +3233,16 @@ def pooled(ex, jobs, total, start=0, chunk=1):
      return [r for f in futures for r in f.result()]
  
  
@@ -983,7 +951,7 @@ index 78e2fcd43585b34365dbc1cbc9cbe83df24b665c..c89617719ad35a78132f26d7c796354d
  def main():
      romfs_l, main_l, pkg, mapout, factsout = sys.argv[1:6]
      pairsout = sys.argv[6] if len(sys.argv) > 6 else None
-@@ -3243,6 +3307,9 @@ def main():
+@@ -3321,6 +3385,9 @@ def main():
              f.write('# kind: evidence  supplemental vertex / pixel shader pairs (BAHS program variations and legacy Unity pass-input covers) for vertex output padding and the pipeline prebuild (generated by dm/gfx/tools/shader_split.py, do not edit): vertex key <TAB> pixel key\n')
              for a, b in sorted(prog - pairs): f.write(f'{a}\t{b}\n')
      print(f'shaders: {len(rows)} (' + ', '.join(f'{STAGE_NAME[s]} {n}' for s, n in sorted(stat.items())) + '); sources ' + ', '.join(f'{g} {n}' for g, n in per_src.most_common()) + f'; compute shader answers {len(facts)} rows' + (f'; variation pairs {len(pairs)}' if pairsout else ''))
@@ -1050,7 +1018,7 @@ index 14c81b46f299d94b1c919be0da52543fe6a9e18c..92a1fe79bc898f871368c7589e6b032f
          dirs = [(os.path.join(out, 'vk'), 'macosx', [])]
          # The iPhone library is compiled with -fmetal-math-mode=relaxed, as the NVN chain's (dm/ios/tools/ios_metal.py): the default fast mode lets the GPU compiler assume there is
 diff --git a/dm/tools/fuzz/fuzz_shader_split.py b/dm/tools/fuzz/fuzz_shader_split.py
-index 1038dd1580d80c0aeb4f82692f6049149df031a6..6b35573f6ff8906a829c0a81fe396fc885aaf92c 100644
+index 51ca2f68f9761b64d3f71e9b69f30f59d80154a1..bc70eaff86577224a540aca2c57189e0f11e9a0c 100644
 --- a/dm/tools/fuzz/fuzz_shader_split.py
 +++ b/dm/tools/fuzz/fuzz_shader_split.py
 @@ -10,6 +10,8 @@ allocation gets past that net. Usage: see fuzzlib.py"""
@@ -1062,10 +1030,10 @@ index 1038dd1580d80c0aeb4f82692f6049149df031a6..6b35573f6ff8906a829c0a81fe396fc8
  import fuzzlib
  
  ss = fuzzlib.import_shader_split()
-@@ -109,10 +111,20 @@ def arh1():
-     return b'arh1' + struct.pack('<9I', 0, len(nodes), so, len(strings), no, len(nodes_b), fo, 1, key) + bytes(0x30 - 40) + enc(strings) + enc(nodes_b) + files
- 
- 
+@@ -116,12 +118,20 @@ def rgxd():
+     for (ctl, code), extra in ((VS, b''), (PS, bytes(12))):
+         c = ctl + extra; d += struct.pack('<I', 0x10 + len(code) + len(c)) + GLSLC + struct.pack('<II', len(code), len(c)) + code + c
+     return bytes(d)
 +def narc(members):
 +    """Camelot's NARC (cra.py): a 16-byte header with its length and section count at 0xc, a BTAF of (start, end) pairs into GMIF, then GMIF (members 4-aligned)"""
 +    data = b''; fat = b''
@@ -1074,13 +1042,13 @@ index 1038dd1580d80c0aeb4f82692f6049149df031a6..6b35573f6ff8906a829c0a81fe396fc8
 +    btaf = b'BTAF' + struct.pack('<II', 12 + len(fat), len(members)) + fat
 +    gmif = b'GMIF' + struct.pack('<I', 8 + len(data)) + data
 +    return b'NARC' + struct.pack('<IIHH', 0xfffe0100, 16 + len(btaf) + len(gmif), 16, 2) + btaf + gmif
-+
-+
+ 
+ 
  def seeds():
      b = bnsh()
      return {'bnsh': b, 'bahs': bahs(), 'mshd': mshd(), 'sarc-yaz0': yaz0(sarc([(b'shader.bnsh', b)])), 'glslc': glslc([VS]), 'glslc-program': glslc([VS, PS]),
--            'sdf': sdf(), 'arh1': arh1()}
-+            'sdf': sdf(), 'arh1': arh1(), 'narc': narc([b, b'\x94\0\0\0' + struct.pack('<I', len(b)) + lz4.block.compress(b, store_size=False)])}
+-            'sdf': sdf(), 'arh1': arh1(), 'rgxd': rgxd()}
++            'sdf': sdf(), 'arh1': arh1(), 'rgxd': rgxd(), 'narc': narc([b, b'\x94\0\0\0' + struct.pack('<I', len(b)) + lz4.block.compress(b, store_size=False)])}
  
  
  def check(data):
@@ -1113,21 +1081,8 @@ index 77aa67f8829af59701f19de9b81bf545bc654274..e0bd8168cde9183b61172d280b96d0a9
      def delete_prefix(self, prefix):
          """Remove every entry whose name starts with prefix, and the bytes nothing names any more, giving their pages back (dmsh_build.py's staged outputs once its image is written)"""
          with self.lock:
-diff --git a/dm/tools/tests/test_dmsh_abi.py b/dm/tools/tests/test_dmsh_abi.py
-index 417e433adec40f3aa7ae6317983e07d6173f7d90..836878dd5d685fea3a6ffce6b76f369a17765c8d 100644
---- a/dm/tools/tests/test_dmsh_abi.py
-+++ b/dm/tools/tests/test_dmsh_abi.py
-@@ -22,7 +22,7 @@ import dmsh_abi as abi   # noqa: E402
- # 0x1000 where it is not the pool table's entry count (DMSH_GMEM_MAP_ENTRIES): the 4 KB page step of nvn_mtl.m's sparse residency map.
- # A count may only go down; when it does, lower it here.
- BASELINE = {
--    'dm/gfx/nvn/nvn_mtl.m': {"'?'": 2, "'geometry'": 3, '0x100': 2, '0x1000': 2},
-+    'dm/gfx/nvn/nvn_mtl.m': {"'?'": 3, "'geometry'": 3, '0x100': 2, '0x1000': 2},
-     'dm/gfx/nvn/nvn_refl.m': {"'c1'": 1},
-     'dm/gfx/nvn/nvn_refl.h': {},
-     'dm/gfx/nvn/nvn_obj.h': {'0x100': 1},
 diff --git a/dm/tools/tests/test_own_compilers.py b/dm/tools/tests/test_own_compilers.py
-index 860e241b4e8b3dbdaf2378fde055df6f7a8c064f..9911f528b3a1b2807bfb2b7f568dfd301aab6394 100644
+index e836b3088eaabec61e4606bb3200c45276610162..0454d8fbb71e3b39ccd859d0122b8a083eceb437 100644
 --- a/dm/tools/tests/test_own_compilers.py
 +++ b/dm/tools/tests/test_own_compilers.py
 @@ -25,6 +25,8 @@ nsp = importlib.util.module_from_spec(spec); spec.loader.exec_module(nsp)
@@ -1178,10 +1133,10 @@ index 860e241b4e8b3dbdaf2378fde055df6f7a8c064f..9911f528b3a1b2807bfb2b7f568dfd30
  class NspScript(unittest.TestCase):
      def setUp(self):
 diff --git a/dm/tools/tests/test_pso_offline.py b/dm/tools/tests/test_pso_offline.py
-index 9a0fa3b73c2487e852a1b43b3d96a794bb40d8fc..f1682b93913dd78f86d0594126940b0e09ae0e35 100644
+index 3c4f2f494ff58f48d48c5ad9e24446c4e974a694..c98591eb438aa938913f608920c2062e0cd28c20 100644
 --- a/dm/tools/tests/test_pso_offline.py
 +++ b/dm/tools/tests/test_pso_offline.py
-@@ -500,10 +500,10 @@ class Build(unittest.TestCase):
+@@ -503,10 +503,10 @@ class Build(unittest.TestCase):
          with mock.patch.object(po, 'plan', return_value=(bases, [], {})), mock.patch.object(self, 'fake_run', runner):
              self.main('--batch-size', '1', '--os-min', '27.0')
          groups = self.work / 'batches.applegpu_g18p'
@@ -1194,7 +1149,7 @@ index 9a0fa3b73c2487e852a1b43b3d96a794bb40d8fc..f1682b93913dd78f86d0594126940b0e
  
      def test_compute_pipelines_are_groups_of_their_own(self):
          (self.prof / 'shader_map.tsv').write_text('package\tindex\tstage\tdm_ctl_sha16\tsource\ncs\t0\tcompute\tk\tx\ncs\t1\tcompute\tkc\tx\n')
-@@ -518,7 +518,7 @@ class Build(unittest.TestCase):
+@@ -521,7 +521,7 @@ class Build(unittest.TestCase):
              self.assertEqual(observed, [('compile', ['main0_z']), ('compile', []), ('merge', 2)])   # the bases, the compute pipelines, one archive
              self.assertEqual(computes(), ['lib:k_b'])   # kc has function constants: left to the host
              self.assertIn('compute\t1\n', (self.out / 'archive.tsv').read_text())
@@ -1203,7 +1158,7 @@ index 9a0fa3b73c2487e852a1b43b3d96a794bb40d8fc..f1682b93913dd78f86d0594126940b0e
              observed.clear(); self.main('--os-min', '27.0'); self.assertEqual(observed, [])   # unchanged: the archive reused
              (self.prof / 'shader_pairs.tsv').write_text('v\tc\nv\tf\n')   # other pair lists, the same bases and compute pipelines: the archive reused
              observed.clear(); self.main('--os-min', '27.0'); self.assertEqual(observed, [])
-@@ -537,14 +537,58 @@ class Build(unittest.TestCase):
+@@ -540,14 +540,58 @@ class Build(unittest.TestCase):
          self.assertTrue((self.out / 'applegpu_g18p.mtl4a').is_file())
          self.assertEqual((self.out / 'rest_pairs.tsv').read_text(), 'v\tc\n')
  
