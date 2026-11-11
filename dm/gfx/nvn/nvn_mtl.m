@@ -15702,6 +15702,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }
 // DM_FSTEP_PROBE_RAMP=1 (default) / 0 / ab: a frame-step probe's grace is renewed while its frames keep getting cheaper (nvn_fstep.h FSTEP_RAMP), the time macOS's GPU clock takes to rise for the shorter deadline
 static int probe_ramp_mode(void) { static int m = -1; if (m < 0) m = sw_mode("DM_FSTEP_PROBE_RAMP", 1); return m; }
 int mtl_probe_ramp_on(void) { return sw_on(probe_ramp_mode()); }
+// A pause or a window change, for the frame step (nvn_fstep.h settle, asked once a frame by hle_nvn.c fstep_tick): the game came back into focus since the last call (the
+// front end's dm_focus_set(1): its window became key again, a pause ended), or the layer's drawable changed size (the window resized, entered or left fullscreen). The frames
+// around either are late for the host's reasons, not the scene's (frame-rate.md, "A pause or a window switch steps the hold up")
+int dm_focus_now(void); uint64_t dm_focus_in_since(void);
+static _Atomic uint64_t g_settle_px, g_settle_focus, g_warm_present_ns; static _Atomic int g_settle;
+static void pause_warm_start(void);
+static void settle_present(CGSize px) {   // each present, with the layer's drawable size
+    uint64_t v = (uint64_t)px.width | (uint64_t)px.height << 32;
+    if (atomic_exchange(&g_settle_px, v) != v) atomic_store(&g_settle, 1);
+    atomic_store(&g_warm_present_ns, now_ns());
+    pause_warm_start();
+}
+int mtl_fstep_settle(void) {
+    uint64_t f = dm_focus_in_since();
+    if (atomic_exchange(&g_settle_focus, f) != f) atomic_store(&g_settle, 1);
+    return atomic_exchange(&g_settle, 0);
+}
+// DM_NVN_PAUSE_WARM (Mac; 1 = on, 0 = off): while the game presents nothing (a pause: its window out of focus, a sidebar or menu over it), a few bytes of GPU work twice a
+// second keep the GPU powered. Left alone for about 2 s it powers down, and the first frame back pays for its return on the submit thread: Ocarina of Time on an M4 Pro, after
+// pauses of 2.5, 5.8 and 35 s, 126–178 ms inside the first residency set commit (off the CPU; 0.3 ms otherwise) and 26–67 ms of GPU time for a 15 ms frame; pauses of 1.2–1.9 s
+// had neither. It stops 2 minutes into a pause, so a game left paused lets the GPU sleep, and does nothing while frames are presented
+#define PAUSE_WARM_DEFAULT 1
+static void pause_warm_start(void) {
+#if TARGET_OS_OSX
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        const char *e = getenv("DM_NVN_PAUSE_WARM"); if (!(e ? atoi(e) : PAUSE_WARM_DEFAULT) || !g_q || !g_dev) return;
+        static dispatch_source_t t; static id<MTLBuffer> buf; static uint64_t n;
+        buf = [g_dev newBufferWithLength:64 options:MTLResourceStorageModePrivate];
+        t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+        dispatch_source_set_timer(t, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), NSEC_PER_SEC / 2, NSEC_PER_SEC / 20);
+        dispatch_source_set_event_handler(t, ^{
+            uint64_t last = atomic_load(&g_warm_present_ns), now = now_ns();
+            if (!last || now - last < 400000000ull || now - last > 120000000000ull || atomic_load(&g_gpu_lost)) return;
+            @autoreleasepool {
+                id<MTLCommandBuffer> cb = [g_q commandBuffer]; id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+                [b fillBuffer:buf range:NSMakeRange(0, 64) value:0]; [b endEncoding]; [cb commit];
+            }
+            if (!n++) MLOG("pause warm: no frame presented for %.1f s, the GPU is kept powered with a 64-byte fill twice a second for up to 2 minutes (DM_NVN_PAUSE_WARM=0 turns it off)", (now - last) / 1e9);
+        });
+        dispatch_resume(t);
+    });
+#endif
+}
 static void sub_cut(void) {
     int n = cut_draws();
     if (!g_cb || g_enc) return;
@@ -17103,6 +17147,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
     if (atomic_load(&g_gpu_lost)) return 0;   // the display command buffer would be ignored too: take no drawable from the screen the front end is about to close
     CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
     if (!layer) return 0;
+    settle_present(layer.drawableSize);
     if (g_present_layer_resident != layer) { [g_q4 addResidencySet:layer.residencySet]; g_present_layer_resident = layer; }
 #if TARGET_OS_OSX
     if (!layer.displaySyncEnabled) layer.displaySyncEnabled = YES;   // Windowed mode follows the display's vsync to prevent tearing
