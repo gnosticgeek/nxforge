@@ -47,6 +47,8 @@ python3 -m pip install lz4 "capstone>=5,<6" fonttools nsz zbic "backports.zstd; 
   Super Mario Bros. Wonder [010015100B514800][v327680].nsp
 ```
 
+DLC can also sit in a subfolder named `DLC` (any letter case, or `DLCs`): the build reads that folder for DLC only, so keep the base game and its update beside each other in the game's folder.
+
 Any version works, with or without an update: the script packs the newest version in the folder. Each game was tested on one version; with another the script builds it with that version's own shaders and says so, and fixes made for the tested version's code, such as the 60 fps ones, don't apply to it.
 
 **3. Build**, with your game folder and your `prod.keys`:

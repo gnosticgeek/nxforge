@@ -21,7 +21,7 @@ enum GameNeeds {
     /// Check name → why this game needs it.
     static func detect(dir: String, repo: String?) -> [String: String] {
         var out: [String: String] = [:]
-        let files = GameFiles.list(in: dir.url)
+        let files = GameFiles.buildFiles(in: dir.url)
         if files.contains(where: { ["nsz", "xcz"].contains($0.pathExtension.lowercased()) }) {
             out["nsz"] = "this folder has compressed .nsz or .xcz files"
         }

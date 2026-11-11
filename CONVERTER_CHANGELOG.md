@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.6.0 (2026-11-11)
+
+Ships in NXForge 0.27.0.
+
+- **A game's `DLC` subfolder counts.** The build now reads a subfolder named `DLC` or `DLCs` (any letter case) for the game's DLC, and the converter follows: the Convert page checks those files with the rest (shown as `DLC/<name>`), the Library counts them as the game's DLC instead of noting them as unused and offering to move them, and the build history's "Base game + 2 DLC" includes them. A base game or update put in that folder is flagged as not used, with Move Beside the Game still offered for it.
+
 ## 0.5.2 (2026-11-09)
 
 Ships in NXForge 0.23.0.
