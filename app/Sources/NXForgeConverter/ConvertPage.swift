@@ -597,7 +597,22 @@ struct StepTiles: View {
         "Build Mac host": "hammer", "Package Mac app": "shippingbox",
     ]
 
-    enum TileState { case pending, running, done, failed }
+    enum TileState { case pending, running, done, failed, skipped }
+
+    /// The script's stages each tile stands for (prefixes of stage names): a Switch 2 game's unpack is its "Extract game
+    /// files", and the pipeline archive is part of packaging. A stage none of these name falls to the tile its own name gives.
+    static let members: [String: [String]] = [
+        "Extract tools": ["build nx_extract", "decompress NSZ", "build ID lookup"],
+        "Extract game files": ["extract", "unpack", "pack", "check "],
+        "Package Mac app": ["Pipeline prebuild", "Pipeline archive", "Mac app"],
+    ]
+
+    /// The tile a stage belongs to (its friendly name), or nil for one no tile shows.
+    static func tile(of stage: String) -> String? {
+        if let t = members.first(where: { $0.value.contains { stage.hasPrefix($0) } })?.key { return t }
+        let f = friendly(stage)
+        return stageNames.contains { $0.1 == f } ? f : nil
+    }
 
     var body: some View {
         let run = model.run
@@ -612,22 +627,29 @@ struct StepTiles: View {
         .padding(.top, 10)
     }
 
-    func state(_ name: String, _ run: BuildRun) -> TileState {
-        if run.running && friendly(run.stage.name) == name { return .running }
-        let done = run.done.filter { friendly($0.name) == name }
+    func state(_ name: String, _ run: BuildRun) -> TileState { Self.state(name, run) }
+
+    static func state(_ name: String, _ run: BuildRun) -> TileState {
+        if run.running && tile(of: run.stage.name) == name { return .running }
+        let done = run.done.filter { tile(of: $0.name) == name }
         if done.contains(where: { !$0.ok }) { return .failed }
         if !done.isEmpty { return .done }
-        return .pending
+        // a step this build has no stage for (a Switch 2 game needs no extract tools) once a later step has started: not needed, not waiting
+        guard let i = stageNames.firstIndex(where: { $0.1 == name }) else { return .pending }
+        let later = Set(stageNames[(i + 1)...].map(\.1))
+        let reached = run.done.compactMap { tile(of: $0.name) } + (run.running ? [tile(of: run.stage.name)].compactMap { $0 } : [])
+        return reached.contains(where: later.contains) ? .skipped : .pending
     }
 
     func tile(_ n: Int, _ name: String, _ st: TileState) -> some View {
         let tint: Color = st == .failed ? .red : st == .done ? .green : .accentColor
-        let lit = st != .pending
+        let lit = st != .pending && st != .skipped
         return VStack(spacing: 6) {
-            Image(systemName: st == .done ? "checkmark.circle" : st == .failed ? "xmark.octagon" : Self.symbols[name] ?? "circle")
-                .font(.system(size: 22)).foregroundStyle(lit ? tint : Color.primary.opacity(0.85))
+            Image(systemName: st == .done ? "checkmark.circle" : st == .skipped ? "minus.circle" : st == .failed ? "xmark.octagon" : Self.symbols[name] ?? "circle")
+                .font(.system(size: 22)).foregroundStyle(lit ? tint : st == .skipped ? Color.secondary : Color.primary.opacity(0.85))
                 .symbolEffect(.pulse, isActive: st == .running)
             Text(name).font(.callout.weight(.medium)).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
+            if st == .skipped { Text("Not needed").font(.caption).foregroundStyle(.secondary) }
         }
         .padding(.top, 14)
         .frame(maxWidth: .infinity, minHeight: 94, alignment: .top)
@@ -636,7 +658,7 @@ struct StepTiles: View {
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(lit ? tint.opacity(0.9) : Theme.cardStroke, lineWidth: lit ? 1.5 : 1))
         .overlay(alignment: .top) { NumberBadge(n: n, color: lit ? tint : Color.secondary.opacity(0.7), size: 20).offset(y: -10) }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(n), \(name), \(st == .done ? "done" : st == .running ? "running" : st == .failed ? "failed" : "not run")")
+        .accessibilityLabel("Step \(n), \(name), \(st == .done ? "done" : st == .running ? "running" : st == .failed ? "failed" : st == .skipped ? "not needed for this game" : "not run")")
     }
 }
 

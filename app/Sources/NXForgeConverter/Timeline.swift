@@ -5,13 +5,20 @@
 import Foundation
 import SwiftUI
 
-/// A stage's name without what varies from build to build: "extract v131072" → "extract" (the script's stage_key).
+/// A stage's name without what varies from build to build: "extract v131072" → "extract", "check v131072 files" →
+/// "check files" (the script's stage_key).
 func stageKey(_ name: String) -> String {
-    name.replacingOccurrences(of: #"\s+v\d+$"#, with: "", options: .regularExpression)
+    name.replacingOccurrences(of: #"\s+v\d+(?=\s|$)"#, with: "", options: .regularExpression)
+}
+
+/// A stage summary that says the whole stage was reused: "reused", "…, reused (inputs unchanged)". A count of reused
+/// pieces ("Metal libraries: 9,807 reused, 3,412 compiled") is a stage that did its work.
+func stageReused(_ summary: String) -> Bool {
+    summary.range(of: #"(^|, )reused( \(|$)"#, options: .regularExpression) != nil
 }
 
 /// The order stages run in (prefixes of the script's stage names), for placing the ones still to come.
-let stageOrder = ["decompress NSZ", "build ID lookup", "build nx_extract", "extract", "unpack", "pack", "unpack DLC", "pack DLC", "extract DLC",
+let stageOrder = ["decompress NSZ", "build ID lookup", "survey", "build nx_extract", "extract", "unpack", "pack", "check", "unpack DLC", "pack DLC", "extract DLC",
                   "rewrite", "NRO capture", "GLSLC capture", "UE shader decode", "JIT capture", "heap check", "address regions",
                   "shader split", "Mac shaders", "Mac host", "Pipeline prebuild", "Pipeline archive", "Mac app"]
 
@@ -36,7 +43,9 @@ enum Estimates {
             var rates: [String: [Double]] = [:]
             for b in builds where b.gameDir != gameDir {
                 guard let bytes = b.gameBytes, bytes > 0, let stages = b.stages, bytes * 4 >= gameBytes, bytes <= gameBytes * 4 else { continue }
-                for s in stages where s.ok && !s.reused && s.seconds > 0 { rates[stageKey(s.name), default: []].append(Double(s.seconds) / Double(bytes)) }
+                // records before Converter 0.6.1 marked a stage reused when its summary merely counted reused pieces (Mac
+                // shaders' "Metal libraries: 9,807 reused, …"), so a "reused" stage that took minutes counts as work
+                for s in stages where s.ok && (!s.reused || s.seconds >= 120) && s.seconds > 0 { rates[stageKey(s.name), default: []].append(Double(s.seconds) / Double(bytes)) }
             }
             for (k, r) in rates { out[k] = r.sorted()[r.count / 2] * Double(gameBytes) }
         }

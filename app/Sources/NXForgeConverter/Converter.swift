@@ -50,7 +50,9 @@ struct StageDone: Hashable, Identifiable {
     let seconds: Int
     let summary: String
 
-    var reused: Bool { summary.contains("reused") }
+    /// the stage reused its last output ("reused", "…, reused (inputs unchanged)"), not one that reused part of its work
+    /// ("Metal libraries: 9,807 reused, 3,412 compiled" after a 50-minute shader stage)
+    var reused: Bool { stageReused(summary) }
     /// a --plan run's stage that a build would do again
     var redo: Bool { summary.contains("would be redone") }
     var line: String {
