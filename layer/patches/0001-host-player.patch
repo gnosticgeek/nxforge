@@ -13,12 +13,12 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/host/hle.h         |   2 +
  dm/host/hle_audio.c   |  15 +++-
  dm/host/hle_hid.c     |  14 +++-
- dm/host/hle_oe.c      |  15 ++--
+ dm/host/hle_oe.c      |   6 ++
  dm/host/tests/t_hid.c |  18 +++--
- dm/host/tests/t_oe.c  |   5 ++
+ dm/host/tests/t_oe.c  |   1 +
  dm/host/web_apple.m   |  19 +++--
  dm/mac/launcher.c     | 104 ++++++++++++++++++++++++---
- 13 files changed, 372 insertions(+), 84 deletions(-)
+ 13 files changed, 364 insertions(+), 79 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
 index f3e38a12c09b6d5807c0755c713184e356f2e2ef..1c91b4ac03c6ed838a72c87b8ba4b244363d4aaf 100644
@@ -62,7 +62,7 @@ index f3e38a12c09b6d5807c0755c713184e356f2e2ef..1c91b4ac03c6ed838a72c87b8ba4b244
          [e setViewport:(MTLViewport){0, 0, P.w, P.h, 0, 1}];
          int sc[4] = {0, 0, (int)P.w, (int)P.h};
 diff --git a/dm/gfx/vk/hle_vk.m b/dm/gfx/vk/hle_vk.m
-index 6b256646989fa38c3ac99da84661177f81e253ca..871abc2297d1c1f2a8aed0cd55a54283ce6bce25 100644
+index 474fb6598b4a181fa5d6decb713269657fe4c2d7..b539f6c4e9118a008b281df1428fe0ff33725c38 100644
 --- a/dm/gfx/vk/hle_vk.m
 +++ b/dm/gfx/vk/hle_vk.m
 @@ -698,7 +698,8 @@ VKB(vkCreateSampler, VkResult, VkDevice d, const VkSamplerCreateInfo *ci, const
@@ -226,7 +226,7 @@ index d36e61c645be716667490c58b295f3bcdce4c1ab..bb02c34f76a50bfc5509bc22588996d9
  // thread. front_web_open: dir = the folder the document path is relative to (an HtmlDocument's html-document), path = the document path with its query, callback = the URL prefix whose
  // loading ends the page (exit reason 3, the URL as the last URL), hidden = loaded without being shown until front_web_show. 0 = opened; -1 = no web view (no window): the caller's
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9985463f9 100644
+index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd24e78d6b2 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -1,12 +1,13 @@
@@ -397,7 +397,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
  static const char *pad_name(GCController *c) { return c.vendorName.UTF8String ?: "?"; }
  static void npad_name(int p, char *out, size_t cap) { uint32_t id = dm_player_npad(p); if (id == 0x20) snprintf(out, cap, "handheld"); else snprintf(out, cap, "%u", id); }
  static void pro_players_changed(GCController *gone) {
-@@ -259,7 +286,7 @@ static void pads_changed(GCController *gone) {
+@@ -260,7 +287,7 @@ static void pads_changed(GCController *gone) {
      if (g_merge) {
          int any = 0;
          for (GCController *c in GCController.controllers) if (c.extendedGamepad && c != gone) {
@@ -406,7 +406,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
              dm_motion_attach(c, 0);   // every controller is player 1: the last one moved drives its six-axis sensor
              pad_read(c.extendedGamepad);
          }
-@@ -288,8 +315,8 @@ static void pads_changed(GCController *gone) {
+@@ -289,8 +316,8 @@ static void pads_changed(GCController *gone) {
          }
          int p = pad_slot_take(&g_slots, (__bridge const void *)c, pad_name(c));
          if (p < 0) { LOG("controller '%s' connected: all %d players are taken, not used", pad_name(c), DM_PLAYERS); continue; }
@@ -417,7 +417,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
          dm_motion_attach(c, p);
          npad_name(p, nb, sizeof nb); LOG("controller '%s' connected: player %d (npad %s)%s", pad_name(c), p + 1, nb, c.motion.hasRotationRate ? ", with motion (gyro)" : "");
          pad_read(c.extendedGamepad);
-@@ -437,12 +464,12 @@ static NSTimer *g_hq_timer;   // while Home is held: the time runs on without a
+@@ -444,12 +471,12 @@ static NSTimer *g_hq_timer;   // while Home is held: the time runs on without a
  static NSView *g_hq_hold, *g_hq_prompt; static CAShapeLayer *g_hq_ring;
  static char g_hq_text[HQ_TEXTS][256];
  static void hq_start(void) {
@@ -432,7 +432,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
  }
  // The Home button setting for apps (macOS 27), once, when the first controller is there (GameController reads it only while one is connected): "system" in the log
  // explains a hold that does nothing, since the system keeps Home whatever the host asks. A front end reads the setting itself (GCControllerHomeButtonSettingsManager)
-@@ -639,6 +666,7 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
+@@ -646,6 +673,7 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
  - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self fitDrawable]; }
  @end
  
@@ -440,7 +440,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
  // AppKit reports a refused fullscreen request only to the window delegate (there is no notification for it)
  static void (^g_fs_failed)(void);
  @interface DmWinDelegate : NSObject <NSWindowDelegate> @end
-@@ -655,6 +683,18 @@ static void *guest_tramp(void *p) {
+@@ -662,6 +690,18 @@ static void *guest_tramp(void *p) {
  
  // Metal reads MTL_HUD_ENABLED when the process makes its first device, which can be before the window: set from DM_METAL_HUD before main (set in front_run, the HUD did not show)
  __attribute__((constructor)) static void hud_env(void) { front_hud_env(); }
@@ -459,7 +459,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
  
  // ---------- Cheats: the menu and the panel (hle_cheats.c holds every state; these only show it and call it) ----------
  
-@@ -1504,8 +1544,10 @@ static NSArray<NSURL *> *found_cheat_files(NSString *build) {
+@@ -1511,8 +1551,10 @@ static NSArray<NSURL *> *found_cheat_files(NSString *build) {
  void front_run(void (*guest)(void)) {
      // A game: tell macOS its work is latency-critical, so the system does not trade its frame time for power while the frame rate is capped
      static id activity; activity = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"game"];
@@ -470,7 +470,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
          [NSApplication sharedApplication];
          [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
          NSRect r = NSMakeRect(0, 0, 1280, 720);
-@@ -1556,6 +1598,8 @@ void front_run(void (*guest)(void)) {
+@@ -1563,6 +1605,8 @@ void front_run(void (*guest)(void)) {
              dispatch_async(dispatch_get_main_queue(), ^{ [g_cheats_menu showPanel:nil]; });
          [[bar addItemWithTitle:@"Window" action:nil keyEquivalent:@""] setSubmenu:wm];
          [wm addItemWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"].keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagCommand;
@@ -479,7 +479,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
          NSApp.mainMenu = bar;
          const char *fs = getenv("DM_FULLSCREEN");   // 1 (or any value but 0): start in fullscreen; 0, the settings window's Window, or unset: a window
          if (fs && strcmp(fs, "0")) {
-@@ -1582,6 +1626,22 @@ void front_run(void (*guest)(void)) {
+@@ -1589,6 +1633,22 @@ void front_run(void (*guest)(void)) {
                  (void)n; want = 0; entering = 0; g_fs_failed = nil; }];   // startup succeeded: later manual refusals have no startup request to retry
              dispatch_async(dispatch_get_main_queue(), enter);
          }
@@ -502,7 +502,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
          for (NSNotificationName nm in @[GCControllerDidConnectNotification, GCControllerDidDisconnectNotification])
              [NSNotificationCenter.defaultCenter addObserverForName:nm object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
                  GCController *c = n.object; int conn = n.name == GCControllerDidConnectNotification;
-@@ -1594,7 +1654,16 @@ void front_run(void (*guest)(void)) {
+@@ -1601,7 +1661,16 @@ void front_run(void (*guest)(void)) {
          [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent *(NSEvent *e) {
              if (e.window != win) return e;   // Only swallow keys for the game window; other windows such as the software keyboard input box receive typing as usual
              if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
@@ -519,7 +519,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
              if (!e.isARepeat) on_key(e, e.type == NSEventTypeKeyDown);
              return nil;   // Swallow it to avoid the system beep
          }];
-@@ -1613,7 +1682,7 @@ void front_run(void (*guest)(void)) {
+@@ -1620,7 +1689,7 @@ void front_run(void (*guest)(void)) {
          // another app taking the key window during an unattended run read as a hang (no frame after the last focus change)
          static int keep = -1; if (keep < 0) keep = getenv("DM_FOCUS_KEEP") && atoi(getenv("DM_FOCUS_KEEP"));
          [nc addObserverForName:NSWindowDidResignKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); if (!win.miniaturized && !g_text_box && !keep) dm_focus_set(2); }];
@@ -528,7 +528,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
          [nc addObserverForName:NSWindowDidMiniaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); dm_focus_set(3); dm_audio_suspend(1); dm_gfx_suspend(1); }];
          [nc addObserverForName:NSWindowDidDeminiaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; dm_gfx_suspend(0); dm_audio_suspend(0); dm_focus_set(2); }];
          display_awake(win.isKeyWindow);   // the window may have become key (makeKeyAndOrderFront above) before these observers were installed
-@@ -1697,28 +1766,23 @@ int front_text_input(const char *title, const char *sub, const char *guide, cons
+@@ -1704,28 +1773,23 @@ int front_text_input(const char *title, const char *sub, const char *guide, cons
      return 1;
  }
  
@@ -563,7 +563,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
          };
          NSWindow *win = g_win;
          if (!(win.styleMask & NSWindowStyleMaskFullScreen)) { tell(); return; }
-@@ -1727,3 +1791,20 @@ void front_gpu_lost(void) {
+@@ -1734,3 +1798,20 @@ void front_gpu_lost(void) {
          [win toggleFullScreen:nil];
      });
  }
@@ -585,7 +585,7 @@ index 92d90adae74236ece1e58d31e50dfda5514a9674..390e7d204260043e43a0d557c96a93e9
 +                                                 "Please report it on GitHub with python3 scripts/bug_report.py %@, which collects the log.", @(DM_GAME_ID)]);
 +}
 diff --git a/dm/host/hle.h b/dm/host/hle.h
-index 49191ac4be467fdf3bc72b6503dd3a96714a9c3c..1ae9dff941d3d7d0b83f9a886fb70ffaf38eb7c5 100644
+index 138f453e13849c0a6c49cdae2f13b3b4da413877..4f517f09ee0e4bee7f0bd372840cf9907721d7de 100644
 --- a/dm/host/hle.h
 +++ b/dm/host/hle.h
 @@ -27,6 +27,8 @@ uint64_t guest_ns(void);              // Guest clock (hle_os.c; does not advance
@@ -645,7 +645,7 @@ index 40a3b7678ccb05fcf6a1289a3ae78ac25f01e2e6..018053fc6609484d0c4a45c13bd1d475
  HLE_FORCE("_ZN2nn5audio31GetVirtualInputDevicePropertiesEPNS0_23VirtualDevicePropertiesERKNS0_15AudioDeviceNameE", "connect to auddmg:u; no such device", Result, h_is_Props, void *props, const char *name) { (void)props; (void)name; return RES_FAIL; }
  HLE_FORCE("_ZN2nn5audio15OpenInputStreamEPNS0_15InputStreamTypeEPvmRKNS0_15AudioDeviceNameERKNS0_12StreamFormatEi", "connect to auddmg:u; no microphone on the host: fails", Result, h_is_Open,
 diff --git a/dm/host/hle_hid.c b/dm/host/hle_hid.c
-index 1ea3583d85437864a52c6116d27aaf662e2ac316..b570e5e9e425995059120f6478d3e859b9587d57 100644
+index 5c01407112cc4ab33ddcff37e81f510b2fc635bc..8f7e0293eeaa7a3a024a712b5168923ae855032b 100644
 --- a/dm/host/hle_hid.c
 +++ b/dm/host/hle_hid.c
 @@ -225,7 +225,10 @@ void hid_keys_init(void) {
@@ -676,7 +676,7 @@ index 1ea3583d85437864a52c6116d27aaf662e2ac316..b570e5e9e425995059120f6478d3e859
                  if (!strncmp(line, "texraw ", 7)) { void dm_gfx_texraw(uint64_t serial, const char *path); char *e2; uint64_t s = strtoull(line + 7, &e2, 10); while (*e2 == ' ') e2++; dm_gfx_texraw(s, e2); continue; }
                  if (!strncmp(line, "peek ", 5)) { void dm_ctl_peek(uint64_t a, int n); char *e2; uint64_t a = strtoull(line + 5, &e2, 16); dm_ctl_peek(a, (int)strtol(e2, NULL, 0)); continue; }
                  if (!strncmp(line, "memdump ", 8)) { void dm_ctl_memdump(uint64_t a, uint64_t n, const char *path); char *e2, *e3; uint64_t a = strtoull(line + 8, &e2, 16), n = strtoull(e2, &e3, 0);
-@@ -1023,7 +1029,9 @@ static void vib_send(const uint32_t *handles, const dm_vibration *values, int n)
+@@ -1044,7 +1050,9 @@ static void vib_send(const uint32_t *handles, const dm_vibration *values, int n)
      }
      dm_haptics_send(updates, count);
  }
@@ -688,38 +688,29 @@ index 1ea3583d85437864a52c6116d27aaf662e2ac316..b570e5e9e425995059120f6478d3e859
  // On Horizon handles are computed from npad id and style (libnx _hidGetVibrationDeviceHandles); vib_send checks for an output at each send. With rumble off they are handed out too,
  // as on a Switch whose vibration setting is off (IsVibrationPermitted answers false and nothing is felt), so turning it on while the game runs works in a game that asked only once.
 diff --git a/dm/host/hle_oe.c b/dm/host/hle_oe.c
-index a079a02935d1b6f561175a0fd8c9622c040734aa..a4fed7da6a2768c5c3e57de0832d373b7511f927 100644
+index b99b57ee8002ce3a88d2370a5d2b5fe31eabba85..2f8cd0fd53da54590c5b7b6a72e5a5cb3807c4dd 100644
 --- a/dm/host/hle_oe.c
 +++ b/dm/host/hle_oe.c
-@@ -287,11 +287,16 @@ static unsigned char g_cpu_oc;
- HLE_FORCE("_ZN2nn2oe21IsCpuOverclockEnabledEv", "CPU overclock state (through apm): what SetCpuOverclockEnabled set, off at start", unsigned, h_oe_CpuOc, void) { return g_cpu_oc; }
- HLE_FORCE("_ZN2nn2oe22SetCpuOverclockEnabledEb", "CPU overclock switch (through apm); the host does not scale clocks", void, h_oe_SetCpuOc, unsigned on) { g_cpu_oc = on & 0xff; }
- // Switch 2 SDKs: the graphics scale, which the SDK takes from am's IGraphicsScalingParametersFunctions (a session the host never opened: null read in
--// oe::GetGraphicsScalingParameters). The SDK maps the parameter's first word 10 / 20 / 30 to scale 0 / 1 / 2. Donkey Kong Bananza keeps it as a quality tier: a byte of its graphics
--// settings (+0x1c7, main+0x549348, next to the handheld flag it takes from the operation mode at +0x1c4), and an index into {3, 12, 16} (main+0x1d1a604) whose value less 3 (0, 9, 13)
--// goes to a renderer parameter (main+0x549614). Which tier the console reports in which mode is not measured: the host answers 0 handheld and 1 console, following the operation mode
--HLE_FORCE("_ZN2nn2oe23GetCurrentGraphicsScaleEv", "graphics scale (Switch 2, through am): 0 handheld, 1 console", int, h_oe_GfxScale, void) { return opmode() == 1; }
--HLE_FORCE("_ZN2nn2oe42SetGraphicsScaleChangedNotificationEnabledEb", "graphics scale change notification (Switch 2, through am); the scale changes only with the operation mode",
-+// oe::GetGraphicsScalingParameters). The SDK maps the parameter's first word 10 / 20 / 30 to scale 0 / 1 / 2. It is the share of the GPU the system leaves the game, not the
-+// operation mode: tier 0 is all of it, 1 and 2 less (as while the system runs GameChat's video, which the host never does), and a game shrinks its picture and its GPU budget
-+// to match. Donkey Kong Bananza takes it as its display manager's scale index (+0x1c7, main+0x549348): its frame buffer is the display's size times {1.0, 0.8, 2/3}[tier]
-+// (main+0x30f840), and as an index into {3, 12, 16} (main+0x1d1a604) whose value less 3 (0, 9, 13) its dynamic resolution takes into its GPU time (main+0x549614). Star Fox
-+// keeps only "tier 0" (byte +0xa of its event 5, main+0xba69970) and renders 0.8 times smaller below it: docked, 768x432 for its 1920x1080 window where tier 0 gives 960x540,
-+// smaller than its 960x540 handheld on a GPU twice as fast; console footage matches tier 0. The host answered 1 docked until it was found so. DM_GFX_SCALE sets a tier to
-+// reproduce a reduced share
-+static int gfx_scale(void) { const char *e = getenv("DM_GFX_SCALE"); int v = e ? atoi(e) : 0; return v >= 0 && v <= 2 ? v : 0; }
-+HLE_FORCE("_ZN2nn2oe23GetCurrentGraphicsScaleEv", "graphics scale (Switch 2, through am): 0, the whole GPU (DM_GFX_SCALE sets 1 or 2)", int, h_oe_GfxScale, void) { return gfx_scale(); }
-+HLE_FORCE("_ZN2nn2oe42SetGraphicsScaleChangedNotificationEnabledEb", "graphics scale change notification (Switch 2, through am); the host's scale never changes",
+@@ -299,6 +299,12 @@ HLE_FORCE("_ZN2nn2oe22SetCpuOverclockEnabledEb", "CPU overclock switch (through
+ static int gfx_scale(void) { const char *e = getenv("DM_GFX_SCALE"); int v = e ? atoi(e) : 0; return v >= 0 && v <= 2 ? v : 0; }
+ HLE_FORCE("_ZN2nn2oe23GetCurrentGraphicsScaleEv", "graphics scale (Switch 2, through am): 0, the whole GPU (DM_GFX_SCALE sets 1 or 2)", int, h_oe_GfxScale, void) { return gfx_scale(); }
+ HLE_FORCE("_ZN2nn2oe42SetGraphicsScaleChangedNotificationEnabledEb", "graphics scale change notification (Switch 2, through am); the host's scale never changes",
++||||||| base
++// oe::GetGraphicsScalingParameters). The SDK maps the parameter's first word 10 / 20 / 30 to scale 0 / 1 / 2. Donkey Kong Bananza keeps it as a quality tier: a byte of its graphics
++// settings (+0x1c7, main+0x549348, next to the handheld flag it takes from the operation mode at +0x1c4), and an index into {3, 12, 16} (main+0x1d1a604) whose value less 3 (0, 9, 13)
++// goes to a renderer parameter (main+0x549614). Which tier the console reports in which mode is not measured: the host answers 0 handheld and 1 console, following the operation mode
++HLE_FORCE("_ZN2nn2oe23GetCurrentGraphicsScaleEv", "graphics scale (Switch 2, through am): 0 handheld, 1 console", int, h_oe_GfxScale, void) { return opmode() == 1; }
++HLE_FORCE("_ZN2nn2oe42SetGraphicsScaleChangedNotificationEnabledEb", "graphics scale change notification (Switch 2, through am); the scale changes only with the operation mode",
            void, h_oe_GfxScaleNotify, unsigned on) { (void)on; }
  // The frame length the game aims at (Switch 2 SDKs): oe::SetGraphicsTargetFrameRate maps up to 59 fps to mode 1, up to 119 to mode 2 and above to mode 3, SetGraphicsTargetFrameRateAuto
  // to mode 0, and both call this, which locks the gs graphics server's context and sends it the mode. The host has no graphics server (nv::InitializeGraphics), so the context is null and
 diff --git a/dm/host/tests/t_hid.c b/dm/host/tests/t_hid.c
-index 201d7f825e97e056b9f0a5848515771187af24ce..adb7a69ff9ad2ae70a68e0e00501509c8fecbf44 100644
+index 1cd3153c3ab5d6442898bea1aa589d8f0578cf1c..f3e84fe236fc42bd20d1ed0aba1453cac804ad4d 100644
 --- a/dm/host/tests/t_hid.c
 +++ b/dm/host/tests/t_hid.c
-@@ -44,6 +44,9 @@ void hle_signal_system_event(void *g) { g_signalled = g; g_signals++; }
- int hle_signal_bound_system_event(void *g) { g_signalled = g; g_signals++; return 1; }
- void dm_gfx_texlist(int target) { (void)target; }
+@@ -47,6 +47,9 @@ void dm_gfx_texlist(int target) { (void)target; }
+ // the guest address space (hle_svc.c): the unit test has none, so every stack is a host stack and the big-stack take-overs (the controller applet) run on it directly (hle_bigstack.c)
+ int dm_guest_as_contains(uintptr_t a) { (void)a; return 0; }
  void dm_gfx_restop(void) {}
 +void dm_gfx_poolstat(void) {}
 +void dm_gfx_texstat(void) {}
@@ -727,7 +718,7 @@ index 201d7f825e97e056b9f0a5848515771187af24ce..adb7a69ff9ad2ae70a68e0e00501509c
  void dm_gfx_texraw(uint64_t serial, const char *path) { (void)serial; (void)path; }
  void dm_ctl_peek(uint64_t a, int n) { (void)a; (void)n; }
  void crash_dump_now(const char *why) { (void)why; }
-@@ -269,18 +272,18 @@ static void t_vibration(void) {
+@@ -302,18 +305,18 @@ static void t_vibration(void) {
      g_mode = 1; ids((uint32_t[]){0, 1, NPAD_HANDHELD}, 3); dm_pad_players(3);
      CHECK(!h_hid_VibPermit() && !h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY), "no sink: no vibration devices");
      dm_haptics_init(vibration_sink, 1);
@@ -752,7 +743,7 @@ index 201d7f825e97e056b9f0a5848515771187af24ce..adb7a69ff9ad2ae70a68e0e00501509c
      CHECK(h_hid_VibHandles(h, 1, &id, STYLE_FULLKEY) == 1, "handle count respects caller capacity");
      h_hid_SendVib(&h[0], &v); h_hid_VibActual(&got, &h[0]);
      CHECK(!memcmp(&got, &v, sizeof v) && vibration[1].motor[0].amplitude_low == 0, "game value is retained for the addressed player only");
-@@ -309,7 +312,8 @@ static void t_vibration(void) {
+@@ -342,7 +345,8 @@ static void t_vibration(void) {
      { int m; CHECK(!vib_targets(3, &m), "old docked handle is not valid in handheld mode"); }
      CHECK(!h_hid_VibMounted(&(uint32_t){3}) && h_hid_VibMounted(&h[0]), "mounted follows the connected controller's style");
      dm_haptics_route(1, 0);
@@ -763,18 +754,14 @@ index 201d7f825e97e056b9f0a5848515771187af24ce..adb7a69ff9ad2ae70a68e0e00501509c
      CHECK(!h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_HANDHELD) == 2, "rumble disabled: not permitted, but the handles exist, as on a Switch");
      dm_haptics_set_enabled(1);
 diff --git a/dm/host/tests/t_oe.c b/dm/host/tests/t_oe.c
-index 89c4ac695cba24891d3bcb51bb9da151b6720d74..18d034c6958e27ef64f8c33f8b00258c9594a0d2 100644
+index ffa7db82a9ac26f3c457515c7168299c546b55f1..bd033a43615276460c1bfa8dda386147f7ce7020 100644
 --- a/dm/host/tests/t_oe.c
 +++ b/dm/host/tests/t_oe.c
-@@ -155,5 +155,10 @@ int main(void) {
-     h_oe_SetFocusMode(3); dm_applet_enter("test");
-     CHECK(empty() && h_oe_GetFocus() == 2, "focus mode 3: an applet changes the state without a notification");
-     dm_applet_leave(); CHECK(empty() && h_oe_GetFocus() == 1, "focus mode 3: back to 1 without a notification");
-+    // the graphics scale is the GPU share the system leaves the game, not the operation mode: tier 0 in both modes; DM_GFX_SCALE picks a reduced tier, nonsense keeps 0
-+    unsetenv("DM_GFX_SCALE"); dm_set_opmode(1); CHECK(h_oe_GfxScale() == 0, "graphics scale docked: tier 0 (the whole GPU)");
-+    dm_set_opmode(0); CHECK(h_oe_GfxScale() == 0, "graphics scale handheld: tier 0");
-+    setenv("DM_GFX_SCALE", "2", 1); CHECK(h_oe_GfxScale() == 2, "DM_GFX_SCALE=2: tier 2");
-+    setenv("DM_GFX_SCALE", "7", 1); CHECK(h_oe_GfxScale() == 0, "DM_GFX_SCALE=7: no such tier, 0"); unsetenv("DM_GFX_SCALE");
+@@ -164,5 +164,6 @@ int main(void) {
+     dm_set_opmode(0); CHECK(h_oe_GfxScale() == 0, "graphics scale handheld: tier 0");
+     setenv("DM_GFX_SCALE", "2", 1); CHECK(h_oe_GfxScale() == 2, "DM_GFX_SCALE=2: tier 2");
+     setenv("DM_GFX_SCALE", "7", 1); CHECK(h_oe_GfxScale() == 0, "DM_GFX_SCALE=7: no such tier, 0"); unsetenv("DM_GFX_SCALE");
++||||||| base
      printf("== oe %d checks, %d failed ==\n", checks, fails); return fails != 0;
  }
 diff --git a/dm/host/web_apple.m b/dm/host/web_apple.m

@@ -2,7 +2,7 @@
 
 Work planned or in flight on NXForge (gnosticgeek/nxforge, formerly
 gnosticgeek/nxnative). Upstream is [seedds/nxnative](https://github.com/seedds/nxnative);
-[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-10 (0.25.0: engine up to nxnative c4ffb9d; 0.23.1: GPU memory guard measures the residency set, upstream PR #1615 as a patch; 0.22.0: engine up to nxnative d9cd9de, Converter 0.5.1 clash list; 0.21.0: Converter 0.5.0 Get Upstream Now, `layer.py local`; 0.20.0: engine up to nxnative 028a263, `layer.py continue`; 0.17.1: Converter 0.2.1 launch-hang fix; 0.17.0: Converter 0.2.0 and Sidebar 0.2.0; 0.16.0: sidebar versioned on its own; 0.15.0: thin fork, upstream main up to bd979ce).
+[UPSTREAM.md](UPSTREAM.md) has the contribution policy. Last updated 2026-11-11 (0.26.0: engine up to nxnative 084f5aa; 0.25.0: engine up to nxnative c4ffb9d; 0.23.1: GPU memory guard measures the residency set, upstream PR #1615 as a patch; 0.22.0: engine up to nxnative d9cd9de, Converter 0.5.1 clash list; 0.21.0: Converter 0.5.0 Get Upstream Now, `layer.py local`; 0.20.0: engine up to nxnative 028a263, `layer.py continue`; 0.17.1: Converter 0.2.1 launch-hang fix; 0.17.0: Converter 0.2.0 and Sidebar 0.2.0; 0.16.0: sidebar versioned on its own; 0.15.0: thin fork, upstream main up to bd979ce).
 
 Keep this file current: every release PR updates the rows its changes touch and the
 "Last updated" line ([UPSTREAM.md](UPSTREAM.md#versions); `scripts/release_check.py` checks it).

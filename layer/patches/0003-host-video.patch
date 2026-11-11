@@ -403,7 +403,7 @@ index 84594e8ba6dfabdebf6db502e3ccf66cc182a6df..79280f7659f84a575f41c122771dd8e9
  // Exposed for its test: fills the 4 + n bytes of an av1C record from a sequence header OBU (with its header and size); 0 when the OBU cannot be read
  int mav1_av1c(const uint8_t *obu, size_t n, uint8_t c[4], int *w, int *h);
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 8029418d526c2a829964c66cfffca1711012cce9..9fe9328dd47371e22e69afe6400df08a7eddc6e8 100644
+index 0b3f768e019152ce9834bf68b180ab7ac948947c..0b2f7202e23da954f91b06929b7d8cbd4b8de7a1 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
 @@ -12,12 +12,14 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)

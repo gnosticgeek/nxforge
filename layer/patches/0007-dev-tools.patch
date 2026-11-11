@@ -5,6 +5,7 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
  dm/tools/lint_c_baseline.tsv         |  9 ++++-----
+ dm/tools/lint_python_baseline.tsv    |  1 +
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
  dm/tools/tests/test_regress.py       | 16 ++++++++--------
@@ -12,7 +13,7 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 19 ++++++++++---------
- 8 files changed, 55 insertions(+), 32 deletions(-)
+ 9 files changed, 56 insertions(+), 32 deletions(-)
 
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
 index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..0586958d562503c9707f82f14fd14bdf69647bf1 100644
@@ -58,6 +59,18 @@ index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..0586958d562503c9707f82f14fd14bdf
  dm/host/tests/t_hid.c	bugprone-unsafe-functions	1
  dm/host/tests/t_hid.c	clang-analyzer-unix.Errno	1
  dm/host/tests/t_movie_vpx.c	clang-analyzer-core.UndefinedBinaryOperatorResult	1
+diff --git a/dm/tools/lint_python_baseline.tsv b/dm/tools/lint_python_baseline.tsv
+index 3be1bc60a5003ed700d0287f05e3fc0f1ebc30ff..44e6353ff7391f4794b3ecf2f16fa99a67e92468 100644
+--- a/dm/tools/lint_python_baseline.tsv
++++ b/dm/tools/lint_python_baseline.tsv
+@@ -196,6 +196,7 @@ pyright	scripts/build_ipa_from_nsp.py	reportCallIssue	1	No overloads for "__init
+ pyright	scripts/build_ipa_from_nsp.py	reportOptionalIterable	1	Object of type "None" cannot be used as iterable value
+ pyright	scripts/build_ipa_from_nsp.py	reportOptionalMemberAccess	1	"close" is not a known attribute of "None"
+ pyright	scripts/build_ipa_from_nsp.py	reportOptionalOperand	1	Operator "-" not supported for "None"
++ruff	dm/gfx/tools/dmsh_entry.py	F401	1	`dmsh_fetch` imported but unused
+ ruff	dm/gfx/tools/shader_split.py	B006	1	Do not use mutable data structures for argument defaults
+ ruff	dm/gfx/tools/shader_split.py	B023	1	Function definition does not bind loop variable `c`
+ ruff	dm/gfx/tools/shader_split.py	B023	1	Function definition does not bind loop variable `order`
 diff --git a/dm/tools/tests/test_bench.py b/dm/tools/tests/test_bench.py
 index a23c146bac6ab6c555745e0812e010ead2698335..3ecf48e858407463bda2017ef5af209535171ab4 100644
 --- a/dm/tools/tests/test_bench.py
