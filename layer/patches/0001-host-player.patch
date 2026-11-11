@@ -13,12 +13,10 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/host/hle.h         |   2 +
  dm/host/hle_audio.c   |  15 +++-
  dm/host/hle_hid.c     |  14 +++-
- dm/host/hle_oe.c      |   6 ++
  dm/host/tests/t_hid.c |  18 +++--
- dm/host/tests/t_oe.c  |   1 +
  dm/host/web_apple.m   |  19 +++--
  dm/mac/launcher.c     | 104 ++++++++++++++++++++++++---
- 13 files changed, 364 insertions(+), 79 deletions(-)
+ 11 files changed, 357 insertions(+), 79 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
 index f3e38a12c09b6d5807c0755c713184e356f2e2ef..1c91b4ac03c6ed838a72c87b8ba4b244363d4aaf 100644
@@ -687,23 +685,6 @@ index 5c01407112cc4ab33ddcff37e81f510b2fc635bc..8f7e0293eeaa7a3a024a712b5168923a
  // Games can cache handles once at startup, before GameController routes the pad's haptics (Unicorn Overlord kept an empty answer and sent every value to handle 0).
  // On Horizon handles are computed from npad id and style (libnx _hidGetVibrationDeviceHandles); vib_send checks for an output at each send. With rumble off they are handed out too,
  // as on a Switch whose vibration setting is off (IsVibrationPermitted answers false and nothing is felt), so turning it on while the game runs works in a game that asked only once.
-diff --git a/dm/host/hle_oe.c b/dm/host/hle_oe.c
-index b99b57ee8002ce3a88d2370a5d2b5fe31eabba85..2f8cd0fd53da54590c5b7b6a72e5a5cb3807c4dd 100644
---- a/dm/host/hle_oe.c
-+++ b/dm/host/hle_oe.c
-@@ -299,6 +299,12 @@ HLE_FORCE("_ZN2nn2oe22SetCpuOverclockEnabledEb", "CPU overclock switch (through
- static int gfx_scale(void) { const char *e = getenv("DM_GFX_SCALE"); int v = e ? atoi(e) : 0; return v >= 0 && v <= 2 ? v : 0; }
- HLE_FORCE("_ZN2nn2oe23GetCurrentGraphicsScaleEv", "graphics scale (Switch 2, through am): 0, the whole GPU (DM_GFX_SCALE sets 1 or 2)", int, h_oe_GfxScale, void) { return gfx_scale(); }
- HLE_FORCE("_ZN2nn2oe42SetGraphicsScaleChangedNotificationEnabledEb", "graphics scale change notification (Switch 2, through am); the host's scale never changes",
-+||||||| base
-+// oe::GetGraphicsScalingParameters). The SDK maps the parameter's first word 10 / 20 / 30 to scale 0 / 1 / 2. Donkey Kong Bananza keeps it as a quality tier: a byte of its graphics
-+// settings (+0x1c7, main+0x549348, next to the handheld flag it takes from the operation mode at +0x1c4), and an index into {3, 12, 16} (main+0x1d1a604) whose value less 3 (0, 9, 13)
-+// goes to a renderer parameter (main+0x549614). Which tier the console reports in which mode is not measured: the host answers 0 handheld and 1 console, following the operation mode
-+HLE_FORCE("_ZN2nn2oe23GetCurrentGraphicsScaleEv", "graphics scale (Switch 2, through am): 0 handheld, 1 console", int, h_oe_GfxScale, void) { return opmode() == 1; }
-+HLE_FORCE("_ZN2nn2oe42SetGraphicsScaleChangedNotificationEnabledEb", "graphics scale change notification (Switch 2, through am); the scale changes only with the operation mode",
-           void, h_oe_GfxScaleNotify, unsigned on) { (void)on; }
- // The frame length the game aims at (Switch 2 SDKs): oe::SetGraphicsTargetFrameRate maps up to 59 fps to mode 1, up to 119 to mode 2 and above to mode 3, SetGraphicsTargetFrameRateAuto
- // to mode 0, and both call this, which locks the gs graphics server's context and sends it the mode. The host has no graphics server (nv::InitializeGraphics), so the context is null and
 diff --git a/dm/host/tests/t_hid.c b/dm/host/tests/t_hid.c
 index 1cd3153c3ab5d6442898bea1aa589d8f0578cf1c..f3e84fe236fc42bd20d1ed0aba1453cac804ad4d 100644
 --- a/dm/host/tests/t_hid.c
@@ -753,17 +734,6 @@ index 1cd3153c3ab5d6442898bea1aa589d8f0578cf1c..f3e84fe236fc42bd20d1ed0aba1453ca
      dm_haptics_init(vibration_sink, 0); dm_haptics_route(0, 1);
      CHECK(!h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_HANDHELD) == 2, "rumble disabled: not permitted, but the handles exist, as on a Switch");
      dm_haptics_set_enabled(1);
-diff --git a/dm/host/tests/t_oe.c b/dm/host/tests/t_oe.c
-index ffa7db82a9ac26f3c457515c7168299c546b55f1..bd033a43615276460c1bfa8dda386147f7ce7020 100644
---- a/dm/host/tests/t_oe.c
-+++ b/dm/host/tests/t_oe.c
-@@ -164,5 +164,6 @@ int main(void) {
-     dm_set_opmode(0); CHECK(h_oe_GfxScale() == 0, "graphics scale handheld: tier 0");
-     setenv("DM_GFX_SCALE", "2", 1); CHECK(h_oe_GfxScale() == 2, "DM_GFX_SCALE=2: tier 2");
-     setenv("DM_GFX_SCALE", "7", 1); CHECK(h_oe_GfxScale() == 0, "DM_GFX_SCALE=7: no such tier, 0"); unsetenv("DM_GFX_SCALE");
-+||||||| base
-     printf("== oe %d checks, %d failed ==\n", checks, fails); return fails != 0;
- }
 diff --git a/dm/host/web_apple.m b/dm/host/web_apple.m
 index ba25f6862ef212f48398beb5ddd25b748999c550..9f6886a5e4cebe326b20e5d44c394aec93c9e857 100644
 --- a/dm/host/web_apple.m
