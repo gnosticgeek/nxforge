@@ -26,14 +26,14 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  18 files changed, 596 insertions(+), 94 deletions(-)
 
 diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
-index 7a167c0358294147d5b9cbcf7fa5d5e638e4b4ef..4a13a120d5c9ca039ad9e309ec1a05bcd74b2c53 100644
+index b99f6ddffd2a681848a9be6b7e3a1738258de871..333f149bc883603aad211492ba8765d080f7cfa0 100644
 --- a/dm/gfx/nvn/dmsh_chain.h
 +++ b/dm/gfx/nvn/dmsh_chain.h
 @@ -1,3 +1,3 @@
  // Generated file (dm/gfx/tools/dmsh_chain.py --header): the B shader library translation chain version this source tree expects (default options), one for every game;
  // the host loads only <library dir>/b-<V>/. Run dmsh_chain.py --header after changing the chain's tools and commit this file with the change
--#define DMSH_CHAIN "3ae08e02ec6a"
-+#define DMSH_CHAIN "3e887b940f3a"
+-#define DMSH_CHAIN "1fa63cf7c7ae"
++#define DMSH_CHAIN "af80d3d704f4"
 diff --git a/dm/gfx/tests/test_dmsh_ampere_mem.py b/dm/gfx/tests/test_dmsh_ampere_mem.py
 index e8c59e851606763f3852fa1abf57f882960d889a..e12812e87002f3aa732c4622ce3888c97b5cdc02 100644
 --- a/dm/gfx/tests/test_dmsh_ampere_mem.py
@@ -146,7 +146,7 @@ index 878932666fed6a57b8a003b2915c2b09a93bae62..280c0a0efdc61aeb3063a1b55b7bfa4d
  
  
 diff --git a/dm/gfx/tools/dmsh_build.py b/dm/gfx/tools/dmsh_build.py
-index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc294a7ab7 100644
+index d4e0b1ea1a0b21a3e6ea96c39f2d000bca4e46b0..c2aeffe8a790b09a3e95296c58c792154942bdfa 100644
 --- a/dm/gfx/tools/dmsh_build.py
 +++ b/dm/gfx/tools/dmsh_build.py
 @@ -7,7 +7,7 @@
@@ -193,7 +193,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
  STORE = shader_cache.Store(os.environ.get('DMSH_CAS', os.path.join(cache_root, 'cas.db')))
  atexit.register(STORE.close)   # folds its log into the one file
  CAS_LOCKS, CAS_LOCKS_GUARD = {}, threading.Lock()
-@@ -80,7 +108,11 @@ METAL_DEPTH = ['-fbracket-depth=1024']
+@@ -81,7 +109,11 @@ METAL_DEPTH = ['-fbracket-depth=1024']
  METAL_FP = dmsh_mtlcache.compiler_id('macosx') + ('\0iphoneos\0' + dmsh_mtlcache.compiler_id('iphoneos') if IOSOUT else '')
  def mac_compile(msl, air, lib):   # same interface as ios_metal.compile; the precompiled header and METAL_DEPTH change no output, so MAC_RECORD does not name them (dmsh_pch.py)
      dmsh_pch.compile(MAC_RUN + METAL_DEPTH, msl, air)
@@ -206,7 +206,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
  
  def record_index(path):   # → (an open descriptor, {a record's key: its bytes' (start, end)}): shader_split.py writes each record's key at +0x08, its bytes from its marker to the next one
      # Scanned through a read-only mapping that is closed again, so no package stays in this process. Pokopia's ps_rdb.bin (4.25 GB) read and cut into its 105,118
-@@ -108,7 +140,7 @@ def shader_rule_source(name):
+@@ -109,7 +141,7 @@ def shader_rule_source(name):
      return b''.join(inspect.getsource(f).encode() for f, applies in RULES if applies(name))
  
  def tool_fingerprint():
@@ -215,7 +215,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
      return ('lock\0' + open(dmsh_chain.LOCK).read() + '\0options\0' + dmsh_chain.options() +
              '\0xlate\0' + dmsh_chain.xlate_source_sha() + '\0spirv-cross\0' + sc.stdout + sc.stderr +
              '\0xc\0' + repr(XC) + '\0mac\0' + MAC_RECORD + '\0ios\0' + (ios_metal.RECORD if IOSOUT else '') + '\0metal\0' + METAL_FP)
-@@ -577,7 +609,7 @@ def gs_slice(spv):
+@@ -578,7 +610,7 @@ def gs_slice(spv):
      grading LUT the tone mapper reads, and without it the screen came out a flat blue). Metal has no geometry stage, so the host drops such a shader and draws with the vertex shader's
      layer entry points instead (vs_layer_entry), which write that component as the layer. Read from the SPIR-V as GLSL (SPIRV-Cross writes no MSL for a geometry stage).
      → {'loc': input location, 'comp': component} or None (any other geometry shader: one-pass cube shadows emit six transformed triangles)"""
@@ -224,7 +224,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
      g = r.stdout
      if r.returncode or 'layout(triangles) in;' not in g or 'layout(max_vertices = 3, triangle_strip) out;' not in g or g.count('EmitVertex();') != 3 or 'EndPrimitive' in g: return None
      ins = {m.group(2): int(m.group(1)) for m in re.finditer(r'layout\(location = (\d+)\) in vec4 (\w+)\[3\];', g)}
-@@ -671,14 +703,14 @@ def geometry_finish(key, w, j, c1):
+@@ -672,14 +704,14 @@ def geometry_finish(key, w, j, c1):
      dmsh_geometry.output_layout(code, 0)   # validate before running the translator
      jobs = [{**j, 'key': key + '_g' + str(t), 'geometry_topology': t} for t in range(5)]
      jp = os.path.join(w, key + '_geometry.json'); atomic_json(jp, jobs)
@@ -241,7 +241,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
          if r.returncode: return 'geometry MSL failed', r.stderr.strip()[:160], None
          try: selected = dmsh_fetch.select_guards(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout)))   # bounded uniform reads as selects (see dmsh_fetch.select_guards)
          except ValueError as e: return 'geometry MSL failed', str(e)[:160], None
-@@ -710,7 +742,7 @@ def geometry_finish(key, w, j, c1):
+@@ -711,7 +743,7 @@ def geometry_finish(key, w, j, c1):
              base = {**refl, 'key': key + '_b'}
              save('_b', src, base)
              spv = os.path.join(w, k + '.reader.spv'); dmsh_geometry.flatten_sets(spv)
@@ -250,7 +250,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
              if r.returncode: return 'geometry reader failed', r.stderr.strip()[:160], None
              try: selected = dmsh_fetch.select_guards(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout)))
              except ValueError as e: return 'geometry reader failed', str(e)[:160], None
-@@ -739,17 +771,17 @@ def finish(key, w, j, c1):
+@@ -740,17 +772,17 @@ def finish(key, w, j, c1):
          try: return geometry_finish(key, w, j, c1)
          except (ValueError, subprocess.CalledProcessError) as e: return 'geometry failed', str(e)[:160], None
      if j['stage'] == 'vs': spv_single_lane(os.path.join(w, key + '.spv'))   # one-lane subgroups (see spv_single_lane)
@@ -271,7 +271,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
              if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
              src = open(msl).read()
      try: src = dmsh_atomic.check_msl(src)
-@@ -767,7 +799,8 @@ def finish(key, w, j, c1):
+@@ -768,7 +800,8 @@ def finish(key, w, j, c1):
      try: src = dmsh_reflect.pool_arrays(src)   # handles traced to no slot read the pools the replay keeps (see pool_arrays)
      except ValueError as e: return 'pool rewrite failed', str(e)[:160], None
      src = dmsh_wide.wide_loads(src)   # storage words the translator split, read whole again (see dmsh_wide.py)
@@ -281,7 +281,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
      if j['stage'] == 'ps': src = dmsh_rewrite.frag_z_snap(src)[0]   # gl_FragCoord.z against a depth of its own surface (see frag_z_snap)
      blend0 = 0
      if j['stage'] == 'ps': src, blend0 = dmsh_rewrite.blend_zero(src)   # a zero blend weight makes 0 of a NaN colour, as NVIDIA's blender does; before the entry points that share main0's body (see blend_zero)
-@@ -864,8 +897,9 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
+@@ -865,8 +898,9 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
      os.makedirs(_d, exist_ok=True)
      for _n in os.listdir(_d):   # a partial build over a folder (an older chain's, or one a stopped build left)
          _m = OUT_KEY.match(_n)
@@ -293,7 +293,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
  STORE.delete_prefix(STAGE + '/')   # what a stopped build of this folder staged
  
  def sweep_work(root):
-@@ -886,7 +920,10 @@ _work = os.environ.get('WORK') or tempfile.gettempdir()
+@@ -887,7 +921,10 @@ _work = os.environ.get('WORK') or tempfile.gettempdir()
  sweep_work(_work)
  w = tempfile.mkdtemp(prefix='dmsh_', dir=_work)
  with open(os.path.join(w, 'pid'), 'w') as _f: _f.write(str(os.getpid()))
@@ -305,7 +305,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
  # first take the libraries earlier chain versions left on disk: the b-*/ and b-*.img beside the output (iOS: the folder of the same name) and the roots DMSH_PREFILL lists
  for _spec in [cache_root + ('=' + os.path.dirname(IOSOUT) if IOSOUT else '')] + [x for x in os.environ.get('DMSH_PREFILL', '').split(os.pathsep) if x]:
      _mac, _, _ios = _spec.partition('=')
-@@ -943,6 +980,7 @@ def xlate_errors(r):
+@@ -944,6 +981,7 @@ def xlate_errors(r):
      for ln in r.stderr.splitlines():
          m = re.match(r'\[RED\] (\w+): (.*)', ln)
          if m: xerr[m.group(1)] = m.group(2)[:160]
@@ -313,7 +313,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
  def translate(batch):
      """A batch's misses translated into a working folder of its own (removed once the batch is finished) → that folder"""
      wb = tempfile.mkdtemp(prefix='batch_', dir=w)
-@@ -950,9 +988,12 @@ def translate(batch):
+@@ -951,9 +989,12 @@ def translate(batch):
      for k in miss: jobs[k], c1s[k] = job_for(k, loc[k][0], rec_of(k)[1], wb)
      def xl(ch):
          jp = os.path.join(wb, f'job_{abs(hash(ch[0]))}.json'); json.dump([jobs[k] for k in ch], open(jp, 'w'))
@@ -328,7 +328,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
      return wb
  def restored(key, wb):
      """A cache hit's outputs back on disk while it is finished. When another build pruned them since the look (cache_lookup), the shader is translated now, in the batch's folder: False"""
-@@ -960,7 +1001,7 @@ def restored(key, wb):
+@@ -961,7 +1002,7 @@ def restored(key, wb):
      PRE_STATS['hit'] -= 1; PRE_STATS['miss'] += 1; PRE_STATS['pruned meanwhile'] += 1
      jobs[key], c1s[key] = job_for(key, loc[key][0], rec_of(key)[1], wb)
      jp = os.path.join(wb, f'job1_{key}.json'); json.dump([jobs[key]], open(jp, 'w'))
@@ -337,7 +337,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
      return False
  DONE = collections.Counter()
  def fin(key, wb):
-@@ -1031,6 +1072,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
+@@ -1032,6 +1073,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
        f'{PULL_STATS["no stage input"]} vertex shaders without stage inputs (none needed)')
  print('mesh libraries (<vertex>_<geometry>_m3, dmsh_mesh.py): ' + (', '.join(f'{k} {v}' for k, v in MESH_STATS.items()) or 'none'))
  print(MTL.summary())
@@ -345,7 +345,7 @@ index 169d7892b440e642192d88d25525740e79ebe7f7..7c9887e1f1d8b639dce908854562f1dc
  for lvl in [k for k in st if k != 'ok']:
      for e, n in collections.Counter(r[2] for r in res if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
  ok = [r[3] for r in res if r[1] == 'ok']
-@@ -1066,7 +1108,7 @@ if PROGRESS:
+@@ -1067,7 +1109,7 @@ if PROGRESS:
      except FileNotFoundError: pass
  if not want:
      for _tool, _table in (('c1_guard.py', 'c1_full.tsv'), ('cb_extent.py', 'cb_extent.tsv')):
@@ -962,7 +962,7 @@ index 473f9db511fd394299d36bb4b17fed79c99e32a6..011739cb3dc38947233773f8cc6bbd1d
  if __name__ == '__main__':
      import nso
 diff --git a/dm/gfx/tools/vk_shaders.py b/dm/gfx/tools/vk_shaders.py
-index 14c81b46f299d94b1c919be0da52543fe6a9e18c..92a1fe79bc898f871368c7589e6b032f5dce91d0 100644
+index 254568a55b83a8e726aa7b4a1fad4917d6c8b09f..c74f2b738bfec8888c0df8cf603eefe507cd9b0b 100644
 --- a/dm/gfx/tools/vk_shaders.py
 +++ b/dm/gfx/tools/vk_shaders.py
 @@ -79,13 +79,15 @@ def fix_strides(words):
@@ -1015,7 +1015,7 @@ index 14c81b46f299d94b1c919be0da52543fe6a9e18c..92a1fe79bc898f871368c7589e6b032f
 -               '# spirv-cross ' + ' '.join((lambda r: r.stdout + r.stderr)(subprocess.run([SPIRV_CROSS, '--revision'], capture_output=True, text=True)).split())]
 +               '# spirv-cross ' + ' '.join((lambda r: r.stdout + r.stderr)(subprocess.run([SPIRV_CROSS, '--revision'], capture_output=True, text=True, stdin=subprocess.DEVNULL)).split())]
          tsv += [f'{k}\t{v[0]}\t{" ".join(v[1])}\t{v[3]}' for k, v in sorted(seen.items())]
-         dirs = [(os.path.join(out, 'vk'), 'macosx', [])]
+         dirs = [(os.path.join(out, 'vk'), 'macosx', [MAC_MIN_FLAG])]   # the Mac host's minimum macOS, as the NVN chain's libraries (dmsh_chain.py MAC_MIN)
          # The iPhone library is compiled with -fmetal-math-mode=relaxed, as the NVN chain's (dm/ios/tools/ios_metal.py): the default fast mode lets the GPU compiler assume there is
 diff --git a/dm/tools/fuzz/fuzz_shader_split.py b/dm/tools/fuzz/fuzz_shader_split.py
 index 51ca2f68f9761b64d3f71e9b69f30f59d80154a1..bc70eaff86577224a540aca2c57189e0f11e9a0c 100644
@@ -1220,10 +1220,10 @@ index e7dd90648701ec1a52594166fcd4d6ba0f790941..6e2ed5a70c8545adcb98549d79cafee3
      def test_low_disk_space_stops_before_metal_tt(self):   # Cruis'n Blast: a full volume made metal-tt fail with only "applegpu-nt command failed"
          self.work.mkdir(parents=True); (self.work / 'translate-0001').write_bytes(b'x'); (self.work / 'a.airp').write_bytes(b'x')
 diff --git a/dm/tools/tests/test_shader_pch.py b/dm/tools/tests/test_shader_pch.py
-index 3e00b60e9f91e22bd2a4ec6f7684479a9fe8deb6..c56a4303cb829df99baedca44335197bc7c8f857 100644
+index b65084a26582487b8a8227c2718e1950301f5f55..899699a8f7e6913166e43a915688234590149fae 100644
 --- a/dm/tools/tests/test_shader_pch.py
 +++ b/dm/tools/tests/test_shader_pch.py
-@@ -59,7 +59,21 @@ class Choice(Tmp):
+@@ -60,7 +60,21 @@ class Choice(Tmp):
          with mock.patch.object(dmsh_pch, 'make', return_value=('/p.pch', None)), mock.patch.object(subprocess, 'run', side_effect=[self.result(1), self.result()]) as run:
              dmsh_pch.compile(['metal', '-c'], 'a.metal', 'a.air')
          self.assertEqual(run.call_args_list[1].args[0], ['metal', '-c', '-x', 'metal', '-', '-o', 'a.air'])

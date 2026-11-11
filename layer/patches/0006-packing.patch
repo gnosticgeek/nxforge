@@ -320,7 +320,7 @@ index db5bfb597ff22b2bb165c47efa34c95ed47ea301..3bc45351e5f3af8b797fcc645fb32a75
      def test_frame_buffering_by_graphics_api(self):
          for api, gid in [('nvn', BOTW), ('vulkan', '0100535012974000'), ('gl', '010014E00DB56000'), ('', BOTW)]:
 diff --git a/dm/tools/tests/test_nsp_chain.py b/dm/tools/tests/test_nsp_chain.py
-index 30323c142d54b8eb31df8c734e50fda4287c5879..89758d9ebbf53de6952fced42c3b8f5000f47762 100644
+index a833f69c67c0329fd3f0a994c21815f7335177d3..cfaaa8c131454d9c77466bb83c718c70852cdff3 100644
 --- a/dm/tools/tests/test_nsp_chain.py
 +++ b/dm/tools/tests/test_nsp_chain.py
 @@ -19,6 +19,9 @@ REPO = Path(__file__).resolve().parents[3]
@@ -356,7 +356,7 @@ index 30323c142d54b8eb31df8c734e50fda4287c5879..89758d9ebbf53de6952fced42c3b8f50
  class Header(Base):
      def setUp(self):   # a repository whose chain tools are the real ones (linked) and whose header is its own
          super().setUp()
-@@ -134,6 +153,27 @@ class TableTools(unittest.TestCase):
+@@ -135,6 +154,27 @@ class TableTools(unittest.TestCase):
                  self.assertEqual(r.returncode, 0, r.stderr)
          self.assertEqual((lib.parent / 'c1_full.tsv').read_text().splitlines()[1:], [key])   # the shader itself is still checked
  
@@ -384,7 +384,7 @@ index 30323c142d54b8eb31df8c734e50fda4287c5879..89758d9ebbf53de6952fced42c3b8f50
  
  class TableDifference(unittest.TestCase):   # the row the build error names when a split table differs from the profile's (GitHub issue #1263)
      HEAD = b'# header\n'
-@@ -153,5 +193,33 @@ class TableDifference(unittest.TestCase):   # the row the build error names when
+@@ -154,5 +194,33 @@ class TableDifference(unittest.TestCase):   # the row the build error names when
          self.assertEqual(nsp.table_difference('t.tsv', b'a\nb\n', b'b\na\n'), 't.tsv: the same rows in another order')
  
  
