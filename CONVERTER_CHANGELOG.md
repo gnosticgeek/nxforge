@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.6.1 (2026-11-11)
+
+Ships in NXForge 0.27.2.
+
+- **The step tiles follow a Switch 2 game's build.** A .nup or dump build has no "Extract tools" or "extract" stage, so tiles 1 and 2 stayed unticked for the whole build, and the pipeline archive lit no tile. Unpacking or packing the game now ticks "Extract game files", "Extract tools" shows "Not needed" once a later step starts, and the pipeline archive lights "Package Mac app".
+- **The time left counts the Mac shader stage.** Its summary ("Metal libraries: 9,807 reused, 33,041 compiled") was read as a reused stage, so the history left out the longest stage of a build (51 minutes for Ocarina of Time). Only a stage reused as a whole counts as reused now, and earlier records of a "reused" stage that took two minutes or more count as work.
+- With NXForge 0.27.2's separate counts for the pipeline archive's batches and compute groups, "About 4 h 35 min left" for Ocarina of Time's archive is gone.
+
 ## 0.6.0 (2026-11-11)
 
 Ships in NXForge 0.27.0.

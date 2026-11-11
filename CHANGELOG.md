@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.27.2 (2026-11-11)
+
+- **A sensible time left while the pipeline archive builds.** `pso_offline.py` counts its base batches (1000 render pipelines, about a minute each) and its compute groups (16 compute pipelines, several at a time) as one list, and the build's ETA took a minute for every entry: Ocarina of Time's 34 batches and 258 compute groups showed "About 4 h 35 min left" for a step of about an hour. The two are now separate steps, "compiling the batches" and "compiling the compute pipelines", each with its own count and ETA.
+- **Mac shaders' time is recorded again.** A stage whose summary counted reused pieces ("Metal libraries: 9,807 reused, 33,041 compiled") was taken for a reused stage, so `stage_times.json` never held the Mac shader stage's time; only a stage reused as a whole is left out now. "check v131072 files" is recorded as "check files", like the other stages without their version.
+- **NXForge Converter 0.6.1** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the step tiles tick a Switch 2 game's steps, and the time left counts the Mac shader stage of earlier builds.
+
 ## 0.27.1 (2026-11-11)
 
 - **Up to nxnative `f75ac06`** (3 commits past 0.26's engine `084f5aa`): a game's Mac shaders are compiled for the Mac host's minimum macOS, so one chain version gives the same result on every Mac; a storage takeover finds its candidates by pool cell instead of walking the whole sharing table (faster in scenes that share tens of thousands of textures); The Binding of Isaac: Rebirth ported. Shader chain `af80d3d704f4`: every game's shaders are translated again on its next build.

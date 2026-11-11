@@ -26,9 +26,12 @@ class Plan(unittest.TestCase):
 
     def test_a_normal_build_records_only_stages_that_did_work(self):
         with mock.patch.object(nsp, 'PLAN', None):
-            for name, summary in (('unpack v131072', '24.4 GB'), ('rewrite', 'main, reused (inputs unchanged)'), ('Pipeline archive', 'applegpu_g16s, 3.8 GB')):
+            for name, summary in (('unpack v131072', '24.4 GB'), ('check v131072 files', '3 files'), ('rewrite', 'main, reused (inputs unchanged)'),
+                                  ('Mac shaders', '42,848 of 42,848 shaders ready (Metal libraries: 9,807 reused, 33,041 compiled)'), ('Mac host', 'reused'),
+                                  ('Pipeline archive', 'applegpu_g16s, 3.8 GB')):
                 self.prog.stage(name); self.prog.cur.t0 -= 90; self.prog.end(summary)
-        self.assertEqual(json.loads(nsp.STAGE_TIMES.read_text()), {'unpack': 90, 'Pipeline archive': 90})
+        # a count of reused pieces is a stage that did its work (Mac shaders after a chain change); only a whole reused stage is left out
+        self.assertEqual(json.loads(nsp.STAGE_TIMES.read_text()), {'unpack': 90, 'check files': 90, 'Mac shaders': 90, 'Pipeline archive': 90})
 
     def test_reused_stages_are_listed_and_the_first_redone_one_stops_the_plan(self):
         nsp.STAGE_TIMES.parent.mkdir(parents=True); nsp.STAGE_TIMES.write_text(json.dumps({'Mac shaders': 900, 'Pipeline archive': 1567, 'Mac app': 191}))

@@ -383,6 +383,43 @@ import Testing
     @Test func stageKeysDropTheVersion() {
         #expect(stageKey("extract v131072") == "extract")
         #expect(stageKey("Mac shaders") == "Mac shaders")
+        #expect(stageKey("check v131072 files") == "check files")
+    }
+
+    @Test func onlyAWholeReusedStageCountsAsReused() {
+        #expect(stageReused("reused"))
+        #expect(stageReused("main, reused (inputs unchanged)"))
+        #expect(stageReused("24.4 GB, reused (image checked)"))
+        // Ocarina of Time's 51-minute Mac shader stage after a chain change
+        #expect(!stageReused("42,848 of 42,848 shaders ready (Metal libraries: 9,807 reused, 33,041 compiled)"))
+        #expect(!stageReused("1,200 converted, 30 reused (out)"))
+    }
+
+    @Test func oldRecordsOfLongReusedStagesStillCount() {
+        let e = EngineVersion(commit: "c", subject: "s", date: "d", branch: "main", dirty: false)
+        let b = BuildRecord(app: "/x/Other.app", gameDir: "/x/other", engine: e, repo: "/x", builtAt: "",
+                            stages: [StageRecord(name: "Mac shaders", seconds: 3000, reused: true, ok: true),
+                                     StageRecord(name: "Mac host", seconds: 7, reused: true, ok: true)],
+                            gameBytes: 1_000_000_000)
+        let exp = Estimates.expected(gameDir: "/nonexistent/game", gameBytes: 1_000_000_000, builds: [b])
+        #expect(exp["Mac shaders"] == 3000)
+        #expect(exp["Mac host"] == nil)
+    }
+
+    @MainActor @Test func aSwitch2BuildTicksItsTiles() {
+        let r = BuildRun()
+        r.running = true
+        r.done = [StageDone(k: 1, n: 8, name: "unpack v131072", ok: true, seconds: 55, summary: "24 GB"),
+                  StageDone(k: 2, n: 8, name: "check v131072 files", ok: true, seconds: 4, summary: "")]
+        r.stage = Stage(k: 7, n: 8, name: "Pipeline archive")
+        #expect(StepTiles.state("Extract tools", r) == .skipped)
+        #expect(StepTiles.state("Extract game files", r) == .done)
+        #expect(StepTiles.state("Package Mac app", r) == .running)
+        // earlier in the same build: the steps after the running one wait
+        r.stage = Stage(k: 3, n: 8, name: "rewrite")
+        #expect(StepTiles.state("Extract tools", r) == .skipped)
+        #expect(StepTiles.state("Rewrite executable", r) == .running)
+        #expect(StepTiles.state("Package Mac app", r) == .pending)
     }
 
     @Test func stagesSortInBuildOrder() {
