@@ -4,7 +4,7 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
- dm/tools/lint_c_baseline.tsv         |  9 ++++-----
+ dm/tools/lint_c_baseline.tsv         | 11 +++++------
  dm/tools/lint_python_baseline.tsv    |  1 +
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
@@ -13,10 +13,10 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 19 ++++++++++---------
- 9 files changed, 56 insertions(+), 32 deletions(-)
+ 9 files changed, 57 insertions(+), 33 deletions(-)
 
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
-index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..0586958d562503c9707f82f14fd14bdf69647bf1 100644
+index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..c72f8def8942cce94cbe8ac99f2a2af4be6602e3 100644
 --- a/dm/tools/lint_c_baseline.tsv
 +++ b/dm/tools/lint_c_baseline.tsv
 @@ -24,12 +24,10 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
@@ -27,9 +27,10 @@ index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..0586958d562503c9707f82f14fd14bdf
 +dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	11
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	5
- dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
+-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
 -dm/gfx/nvn/nvn_mtl.m	clang-analyzer-osx.cocoa.RetainCount	1
 -dm/gfx/nvn/nvn_mtl.m	clang-analyzer-security.ArrayBound	1
++dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	19
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	4
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
  dm/gfx/nvn/nvn_mtl.m	misc-redundant-expression	2
