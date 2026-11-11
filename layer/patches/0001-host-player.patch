@@ -9,14 +9,14 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/gfx/vk/hle_vk.m    |   5 +-
  dm/host/Makefile      |  14 ++--
  dm/host/front.h       |  65 ++++++++++++++++-
- dm/host/front_mac.m   | 159 +++++++++++++++++++++++++++++++-----------
+ dm/host/front_mac.m   | 161 ++++++++++++++++++++++++++++++++----------
  dm/host/hle.h         |   2 +
  dm/host/hle_audio.c   |  15 +++-
  dm/host/hle_hid.c     |  14 +++-
  dm/host/tests/t_hid.c |  18 +++--
  dm/host/web_apple.m   |  19 +++--
  dm/mac/launcher.c     | 104 ++++++++++++++++++++++++---
- 11 files changed, 357 insertions(+), 79 deletions(-)
+ 11 files changed, 359 insertions(+), 79 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
 index f3e38a12c09b6d5807c0755c713184e356f2e2ef..1c91b4ac03c6ed838a72c87b8ba4b244363d4aaf 100644
@@ -224,7 +224,7 @@ index d36e61c645be716667490c58b295f3bcdce4c1ab..bb02c34f76a50bfc5509bc22588996d9
  // thread. front_web_open: dir = the folder the document path is relative to (an HtmlDocument's html-document), path = the document path with its query, callback = the URL prefix whose
  // loading ends the page (exit reason 3, the URL as the last URL), hidden = loaded without being shown until front_web_show. 0 = opened; -1 = no web view (no window): the caller's
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd24e78d6b2 100644
+index 278bf27240597f784ec258cc39cc62caa4087aa7..377056b935de97dcb85a9b70f31e6d9db534754b 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -1,12 +1,13 @@
@@ -430,7 +430,7 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
  }
  // The Home button setting for apps (macOS 27), once, when the first controller is there (GameController reads it only while one is connected): "system" in the log
  // explains a hold that does nothing, since the system keeps Home whatever the host asks. A front end reads the setting itself (GCControllerHomeButtonSettingsManager)
-@@ -646,6 +673,7 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
+@@ -646,12 +673,14 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
  - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self fitDrawable]; }
  @end
  
@@ -438,7 +438,14 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
  // AppKit reports a refused fullscreen request only to the window delegate (there is no notification for it)
  static void (^g_fs_failed)(void);
  @interface DmWinDelegate : NSObject <NSWindowDelegate> @end
-@@ -662,6 +690,18 @@ static void *guest_tramp(void *p) {
+ @implementation DmWinDelegate
+ - (void)windowDidFailToEnterFullScreen:(NSWindow *)w { (void)w; if (g_fs_failed) g_fs_failed(); }
+ @end
++#include "nxforge/front_mac_fullscreen.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
+ 
+ typedef struct { void (*fn)(void); } guest_arg;
+ static void *guest_tramp(void *p) {
+@@ -662,6 +691,18 @@ static void *guest_tramp(void *p) {
  
  // Metal reads MTL_HUD_ENABLED when the process makes its first device, which can be before the window: set from DM_METAL_HUD before main (set in front_run, the HUD did not show)
  __attribute__((constructor)) static void hud_env(void) { front_hud_env(); }
@@ -457,7 +464,7 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
  
  // ---------- Cheats: the menu and the panel (hle_cheats.c holds every state; these only show it and call it) ----------
  
-@@ -1511,8 +1551,10 @@ static NSArray<NSURL *> *found_cheat_files(NSString *build) {
+@@ -1511,8 +1552,10 @@ static NSArray<NSURL *> *found_cheat_files(NSString *build) {
  void front_run(void (*guest)(void)) {
      // A game: tell macOS its work is latency-critical, so the system does not trade its frame time for power while the frame rate is capped
      static id activity; activity = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"game"];
@@ -468,7 +475,15 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
          [NSApplication sharedApplication];
          [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
          NSRect r = NSMakeRect(0, 0, 1280, 720);
-@@ -1563,6 +1605,8 @@ void front_run(void (*guest)(void)) {
+@@ -1523,6 +1566,7 @@ void front_run(void (*guest)(void)) {
+         // Fullscreen: without FullScreenPrimary the green button only zooms the window. The present path already scales
+         // the game picture to fit the drawable with black bars around it, so fullscreen keeps the game's aspect ratio.
+         win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
++        nxf_fullscreen_window(win);   // NXForge: full screen hides the menu bar and title bar (nxforge/front_mac_fullscreen.inc)
+         NSView *v = win.contentView = [[DmGameView alloc] initWithFrame:r];
+         v.wantsLayer = YES;
+         g_layer = [CAMetalLayer layer];
+@@ -1563,6 +1607,8 @@ void front_run(void (*guest)(void)) {
              dispatch_async(dispatch_get_main_queue(), ^{ [g_cheats_menu showPanel:nil]; });
          [[bar addItemWithTitle:@"Window" action:nil keyEquivalent:@""] setSubmenu:wm];
          [wm addItemWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"].keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagCommand;
@@ -477,7 +492,7 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
          NSApp.mainMenu = bar;
          const char *fs = getenv("DM_FULLSCREEN");   // 1 (or any value but 0): start in fullscreen; 0, the settings window's Window, or unset: a window
          if (fs && strcmp(fs, "0")) {
-@@ -1589,6 +1633,22 @@ void front_run(void (*guest)(void)) {
+@@ -1589,6 +1635,22 @@ void front_run(void (*guest)(void)) {
                  (void)n; want = 0; entering = 0; g_fs_failed = nil; }];   // startup succeeded: later manual refusals have no startup request to retry
              dispatch_async(dispatch_get_main_queue(), enter);
          }
@@ -500,7 +515,7 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
          for (NSNotificationName nm in @[GCControllerDidConnectNotification, GCControllerDidDisconnectNotification])
              [NSNotificationCenter.defaultCenter addObserverForName:nm object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
                  GCController *c = n.object; int conn = n.name == GCControllerDidConnectNotification;
-@@ -1601,7 +1661,16 @@ void front_run(void (*guest)(void)) {
+@@ -1601,7 +1663,16 @@ void front_run(void (*guest)(void)) {
          [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent *(NSEvent *e) {
              if (e.window != win) return e;   // Only swallow keys for the game window; other windows such as the software keyboard input box receive typing as usual
              if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
@@ -517,7 +532,7 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
              if (!e.isARepeat) on_key(e, e.type == NSEventTypeKeyDown);
              return nil;   // Swallow it to avoid the system beep
          }];
-@@ -1620,7 +1689,7 @@ void front_run(void (*guest)(void)) {
+@@ -1620,7 +1691,7 @@ void front_run(void (*guest)(void)) {
          // another app taking the key window during an unattended run read as a hang (no frame after the last focus change)
          static int keep = -1; if (keep < 0) keep = getenv("DM_FOCUS_KEEP") && atoi(getenv("DM_FOCUS_KEEP"));
          [nc addObserverForName:NSWindowDidResignKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); if (!win.miniaturized && !g_text_box && !keep) dm_focus_set(2); }];
@@ -526,7 +541,7 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
          [nc addObserverForName:NSWindowDidMiniaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); dm_focus_set(3); dm_audio_suspend(1); dm_gfx_suspend(1); }];
          [nc addObserverForName:NSWindowDidDeminiaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; dm_gfx_suspend(0); dm_audio_suspend(0); dm_focus_set(2); }];
          display_awake(win.isKeyWindow);   // the window may have become key (makeKeyAndOrderFront above) before these observers were installed
-@@ -1704,28 +1773,23 @@ int front_text_input(const char *title, const char *sub, const char *guide, cons
+@@ -1704,28 +1775,23 @@ int front_text_input(const char *title, const char *sub, const char *guide, cons
      return 1;
  }
  
@@ -561,7 +576,7 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..dd230c0ea65891a7bdfdb14384fedbd2
          };
          NSWindow *win = g_win;
          if (!(win.styleMask & NSWindowStyleMaskFullScreen)) { tell(); return; }
-@@ -1734,3 +1798,20 @@ void front_gpu_lost(void) {
+@@ -1734,3 +1800,20 @@ void front_gpu_lost(void) {
          [win toggleFullScreen:nil];
      });
  }

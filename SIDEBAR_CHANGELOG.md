@@ -4,6 +4,12 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.3.1 (2026-11-11)
+
+Full screen without the title bar. Ships in NXForge 0.27.3.
+
+- **Full screen hides the title bar and menu bar** (`dm/host/nxforge/front_mac_fullscreen.inc`), whether it is entered from the green button, ⌃⌘F, the Full screen row or at launch. Before, macOS showed them again while the pointer was at the top of the screen, where the green button leaves it. `DM_FULLSCREEN_MENU_BAR=1` keeps macOS's behaviour.
+
 ## 0.3.0 (2026-11-09)
 
 HDR highlights. Ships in NXForge 0.24.0.

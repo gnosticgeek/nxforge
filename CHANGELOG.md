@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.27.3 (2026-11-11)
+
+- **Full screen hides the title bar.** macOS's full screen shows the menu bar and the window's title bar again whenever the pointer is at the top of the screen, and the green button that enters it is up there, so after a click the title bar stayed over the game (Ocarina of Time on a MacBook Pro). The game window now asks macOS to hide the menu bar and the Dock in full screen, so the title bar no longer comes back; ⌃⌘F, the sidebar's Full screen row and ⌘Q leave or quit as before. `DM_FULLSCREEN_MENU_BAR=1` keeps macOS's own behaviour. Takes a rebuild of the game app.
+- **NXForge Sidebar 0.3.1** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)).
+
 ## 0.27.2 (2026-11-11)
 
 - **A sensible time left while the pipeline archive builds.** `pso_offline.py` counts its base batches (1000 render pipelines, about a minute each) and its compute groups (16 compute pipelines, several at a time) as one list, and the build's ETA took a minute for every entry: Ocarina of Time's 34 batches and 258 compute groups showed "About 4 h 35 min left" for a step of about an hour. The two are now separate steps, "compiling the batches" and "compiling the compute pipelines", each with its own count and ETA.
