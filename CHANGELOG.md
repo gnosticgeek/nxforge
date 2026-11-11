@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.27.1 (2026-11-11)
+
+- **Up to nxnative `f75ac06`** (3 commits past 0.26's engine `084f5aa`): a game's Mac shaders are compiled for the Mac host's minimum macOS, so one chain version gives the same result on every Mac; a storage takeover finds its candidates by pool cell instead of walking the whole sharing table (faster in scenes that share tens of thousands of textures); The Binding of Isaac: Rebirth ported. Shader chain `af80d3d704f4`: every game's shaders are translated again on its next build.
+- NXForge's idle eviction of sharing entries now goes through upstream's `alias_del`, so the new per-cell index stays in step.
+
 ## 0.27.0 (2026-11-11)
 
 - **DLC in a `DLC` subfolder is built in.** A game folder's subfolder named `DLC` or `DLCs`, in any letter case, is now read for the game's DLC (`.nsp`, `.xci`, `.nsz`, `.xcz`), so a library that keeps DLC apart (`Cadence of Hyrule/DLC/…`) no longer has to move it beside the base game. Only DLC is taken from that folder: a base game or update there is named in the log and left out. A Switch 2 dump's `dlc/` folder is now found in any letter case on a case-sensitive drive too.
