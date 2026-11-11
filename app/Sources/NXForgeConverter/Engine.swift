@@ -313,14 +313,17 @@ enum Engine {
     static func describeFiles(_ dir: String) -> String {
         if Source.isNupFile(dir) { return "NUP container" }
         let names = GameFiles.list(in: dir.url).map(\.lastPathComponent)
-        let tails = names.compactMap { n -> String? in
+        func tail(_ n: String) -> String? {
             guard let r = n.range(of: #"\[[0-9A-Fa-f]{16}\]"#, options: .regularExpression) else { return nil }
             return String(n[r].dropFirst(14).prefix(3))
         }
+        let tails = names.compactMap(tail)
+        // the DLC folder's files are read for DLC only: a tagged base game or update there is left out
+        let inDLC = GameFiles.dlcFolders(in: dir.url).flatMap { GameFiles.list(in: $0) }.filter { u in tail(u.lastPathComponent).map { $0 != "000" && $0 != "800" } ?? true }.count
         // an update is tagged …800, though some dumps tag it with the base game's ID and only a version above v0 (Cyber Shadow)
         let versioned = names.filter { $0.range(of: #"\[v[1-9][0-9]*\]"#, options: .regularExpression) != nil }.count
         let upd = max(tails.filter { $0 == "800" }.count, versioned)
-        let dlc = tails.filter { $0 != "800" && $0 != "000" }.count
+        let dlc = tails.filter { $0 != "800" && $0 != "000" }.count + inDLC
         var parts = ["Base game"]
         if upd > 0 { parts.append("update") }
         if dlc > 0 { parts.append("\(dlc) DLC") }

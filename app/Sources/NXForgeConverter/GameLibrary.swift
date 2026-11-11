@@ -242,6 +242,7 @@ enum GameLibrary {
         var stack: [(URL, Int)] = [(root.url, 0)]
         var silent = 0
         var parentHasPackages = Set<String>()
+        var dlcFolders: [String: [URL]] = [:]
         var lastReport = Date.distantPast
         while let (dir, depth) = stack.popLast() {
             if Task.isCancelled { result.stopped = "Stopped before the end: the list may be incomplete."; break }
@@ -262,6 +263,12 @@ enum GameLibrary {
                                                 base: true, updates: 0, dlc: 0, app: l.apps.sorted().first))
                 continue   // a dump's own folders are its files
             }
+            // the DLC folder of a game folder ("Cadence of Hyrule/DLC"): the build reads it for DLC, so its files belong to that game
+            let parent = dir.deletingLastPathComponent().path
+            if dir.path != root && GameFiles.isDLCFolderName(dir.lastPathComponent) && parentHasPackages.contains(parent) {
+                dlcFolders[parent, default: []] += l.packages.map(\.url)
+                continue
+            }
             if !l.packages.isEmpty { parentHasPackages.insert(dir.path) }
             result.games += games(in: dir, packages: l.packages, apps: l.apps)
             for n in l.nups {
@@ -271,10 +278,33 @@ enum GameLibrary {
             }
             if depth < maxDepth { stack += l.dirs.reversed().map { ($0, depth + 1) } }
         }
+        result.games = addDLCFolders(result.games, dlcFolders)
         result.games = fold(result.games)
         result.scanned = Date()
         progress(result.folders, "", result.games)
         return result
+    }
+
+    /// Counts the files of each game folder's DLC folder as that game's DLC (the build reads them for DLC only). A file tagged as a
+    /// base game or an update there is not used: it becomes a note, with the file to move beside the game.
+    static func addDLCFolders(_ games: [LibraryGame], _ folders: [String: [URL]]) -> [LibraryGame] {
+        var out = games
+        for (parent, files) in folders {
+            let here = out.indices.filter { out[$0].kind == .packages && out[$0].path == parent }
+            guard !here.isEmpty else { continue }
+            for f in files {
+                let tag = titleTag(f.lastPathComponent)
+                let i = tag.flatMap { t in here.first { out[$0].titleID == String(format: "%016llX", GameFiles.appOf(t)) } } ?? (here.count == 1 ? here[0] : nil)
+                guard let i else { continue }
+                if let t = tag, t & 0xFFF == 0 || t & 0xFFF == 0x800 {
+                    out[i].notes.append("\(f.lastPathComponent) in “\(f.deletingLastPathComponent().lastPathComponent)” not used: only DLC is read from that folder")
+                    out[i].stray = (out[i].stray ?? []) + [f.path]
+                } else {
+                    out[i].dlc += 1
+                }
+            }
+        }
+        return out
     }
 
     /// DLC or an update in a subfolder of its base game's folder ("Cadence of Hyrule/4 DLCs"): the script reads one folder only,
@@ -285,7 +315,7 @@ enum GameLibrary {
         for (i, g) in games.enumerated() where g.kind == .packages && !g.base && !g.shared {
             guard let tid = g.titleID, let p = out.firstIndex(where: { $0.titleID == tid && $0.base && g.path.hasPrefix($0.folder + "/") }) else { continue }
             let what = [g.updates > 0 ? (g.updates == 1 ? "an update" : "\(g.updates) updates") : nil, g.dlc > 0 ? "\(g.dlc) DLC" : nil].compactMap { $0 }.joined(separator: " and ")
-            out[p].notes.append("\(what) in “\(g.path.lastComponent)” not used: the build reads only the game's own folder")
+            out[p].notes.append("\(what) in “\(g.path.lastComponent)” not used: the build reads only the game's own folder and its DLC folder")
             out[p].stray = (out[p].stray ?? []) + g.fileURLs.map(\.path)
             out[p].dlc += g.dlc
             out[i].path = ""   // dropped below

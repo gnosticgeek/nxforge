@@ -41,6 +41,20 @@ enum GameFiles {
         return items.filter { gameExtensions.contains($0.pathExtension.lowercased()) }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
+    /// A game folder's subfolders named DLC or DLCs (any letter case): the build reads their packages for DLC only.
+    static func dlcFolders(in dir: URL) -> [URL] {
+        let items = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        return items.filter { isDLCFolderName($0.lastPathComponent) && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    static func isDLCFolderName(_ name: String) -> Bool { ["dlc", "dlcs"].contains(name.lowercased()) }
+
+    /// The game files a build reads: the folder's own, then those in its DLC folders.
+    static func buildFiles(in dir: URL) -> [URL] {
+        list(in: dir) + dlcFolders(in: dir).flatMap { list(in: $0) }
+    }
+
     static func validate(dir: URL, keysURL: URL) -> Validation {
         func fail(_ s: [CheckLine], _ k: String = "") -> Validation { Validation(ok: false, keysSummary: k, summary: s, files: []) }
         let keys: Keys
@@ -53,6 +67,7 @@ enum GameFiles {
             return fail(summary, keysSummary)
         }
         let files = list(in: dir)
+        let dlcFiles = dlcFolders(in: dir).flatMap { list(in: $0) }
         if files.isEmpty {
             summary.append(CheckLine(ok: false, text: "no .nsp, .xci, .nsz or .xcz files in \(dir.path)"))
             return fail(summary, keysSummary)
@@ -63,6 +78,18 @@ enum GameFiles {
             let (r, tid) = checkFile(f, keys: keys, headerKey: headerKey)
             if let tid { titles.append(tid) }
             reports.append(r)
+        }
+        // DLC/: read for DLC only, as the script does; a base game or an update there is reported and left out
+        for f in dlcFiles {
+            let (r, tid) = checkFile(f, keys: keys, headerKey: headerKey)
+            let shown = "\(f.deletingLastPathComponent().lastPathComponent)/\(r.name)"
+            if let tid, tid & 0xFFF == 0 || tid & 0xFFF == 0x800 {
+                reports.append(FileReport(name: shown, role: "\(r.role), not used", ok: true,
+                                          lines: [CheckLine(ok: false, text: "only DLC is read from \(f.deletingLastPathComponent().lastPathComponent)/: move it beside the base game to use it")] + r.lines))
+                continue
+            }
+            if let tid { titles.append(tid) }
+            reports.append(FileReport(name: shown, role: r.role, ok: r.ok, lines: r.lines))
         }
         // one game per folder, with a base game, as the script requires
         var ok = reports.allSatisfy(\.ok)

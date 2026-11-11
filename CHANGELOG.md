@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.27.0 (2026-11-11)
+
+- **DLC in a `DLC` subfolder is built in.** A game folder's subfolder named `DLC` or `DLCs`, in any letter case, is now read for the game's DLC (`.nsp`, `.xci`, `.nsz`, `.xcz`), so a library that keeps DLC apart (`Cadence of Hyrule/DLC/…`) no longer has to move it beside the base game. Only DLC is taken from that folder: a base game or update there is named in the log and left out. A Switch 2 dump's `dlc/` folder is now found in any letter case on a case-sensitive drive too.
+- **NXForge Converter 0.6.0** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Convert page's file check, the Library and the build history count a `DLC` subfolder's files as the game's DLC.
+
 ## 0.26.0 (2026-11-11)
 
 - **Up to nxnative `084f5aa`** (40 commits past 0.25's engine `c4ffb9d`). Among them: Switch 2 games draw their full docked picture (graphics scale tier 0 in both modes; Ocarina of Time 2560x1440 docked); Metroid Prime 4: Beyond, Ori and the Blind Forest and Ori and the Will of the Wisps play on the Mac; textures that dynamic resolution resizes reuse recycled heaps (Mario Kart World); unused border corrections are compiled out of pipelines (Ocarina of Time GPU about 0.4 ms lower); an argument block whose only change is its uniform slots is patched instead of encoded again; GPU writes into storage-uploaded textures stay on the GPU (no CPU readbacks); a pipeline base the archives lack is remembered for the run; Switch 2 controllers join with a button press; short sleeps poll. Shader chain `3e887b940f3a`: every game's shaders are translated again on its next build.

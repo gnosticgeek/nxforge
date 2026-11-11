@@ -534,7 +534,7 @@ import Testing
     @Test func strayAndDuplicates() throws {
         let root = try tree([
             "Cadence/Cadence [01000B900D8B0000][v0].nsp", "Cadence/Cadence [01000B900D8B0800][v458752].nsp",
-            "Cadence/DLC/Cadence [DLC] [01000B900D8B1001][v1].nsp",
+            "Cadence/Extras/Cadence [DLC] [01000B900D8B1001][v1].nsp",
             "Cyber Shadow/Cyber Shadow [0100C1F0141AA000][v0].nsp", "Cyber Shadow [NSP]/Cyber Shadow [0100C1F0141AA000][v0].nsp",
         ])
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -545,6 +545,24 @@ import Testing
         try GameLibrary.moveStray(c)
         let again = GameLibrary.scan(root: root).games.first { $0.titleID == "01000B900D8B0000" }
         #expect(again?.files.count == 3 && again?.stray == nil && again?.notes.isEmpty == true)
+    }
+
+    @Test func dlcFolder() throws {
+        let root = try tree([
+            "Cadence/Cadence [01000B900D8B0000][v0].nsp",
+            "Cadence/dlc/Cadence [DLC] [01000B900D8B1001][v1].nsp", "Cadence/dlc/Cadence [DLC] [01000B900D8B1002][v1].nsp",
+            "Cadence/dlc/Cadence [01000B900D8B0800][v458752].nsp",
+            "Hades/Hades [0100535012974000][v0].nsp", "Hades/DLCs/Hades DLC.nsp",
+        ])
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let s = GameLibrary.scan(root: root)
+        #expect(s.games.count == 2, "\(s.games.map(\.name))")
+        let c = try #require(s.games.first { $0.titleID == "01000B900D8B0000" })
+        #expect(c.dlc == 2 && c.stray?.count == 1 && c.notes.count == 1)   // the update in DLC/ is not read
+        let h = try #require(s.games.first { $0.titleID == "0100535012974000" })
+        #expect(h.dlc == 1 && h.stray == nil && h.notes.isEmpty)   // an untagged file in DLCs/ counts as DLC
+        #expect(GameFiles.buildFiles(in: "\(root)/Hades".url).map(\.lastPathComponent) == ["Hades [0100535012974000][v0].nsp", "Hades DLC.nsp"])
+        #expect(Engine.describeFiles("\(root)/Cadence") == "Base game + 2 DLC")
     }
 
     @Test func romfsFiles() {

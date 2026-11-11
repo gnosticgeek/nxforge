@@ -56,7 +56,7 @@ enum Estimates {
 
     /// The game files' total size in bytes.
     static func gameBytes(_ dir: String) -> Int64 {
-        GameFiles.list(in: dir.url).reduce(Int64(0)) { $0 + ((try? FileManager.default.attributesOfItem(atPath: $1.path)[.size] as? Int64) ?? 0) }
+        GameFiles.buildFiles(in: dir.url).reduce(Int64(0)) { $0 + ((try? FileManager.default.attributesOfItem(atPath: $1.path)[.size] as? Int64) ?? 0) }
     }
 
     /// The stages a build would run, in order, with their expected seconds: the ones history knows about.
