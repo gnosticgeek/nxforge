@@ -2,6 +2,14 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.27.3 (2026-11-11)
+
+- **Full screen hides the title bar.** macOS's full screen shows the menu bar and the window's title bar again whenever the pointer is at the top of the screen, and the green button that enters it is up there, so after a click the title bar stayed over the game (Ocarina of Time on a MacBook Pro). The game window now asks macOS to hide the menu bar and the Dock in full screen, so the title bar no longer comes back; ⌃⌘F, the sidebar's Full screen row and ⌘Q leave or quit as before. `DM_FULLSCREEN_MENU_BAR=1` keeps macOS's own behaviour. Takes a rebuild of the game app.
+- **No more dip to 20 or 30 fps after a pause or a window switch.** After every pause (the sidebar, the window losing focus), full screen switch or covered window, the frame step took the few late frames that follow for the scene's cost and held 3 vsyncs: about a second at 20 and then 30 fps in a scene that held 60 before and after (Ocarina of Time on an M4 Pro: 12 pauses and 4 full screen switches in a 15-minute session). A frame shown for 133 ms or more is now a stall, and the player also names a return to focus or a change of the window's size itself; that frame and the 30 after it no longer count toward a longer hold. A scene that really is heavier still steps down, half a second later. Takes a rebuild of the game app. Headed upstream.
+- **No fast-forward after a pause.** The quarter second the game "fell behind" during a pause was paid back at double speed on the first frames after it. The time of a pause or a window change is now dropped. Hitches in play (a load) are paid back as before.
+- **The GPU is kept awake through a pause** (`DM_NVN_PAUSE_WARM`, Mac, `0` turns it off): while the game shows no frames, a 64-byte fill twice a second for up to 2 minutes. After pauses of 2 s or more the first frame back blocked for 126 to 178 ms and took two to four times its GPU time, which looks like the GPU powering down; whether this removes it is not measured yet (a headless run does not show the block).
+- **NXForge Sidebar 0.3.1** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)).
+
 ## 0.27.2 (2026-11-11)
 
 - **A sensible time left while the pipeline archive builds.** `pso_offline.py` counts its base batches (1000 render pipelines, about a minute each) and its compute groups (16 compute pipelines, several at a time) as one list, and the build's ETA took a minute for every entry: Ocarina of Time's 34 batches and 258 compute groups showed "About 4 h 35 min left" for a step of about an hour. The two are now separate steps, "compiling the batches" and "compiling the compute pipelines", each with its own count and ETA.

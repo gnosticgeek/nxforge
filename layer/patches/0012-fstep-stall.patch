@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 11 Nov 2026 17:34:58 +0000
+Subject: fstep-stall: A pause or a window switch does not step the frame hold
+ up
+
+A frame shown for FSTEP_STALL (8) vsyncs or more is a stall (a pause, a covered
+window, a fullscreen switch, a silent display link), not the scene's cost. It and
+the FSTEP_GRACE frames after it do not count toward a step up. Before, the late
+frames after every pause stepped the hold to 3: about a second at 20 and 30 fps
+(Ocarina of Time, Mac M4 Pro). Headed upstream (seedds/nxnative).
+---
+ dm/gfx/nvn/hle_nvn.c         |  4 ++--
+ dm/gfx/nvn/nvn_fstep.h       | 13 +++++++++++--
+ dm/gfx/tests/t_fstep.c       | 24 ++++++++++++++++++++++++
+ docs/agents/symptoms.md      |  1 +
+ docs/reference/frame-rate.md |  9 +++++++++
+ 5 files changed, 47 insertions(+), 4 deletions(-)
+
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index 300f95ac34979e8a1d96a09cf1ad4bbdc5c296a4..6863eb0a2cc7c8e7c9fcc7ef3c7010883f357f36 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -2368,9 +2368,9 @@ static void fstep_tick(const win_t *o, int c) {
+         if (o->presents % 1800 == 0) { LOG("[nvn] 120 fps: held 1 / 2 ticks %llu / %llu frames, %llu late, %llu up / %llu down (%llu probes, %llu failed trials)", (unsigned long long)held[1], (unsigned long long)held[2], (unsigned long long)g_fs.late, (unsigned long long)g_fs.ups, (unsigned long long)g_fs.downs, (unsigned long long)g_fs.probes, (unsigned long long)g_fs.failed); memset(held, 0, sizeof held); }
+     } else if (o->presents % 1800 == 0) {   // game time against real time (1.000 = normal speed; lower when a device cannot hold 20 fps or after long stalls)
+         uint64_t vs = __atomic_load_n((uint64_t *)(dm_fps_state + 0x30), __ATOMIC_RELAXED) + fixed_sum, t = now_ns();
+-        if (t0) LOG("[nvn] frame step: game time %.2f s in %.2f s (%.3f of real time); held 1 / 2 / 3 vsyncs %llu / %llu / %llu frames, %llu late, %llu vsyncs paid back, %.0f dropped, %llu up / %llu down (%llu probes, %llu failed trials)",
++        if (t0) LOG("[nvn] frame step: game time %.2f s in %.2f s (%.3f of real time); held 1 / 2 / 3 vsyncs %llu / %llu / %llu frames, %llu late, %llu vsyncs paid back, %.0f dropped, %llu up / %llu down (%llu probes, %llu failed trials), %llu stalls",
+                     (vs - v0) / 60.0, (t - t0) / 1e9, (vs - v0) / 60.0 / ((t - t0) / 1e9), (unsigned long long)held[1], (unsigned long long)held[2], (unsigned long long)held[3],
+-                    (unsigned long long)g_fs.late, (unsigned long long)g_fs.paid, g_fs.dropped, (unsigned long long)g_fs.ups, (unsigned long long)g_fs.downs, (unsigned long long)g_fs.probes, (unsigned long long)g_fs.failed);
++                    (unsigned long long)g_fs.late, (unsigned long long)g_fs.paid, g_fs.dropped, (unsigned long long)g_fs.ups, (unsigned long long)g_fs.downs, (unsigned long long)g_fs.probes, (unsigned long long)g_fs.failed, (unsigned long long)g_fs.stalls);
+         t0 = t; v0 = vs; memset(held, 0, sizeof held);
+     }
+ }
+diff --git a/dm/gfx/nvn/nvn_fstep.h b/dm/gfx/nvn/nvn_fstep.h
+index 0f8cf97396f5acb468213e7c3de26e0917463a76..55ca720c36046e4c54947206849bd7ed9088bc37 100644
+--- a/dm/gfx/nvn/nvn_fstep.h
++++ b/dm/gfx/nvn/nvn_fstep.h
+@@ -37,12 +37,19 @@
+ // second half cost at most 1 − FSTEP_RAMP of its first half, and had a late frame (a window on time is judged as a trial), starts another, up to FSTEP_PROBE_MAX frames in all
+ #define FSTEP_RAMP 0.05       // the fall in cost from one half of a grace window to the next that shows the clock still rising (the per-frame noise of a 25 ms frame is 4%, of 15 frames 1%)
+ #define FSTEP_PROBE_MAX 180   // grace frames a probe may take in all (3 s at 60 fps): a clock that keeps rising without reaching the hold is not waited for longer
++// A stall is a frame that stayed up longer than any hold could explain: the game paused (focus lost, the Home menu), the window covered, its screen changing mode (fullscreen),
++// a silent display link. What it took is not what the scene costs, and the frames after it run late for the host's reasons: the GPU clock fell while nothing was drawn (Ocarina
++// of Time on an M4 Pro: the first frame after a pause of 1.2–35 s took 26–67 ms of GPU time where the scene takes 15) and the display link is finding its ticks again. Counted,
++// they stepped the hold up to 3 after every pause and fullscreen switch, 20 then 30 fps for about a second in a scene that held 60 before and after. So a stall is not late, and
++// the FSTEP_GRACE frames after it do not count toward a step up, as after a probe (a stall in that grace starts it again)
++#define FSTEP_STALL 8.0       // vsyncs a frame was shown for that make it a stall (133 ms): more than twice the longest hold, so no step up would have made the frame fit
+ 
+ typedef struct {
+     int k, step;              // vsyncs each frame stays on screen; the step handed to the game for the next frame (k, or k + 1 while paying back)
+     int kmin;                 // the last call's kmin (a lower one takes effect at once)
+     double debt;              // real time the game is behind, in vsyncs
+     int late_run, fit_run, trial;   // late frames in a row; frames in a row whose cost fits k − 1; frames left of a trial at k − 1 (0 = none)
++    int sgrace;               // frames left of the grace after a stall (FSTEP_STALL), whose lateness does not count toward a step up
+     int probe, grace;         // 1: the trial in progress is a probe; 2: a probe held and its run at kmin has not ended yet; frames left of the probe's grace
+     int ramp;                 // set by the caller (kept): 1 = a probe's grace is renewed while its frames keep getting cheaper (FSTEP_RAMP; the host's DM_FSTEP_PROBE_RAMP)
+     double pa, pb; int plate, ptotal;   // the current grace window: the cost of its first and second halves (sums), its late frames; grace frames this probe has taken in all
+@@ -56,7 +63,7 @@ typedef struct {
+     double ccur; int ck, cn;  // the cost of the frames on time at the longer hold ck (running mean) and their count
+     int ckmin;                // the kmin run, crun and cref belong to
+     double cref_at[FSTEP_MAX + 1];   // cref of each kmin, kept while another kmin is in force
+-    uint64_t late, paid, ups, downs, failed, probes; double dropped;   // statistics for the log
++    uint64_t late, paid, ups, downs, failed, probes, stalls; double dropped;   // statistics for the log
+ } nvn_fstep;
+ 
+ // Whether the cost at the longer hold is the cost that held kmin (a probe without a slowed report)
+@@ -97,7 +104,9 @@ static inline int nvn_fstep_next(nvn_fstep *s, double shown, double cost, int km
+         s->plate += late; s->ptotal++;
+         if (!--s->grace && s->ramp && s->plate && s->ptotal + FSTEP_GRACE <= FSTEP_PROBE_MAX && s->pb <= (1 - FSTEP_RAMP) * s->pa) { s->grace = FSTEP_GRACE; s->pa = s->pb = 0; s->plate = 0; }   // still getting cheaper: another window
+     }
+-    if (late) { s->late++; s->late_run = grace ? 0 : s->late_run + 1; s->fit_run = 0; } else s->late_run = 0;
++    int stall = shown >= FSTEP_STALL * (s->per_vsync ? s->per_vsync : 1), sgrace = stall || s->sgrace > 0;   // a stall, or a frame in the grace after one
++    if (stall) { s->sgrace = FSTEP_GRACE; s->stalls++; } else if (s->sgrace) s->sgrace--;
++    if (late) { s->late++; s->late_run = grace || sgrace ? 0 : s->late_run + 1; s->fit_run = 0; } else s->late_run = 0;
+     // The cost of the frames on time (a hitch is not what the scene costs): at kmin, and at the longer hold
+     if (kmin != s->ckmin) {   // another cap: its run starts over, and what held it before comes back
+         if (s->ckmin >= 1 && s->ckmin <= FSTEP_MAX) {
+diff --git a/dm/gfx/tests/t_fstep.c b/dm/gfx/tests/t_fstep.c
+index 9d31579aae853f9671bf0d7435f35b7941351a39..d0f16e0444c52e4707aea5e65a7644618e0b10c8 100644
+--- a/dm/gfx/tests/t_fstep.c
++++ b/dm/gfx/tests/t_fstep.c
+@@ -360,6 +360,30 @@ int main(void) {
+             check(first_len == want[c] && m.s.k == 2 && m.s.failed == 1, b);
+         }
+     }
++    {   // A stall (FSTEP_STALL): a pause, a covered window, a fullscreen switch. Ocarina of Time on an M4 Pro, GPU 0.9 vsyncs at hold 1: a pause of 1.9 s, then the first frames back
++        // at 2.3, 1.2 and 1.1 vsyncs (the GPU clock fell while nothing was drawn) stepped the hold to 3, about a second at 20 and 30 fps after every pause
++        sim m = {0}; run(&m, 600, 0.9, 1, 3, 0);
++        run(&m, 1, 114, 1, 3, 0); run(&m, 1, 2.3, 1, 3, 0); run(&m, 1, 1.2, 1, 3, 0); run(&m, 1, 1.1, 1, 3, 0); run(&m, 60, 0.9, 1, 3, 0);
++        snprintf(b, sizeof b, "stall: a pause and three late frames after it keep hold 1 (k %d, ups %llu, stalls %llu)", m.s.k, (unsigned long long)m.s.ups, (unsigned long long)m.s.stalls);
++        check(m.s.k == 1 && m.s.ups == 0 && m.s.stalls == 1, b);
++        check(m.s.crun < 0.95, "  the stall's time stays out of the cost that held hold 1");
++        // a fullscreen switch: the display link silent twice (10 and 17 vsyncs) with late frames between and after
++        run(&m, 2, 1.3, 1, 3, 0); run(&m, 1, 10, 1, 3, 0); run(&m, 3, 1.4, 1, 3, 0); run(&m, 1, 17, 1, 3, 0); run(&m, 6, 1.3, 1, 3, 0); run(&m, 120, 0.9, 1, 3, 0);
++        check(m.s.k == 1 && m.s.ups == 0 && m.s.stalls == 3, "  a fullscreen switch (two stalls, late frames around them) keeps hold 1");
++        // the scene after the stall really is heavier (a load into a heavy area): the grace only delays the step up
++        sim h = {0}; run(&h, 600, 0.9, 1, 3, 0); run(&h, 1, 114, 1, 3, 0);
++        int n = 0; while (h.s.k == 1 && n < 600) { run(&h, 1, 1.32, 1, 3, 0); n++; }
++        snprintf(b, sizeof b, "  22 ms frames after a stall step up once its grace is over (%d frames)", n);
++        check(h.s.k == 2 && n == FSTEP_GRACE + 3, b);
++        // long frames below a stall are judged as before
++        sim l = {0}; run(&l, 600, 0.9, 1, 3, 0); run(&l, 3, 5.0, 1, 3, 0);
++        check(l.s.k == 3 && l.s.ups == 1 && l.s.stalls == 0, "  three 83 ms frames in a row are not stalls: they step up as before");
++        // 120 fps counts in ticks of 1/120 s: the same 133 ms
++        sim f = {0}; f.s.per_vsync = 2; run(&f, 240, 0.7, 1, 2, 0); run(&f, 3, 10, 1, 2, 0);
++        check(f.s.k == 2 && f.s.stalls == 0, "  120 fps: 83 ms frames are not stalls");
++        sim g = {0}; g.s.per_vsync = 2; run(&g, 240, 0.7, 1, 2, 0); run(&g, 1, 200, 1, 2, 0); run(&g, 3, 1.5, 1, 2, 0); run(&g, 60, 0.7, 1, 2, 0);
++        check(g.s.k == 1 && g.s.stalls == 1, "  120 fps: a pause and three late frames keep 120");
++    }
+     printf("== %d checks, %d failed ==\n", checks, fail);
+     return fail != 0;
+ }
+diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
+index 61327daceacdcf9da75928afbad2a415268355f1..99fa67f001e2033f05105c55a8f625a3e3107308 100644
+--- a/docs/agents/symptoms.md
++++ b/docs/agents/symptoms.md
+@@ -483,6 +483,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - in a game the host steps at 60 fps (`FRAME_STEP`), a prerendered movie plays at twice its speed, its sound falls behind, and the frame counter shows 60 during it. The log has `[movie]` lines with pictures 33 ms apart (`time 0 / 33000 / 67000 µs`) and no `frame step cap 60 → 30` at the movie. → [Movies hold 30 fps under the frame step](../reference/frame-rate.md#movies-hold-30-fps-under-the-frame-step)
+ - after a 30 fps cap ends (a prerendered movie, the thermal cap), a GPU-bound game stays at 30 fps in a scene that held 60 before the cap; the log shows `frame step cap 30 → 60 fps` and a few frames later `frame step: hold 1 → 2 vsyncs at present … (3 late frames; …)`, with no probe after it. → [The frame step after a 30 fps cap ends](../reference/frame-rate.md#the-frame-step-after-a-30-fps-cap-ends)
+ - on a Mac, a GPU-bound game at 60 fps falls to 30 or 20 fps when the scene gets heavier and stays there until a menu or a lighter scene, while the GPU clock sits at its floor (338–400 MHz on an M5 Pro) and the GPU is powered 60–75% of the time; the log shows probes back to hold 1 that fail after about 33 frames (`frame step: hold 2 → 1 vsyncs … (probe, GPU 1.67× its time at hold 1)` then `the probe failed`), and the host's profiler (`@gpu_mhz`) shows the clock rising during each probe and falling back after it. → [A probe's grace lasts while its frames keep getting cheaper](../reference/frame-rate.md#a-probes-grace-lasts-while-its-frames-keep-getting-cheaper)
++- after every pause (the game out of focus, then back), fullscreen switch or covered window, a game that held 60 fps plays at 20 and then 30 fps for about a second; the log shows `frame step: hold 1 → 3 vsyncs at present … (3 late frames; cost 3.00, GPU 0.89; …)` right after `oe focus state → 1` or `front end: window visible`, then a trial to 2 and a probe back to 1 that holds. → [A pause or a window switch steps the hold up](../reference/frame-rate.md#a-pause-or-a-window-switch-steps-the-hold-up)
+ - a game whose profile has a frame step (`FRAME_STEP` in its `patches.py`) runs at double speed when packed from another update; the log has no `frame step in whole vsyncs` line, and the frame counter shows 60. → [A derived profile drops the frame step its build lacks](../reference/frame-rate.md#a-derived-profile-drops-the-frame-step-its-build-lacks)
+ - a fixed-step game runs at double speed (or slow motion at 30) after `DM_FPS_TARGET` is set, in `Documents/env.txt` or the launcher, on a build its profile's frame step stubs and limiter rows do not know. → [A present cap applies only with a frame step or an engine limit the host writes](../reference/frame-rate.md#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)
+ - a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick. → [A present interval that is the game's only limit, in display mode](../reference/frame-rate.md#a-present-interval-that-is-the-games-only-limit-in-display-mode)
+diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
+index 9d2f8d2917e6d5728d0415e8a8d45299c968abd4..127c98347ab02d6ea3e6a0402230bd81eddace02 100644
+--- a/docs/reference/frame-rate.md
++++ b/docs/reference/frame-rate.md
+@@ -78,6 +78,15 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
+ - **Note:** what shortens the serial chain itself, so the GPU's occupancy at a GPU-bound hold is higher and the clock rises faster: Metal encoding on its own thread (`DM_NVN_ENC_THREAD=1`, the profile's `enc_thread on`; the submit thread's translation 6.5 → about 4 ms a frame, measured on an M4 Pro and for Need for Speed), and a smaller first segment. Neither can start the GPU before the game's own work after its wait, and neither was measured on this symptom yet.
+ 
+ 
++### A pause or a window switch steps the hold up
++
++- **Symptom:** after every pause (the game out of focus, then back), fullscreen switch or covered window, a game that held 60 fps plays at 20 and then 30 fps for about a second; the log shows `frame step: hold 1 → 3 vsyncs at present … (3 late frames; cost 3.00, GPU 0.89; …)` right after `oe focus state → 1` or `front end: window visible`, then a trial to 2 and a probe back to 1 that holds.
++- **Cause:** `nvn_fstep_next` took the frames after the stall as the scene's cost. The frame that spans the stall is as long as the stall, and the next few are late for the host's reasons: the GPU clock fell while nothing was drawn (the first frame back took 26–42 ms of GPU time after pauses of 1.2–5.8 s and 67 ms after one of 35 s, where the scene takes 15), and the display link is finding its ticks again (acquire and fence waits of 30–160 ms). Three of them in a row stepped up to their cost, 3 vsyncs. After a fullscreen switch the display link's silence (200–570 ms, [Present thread rescues a silent display link](#present-thread-rescues-a-silent-display-link)) did the same (`hold 2 → 3 … cost 6.41, GPU 1.12`).
++- **Fix:** a frame shown for `FSTEP_STALL` (8) vsyncs or more, 133 ms, is a stall: more than twice the longest hold, so no step up would have made it fit. It does not count toward a step up, and neither do the `FSTEP_GRACE` (30) frames after it, as after a probe; a stall inside that grace starts it again. A scene that really is heavier after the stall (a load into a heavy area) steps up 33 frames after it instead of 3. Long frames below a stall (three of 83 ms in a row) step up as before. The 30-second line counts them (`… failed trials), N stalls`).
++- **Not covered:** the first step of a fullscreen switch, `hold 1 → 2` on three mildly late frames (cost 1.3) while the window animates, before any frame is a stall: 30 frames at 30 fps, then the probe holds.
++- **Check:** `make -C dm/gfx/tests GAME=010015100B514000 t_fstep && dm/gfx/tests/t_fstep`: a pause and three late frames, a fullscreen switch with two stalls, 22 ms frames after a stall (step up after grace + 3), 83 ms frames (not stalls), and the same at 120 fps. The pause and fullscreen cases step to hold 3 without the rule.
++- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (Mac M4 Pro, 24 GB, a 15-minute session with 12 pauses and 4 fullscreen switches: 543 frames held at 3 vsyncs, nearly all after them). Modelled in `t_fstep`; not yet run on a device with the rule.
++
+ ### A derived profile drops the frame step its build lacks
+ 
+ - **Symptom:** a game whose profile has a frame step (`FRAME_STEP` in its `patches.py`) runs at double speed when packed from another update; the log has no `frame step in whole vsyncs` line, and the frame counter shows 60.

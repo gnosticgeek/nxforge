@@ -1,0 +1,225 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 11 Nov 2026 17:43:17 +0000
+Subject: fstep-settle: The host names a pause or a window change for the frame
+ step, and keeps the GPU powered through a pause
+
+mtl_fstep_settle reports a return to focus or a drawable size change; nvn_fstep
+takes that frame as a stall and does not pay its lateness back. DM_NVN_PAUSE_WARM
+(Mac): a 64-byte fill twice a second while nothing is presented, up to 2 minutes.
+---
+ dm/gfx/nvn/hle_nvn.c         |  2 ++
+ dm/gfx/nvn/nvn_fstep.h       | 11 ++++++---
+ dm/gfx/nvn/nvn_mtl.m         | 45 ++++++++++++++++++++++++++++++++++++
+ dm/gfx/tests/t_fstep.c       | 13 +++++++++++
+ docs/agents/symptoms.md      |  1 +
+ docs/env_switches.tsv        |  2 ++
+ docs/reference/frame-rate.md | 11 +++++++--
+ 7 files changed, 80 insertions(+), 5 deletions(-)
+
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index 6863eb0a2cc7c8e7c9fcc7ef3c7010883f357f36..a31fe2baf5fc17d1a90a0939bb71b4f4afddaaf5 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -1794,6 +1794,7 @@ static int link_wait(const win_t *o, uint64_t timeout_ns);
+ __attribute__((weak)) void dm_main_yield_stats(uint64_t *n, uint64_t *ns) { *n = 0; *ns = 0; }   // The host's hle_thread.c provides the ground truth; 0 in graphics unit tests
+ __attribute__((weak)) uint32_t dm_guest_work_qos(unsigned *count) { if (count) *count = 0; return QOS_CLASS_UNSPECIFIED; }
+ int mtl_probe_ramp_on(void);   // nvn_mtl.m: DM_FSTEP_PROBE_RAMP (default on; ab with DM_AB)
++int mtl_fstep_settle(void);    // nvn_mtl.m: the game came back into focus or its window changed size since the last call (nvn_fstep.h settle)
+ __attribute__((weak)) void dm_yield_top(char *out, size_t n) { if (n) snprintf(out, n, "-"); }   // hle_thread.c: the threads that yielded most since the last call; none in graphics unit tests
+ __attribute__((weak)) void dm_thread_cpu(char *out, size_t n, double secs) { (void)secs; if (n) snprintf(out, n, "-"); }   // hle_thread.c: guest-thread CPU by Switch priority band since the last call
+ void mtl_res_stats(char *out, size_t n);
+@@ -2343,6 +2344,7 @@ static void fstep_tick(const win_t *o, int c) {
+     // A probe's grace lasts while its frames keep getting cheaper (nvn_fstep.h FSTEP_RAMP): macOS raises the GPU clock for the shorter deadline over seconds, not the iPhone's 30 frames
+     // (Breath of the Wild on an M5 Pro: the probe's 33 frames took the clock 338 → 432 MHz and its GPU time 24.8 → 18.5 ms, then it failed at 22 ms frames; hold 1 needed about 560 MHz)
+     g_fs.ramp = mtl_probe_ramp_on();
++    g_fs.settle = mtl_fstep_settle();   // a pause ended or the window changed: this frame and the grace after it are not what the scene costs
+     g_fs.per_vsync = fstep_hz() / 60;
+     int n = nvn_fstep_next(&g_fs, shown, cost, kmin, kmax, fixed, cslow || gslow);
+     if (dm_fps_state) __atomic_store_n((uint32_t *)(dm_fps_state + 0x20), (uint32_t)n, __ATOMIC_RELAXED);
+diff --git a/dm/gfx/nvn/nvn_fstep.h b/dm/gfx/nvn/nvn_fstep.h
+index 55ca720c36046e4c54947206849bd7ed9088bc37..477cfc7dfb6bddfa5274e312edcae2aead4f2894 100644
+--- a/dm/gfx/nvn/nvn_fstep.h
++++ b/dm/gfx/nvn/nvn_fstep.h
+@@ -41,7 +41,10 @@
+ // a silent display link. What it took is not what the scene costs, and the frames after it run late for the host's reasons: the GPU clock fell while nothing was drawn (Ocarina
+ // of Time on an M4 Pro: the first frame after a pause of 1.2–35 s took 26–67 ms of GPU time where the scene takes 15) and the display link is finding its ticks again. Counted,
+ // they stepped the hold up to 3 after every pause and fullscreen switch, 20 then 30 fps for about a second in a scene that held 60 before and after. So a stall is not late, and
+-// the FSTEP_GRACE frames after it do not count toward a step up, as after a probe (a stall in that grace starts it again)
++// the FSTEP_GRACE frames after it do not count toward a step up, as after a probe (a stall in that grace starts it again).
++// The caller can say so itself (nvn_fstep.settle: the game came back into focus, its window changed size or went fullscreen), which also covers the frames of a window's
++// animation, late by a fraction of a vsync before any of them is a stall. The time the game was behind in such a frame is not paid back either: a pause is not time the game
++// owes, and paid back it played the first quarter second after every pause at double speed
+ #define FSTEP_STALL 8.0       // vsyncs a frame was shown for that make it a stall (133 ms): more than twice the longest hold, so no step up would have made the frame fit
+ 
+ typedef struct {
+@@ -56,6 +59,7 @@ typedef struct {
+     double hold, since;       // vsyncs a trial waits for after a step up; vsyncs since the last step up
+     int per_vsync;            // set by the caller: the ticks a 1/60 s vsync is (0 = 1). At 120 fps the unit is 1/120 s (hle_nvn.c fps_high), and the waits between trials stay the same real time
+     double shown_slack;       // vsyncs a frame on time may show longer than k (set by the caller): one refresh on screens whose rate is not a multiple of 60; the cost keeps FSTEP_LATE
++    int settle;               // set by the caller before a call, then cleared: this frame spans a pause or a window change (a stall whatever it took; its lateness is not debt)
+     int screen;               // set by the caller before each call, then cleared: 0 = judge lateness by shown and cost; 1 = the screen showed a recent frame on time, 2 = late. With present
+                               // snapshots (nvn_mtl.m) the game runs ahead of the screen and a frame that runs long is absorbed, so only what the screen shows counts
+     double run, crun, cref;   // vsyncs at kmin in a row; the cost of its frames on time (running mean; not during a probe's trial, whose frames run while the clock rises);
+@@ -87,7 +91,8 @@ static inline int nvn_fstep_next(nvn_fstep *s, double shown, double cost, int km
+     }
+     if (!s->k) { s->k = s->step = s->kmin = kmin; return s->step; }   // first frame: nothing measured yet
+     int held = s->k;   // the frame that just ended stayed on screen this long
+-    s->debt += shown - s->step;
++    int settle = s->settle; s->settle = 0;
++    if (settle && shown > s->step) s->dropped += shown - s->step; else s->debt += shown - s->step;   // a pause is not time the game owes
+     if (s->debt > FSTEP_DEBT_MAX) { s->dropped += s->debt - FSTEP_DEBT_MAX; s->debt = FSTEP_DEBT_MAX; }
+     if (s->debt < -1) s->debt = -1;   // ahead (a frame shorter than its step): nothing slows the game down, so at most one vsync is remembered
+     s->since += shown;
+@@ -104,7 +109,7 @@ static inline int nvn_fstep_next(nvn_fstep *s, double shown, double cost, int km
+         s->plate += late; s->ptotal++;
+         if (!--s->grace && s->ramp && s->plate && s->ptotal + FSTEP_GRACE <= FSTEP_PROBE_MAX && s->pb <= (1 - FSTEP_RAMP) * s->pa) { s->grace = FSTEP_GRACE; s->pa = s->pb = 0; s->plate = 0; }   // still getting cheaper: another window
+     }
+-    int stall = shown >= FSTEP_STALL * (s->per_vsync ? s->per_vsync : 1), sgrace = stall || s->sgrace > 0;   // a stall, or a frame in the grace after one
++    int stall = settle || shown >= FSTEP_STALL * (s->per_vsync ? s->per_vsync : 1), sgrace = stall || s->sgrace > 0;   // a stall, or a frame in the grace after one
+     if (stall) { s->sgrace = FSTEP_GRACE; s->stalls++; } else if (s->sgrace) s->sgrace--;
+     if (late) { s->late++; s->late_run = grace || sgrace ? 0 : s->late_run + 1; s->fit_run = 0; } else s->late_run = 0;
+     // The cost of the frames on time (a hitch is not what the scene costs): at kmin, and at the longer hold
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 7916cc34aea5ceabca0c8e8f9dd873de4dee0497..1c55fa939feb944cea99fcde807045a9c6a08a37 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -15631,6 +15631,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }
+ // DM_FSTEP_PROBE_RAMP=1 (default) / 0 / ab: a frame-step probe's grace is renewed while its frames keep getting cheaper (nvn_fstep.h FSTEP_RAMP), the time macOS's GPU clock takes to rise for the shorter deadline
+ static int probe_ramp_mode(void) { static int m = -1; if (m < 0) m = sw_mode("DM_FSTEP_PROBE_RAMP", 1); return m; }
+ int mtl_probe_ramp_on(void) { return sw_on(probe_ramp_mode()); }
++// A pause or a window change, for the frame step (nvn_fstep.h settle, asked once a frame by hle_nvn.c fstep_tick): the game came back into focus since the last call (the
++// front end's dm_focus_set(1): its window became key again, a pause ended), or the layer's drawable changed size (the window resized, entered or left fullscreen). The frames
++// around either are late for the host's reasons, not the scene's (frame-rate.md, "A pause or a window switch steps the hold up")
++int dm_focus_now(void); uint64_t dm_focus_in_since(void);
++static _Atomic uint64_t g_settle_px, g_settle_focus, g_warm_present_ns; static _Atomic int g_settle;
++static void pause_warm_start(void);
++static void settle_present(CGSize px) {   // each present, with the layer's drawable size
++    uint64_t v = (uint64_t)px.width | (uint64_t)px.height << 32;
++    if (atomic_exchange(&g_settle_px, v) != v) atomic_store(&g_settle, 1);
++    atomic_store(&g_warm_present_ns, now_ns());
++    pause_warm_start();
++}
++int mtl_fstep_settle(void) {
++    uint64_t f = dm_focus_in_since();
++    if (atomic_exchange(&g_settle_focus, f) != f) atomic_store(&g_settle, 1);
++    return atomic_exchange(&g_settle, 0);
++}
++// DM_NVN_PAUSE_WARM (Mac; 1 = on, 0 = off): while the game presents nothing (a pause: its window out of focus, a sidebar or menu over it), a few bytes of GPU work twice a
++// second keep the GPU powered. Left alone for about 2 s it powers down, and the first frame back pays for its return on the submit thread: Ocarina of Time on an M4 Pro, after
++// pauses of 2.5, 5.8 and 35 s, 126–178 ms inside the first residency set commit (off the CPU; 0.3 ms otherwise) and 26–67 ms of GPU time for a 15 ms frame; pauses of 1.2–1.9 s
++// had neither. It stops 2 minutes into a pause, so a game left paused lets the GPU sleep, and does nothing while frames are presented
++#define PAUSE_WARM_DEFAULT 1
++static void pause_warm_start(void) {
++#if TARGET_OS_OSX
++    static dispatch_once_t once;
++    dispatch_once(&once, ^{
++        const char *e = getenv("DM_NVN_PAUSE_WARM"); if (!(e ? atoi(e) : PAUSE_WARM_DEFAULT) || !g_q || !g_dev) return;
++        static dispatch_source_t t; static id<MTLBuffer> buf; static uint64_t n;
++        buf = [g_dev newBufferWithLength:64 options:MTLResourceStorageModePrivate];
++        t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
++        dispatch_source_set_timer(t, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), NSEC_PER_SEC / 2, NSEC_PER_SEC / 20);
++        dispatch_source_set_event_handler(t, ^{
++            uint64_t last = atomic_load(&g_warm_present_ns), now = now_ns();
++            if (!last || now - last < 400000000ull || now - last > 120000000000ull || atomic_load(&g_gpu_lost)) return;
++            @autoreleasepool {
++                id<MTLCommandBuffer> cb = [g_q commandBuffer]; id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
++                [b fillBuffer:buf range:NSMakeRange(0, 64) value:0]; [b endEncoding]; [cb commit];
++            }
++            if (!n++) MLOG("pause warm: no frame presented for %.1f s, the GPU is kept powered with a 64-byte fill twice a second for up to 2 minutes (DM_NVN_PAUSE_WARM=0 turns it off)", (now - last) / 1e9);
++        });
++        dispatch_resume(t);
++    });
++#endif
++}
+ static void sub_cut(void) {
+     int n = cut_draws();
+     if (!g_cb || g_enc) return;
+@@ -16993,6 +17037,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+     if (atomic_load(&g_gpu_lost)) return 0;   // the display command buffer would be ignored too: take no drawable from the screen the front end is about to close
+     CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
+     if (!layer) return 0;
++    settle_present(layer.drawableSize);
+     if (g_present_layer_resident != layer) { [g_q4 addResidencySet:layer.residencySet]; g_present_layer_resident = layer; }
+ #if TARGET_OS_OSX
+     if (!layer.displaySyncEnabled) layer.displaySyncEnabled = YES;   // Windowed mode follows the display's vsync to prevent tearing
+diff --git a/dm/gfx/tests/t_fstep.c b/dm/gfx/tests/t_fstep.c
+index d0f16e0444c52e4707aea5e65a7644618e0b10c8..9665a2046903912fd81037db3dd1c01d5b0d3bb8 100644
+--- a/dm/gfx/tests/t_fstep.c
++++ b/dm/gfx/tests/t_fstep.c
+@@ -383,6 +383,19 @@ int main(void) {
+         check(f.s.k == 2 && f.s.stalls == 0, "  120 fps: 83 ms frames are not stalls");
+         sim g = {0}; g.s.per_vsync = 2; run(&g, 240, 0.7, 1, 2, 0); run(&g, 1, 200, 1, 2, 0); run(&g, 3, 1.5, 1, 2, 0); run(&g, 60, 0.7, 1, 2, 0);
+         check(g.s.k == 1 && g.s.stalls == 1, "  120 fps: a pause and three late frames keep 120");
++        // the caller names the pause (settle): nothing of it is paid back, where a stall it does not name (a load) still pays back FSTEP_DEBT_MAX
++        sim p = {0}; run(&p, 600, 0.9, 1, 3, 0); uint64_t paid0 = p.s.paid;
++        p.s.settle = 1; run(&p, 1, 114, 1, 3, 0); run(&p, 60, 0.9, 1, 3, 0);
++        snprintf(b, sizeof b, "  a pause the caller names is not paid back (paid %llu, debt %.2f)", (unsigned long long)(p.s.paid - paid0), p.s.debt);
++        check(p.s.paid == paid0 && p.s.debt < 1 && p.s.k == 1 && p.s.settle == 0, b);
++        sim q = {0}; run(&q, 600, 0.9, 1, 3, 0); paid0 = q.s.paid; run(&q, 1, 114, 1, 3, 0); run(&q, 60, 0.9, 1, 3, 0);
++        check(q.s.paid - paid0 == 15, "  a stall it does not name pays back 15 vsyncs as before");
++        // a fullscreen switch the caller names: frames late by a third of a vsync while the window animates, none of them a stall
++        sim w = {0}; run(&w, 600, 0.9, 1, 3, 0);
++        w.s.settle = 1; run(&w, 20, 1.34, 1, 3, 0); w.s.settle = 1; run(&w, 20, 1.34, 1, 3, 0); run(&w, 120, 0.9, 1, 3, 0);
++        check(w.s.k == 1 && w.s.ups == 0, "  a window change the caller names: 40 mildly late frames keep hold 1");
++        sim x = {0}; run(&x, 600, 0.9, 1, 3, 0); run(&x, 20, 1.34, 1, 3, 0);
++        check(x.s.k == 2 && x.s.ups == 1, "  the same frames with no window change step up as before");
+     }
+     printf("== %d checks, %d failed ==\n", checks, fail);
+     return fail != 0;
+diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
+index 99fa67f001e2033f05105c55a8f625a3e3107308..d6bbdb32ef3f403d2cf640c8ab296599af13d1e8 100644
+--- a/docs/agents/symptoms.md
++++ b/docs/agents/symptoms.md
+@@ -484,6 +484,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - after a 30 fps cap ends (a prerendered movie, the thermal cap), a GPU-bound game stays at 30 fps in a scene that held 60 before the cap; the log shows `frame step cap 30 → 60 fps` and a few frames later `frame step: hold 1 → 2 vsyncs at present … (3 late frames; …)`, with no probe after it. → [The frame step after a 30 fps cap ends](../reference/frame-rate.md#the-frame-step-after-a-30-fps-cap-ends)
+ - on a Mac, a GPU-bound game at 60 fps falls to 30 or 20 fps when the scene gets heavier and stays there until a menu or a lighter scene, while the GPU clock sits at its floor (338–400 MHz on an M5 Pro) and the GPU is powered 60–75% of the time; the log shows probes back to hold 1 that fail after about 33 frames (`frame step: hold 2 → 1 vsyncs … (probe, GPU 1.67× its time at hold 1)` then `the probe failed`), and the host's profiler (`@gpu_mhz`) shows the clock rising during each probe and falling back after it. → [A probe's grace lasts while its frames keep getting cheaper](../reference/frame-rate.md#a-probes-grace-lasts-while-its-frames-keep-getting-cheaper)
+ - after every pause (the game out of focus, then back), fullscreen switch or covered window, a game that held 60 fps plays at 20 and then 30 fps for about a second; the log shows `frame step: hold 1 → 3 vsyncs at present … (3 late frames; cost 3.00, GPU 0.89; …)` right after `oe focus state → 1` or `front end: window visible`, then a trial to 2 and a probe back to 1 that holds. → [A pause or a window switch steps the hold up](../reference/frame-rate.md#a-pause-or-a-window-switch-steps-the-hold-up)
++- after a pause of about 2 s or more, one frame of 130–300 ms, then the game runs as before; the long-frame line shows the time inside the residency set commit with the submit thread off the CPU (`submit 152.9 ms wall / 9.6 CPU …, off CPU 143.3; residency commits 143.4 ms`) and a first GPU time well above the scene's (26–67 ms for 15). Pauses of 1.2–1.9 s show neither. → [The first frame after a pause waits for the GPU](../reference/frame-rate.md#the-first-frame-after-a-pause-waits-for-the-gpu)
+ - a game whose profile has a frame step (`FRAME_STEP` in its `patches.py`) runs at double speed when packed from another update; the log has no `frame step in whole vsyncs` line, and the frame counter shows 60. → [A derived profile drops the frame step its build lacks](../reference/frame-rate.md#a-derived-profile-drops-the-frame-step-its-build-lacks)
+ - a fixed-step game runs at double speed (or slow motion at 30) after `DM_FPS_TARGET` is set, in `Documents/env.txt` or the launcher, on a build its profile's frame step stubs and limiter rows do not know. → [A present cap applies only with a frame step or an engine limit the host writes](../reference/frame-rate.md#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)
+ - a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick. → [A present interval that is the game's only limit, in display mode](../reference/frame-rate.md#a-present-interval-that-is-the-games-only-limit-in-display-mode)
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index f23f0a4943f328288534661f108f0d432fc1179f..ffb2f2ca3963264f4d338e5cfe5f4a42862a365f 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -52,6 +52,7 @@ DM_FSLOG	diagnostic	`=<file>` writes one TSV line per ReadFile: seconds since bo
+ DM_FSLOG_HASH	diagnostic	With `DM_FSLOG`, adds a column with the FNV-1a 64 hash of the bytes read
+ DM_FSTEP_PROBE_RAMP	switch	`0` ends a frame-step probe's grace after its 30 frames as before; by default the grace is renewed while the probe's frames keep getting cheaper (macOS raises the GPU clock for the shorter deadline over seconds); `ab` alternates with `DM_AB`
+ DM_FULLSCREEN	player	`1` (any value but `0`) starts the Mac window in fullscreen; `0` or unset, a window. The Mac settings window's Display mode
++DM_FULLSCREEN_MENU_BAR	switch	`1` keeps macOS's behaviour in full screen on the Mac: the menu bar and title bar come back when the pointer is at the top of the screen; by default NXForge hides them and the Dock
+ DM_GAME	switch	Selects the game profile (a title ID under `dm/games` or `DM_GAMES_DIR`) for the Python tools and the rewriter; there is no default
+ DM_GAMES_DIR	path	Profile folders outside the repository, separated by `:`, searched after `dm/games`; the NSP script points it at a provisional or derived profile
+ DM_GAMES_FIRST	switch	`=1` searches `DM_GAMES_DIR` before `dm/games`, so a provisional or derived profile wins over the game's own (the NSP script's `--provisional`)
+@@ -190,6 +191,7 @@ DM_NVN_PASSGPU	diagnostic	`=<file>` writes the GPU time of each render and compu
+ DM_NVN_PASSGPU_SERIAL	diagnostic	`=1` makes each encoder on the main command buffer wait until all earlier work has finished, so `DM_NVN_PASSGPU` times read each pass's exclusive time (totals read high)
+ DM_NVN_PASS_SPLIT	switch	`=<draws>` (default 256, `0` off): a render pass is ended and its segment committed after this many draws while the GPU has no segment left, so the GPU starts a long pass (a G-buffer) before it is all translated; its attachments are stored and loaded again
+ DM_NVN_PASS_SPLIT_MAX	switch	`=<n>` (default 2, `0` no limit): the most splits of one render pass (`DM_NVN_PASS_SPLIT`), as each stores and loads its attachments
++DM_NVN_PAUSE_WARM	switch	`0` lets the GPU power down while the game presents nothing (a pause); by default on the Mac a 64-byte fill twice a second keeps it powered for up to 2 minutes, so the first frame after a pause does not wait for it
+ DM_NVN_POOL_CHUNKS	switch	`0` wraps a memory pool of 512 MB or more whole in one buffer, as before; by default it is wrapped in overlapping 16 MB chunks made as draws reach them, so only the parts in use are wired
+ DM_NVN_POOL_FIRST	diagnostic	`1` logs every first read through the pool table of a texture ID whose texture was not made yet (up to 32 a frame): what the read found (the ID's stand-in, or the dummy, which reads 0), the texture, its view and how many frames before it was registered; it also checks at each such read whether the storage the stand-in was made from has been written since. The totals go to the log every 300 frames without it (`pool stand-ins up to frame`)
+ DM_NVN_POOL_HEAP	switch	`1` gives the COMPRESSIBLE render targets of each CPU_NO_ACCESS pool (up to 1 GB) one placement heap, each at its pool offset scaled by 1.25, so targets an engine places over each other share memory as on NVN (`pool_heap_texture`); off by default since nxnative recycles render-target heaps instead (`rh_texture`) and found a pool-mirroring heap corrupts the picture under dynamic resolution
+diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
+index 127c98347ab02d6ea3e6a0402230bd81eddace02..d5ff48b08dc78d9d1b02399890f7c88f947bdc2f 100644
+--- a/docs/reference/frame-rate.md
++++ b/docs/reference/frame-rate.md
+@@ -83,10 +83,17 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
+ - **Symptom:** after every pause (the game out of focus, then back), fullscreen switch or covered window, a game that held 60 fps plays at 20 and then 30 fps for about a second; the log shows `frame step: hold 1 → 3 vsyncs at present … (3 late frames; cost 3.00, GPU 0.89; …)` right after `oe focus state → 1` or `front end: window visible`, then a trial to 2 and a probe back to 1 that holds.
+ - **Cause:** `nvn_fstep_next` took the frames after the stall as the scene's cost. The frame that spans the stall is as long as the stall, and the next few are late for the host's reasons: the GPU clock fell while nothing was drawn (the first frame back took 26–42 ms of GPU time after pauses of 1.2–5.8 s and 67 ms after one of 35 s, where the scene takes 15), and the display link is finding its ticks again (acquire and fence waits of 30–160 ms). Three of them in a row stepped up to their cost, 3 vsyncs. After a fullscreen switch the display link's silence (200–570 ms, [Present thread rescues a silent display link](#present-thread-rescues-a-silent-display-link)) did the same (`hold 2 → 3 … cost 6.41, GPU 1.12`).
+ - **Fix:** a frame shown for `FSTEP_STALL` (8) vsyncs or more, 133 ms, is a stall: more than twice the longest hold, so no step up would have made it fit. It does not count toward a step up, and neither do the `FSTEP_GRACE` (30) frames after it, as after a probe; a stall inside that grace starts it again. A scene that really is heavier after the stall (a load into a heavy area) steps up 33 frames after it instead of 3. Long frames below a stall (three of 83 ms in a row) step up as before. The 30-second line counts them (`… failed trials), N stalls`).
+-- **Not covered:** the first step of a fullscreen switch, `hold 1 → 2` on three mildly late frames (cost 1.3) while the window animates, before any frame is a stall: 30 frames at 30 fps, then the probe holds.
+-- **Check:** `make -C dm/gfx/tests GAME=010015100B514000 t_fstep && dm/gfx/tests/t_fstep`: a pause and three late frames, a fullscreen switch with two stalls, 22 ms frames after a stall (step up after grace + 3), 83 ms frames (not stalls), and the same at 120 fps. The pause and fullscreen cases step to hold 3 without the rule.
++- **The host names them too:** `mtl_fstep_settle` (`nvn_mtl.m`, asked once a frame by `fstep_tick`) reports that the game came back into focus (`dm_focus_set(1)`: a pause ended, the window became key) or that the layer's drawable changed size (a resize, entering or leaving fullscreen), and sets `nvn_fstep.settle`: that frame is a stall whatever it took. This covers the first step of a fullscreen switch, `hold 1 → 2` on three mildly late frames (cost 1.3) while the window animates, before any frame is 133 ms long. The time the game was behind in a frame the host names is dropped, not paid back: a pause is not time the game owes, and paid back it played the first quarter second after every pause at double speed (`15 vsyncs paid back`). A stall the host does not name (a load) is paid back up to `FSTEP_DEBT_MAX` as before.
++- **Check:** `make -C dm/gfx/tests GAME=010015100B514000 t_fstep && dm/gfx/tests/t_fstep`: a pause and three late frames, a fullscreen switch with two stalls, 22 ms frames after a stall (step up after grace + 3), 83 ms frames (not stalls), and the same at 120 fps. The pause and fullscreen cases step to hold 3 without the rule. A pause the host names pays nothing back where an unnamed stall pays 15 vsyncs; 40 frames at 1.34 vsyncs around a named window change keep hold 1 and step up without it.
+ - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (Mac M4 Pro, 24 GB, a 15-minute session with 12 pauses and 4 fullscreen switches: 543 frames held at 3 vsyncs, nearly all after them). Modelled in `t_fstep`; not yet run on a device with the rule.
+ 
++### The first frame after a pause waits for the GPU
++
++- **Symptom:** after a pause of about 2 s or more, one frame of 130–300 ms, then the game runs as before; the long-frame line shows the time inside the residency set commit with the submit thread off the CPU (`submit 152.9 ms wall / 9.6 CPU …, off CPU 143.3; residency commits 143.4 ms`) and a first GPU time well above the scene's (26–67 ms for 15). Pauses of 1.2–1.9 s show neither.
++- **Cause (not proven):** with nothing submitted for about 2 s the GPU powers down, and the first call that needs it waits for its return. The commit is where the submit thread meets it; it takes 0.3 ms otherwise (276 commits in 82 ms).
++- **Fix:** `DM_NVN_PAUSE_WARM` (`pause_warm_start` in `nvn_mtl.m`, Mac only): while no frame has been presented for 0.4 s, a 64-byte buffer fill twice a second keeps the GPU powered, for up to 2 minutes of a pause; it does nothing while frames are presented. `0` turns it off.
++- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (Mac M4 Pro: pauses of 2.5, 5.8 and 35 s, 126–178 ms in the commit).
++
+ ### A derived profile drops the frame step its build lacks
+ 
+ - **Symptom:** a game whose profile has a frame step (`FRAME_STEP` in its `patches.py`) runs at double speed when packed from another update; the log has no `frame step in whole vsyncs` line, and the frame counter shows 60.
