@@ -88,7 +88,7 @@ int main(int argc, char **argv) { @autoreleasepool {
         mtl_tex_release(&img); mtl_tex_release(&img2); mi = nil; mi2 = nil;
 
         tex_t plain = target(&pool, 995003, 16 << 20, 256, 256, 0);
-        CHECK(!tex_mtl(&plain).heap, "a texture without COMPRESSIBLE keeps an allocation of its own");
+        CHECK(tex_mtl(&plain).heap != ma.heap, "a texture without COMPRESSIBLE stays out of the pool's heap (upstream's recycled heaps may hold it, rh_texture)");
         tex_t sparse = target(&pool, 995004, 20 << 20, 256, 256, NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE);
         CHECK(!tex_mtl(&sparse).heap, "a sparse texture keeps an allocation of its own");
         tex_t visible = target(&cpu, 995005, 0, 256, 256, NVN_TEXTURE_FLAGS_COMPRESSIBLE);
