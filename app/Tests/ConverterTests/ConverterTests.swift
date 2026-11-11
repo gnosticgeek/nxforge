@@ -415,7 +415,11 @@ import Testing
         #expect(StepTiles.state("Extract tools", r) == .skipped)
         #expect(StepTiles.state("Extract game files", r) == .done)
         #expect(StepTiles.state("Package Mac app", r) == .running)
-        #expect(StepTiles.state("Build Mac host", r) == .pending)
+        // earlier in the same build: the steps after the running one wait
+        r.stage = Stage(k: 3, n: 8, name: "rewrite")
+        #expect(StepTiles.state("Extract tools", r) == .skipped)
+        #expect(StepTiles.state("Rewrite executable", r) == .running)
+        #expect(StepTiles.state("Package Mac app", r) == .pending)
     }
 
     @Test func stagesSortInBuildOrder() {
