@@ -387,7 +387,7 @@ index 0a69353fa6dd6175875dbccb23bc6505a235599c..c087d79ea8cb45c3982c6a15c722cb41
  void mtl_set_depth_zero(int on);          // NVN depth mode: 1 = near is 0 (D3D / Metal), 0 = near is -w (GL, NVN's default); picks the vertex shaders' entry point (see shader_load in nvn_mtl.m)
  void mtl_set_origin_lower_left(int on);   // NVN window origin: 1 = lower left (GL, NVN's default), 0 = upper left (D3D / Metal); see nvn_mtl.m
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 50e54eed10f2e7dbe137b72f8470c9ed83d86ab1..e5ee5222d6d51f084bb61c219ef1b9916fd2b28a 100644
+index 50e54eed10f2e7dbe137b72f8470c9ed83d86ab1..50df54ac5b956a47ede9e459965d6b022e59af0e 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3,6 +3,13 @@
@@ -1122,7 +1122,7 @@ index 50e54eed10f2e7dbe137b72f8470c9ed83d86ab1..e5ee5222d6d51f084bb61c219ef1b991
 +#define POOL_HEAP_MAX (1ull << 30)
 +@interface NvPoolHeap : NvImageHeap { @public uint8_t *used; size_t ngrain; } @end   // used: the grains a placed texture has covered
 +@implementation NvPoolHeap
-+- (void)dealloc { free(used); }
++- (void)dealloc { free(used); res_remove(heap); heap = nil; }   // a pool's whole heap leaves with its last texture: not one for the recycled list (NvImageHeap's dealloc, rh_wait, sees nil)
 +@end
 +static id<MTLTexture> pool_heap_texture(const tex_t *t, MTLTextureDescriptor *d) {
 +    static int on = -1; if (on < 0) { const char *e = getenv("DM_NVN_POOL_HEAP"); on = e && atoi(e); }   // off unless asked: upstream found the pool-mirroring heap (#1453) corrupts the picture under dynamic resolution and recycles render-target heaps instead (rh_texture)
