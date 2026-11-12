@@ -41,7 +41,7 @@ static int drain(void) {
     int left = g_pq_inflight; pthread_mutex_unlock(&g_pq_mu); return left;
 }
 int main(void) { @autoreleasepool {
-    alarm(60); setbuf(stdout, NULL);
+    alarm(60); setvbuf(stdout, NULL, _IONBF, 0);
     setenv("DM_PRESENT_HZ", "0", 1); setenv("DM_PRESENT_INTERP", "on", 1);
     mtl_init();
     g_test_layer = [CAMetalLayer layer]; g_test_layer.device = g_dev; g_test_layer.pixelFormat = MTLPixelFormatBGRA8Unorm; g_test_layer.framebufferOnly = NO;
