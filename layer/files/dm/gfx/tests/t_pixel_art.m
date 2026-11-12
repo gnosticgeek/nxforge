@@ -59,7 +59,7 @@ static uint8_t g_art[AH][AW][4];
 static id<MTLTexture> picture(int w, int h, double sx, double sy) {   // the art enlarged into w x h by repeating pixels at scale sx, sy (nearest, as a game does)
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:w height:h mipmapped:NO];
     d.storageMode = MTLStorageModeShared; d.usage = MTLTextureUsageShaderRead;
-    id<MTLTexture> t = [g_dev newTextureWithDescriptor:d]; uint8_t *p = malloc((size_t)w * h * 4); if (!p) abort();
+    id<MTLTexture> t = [g_dev newTextureWithDescriptor:d]; uint8_t *p = malloc((size_t)w * h * 4); if (!p || !t) abort();
     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
         int ax = (int)floor((x + 0.5) / sx), ay = (int)floor((y + 0.5) / sy);
         memcpy(p + ((size_t)y * w + x) * 4, g_art[ay < AH ? ay : AH - 1][ax < AW ? ax : AW - 1], 4);
@@ -70,10 +70,11 @@ static id<MTLTexture> picture(int w, int h, double sx, double sy) {   // the art
 static id<MTLTexture> target(int w, int h) {
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:w height:h mipmapped:NO];
     d.storageMode = MTLStorageModeShared; d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-    id<MTLTexture> t = [g_dev newTextureWithDescriptor:d]; res_add(t); res_commit(); return t;
+    id<MTLTexture> t = [g_dev newTextureWithDescriptor:d]; if (!t) abort(); res_add(t); res_commit(); return t;
 }
 static int window_present(id<MTLTexture> src, id<MTLTexture> out) {   // the window's present path (the finder runs there), waited for
     id<MTL4CommandAllocator> al = [g_dev newCommandAllocator]; id<MTL4CommandBuffer> cb = [g_dev newCommandBuffer]; id<MTLSharedEvent> ev = [g_dev newSharedEvent];
+    if (!al || !cb || !ev) return 0;
     [cb beginCommandBufferWithAllocator:al]; int kind = present_encode_m4(cb, src, out, NULL, g_present_uv[0], &g_fx_present); [cb endCommandBuffer];
     [g_q4 commit:&cb count:1]; [g_q4 signalEvent:ev value:1];
     return kind && [ev waitUntilSignaledValue:1 timeoutMS:10000];
