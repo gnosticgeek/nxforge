@@ -474,10 +474,16 @@ static void res_check(id r, const char *what, int reg) {
 // can hold g_mu, so it only reads the sizes and leaves a level for the submit thread (guard_act). A stuck submit thread never comes back to look, so a 100 ms timer reads them too (guard_tick).
 // DM_NVN_RES_LIMIT_MB: =<MB> stops at that size instead (a low one tests this), =0 turns the guard off. On iOS the system ends a process for its footprint long before this, and no front end has
 // been tried with this stop, so there the guard only evicts unless the switch asks for a limit
-enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TICKS = 10 };   // the evictions are at least GUARD_EVERY frames apart; the timer stops the game after GUARD_TICKS ticks over the stop level
-static struct { uint64_t evict, stop, wall; } g_guard;   // bytes, all 0 with the guard off: the eviction level, the stop level, the size no commit grows past
+enum { GUARD_OK, GUARD_SOFT, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_SOFT_EVERY = 120, GUARD_TICKS = 10 };   // the evictions are at least GUARD_EVERY frames apart; the timer stops the game after GUARD_TICKS ticks over the stop level
+// NXForge: the driver's low-water mark. Long before the working set, at about half of it, IOGPUFamily's wired collector tries to free at every command buffer
+// (kernel log: IOGPUCommandDescriptor::prepare <dmhost> FAILED To Free, thousands a minute) once what the buffers need cannot go back under the mark: GPU times
+// triple and the game runs at about 10 fps. Ocarina of Time on a 24 GB M4 Pro (working set 18,186 MB): the first refusal with 8.5-8.9 GB in the residency set,
+// with or without 8 GB held by another process. So from g_guard.soft (80% of half the working set) the submit thread lets go of what a long session leaves
+// behind (GUARD_SOFT: sharing entries idle for ALIAS_IDLE_SOFT submissions, spares, staging), and from g_guard.low (92% of it) a slow game is named to the
+// player (guard_low_tick, front_gpu_memory_low). DM_NVN_GUARD_SOFT_MB=<MB> sets the soft level (the low one 15% above it), 0 turns both off. Mac only
+static struct { uint64_t evict, stop, wall, soft, low; } g_guard;   // bytes, all 0 with the guard off: the eviction level, the stop level, the size no commit grows past
 static _Atomic int g_guard_lv;   // the highest level met since the submit thread last looked (guard_act)
-static int guard_level(uint64_t used) { return !g_guard.stop ? GUARD_OK : used >= g_guard.wall ? GUARD_WALL : used >= g_guard.stop ? GUARD_STOP : used >= g_guard.evict ? GUARD_EVICT : GUARD_OK; }
+static int guard_level(uint64_t used) { return !g_guard.stop ? GUARD_OK : used >= g_guard.wall ? GUARD_WALL : used >= g_guard.stop ? GUARD_STOP : used >= g_guard.evict ? GUARD_EVICT : g_guard.soft && used >= g_guard.soft ? GUARD_SOFT : GUARD_OK; }
 // What the guard measures: the residency set after its next commit (g_guard_set: its size at the last commit and what res_add added since), not the device's currentAllocatedSize.
 // The device counts every no-copy buffer whole, and with large pools in lookup chunks, pool-table segments and sparse-run buffers several of them lie over the same guest pages:
 // PRAGMATA's boot load read 8,134 MB there with the set near 3 GB on an 8 GB Mac, and the wall refused the commits its textures needed. DM_NVN_GUARD_DEVICE=1: the larger of the two
@@ -718,10 +724,38 @@ static void guard_stop(uint64_t used) {
     front_gpu_memory_stop(used >> 20, g_guard.wall >> 20);
 }
 // The submit thread decides while it comes round (guard_act). Past the working set, or a second over the stop level, it does not
+// DM_NVN_RES_BALLAST=<step MB>:<from s>:<every s>:<max MB> (diagnostic): private buffers added to the residency set on a timer, to bring a short run's set to the size of a long session's
+static void guard_ballast(void) {
+    static int init; static unsigned step, from, every, max, ticks, have; static NSMutableArray *keep;
+    if (!init) { init = 1; const char *e = getenv("DM_NVN_RES_BALLAST"); if (e && sscanf(e, "%u:%u:%u:%u", &step, &from, &every, &max) == 4 && step && every) keep = [NSMutableArray new]; }
+    if (!keep) return;
+    unsigned t = ++ticks / 10; if (ticks % 10 || t < from || (t - from) % every || have + step > max) return;
+    id<MTLBuffer> b = [g_dev newBufferWithLength:(NSUInteger)step << 20 options:MTLResourceStorageModePrivate];
+    if (!b) return;
+    [keep addObject:b]; res_add(b); have += step;
+    MLOG("residency ballast: %u MB held (DM_NVN_RES_BALLAST), residency set after its next commit %llu MB", have, (unsigned long long)(atomic_load(&g_guard_set) >> 20));
+}
+void front_gpu_memory_low(unsigned long long used_mb, unsigned long long low_mb);
+__attribute__((weak)) void front_gpu_memory_low(unsigned long long used_mb, unsigned long long low_mb) { (void)used_mb; (void)low_mb; }   // a windowless run and iOS: the log line is all
+// Once a second, from the guard's timer: the residency set past the low level and the game at under 40% of the best frame rate it has shown, three seconds running.
+// A pause shows no frames at all and is left out. Told again after five minutes at the earliest
+static _Atomic uint64_t g_cur_frame;
+static void guard_low_tick(uint64_t used) {
+    static unsigned ticks, slow; static uint64_t f0, best, told;
+    if (++ticks % 10) return;
+    uint64_t f = atomic_load(&g_cur_frame), fps = f - f0; f0 = f; if (fps > best && fps <= 240) best = fps;
+    slow = g_guard.low && used >= g_guard.low && best >= 20 && fps >= 2 && fps * 10 < best * 4 ? slow + 1 : 0;
+    if (slow != 3 || (told && ticks - told < 3000)) return;
+    told = ticks;
+    MLOG("GPU memory guard: %llu MB in the residency set, past the driver's low-water mark (about %llu MB), and %llu frames in the last second against %llu at best: the driver frees at every command buffer (kernel log: IOGPUCommandDescriptor::prepare FAILED To Free). Saving and starting the game again empties it",
+         (unsigned long long)(used >> 20), (unsigned long long)(g_guard.low >> 20), (unsigned long long)fps, (unsigned long long)best);
+    front_gpu_memory_low(used >> 20, g_guard.low >> 20);
+}
 static void guard_tick(void) {
     static unsigned over;
     uint64_t used = guard_used(); int lv = guard_level(used);
     if (lv) guard_raise(lv);
+    guard_ballast(); guard_low_tick(used);
     over = lv >= GUARD_STOP ? over + 1 : 0;
     if (lv == GUARD_WALL || over >= GUARD_TICKS) guard_stop(used);
 }
@@ -733,13 +767,18 @@ static void guard_init(void) {
 #if TARGET_OS_IPHONE
         if (!lim) g_guard.stop = g_guard.wall = UINT64_MAX;
 #endif
+#if !TARGET_OS_IPHONE
+        { const char *sm = getenv("DM_NVN_GUARD_SOFT_MB"); uint64_t so = sm ? strtoull(sm, NULL, 0) << 20 : ws / 2 / 100 * 80;
+          g_guard.soft = so; g_guard.low = sm ? so / 100 * 115 : ws / 2 / 100 * 92; }
+#endif
     }
     static dispatch_source_t timer;
     timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
     dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), 100 * NSEC_PER_MSEC, 20 * NSEC_PER_MSEC);
     dispatch_source_set_event_handler(timer, ^{ guard_tick(); });
     dispatch_resume(timer);
-    if (g_guard.stop) MLOG("GPU memory guard: lets go of what it can from %llu MB, stops the game at %llu MB (Metal's working set %llu MB)", (unsigned long long)(g_guard.evict >> 20), (unsigned long long)(g_guard.stop >> 20), (unsigned long long)(ws >> 20));
+    if (g_guard.stop) MLOG("GPU memory guard: lets go of what it can from %llu MB, stops the game at %llu MB (Metal's working set %llu MB); lets go of what has idled from %llu MB and names a slow game from %llu MB (the driver's low-water mark, about half the working set)",
+                           (unsigned long long)(g_guard.evict >> 20), (unsigned long long)(g_guard.stop >> 20), (unsigned long long)(ws >> 20), (unsigned long long)(g_guard.soft >> 20), (unsigned long long)(g_guard.low >> 20));
 }
 static void udc_selftest(void) {
     if (!getenv("DM_UDC_SELFTEST")) return;
@@ -6728,7 +6767,7 @@ static uint32_t own_entries_locked(int with_ghosts, uint64_t **sers, void ***obj
     });
     *sers = sv; *objs = ov; return n;
 }
-static unsigned alias_evict_idle(void) {
+static unsigned alias_evict_idle(uint64_t idle) {
     os_unfair_lock_lock(&g_rmu);
     pthread_mutex_lock(&g_smu);
     CFMutableSetRef held = CFSetCreateMutable(NULL, 0, NULL); uint64_t *sv; void **ov; uint32_t ne = own_entries_locked(1, &sv, &ov);
@@ -6739,7 +6778,7 @@ static unsigned alias_evict_idle(void) {
     alias_key *ks = cap ? malloc(cap * sizeof *ks) : NULL; __block uint32_t n = 0;
     if (ks) own_alias_each_locked(^(const alias_key *k, id o) {
         if (n >= cap || CFSetContainsValue(held, (__bridge const void *)o)) return;
-        uint64_t seen = own_alias_seen_locked(k); if (!seen || now - seen >= ALIAS_IDLE) ks[n++] = *k;
+        uint64_t seen = own_alias_seen_locked(k); if (!seen || now - seen >= idle) ks[n++] = *k;
     });
     CFRelease(held);
     for (uint32_t j = 0; j < n; j++) own_alias_del_locked(&ks[j]);   // retired; residency follows the serial entries that still hold them (own_retire_locked)
@@ -6771,20 +6810,23 @@ static unsigned pkg_trim(void) {
     return n;
 }
 // From the eviction level: what can go. Everything here leaves behind the fences of the submissions that may use it, so the sizes fall a little later
-static void guard_evict(int force) { @autoreleasepool {
-    static uint64_t last; uint64_t f = atomic_load(&g_cur_frame) + 1;
-    if (!force && last && f - last < GUARD_EVERY) return;
+enum { ALIAS_IDLE_SOFT = 1800 };   // submissions (15 s and more of play): at the soft level only what no lookup found for that long goes
+static void guard_evict(int lv) { @autoreleasepool {
+    static uint64_t last; uint64_t f = atomic_load(&g_cur_frame) + 1; int force = lv >= GUARD_STOP, soft = lv == GUARD_SOFT;
+    if (!force && last && f - last < (soft ? GUARD_SOFT_EVERY : GUARD_EVERY)) return;
     last = f;
-    unsigned entries = alias_evict_idle(), spares = pkg_trim(), staging = up_trim();
+    unsigned entries = alias_evict_idle(soft ? ALIAS_IDLE_SOFT : ALIAS_IDLE), spares = pkg_trim(), staging = up_trim();
     defer_drain(); res_commit();
-    static uint64_t lines; if (entries + spares + staging && lines++ < 16)
-        MLOG("GPU memory guard: %llu MB (it lets go from %llu MB): %u idle sharing entries, %u spare textures, %u staging blocks let go", (unsigned long long)(guard_used() >> 20), (unsigned long long)(g_guard.evict >> 20), entries, spares, staging);
+    static uint64_t lines, tot[3]; tot[0] += entries; tot[1] += spares; tot[2] += staging;
+    if (entries + spares + staging && (lines++ < 16 || lines % 64 == 0))
+        MLOG("GPU memory guard: %llu MB (it lets go from %llu MB%s): %u idle sharing entries, %u spare textures, %u staging blocks let go (%llu, %llu and %llu so far)", (unsigned long long)(guard_used() >> 20),
+             (unsigned long long)((soft ? g_guard.soft : g_guard.evict) >> 20), soft ? ", the driver's low-water mark near" : "", entries, spares, staging, (unsigned long long)tot[0], (unsigned long long)tot[1], (unsigned long long)tot[2]);
 } }
 // On the submit thread, after a submission, with no lock held. The stop level gives the eviction its chance first: this submission's fence, then the sizes again
 static void guard_act(uint64_t fence) {
     int lv = atomic_exchange(&g_guard_lv, GUARD_OK);
     if (!lv) return;
-    guard_evict(lv >= GUARD_STOP);
+    guard_evict(lv);
     if (lv < GUARD_STOP) return;
     mtl_wait_at(fence, 2000000000ull, WS_DRAIN);
     defer_drain(); res_commit();
