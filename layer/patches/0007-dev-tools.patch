@@ -4,22 +4,21 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
- dm/tools/lint_c_baseline.tsv         | 21 ++++++++++++---------
- dm/tools/lint_python_baseline.tsv    |  1 +
+ dm/tools/lint_c_baseline.tsv         | 17 +++++++++++++----
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
- dm/tools/tests/test_regress.py       | 16 ++++++++--------
+ dm/tools/tests/test_regress.py       | 14 +++++++-------
  dm/tools/tests/test_triage_report.py |  8 +++++---
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
- scripts/regress.py                   | 19 ++++++++++---------
- 9 files changed, 64 insertions(+), 36 deletions(-)
+ scripts/regress.py                   | 23 ++++++++++++++---------
+ 8 files changed, 67 insertions(+), 30 deletions(-)
 
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
-index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..463a8eb02def8ca1b1ff850a41b0b91d113e5695 100644
+index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..c4ae3b59eee9ae1f916cc7e53f25458584afd886 100644
 --- a/dm/tools/lint_c_baseline.tsv
 +++ b/dm/tools/lint_c_baseline.tsv
-@@ -24,22 +24,22 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
+@@ -24,20 +24,23 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
  dm/gfx/nvn/nvn_mtl.m	bugprone-misplaced-widening-cast	1
  dm/gfx/nvn/nvn_mtl.m	bugprone-signed-char-misuse	1
  dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
@@ -28,15 +27,13 @@ index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..463a8eb02def8ca1b1ff850a41b0b91d
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	5
 -dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
--dm/gfx/nvn/nvn_mtl.m	clang-analyzer-osx.cocoa.RetainCount	1
--dm/gfx/nvn/nvn_mtl.m	clang-analyzer-security.ArrayBound	1
 +dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	19
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-security.ArrayBound	1
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	4
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
  dm/gfx/nvn/nvn_mtl.m	misc-redundant-expression	2
  dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_alpha.m	clang-analyzer-nullability.NullablePassedToNonnull	1
--dm/gfx/tests/t_border.m	clang-analyzer-nullability.NullablePassedToNonnull	1
 +dm/gfx/tests/t_blend_zero.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_border.m	clang-analyzer-security.ArrayBound	2
  dm/gfx/tests/t_capture.c	bugprone-misplaced-pointer-arithmetic-in-alloc	1
@@ -47,27 +44,27 @@ index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..463a8eb02def8ca1b1ff850a41b0b91d
  dm/gfx/tests/t_float_pad.m	bugprone-suspicious-memory-comparison	1
  dm/gfx/tests/t_geometry.m	clang-analyzer-nullability.NullablePassedToNonnull	8
  dm/gfx/tests/t_geometry.m	clang-analyzer-security.ArrayBound	1
-@@ -50,6 +50,7 @@ dm/gfx/tests/t_image_alias.m	clang-analyzer-nullability.NullablePassedToNonnull
+@@ -46,6 +49,8 @@ dm/gfx/tests/t_geometry_primitive_id.m	clang-analyzer-nullability.NullablePassed
+ dm/gfx/tests/t_image_alias.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_initial_uncached.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_logic.m	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_mip_extent.m	clang-analyzer-nullability.NullablePassedToNonnull	1
++dm/gfx/tests/t_mip_extent.m	clang-analyzer-nullability.NullablePassedToNonnull	1
 +dm/gfx/tests/t_mip_extent.m	clang-analyzer-unix.Malloc	1
  dm/gfx/tests/t_missing_src1.m	bugprone-suspicious-memory-comparison	2
  dm/gfx/tests/t_perf_order.m	bugprone-unsafe-functions	2
  dm/gfx/tests/t_pfv.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-@@ -61,9 +62,9 @@ dm/gfx/tests/t_present_snap.m	bugprone-unsafe-functions	1
+@@ -57,8 +62,9 @@ dm/gfx/tests/t_present_snap.m	bugprone-unsafe-functions	1
  dm/gfx/tests/t_present_snap.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_primitive_restart.m	clang-analyzer-unix.cstring.UninitializedRead	1
  dm/gfx/tests/t_pso_archive.m	bugprone-suspicious-memory-comparison	1
 -dm/gfx/tests/t_pso_archive.m	clang-analyzer-nullability.NullablePassedToNonnull	2
 +dm/gfx/tests/t_pso_archive.m	clang-analyzer-nullability.NullablePassedToNonnull	3
  dm/gfx/tests/t_pso_bundle.m	bugprone-command-processor	1
--dm/gfx/tests/t_pso_skey.m	bugprone-suspicious-memory-comparison	5
 +dm/gfx/tests/t_pso_skey.m	bugprone-suspicious-memory-comparison	7
  dm/gfx/tests/t_pso_stall.m	bugprone-command-processor	1
  dm/gfx/tests/t_pull.m	bugprone-random-generator-seed	1
  dm/gfx/tests/t_pull_inv.m	bugprone-command-processor	1
-@@ -78,7 +79,10 @@ dm/gfx/tests/t_tex_fit_root.m	clang-analyzer-nullability.NullablePassedToNonnull
+@@ -73,7 +79,10 @@ dm/gfx/tests/t_tex_fit_root.m	clang-analyzer-nullability.NullablePassedToNonnull
  dm/gfx/tests/t_transform_feedback.m	bugprone-suspicious-memory-comparison	4
  dm/gfx/tests/t_transform_feedback.m	clang-analyzer-nullability.NullablePassedToNonnull	1
  dm/gfx/tests/t_unwritten_store.m	bugprone-suspicious-memory-comparison	1
@@ -78,31 +75,17 @@ index 099f4ff365fbd7781de8233a7d0dbb948bb9ef59..463a8eb02def8ca1b1ff850a41b0b91d
  dm/gfx/tests/t_view_swizzle.m	clang-analyzer-core.UndefinedBinaryOperatorResult	1
  dm/gfx/tests/t_view_swizzle.m	clang-analyzer-nullability.NullablePassedToNonnull	2
  dm/gfx/tests/t_xv.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-@@ -108,9 +112,8 @@ dm/host/tests/t_audio_spsc.c	clang-analyzer-unix.Malloc	4
- dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
+@@ -104,7 +113,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
  dm/host/tests/t_fs.c	bugprone-command-processor	2
  dm/host/tests/t_fs.c	clang-analyzer-unix.Stream	1
--dm/host/tests/t_fs_case.c	clang-analyzer-core.CallAndMessage	2
  dm/host/tests/t_fs_case.c	clang-analyzer-unix.Stream	1
 -dm/host/tests/t_hid.c	bugprone-suspicious-memory-comparison	2
 +dm/host/tests/t_hid.c	bugprone-suspicious-memory-comparison	1
  dm/host/tests/t_hid.c	bugprone-unsafe-functions	1
  dm/host/tests/t_hid.c	clang-analyzer-unix.Errno	1
  dm/host/tests/t_movie_vpx.c	clang-analyzer-core.UndefinedBinaryOperatorResult	1
-diff --git a/dm/tools/lint_python_baseline.tsv b/dm/tools/lint_python_baseline.tsv
-index 3be1bc60a5003ed700d0287f05e3fc0f1ebc30ff..44e6353ff7391f4794b3ecf2f16fa99a67e92468 100644
---- a/dm/tools/lint_python_baseline.tsv
-+++ b/dm/tools/lint_python_baseline.tsv
-@@ -196,6 +196,7 @@ pyright	scripts/build_ipa_from_nsp.py	reportCallIssue	1	No overloads for "__init
- pyright	scripts/build_ipa_from_nsp.py	reportOptionalIterable	1	Object of type "None" cannot be used as iterable value
- pyright	scripts/build_ipa_from_nsp.py	reportOptionalMemberAccess	1	"close" is not a known attribute of "None"
- pyright	scripts/build_ipa_from_nsp.py	reportOptionalOperand	1	Operator "-" not supported for "None"
-+ruff	dm/gfx/tools/dmsh_entry.py	F401	1	`dmsh_fetch` imported but unused
- ruff	dm/gfx/tools/shader_split.py	B006	1	Do not use mutable data structures for argument defaults
- ruff	dm/gfx/tools/shader_split.py	B023	1	Function definition does not bind loop variable `c`
- ruff	dm/gfx/tools/shader_split.py	B023	1	Function definition does not bind loop variable `order`
 diff --git a/dm/tools/tests/test_bench.py b/dm/tools/tests/test_bench.py
-index a23c146bac6ab6c555745e0812e010ead2698335..3ecf48e858407463bda2017ef5af209535171ab4 100644
+index c299b03aa45c0d61c3ed1132b70fe5bbd1c43c0e..cce5b8009c5a42268ca0b2cdcf012aaa1cbba23d 100644
 --- a/dm/tools/tests/test_bench.py
 +++ b/dm/tools/tests/test_bench.py
 @@ -25,6 +25,13 @@ class Bench(unittest.TestCase):
@@ -139,12 +122,12 @@ index 47b05da3bfb292519667dee9a5729a2507b1c2a9..2d1727f78536d5254d6e85ea6857905b
  
      def test_home_redacted(self):
 diff --git a/dm/tools/tests/test_regress.py b/dm/tools/tests/test_regress.py
-index 66bb010d96589b600b5d52ebc45876cad95afc90..91412a47d657cdcf7cccbb8dac6825aa894f408d 100644
+index 20732d1fdf24f34fc264335ca7d580e49f3b06a3..4f850a1b3ea885e7fc6a68de7be77855060afc1e 100644
 --- a/dm/tools/tests/test_regress.py
 +++ b/dm/tools/tests/test_regress.py
-@@ -407,15 +407,15 @@ class Regress(unittest.TestCase):
+@@ -421,16 +421,16 @@ class Regress(unittest.TestCase):
  
-     def test_chain_builds_share_the_players_one_file_cache(self):
+     def test_chain_builds_keep_their_own_cache_without_adopting_players_files(self):
          with tempfile.TemporaryDirectory() as td:
 -            root = Path(td); build = root / 'build'; g = NS(id='game', kind='nvn', folder=root, build=build)
 +            root = Path(td); build = root / 'build'; g = NS(id='game', kind='nvn', folder=root, build=build, shader=build / 'shader.noindex')
@@ -153,17 +136,17 @@ index 66bb010d96589b600b5d52ebc45876cad95afc90..91412a47d657cdcf7cccbb8dac6825aa
                  own = regress.game_root(g)
                  self.assertEqual(regress.chain_cache(NS(path=new), g), own / 'cas.db')   # no player's build yet
 -                old = build / 'shader/cache/cas/metallib/mac/ab'; old.mkdir(parents=True); (old / 'abcd.metallib').write_bytes(b'compiled')
--                self.assertEqual(regress.chain_cache(NS(path=new), g), build / 'shader/cache/cas.db')   # a cache from before it moves in
--                self.assertFalse((build / 'shader/cache/cas').exists())
--                s = regress.shader_cache.Store(build / 'shader/cache/cas.db'); self.addCleanup(s.close)
 +                old = g.shader / 'cache/cas/metallib/mac/ab'; old.mkdir(parents=True); (old / 'abcd.metallib').write_bytes(b'compiled')
-+                self.assertEqual(regress.chain_cache(NS(path=new), g), g.shader / 'cache/cas.db')   # a cache from before it moves in
-+                self.assertFalse((g.shader / 'cache/cas').exists())
-+                s = regress.shader_cache.Store(g.shader / 'cache/cas.db'); self.addCleanup(s.close)
-                 self.assertEqual(s.get('metallib/mac/abcd.metallib'), b'compiled')
+                 self.assertEqual(regress.chain_cache(NS(path=new), g), own / 'cas.db')
+                 self.assertEqual((old / 'abcd.metallib').read_bytes(), b'compiled')
+-                self.assertFalse((build / 'shader/cache/cas.db').exists())
+-                s = regress.shader_cache.Store(build / 'shader/cache/cas.db'); s.put('metallib/mac/abcd.metallib', b'compiled'); s.close()
++                self.assertFalse((g.shader / 'cache/cas.db').exists())
++                s = regress.shader_cache.Store(g.shader / 'cache/cas.db'); s.put('metallib/mac/abcd.metallib', b'compiled'); s.close()
+                 self.assertEqual(regress.chain_cache(NS(path=new), g), own / 'cas.db')
                  self.assertEqual(regress.chain_cache(NS(path=root / 'revision-from-before'), g), own / 'cas')   # its dmsh_build.py wants a folder
  
-@@ -523,17 +523,17 @@ class Regress(unittest.TestCase):
+@@ -613,17 +613,17 @@ out = Path(sys.argv[2]) / 'b-v'; out.mkdir(parents=True, exist_ok=True)
  
      def test_chain_key_tracks_shader_package_and_split_pairs(self):
          with tempfile.TemporaryDirectory() as td:
@@ -204,7 +187,7 @@ index 1d894a593456aca8a1c38419f4b36370b49927cf..0b2be24fd243f2ea549c46af6c451227
  
      def test_conflicts_since(self):
 diff --git a/scripts/bench.py b/scripts/bench.py
-index 70c27a782e2ed568c0afb3cc592aff0fcfadbd49..75edc4ad7f3caa679cc1b904d690fcc647eb9b80 100755
+index 267eaf5208067430abfdcaf23d14ae78637286f1..557a3352820dba75a6816ec0040054f9c29be0e3 100755
 --- a/scripts/bench.py
 +++ b/scripts/bench.py
 @@ -4,8 +4,8 @@
@@ -218,7 +201,7 @@ index 70c27a782e2ed568c0afb3cc592aff0fcfadbd49..75edc4ad7f3caa679cc1b904d690fcc6
  #   each run gets a copy, the folder itself is not changed. --variant 'label:KEY=VALUE,KEY=VALUE': a variant (repeatable; KEY host=<path> runs another host binary, msl=<folder>
  #   other Mac shader libraries, shmap=<file> another shader map (with the c1_full.tsv / cb_extent.tsv of those libraries beside it), patched=<folder> other rewritten modules,
  #   pso=<folder> another pipeline archive); without one, a single variant 'base'. --runs N: each variant N times, in turn (default 2).
-@@ -30,6 +30,13 @@ def newest(paths):   # the newest version folder (v<number>) of a glob
+@@ -31,6 +31,13 @@ def newest(paths):   # the newest version folder (v<number>) of a glob
      return vs[-1] if vs else None
  
  
@@ -232,7 +215,7 @@ index 70c27a782e2ed568c0afb3cc592aff0fcfadbd49..75edc4ad7f3caa679cc1b904d690fcc6
  def routes(gid):
      f = REPO / 'dm/games' / gid / 'bench.tsv'
      if not f.is_file(): return {}
-@@ -85,9 +92,10 @@ def run_one(a, gid, build, var, route, out, lock):
+@@ -86,9 +93,10 @@ def run_one(a, gid, build, var, route, out, lock):
      prof = build / 'profile' / gid if (build / 'profile' / gid / 'game.tsv').is_file() else REPO / 'dm/games' / gid
      out.mkdir(parents=True, exist_ok=True); save, temp = out / 'save', out / 'temp'
      shutil.rmtree(save, ignore_errors=True); shutil.copytree(a.save, save); temp.mkdir(exist_ok=True)
@@ -244,7 +227,7 @@ index 70c27a782e2ed568c0afb3cc592aff0fcfadbd49..75edc4ad7f3caa679cc1b904d690fcc6
      if (build / 'pso/mac').is_dir(): env.setdefault('DM_PSO_BUNDLE', str(build / 'pso/mac'))   # the offline pipeline archive the Mac app bundles (launcher.c sets it there); without it an NVN game rebuilds every base before its first frame
      if (build / 'aoc').is_dir(): env['DM_AOC_DIR'] = str(build / 'aoc')
      archive = var.get('pso') or a.pso_archive
-@@ -182,16 +190,21 @@ def main():
+@@ -185,16 +193,21 @@ def main():
      ap.add_argument('--shots', type=lambda v: [float(x) for x in v.split(',')], help='screenshot times in seconds from host start, comma-separated (default: after the measurement window; in-window captures perturb timing)')
      ap.add_argument('--no-hud', action='store_true', help='no Metal performance HUD')
      ap.add_argument('--out', help='the output folder (default <id>_build/bench/<date-time>)')
@@ -290,10 +273,10 @@ index e63bbbbfc910a747b11fd3b090be67f1a2343341..dc069829654dc6341e8be1e963b0702c
      for d in dirs:
          if d.is_symlink() or not d.is_dir(): continue
 diff --git a/scripts/regress.py b/scripts/regress.py
-index 468c86def46da3fb3f32488c712e1d1d939eb84b..ddc5cec8b5d79f259eb8c3af0912b253689c06e0 100644
+index 6b556df7dc7ecd4eec9253083f5618f35a97528c..c3a88a2e93b7f0cc22dc618f36f73944ef7218df 100644
 --- a/scripts/regress.py
 +++ b/scripts/regress.py
-@@ -251,7 +251,8 @@ class Game:
+@@ -253,7 +253,8 @@ class Game:
          self.name = re.sub(r'\s*\[[0-9A-Fa-f]{16}\]\s*$', '', folder.name)
          self.patched = bench.newest(build.glob('patched_v*'))
          self.ver = self.patched.name.removeprefix('patched_') if self.patched else None
@@ -303,7 +286,7 @@ index 468c86def46da3fb3f32488c712e1d1d939eb84b..ddc5cec8b5d79f259eb8c3af0912b253
          # The build's own profile runs instead of dm/games' only when it is derived (the NSP script's <id>.derived.key beside it: a version the game's profile was not brought up
          # on) or the game has no profile here (a provisional one). A provisional profile the NSP script left from before the game's profile was added would test its guesses
          own = build / 'profile' / self.id
-@@ -270,7 +271,7 @@ class Game:
+@@ -272,7 +273,7 @@ class Game:
          prof = self.profile_dir(tree)
          env.update(DM_GAMES_DIR=str(prof.parent), DM_GAMES_FIRST='1')
          if self.kind == 'nvn' and not (prof / 'pso_pairs.tsv').is_file():
@@ -312,54 +295,63 @@ index 468c86def46da3fb3f32488c712e1d1d939eb84b..ddc5cec8b5d79f259eb8c3af0912b253
              if pairs.is_file(): env['DM_PSO_PAIRS'] = str(pairs)
          return env
  
-@@ -346,10 +347,10 @@ def chain_key(tree, g, tools):
+@@ -348,10 +349,10 @@ def chain_key(tree, g, tools):
      if g.kind == 'nvn':
          v, inp = json.loads(tree.py("import sys, json; sys.path.insert(0, 'dm/gfx/tools'); import dmsh_chain as c; g = c.load_game(); print(json.dumps([c.version(), c.inputs(g)]))", g.env(tree)))
          side = digest([tree.path / 'dm/gfx/tools' / f for f in ('c1_guard.py', 'cb_extent.py', 'dmsh_mtlcache.py', 'dmsh_pch.py', 'own_compilers.py', 'tool_lock.py')] + [tree.path / 'dm/games/game.py'])
 -        pkg = g.build / 'shader/pkg'
-+        pkg = g.shader / 'pkg'
++        pkg = shader_dir(g) / 'pkg'
          sources = digest(sorted(p for p in pkg.rglob('*') if p.is_file()), root=pkg)
          pairs = g.profile_dir(tree) / 'pso_pairs.tsv'
 -        if not pairs.is_file(): pairs = g.build / 'shader/pso_pairs.tsv'
-+        if not pairs.is_file(): pairs = g.shader / 'pso_pairs.tsv'
++        if not pairs.is_file(): pairs = shader_dir(g) / 'pso_pairs.tsv'
          side += digest([pairs])
      elif g.kind == 'vk':
          v, inp = digest([tree.path / 'dm/gfx/tools/vk_shaders.py'])[:12], g.ver
-@@ -419,8 +420,8 @@ def chain_cache(tree, g):
-     """The compile cache a chain build of this revision uses: the player's build's one file when there is one, which a cache from before it moves into first, else the work folder's. A revision from before
-     shader_cache.py wants a folder, regress/cas, kept as a tar between builds. Its chain key differs, as it covers dmsh_mtlcache.py, and its compiles are not shared"""
-     if not (tree.path / 'dm/tools/shader_cache.py').is_file(): return game_root(g) / 'cas'
--    shared, own = g.build / 'shader/cache/cas.db', game_root(g) / 'cas.db'
--    shader_cache.adopt(g.build / 'shader/cache/cas', shared, say)
-+    shared, own = g.shader / 'cache/cas.db', game_root(g) / 'cas.db'
-+    shader_cache.adopt(g.shader / 'cache/cas', shared, say)
-     if shared.is_file(): return shared
-     shader_cache.adopt(game_root(g) / 'cas', own, say)
-     return own
-@@ -462,7 +463,7 @@ def chain_build_locked(tree, g, a, v, inp, key, out):
+@@ -425,11 +426,15 @@ def chain_cache(tree, g):
+     return game_root(g) / 'cas.db'
+ 
+ 
++def shader_dir(g):   # NXForge: the build's shader folder (bench.shader_folder); a game object without one (an older revision's, a test's) has it at build/shader
++    return getattr(g, 'shader', None) or g.build / 'shader'
++
++
+ def shader_cache_limit(g, a):
+     """Four full libraries of headroom, at least 8 GiB; an explicit --shader-cache-gb is a fixed budget. Recomputed after a build, so a larger new library raises the automatic limit."""
+     explicit = getattr(a, 'shader_cache_gb', None)
+     if explicit is not None: return int(explicit * (1 << 30))
+-    images = list((g.build / 'shader/cache').glob('b-*.img')) + list((game_root(g) / 'chain').glob('*/b-*.img'))
++    images = list((shader_dir(g) / 'cache').glob('b-*.img')) + list((game_root(g) / 'chain').glob('*/b-*.img'))
+     largest = 0
+     for p in images:
+         try: largest = max(largest, p.stat().st_size)
+@@ -496,9 +501,9 @@ def chain_build_locked(tree, g, a, v, inp, key, out):
+         lib = out / f'b-{v}'
          if not done:
              say(f'  {g.id}: chain {v} (inputs {inp}) of {tree.id}: translating the shaders ({jobs} workers) → {out}')
-             if cas.suffix != '.db': tree_tar.unpack(cas, say)
--            rc, paused = run_heavy([sys.executable, entry, g.build / 'shader/pkg', out], log, tree.path, env, a, f'{g.id} shader build'); t0 += paused
-+            rc, paused = run_heavy([sys.executable, entry, g.shader / 'pkg', out], log, tree.path, env, a, f'{g.id} shader build'); t0 += paused
-             if rc or not (shader_lib.view(lib) / '_b_build.json').is_file():   # a folder (an older revision's dmsh_build.py) or the image a newer one writes
-                 raise HarnessError(f'{g.id}: dmsh_build.py of {tree.id} failed (exit {rc}); last lines of {log}:\n' + ''.join(collections.deque(open(log, errors='replace'), maxlen=8)))
-             prof = out / 'profile'; prof.mkdir(exist_ok=True)   # the tables the host reads beside the shader map, as this build made them
-@@ -583,7 +584,7 @@ def interface_check(tree, g, out):
+-            command = [sys.executable, entry, g.build / 'shader/pkg', out]
++            command = [sys.executable, entry, shader_dir(g) / 'pkg', out]
+             if cas.suffix == '.db':
+-                command = [sys.executable, REPO / 'dm/tools/shader_cache.py', '--run', '--readonly', g.build / 'shader/cache/cas.db', entry, g.build / 'shader/pkg', out]
++                command = [sys.executable, REPO / 'dm/tools/shader_cache.py', '--run', '--readonly', shader_dir(g) / 'cache/cas.db', entry, shader_dir(g) / 'pkg', out]
+                 rc, paused = run_heavy(command, log, tree.path, env, a, f'{g.id} shader build')
+             else:
+                 tree_tar.unpack(cas, say)
+@@ -624,7 +629,7 @@ def interface_check(tree, g, out):
      pipeline, and one refused pipeline fails the whole archive (GitHub issue #283). The entry points are pso_offline's: the reflection's entry (entry_z for a near = 0 game)"""
      lib = chain_lib(out); chain = shader_lib.name_of(lib)[2:]
      prof = g.profile_dir(tree)
 -    pairs = [prof / 'shader_pairs.tsv', prof / 'pso_pairs.tsv' if (prof / 'pso_pairs.tsv').is_file() else g.build / 'shader/pso_pairs.tsv']
-+    pairs = [prof / 'shader_pairs.tsv', prof / 'pso_pairs.tsv' if (prof / 'pso_pairs.tsv').is_file() else g.shader / 'pso_pairs.tsv']
++    pairs = [prof / 'shader_pairs.tsv', prof / 'pso_pairs.tsv' if (prof / 'pso_pairs.tsv').is_file() else shader_dir(g) / 'pso_pairs.tsv']
      po = tree.path / 'dm/gfx/tools/pso_offline.py'
      if not po.is_file(): return {'checked': 0, 'note': 'no pso_offline.py in this revision', 'bad': []}
      mod = load_module('pso_offline_' + tree.id.replace('-', '_'), po)
-@@ -973,7 +974,7 @@ def run_env(g, art, route, outdir, a):
+@@ -1021,7 +1026,7 @@ def run_env(g, art, route, outdir, a):
                 DM_WINDOW='1', DM_WINDOW_TOP='1', DM_FOCUS_KEEP='1', DM_AUDIO='0', DM_METAL_HUD='0' if a.no_hud else '1', DM_CTL=str(outdir / 'ctl'), TMPDIR=str(game_root(g) / 'tmp') + '/')
      if g.kind == 'nvn':
          env.update(DM_NVN_SHMAP=str(prof / 'shader_map.tsv'), DM_NVN_TSV=str(outdir / 'frames.tsv'), DM_NVN_TSV_CALLS='0')
 -        if not (prof / 'pso_pairs.tsv').is_file() and (g.build / 'shader/pso_pairs.tsv').is_file(): env['DM_PSO_PAIRS'] = str(g.build / 'shader/pso_pairs.tsv')
-+        if not (prof / 'pso_pairs.tsv').is_file() and (g.shader / 'pso_pairs.tsv').is_file(): env['DM_PSO_PAIRS'] = str(g.shader / 'pso_pairs.tsv')
++        if not (prof / 'pso_pairs.tsv').is_file() and (shader_dir(g) / 'pso_pairs.tsv').is_file(): env['DM_PSO_PAIRS'] = str(shader_dir(g) / 'pso_pairs.tsv')
      if (g.build / 'aoc').is_dir(): env['DM_AOC_DIR'] = str(g.build / 'aoc')
      for kv in a.env: k, _, v = kv.partition('='); env[k] = v
-     return env, src_save
+     try: run_saves.cloud_off(env, run_saves.asked(a.env))   # last, after every override: cloud saves off (dm/tools/run_saves.py)

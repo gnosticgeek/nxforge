@@ -19,13 +19,13 @@ files up to 1 MB ahead on 16 threads. Each walk of the dump: 17 s.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_016qteK3AQaSqMoGPyBgeeFe
 ---
- dm/tools/romfs_image.py            | 144 ++++++++++++++++++++++++++++-
+ dm/tools/romfs_image.py            | 146 +++++++++++++++++++++++++++--
  dm/tools/tests/test_romfs_image.py |  15 +++
  scripts/build_ipa_from_nsp.py      |  14 +--
- 3 files changed, 156 insertions(+), 17 deletions(-)
+ 3 files changed, 157 insertions(+), 18 deletions(-)
 
 diff --git a/dm/tools/romfs_image.py b/dm/tools/romfs_image.py
-index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..bd50b77c6fb3e04cd99f7b80ef0d67f6dd5069ca 100755
+index 7b28a659a1359145477786431d9f09174ce230c2..054c233f159bb8ec321e41a295a2727ed130adeb 100755
 --- a/dm/tools/romfs_image.py
 +++ b/dm/tools/romfs_image.py
 @@ -14,7 +14,7 @@
@@ -37,7 +37,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..bd50b77c6fb3e04cd99f7b80ef0d67f6
  from pathlib import Path
  
  MAGIC = b'DMROMFS1'
-@@ -29,11 +29,110 @@ def guest(parent, name):
+@@ -33,12 +33,111 @@ def guest(parent, name):
      return r.stdout.rstrip('\n') if r.returncode == 0 else name
  
  
@@ -108,7 +108,8 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..bd50b77c6fb3e04cd99f7b80ef0d67f6
      out = []
      with os.scandir(path) as it:
          for e in it:
--            out.append((guest(path, e.name).encode(), e.path, e.is_dir(follow_symlinks=True)))
+-            name, isdir = guest(path, e.name).encode(), e.is_dir(follow_symlinks=True)
+-            if isdir or name not in ARTIFACTS: out.append((name, e.path, isdir))
 +            k = 'dir' if e.is_dir(follow_symlinks=False) else 'link' if e.is_symlink() else 'file' if e.is_file(follow_symlinks=False) else 'other'
 +            out.append((e.name, k, None))
 +    return out
@@ -146,11 +147,12 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..bd50b77c6fb3e04cd99f7b80ef0d67f6
 +    for name, kind, ident in listing(path):
 +        p = os.path.join(path, name)
 +        if ident is not None: _IDS[p] = ident
-+        out.append((guest(path, name).encode(), p, kind == 'dir' or (kind == 'link' and os.path.isdir(p))))
++        gname, isdir = guest(path, name).encode(), kind == 'dir' or (kind == 'link' and os.path.isdir(p))
++        if isdir or gname not in ARTIFACTS: out.append((gname, p, isdir))   # a dump tool's .listing files are not the game's
      out.sort()
      return out
  
-@@ -61,7 +160,7 @@ def source_digest(src, ents):
+@@ -66,7 +165,7 @@ def source_digest(src, ents):
      h.update(os.fsencode(os.path.realpath(src)) + b'\0')
      for name, path, isdir, _, _ in ents:
          h.update(struct.pack('<I?', len(name), isdir)); h.update(name)
@@ -159,7 +161,7 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..bd50b77c6fb3e04cd99f7b80ef0d67f6
      return h.hexdigest()
  
  
-@@ -114,12 +213,47 @@ def copy_file(path, out):
+@@ -119,12 +218,47 @@ def copy_file(path, out):
      return n
  
  
@@ -209,10 +211,10 @@ index 1808a59cfa8fd7370f3e7ba97251dd763618ffe4..bd50b77c6fb3e04cd99f7b80ef0d67f6
      if source_digest(src, entries(src)) != digest:
          os.unlink(part)
 diff --git a/dm/tools/tests/test_romfs_image.py b/dm/tools/tests/test_romfs_image.py
-index 55759f39843085774650655ac53ba42083d6cc3e..6a7313c3ec2c5e260176778e22cdafa79e4e6e3e 100644
+index 1310dd1d9990b62f9a3ed2a7ab348393dee22625..fc425fc4de914012e1b97e3dbf0fbf08fcf4c184 100644
 --- a/dm/tools/tests/test_romfs_image.py
 +++ b/dm/tools/tests/test_romfs_image.py
-@@ -250,6 +250,21 @@ else: sys.exit(f'fake afcclient: no command {cmd}')
+@@ -259,6 +259,21 @@ else: sys.exit(f'fake afcclient: no command {cmd}')
  '''
  
  
@@ -235,10 +237,10 @@ index 55759f39843085774650655ac53ba42083d6cc3e..6a7313c3ec2c5e260176778e22cdafa7
      """The DLC set replaces Documents/aoc over AFC, and nothing else in the app's data container: devicectl's --remove-existing-content empties the whole
      container (CoreDevice 651.32, docs/reference/packing.md), saves included, so the script never passes it."""
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 9e6482b5b9c1d03bc4547ea6feef862cfa6e5f40..60d02a7969604b904e31ea8eea7543460ff8b6ef 100755
+index 40a694a05d6073c7d6a3ed3bd318cab9780092cd..f84d971c96458937fe3a1caa983fdbf63f0533b0 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -312,18 +312,8 @@ def progress_mode(want):   # auto: redraw in a terminal or in Spyder (IPython ha
+@@ -314,18 +314,8 @@ def progress_mode(want):   # auto: redraw in a terminal or in Spyder (IPython ha
      return 'bar' if in_ipython() or (sys.stdout and sys.stdout.isatty()) else 'lines'
  
  

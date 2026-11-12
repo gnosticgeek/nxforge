@@ -88,6 +88,8 @@ struct NXFLauncherView: View {
     let fit: (CGFloat) -> Void
     @AppStorage("window.show") private var show = true
     @AppStorage("window.tab") private var tab = NXFLauncherTab.general
+    @State private var checking = false   // Play waits for the cloud save (SaveCheck), as upstream's window does
+    @State private var check = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -108,14 +110,37 @@ struct NXFLauncherView: View {
                 Toggle("Show at launch", isOn: $show).toggleStyle(.checkbox)
                     .help("Off: the game starts straight away. Hold Option while opening the app to see this window again.")
                 Spacer()
+                if checking {
+                    ProgressView().controlSize(.small)
+                    Text("Checking the cloud save…").foregroundStyle(.secondary)
+                    Button("Play Without It") { checking = false; SaveCheck.apply("offline"); done(true) }
+                }
                 Button { done(false) } label: { Text("Quit").frame(minWidth: 70) }
-                Button { done(true) } label: { Label("Play", systemImage: "play.fill").frame(minWidth: 70) }
-                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                Button { start() } label: { Label("Play", systemImage: "play.fill").frame(minWidth: 70) }
+                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(checking)
             }
             .controlSize(.large)
             .padding(.horizontal, 20).padding(.vertical, 14)
         }
         .frame(minWidth: 720, idealWidth: 760)
+    }
+
+    /// Play: the save check off the main thread, then its question if any (a newer Play or Play Without It wins over a late answer)
+    private func start() {
+        check += 1; checking = true
+        let mine = check
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = SaveCheck.report()
+            DispatchQueue.main.async {
+                guard checking, check == mine else { return }
+                checking = false
+                switch SaveCheck.ask(r, cancel: "Cancel") {
+                case .play(let choice): SaveCheck.apply(choice); done(true)
+                case .retry: start()
+                case .cancel: break
+                }
+            }
+        }
     }
 
     private var tabs: some View {
