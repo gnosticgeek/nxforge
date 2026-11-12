@@ -15,8 +15,14 @@ enum NXFLauncherLayout {
         ("HDR", ["DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH"]),
     ]
     static let graphics: [String] = graphicsBoxes.flatMap(\.envs)
+    /// The Advanced tab's boxes: Performance split in two so the columns match
+    static let advancedBoxes: [(title: String, envs: [String])] = [
+        ("Pipelines", ["DM_PSO_MTL4", "DM_PSO_PREBUILD", "DM_NVN_ENC_THREAD"]),
+        ("Display", ["DM_PRESENT_SNAP", "DM_FPS_HOLD", "DM_METAL_HUD"]),
+    ]
+    static let boxes = graphicsBoxes + advancedBoxes
     /// On the General tab though not level=basic: everyday controls
-    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
+    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
     /// The Mac window's shorter notes (the two-column boxes are narrow); a setting not listed keeps settings.tsv's note
     static let notes: [String: String] = [
         "DM_DYNAMIC_RESOLUTION": "Lets the game lower its resolution under load.",
@@ -34,13 +40,13 @@ enum NXFLauncherLayout {
     static func tab(_ s: Setting) -> NXFLauncherTab {
         graphics.contains(s.env) ? .graphics : s.basic || general.contains(s.env) ? .general : .advanced
     }
-    static func group(_ s: Setting) -> String { graphicsBoxes.first { $0.envs.contains(s.env) }?.title ?? s.sectionTitle }
+    static func group(_ s: Setting) -> String { boxes.first { $0.envs.contains(s.env) }?.title ?? s.sectionTitle }
     static func note(_ s: Setting) -> String { notes[s.env] ?? s.note }
 
     static let cloudSaves = "Cloud saves"   // General's box that is not a group of settings
 
     /// One tab's boxes, each a group's visible rows in the list's order, split into two columns. General: Game on the left and Controls on the right, then Cloud saves and
-    /// any other group each where the column is shorter so far (a slider counts as taller, a note adds a line). Graphics: Resolution on the left, the others on the right
+    /// any other group each where the column is shorter so far (a slider counts as taller, a note adds a line). Graphics: Resolution on the left, the others on the right. Advanced: Pipelines and Display
     static func columns(_ m: LauncherModel, _ t: NXFLauncherTab) -> (left: [String], right: [String]) {
         let shown = m.settings.filter { tab($0) == t && m.visible($0) }
         func height(_ g: String) -> Double {
@@ -58,14 +64,20 @@ enum NXFLauncherLayout {
         case .graphics:
             let boxes = graphicsBoxes.map(\.title).filter { height($0) > 0 }
             return (Array(boxes.prefix(1)), Array(boxes.dropFirst()))
-        case .advanced:
-            return (groups.filter { $0 != "Performance" }, groups.filter { $0 == "Performance" })
+        case .advanced:   // Pipelines and Display side by side, any other group under the shorter column
+            let named = advancedBoxes.map(\.title).filter { height($0) > 0 }
+            var left = Array(named.prefix(1)), right = Array(named.dropFirst())
+            var l = left.map(height).reduce(0, +), r = right.map(height).reduce(0, +)
+            for g in groups where !named.contains(g) {
+                if l <= r { left.append(g); l += height(g) + 1 } else { right.append(g); r += height(g) + 1 }
+            }
+            return (left, right)
         }
     }
 
     static func rows(_ m: LauncherModel, group g: String, tab t: NXFLauncherTab) -> [Setting] {
         let rows = m.settings.filter { tab($0) == t && m.visible($0) && group($0) == g }
-        guard let order = graphicsBoxes.first(where: { $0.title == g })?.envs else { return rows }
+        guard let order = boxes.first(where: { $0.title == g })?.envs else { return rows }
         return rows.sorted { (order.firstIndex(of: $0.env) ?? 0) < (order.firstIndex(of: $1.env) ?? 0) }
     }
 }
