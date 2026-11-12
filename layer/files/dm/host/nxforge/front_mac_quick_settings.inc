@@ -65,6 +65,7 @@ static void mods_start(void) {   // main thread, before the guest runs (the game
 }
 
 #include "front_mac_settings_file.inc"
+#include "front_mac_launcher_sync.inc"
 
 @interface DmSettings : NSObject
 @property NSView *view; @property NSMutableArray<NSMenuItem *> *items; @property NSTextField *fpsLabel; @property NSTimer *fpsTimer; @property uint64_t fpsN0; @property double fpsT0;
@@ -295,12 +296,15 @@ static void settings_apply(int start) {
         if (!getenv("DM_ANISO")) mtl_aniso_set([d objectForKey:opt_key(@"aniso")] ? (int)[d integerForKey:opt_key(@"aniso")] : 16);
     } else if (!getenv("DM_ANISO")) mtl_aniso_set([d objectForKey:opt_key(@"aniso")] ? (int)[d integerForKey:opt_key(@"aniso")] : 16);   // logs that it applies at the next launch
     controls_load();
-    // Upscaling: MetalFX unless the settings window's saved choice (launcher.DM_PRESENT_UPSCALE, which Quick settings writes too) says off; the window and env.txt set it in the environment
-    if (!getenv("DM_PRESENT_UPSCALE")) { NSString *u = [d stringForKey:@"launcher.DM_PRESENT_UPSCALE"]; mtl_present_upscale_set(u ? [u isEqualToString:@"metalfx"] : 1); }
-    if (!getenv("DM_PRESENT_AA")) mtl_present_aa_set([d objectForKey:opt_key(@"aa")] ? (int)[d integerForKey:opt_key(@"aa")] : DM_PAA_OFF);
+    // Upscaling: MetalFX unless the settings window's saved choice (launcher.DM_PRESENT_UPSCALE, which Quick settings writes too) says off. The window puts it into the environment too,
+    // but only the launch environment and env.txt fix it (env_fixed): a Restart game, which starts with the same environment, keeps a change the sidebar made
+    if (!env_fixed("DM_PRESENT_UPSCALE")) { NSString *u = [d stringForKey:@"launcher.DM_PRESENT_UPSCALE"]; mtl_present_upscale_set(u ? [u isEqualToString:@"metalfx"] : 1); }
+    if (!env_fixed("DM_PRESENT_AA")) mtl_present_aa_set([d objectForKey:opt_key(@"aa")] ? (int)[d integerForKey:opt_key(@"aa")] : DM_PAA_OFF);
     // EDR highlights: off unless this game's saved choice says on; strength 50 % unless saved (present_edr.inc)
-    if (!getenv("DM_PRESENT_EDR")) mtl_present_edr_set([d boolForKey:opt_key(@"edr")]);
-    if (!getenv("DM_PRESENT_EDR_STRENGTH")) mtl_present_edr_strength_set([d objectForKey:opt_key(@"edrStrength")] ? (int)lround([d doubleForKey:opt_key(@"edrStrength")] * 100) : 50);
+    if (!env_fixed("DM_PRESENT_EDR")) mtl_present_edr_set([d boolForKey:opt_key(@"edr")]);
+    if (!env_fixed("DM_PRESENT_EDR_STRENGTH")) mtl_present_edr_strength_set([d objectForKey:opt_key(@"edrStrength")] ? (int)lround([d doubleForKey:opt_key(@"edrStrength")] * 100) : 50);
+    // Frame interpolation: off unless this game's saved choice says on or auto (frame_interp.inc)
+    if (!env_fixed("DM_PRESENT_INTERP")) mtl_present_interp_set((int)[d integerForKey:opt_key(@"interp")]);
     if (!getenv("DM_PRESENT_SCALE")) mtl_present_scale_set([d objectForKey:opt_key(@"scale")] ? (int)[d integerForKey:opt_key(@"scale")] : DM_PSCALE_FIT);
     qs_volume_apply();
     if (!getenv("DM_PRESENT_SCANLINE")) mtl_present_scanline_set([d objectForKey:pfx_key(@"scanline")] ? (int)[d integerForKey:pfx_key(@"scanline")] : 0);
@@ -313,6 +317,7 @@ static void settings_apply(int start) {
 }
 static void graphics_start(void) {   // main thread, before the guest runs: the settings file, then the saved filter, anisotropic filtering, upscaling, anti-aliasing, volume, controls and mods
     settings_file_start();
+    launcher_sync(1); launcher_sync_watch();   // what the settings window changed, then the window's store kept in step with the sidebar (front_mac_launcher_sync.inc)
     settings_apply(1);
 }
 const char *front_qs_title_id(void) { return DM_GAME_ID; }   // the save backups' manifest and the mods' Atmosphere folders

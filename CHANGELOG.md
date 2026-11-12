@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.27.4 (2026-11-12)
+
+- **120 fps frame interpolation, for every Switch game on the Mac** (`DM_PRESENT_INTERP`, experimental, off by default). On a 120 Hz screen each 60 fps frame gets an in-between picture made from the game's last two frames (a block motion search on a quarter-size picture, about 4 ms of GPU time on an M4 Pro at 1440p), and the real frame follows on the next refresh, about 8 ms later. Off, On or Auto (on only where the screen runs at 120 Hz or more), per game. Measured on Super Mario Odyssey: 120 pictures a second with the game at 59.5 fps; fast edges and the HUD can wobble.
+- **The game's settings window has the sidebar's picture options.** HDR highlights and its brightness boost, 120 fps frame interpolation (Basic settings) and anti-aliasing (Advanced settings) can now be chosen before a game starts, in every Mac game built with this release, and on the converter's game page. The window and the sidebar keep one choice: a change in either shows in the other and in `NXForge settings.txt`. Only `env.txt` or the launch environment fixes these settings now; the window's own choices no longer grey out the sidebar, and Restart game keeps a change made in the sidebar (upscaling too, which before went back to the window's choice).
+- **NXForge Sidebar 0.3.2** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)).
+
 ## 0.27.3 (2026-11-11)
 
 - **Full screen hides the title bar.** macOS's full screen shows the menu bar and the window's title bar again whenever the pointer is at the top of the screen, and the green button that enters it is up there, so after a click the title bar stayed over the game (Ocarina of Time on a MacBook Pro). The game window now asks macOS to hide the menu bar and the Dock in full screen, so the title bar no longer comes back; ⌃⌘F, the sidebar's Full screen row and ⌘Q leave or quit as before. `DM_FULLSCREEN_MENU_BAR=1` keeps macOS's own behaviour. Takes a rebuild of the game app.

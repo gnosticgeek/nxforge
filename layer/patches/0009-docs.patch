@@ -8,7 +8,7 @@ Subject: docs: Engine docs for the changes above
  docs/agents/game-patches.md   | 20 +++++++++++-
  docs/agents/symptoms.md       | 19 ++++++++++++
  docs/development.md           | 48 +++++++++++++++++------------
- docs/env_switches.tsv         | 25 +++++++++++++++
+ docs/env_switches.tsv         | 26 ++++++++++++++++
  docs/reference/frame-rate.md  | 27 +++++++++++++++++
  docs/reference/memory.md      | 39 +++++++++++++++++++++++-
  docs/reference/movies.md      |  8 +++++
@@ -19,8 +19,8 @@ Subject: docs: Engine docs for the changes above
  docs/reference/services.md    | 10 +++++-
  docs/reference/shaders.md     | 34 +++++++++++++++++++++
  docs/reference/threads.md     |  1 +
- docs/settings.md              | 35 +++++++++++++++++++--
- 16 files changed, 314 insertions(+), 30 deletions(-)
+ docs/settings.md              | 38 +++++++++++++++++++++--
+ 16 files changed, 318 insertions(+), 30 deletions(-)
 
 diff --git a/docs/agents/01-extract.md b/docs/agents/01-extract.md
 index 92090463d7c7ed3466b33aa1e368435638cfa00f..a2460cf18ccea57f2f4d11ac31a44a1845949914 100644
@@ -409,7 +409,7 @@ index 431250a7081dac3872e1e6656506de5f1e4bbd0b..e6ca861855f909684374591527a65184
  On iOS the standard is the pipeline archive made on the Mac and shipped in the app. Otherwise the device builds the bases on first start behind the "Preparing pipelines" screen; [Breath of the Wild's note](../dm/games/01007EF00011E000/README.md#pipelines-on-a-cold-start) records the build times, sizes and startup measurements. `build_ipa.sh` makes them on the Mac and puts them into the app (`dm/gfx/tools/pso_offline.py`). Only the Metal 4 path reads them, so by default it does this for a game whose profile sets `pso_mtl4 on` (the path is on for it on iOS), and for no other:
  1. It writes a Metal 4 pipelines script (`metal4-pipelines-script(5)`) with the base of every pair in `shader_pairs.tsv` and `pso_pairs.tsv`, by the prebuild's rules (`pre_desc` in `nvn_mtl.m`): the pulling vertex library `<key>_bp` (a vertex shader without stage inputs: its own `<key>_b`), the vertex entry for the depth mode, the pixel shader's entry, no vertex descriptor, one sample, every colour attachment unspecialized. Pairs the prebuild leaves to the draws are left out the same way. A pair whose functions declare function constants is left to the device (`rest_pairs.tsv`): `metal-tt` makes no specialized function from a library ("cannot find private metadata"), and the host specializes such functions with an empty set. If every eligible pair needs this specialization, the tool writes the remainder list without running `metal-tt` or shipping an archive, and the device builds them all.
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 1d05c13c00c874cfa4d9b9fb1b91c4b75dc6b5f5..f23f0a4943f328288534661f108f0d432fc1179f 100644
+index 1d05c13c00c874cfa4d9b9fb1b91c4b75dc6b5f5..1ae2bfa3807efa6e4ffff2a322d5b9b4dc36382c 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -3,6 +3,7 @@ DM_AB	diagnostic	`=<frames>` splits the run into phases of that many frames and
@@ -496,17 +496,18 @@ index 1d05c13c00c874cfa4d9b9fb1b91c4b75dc6b5f5..f23f0a4943f328288534661f108f0d43
  DM_NVN_VCONV_RANGE	switch	`0` / `1` overrides the profile's `vconv_range`: CPU vertex conversion only over the vertices each draw reads instead of the whole bound range
  DM_NVN_VLOG	diagnostic	Set: logs each NVN memory pool as it is created (address, memory, size, flags) with a backtrace
  DM_NVN_VSDUMP	path	Output file for post-vertex captures; used with DM_NVN_VSDUMP_KEY and the frame/count bounds
-@@ -255,11 +270,18 @@ DM_PHONE_MOTION	switch	On iOS, whether the phone's own device motion drives play
+@@ -255,11 +270,19 @@ DM_PHONE_MOTION	switch	On iOS, whether the phone's own device motion drives play
  DM_PICTURE_FIT	player	`fill` scales the 16:9 picture on the iPhone and iPad until it covers the screen in landscape and crops the edges (a portrait or tabletop split and a TV stay fitted); `fit` or unset, the largest 16:9 rectangle with black bars. Launcher and in-game menu setting
  DM_PREEMPT	switch	`0` / `1` overrides the profile's `core_preempt`: also check already-runnable higher-priority peers on the caller's core after every thread SVC
  DM_PRELOAD	diagnostic	Set: on the Mac, runs the host's early background loading (`dm_host_preload_start`) as the iOS app does, to exercise that path
 +DM_PRESENT_AA	player	`fxaa` or `off` (the default): FXAA over the game's finished picture before upscaling and the present filter, smoothing jagged edges (small HUD text softens a little); on the Mac the Quick settings sidebar picks it per game, and this wins and is not saved
-+DM_PRESENT_EDR	player	`on` or `off` (the default; Mac only): HDR highlights. The window presents in extended linear sRGB (RGBA16Float) and an inverse tone map lifts the brightest parts of the picture (above about 60 % linear) up to the screen's EDR headroom, capped at 4x SDR white; the rest of the picture is unchanged. Needs an HDR or XDR screen to show; on the Mac the Quick settings sidebar switches it per game (Graphics › HDR highlights), and this wins and is not saved
-+DM_PRESENT_EDR_STRENGTH	player	`=0..100`: how far HDR highlights lift the brightest parts toward the headroom (50 by default)
++DM_PRESENT_EDR	player	`on` or `off` (the default; Mac only): HDR highlights. The window presents in extended linear sRGB (RGBA16Float) and an inverse tone map lifts the brightest parts of the picture (above about 60 % linear) up to the screen's EDR headroom, capped at 4x SDR white; the rest of the picture is unchanged. Needs an HDR or XDR screen to show; on the Mac the settings window (Game › HDR highlights) and the Quick settings sidebar (Graphics › HDR highlights) switch it per game; set by env.txt or the launch environment, this wins and is not saved
++DM_PRESENT_EDR_STRENGTH	player	`=0..100`, or a fraction with a point (`0.5`, as the settings window writes it): how far HDR highlights lift the brightest parts toward the headroom (50 by default)
  DM_PRESENT_FIFO	switch	`0` makes the display link take the newest queued frame each tick, as before; by default it shows frames in order, at most one tick behind
 +DM_PRESENT_FILTER	player	`off`, `sharpen`, `pixel`, `crt`, `lottes` or `lcd`: how the game picture is drawn into the window or screen (on the Mac the Quick settings sidebar picks it per game; this wins and is not saved)
 +DM_PRESENT_FILTER_STRENGTH	player	`=0..1`: the present filter's strength (0.5 by default; Pixel-perfect has none)
  DM_PRESENT_HZ	switch	`=<N>`: the frequency of presentation pacing (default 60); `0` means no frame limit and is for performance profiling only
++DM_PRESENT_INTERP	player	`off` (the default), `on` or `auto` (Mac only): frame interpolation to 120 fps. On a 120 Hz display link each 60 fps frame gets an in-between picture made from the game's last two frames (block motion search on a quarter-size picture), and the real frame follows on the next refresh, about 8 ms later; `auto` turns it on only where the screen runs at 120 Hz or more. Experimental: fast edges and the HUD can wobble. The settings window (Performance › 120 fps frame interpolation) and the Quick settings sidebar (FPS › Frame interpolation) choose it per game; set here, it wins and is not saved
  DM_PRESENT_INTERVAL	switch	`display` presents one frame per display-link tick whatever interval the game sets; `game` follows the game's present interval (default: the profile's `present_interval`)
  DM_PRESENT_LATENCY	switch	`=1` or `2`: overrides the display link's preferred frame latency for every screen and window mode; larger positive values use 2 (default 2 in variable-refresh fullscreen, 1 otherwise)
  DM_PRESENT_LINK	switch	Present pacing: `0` acquires the drawable itself, `1` (the default) presents on a 60 Hz display link, `2` uses a 120 Hz display link with a frame every other tick. Unset, a 60 fps game in fullscreen on a variable-refresh screen that keeps its variable mode (no fixed-rate mode, or `DM_SCREEN_MATCH=0`) at a multiple of 120 Hz takes the 120 Hz link of `2`; a value set here holds in every window and screen mode
@@ -515,7 +516,7 @@ index 1d05c13c00c874cfa4d9b9fb1b91c4b75dc6b5f5..f23f0a4943f328288534661f108f0d43
  DM_PRESENT_SNAP	player	`=<n>`: present snapshots, a ring of n host textures (2 to 4; `1` = 2) the presents are copied to so the game's swapchain texture is free at once; `0` off (default: the profile's `present_snap`)
  DM_PRESENT_UPSCALE	player	`metalfx` scales a picture smaller than its rectangle on the screen through MetalFX's spatial scaler; `off` (the default) scales it bilinearly
  DM_PREV_PROGRAM	switch	What `oe::GetPreviousProgramIndex` answers (default -1, started from HOME); `oe::ExecuteProgram` sets it for the program it starts
-@@ -334,6 +356,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+@@ -334,6 +357,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
  DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
  DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
  DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz), and a variable-refresh screen to a fixed-rate mode at a multiple (ProMotion 120 → 60 Hz at 60 and 30 fps)
@@ -523,7 +524,7 @@ index 1d05c13c00c874cfa4d9b9fb1b91c4b75dc6b5f5..f23f0a4943f328288534661f108f0d43
  DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
  DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
  DM_SHAKE_G	switch	`=<G>`: on iOS, the acceleration beyond gravity above which a flick of the phone shakes the controller's six-axis sensor (default 1.5)
-@@ -364,6 +387,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
+@@ -364,6 +388,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
  DM_TEST_FS_FAILAT	diagnostic	`=<point>[:<count>][,…]` makes steps of the save transaction (`mountclone`, `reclone`, `guestname`, `renameback`) fail with ENOSPC
  DM_TEST_GEOMETRY	test	Path of the native `t_geometry` executable; `test_dmsh_geometry.py` runs its native geometry emitter checks only when it is set
  DM_TEST_GEOMETRY_PRIMITIVE_ID	test	Path to the native t_geometry_primitive_id replay executable used by test_dmsh_geometry.py with DMSH_TEST_GPU=1.
@@ -531,7 +532,7 @@ index 1d05c13c00c874cfa4d9b9fb1b91c4b75dc6b5f5..f23f0a4943f328288534661f108f0d43
  DM_TEST_GPU_LOST	diagnostic	`=<n>` imitates the GPU access macOS revoked from the nth submission on: each submission's feedback reports `MTL4CommandQueueErrorAccessRevoked` and the GPU does not signal its fence, so the host stops presenting and the front end ends the game
  DM_TEST_KEYRACE	diagnostic	`=<n>` creates up to n (at most 512) pthread keys on a thread of its own while the host starts up
  DM_TEST_KILL_AT	diagnostic	`=write:<n>` exits the process (`_exit(9)`) at the nth save write, imitating a kill mid-write
-@@ -389,6 +413,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
+@@ -389,6 +414,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
  DM_VK_CAPTURE	path	`=<dir>` (Mac) writes every SPIR-V module the game creates to `<dir>/<key>.spv`; the NSP script's Vulkan shader capture stage sets it
  DM_VK_LOG	diagnostic	`=1` logs Vulkan object creation in the Vulkan-on-Metal layer
  DM_VSYNC_HZ	switch	`=<Hz>`: rate at which a host thread fires the vi vsync event when the display link does not drive it (default 60)
@@ -973,7 +974,7 @@ index a267c4cabc880ff5f268e5a075d9f43bc0d7887d..729a888c8e78c2d97da35d6ba08aeb51
  
  ### File system calls are service requests
 diff --git a/docs/settings.md b/docs/settings.md
-index 595d3953b27bbcbece637c11aa5c2026354f40af..4895402dfe03c96355ffbcfdcc124073ee4d43e8 100644
+index 595d3953b27bbcbece637c11aa5c2026354f40af..bc58147db9f4d9f42446c3bf25fdff4c74513313 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -7,6 +7,7 @@ The screen before the game starts shows the settings the game supports. A settin
@@ -1002,7 +1003,7 @@ index 595d3953b27bbcbece637c11aa5c2026354f40af..4895402dfe03c96355ffbcfdcc124073
  
  ### Game's upscaler
  
-@@ -249,6 +250,36 @@ A save that is replaced, on the device or in iCloud Drive, is kept first, beside
+@@ -249,6 +250,39 @@ A save that is replaced, on the device or in iCloud Drive, is kept first, beside
  
  iCloud Drive takes a moment to carry a file from one device to the other. Quit the game on one device and give it a few seconds before you start it on the other. Without a connection, or when the save in iCloud Drive has not arrived in time, the game plays on with the save it has and sends it later. If the save in iCloud Drive changed meanwhile, the game sends nothing that session, and the next start decides between the two as above. The game log says what came in and what went out (lines starting with `save sync:`).
  
@@ -1021,10 +1022,11 @@ index 595d3953b27bbcbece637c11aa5c2026354f40af..4895402dfe03c96355ffbcfdcc124073
 +| Picture filter and its strength (Quick settings and the Graphics menu offer off and CRT; the environment also takes the engine's other filters) | – | Graphics › CRT filter, Strength | `DM_PRESENT_FILTER`, `DM_PRESENT_FILTER_STRENGTH` | `DMPresentFilter.mode.<game>`, `DMPresentFilter.strength.<game>` |
 +| Picture size (Fit, Stretch, Pixel-perfect) | – | Graphics › Picture size | `DM_PRESENT_SCALE` (`fit`, `stretch`, `integer`) | `DMQuickSettings.scale.<game>` |
 +| CRT line size | – | Graphics › Line size | `DM_PRESENT_SCANLINE` | `DMPresentFilter.scanline.<game>` |
-+| Anti-aliasing (FXAA) | – | Graphics › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>` |
-+| HDR highlights and Brightness boost (off, 50 %) | – | Graphics › HDR highlights, Brightness boost | `DM_PRESENT_EDR`, `DM_PRESENT_EDR_STRENGTH` | `DMQuickSettings.edr.<game>`, `DMQuickSettings.edrStrength.<game>` |
++| Anti-aliasing (FXAA) | Advanced settings › Game › Anti-aliasing | Graphics › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>`; the window's `launcher.DM_PRESENT_AA` follows it (below) |
++| HDR highlights and Brightness boost (off, 50 %) | Game › HDR highlights, HDR brightness boost | Graphics › HDR highlights, Brightness boost | `DM_PRESENT_EDR`, `DM_PRESENT_EDR_STRENGTH` (`0` to `100`, or `0.0` to `1.0`) | `DMQuickSettings.edr.<game>`, `DMQuickSettings.edrStrength.<game>`; the window's `launcher.<variable>` follow them (below) |
 +| Anisotropic filtering (16× by default) | – | Graphics › Anisotropic filtering | `DM_ANISO` | `DMQuickSettings.aniso.<game>` |
 +| Frame-rate counter, its corner and milliseconds | – | FPS › Show FPS (and FPS at the top), Show milliseconds | `DM_SHOW_FPS` | `DMQuickSettings.fps.<game>`, `DMQuickSettings.fpsPos.<game>`, `DMQuickSettings.fpsMs.<game>` |
++| 120 fps frame interpolation (Off, On, Auto: on a screen of 120 Hz or more) | Performance › 120 fps frame interpolation | FPS › Frame interpolation | `DM_PRESENT_INTERP` (`off`, `on`, `auto`) | `DMQuickSettings.interp.<game>`; the window's `launcher.DM_PRESENT_INTERP` follows it (below) |
 +| Record frame times (from the next launch) | – | FPS › Record frame times | `DM_FRAME_TIMES` (a `DM_NVN_TSV` wins) | `DMQuickSettings.frameTimes.<game>` |
 +| Volume and mute | – | the slider and speaker at the top | – | `DMQuickSettings.volume.<game>`, `DMQuickSettings.muted.<game>` |
 +| Pause the game, quieter sound while the sidebar is open | – | General | – | `DMQuickSettings.pauseOpen.<game>` (unset: on), `DMQuickSettings.duckOpen.<game>` |
@@ -1035,6 +1037,8 @@ index 595d3953b27bbcbece637c11aa5c2026354f40af..4895402dfe03c96355ffbcfdcc124073
 +| Show this window at launch | the window's switch | – | `DM_LAUNCHER=0` skips it | `window.show` |
 +
 +`<game>` is the game's profile name; each game app has preferences of its own (`org.nxforge.<title ID>`). The sidebar's settings are also kept as plain text in `NXForge settings.txt` in the game folder (`name = value` a line; `DM_SETTINGS_FILE=0` turns it off), which wins at launch, so an edit made with the game closed applies; General › Make these my defaults writes the shared ones to `~/Library/Application Support/NXForge/Sidebar defaults.txt`, where a game without a settings file of its own starts. `dm/tools/tests/test_settings_table.py` checks that every key Quick settings saves is in this table.
++
++Anti-aliasing, HDR highlights, its brightness boost and frame interpolation are in both the settings window and the sidebar, so every Mac game can have them before it starts. The sidebar's keys stay the record; the game copies each one into the window's `launcher.<variable>` (and notes what it copied in `nxforge.mirror.<variable>`), and at launch it takes a `launcher.<variable>` that differs from that note, as the window (or the converter's game page) changed it since. So the window shows what the sidebar last chose, a choice made in the window reaches the sidebar and `NXForge settings.txt`, and Restart game keeps a change made in the sidebar. As for upscaling, only an `env.txt` or the launch environment fixes them; the window's own choices do not grey out the sidebar.
 +
  ## In-game menu
  
