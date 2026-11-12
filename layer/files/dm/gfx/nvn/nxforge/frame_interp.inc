@@ -29,21 +29,41 @@ void mtl_present_interp_set(int mode) {
     if (atomic_exchange(&g_fi, mode) != mode) MLOG("present: frame interpolation %s", g_fi_name[mode]);
 }
 // Whether the display link should run at 120 Hz for it (link_sync): on, or auto on a screen of 120 Hz or more
-static int nxf_fi_wants_link(void) { int m = mtl_present_interp(); return !nxf_px_active() && (m == 1 || (m == 2 && front_screen_max_fps() >= 120)); }   // not while pixel art is on: flat sprites wobble
+static int nxf_fi_wants_link(void) { int m = mtl_present_interp(); return m == 1 || (m == 2 && front_screen_max_fps() >= 120); }
 int mtl_present_interp_active(void) { return nxf_fi_wants_link(); }
 // Whether a display-link callback may draw or show an in-between picture (the delegate, under g_pq_mu): only on the link's own thread ("nvn-present-link"), and only once the
 // drawable has kept its size for FI_SETTLE_NS. A window change runs callbacks from the thread that flushes its transaction (the main thread, CA's deferred display links) while the
 // link's thread may be in its own; Donkey Kong Country Returns HD going full screen with interpolation on crashed in the driver there (AGX render encoder with no end-of-tile
 // program, inside fi_pass) or hung the GPU (0.28.3). The window's present at a new size gets the game's frames until it settles
 #define FI_SETTLE_NS 1000000000ull
+// The link must call back about 120 times a second for every refresh to get a picture. In full screen on a variable-refresh screen at frame latency 2 macOS shows each present
+// one refresh late and the link then skips the next tick: with a present on every tick it called back about 80 times a second, the game was paced at 40 fps and ran in slow
+// motion (Donkey Kong Country Returns HD on a ProMotion MacBook Pro, 0.29.1). A second of in-between pictures at 30 to 100 callbacks a second (a covered window calls back about
+// once a second and is left alone) turns them off at that drawable size: the game's frames go up every other tick, which holds 60 there (link_vrr_120), until the size changes
+static int g_fi_slow;
+static int nxf_fi_link_rate(uint64_t now, NSUInteger w, NSUInteger h) {
+    static uint64_t t0, n, mid0;
+    if (!t0 || now - t0 > 3 * FI_SETTLE_NS) { t0 = now; n = 0; mid0 = g_fi_mid_n; return 1; }   // a gap (a pause, interpolation off) starts the count again
+    n++;
+    if (now - t0 < FI_SETTLE_NS) return 1;
+    double rate = n / ((now - t0) / 1e9); uint64_t mids = g_fi_mid_n - mid0;
+    t0 = now; n = 0; mid0 = g_fi_mid_n;
+    if (mids >= 30 && rate >= 30 && rate < 100) {
+        g_fi_slow = 1;
+        MLOG("frame interpolation: the display link called back %.0f times a second at %lux%lu, not 120 (the game would run at %.0f fps); off at this size, the game's frames only", rate, (unsigned long)w, (unsigned long)h, rate / 2);
+        return 0;
+    }
+    return 1;
+}
 static int nxf_fi_callback_ok(id<MTLTexture> drawable) {
     char nm[32] = ""; pthread_getname_np(pthread_self(), nm, sizeof nm);
     if (strcmp(nm, "nvn-present-link")) return 0;
     static NSUInteger w, h; static uint64_t since;
     uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     if (!drawable) return 0;
-    if (drawable.width != w || drawable.height != h) { w = drawable.width; h = drawable.height; since = now; return 0; }
-    return now - since >= FI_SETTLE_NS;
+    if (drawable.width != w || drawable.height != h) { w = drawable.width; h = drawable.height; since = now; g_fi_slow = 0; return 0; }
+    if (now - since < FI_SETTLE_NS) return 0;
+    return !g_fi_slow && nxf_fi_link_rate(now, w, h);
 }
 
 static const char *const g_fi_src =
