@@ -11,7 +11,7 @@ Subject: host-threads: Host threads and sync fixes
  4 files changed, 95 insertions(+), 61 deletions(-)
 
 diff --git a/dm/host/hle_jit.c b/dm/host/hle_jit.c
-index 198de551180fc8861e7c096d10329c4714870c47..08af31c629ff3d8067fbe780484abf5f6f0e951b 100644
+index fc63cee05ab80c5063ea5be48097b4ae0bb81cee..d7c9ba4df0a849e34bcab74b25361fc03889a509 100644
 --- a/dm/host/hle_jit.c
 +++ b/dm/host/hle_jit.c
 @@ -37,6 +37,7 @@ static int jit_log_all(void) { static int v = -1; if (v < 0) { const char *e = g

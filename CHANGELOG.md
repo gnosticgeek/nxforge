@@ -2,6 +2,14 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.28.0 (2026-11-12)
+
+- **Up to nxnative `637f3fa`** (63 commits past 0.27's engine `f75ac06`). Among them: Mario Kart World no longer drops to about 40 fps on a fast Mac (the frame step raises its hold only when the frames also miss it on average, and never past the game's own largest step), and 1.8.0 gets the host's frame step; movies decode on a thread of their own and AV1 with 4 dav1d threads, so Ocarina of Time's title movie no longer repeats pictures at 60 fps; a texture written while it is drawn re-reads only the images written (Ocarina's castle town); the Mac shader build finishes shaders in worker processes, using every core; conditional rendering is evaluated for every game; cloud saves ask which save to keep when both changed; Nintendo Switch Sports Resort, Diablo II: Resurrected, Diablo III and PRAGMATA ported. Shader chain `90544e48dcd5`: every game's shaders are translated again once.
+- **Upstream moved its texture tables into `nvn_owner.m`**, so NXForge's GPU memory guard (idle sharing entries, spare textures, the by-kind memory line) and the `texstat` diagnostic now read them through the owner's calls; the unretained `tex_mtl` return is dropped in favour of upstream's.
+- **Upstream now decodes movies on a thread of its own and runs dav1d with frame threads**, so NXForge's own dav1d threading is gone. Carried over onto the new decoder: the AV1 movie clock (late pictures skipped when the game runs slower than the movie), Mario Kart World's late "free" signal after a race, and the refused-packet count.
+- The Mac launcher moves the save into the game folder before its settings window, so upstream's new cloud-save check compares the save the game will use.
+- Kept over upstream: NXForge's batch-by-batch pipeline archive (`pso_offline.py`), now also carrying the pipelines metal-tt cannot compile over to the device; the M1 shader switches; Mario Kart World's `fps_hold off`.
+
 ## 0.27.3 (2026-11-11)
 
 - **Full screen hides the title bar.** macOS's full screen shows the menu bar and the window's title bar again whenever the pointer is at the top of the screen, and the green button that enters it is up there, so after a click the title bar stayed over the game (Ocarina of Time on a MacBook Pro). The game window now asks macOS to hide the menu bar and the Dock in full screen, so the title bar no longer comes back; ⌃⌘F, the sidebar's Full screen row and ⌘Q leave or quit as before. `DM_FULLSCREEN_MENU_BAR=1` keeps macOS's own behaviour. Takes a rebuild of the game app.
