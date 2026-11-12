@@ -31,7 +31,7 @@ index 38be76cb7df4154195f4ab87a6ff843e7cf91b80..0741ae2b6dc9b4d8e4021e064f29ce1c
  - [Unused border corrections retain sample registers](../../../docs/reference/rendering.md#unused-border-corrections-retain-sample-registers): about 1.5 ms of GPU a frame at 1080p ([measurements](#unused-border-corrections)).
  
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 33251ba792a41a59d8f6eec383b440cb320017f8..e1c40d98733d4f27ea9c4643ecdb644449684fbe 100644
+index 19d11df4bef39807005492979bb26692b73f745b..9394fab99c3600225affb315664a38f5e5037cab 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -6961,6 +6961,19 @@ static void pool_seen_clear(int id_) {

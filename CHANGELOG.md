@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.28.3 (2026-11-12)
+
+- **Frame interpolation no longer crashes a game as it goes full screen.** Donkey Kong Country Returns HD with interpolation on crashed in Metal's driver (or hung the GPU) a few seconds after start, as its window went full screen. Two things went wrong there. The display link fell silent during the switch, and its rescue (the player drawing frames itself for 3 s) ended on the frame it started, because interpolation's 120 Hz link counted as a new mode. And macOS ran display-link callbacks for the window change from another thread, which then drew in-between pictures. The rescue now holds, in-between pictures are drawn only on the display link's own thread, and they pause for a second after the window changes size (the game's own frames are shown meanwhile). New test `t_frame_interp`. Takes a rebuild of the game app (no shader rebuild).
+
 ## 0.28.2 (2026-11-12)
 
 - **Ocarina of Time no longer slows to about 10 fps after a while in Hyrule Field.** Once the game's GPU memory reaches about half of Metal's working set (about 9 GB on a 24 GB M4 Pro), macOS's GPU driver frees memory at every command buffer and the frame rate collapses; other apps' memory does not matter. The GPU memory guard now lets go of what has idled from 80% of that level (`DM_NVN_GUARD_SOFT_MB`, `DM_NVN_RES_BALLAST`; [docs/reference/memory.md](docs/reference/memory.md)), and the player names a slow game from 92%.
