@@ -92,7 +92,7 @@ static int fi_ready(MTLPixelFormat pf) {
     static id<MTLLibrary> lib; static int failed;
     if (failed) return 0;
     if (!lib) {
-        NSError *e = nil; lib = [g_dev newLibraryWithSource:[NSString stringWithUTF8String:g_fi_src] options:nil error:&e];
+        NSError *e = nil; NSString *src = [NSString stringWithUTF8String:g_fi_src]; if (src) lib = [g_dev newLibraryWithSource:src options:nil error:&e];
         MTL4ArgumentTableDescriptor *ad = [MTL4ArgumentTableDescriptor new]; ad.maxTextureBindCount = 3; ad.maxSamplerStateBindCount = 1; ad.maxBufferBindCount = 1;
         g_fi_args = lib ? [g_dev newArgumentTableWithDescriptor:ad error:&e] : nil;
         if (lib) { g_fi_pso_lum = fi_pso(lib, @"fi_lum", MTLPixelFormatRG16Float); g_fi_pso_down = fi_pso(lib, @"fi_down", MTLPixelFormatRG16Float);
