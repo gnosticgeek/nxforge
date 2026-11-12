@@ -2,6 +2,14 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.28.0 (2026-11-12)
+
+- **Up to nxnative `637f3fa`** (63 commits past 0.27's engine `f75ac06`). Among them: Mario Kart World no longer drops to about 40 fps on a fast Mac (the frame step raises its hold only when the frames also miss it on average, and never past the game's own largest step), and 1.8.0 gets the host's frame step; movies decode on a thread of their own and AV1 with 4 dav1d threads, so Ocarina of Time's title movie no longer repeats pictures at 60 fps; a texture written while it is drawn re-reads only the images written (Ocarina's castle town); the Mac shader build finishes shaders in worker processes, using every core; conditional rendering is evaluated for every game; cloud saves ask which save to keep when both changed; Nintendo Switch Sports Resort, Diablo II: Resurrected, Diablo III and PRAGMATA ported. Shader chain `75e7e527f49c`: every game's shaders are translated again once.
+- **Upstream moved its texture tables into `nvn_owner.m`**, so NXForge's GPU memory guard (idle sharing entries, spare textures, the by-kind memory line) and the `texstat` diagnostic now read them through the owner's calls; the unretained `tex_mtl` return is dropped in favour of upstream's.
+- **Upstream now decodes movies on a thread of its own and runs dav1d with frame threads**, so NXForge's own dav1d threading is gone. Carried over onto the new decoder: the AV1 movie clock (late pictures skipped when the game runs slower than the movie), Mario Kart World's late "free" signal after a race, and the refused-packet count.
+- The Mac launcher moves the save into the game folder before its settings window, so upstream's new cloud-save check compares the save the game will use.
+- Kept over upstream: NXForge's batch-by-batch pipeline archive (`pso_offline.py`), now also carrying the pipelines metal-tt cannot compile over to the device; the M1 shader switches; Mario Kart World's `fps_hold off`.
+
 ## 0.27.4 (2026-11-12)
 
 - **120 fps frame interpolation, for every Switch game on the Mac** (`DM_PRESENT_INTERP`, experimental, off by default). On a 120 Hz screen each 60 fps frame gets an in-between picture made from the game's last two frames (a block motion search on a quarter-size picture, about 4 ms of GPU time on an M4 Pro at 1440p), and the real frame follows on the next refresh, about 8 ms later. Off, On or Auto (on only where the screen runs at 120 Hz or more), per game. Measured on Super Mario Odyssey: 120 pictures a second with the game at 59.5 fps; fast edges and the HUD can wobble.

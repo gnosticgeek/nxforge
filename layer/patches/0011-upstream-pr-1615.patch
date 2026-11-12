@@ -18,10 +18,10 @@ set holds after its next commit. DM_NVN_GUARD_DEVICE=1 keeps the old measure.
  2 files changed, 15 insertions(+), 3 deletions(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index e09889429e8932b02fd843096c9e033ac752a7c3..68f85e3d4bea4e5752f1ddd70dec531decec4b72 100644
+index 441a2dd985ddcb6d2950932035af98dcd6e0fb8a..c45fd5126f0ea13b364e1323589d92832d5a7d5b 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -324,6 +324,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {
+@@ -325,6 +325,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {
      [g_res removeAllocation:(id<MTLAllocation>)r];
      [g_res_objects removeObject:r];
      g_res_dirty = 1; g_rs_rm++;
@@ -32,7 +32,7 @@ index e09889429e8932b02fd843096c9e033ac752a7c3..68f85e3d4bea4e5752f1ddd70dec531d
      pthread_mutex_unlock(&g_res_mu);
  } }
  // Recycled texture memory (GitHub issues #1831, #1823). An engine that keeps its render targets in a GPU-only pool and moves or resizes them with its dynamic resolution names new
-@@ -473,7 +477,14 @@ enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TI
+@@ -474,7 +478,14 @@ enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TI
  static struct { uint64_t evict, stop, wall; } g_guard;   // bytes, all 0 with the guard off: the eviction level, the stop level, the size no commit grows past
  static _Atomic int g_guard_lv;   // the highest level met since the submit thread last looked (guard_act)
  static int guard_level(uint64_t used) { return !g_guard.stop ? GUARD_OK : used >= g_guard.wall ? GUARD_WALL : used >= g_guard.stop ? GUARD_STOP : used >= g_guard.evict ? GUARD_EVICT : GUARD_OK; }
@@ -48,7 +48,7 @@ index e09889429e8932b02fd843096c9e033ac752a7c3..68f85e3d4bea4e5752f1ddd70dec531d
  static void guard_raise(int lv) { int cur = atomic_load(&g_guard_lv); while (lv > cur && !atomic_compare_exchange_weak(&g_guard_lv, &cur, lv)) {} }
  static void guard_act(uint64_t fence);
  static void res_commit(void) {
-@@ -482,7 +493,7 @@ static void res_commit(void) {
+@@ -483,7 +494,7 @@ static void res_commit(void) {
          uint64_t used = guard_used(); int lv = guard_level(used);
          if (lv) guard_raise(lv);
          if (lv == GUARD_WALL && g_res_grew) {   // removals alone always go through: they are what brings the set down
@@ -57,7 +57,7 @@ index e09889429e8932b02fd843096c9e033ac752a7c3..68f85e3d4bea4e5752f1ddd70dec531d
              pthread_mutex_unlock(&g_res_mu); return;
          }
          uint64_t t0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); [g_res commit]; g_res_dirty = g_res_grew = 0; g_rs_commits++; uint64_t d_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t0; g_rs_commit_ns += d_; atomic_fetch_add(&g_rs_commit_total_ns, d_);
-@@ -714,6 +725,7 @@ static void guard_tick(void) {
+@@ -715,6 +726,7 @@ static void guard_tick(void) {
      if (lv == GUARD_WALL || over >= GUARD_TICKS) guard_stop(used);
  }
  static void guard_init(void) {
