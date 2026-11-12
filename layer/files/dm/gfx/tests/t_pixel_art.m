@@ -1,5 +1,5 @@
 // NXForge: pixel art (nxforge/pixel_art.inc, pixel_grid.h, msl/pixel_art.metal). The grid finder on counts made up here (even, uneven and bordered enlargements, chunky art,
-// noise, a flat screen); then on the GPU: the finder on a 320x180 picture enlarged 6x into 1920x1080, the art taken back to its own grid and presented at 2x exactly, an uneven
+// noise, a flat screen, changes in a narrow band, two misaligned layers); then on the GPU: the finder on a 320x180 picture enlarged 6x into 1920x1080, the art taken back to its own grid and presented at 2x exactly, an uneven
 // 3.2x enlargement coming out even, MMPX keeping the art's colours on a diagonal, and auto turning on by itself
 #include "../nvn/nvn_mtl.m"
 void *front_metal_layer(void) { return NULL; }
@@ -39,6 +39,14 @@ static void finder_cases(void) {
     snprintf(name, sizeof name, "  but the grid in use (6) is kept (%.2f)", a.s); CHECK(name, r == 1 && fabs(a.s - 6) < 1e-9);
     counts(1920, 0, 1, 0, 1, 1); r = pxg_find(g_h, 1920, NULL, &a);
     CHECK("a picture drawn at full resolution (noise): no grid", r == 0);
+    // Curse of the Moon (427x240 at 3x in 720 rows): when the changes sit in a band of 25 rows (a line of text), 720 / 234 = 3.08 puts them all on its seams too; the whole 3 wins
+    memset(g_h, 0, sizeof g_h); for (int k = 0; k < 240; k++) { int x = k * 3 + 1; if (x >= 300 && x < 325) g_h[x - 1] = 10 + k % 7; }
+    r = pxg_find(g_h, 720, NULL, &a);
+    snprintf(name, sizeof name, "changes in a 25-row band of 3x art: scale 3, not a near uneven one (%.3f, offset %.1f)", a.s, a.o); CHECK(name, r == 1 && fabs(a.s - 3) < 1e-9 && fabs(a.o - 1) < 1e-9);
+    // Two layers on 3x grids one texel apart (a line of text scrolled over the HUD): no one grid fits, and no near-whole uneven scale (720 / 241 = 2.99) stands in for one
+    memset(g_h, 0, sizeof g_h); for (int k = 1; k < 240; k++) { int x = k * 3; if (x < 90) g_h[x - 1] = 10 + k % 7; x = k * 3 + 1; if (x >= 400 && x < 500) g_h[x - 1] = 10 + k % 5; }
+    r = pxg_find(g_h, 720, NULL, &a);
+    snprintf(name, sizeof name, "two 3x layers one texel apart: no grid (%d, %.3f)", r, r == 1 ? a.s : 0.0); CHECK(name, r == 0);
     memset(g_h, 0, sizeof g_h); g_h[100] = 10; r = pxg_find(g_h, 1920, NULL, &a);
     CHECK("a nearly flat screen: too little to tell", r == -1);
 }

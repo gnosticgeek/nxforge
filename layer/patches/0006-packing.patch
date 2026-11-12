@@ -20,9 +20,9 @@ Subject: packing: Packing: converter support in build_ipa_from_nsp,
  dm/tools/tests/test_nsp_scan.py          |  40 +++
  dm/tools/tests/test_nsp_work_dir.py      |   6 +
  dm/tools/tests/test_romfs_image.py       |  15 +
- scripts/build_ipa_from_nsp.py            | 420 ++++++++++++++++++++---
+ scripts/build_ipa_from_nsp.py            | 422 ++++++++++++++++++++---
  scripts/pack_dump.py                     |  11 +-
- 17 files changed, 810 insertions(+), 85 deletions(-)
+ 17 files changed, 811 insertions(+), 86 deletions(-)
  create mode 100644 dm/tools/tests/test_nsp_dlc_folder.py
 
 diff --git a/dm/ios/tools/build_ipa.sh b/dm/ios/tools/build_ipa.sh
@@ -885,7 +885,7 @@ index 79b96862ce6b27ae3ebd752fb1d8bee37a9a14b5..1310dd1d9990b62f9a3ed2a7ab348393
          (self.src / 'a').write_bytes(b'old'); image.pack(self.src, self.dst)
          original = self.dst.read_bytes()
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index ce36a5f7b8dd564acf6b69e7b4b2ee8409580da0..40a694a05d6073c7d6a3ed3bd318cab9780092cd 100755
+index ce36a5f7b8dd564acf6b69e7b4b2ee8409580da0..a08ec5a75a28a21c419ec30e9ee51e4e8ee1fc32 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
 @@ -22,7 +22,7 @@
@@ -1248,6 +1248,15 @@ index ce36a5f7b8dd564acf6b69e7b4b2ee8409580da0..40a694a05d6073c7d6a3ed3bd318cab9
      rmtree(cap); rmtree(rd); cap.mkdir(parents=True)
      for d in ('save', 'temp'): (rd / d).mkdir(parents=True)
      PROG.set(step='booting the game')
+@@ -1550,7 +1731,7 @@ def apple_silicon():   # hw.optional.arm64 is 1 on Apple silicon (for a Python u
+     return subprocess.run(['sysctl', '-n', 'hw.optional.arm64'], capture_output=True, text=True).stdout.strip() == '1'
+ 
+ 
+-HOST_DIRS = ('dm/host', 'dm/gfx', 'dm/gfx/nvn', 'dm/gfx/nvn/include', 'dm/gfx/tex', 'dm/gfx/vk', 'dm/gfx/gl')   # the folders the host's compile line takes its sources and headers from (dm/host/Makefile SRC, GFX, GFX_H)
++HOST_DIRS = ('dm/host', 'dm/host/nxforge', 'dm/gfx', 'dm/gfx/nvn', 'dm/gfx/nvn/nxforge', 'dm/gfx/nvn/include', 'dm/gfx/tex', 'dm/gfx/vk', 'dm/gfx/gl')   # the folders the host's compile line takes its sources and headers from (dm/host/Makefile SRC, GFX, GFX_H; NXForge: its layer files' folders, so a change there alone rebuilds the host)
+ 
+ 
+ def decoder_host_key(host):
 @@ -1570,15 +1751,15 @@ def build_mac_host(repo, out, env, logs, g):
      and the macOS SDK) are as at the last build into out. The host runs the game's own arm64 code natively, so an Intel Mac stops here (GitHub issue #54)"""
      if not apple_silicon(): raise BuildError('this step boots the game in the Mac host, which runs the game\'s own arm64 code natively: it needs a Mac with Apple silicon, and this Mac has an Intel processor')

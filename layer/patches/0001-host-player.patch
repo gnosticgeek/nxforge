@@ -84,7 +84,7 @@ index 125014a714ed8afee2edae931366e200658dc70a..b53a2ade8449af855b22c8565435f9eb
      q->occ[q->nvis] = (occ_t){s->aq, s->aq_first, q->nvis};
      [s->re setVisibilityResultMode:MTLVisibilityResultModeCounting offset:q->nvis * 8]; q->nvis++;
 diff --git a/dm/host/Makefile b/dm/host/Makefile
-index 461132fb707e7b9b1053ccbd9da5116d582e87ab..c94a95cff67cb46103fbbed8bf914c6633a7678f 100644
+index 461132fb707e7b9b1053ccbd9da5116d582e87ab..0daa2604ae126b4249307f61aa6724c1ada06f15 100644
 --- a/dm/host/Makefile
 +++ b/dm/host/Makefile
 @@ -19,11 +19,11 @@ include ../mac/min_os.mk
@@ -97,7 +97,7 @@ index 461132fb707e7b9b1053ccbd9da5116d582e87ab..c94a95cff67cb46103fbbed8bf914c66
  # Sources under dm/gfx, dm/gfx/nvn, dm/gfx/tex, dm/gfx/vk and dm/gfx/gl are included by wildcard (tests/ and metal/ do not go into the host): adding a file does not touch this line
  GFX=$(sort $(wildcard ../gfx/*.c ../gfx/nvn/*.c ../gfx/nvn/*.m ../gfx/nvn/*.S ../gfx/tex/*.c ../gfx/tex/*.m ../gfx/vk/*.m ../gfx/gl/*.m))
 -GFX_H=$(sort $(wildcard ../gfx/nvn/*.h ../gfx/nvn/*.inc ../gfx/nvn/include/*.h ../gfx/tex/*.h))   # *.inc: nvn_mtl.m includes them (nvn_geometry.inc); an edit there alone used not to rebuild the host
-+GFX_H=$(sort $(wildcard ../gfx/nvn/*.h ../gfx/nvn/*.inc ../gfx/nvn/nxforge/*.inc ../gfx/nvn/include/*.h ../gfx/tex/*.h))   # *.inc: nvn_mtl.m includes them (nvn_geometry.inc); an edit there alone used not to rebuild the host
++GFX_H=$(sort $(wildcard ../gfx/nvn/*.h ../gfx/nvn/*.inc ../gfx/nvn/nxforge/*.inc ../gfx/nvn/nxforge/*.h ../gfx/nvn/include/*.h ../gfx/tex/*.h))   # *.inc: nvn_mtl.m includes them (nvn_geometry.inc); an edit there alone used not to rebuild the host
  # Third party: libvpx ships the VP8 and VP9 decoder sources (movie decoding, hle_movie.c), with its configuration headers in config/ (arm64, shared by Mac and iOS). Built separately into a static library, file by file, so host changes do not recompile it
  VPX=../third_party/libvpx
  VPX_SRC=$(sort $(shell find $(VPX) -name '*.c'))

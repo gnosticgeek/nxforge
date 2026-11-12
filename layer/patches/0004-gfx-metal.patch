@@ -2441,7 +2441,7 @@ index 5b54cf121af02bce1d0acc4c7cee5d75d2315ae7..fc0605d3a46b0e41c37562bff9c1d3cd
  // evict: Mario's pools stay for good, so entries are bounded; Engage frees pools on scene changes and rebuilds on new ones, so the old pools' render targets and other private textures
  // stayed in the table forever (about 0.8 GB more GPU memory over 850 s of the title demo), and linear textures built directly on a pool also kept the whole pool buffer alive. Also, when a
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 2e443631dc59e618b98a6dafc967d9060aafece7..200747df027024c3ae9c6c8195699927ef5dcec0 100644
+index 2e443631dc59e618b98a6dafc967d9060aafece7..4e1c8200a484cb0a42d5e0a4939d7e3b9bcd04ad 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
 @@ -13,7 +13,7 @@ GAME_H = ../../host/gen/$(GAME)/game_profile.h
@@ -2449,7 +2449,7 @@ index 2e443631dc59e618b98a6dafc967d9060aafece7..200747df027024c3ae9c6c8195699927
  CFLAGS=-O1 -g -Wall -Wno-unused-function -I../nvn/include -I$(dir $(GAME_H)) -I$(dir $(MSL_H))
  GFX=$(filter-out ../nvn/hle_nvn.c,$(sort $(wildcard ../nvn/*.c ../nvn/*.m ../nvn/*.S ../tex/*.c ../tex/*.m)))
 -GFX_H=$(wildcard ../nvn/*.h ../nvn/*.inc ../nvn/include/*.h ../tex/*.h) $(GAME_H) $(MSL_H)
-+GFX_H=$(wildcard ../nvn/*.h ../nvn/*.inc ../nvn/nxforge/*.inc ../nvn/include/*.h ../tex/*.h) $(GAME_H) $(MSL_H)
++GFX_H=$(wildcard ../nvn/*.h ../nvn/*.inc ../nvn/nxforge/*.inc ../nvn/nxforge/*.h ../nvn/include/*.h ../tex/*.h) $(GAME_H) $(MSL_H)
  .DEFAULT_GOAL := t_nvn   # the profile header rule comes first, so keep the default goal as before
  # Regenerated on every make (host_msl_force), by the host Makefile: a header from an older game.py lacks newer defines; game.py writes it only when it changes, so an unchanged header rebuilds no test
  $(GAME_H): host_msl_force
