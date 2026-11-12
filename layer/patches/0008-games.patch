@@ -15,8 +15,10 @@ Subject: games: Game profiles and notes
  dm/games/0400E88025B1A000/README.md        |    2 +
  dm/games/README.md                         |    4 +-
  dm/games/profile_guess.py                  |    8 +-
- dm/games/settings.tsv                      |    2 +-
- 12 files changed, 2975 insertions(+), 7 deletions(-)
+ dm/games/settings.py                       |    1 +
+ dm/games/settings.tsv                      |    8 +-
+ dm/tools/tests/test_launcher_settings.py   |    2 +-
+ 14 files changed, 2982 insertions(+), 9 deletions(-)
 
 diff --git a/dm/games/010014E00DB56000/README.md b/dm/games/010014E00DB56000/README.md
 index ab12954e0eb151145a32595fd27f95457b4ae0d3..5ef90fc6145af4c7e0b69bc70f1ef9c49c186a9c 100644
@@ -3191,16 +3193,62 @@ index d0d74a8831c550ab40bbc303b02623b5dadaf7fa..319e2888b0b0858108aa3b8e443edf37
          if mag: R['mags'][mag] += 1; R['magb'][mag] += size
          if mag in PACKED: R['extc'][ext] += 1
      return F
+diff --git a/dm/games/settings.py b/dm/games/settings.py
+index 506134421ad0593a533583188df632dfa81abbf7..20976e4f11580eb88de0b5c62c291470b7e89357 100644
+--- a/dm/games/settings.py
++++ b/dm/games/settings.py
+@@ -74,6 +74,7 @@ def build(gid, patched, control):
+ 
+     def shown(cond, n):
+         if cond == 'always': return True
++        if '&' in cond: return all(shown(c, n) for c in cond.split('&'))   # every one of them (gfxapi:nvn&platform:mac)
+         if cond == 'languages>1': return len(langs) > 1
+         if cond.startswith('fixups:'): return cond[7:] in keys
+         if cond.startswith('gfxapi:'): return os.environ.get('GFXAPI', '') == cond[7:]
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 15f4824107e0ddf9f48a2fe633ef49b7a0a5558a..006840ba8537e35b219a4a7a112c079d273decfb 100644
+index 15f4824107e0ddf9f48a2fe633ef49b7a0a5558a..032f459d11978a2dfcd9644315ff6bca64587dc2 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -18,7 +18,7 @@ DM_FPS_TARGET	choice	30=30 fps,60=60 fps,120=120 fps?DM_GAME_FPS_MAX==120&platfo
+@@ -7,7 +7,7 @@
+ #             toggle: values - (on sets 1, off 0) or <on>/<off>, the two values the variable takes (on/off)
+ #   default   a value (a toggle's: 1 on, 0 off); DM_GAME_<NAME>: the host's own default from the game profile (game_profile.h, game.py); build:<VAR>: the IPA build's setting (build_ipa.sh)
+ #             <ios>|<mac> selects the platform's default before resolving a profile macro or build variable
+-#   shown     always; DM_GAME_<NAME>!=<value> or ==<value>; fixups:<KEY>: main's rewriter table has that key (a stub in the game's build, patch_nso.py); languages>1 (more than one to pick, so also when the control data lists none); gfxapi:<API>: the packer's GFXAPI;
++#   shown     always; DM_GAME_<NAME>!=<value> or ==<value>; fixups:<KEY>: main's rewriter table has that key (a stub in the game's build, patch_nso.py); languages>1 (more than one to pick, so also when the control data lists none); gfxapi:<API>: the packer's GFXAPI; several joined by & must all hold (gfxapi:nvn&platform:mac);
+ #             platform:<ios | mac>: the app's platform (SETTINGS_PLATFORM, ios when unset), for a switch only that platform's front end reads
+ #   section   Game, Controls or Performance: a heading on the single settings screen. Rows appear in table order within each section
+ #             Reset to tested defaults clears all launcher choices; values fixed by an env file stay
+@@ -18,8 +18,11 @@ DM_FPS_TARGET	choice	30=30 fps,60=60 fps,120=120 fps?DM_GAME_FPS_MAX==120&platfo
  DM_DYNAMIC_RESOLUTION	toggle	-	0	fixups:DYNAMIC_RESOLUTION	Game	Dynamic resolution	Lets the game lower its resolution under load. Turn off to keep full resolution for the selected console mode.
  DM_RENDER_SCALE	range	0.5:1.0:0.05	1.0	fixups:RENDER_SCALE	Game	Render scale		level=basic
  DM_OPMODE	choice	1=Docked,0=Handheld	DM_GAME_OPMODE	always	Game	Console mode		level=basic
 -DM_PRESENT_UPSCALE	choice	off=Standard,metalfx=MetalFX	off	always	Game	Upscaling	Uses more GPU time and can increase heat.
 +DM_PRESENT_UPSCALE	choice	off=Standard,metalfx=MetalFX	off|metalfx	always	Game	Upscaling	Uses more GPU time and can increase heat.
  DM_UPSCALER	choice	game=Game's own,metalfx=MetalFX	game	DM_GAME_UPSCALER_N!=0	Game	Game's upscaler
++DM_PRESENT_AA	choice	off=Off,fxaa=FXAA	off	gfxapi:nvn&platform:mac	Game	Anti-aliasing	Smooths jagged edges in games without anti-aliasing of their own; small text softens a little.
++DM_PRESENT_EDR	toggle	-	0	gfxapi:nvn&platform:mac	Game	HDR highlights	On an XDR or HDR screen the brightest parts of the picture glow above white. White HUD text brightens too.	level=basic
++DM_PRESENT_EDR_STRENGTH	range	0:1:0.05	0.5	gfxapi:nvn&platform:mac	Game	HDR brightness boost		level=basic;needs=DM_PRESENT_EDR=1
  DM_LANG	choice	languages	build:DM_LANG	languages>1	Game	Game language		level=basic
  DM_FULLSCREEN	choice	0=Window,1=Fullscreen	0	platform:mac	Game	Display mode		level=basic
+ DM_PICTURE_FIT	choice	fit=Fit,fill=Fill	fit	platform:ios	Game	Picture	Fill crops the game's 16:9 picture to cover the screen. Health bars, subtitles or maps near the edges can be cut off. A full-screen picture without cropping needs a patch for each game.
+@@ -31,6 +34,7 @@ DM_RUMBLE_MIN	range	0:0.9:0.05	0	always	Controls	Rumble cutoff
+ DM_PAD_PRESS_TO_JOIN	toggle	-	0	always	Controls	Press a button to join
+ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
+ DM_SCREEN_ASPECT	choice	auto=Match screen?platform:ios,1.43=iPhone Duo screen (1.43:1),0=16:9 (Switch)	auto|0	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
++DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
+ DM_PRESENT_SNAP	toggle	-	DM_GAME_PRESENT_SNAP	gfxapi:nvn	Performance	Frame buffering	Up to one frame more display latency.
+ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
+ DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
+diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
+index 3bc45351e5f3af8b797fcc645fb32a754a15299e..8bac021f29e7737971b06740c25b1f0e8c033118 100644
+--- a/dm/tools/tests/test_launcher_settings.py
++++ b/dm/tools/tests/test_launcher_settings.py
+@@ -78,7 +78,7 @@ class LauncherSettingsTests(unittest.TestCase):
+         self.assertEqual(build(BOTW, 'nvn', 'ios').keys(), ios.keys())   # ios when unset
+         self.assertEqual(set(ios) - set(mac), {'DM_SHOW_FPS', 'DM_TOUCH_HAPTICS', 'DM_PICTURE_FIT'})
+         self.assertIn('DM_RUMBLE', mac); self.assertIn('DM_METAL_HUD', mac)
+-        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2'})   # the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
++        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP'})   # NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
+         s = mac['DM_FULLSCREEN']
+         self.assertEqual((s['kind'], s['default'], s['options'], s['level']), ('choice', '0', [['0', 'Window'], ['1', 'Fullscreen']], 'basic'))
+ 

@@ -81,7 +81,7 @@ index 55ca720c36046e4c54947206849bd7ed9088bc37..477cfc7dfb6bddfa5274e312edcae2ae
      if (late) { s->late++; s->late_run = grace || sgrace ? 0 : s->late_run + 1; s->fit_run = 0; } else s->late_run = 0;
      // The cost of the frames on time (a hitch is not what the scene costs): at kmin, and at the longer hold
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 7916cc34aea5ceabca0c8e8f9dd873de4dee0497..1c55fa939feb944cea99fcde807045a9c6a08a37 100644
+index 68f85e3d4bea4e5752f1ddd70dec531decec4b72..32bdb6871da12455b7ad27d99f876ab3e78eea44 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -15631,6 +15631,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }
@@ -135,7 +135,7 @@ index 7916cc34aea5ceabca0c8e8f9dd873de4dee0497..1c55fa939feb944cea99fcde807045a9
  static void sub_cut(void) {
      int n = cut_draws();
      if (!g_cb || g_enc) return;
-@@ -16993,6 +17037,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -16995,6 +17039,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      if (atomic_load(&g_gpu_lost)) return 0;   // the display command buffer would be ignored too: take no drawable from the screen the front end is about to close
      CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
      if (!layer) return 0;
@@ -180,7 +180,7 @@ index 99fa67f001e2033f05105c55a8f625a3e3107308..d6bbdb32ef3f403d2cf640c8ab296599
  - a fixed-step game runs at double speed (or slow motion at 30) after `DM_FPS_TARGET` is set, in `Documents/env.txt` or the launcher, on a build its profile's frame step stubs and limiter rows do not know. → [A present cap applies only with a frame step or an engine limit the host writes](../reference/frame-rate.md#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)
  - a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick. → [A present interval that is the game's only limit, in display mode](../reference/frame-rate.md#a-present-interval-that-is-the-games-only-limit-in-display-mode)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index f23f0a4943f328288534661f108f0d432fc1179f..ffb2f2ca3963264f4d338e5cfe5f4a42862a365f 100644
+index 1ae2bfa3807efa6e4ffff2a322d5b9b4dc36382c..af6eaf9526592fa0b40d1372bfd610fd411bf028 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -52,6 +52,7 @@ DM_FSLOG	diagnostic	`=<file>` writes one TSV line per ReadFile: seconds since bo

@@ -4,6 +4,13 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.3.2 (2026-11-12)
+
+Frame interpolation, and the settings window shares the picture options. Ships in NXForge 0.27.4.
+
+- **FPS › Frame interpolation** (Off, On, Auto; `dm/gfx/nvn/nxforge/frame_interp.inc`): 60 fps games shown at 120 fps on a 120 Hz screen with in-between pictures. Saved per game and in the settings file (`frame_interpolation`).
+- **The settings window shows anti-aliasing, HDR highlights, its strength and frame interpolation too** (`dm/host/nxforge/front_mac_launcher_sync.inc`): the sidebar's choice is copied to the window's, and a change made in the window is taken at launch. A setting the window set is no longer shown as fixed ("Set by … for this run"); only `env.txt` and the launch environment fix one.
+
 ## 0.3.1 (2026-11-11)
 
 Full screen without the title bar. Ships in NXForge 0.27.3.
