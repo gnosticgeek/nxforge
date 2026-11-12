@@ -2,6 +2,13 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.28.2 (2026-11-12)
+
+- **Ocarina of Time no longer slows to about 10 fps after a while in Hyrule Field.** Once the game's GPU memory reaches about half of Metal's working set (about 9 GB on a 24 GB M4 Pro), macOS's GPU driver frees memory at every command buffer and the frame rate collapses; other apps' memory does not matter. The GPU memory guard now lets go of what has idled from 80% of that level (`DM_NVN_GUARD_SOFT_MB`, `DM_NVN_RES_BALLAST`; [docs/reference/memory.md](docs/reference/memory.md)), and the player names a slow game from 92%.
+- **Upstream PR [#2344](https://github.com/seedds/nxnative/pull/2344) taken early** (patch 0014): a texture's read mark no longer outlives its area, so area loads late in a session no longer freeze in runs of 200-670 ms frames. Dropped once nxnative lands it.
+- **NXForge Sidebar 0.3.3** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): a warning when GPU memory is nearly full and the game is slow.
+- Takes a rebuild of the game app (no shader rebuild: the shader chain is unchanged).
+
 ## 0.28.1 (2026-11-12)
 
 - **A new settings window for every Mac game.** A header shows the game's icon, name and version over its artwork (the app's `Resources/dm/banner.jpg` or `.png` when it has one, otherwise its icon, enlarged and blurred). Under it are three tabs, with the settings in boxes side by side: **General** (Game, Controls with rumble strength and cutoff, Cloud saves), **Graphics** (Resolution, Frame rate, HDR) and **Advanced** (Pipelines and Display, with Reset to tested defaults). Notes under the settings are shorter, the window remembers its tab, and "Show this window at launch" is now a "Show at launch" checkbox beside Quit and Play. **Play** still checks the cloud save first, as in 0.28.0. The settings themselves and their saved choices are unchanged. Takes a rebuild of the game app.
