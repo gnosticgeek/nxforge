@@ -322,3 +322,14 @@ static void graphics_start(void) {   // main thread, before the guest runs: the 
 }
 const char *front_qs_title_id(void) { return DM_GAME_ID; }   // the save backups' manifest and the mods' Atmosphere folders
 void front_qs_toast_text(const char *msg) { toast(@(msg)); }   // the sidebar's own toasts (a save backed up, a capture copied)
+// GPU memory at the driver's low-water mark with the game slow (nvn_mtl.m guard_low_tick, from its timer's thread): macOS's GPU driver frees at every command buffer from about half
+// the working set, and the game drops to about 10 fps (Ocarina of Time in Hyrule Field after 15 minutes, 24 GB M4 Pro). Nothing the player can change in the run brings it back,
+// so a toast that stays 8 seconds says what does, and the sidebar's Performance page keeps the note
+void front_gpu_memory_low(unsigned long long used_mb, unsigned long long low_mb) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!g_win) return;
+        LOG("front end: GPU memory is nearly full and the game is slow; telling the player");
+        dm_qs_toast_long((__bridge void *)g_win.contentView, "GPU memory is nearly full, so the game is slow. Save and restart the game to free it.", 8);
+        dm_qs_gpu_memory_low(used_mb, low_mb);
+    });
+}

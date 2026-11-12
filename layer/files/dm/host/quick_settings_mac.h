@@ -77,3 +77,6 @@ void dm_qs_captures_changed(void);
 const char *front_qs_title_id(void);
 // A toast over the game picture (front_mac.m toast). Main thread
 void front_qs_toast_text(const char *msg);
+// GPU memory nearly full with the game slow (nvn_mtl.m guard_low_tick): a longer toast, and a note on the Performance page for the rest of the run. Main thread
+void dm_qs_toast_long(void *parent, const char *msg, double seconds);
+void dm_qs_gpu_memory_low(unsigned long long used_mb, unsigned long long low_mb);

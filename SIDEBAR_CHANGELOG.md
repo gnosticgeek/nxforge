@@ -4,6 +4,13 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.3.3 (2026-11-12)
+
+A warning when GPU memory is nearly full. Ships in NXForge 0.28.2.
+
+- **"GPU memory is nearly full, so the game is slow"**: when the player finds the game's GPU memory past the level from which macOS's GPU driver slows every frame, with the game at under 40% of its best frame rate for three seconds, a toast says so for 8 seconds and the **Performance** page keeps a note with the sizes for the rest of the run (`front_gpu_memory_low` in `dm/host/nxforge/front_mac_quick_settings.inc`). Saving and restarting the game frees the memory. Found on Ocarina of Time in Hyrule Field, 15 minutes into a session on a 24 GB Mac.
+- Toasts can stay longer than 2 seconds (`dm_qs_toast_long`).
+
 ## 0.3.2 (2026-11-12)
 
 Frame interpolation, and the settings window shares the picture options. Ships in NXForge 0.27.4.

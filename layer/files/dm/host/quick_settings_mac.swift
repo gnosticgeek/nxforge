@@ -15,7 +15,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.3.2"
+let SIDEBAR_VERSION = "0.3.3"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -200,6 +200,7 @@ final class QuickSettings: ObservableObject {
     @Published var lastBackup: Date?
     @Published var backupBusy = false
     @Published var backupNote = ""
+    var gpuMemoryLow: (used: UInt64, low: UInt64)? { didSet { objectWillChange.send() } }   // set once the host finds GPU memory nearly full with the game slow
     @Published var settingsPath = ""
     @Published var defaultsExist = false
     @Published var captures: [CaptureFile] = []
@@ -992,6 +993,10 @@ struct QuickSettingsView: View {
                  : "60 FPS games shown at 120 on a 120 Hz screen, about 8 ms later. Experimental: fast edges and the HUD can wobble")
             subhead("Frame times").padding(.top, 6)
             FrameGraph(paused: m.paused)
+            if let g = m.gpuMemoryLow {
+                Label("GPU memory is nearly full (\(String(format: "%.1f", Double(g.used) / 1024)) GB in use; macOS slows the game from about \(String(format: "%.1f", Double(g.low) / 1024)) GB on this Mac). Save and restart the game to free it.",
+                      systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             subhead("Advanced").padding(.top, 6)
             Row(title: "Record frame times", changed: m.frameTimes, nextLaunch: env["DM_FRAME_TIMES"] == nil ? m.frameTimesPending : nil) {
                 Toggle("Record frame times", isOn: Binding(get: { m.frameTimes }, set: { m.setFrameTimes($0) })).toggleStyle(.switch).labelsHidden()
@@ -1310,8 +1315,16 @@ public func dm_qs_toast(_ parent: UnsafeMutableRawPointer, _ msg: UnsafePointer<
         h.autoresizingMask = [.width, .minYMargin]; p.addSubview(h, positioned: .above, relativeTo: nil); toastHost = h
     } else if let h = toastHost { p.addSubview(h, positioned: .above, relativeTo: nil) }   // over a sidebar opened since
     toastModel.text = String(cString: msg); toastSerial += 1; let serial = toastSerial
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { if toastSerial == serial { toastModel.text = nil } }
+    DispatchQueue.main.asyncAfter(deadline: .now() + toastSeconds) { if toastSerial == serial { toastModel.text = nil } }
+    toastSeconds = 2.2
 }
+private var toastSeconds = 2.2
+// A toast that stays longer: a warning the player has to read (GPU memory nearly full). Main thread
+@_cdecl("dm_qs_toast_long")
+public func dm_qs_toast_long(_ parent: UnsafeMutableRawPointer, _ msg: UnsafePointer<CChar>, _ seconds: Double) { toastSeconds = seconds; dm_qs_toast(parent, msg) }
+// The host found GPU memory nearly full with the game slow (front_gpu_memory_low): the Performance page says so for the rest of the run. Main thread
+@_cdecl("dm_qs_gpu_memory_low")
+public func dm_qs_gpu_memory_low(_ usedMB: UInt64, _ lowMB: UInt64) { shared?.gpuMemoryLow = (usedMB, lowMB) }
 
 private var shared: QuickSettings?
 @_cdecl("dm_qs_make")

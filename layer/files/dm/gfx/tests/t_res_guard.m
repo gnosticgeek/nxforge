@@ -28,6 +28,18 @@ static void levels(void) {
     memset(&g_guard, 0, sizeof g_guard); CHECK(guard_level(UINT64_MAX) == GUARD_OK, "off: no level");
     setenv("DM_NVN_RES_LIMIT_MB", "950", 1); guard_init();
     CHECK(g_guard.stop == 950ull << 20 && g_guard.evict == 800ull << 20 && g_guard.wall == g_dev.recommendedMaxWorkingSetSize, "DM_NVN_RES_LIMIT_MB sets the stop and the eviction level under it");
+#if !TARGET_OS_IPHONE
+    { uint64_t ws = g_dev.recommendedMaxWorkingSetSize;   // NXForge: the driver's low-water mark, about half the working set
+      CHECK(g_guard.soft == ws / 2 / 100 * 80 && g_guard.low == ws / 2 / 100 * 92, "the soft and low levels sit under half the working set");
+      uint64_t ev = g_guard.evict, st = g_guard.stop, wa = g_guard.wall; g_guard.evict = g_guard.stop = g_guard.wall = UINT64_MAX;
+      CHECK(guard_level(g_guard.soft - 1) == GUARD_OK && guard_level(g_guard.soft) == GUARD_SOFT, "the soft level is a level of its own under the eviction level");
+      g_guard.evict = ev; g_guard.stop = st; g_guard.wall = wa;
+      setenv("DM_NVN_GUARD_SOFT_MB", "400", 1); guard_init();
+      CHECK(g_guard.soft == 400ull << 20 && g_guard.low == (400ull << 20) / 100 * 115, "DM_NVN_GUARD_SOFT_MB sets the soft level and the low one above it");
+      setenv("DM_NVN_GUARD_SOFT_MB", "0", 1); guard_init();
+      CHECK(!g_guard.soft && !g_guard.low && guard_level(1) == GUARD_OK, "DM_NVN_GUARD_SOFT_MB=0 turns both off");
+      unsetenv("DM_NVN_GUARD_SOFT_MB"); }
+#endif
     setenv("DM_NVN_RES_LIMIT_MB", "0", 1); memset(&g_guard, 0, sizeof g_guard);
 }
 // The set's own size leaves out what was never committed, and the check before the commit needs it; the device's has what no set holds too
@@ -72,7 +84,10 @@ static void eviction(void) {
     id<MTLBuffer> staging = [g_dev newBufferWithLength:1 << 20 options:MTLResourceStorageModePrivate]; res_add(staging); g_up_slot_blk[1] = staging; __weak id<MTLBuffer> w_staging = staging; staging = nil;
     uint64_t idle = g_alias_idle, gen = g_ser_gen;
     g_sub_thread = pthread_self(); atomic_store(&g_sub_thread_set, 1);
-    guard_evict(1);
+    { uint64_t last_soft = g_alias_idle; guard_evict(GUARD_SOFT);   // NXForge: near the driver's low-water mark only what idled ALIAS_IDLE_SOFT submissions goes
+      CHECK(g_alias_idle == last_soft && w_dead, "the soft level keeps an entry idle for ALIAS_IDLE submissions only"); }
+    staging = [g_dev newBufferWithLength:1 << 20 options:MTLResourceStorageModePrivate]; res_add(staging); g_up_slot_blk[1] = staging; w_staging = staging; staging = nil;   // the soft pass let the first go
+    guard_evict(GUARD_STOP);
     CHECK(g_alias_idle == idle + 1 && g_ser_gen == gen + 1, "one entry left, one bump");
     settle();
     CHECK(!w_dead, "the idle entry nothing holds is gone");
