@@ -110,6 +110,7 @@ int main(void) { @autoreleasepool {
     chain_checks(in, scale);
 
     id<MTLBuffer> pixels = [g_dev newBufferWithLength:256 * 3 options:MTLResourceStorageModeShared];
+    if (!pixels) return 1;
     id<MTLCommandBuffer> read = q_cb();
     id<MTLBlitCommandEncoder> blit = [read blitCommandEncoder];
     const MTLOrigin samples[] = {MTLOriginMake(0, 0, 0), MTLOriginMake(1280, 720, 0), MTLOriginMake(2559, 1439, 0)};
