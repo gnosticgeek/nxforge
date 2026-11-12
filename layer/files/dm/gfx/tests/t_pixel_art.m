@@ -44,7 +44,7 @@ static void finder_cases(void) {
 }
 
 // ---- on the GPU
-enum { AW = 320, AH = 180, S = 6, W = AW * S, H = AH * S };
+enum { AW = 320, AH = 180, SC = 6, W = AW * SC, H = AH * SC };
 static uint8_t g_art[AH][AW][4];
 static id<MTLTexture> picture(int w, int h, double sx, double sy) {   // the art enlarged into w x h by repeating pixels at scale sx, sy (nearest, as a game does)
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:w height:h mipmapped:NO];
@@ -83,14 +83,14 @@ int main(void) { @autoreleasepool {
     mtl_init();
     mtl_present_layer(W, H);
     srand(11); for (int y = 0; y < AH; y++) for (int x = 0; x < AW; x++) { g_art[y][x][0] = (uint8_t)(rand() % 6 * 51); g_art[y][x][1] = (uint8_t)(rand() % 6 * 51); g_art[y][x][2] = (uint8_t)(rand() % 6 * 51); g_art[y][x][3] = 255; }
-    id<MTLTexture> big = picture(W, H, S, S), out = target(AW * 2, AH * 2);
+    id<MTLTexture> big = picture(W, H, SC, SC), out = target(AW * 2, AH * 2);
     char name[200]; float aw = 0, ah = 0, sc = 0;
 
     mtl_present_pixel_set(DM_PIXEL_AUTO);
     finder_settle(big, out, PX_EVERY * 3);
     CHECK("auto: off until the grid has held a while", mtl_present_pixel_active() == DM_PIXEL_OFF);
     int got = mtl_present_pixel_grid(&aw, &ah, &sc);
-    snprintf(name, sizeof name, "the finder: art 320x180 at 6 texels per pixel (%d: %.1fx%.1f at %.2f)", got, aw, ah, sc); CHECK(name, got && fabsf(aw - AW) < 0.01f && fabsf(ah - AH) < 0.01f && fabsf(sc - S) < 0.01f);
+    snprintf(name, sizeof name, "the finder: art 320x180 at 6 texels per pixel (%d: %.1fx%.1f at %.2f)", got, aw, ah, sc); CHECK(name, got && fabsf(aw - AW) < 0.01f && fabsf(ah - AH) < 0.01f && fabsf(sc - SC) < 0.01f);
     finder_settle(big, out, PX_EVERY * (PX_LATCH + 2));
     CHECK("auto turns sharp pixels on by itself", mtl_present_pixel_active() == DM_PIXEL_SHARP);
     CHECK("which pauses frame interpolation", !nxf_fi_wants_link());
@@ -107,14 +107,15 @@ int main(void) { @autoreleasepool {
     present_offscreen_wait(uneven, NULL, out);
     snprintf(name, sizeof name, "  and shown even, at exactly 2x (%ld pixels off)", art_mismatch(out, 2)); CHECK(name, art_mismatch(out, 2) == 0);
 
-    // Off: the plain present (MetalFX again), and nothing taken back
+    // Off: the plain present (MetalFX again), and nothing taken back. MetalFX only enlarges (fx_wanted), so the check shows a 320x180 crop in the 640x360 target
     mtl_present_pixel_set(DM_PIXEL_OFF);
-    CHECK("off: MetalFX again", present_offscreen_wait(uneven, NULL, out) == PRESENT_METALFX || !mtl_present_upscale());
+    const int up_crop[4] = {0, 0, 320, 180};
+    CHECK("off: MetalFX again", present_offscreen_wait(uneven, up_crop, out) == PRESENT_METALFX || !mtl_present_upscale());
 
     // MMPX: a one-pixel diagonal of one colour on another; Smooth edges at 2x keeps only the art's two colours and fills the stair's corners
     mtl_present_layer(W, H);
     for (int y = 0; y < AH; y++) for (int x = 0; x < AW; x++) { uint8_t v = x == y || x == y + 1 ? 255 : 0; g_art[y][x][0] = v; g_art[y][x][1] = v; g_art[y][x][2] = v; g_art[y][x][3] = 255; }
-    id<MTLTexture> diag = picture(W, H, S, S);
+    id<MTLTexture> diag = picture(W, H, SC, SC);
     mtl_present_pixel_set(DM_PIXEL_SMOOTH);
     finder_settle(diag, out, PX_EVERY * 3);
     present_offscreen_wait(diag, NULL, out);

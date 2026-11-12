@@ -389,7 +389,7 @@ index fb9fb002d7f647d637bbfacd409edd57895c8a36..a5fc2dceb7574762a1353442db51c3c5
  void mtl_set_depth_zero(int on);          // NVN depth mode: 1 = near is 0 (D3D / Metal), 0 = near is -w (GL, NVN's default); picks the vertex shaders' entry point (see shader_load in nvn_mtl.m)
  void mtl_set_origin_lower_left(int on);   // NVN window origin: 1 = lower left (GL, NVN's default), 0 = upper left (D3D / Metal); see nvn_mtl.m
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index bd65f8f8eaa17debcc05707a77b59da5481714e7..66a8d8ed03a36bc569bc80666d80688b9ecefe15 100644
+index bd65f8f8eaa17debcc05707a77b59da5481714e7..3199db64d3c5c9761ec0d764944ad22341147707 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3,6 +3,13 @@
@@ -884,7 +884,7 @@ index bd65f8f8eaa17debcc05707a77b59da5481714e7..66a8d8ed03a36bc569bc80666d80688b
  #define RED_ONCE(k, ...) do { _Static_assert((k) < sizeof g_red_once / sizeof *g_red_once, "a RED_ONCE key past g_red_once: raise its size"); if (!g_red_once[k]++) MLOG("[RED] " __VA_ARGS__); } while (0)
 +// NXForge's own red lines keep a table of their own, so upstream's keys never move them (each upstream merge renumbered them before 0.15.0). Keys: 0 packaged entry not
 +// CPU-written, 1-2 present anti-aliasing (FXAA). A new NXForge key raises g_nxf_red_once
-+static int g_nxf_red_once[4];
++static int g_nxf_red_once[16];
 +#define NXF_RED_ONCE(k, ...) do { _Static_assert((k) < sizeof g_nxf_red_once / sizeof *g_nxf_red_once, "an NXF_RED_ONCE key past g_nxf_red_once: raise its size"); if (!g_nxf_red_once[k]++) MLOG("[RED] " __VA_ARGS__); } while (0)
  // NVN vertex streams 0–15 → Metal vertex buffer slots: 0–13 go to 16–29 (30 is the constant fallback buffer), 14 and 15 to 14 and 15. Metal has only the 31 slots 0–30; translated shaders use only buffer(0) (the argument buffer),
  // and the host's own vertex functions read no vertex buffers. 13 Sentinels uses stream 15, and the old 16 + stream went out of range (Metal assertion: buffer index (31) must be < 31)
