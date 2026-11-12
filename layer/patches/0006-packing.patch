@@ -7,7 +7,7 @@ Subject: packing: Packing: converter support in build_ipa_from_nsp,
 ---
  dm/ios/tools/build_ipa.sh                |   4 +-
  dm/ios/tools/gen_build.py                |   2 +-
- dm/mac/pack_app.py                       |  95 ++++-
+ dm/mac/pack_app.py                       |  98 +++++-
  dm/tools/nso_syms.py                     |   1 +
  dm/tools/romfs_image.py                  |   8 +-
  dm/tools/sdk_patches.py                  |  10 +
@@ -15,14 +15,14 @@ Subject: packing: Packing: converter support in build_ipa_from_nsp,
  dm/tools/tests/test_nsp_chain.py         |  68 ++++
  dm/tools/tests/test_nsp_dlc_folder.py    |  67 ++++
  dm/tools/tests/test_nsp_dump.py          |   8 +
- dm/tools/tests/test_nsp_mac_app.py       | 106 +++++-
+ dm/tools/tests/test_nsp_mac_app.py       | 115 ++++++-
  dm/tools/tests/test_nsp_nup.py           |   9 +
  dm/tools/tests/test_nsp_scan.py          |  40 +++
  dm/tools/tests/test_nsp_work_dir.py      |   6 +
  dm/tools/tests/test_romfs_image.py       |  15 +
  scripts/build_ipa_from_nsp.py            | 420 ++++++++++++++++++++---
  scripts/pack_dump.py                     |  11 +-
- 17 files changed, 804 insertions(+), 79 deletions(-)
+ 17 files changed, 811 insertions(+), 84 deletions(-)
  create mode 100644 dm/tools/tests/test_nsp_dlc_folder.py
 
 diff --git a/dm/ios/tools/build_ipa.sh b/dm/ios/tools/build_ipa.sh
@@ -61,7 +61,7 @@ index df7ccd494d19a525e1f69a1036ea0c17d59d044e..771adaa8a915556809ad16fbd774c892
  if mac_only: print('gen_build: not in the iOS SDK, left out of the link: ' + ' '.join(mac_only), file=sys.stderr)
  print('DM_FRAMEWORKS = ' + ' '.join(f'-framework {f}' for f in fws if f not in mac_only))
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc427e0f0afd 100755
+index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..fa4f7507d8b923c08cb12b93958d3a51f63efce8 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
 @@ -26,6 +26,12 @@ MSL_FILES = ('*.metallib', '*.json', '*.tsv')   # what the host reads from msl/
@@ -77,7 +77,17 @@ index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc42
  ICON_SIZES = (16, 32, 128, 256, 512)
  DETRITUS = ('.DS_Store',)   # Finder leftovers beside the AppleDouble "._name" files, see detritus() and strip_detritus()
  
-@@ -120,7 +126,7 @@ def settings_rules(listed):   # DMSettings: what the launcher accepts as each se
+@@ -88,7 +94,8 @@ def min_os(host):   # the host's deployment target (LC_BUILD_VERSION minos): the
+ 
+ 
+ def swift_sources():   # the settings window, with the iOS launcher's model and rows
+-    return [HERE / 'Launcher.swift', HERE.parent / 'ios/Sources/LauncherSettings.swift', HERE.parent / 'ios/Sources/LauncherRow.swift']
++    return [HERE / 'Launcher.swift', HERE.parent / 'ios/Sources/LauncherSettings.swift', HERE.parent / 'ios/Sources/LauncherRow.swift',
++            HERE / 'nxforge/launcher_window.swift']   # NXForge's window (LauncherView stays for nxnative's layout check)
+ 
+ 
+ def build_launcher(out, minos, clang, swiftc, sdk):   # launcher.c's main and the host's cloud-save code (its send after the host exits), linked by swiftc with the settings window (no Swift main: -parse-as-library)
+@@ -120,7 +127,7 @@ def settings_rules(listed):   # DMSettings: what the launcher accepts as each se
  
  def info_plist(a, minos, icon):
      # LSSupportsGameMode off: macOS's Game Mode holds the GPU at its lowest clock while it is busy (docs/reference/frame-rate.md, macOS Game Mode holds the GPU at its lowest clock)
@@ -86,7 +96,7 @@ index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc42
           'CFBundleVersion': a.version or '1.0', 'CFBundleShortVersionString': a.version or '1.0', 'CFBundlePackageType': 'APPL', 'CFBundleExecutable': EXE,
           'CFBundleInfoDictionaryVersion': '6.0', 'LSMinimumSystemVersion': minos, 'LSArchitecturePriority': ['arm64'], 'NSHighResolutionCapable': True,
           'NSBluetoothAlwaysUsageDescription': 'Connect Switch 2 Joy-Con and Pro Controllers over Bluetooth.',
-@@ -164,11 +170,17 @@ def sign(app, identity, codesign):   # the inner host first, then the bundle (it
+@@ -164,11 +171,17 @@ def sign(app, identity, codesign):   # the inner host first, then the bundle (it
      strip_detritus(app)   # codesign sets an attribute on what it signs, which is a "._name" file again on exFAT: the signature still verifies without it, and a later --force would refuse it
  
  
@@ -106,7 +116,7 @@ index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc42
  
  
  def inventory(root):
-@@ -201,6 +213,35 @@ def copy_msl(msl, msls, dst, clone):
+@@ -201,6 +214,35 @@ def copy_msl(msl, msls, dst, clone):
      dst.mkdir(parents=True); copy(msls, dst, clone)
  
  
@@ -142,7 +152,7 @@ index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc42
  def selected_inputs(a):
      """Resolve once: these same lists supply both the reuse key and the copies."""
      for name in ('patched', 'romfs', 'msl', 'tables', 'font', 'aoc', 'pso'):
-@@ -261,6 +302,7 @@ def swap_by_moves(tmp, out):
+@@ -261,6 +303,7 @@ def swap_by_moves(tmp, out):
  
  
  def pack(a):
@@ -150,7 +160,7 @@ index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc42
      out = Path(a.out).resolve()
      if out.suffix != '.app': raise SystemExit(f'the output must end in .app: {out}')
      key_file = out.with_name(out.name + '.key')
-@@ -288,15 +330,19 @@ def pack(a):
+@@ -288,15 +331,19 @@ def pack(a):
          codesign = Path(codesign).resolve()
          minos = min_os(a.host)
          sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'tools/romfs.py'] + swift_sources()
@@ -173,7 +183,7 @@ index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc42
      except BaseException:
          key_file.unlink(missing_ok=True)
          raise
-@@ -306,11 +352,21 @@ def pack(a):
+@@ -306,11 +353,21 @@ def pack(a):
      c = tmp / 'Contents'; mac, res = c / 'MacOS', c / 'Resources'; dm = res / 'dm'
      for d in (mac, dm / 'font'): d.mkdir(parents=True)
      romfs, msl, aoc = Path(a.romfs), Path(a.msl), Path(a.aoc) if a.aoc else None
@@ -197,7 +207,7 @@ index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc42
      if need:
          free = shutil.disk_usage(res).free
          if need + (1 << 30) > free: raise SystemExit(f'the app needs {need / 2**30:.1f} GB on the volume of {out.parent} (no APFS clones from the build there) and {free / 2**30:.1f} GB are free')
-@@ -323,10 +379,23 @@ def pack(a):
+@@ -323,10 +380,23 @@ def pack(a):
      if fonts: copy(fonts, dm / 'font', False)
      if a.env_file: shutil.copyfile(a.env_file, dm / 'env.txt')
      if a.settings: shutil.copyfile(a.settings, dm / 'launcher.json')
@@ -224,7 +234,7 @@ index 64a7dcffacff4e0ffd3d02b88d5f817cfa410d83..3df1ad868f0b129f606e0f9f7043bc42
      if a.html and Path(a.html).is_dir(): copy([Path(a.html)], res / 'html', False)   # the offline pages, beside the RomFS where the host looks for them (hle_web.c)
      # The other programs: p<N>/ (RomFS, offline pages), msl/p<N>/<library>, dm/p<N>/ (modules, tables), and the table of them all, which the launcher makes DM_PROGRAMS (launcher.c, hle_oe.c): @R@ Resources, @C@ Contents, @S@ the app's Application Support folder
      if programs:
-@@ -387,8 +456,10 @@ def parse(argv):
+@@ -387,8 +457,10 @@ def parse(argv):
      ap.add_argument('--version'); ap.add_argument('--bundle-id'); ap.add_argument('--category'); ap.add_argument('--lang'); ap.add_argument('--marker', help='the profile\'s romfs_marker')
      ap.add_argument('--icon', help='the game icon (icon.jpg from the control data)')
      ap.add_argument('--sign', default='-', help='codesign identity (default: - = ad-hoc)')
@@ -511,7 +521,7 @@ index 5a6059fae68dd7ce8f9e6c44dea3c8a9254b9524..c5c7571a767a6001f30013a18e7d2a7b
          with self.assertRaisesRegex(pack_dump.Error, 'the base is'): pack_dump.pack_version(self.dump / f'updates/{VER}', TID + 0x2000, self.out(), say=lambda s: None)
  
 diff --git a/dm/tools/tests/test_nsp_mac_app.py b/dm/tools/tests/test_nsp_mac_app.py
-index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39dacbaf24 100644
+index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..77360b527e10242c8f7e34f4b69aeb5e4703478f 100644
 --- a/dm/tools/tests/test_nsp_mac_app.py
 +++ b/dm/tools/tests/test_nsp_mac_app.py
 @@ -1,5 +1,5 @@
@@ -521,7 +531,24 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
  code returned and SIGTERM forwarded to it, an alert when the game data is missing; the script's options and its pack_app.py command line; --seen-shaders' keys and partial library.
  No game files, keys or Xcode needed: a stand-in host compiled here records what it was given (temporary files only in a temporary folder)."""
  import contextlib
-@@ -182,6 +182,30 @@ class PackReuse(unittest.TestCase):
+@@ -109,7 +109,7 @@ class PackReuse(unittest.TestCase):
+         self.tmp = Path(tempfile.mkdtemp(prefix='pack-reuse-', dir=TEST_ROOT)).resolve()
+         self.addCleanup(shutil.rmtree, self.tmp)
+         t = self.tmp
+-        for d in ('patched', 'romfs/empty', 'msl', 'profile', 'font', 'aoc/1', 'pso', 'bin', 'sdk', 'source', 'host', 'tools', 'ios/Sources'):
++        for d in ('patched', 'romfs/empty', 'msl', 'profile', 'font', 'aoc/1', 'pso', 'bin', 'sdk', 'source', 'source/nxforge', 'host', 'tools', 'ios/Sources'):
+             (t / d).mkdir(parents=True)
+         files = {
+             'dmhost': b'host', 'patched/main.patched.bin': b'code', 'patched/main.fixups.tsv': b'fixups',
+@@ -120,6 +120,7 @@ class PackReuse(unittest.TestCase):
+             'env.txt': b'DM_TEST=1', 'split.tsv': b'split', 'icon.jpg': b'jpeg', 'source/launcher.c': b'launcher',
+             'host/romfs_image.h': b'validator', 'host/save_sync.c': b'sync', 'host/save_sync.h': b'sync api', 'tools/romfs.py': b'reader',
+             'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows',
++            'source/nxforge/launcher_window.swift': b'nxforge window',
+         }
+         for n in pack_app.TABLES: files['profile/' + n] = n.encode()
+         for n, content in files.items(): (t / n).write_bytes(content)
+@@ -182,6 +183,30 @@ class PackReuse(unittest.TestCase):
          self.assertIs(type(info['DMSaveSyncChoice']), int)
          self.assertEqual(info['DMSaveSyncChoice'], 1)   # the host follows DM_SAVE_SYNC_CHOICE (docs/frontends.md, The cloud saves folder)
  
@@ -552,7 +579,34 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
      def test_retargeted_input_symlink_repacks(self):
          msl = self.tmp / 'msl'
          for name in ('left.metallib', 'right.metallib'): (msl / name).write_bytes(b'same library')
-@@ -503,7 +527,7 @@ class App(unittest.TestCase):
+@@ -204,7 +229,7 @@ class PackReuse(unittest.TestCase):
+         names = ['dmhost', 'patched/main.patched.bin', 'patched/main.fixups.tsv', 'patched/main.gates.tsv', 'patched/main.cuts.tsv',
+                  'patched/main.obs.tsv', 'patched/nro.tsv', 'msl/k.metallib', 'msl/k.json', 'msl/inputs.tsv', 'font/nintendo_ext.ttf',
+                  'pso/gpu.mtl4a', 'pso/prebuilt.tsv', 'pso/rest_pairs.tsv', 'pso/archive.tsv', 'env.txt', 'icon.jpg', 'source/launcher.c',
+-                 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift',   # the settings window's sources
++                 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'source/nxforge/launcher_window.swift',   # the settings window's sources
+                  'host/save_sync.c', 'host/save_sync.h']   # the cloud-save code the launcher links (its send after the host exits)
+         names += ['profile/' + n for n in pack_app.TABLES]
+         for name in names:
+@@ -265,7 +290,7 @@ class PackReuse(unittest.TestCase):
+         self.assertIn(c[c.index('-o') + 1], s)   # launcher.c's object, with its main
+         sync = next(c for c in self.commands if Path(c[0]).name == 'clang' and '-o' in c and c[-1].endswith('save_sync.c'))
+         self.assertIn(sync[sync.index('-o') + 1], s)   # save_sync.c's object: the launcher sends the save once the host has exited
+-        self.assertEqual([Path(x).name for x in s if x.endswith('.swift')], ['Launcher.swift', 'LauncherSettings.swift', 'LauncherRow.swift'])
++        self.assertEqual([Path(x).name for x in s if x.endswith('.swift')], ['Launcher.swift', 'LauncherSettings.swift', 'LauncherRow.swift', 'launcher_window.swift'])
+ 
+     def test_selected_file_modes_and_file_additions_and_removals_invalidate(self):
+         self.pack()
+@@ -338,7 +363,7 @@ class PackReuse(unittest.TestCase):
+     def test_missing_selected_inputs_fail_before_reuse_or_partial_creation(self):
+         self.pack()
+         for name in ('dmhost', 'patched/main.fixups.tsv', 'msl/k.metallib', 'romfs/marker', 'pso/prebuilt.tsv', 'env.txt', 'icon.jpg',
+-                     'font', 'aoc', 'profile', 'bin/clang', 'bin/swiftc', 'sdk', 'bin/codesign', 'source/launcher.c', 'source/Launcher.swift', 'ios/Sources/LauncherRow.swift'):
++                     'font', 'aoc', 'profile', 'bin/clang', 'bin/swiftc', 'sdk', 'bin/codesign', 'source/launcher.c', 'source/Launcher.swift', 'ios/Sources/LauncherRow.swift', 'source/nxforge/launcher_window.swift'):
+             with self.subTest(name=name):
+                 p = self.tmp / name; hidden = p.with_name(p.name + '.hidden'); p.rename(hidden)
+                 try:
+@@ -503,7 +528,7 @@ class App(unittest.TestCase):
  
      def test_info_plist(self):
          p = plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())
@@ -561,7 +615,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
          self.assertEqual((p['DMTitleID'], p['DMLanguage'], p['DMRomfsMarker'], p['CFBundleIconFile']), (TID, 'fr', 'region_common/audio/edward.bfsar', 'AppIcon'))
          self.assertIs(p['LSSupportsGameMode'], False)   # macOS's Game Mode holds the GPU at its lowest clock (frame-rate.md)
          self.assertEqual(p['DMSettings'], [])   # launcher.json's settings, as the saved choices they accept: none here
-@@ -595,10 +619,12 @@ class App(unittest.TestCase):
+@@ -595,10 +620,12 @@ class App(unittest.TestCase):
          self.assertEqual((r['DM_ROMFS'], r['DM_MSL_DIR'], r['DM_NVN_SHMAP'], r['DM_FONT_DIR'], r['DM_AOC_DIR']),
                           (str(res / 'romfs'), str(res / 'msl'), str(res / 'dm/shader_map.tsv'), str(res / 'dm/font'), str(res / 'aoc')))
          self.assertEqual(r['DM_PSO_BUNDLE'], str(res / 'pso'))   # the pipeline archive made offline, as the iOS app's main.m sets it
@@ -576,7 +630,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
          self.assertIn('standin host output', (logs / f'{TID}.log').read_text())
          p = self.launch(); p.communicate(timeout=30)
          self.assertIn('standin host output', (logs / f'{TID}.prev.log').read_text())
-@@ -616,7 +642,7 @@ class App(unittest.TestCase):
+@@ -616,7 +643,7 @@ class App(unittest.TestCase):
      def test_missing_data(self):
          broken = self.tmp / 'Broken.app'; shutil.rmtree(broken, ignore_errors=True)
          subprocess.run(['/bin/cp', '-R', self.app, broken], check=True)
@@ -585,7 +639,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
          (self.tmp / 'home/alert.txt').unlink(missing_ok=True)
          p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(self.tmp / 'home'), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'), capture_output=True, text=True, timeout=30)
          self.assertEqual(p.returncode, 1)
-@@ -641,7 +667,7 @@ class App(unittest.TestCase):
+@@ -641,7 +668,7 @@ class App(unittest.TestCase):
          title = 'Game "Test" \\ Edition'
          plist = broken / 'Contents/Info.plist'
          info = plistlib.loads(plist.read_bytes()); info['CFBundleName'] = title; plist.write_bytes(plistlib.dumps(info))
@@ -594,7 +648,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
          home = self.tmp / 'home'
          (home / 'alert.scpt').unlink(missing_ok=True)
          p = subprocess.run([broken / 'Contents/MacOS/nxnative'], env=dict(HOME=str(home), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin'),
-@@ -652,6 +678,57 @@ class App(unittest.TestCase):
+@@ -652,6 +679,57 @@ class App(unittest.TestCase):
          self.assertEqual(args[2], title)   # data is passed separately from the compiled script
          self.assertIn('game data inside this app is missing', args[3])
  
@@ -652,7 +706,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
      def test_relocated(self):   # run with the entire build folder unavailable
          with tempfile.TemporaryDirectory(dir=TEST_ROOT) as dst:
              dst = Path(dst).resolve(); moved = dst / self.app.name; home = dst / 'home'; home.mkdir()
-@@ -732,12 +809,13 @@ class Script(unittest.TestCase):
+@@ -732,12 +810,13 @@ class Script(unittest.TestCase):
              ran.append([str(c) for c in cmd])
              if str(cmd[1]).endswith('dm/games/settings.py'):   # the launcher settings, before the packer
                  self.settings_env = env; Path(cmd[-1]).write_text('{}'); return
@@ -667,7 +721,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
              (out / 'Contents/MacOS').mkdir(parents=True); (out / 'Contents/MacOS/dmhost').write_bytes(b'x')
              on_line('step: launcher and host (clones of the game files)')
              on_line(f'app: {out}')
-@@ -747,7 +825,7 @@ class Script(unittest.TestCase):
+@@ -747,7 +826,7 @@ class Script(unittest.TestCase):
          with mock.patch.object(nsp, 'run', fake_run), mock.patch.object(nsp, 'PROG', self.prog), mock.patch.object(nsp, 'chain_of', lambda repo: '0123456789ab'), \
               mock.patch.object(nsp, 'mac_gpu_arch', lambda *a: 'applegpu_g14s'), mock.patch.object(nsp, 'say', self.said.append):
              nsp.mac_app(sys.executable, REPO, out, 0x01008CF01BAAC000, tmp, tmp / 'ex', tmp / 'patched', tmp / 'dmhost', tmp / 'font', tmp / 'shader/cache' if gfx == 'nvn' else tmp / 'shader',
@@ -676,7 +730,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
          self.pso_cmd = next((c for c in ran if c[1].endswith('pso_offline.py')), None)   # before the packer
          self.settings_cmd = next(c for c in ran if c[1].endswith('dm/games/settings.py'))
          c = ran[-1]; return {c[i]: c[i + 1] for i in range(3, len(c) - 1) if c[i].startswith('--')}, tmp
-@@ -755,9 +833,9 @@ class Script(unittest.TestCase):
+@@ -755,9 +834,9 @@ class Script(unittest.TestCase):
      def test_pack_command(self):
          o, tmp = self.pack_cmd('nvn')
          self.assertNotIn('--pso-pairs', o)   # no split copy
@@ -688,7 +742,7 @@ index 86b0f0548b11ec9c30c5a9a23f3beb677ea7d23e..1f6818945ec0d2989422d9590209de39
          o, tmp = self.pack_cmd('nvn')
          self.assertEqual((o['--msl'], o['--romfs'], o['--tables'], o['--title-id'], o['--sign'], o['--marker']),
                           (str(tmp / 'shader/cache/b-0123456789ab'), str(tmp / 'ex/RomFS'), str(tmp / 'profile'), TID, '-', 'a/b'))
-@@ -911,6 +989,14 @@ class SeenShaders(unittest.TestCase):   # --seen-shaders: the keys, the partial
+@@ -911,6 +990,14 @@ class SeenShaders(unittest.TestCase):   # --seen-shaders: the keys, the partial
              self.build()
          self.assertFalse(any('--seen-shaders' in m for m in self.said))
  

@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.27.5 (2026-11-12)
+
+- **A new settings window for every Mac game.** The window before the game starts is redesigned: a header with the game's icon, name and version over its artwork, and General and Advanced tabs with the settings in boxes side by side. General has Game (console mode, language, display mode), Controls (rumble and its strength, press a button to join, Switch 2 controllers), Graphics (frame rate, render scale, HDR highlights and boost, 120 fps frame interpolation) and Cloud saves; Advanced has the rest of Graphics (upscaling, anti-aliasing, dynamic resolution), rumble cutoff and Performance, with Reset to tested defaults. Notes under the rows are shorter, and the checkbox is now "Show at launch". The settings, their defaults and where they are saved are unchanged. Takes a rebuild of the game app.
+
 ## 0.27.4 (2026-11-12)
 
 - **120 fps frame interpolation, for every Switch game on the Mac** (`DM_PRESENT_INTERP`, experimental, off by default). On a 120 Hz screen each 60 fps frame gets an in-between picture made from the game's last two frames (a block motion search on a quarter-size picture, about 4 ms of GPU time on an M4 Pro at 1440p), and the real frame follows on the next refresh, about 8 ms later. Off, On or Auto (on only where the screen runs at 120 Hz or more), per game. Measured on Super Mario Odyssey: 120 pictures a second with the game at 59.5 fps; fast edges and the HUD can wobble.
