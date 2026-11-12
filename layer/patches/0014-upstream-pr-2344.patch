@@ -31,7 +31,7 @@ index 38be76cb7df4154195f4ab87a6ff843e7cf91b80..0741ae2b6dc9b4d8e4021e064f29ce1c
  - [Unused border corrections retain sample registers](../../../docs/reference/rendering.md#unused-border-corrections-retain-sample-registers): about 1.5 ms of GPU a frame at 1080p ([measurements](#unused-border-corrections)).
  
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 19d11df4bef39807005492979bb26692b73f745b..9394fab99c3600225affb315664a38f5e5037cab 100644
+index ed4a60c83c4e42d2c1cd2eeaf43e1e55a68a881e..25cfdadef9e6d87f5e887d3bdd4e4a6d42debe32 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -6961,6 +6961,19 @@ static void pool_seen_clear(int id_) {
@@ -140,7 +140,7 @@ index b84799eef67b6d4e883de014ef36ed7cc5745cbf..144a73546901eea709f9d3d40b0eaa96
  - a model has correct geometry, base colour and normals but appears as a black silhouette; deferred lighting's material-ID depth texture stays zero. → [IMAGE usage does not split texture storage](../reference/rendering.md#image-usage-does-not-split-texture-storage)
  - a surface that Unreal draws from a runtime virtual texture (a landscape floor) stays black; its BC tile caches read all zero in a texture dump, and nothing writes them on the GPU or the CPU; no red line. → [Copies into an uncompressed alias of a compressed texture](../reference/rendering.md#copies-into-an-uncompressed-alias-of-a-compressed-texture)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index fd11a110e1208b33a4f253f7cc36b21f203eae84..254284cf0a68c0a71372cefd120fe204c64d8133 100644
+index 59812577ea02011ada008946b49d9725d71a8c03..451a749744b889891ffb6a7cbfd97f9aac0280e0 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -220,6 +220,7 @@ DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render target

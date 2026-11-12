@@ -8,6 +8,8 @@
 // and an RGB aperture mask on the output columns, brightened by part of what they take away; the scanlines fade out where a line spans under 2.5 output pixels. CRT-Lottes: Timothy Lottes'
 // public-domain CRT shader (beams, bloom and a shadow mask on cells of the scanline height). LCD Grid: each cell a square with a dark gap and RGB thirds, like a handheld's screen. The filters work on the stored bytes as the bilinear stretch does (present_raw_src); the whole-window screenshot (grab_present) shows the filter too,
 // the raw swapchain screenshots (shot: DM_NVN_SHOT, DM_NVN_SHOT_UI) do not
+static int nxf_px_active(void); static int nxf_px_art_size(double *w, double *h);   // pixel_art.inc (included before present_encode_m4)
+static __thread int t_px_rows;   // pixel_art.inc: the present pass's texture rows per art row while it draws the art at its own size (0: the game's picture)
 static const char *const g_pfx_name[DM_PFX_N] = {"off", "sharpen", "pixel", "crt", "lottes", "lcd"};
 static id<MTLRenderPipelineState> g_pfx_pso[DM_PFX_N];   // [0] is g_blit_pso
 static _Atomic int g_pfx = -1; static _Atomic float g_pfx_k = 0.5f;
@@ -27,7 +29,7 @@ void mtl_present_scanline_set(int rows) {
     rows = rows < 0 ? 0 : rows > 8 ? 8 : rows;
     if (g_pfx_rows != rows) { g_pfx_rows = rows; if (rows) MLOG("present: CRT scanlines every %d source rows", rows); else MLOG("present: CRT scanlines auto (about 240 lines)"); }
 }
-static int pfx_mode(void) {   // any thread: the filter now, read from the environment the first time (a front end's mtl_present_filter_set before that wins)
+static int pfx_chosen(void) {   // any thread: the filter chosen, read from the environment the first time (a front end's mtl_present_filter_set before that wins)
     int m = g_pfx;
     if (m >= 0) return m;
     const char *e = getenv("DM_PRESENT_FILTER"), *k = getenv("DM_PRESENT_FILTER_STRENGTH"); int want = 0;
@@ -38,7 +40,9 @@ static int pfx_mode(void) {   // any thread: the filter now, read from the envir
     if (atomic_compare_exchange_strong(&g_pfx, &none, want) && want) MLOG("present: filter %s, strength %.2f (DM_PRESENT_FILTER)", g_pfx_name[want], (double)g_pfx_k);
     return g_pfx;
 }
-int mtl_present_filter(float *strength) { int m = pfx_mode(); if (strength) *strength = g_pfx_k; return m; }
+// The filter the present draws with: while pixel art is on (pixel_art.inc), no filter or Sharpen is sharp bilinear (Pixel), so the art's pixels stay even and crisp
+static int pfx_mode(void) { int m = pfx_chosen(); return (m == DM_PFX_OFF || m == DM_PFX_SHARPEN) && nxf_px_active() ? DM_PFX_PIXEL : m; }
+int mtl_present_filter(float *strength) { int m = pfx_chosen(); if (strength) *strength = g_pfx_k; return m; }
 void mtl_present_filter_set(int mode, float strength) {
     if (mode < 0 || mode >= DM_PFX_N) mode = 0;
     strength = strength < 0 ? 0 : strength > 1 ? 1 : strength;
@@ -76,14 +80,16 @@ unsigned mtl_aniso_pick(float game, int eligible) {
     return eligible && f > g ? f : g;
 }
 // The filter's parameters (the fragment functions' Crop.fx): strength, the output pixels per source texel on x and y (the viewport over the crop), which sharp bilinear needs,
-// and the CRT filter's scanline height in source rows
-static void pfx_params(float fx[4], const MTLViewport *vp, NSUInteger cw, NSUInteger ch) {
-    int rows = mtl_present_scanline(); if (!rows) rows = (int)fmax(1, floor(ch / 240.0 + 0.5));
+// and the CRT filter's scanline height in source rows (auto: about 240 lines, or one art row while pixel art draws the art at its own size). cw x ch: the crop in the texture
+// the pass reads, in its texels (fractional over pixel art's own grid)
+static void pfx_params(float fx[4], const MTLViewport *vp, double cw, double ch) {
+    int rows = mtl_present_scanline(); if (!rows) rows = t_px_rows ? t_px_rows : (int)fmax(1, floor(ch / 240.0 + 0.5));
     fx[0] = g_pfx_k; fx[1] = cw ? (float)(vp->width / cw) : 1; fx[2] = ch ? (float)(vp->height / ch) : 1; fx[3] = (float)rows;
 }
 // Picture size (front.h mtl_present_scale; the sidebar's Display section, or DM_PRESENT_SCALE=fit|stretch|integer): Fit keeps the game's shape with black bars (as before),
 // Stretch fills the window, Pixel-perfect enlarges the game's own pixels by a whole number (the largest that fits), so pixel art keeps every pixel the same size; where not even
-// one whole step fits it fits as before. present_fit asks here first (one line in nvn_mtl.m)
+// one whole step fits it fits as before. While pixel art is on and its own grid holds (pixel_art.inc), the whole steps are the art's pixels: a 320x180 game drawn into 1080p
+// fills 1800 rows of a 1898-row screen (10x) instead of 1080 (1x). present_fit asks here first (one line in nvn_mtl.m)
 static _Atomic int g_pscale = -1;
 int mtl_present_scale(void) {
     int s = g_pscale;
@@ -104,9 +110,10 @@ static int nxf_present_scale_fit(id<MTLTexture> src, double pw, double ph, doubl
     if (m == DM_PSCALE_STRETCH) { *vp = (MTLViewport){0, 0, dw, dh, 0, 1}; return 1; }
     if (m != DM_PSCALE_INTEGER || !src.width || !src.height || pw <= 0 || ph <= 0) return 0;
     // the game's pixels in the shape it is shown in: a 1280x720 texture shown 16:9 is 1280x720; an anamorphic one keeps its height and takes the shape's width
-    double sh = src.height, sw = sh * pw / ph, k = floor(fmin(dw / sw, dh / sh));
+    double sh = src.height, aw, ah; if (nxf_px_art_size(&aw, &ah)) sh = ah;
+    double sw = sh * pw / ph, k = floor(fmin(dw / sw, dh / sh));
     if (k < 1) return 0;
-    double w = round(sw * k), h = sh * k;
+    double w = round(sw * k), h = round(sh * k);
     *vp = (MTLViewport){floor((dw - w) / 2), floor((dh - h) / 2), w, h, 0, 1};
     return 1;
 }

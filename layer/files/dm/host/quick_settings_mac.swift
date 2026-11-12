@@ -15,7 +15,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.3.3"
+let SIDEBAR_VERSION = "0.4.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -27,6 +27,9 @@ private let sizeNames = ["Fit", "Stretch", "Pixel-perfect"]   // front.h DM_PSCA
 private let scaleFixed = env["DM_PRESENT_SCALE"] != nil
 private let aaNames = ["Off", "FXAA"]   // front.h DM_PAA_*, in that order
 private let interpNames = ["Off", "On", "Auto"]   // front.h mtl_present_interp, in that order
+// Pixel art (front.h DM_PIXEL_*: 0 off, 1 sharp, 2 smooth, 3 auto), in the menu's order
+private let pixelOrder = [Int(DM_PIXEL_AUTO), Int(DM_PIXEL_OFF), Int(DM_PIXEL_SHARP), Int(DM_PIXEL_SMOOTH)]
+private let pixelNames = [Int(DM_PIXEL_AUTO): "Auto", Int(DM_PIXEL_OFF): "Off", Int(DM_PIXEL_SHARP): "Sharp pixels", Int(DM_PIXEL_SMOOTH): "Smooth edges"]
 // Settings the game's settings window shows too (upscaling, anti-aliasing, HDR highlights and its strength, frame interpolation; front_mac_launcher_sync.inc): fixed here only when
 // the launch environment or an env file set them, not when the window or a saved choice did (the window puts every one of its settings into the environment)
 private let envSetKeys = Set(((env["DM_ENV_LAUNCH_KEYS"] ?? "") + " " + (env["DM_ENV_FILE_KEYS"] ?? "")).split(separator: " ").map(String.init))
@@ -51,7 +54,7 @@ private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods =
 enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
     case pauseOpen, duckOpen, backup, backupShow, settingsShow, settingsOpen, defaultsSave, defaultsUse
-    case fullscreen, scale, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
+    case fullscreen, scale, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
@@ -61,7 +64,7 @@ enum Nav: Hashable {
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .fullscreen, .scale, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .fullscreen, .scale, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
@@ -193,6 +196,9 @@ final class QuickSettings: ObservableObject {
     @Published var aniso = 0      // the chosen anisotropic filtering floor (0: the game's own)
     @Published var anisoRun = 0   // the one this launch took
     @Published var scale = 0      // picture size (DM_PSCALE_*)
+    @Published var pixel = Int(DM_PIXEL_AUTO)   // pixel art chosen (DM_PIXEL_*)
+    @Published var pixelActive = 0                // the mode in effect now (auto: off until the game shows pixel art)
+    @Published var pixelGrid: (w: Float, h: Float, s: Float)?   // the art's own size and texels per art pixel, while a grid holds
     @Published var fullscreen = false
     @Published var pauseOpen = true   // pause the game while the sidebar is up
     @Published var duckOpen = false   // quieter sound while it is up
@@ -243,7 +249,7 @@ final class QuickSettings: ObservableObject {
         paused = front_qs_paused() != 0; fullscreen = front_qs_fullscreen() != 0
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
-        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale())
+        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale()); pixel = Int(mtl_present_pixel()); refreshPixel()
         edr = mtl_present_edr() != 0; edrStrength = Double(mtl_present_edr_strength()) / 100; edrHeadroom = mtl_present_edr_headroom(); interp = Int(mtl_present_interp()); interpActive = mtl_present_interp_active() != 0
         shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
         settingsPath = String(cString: front_qs_settings_path()); defaultsExist = front_qs_defaults_exist() != 0
@@ -368,13 +374,33 @@ final class QuickSettings: ObservableObject {
         mtl_present_scanline_set(Int32(r)); scanline = r
         if env["DM_PRESENT_SCANLINE"] == nil { UserDefaults.standard.set(r, forKey: pfxKey("scanline")) }
     }
+    /// Pixel art's state now (auto turns on by itself, and the art's grid follows the scene): the Graphics page asks every second while it shows
+    func refreshPixel() {
+        let a = Int(mtl_present_pixel_active()); if a != pixelActive { pixelActive = a; interpActive = mtl_present_interp_active() != 0 }
+        var w: Float = 0, h: Float = 0, k: Float = 0
+        let g: (w: Float, h: Float, s: Float)? = mtl_present_pixel_grid(&w, &h, &k) != 0 ? (w, h, k) : nil
+        if g?.w != pixelGrid?.w || g?.h != pixelGrid?.h || g?.s != pixelGrid?.s { pixelGrid = g }
+    }
+    func setPixel(_ n: Int) {   // at once, from the next frame
+        guard !envFixed("DM_PIXEL_ART") else { return }
+        pixel = n; mtl_present_pixel_set(Int32(n)); UserDefaults.standard.set(n, forKey: optKey("pixel")); refreshPixel()
+    }
+    /// The line under Pixel art: what it does now
+    var pixelNote: String {
+        if envFixed("DM_PIXEL_ART") { return "Set by DM_PIXEL_ART for this run" }
+        if pixelActive == 0 { return pixel == Int(DM_PIXEL_AUTO) ? "Auto: turns on by itself when the game draws pixel art" : "Off: the picture as the settings below make it" }
+        let paused = "MetalFX, anti-aliasing, HDR highlights and frame interpolation wait while it is on."
+        guard let g = pixelGrid else { return "On: this scene has no pixel grid, so the picture is scaled sharply. " + paused }
+        return "On: the art is \(Int(g.w.rounded()))×\(Int(g.h.rounded())), every pixel the same size" + (pixelActive == Int(DM_PIXEL_SMOOTH) ? ", diagonals smoothed. " : ". ") + paused
+    }
+    var pixelPaused: Bool { pixelActive != 0 }
     func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); UserDefaults.standard.set(n, forKey: optKey("scale")) }
     func toggleFullscreen() { front_qs_fullscreen_toggle() }
-    var graphicsChanged: Bool { filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
+    var graphicsChanged: Bool { pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
-        setUpscale(true); setScale(0)
+        setUpscale(true); setScale(0); setPixel(Int(DM_PIXEL_AUTO))
         if !envFixed("DM_PRESENT_AA") { setAA(0) }
         setEDR(false); setEDRStrength(0.5)
         if env["DM_ANISO"] == nil { setAniso(anisoDefault) }
@@ -533,7 +559,7 @@ final class QuickSettings: ObservableObject {
         switch p {
         case pGeneral:
             return [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
-        case pGraphics: return [[.fullscreen], [.scale], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
+        case pGraphics: return [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
@@ -585,6 +611,7 @@ final class QuickSettings: ObservableObject {
         case .duckOpen: setDuck(d > 0)
         case .fullscreen: if (d > 0) != fullscreen { toggleFullscreen() }
         case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
+        case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[min(max(i + d, 0), pixelOrder.count - 1)]) }
         case .crt: setCRT(d > 0)
         case .strength: if crtOn { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
         case .scanlines: if crtOn { setScanline(min(max(scanline + d, 0), 8)) }
@@ -621,6 +648,7 @@ final class QuickSettings: ObservableObject {
         case .defaultsUse: useDefaults()
         case .fullscreen: toggleFullscreen()
         case .scale: setScale((scale + 1) % sizeNames.count)
+        case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[(i + 1) % pixelOrder.count]) }
         case .crt: setCRT(!crtOn)
         case .scanlines: if crtOn { setScanline((scanline + 1) % 9) }
         case .upscale: setUpscale(!upscale)
@@ -909,7 +937,15 @@ struct QuickSettingsView: View {
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(scaleFixed)
             }.nav(m, .scale)
             note(scaleFixed ? "Set by DM_PRESENT_SCALE for this run" : m.scale == 1 ? "Fills the window; the picture may look wider or taller than the game draws it"
-                 : m.scale == 2 ? "Each game pixel the same whole number of screen pixels: crisp pixel art, with a border" : "The game's shape, with black bars where the window is wider or taller")
+                 : m.scale == 2 ? (m.pixelGrid != nil && m.pixelPaused ? "Each art pixel the same whole number of screen pixels, counted on the art's own grid, with a border"
+                                   : "Each game pixel the same whole number of screen pixels: crisp pixel art, with a border") : "The game's shape, with black bars where the window is wider or taller")
+            // Pixel art: sharp, even pixels for 2D games, on the art's own grid where the game enlarged it (pixel_art.inc); auto turns it on where the picture shows pixel art
+            Row(title: "Pixel art", changed: m.pixel != Int(DM_PIXEL_AUTO)) {
+                Picker("Pixel art", selection: Binding(get: { m.pixel }, set: { m.setPixel($0) })) {
+                    ForEach(pixelOrder, id: \.self) { Text(pixelNames[$0] ?? "").tag($0) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(envFixed("DM_PIXEL_ART"))
+            }.nav(m, .pixel)
+            note(m.pixelNote)
             subhead("Look").padding(.top, 6)
             Row(title: "CRT filter", changed: m.crtOn) {
                 Toggle("CRT filter", isOn: Binding(get: { m.crtOn }, set: { on in withAnimation(motion) { m.setCRT(on) } })).toggleStyle(.switch).labelsHidden().disabled(filterFixed)
@@ -936,6 +972,8 @@ struct QuickSettingsView: View {
                 Toggle("MetalFX upscaling", isOn: Binding(get: { m.upscale }, set: { m.setUpscale($0) })).toggleStyle(.switch).labelsHidden().disabled(upscaleFixed)
             }.nav(m, .upscale)
             note(upscaleFixed ? "Set by DM_PRESENT_UPSCALE for this run"
+                 : m.upscale && m.pixelPaused ? "Waits while Pixel art is on"
+                 : m.upscale && m.scale == 2 ? "Not used with Pixel-perfect picture size: it keeps every pixel square"
                  : m.upscale && m.crtOn ? "Not used while the CRT filter is on: it needs the game's own pixels"
                  : "Sharper than plain stretching when the window is larger than the game")
             // Anti-aliasing: FXAA over the game's picture, smoothing jagged edges in games without their own; it softens small HUD text a little
@@ -944,6 +982,7 @@ struct QuickSettingsView: View {
                     ForEach(aaNames.indices, id: \.self) { Text(aaNames[$0]).tag($0) }
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(envFixed("DM_PRESENT_AA"))
             }.nav(m, .aa)
+            if m.aa != 0 && m.pixelPaused { note("Waits while Pixel art is on") }
             // Anisotropic filtering: sharper textures on surfaces seen at an angle; the game's samplers take it when they are made, so it applies at the next start
             Row(title: "Anisotropic filtering", changed: m.aniso != anisoDefault, nextLaunch: env["DM_ANISO"] == nil ? m.anisoPending : nil) {
                 Picker("Anisotropic filtering", selection: Binding(get: { m.aniso }, set: { m.setAniso($0) })) {
@@ -964,10 +1003,11 @@ struct QuickSettingsView: View {
                 }.nav(m, .edrStrength)
             }
             note(envFixed("DM_PRESENT_EDR") ? "Set by DM_PRESENT_EDR for this run"
+                 : m.edr && m.pixelPaused ? "Waits while Pixel art is on, which keeps the game's own colours"
                  : m.edrHeadroom <= 1.01 ? "Needs an XDR or HDR screen; this one shows SDR, so the picture stays the same"
                  : "Sun, lava and shiny things glow brighter than white. White HUD text brightens too")
             resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
-        }
+        }.onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in m.refreshPixel() }   // auto turns on by itself, and the art's grid follows the scene
     }
     private var performance: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -989,6 +1029,7 @@ struct QuickSettingsView: View {
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(envFixed("DM_PRESENT_INTERP"))
             }.nav(m, .interp)
             note(envFixed("DM_PRESENT_INTERP") ? "Set by DM_PRESENT_INTERP for this run"
+                 : m.interp != 0 && m.pixelPaused ? "Waits while Pixel art is on (Graphics): flat sprites would wobble"
                  : m.interp == 2 && !m.interpActive ? "Auto: off on this screen, which runs below 120 Hz"
                  : "60 FPS games shown at 120 on a 120 Hz screen, about 8 ms later. Experimental: fast edges and the HUD can wobble")
             subhead("Frame times").padding(.top, 6)

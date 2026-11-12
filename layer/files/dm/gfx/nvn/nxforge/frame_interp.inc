@@ -29,7 +29,7 @@ void mtl_present_interp_set(int mode) {
     if (atomic_exchange(&g_fi, mode) != mode) MLOG("present: frame interpolation %s", g_fi_name[mode]);
 }
 // Whether the display link should run at 120 Hz for it (link_sync): on, or auto on a screen of 120 Hz or more
-static int nxf_fi_wants_link(void) { int m = mtl_present_interp(); return m == 1 || (m == 2 && front_screen_max_fps() >= 120); }
+static int nxf_fi_wants_link(void) { int m = mtl_present_interp(); return !nxf_px_active() && (m == 1 || (m == 2 && front_screen_max_fps() >= 120)); }   // not while pixel art is on: flat sprites wobble
 int mtl_present_interp_active(void) { return nxf_fi_wants_link(); }
 // Whether a display-link callback may draw or show an in-between picture (the delegate, under g_pq_mu): only on the link's own thread ("nvn-present-link"), and only once the
 // drawable has kept its size for FI_SETTLE_NS. A window change runs callbacks from the thread that flushes its transaction (the main thread, CA's deferred display links) while the
