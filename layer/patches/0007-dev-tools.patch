@@ -11,8 +11,8 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  dm/tools/tests/test_triage_report.py |  8 +++++---
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
- scripts/regress.py                   | 19 ++++++++++---------
- 8 files changed, 63 insertions(+), 30 deletions(-)
+ scripts/regress.py                   | 23 ++++++++++++++---------
+ 8 files changed, 67 insertions(+), 30 deletions(-)
 
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
 index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..c4ae3b59eee9ae1f916cc7e53f25458584afd886 100644
@@ -273,7 +273,7 @@ index e63bbbbfc910a747b11fd3b090be67f1a2343341..dc069829654dc6341e8be1e963b0702c
      for d in dirs:
          if d.is_symlink() or not d.is_dir(): continue
 diff --git a/scripts/regress.py b/scripts/regress.py
-index 6b556df7dc7ecd4eec9253083f5618f35a97528c..7489f4fae729399315cbd89bd184d652c4b9650c 100644
+index 6b556df7dc7ecd4eec9253083f5618f35a97528c..c3a88a2e93b7f0cc22dc618f36f73944ef7218df 100644
 --- a/scripts/regress.py
 +++ b/scripts/regress.py
 @@ -253,7 +253,8 @@ class Game:
@@ -300,50 +300,58 @@ index 6b556df7dc7ecd4eec9253083f5618f35a97528c..7489f4fae729399315cbd89bd184d652
          v, inp = json.loads(tree.py("import sys, json; sys.path.insert(0, 'dm/gfx/tools'); import dmsh_chain as c; g = c.load_game(); print(json.dumps([c.version(), c.inputs(g)]))", g.env(tree)))
          side = digest([tree.path / 'dm/gfx/tools' / f for f in ('c1_guard.py', 'cb_extent.py', 'dmsh_mtlcache.py', 'dmsh_pch.py', 'own_compilers.py', 'tool_lock.py')] + [tree.path / 'dm/games/game.py'])
 -        pkg = g.build / 'shader/pkg'
-+        pkg = g.shader / 'pkg'
++        pkg = shader_dir(g) / 'pkg'
          sources = digest(sorted(p for p in pkg.rglob('*') if p.is_file()), root=pkg)
          pairs = g.profile_dir(tree) / 'pso_pairs.tsv'
 -        if not pairs.is_file(): pairs = g.build / 'shader/pso_pairs.tsv'
-+        if not pairs.is_file(): pairs = g.shader / 'pso_pairs.tsv'
++        if not pairs.is_file(): pairs = shader_dir(g) / 'pso_pairs.tsv'
          side += digest([pairs])
      elif g.kind == 'vk':
          v, inp = digest([tree.path / 'dm/gfx/tools/vk_shaders.py'])[:12], g.ver
-@@ -429,7 +430,7 @@ def shader_cache_limit(g, a):
+@@ -425,11 +426,15 @@ def chain_cache(tree, g):
+     return game_root(g) / 'cas.db'
+ 
+ 
++def shader_dir(g):   # NXForge: the build's shader folder (bench.shader_folder); a game object without one (an older revision's, a test's) has it at build/shader
++    return getattr(g, 'shader', None) or g.build / 'shader'
++
++
+ def shader_cache_limit(g, a):
      """Four full libraries of headroom, at least 8 GiB; an explicit --shader-cache-gb is a fixed budget. Recomputed after a build, so a larger new library raises the automatic limit."""
      explicit = getattr(a, 'shader_cache_gb', None)
      if explicit is not None: return int(explicit * (1 << 30))
 -    images = list((g.build / 'shader/cache').glob('b-*.img')) + list((game_root(g) / 'chain').glob('*/b-*.img'))
-+    images = list((getattr(g, 'shader', g.build / 'shader') / 'cache').glob('b-*.img')) + list((game_root(g) / 'chain').glob('*/b-*.img'))
++    images = list((shader_dir(g) / 'cache').glob('b-*.img')) + list((game_root(g) / 'chain').glob('*/b-*.img'))
      largest = 0
      for p in images:
          try: largest = max(largest, p.stat().st_size)
-@@ -496,9 +497,9 @@ def chain_build_locked(tree, g, a, v, inp, key, out):
+@@ -496,9 +501,9 @@ def chain_build_locked(tree, g, a, v, inp, key, out):
          lib = out / f'b-{v}'
          if not done:
              say(f'  {g.id}: chain {v} (inputs {inp}) of {tree.id}: translating the shaders ({jobs} workers) → {out}')
 -            command = [sys.executable, entry, g.build / 'shader/pkg', out]
-+            command = [sys.executable, entry, g.shader / 'pkg', out]
++            command = [sys.executable, entry, shader_dir(g) / 'pkg', out]
              if cas.suffix == '.db':
 -                command = [sys.executable, REPO / 'dm/tools/shader_cache.py', '--run', '--readonly', g.build / 'shader/cache/cas.db', entry, g.build / 'shader/pkg', out]
-+                command = [sys.executable, REPO / 'dm/tools/shader_cache.py', '--run', '--readonly', g.shader / 'cache/cas.db', entry, g.shader / 'pkg', out]
++                command = [sys.executable, REPO / 'dm/tools/shader_cache.py', '--run', '--readonly', shader_dir(g) / 'cache/cas.db', entry, shader_dir(g) / 'pkg', out]
                  rc, paused = run_heavy(command, log, tree.path, env, a, f'{g.id} shader build')
              else:
                  tree_tar.unpack(cas, say)
-@@ -624,7 +625,7 @@ def interface_check(tree, g, out):
+@@ -624,7 +629,7 @@ def interface_check(tree, g, out):
      pipeline, and one refused pipeline fails the whole archive (GitHub issue #283). The entry points are pso_offline's: the reflection's entry (entry_z for a near = 0 game)"""
      lib = chain_lib(out); chain = shader_lib.name_of(lib)[2:]
      prof = g.profile_dir(tree)
 -    pairs = [prof / 'shader_pairs.tsv', prof / 'pso_pairs.tsv' if (prof / 'pso_pairs.tsv').is_file() else g.build / 'shader/pso_pairs.tsv']
-+    pairs = [prof / 'shader_pairs.tsv', prof / 'pso_pairs.tsv' if (prof / 'pso_pairs.tsv').is_file() else g.shader / 'pso_pairs.tsv']
++    pairs = [prof / 'shader_pairs.tsv', prof / 'pso_pairs.tsv' if (prof / 'pso_pairs.tsv').is_file() else shader_dir(g) / 'pso_pairs.tsv']
      po = tree.path / 'dm/gfx/tools/pso_offline.py'
      if not po.is_file(): return {'checked': 0, 'note': 'no pso_offline.py in this revision', 'bad': []}
      mod = load_module('pso_offline_' + tree.id.replace('-', '_'), po)
-@@ -1021,7 +1022,7 @@ def run_env(g, art, route, outdir, a):
+@@ -1021,7 +1026,7 @@ def run_env(g, art, route, outdir, a):
                 DM_WINDOW='1', DM_WINDOW_TOP='1', DM_FOCUS_KEEP='1', DM_AUDIO='0', DM_METAL_HUD='0' if a.no_hud else '1', DM_CTL=str(outdir / 'ctl'), TMPDIR=str(game_root(g) / 'tmp') + '/')
      if g.kind == 'nvn':
          env.update(DM_NVN_SHMAP=str(prof / 'shader_map.tsv'), DM_NVN_TSV=str(outdir / 'frames.tsv'), DM_NVN_TSV_CALLS='0')
 -        if not (prof / 'pso_pairs.tsv').is_file() and (g.build / 'shader/pso_pairs.tsv').is_file(): env['DM_PSO_PAIRS'] = str(g.build / 'shader/pso_pairs.tsv')
-+        if not (prof / 'pso_pairs.tsv').is_file() and (g.shader / 'pso_pairs.tsv').is_file(): env['DM_PSO_PAIRS'] = str(g.shader / 'pso_pairs.tsv')
++        if not (prof / 'pso_pairs.tsv').is_file() and (shader_dir(g) / 'pso_pairs.tsv').is_file(): env['DM_PSO_PAIRS'] = str(shader_dir(g) / 'pso_pairs.tsv')
      if (g.build / 'aoc').is_dir(): env['DM_AOC_DIR'] = str(g.build / 'aoc')
      for kv in a.env: k, _, v = kv.partition('='); env[k] = v
      try: run_saves.cloud_off(env, run_saves.asked(a.env))   # last, after every override: cloud saves off (dm/tools/run_saves.py)
