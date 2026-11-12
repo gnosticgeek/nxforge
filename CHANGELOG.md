@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.29.1 (2026-11-12)
+
+- **Frame interpolation no longer slows a game down in full screen.** On a variable-refresh screen in full screen, macOS showed each present one refresh late and the display link then skipped a tick. With an in-between picture on every refresh, the link called back about 80 times a second instead of 120, so Donkey Kong Country Returns HD was paced at 40 fps and ran in slow motion (it was smooth at 60 in a window). Interpolation now counts the link's callbacks. After a second at 30 to 100 a second, it turns itself off at that window size and the game's frames go up every other refresh, which holds 60 there. A new window size tries again. Takes a rebuild of the game app (no shader rebuild).
+
 ## 0.29.0 (2026-11-12)
 
 - **Pixel art: crisp, even pixels for 2D games** (`DM_PIXEL_ART`; the settings window's **Graphics › Pixel art** and the sidebar's **Graphics › Pixel art**, per game). Auto (the default) turns it on by itself once a game's picture shows a steady pixel grid for about a second; Off, **Sharp pixels** and **Smooth edges** choose it by hand.

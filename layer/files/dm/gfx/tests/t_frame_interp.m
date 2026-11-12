@@ -1,6 +1,7 @@
 // NXForge: frame interpolation through the display-link callback (frame_interp.inc), offscreen drawables and no window: 60 fps frames on a 120 Hz link, each frame an
 // in-between picture on one tick and the held frame on the next. Then what 0.28.3 changed: a callback on another thread (CA runs deferred display links from the thread that
-// flushes a window change) and the first second after the drawable changes size present the game's frames only, and a rescue in mode 1 is not ended by the 120 Hz link it asks for
+// flushes a window change) and the first second after the drawable changes size present the game's frames only, and a rescue in mode 1 is not ended by the 120 Hz link it asks for.
+// 0.29.1: a link that calls back only about 80 times a second turns them off at that drawable size
 #include "../nvn/nvn_mtl.m"
 @interface FakeLinkUpdate : NSObject
 @property id<CAMetalDrawable> drawable;
@@ -67,6 +68,17 @@ int main(void) { @autoreleasepool {
     usleep(1100000); frames(10);
     CHECK("and they come back once it has kept its size for a second", g_fi_mid_n >= m1 + 9);
     CHECK("every present completed", drain() == 0);
+
+    // A link that calls back 80 times a second (full screen at latency 2, 0.29.1): interpolation turns off at that size, and comes back at a new size
+    usleep(1100000); uint64_t m2 = g_fi_mid_n;
+    for (int i = 0; i < 120; i++) { present_enqueue(i & 1 ? &g_b : &g_a, 1. / 60, NULL, 0, NULL); tick(); usleep(12500); tick(); usleep(12500); }
+    uint64_t m3 = g_fi_mid_n;
+    snprintf(name, sizeof name, "a link at 80 a second turns them off (%llu in-between pictures, then %d)", (unsigned long long)(m3 - m2), g_fi_slow); CHECK(name, g_fi_slow && m3 - m2 < 100);
+    frames(10); CHECK("and they stay off at that size", g_fi_mid_n == m3);
+    g_test_layer.drawableSize = CGSizeMake(2560, 1440); mtl_present_layer(2560, 1440);
+    frames(2); usleep(1100000); frames(10);
+    CHECK("a new size tries them again", g_fi_mid_n >= m3 + 9);
+    CHECK("every present completed after that", drain() == 0);
 
     // A rescue of mode 1 (link_sync): the 120 Hz link that interpolation asks for does not end it
     g_rescue_mode = 1; g_rescue_back_at = now_ns() + 3000000000ull; link_sync();
