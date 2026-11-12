@@ -27,6 +27,7 @@ fails into the release PR. A row that has never been tried in a running game say
 - [ ] Full screen holds 60 fps on the built-in display.
 - [ ] Quick settings (Esc or Home) opens; a controller moves through it, L / R turn the pages and the legend shows its buttons; a Next launch change shows Restart game, which (pressed twice) restarts the game; Quit, pressed twice, ends it.
 - [ ] The CRT filter (strength, line size) changes the picture, and MetalFX and FXAA switch on and off.
+- [ ] In a 2D pixel-art game (Curse of the Moon, Celeste), Pixel art on Auto turns on within a few seconds, the sidebar names the art's size, and Smooth edges rounds diagonals.
 - [ ] Volume in Quick settings changes the sound.
 - [ ] A screenshot (⇧⌘S) and a short recording (⇧⌘R) land in the game folder and open.
 - [ ] A remapped key or button works, and Reset puts it back.

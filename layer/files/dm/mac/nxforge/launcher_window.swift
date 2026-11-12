@@ -13,6 +13,7 @@ enum NXFLauncherLayout {
         ("Resolution", ["DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER", "DM_SCREEN_ASPECT", "DM_PRESENT_AA"]),
         ("Frame rate", ["DM_FPS_TARGET", "DM_PRESENT_INTERP"]),
         ("HDR", ["DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH"]),
+        ("Pixel art", ["DM_PIXEL_ART"]),
     ]
     static let graphics: [String] = graphicsBoxes.flatMap(\.envs)
     /// The Advanced tab's boxes: Performance split in two so the columns match
@@ -31,6 +32,7 @@ enum NXFLauncherLayout {
         "DM_PRESENT_EDR": "On an XDR or HDR screen, highlights glow above white.",
         "DM_PRESENT_INTERP": "Shows 60 fps at 120 fps, about 8 ms later. Experimental.",
         "DM_PRESENT_AA": "Smooths jagged edges; small text softens a little.",
+        "DM_PIXEL_ART": "Crisp, even pixels for 2D games. Auto turns it on by itself.",
         "DM_SW2": "Pair Joy-Con 2 or Pro Controller 2 over Bluetooth.",
         "DM_PRESENT_SNAP": "Adds up to one frame of display latency.",
         "DM_PSO_MTL4": "Caches pipelines; uses more memory.",

@@ -12,6 +12,7 @@ static const char *const sf_lines[] = {"auto", "1", "2", "3", "4", "5", "6", "7"
 static const char *const sf_aa[] = {"off", "fxaa"};
 static const char *const sf_size[] = {"fit", "stretch", "pixel-perfect"};   // DM_PSCALE_*
 static const char *const sf_interp[] = {"off", "on", "auto"};   // front.h mtl_present_interp
+static const char *const sf_pixel[] = {"off", "sharp", "smooth", "auto"};   // front.h DM_PIXEL_*
 static const char *const sf_corner[] = {"top-left", "top-right", "bottom-left", "bottom-right"};
 // key: the user defaults key's middle part (pfx: DMPresentFilter.<key>.<game>, else DMQuickSettings.<key>.<game>); aniso and upscale are handled by name
 static const sf_entry g_sf[] = {
@@ -24,6 +25,7 @@ static const sf_entry g_sf[] = {
     {"hdr_highlights", "edr", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"hdr_strength", "edrStrength", 0, SF_PERCENT, NULL, 0, 1, "50"},
     {"picture_size", "scale", 0, SF_PICK, sf_size, 3, 1, "fit"},
+    {"pixel_art", "pixel", 0, SF_PICK, sf_pixel, 4, 1, "auto"},
     {"volume", "volume", 0, SF_PERCENT, NULL, 0, 1, "100"},
     {"muted", "muted", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"pause_while_open", "pauseOpen", 0, SF_BOOL, NULL, 0, 1, "on"},

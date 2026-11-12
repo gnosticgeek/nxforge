@@ -4,6 +4,13 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.4.0 (2026-11-12)
+
+Pixel art. Ships in NXForge 0.29.0.
+
+- **Graphics › Pixel art** (Auto, Off, Sharp pixels, Smooth edges; `dm/gfx/nvn/nxforge/pixel_art.inc`): crisp, even pixels for 2D games, on the art's own pixel grid where the game enlarged it. The note under it says what it does now: waiting for pixel art (Auto), or the art's size while it is on. Saved per game, in the settings file (`pixel_art`) and in the settings window (`launcher.DM_PIXEL_ART`).
+- MetalFX upscaling, Anti-aliasing, HDR highlights and Frame interpolation say "Waits while Pixel art is on" while it is; MetalFX says it is not used with a Pixel-perfect picture size.
+
 ## 0.3.3 (2026-11-12)
 
 A warning when GPU memory is nearly full. Ships in NXForge 0.28.2.

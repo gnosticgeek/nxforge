@@ -1,6 +1,6 @@
 // NXForge: included by nxforge/front_mac_quick_settings.inc (it shares front_mac.m's statics). See UPSTREAM.md, Thin fork.
-// The settings the game's settings window (dm/mac/Launcher.swift, rows from dm/games/settings.tsv) and the sidebar both show: anti-aliasing, HDR highlights and its strength, and
-// frame interpolation. The sidebar keeps them as before (DMQuickSettings.<what>.<game>, and the settings file); the window keeps launcher.<VAR> strings, which launcher.c and the
+// The settings the game's settings window (dm/mac/Launcher.swift, rows from dm/games/settings.tsv) and the sidebar both show: anti-aliasing, HDR highlights and its strength,
+// frame interpolation and pixel art. The sidebar keeps them as before (DMQuickSettings.<what>.<game>, and the settings file); the window keeps launcher.<VAR> strings, which launcher.c and the
 // window put into the environment at launch. Two stores, kept equal here:
 //   - the host mirrors each sidebar value into launcher.<VAR> (removed at the default, as the window does), and notes what it wrote in nxforge.mirror.<VAR>
 //   - at launch, a launcher.<VAR> that differs from that note was changed in the window since: the sidebar takes it (and the settings file follows)
@@ -30,11 +30,13 @@ enum { LW_BOOL, LW_PICK, LW_FRACTION };   // a fraction: the window's slider wri
 typedef struct { const char *var; const char *what; int kind; const char *const *picks; int npicks; const char *def; } lw_entry;
 static const char *const lw_aa[] = {"off", "fxaa"};           // DM_PAA_*, as DM_PRESENT_AA takes them
 static const char *const lw_interp[] = {"off", "on", "auto"};  // mtl_present_interp, as DM_PRESENT_INTERP takes them
+static const char *const lw_pixel[] = {"off", "sharp", "smooth", "auto"};  // DM_PIXEL_*, as DM_PIXEL_ART takes them
 static const lw_entry g_lw[] = {
     {"DM_PRESENT_AA", "aa", LW_PICK, lw_aa, 2, "off"},
     {"DM_PRESENT_EDR", "edr", LW_BOOL, NULL, 0, "0"},
     {"DM_PRESENT_EDR_STRENGTH", "edrStrength", LW_FRACTION, NULL, 0, "0.50"},
     {"DM_PRESENT_INTERP", "interp", LW_PICK, lw_interp, 3, "off"},
+    {"DM_PIXEL_ART", "pixel", LW_PICK, lw_pixel, 4, "auto"},
 };
 enum { LW_N = sizeof g_lw / sizeof g_lw[0] };
 

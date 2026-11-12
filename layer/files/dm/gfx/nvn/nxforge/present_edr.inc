@@ -34,7 +34,7 @@ static void nxf_edr_layer(CAMetalLayer *layer) {
         if (s && [s respondsToSelector:NSSelectorFromString(@"maximumPotentialExtendedDynamicRangeColorComponentValue")]) h = [[s valueForKey:@"maximumPotentialExtendedDynamicRangeColorComponentValue"] floatValue];
         if (fabsf(h - g_edr_head) > 0.01f) MLOG("present: screen EDR headroom %.2fx SDR white", (double)h);
         g_edr_head = h < 1 ? 1 : h; asking = 0; });
-    int on = mtl_present_edr(), is = layer.pixelFormat == MTLPixelFormatRGBA16Float;
+    int on = mtl_present_edr() && !nxf_px_active(), is = layer.pixelFormat == MTLPixelFormatRGBA16Float;   // pixel art keeps the game's colours (pixel_art.inc)
     if (on == is) return;
     if (on) {
         CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);

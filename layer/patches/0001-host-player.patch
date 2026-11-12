@@ -8,7 +8,7 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/gfx/gl/hle_gl.m    |  21 ++++--
  dm/gfx/vk/hle_vk.m    |   5 +-
  dm/host/Makefile      |  14 ++--
- dm/host/front.h       |  70 +++++++++++++++++-
+ dm/host/front.h       |  79 ++++++++++++++++++++-
  dm/host/front_mac.m   | 161 ++++++++++++++++++++++++++++++++----------
  dm/host/hle.h         |   2 +
  dm/host/hle_audio.c   |  15 +++-
@@ -17,7 +17,7 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/host/web_apple.m   |  19 +++--
  dm/mac/Launcher.swift |   6 +-
  dm/mac/launcher.c     | 108 +++++++++++++++++++++++++---
- 12 files changed, 368 insertions(+), 83 deletions(-)
+ 12 files changed, 377 insertions(+), 83 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
 index 285e675e42a3457972158496b2cba98f58fe54c0..31bc6a6619fc434ec224c61114e844f0f78483a9 100644
@@ -84,7 +84,7 @@ index 125014a714ed8afee2edae931366e200658dc70a..b53a2ade8449af855b22c8565435f9eb
      q->occ[q->nvis] = (occ_t){s->aq, s->aq_first, q->nvis};
      [s->re setVisibilityResultMode:MTLVisibilityResultModeCounting offset:q->nvis * 8]; q->nvis++;
 diff --git a/dm/host/Makefile b/dm/host/Makefile
-index 461132fb707e7b9b1053ccbd9da5116d582e87ab..c94a95cff67cb46103fbbed8bf914c6633a7678f 100644
+index 461132fb707e7b9b1053ccbd9da5116d582e87ab..0daa2604ae126b4249307f61aa6724c1ada06f15 100644
 --- a/dm/host/Makefile
 +++ b/dm/host/Makefile
 @@ -19,11 +19,11 @@ include ../mac/min_os.mk
@@ -97,7 +97,7 @@ index 461132fb707e7b9b1053ccbd9da5116d582e87ab..c94a95cff67cb46103fbbed8bf914c66
  # Sources under dm/gfx, dm/gfx/nvn, dm/gfx/tex, dm/gfx/vk and dm/gfx/gl are included by wildcard (tests/ and metal/ do not go into the host): adding a file does not touch this line
  GFX=$(sort $(wildcard ../gfx/*.c ../gfx/nvn/*.c ../gfx/nvn/*.m ../gfx/nvn/*.S ../gfx/tex/*.c ../gfx/tex/*.m ../gfx/vk/*.m ../gfx/gl/*.m))
 -GFX_H=$(sort $(wildcard ../gfx/nvn/*.h ../gfx/nvn/*.inc ../gfx/nvn/include/*.h ../gfx/tex/*.h))   # *.inc: nvn_mtl.m includes them (nvn_geometry.inc); an edit there alone used not to rebuild the host
-+GFX_H=$(sort $(wildcard ../gfx/nvn/*.h ../gfx/nvn/*.inc ../gfx/nvn/nxforge/*.inc ../gfx/nvn/include/*.h ../gfx/tex/*.h))   # *.inc: nvn_mtl.m includes them (nvn_geometry.inc); an edit there alone used not to rebuild the host
++GFX_H=$(sort $(wildcard ../gfx/nvn/*.h ../gfx/nvn/*.inc ../gfx/nvn/nxforge/*.inc ../gfx/nvn/nxforge/*.h ../gfx/nvn/include/*.h ../gfx/tex/*.h))   # *.inc: nvn_mtl.m includes them (nvn_geometry.inc); an edit there alone used not to rebuild the host
  # Third party: libvpx ships the VP8 and VP9 decoder sources (movie decoding, hle_movie.c), with its configuration headers in config/ (arm64, shared by Mac and iOS). Built separately into a static library, file by file, so host changes do not recompile it
  VPX=../third_party/libvpx
  VPX_SRC=$(sort $(shell find $(VPX) -name '*.c'))
@@ -126,7 +126,7 @@ index 461132fb707e7b9b1053ccbd9da5116d582e87ab..c94a95cff67cb46103fbbed8bf914c66
  	rm -rf gen dmhost dmhost_* *.dSYM
  .PHONY: clean
 diff --git a/dm/host/front.h b/dm/host/front.h
-index b657e6c1c0dc37a39196167dc2608033150237e6..8a884a9d8214366741dd320a91cf3bbb4b34eeec 100644
+index b657e6c1c0dc37a39196167dc2608033150237e6..863963a5b12d74811e0f11b673f18332826878aa 100644
 --- a/dm/host/front.h
 +++ b/dm/host/front.h
 @@ -1,5 +1,6 @@
@@ -144,7 +144,7 @@ index b657e6c1c0dc37a39196167dc2608033150237e6..8a884a9d8214366741dd320a91cf3bbb
  // The pixel size of the display the game is shown on: on the Mac the window's screen in its current mode (the main display before the window is up) (a scaled Retina mode's pixels), an iPhone's or iPad's screen (nativeBounds).
  // Returns 0 and leaves w, h alone when not known (no front end: graphics unit tests). Any thread
  int front_display_pixels(int *w, int *h);
-@@ -23,6 +25,66 @@ int front_screen_variable_refresh(void);
+@@ -23,6 +25,75 @@ int front_screen_variable_refresh(void);
  // The frame rate the display link paces the game at (60, 30, 120; nvn_mtl.m link_sync): in fullscreen, a screen whose refresh rate is not a multiple of it is switched, while the game runs,
  // to a mode of the same size whose rate is, and back when the window leaves fullscreen or that screen (front_mac.m; none on iOS). Called from the present thread
  void front_screen_match(int fps);
@@ -178,6 +178,15 @@ index b657e6c1c0dc37a39196167dc2608033150237e6..8a884a9d8214366741dd320a91cf3bbb
 +int mtl_present_interp(void);
 +void mtl_present_interp_set(int mode);
 +int mtl_present_interp_active(void);
++// Pixel art (NXForge, nvn_mtl.m nxforge/pixel_art.inc; DM_PIXEL_ART=off|sharp|smooth|auto read the first time, off when unset): crisp, even pixels for 2D games. Sharp scales the picture
++// sharply, takes the art back to its own pixel grid where it finds one (DM_PIXEL_GRID), and leaves out MetalFX, FXAA, frame interpolation and EDR highlights while on; Smooth adds
++// MMPX's 2x enlargement of the art; Auto is off until the picture shows a steady pixel grid, then Sharp for the run. Taken at every present. Any thread.
++// mtl_present_pixel_active: the mode in effect now (DM_PIXEL_OFF, SHARP or SMOOTH); mtl_present_pixel_grid: 1 with the art's size and the picture texels per art pixel while a grid holds
++enum { DM_PIXEL_OFF, DM_PIXEL_SHARP, DM_PIXEL_SMOOTH, DM_PIXEL_AUTO, DM_PIXEL_N };   // the saved choice is the number
++int mtl_present_pixel(void);
++void mtl_present_pixel_set(int mode);
++int mtl_present_pixel_active(void);
++int mtl_present_pixel_grid(float *art_w, float *art_h, float *scale);
 +// The CRT filters' scanline height (and the LCD grid's cell) in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
 +int mtl_present_scanline(void);
 +void mtl_present_scanline_set(int rows);
@@ -211,7 +220,7 @@ index b657e6c1c0dc37a39196167dc2608033150237e6..8a884a9d8214366741dd320a91cf3bbb
  // The shape of the picture the game presents (nvn_mtl.m present_now, present_shape: the layer's, not the crop's, w x h), called when its width / height changes: the front end
  // lays the picture out in that shape instead of 16:9, so a profile with screen_aspect under DM_SCREEN_ASPECT (1920x1344) fills a 1.43:1 screen and touches map onto the picture
  // as drawn. Before the first call the picture is 16:9. Called from the present thread; the front end switches to its main thread and does not block
-@@ -68,10 +130,16 @@ void front_save_failed(int err);
+@@ -68,10 +139,16 @@ void front_save_failed(int err);
  
  // GPU lost (called by the graphics backend's nvn_mtl.m gpu_lost_check, once): the first command buffer came back MTL4CommandQueueErrorAccessRevoked, so macOS runs none of the process's GPU work
  // any more and nothing is drawn again. By then presents have stopped and the game's waits for the GPU are released, so the game runs on with nothing on screen until the front end ends it.

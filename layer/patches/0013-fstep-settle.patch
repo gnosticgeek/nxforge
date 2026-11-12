@@ -81,7 +81,7 @@ index ab7e74fe6da5bbfb17eda9689edb40b1f2c22b00..77bbce61efd51cb064c0f58164201404
      if (late) { s->late++; s->late_run = grace || sgrace ? 0 : s->late_run + 1; s->fit_run = 0; } else s->late_run = 0;
      // The cost of the frames on time (a hitch is not what the scene costs): at kmin, and at the longer hold
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 97e5951a0d3f4e4214a6f9688585673c4cc9f8de..19d11df4bef39807005492979bb26692b73f745b 100644
+index d35e78f534e7768bb705a74a7d92fc841cc62685..37edbc1c1646eb70b4d84936dc621210ac11f558 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -15702,6 +15702,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }
@@ -135,7 +135,7 @@ index 97e5951a0d3f4e4214a6f9688585673c4cc9f8de..19d11df4bef39807005492979bb26692
  static void sub_cut(void) {
      int n = cut_draws();
      if (!g_cb || g_enc) return;
-@@ -17095,6 +17139,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -17103,6 +17147,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      if (atomic_load(&g_gpu_lost)) return 0;   // the display command buffer would be ignored too: take no drawable from the screen the front end is about to close
      CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
      if (!layer) return 0;
@@ -180,7 +180,7 @@ index 587347c219928af94efdf9f9cbc9cf1af19956af..b84799eef67b6d4e883de014ef36ed7c
  - a fixed-step game runs at double speed (or slow motion at 30) after `DM_FPS_TARGET` is set, in `Documents/env.txt` or the launcher, on a build its profile's frame step stubs and limiter rows do not know. → [A present cap applies only with a frame step or an engine limit the host writes](../reference/frame-rate.md#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)
  - a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick. → [A present interval that is the game's only limit, in display mode](../reference/frame-rate.md#a-present-interval-that-is-the-games-only-limit-in-display-mode)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index ab45c2e7961f93f460736d6bf71278f783f8004a..fd11a110e1208b33a4f253f7cc36b21f203eae84 100644
+index 181e7c53b4421bed25eae9e733afec46283ca2bf..59812577ea02011ada008946b49d9725d71a8c03 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -3,6 +3,7 @@ DM_AB	diagnostic	`=<frames>` splits the run into phases of that many frames and
@@ -265,8 +265,8 @@ index ab45c2e7961f93f460736d6bf71278f783f8004a..fd11a110e1208b33a4f253f7cc36b21f
  DM_NVN_REUPLOADS	diagnostic	`=1` logs the first 400 re-uploads of textures taken from their storage: shape, size, how much was read from guest memory and how many images were copied from the texture it replaces, the frame and the submission, the pages written since the upload and where the first lies, and the GPU copies into it since then
  DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover the whole target, as before; by default a draw pass that loads what it keeps stops at the far corner of its scissor when that is at most half the target
  DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render targets, as before; by default SetRenderTargets naming the open pass's targets continues the pass
-@@ -266,11 +282,19 @@ DM_PHONE_MOTION	switch	On iOS, whether the phone's own device motion drives play
- DM_PICTURE_FIT	player	`fill` scales the 16:9 picture on the iPhone and iPad until it covers the screen in landscape and crops the edges (a portrait or tabletop split and a TV stay fitted); `fit` or unset, the largest 16:9 rectangle with black bars. Launcher and in-game menu setting
+@@ -268,11 +284,19 @@ DM_PIXEL_ART	player	`off` (the default where nothing sets it), `sharp`, `smooth`
+ DM_PIXEL_GRID	player	`auto` (the default), `off` or `<width>x<height>` (`320x180`; Mac only): the art's own pixel grid for `DM_PIXEL_ART`. `auto` finds it from where the colour changes in the picture (a scale of 2 to 16 picture texels per art pixel, uneven ones included, and a whole-texel offset for art with a border); `off` never takes the art back to its own grid (sharp scaling of the picture only); a size fixes it for a game the finder misses
  DM_PREEMPT	switch	`0` / `1` overrides the profile's `core_preempt`: also check already-runnable higher-priority peers on the caller's core after every thread SVC
  DM_PRELOAD	diagnostic	Set: on the Mac, runs the host's early background loading (`dm_host_preload_start`) as the iOS app does, to exercise that path
 +DM_PRESENT_AA	player	`fxaa` or `off` (the default): FXAA over the game's finished picture before upscaling and the present filter, smoothing jagged edges (small HUD text softens a little); on the Mac the Quick settings sidebar picks it per game, and this wins and is not saved
@@ -285,7 +285,7 @@ index ab45c2e7961f93f460736d6bf71278f783f8004a..fd11a110e1208b33a4f253f7cc36b21f
  DM_PRESENT_SNAP	player	`=<n>`: present snapshots, a ring of n host textures (2 to 4; `1` = 2) the presents are copied to so the game's swapchain texture is free at once; `0` off (default: the profile's `present_snap`)
  DM_PRESENT_UPSCALE	player	`metalfx` scales a picture smaller than its rectangle on the screen through MetalFX's spatial scaler; `off` (the default) scales it bilinearly
  DM_PREV_PROGRAM	switch	What `oe::GetPreviousProgramIndex` answers (default -1, started from HOME); `oe::ExecuteProgram` sets it for the program it starts; a relaunch removes it
-@@ -346,6 +370,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+@@ -348,6 +372,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
  DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
  DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
  DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz), and a variable-refresh screen to a fixed-rate mode at a multiple (ProMotion 120 → 60 Hz at 60 and 30 fps)
@@ -293,7 +293,7 @@ index ab45c2e7961f93f460736d6bf71278f783f8004a..fd11a110e1208b33a4f253f7cc36b21f
  DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
  DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
  DM_SHAKE_G	switch	`=<G>`: on iOS, the acceleration beyond gravity above which a flick of the phone shakes the controller's six-axis sensor (default 1.5)
-@@ -377,6 +402,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
+@@ -379,6 +404,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
  DM_TEST_FS_FAILAT	diagnostic	`=<point>[:<count>][,…]` makes steps of the save transaction (`mountclone`, `reclone`, `guestname`, `renameback`) fail with ENOSPC
  DM_TEST_GEOMETRY	test	Path of the native `t_geometry` executable; `test_dmsh_geometry.py` runs its native geometry emitter checks only when it is set
  DM_TEST_GEOMETRY_PRIMITIVE_ID	test	Path to the native t_geometry_primitive_id replay executable used by test_dmsh_geometry.py with DMSH_TEST_GPU=1.
@@ -301,7 +301,7 @@ index ab45c2e7961f93f460736d6bf71278f783f8004a..fd11a110e1208b33a4f253f7cc36b21f
  DM_TEST_GPU_LOST	diagnostic	`=<n>` imitates the GPU access macOS revoked from the nth submission on: each submission's feedback reports `MTL4CommandQueueErrorAccessRevoked` and the GPU does not signal its fence, so the host stops presenting and the front end ends the game
  DM_TEST_KEYRACE	diagnostic	`=<n>` creates up to n (at most 512) pthread keys on a thread of its own while the host starts up
  DM_TEST_KILL_AT	diagnostic	`=write:<n>` exits the process (`_exit(9)`) at the nth save write, imitating a kill mid-write
-@@ -402,6 +428,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
+@@ -404,6 +430,7 @@ DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR n
  DM_VK_CAPTURE	path	`=<dir>` (Mac) writes every SPIR-V module the game creates to `<dir>/<key>.spv`; the NSP script's Vulkan shader capture stage sets it
  DM_VK_LOG	diagnostic	`=1` logs Vulkan object creation in the Vulkan-on-Metal layer
  DM_VSYNC_HZ	switch	`=<Hz>`: rate at which a host thread fires the vi vsync event when the display link does not drive it (default 60)
