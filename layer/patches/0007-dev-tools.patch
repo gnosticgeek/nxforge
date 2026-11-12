@@ -4,7 +4,8 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
- dm/tools/lint_c_baseline.tsv         | 17 +++++++++++++----
+ dm/gfx/tests/t_gl_imports.m          |  2 +-
+ dm/tools/lint_c_baseline.tsv         |  5 ++---
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
  dm/tools/tests/test_regress.py       | 14 +++++++-------
@@ -12,13 +13,26 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 23 ++++++++++++++---------
- 8 files changed, 67 insertions(+), 30 deletions(-)
+ 9 files changed, 57 insertions(+), 30 deletions(-)
 
+diff --git a/dm/gfx/tests/t_gl_imports.m b/dm/gfx/tests/t_gl_imports.m
+index b373c43b15513f3d18c70e9ca3c4ce4e09ca2b41..28cd23f1b91a3d95748315d1bddd0f7af56b2788 100644
+--- a/dm/gfx/tests/t_gl_imports.m
++++ b/dm/gfx/tests/t_gl_imports.m
+@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
+     id<MTLCommandBuffer> rcb = [g_q commandBuffer]; id<MTLBlitCommandEncoder> rbe = [rcb blitCommandEncoder];   // after the upload: one queue runs its command buffers in commit order
+     [rbe copyFromTexture:dtex->tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(4, 4, 1) toBuffer:rb destinationOffset:0 destinationBytesPerRow:16 destinationBytesPerImage:64];
+     [rbe endEncoding]; [rcb commit]; [rcb waitUntilCompleted];
+-    assert(!memcmp(rb.contents, depth, sizeof depth));
++    assert(!memcmp(rb.contents, depth, sizeof depth));   // NOLINT(bugprone-suspicious-memory-comparison): the blit must copy the depth texels bit for bit
+     // A real link: the linked program keeps the stages' code (si, fn) whatever its attachments do afterwards; a relink without a stage fails. The same shader attached twice
+     // changes nothing (its count included)
+     void (*link)(GLuint) = import("glLinkProgram");
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
-index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..c4ae3b59eee9ae1f916cc7e53f25458584afd886 100644
+index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..f396b01e20cbe5d92e15fe9c444190d7090bc7d5 100644
 --- a/dm/tools/lint_c_baseline.tsv
 +++ b/dm/tools/lint_c_baseline.tsv
-@@ -24,20 +24,23 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
+@@ -24,11 +24,10 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
  dm/gfx/nvn/nvn_mtl.m	bugprone-misplaced-widening-cast	1
  dm/gfx/nvn/nvn_mtl.m	bugprone-signed-char-misuse	1
  dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
@@ -26,56 +40,12 @@ index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..c4ae3b59eee9ae1f916cc7e53f254585
 +dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	8
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	5
--dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
-+dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	19
- dm/gfx/nvn/nvn_mtl.m	clang-analyzer-security.ArrayBound	1
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
+-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-security.ArrayBound	1
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	4
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
  dm/gfx/nvn/nvn_mtl.m	misc-redundant-expression	2
- dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_alpha.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-+dm/gfx/tests/t_blend_zero.m	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_border.m	clang-analyzer-security.ArrayBound	2
- dm/gfx/tests/t_capture.c	bugprone-misplaced-pointer-arithmetic-in-alloc	1
- dm/gfx/tests/t_clear_ds.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-+dm/gfx/tests/t_clear_msaa.m	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_defer_chain.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-+dm/gfx/tests/t_dirty_race.c	clang-analyzer-unix.BlockInCriticalSection	1
- dm/gfx/tests/t_float_pad.m	bugprone-suspicious-memory-comparison	1
- dm/gfx/tests/t_geometry.m	clang-analyzer-nullability.NullablePassedToNonnull	8
- dm/gfx/tests/t_geometry.m	clang-analyzer-security.ArrayBound	1
-@@ -46,6 +49,8 @@ dm/gfx/tests/t_geometry_primitive_id.m	clang-analyzer-nullability.NullablePassed
- dm/gfx/tests/t_image_alias.m	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_initial_uncached.m	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_logic.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-+dm/gfx/tests/t_mip_extent.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-+dm/gfx/tests/t_mip_extent.m	clang-analyzer-unix.Malloc	1
- dm/gfx/tests/t_missing_src1.m	bugprone-suspicious-memory-comparison	2
- dm/gfx/tests/t_perf_order.m	bugprone-unsafe-functions	2
- dm/gfx/tests/t_pfv.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-@@ -57,8 +62,9 @@ dm/gfx/tests/t_present_snap.m	bugprone-unsafe-functions	1
- dm/gfx/tests/t_present_snap.m	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_primitive_restart.m	clang-analyzer-unix.cstring.UninitializedRead	1
- dm/gfx/tests/t_pso_archive.m	bugprone-suspicious-memory-comparison	1
--dm/gfx/tests/t_pso_archive.m	clang-analyzer-nullability.NullablePassedToNonnull	2
-+dm/gfx/tests/t_pso_archive.m	clang-analyzer-nullability.NullablePassedToNonnull	3
- dm/gfx/tests/t_pso_bundle.m	bugprone-command-processor	1
-+dm/gfx/tests/t_pso_skey.m	bugprone-suspicious-memory-comparison	7
- dm/gfx/tests/t_pso_stall.m	bugprone-command-processor	1
- dm/gfx/tests/t_pull.m	bugprone-random-generator-seed	1
- dm/gfx/tests/t_pull_inv.m	bugprone-command-processor	1
-@@ -73,7 +79,10 @@ dm/gfx/tests/t_tex_fit_root.m	clang-analyzer-nullability.NullablePassedToNonnull
- dm/gfx/tests/t_transform_feedback.m	bugprone-suspicious-memory-comparison	4
- dm/gfx/tests/t_transform_feedback.m	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_unwritten_store.m	bugprone-suspicious-memory-comparison	1
-+dm/gfx/tests/t_unwritten_store.m	clang-analyzer-nullability.NullablePassedToNonnull	1
- dm/gfx/tests/t_upload_budget.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-+dm/gfx/tests/t_vconv_keep.m	bugprone-random-generator-seed	1
-+dm/gfx/tests/t_vconv_keep.m	bugprone-suspicious-memory-comparison	1
- dm/gfx/tests/t_view_swizzle.m	clang-analyzer-core.UndefinedBinaryOperatorResult	1
- dm/gfx/tests/t_view_swizzle.m	clang-analyzer-nullability.NullablePassedToNonnull	2
- dm/gfx/tests/t_xv.m	clang-analyzer-nullability.NullablePassedToNonnull	1
-@@ -104,7 +113,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
+@@ -104,7 +103,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
  dm/host/tests/t_fs.c	bugprone-command-processor	2
  dm/host/tests/t_fs.c	clang-analyzer-unix.Stream	1
  dm/host/tests/t_fs_case.c	clang-analyzer-unix.Stream	1

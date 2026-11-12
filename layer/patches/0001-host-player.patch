@@ -15,8 +15,9 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/host/hle_hid.c     |  12 +++-
  dm/host/tests/t_hid.c |  18 +++--
  dm/host/web_apple.m   |  19 +++--
- dm/mac/launcher.c     | 106 ++++++++++++++++++++++++---
- 11 files changed, 364 insertions(+), 79 deletions(-)
+ dm/mac/Launcher.swift |   6 +-
+ dm/mac/launcher.c     | 108 +++++++++++++++++++++++++---
+ 12 files changed, 368 insertions(+), 83 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
 index 285e675e42a3457972158496b2cba98f58fe54c0..31bc6a6619fc434ec224c61114e844f0f78483a9 100644
@@ -817,11 +818,33 @@ index ba25f6862ef212f48398beb5ddd25b748999c550..9f6886a5e4cebe326b20e5d44c394aec
              NSData *d = [r representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
              if (![d writeToFile:p atomically:YES]) LOG("[RED] webshot: nothing written to %s (%s)", p.UTF8String, e.localizedDescription.UTF8String ?: "-");
          }];
+diff --git a/dm/mac/Launcher.swift b/dm/mac/Launcher.swift
+index a990d05b401ba0dc40fcf7ba0b477d73262d1b8c..95cfe2f2213b9f7c3d86169c9f9b99318648617d 100644
+--- a/dm/mac/Launcher.swift
++++ b/dm/mac/Launcher.swift
+@@ -263,14 +263,14 @@ private final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate
+         app.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+         app.addItem(withTitle: "Quit \(name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+         item.submenu = app; menu.addItem(item); NSApp.mainMenu = menu
+-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 660), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
++        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+         w.title = name; w.isReleasedWhenClosed = false; w.delegate = self
+-        w.contentMinSize = NSSize(width: 520, height: 0)
++        w.contentMinSize = NSSize(width: 720, height: 0)
+         window = w
+         if let screen = w.screen ?? NSScreen.main {
+             w.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.midX - w.frame.width / 2, y: screen.visibleFrame.maxY))
+         }
+-        let host = NSHostingView(rootView: LauncherView(m: model, done: { [weak self] in self?.finish($0) }, fit: { [weak self] in self?.fit($0) }))
++        let host = NSHostingView(rootView: NXFLauncherView(m: model, done: { [weak self] in self?.finish($0) }, fit: { [weak self] in self?.fit($0) }))
+         host.sizingOptions = []   // the Form's measured scroll content owns the height, including after collapse
+         w.contentView = host
+         host.layoutSubtreeIfNeeded()
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 029dccea4197250ccffb2ff9e74430970e4d73b0..399c7c82f78b3b2ec238f7c8782a2ca37948f120 100644
+index 029dccea4197250ccffb2ff9e74430970e4d73b0..ee202f0ea3704a608db8f17abf49eaa1c681b8ad 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
-@@ -2,7 +2,10 @@
+@@ -2,16 +2,22 @@
  // The host is not exec'ed: macOS privacy checks (TCC) attribute a child's file access to the app that launched it, while a launcher that hands its process over (a shell script exec'ing
  // dmhost) gets EPERM on every open on a removable volume, with no prompt, signed or not. The launcher forwards SIGTERM / SIGINT / SIGHUP to the host and returns its exit code.
  // Bundle layout: Resources/romfs.img (the game's RomFS image; legacy romfs/ also supported), Resources/msl/<b-chain.img | vk | gl> (the Mac shader libraries), Resources/aoc/<index> (DLC), Resources/pso (the pipeline archive made
@@ -833,9 +856,11 @@ index 029dccea4197250ccffb2ff9e74430970e4d73b0..399c7c82f78b3b2ec238f7c8782a2ca3
  // (the previous run's kept as <title ID>.prev.log). Environment switches: one KEY=VALUE per line in <Application Support folder>/env.txt, then Resources/dm/env.txt (the first one wins; neither
  // replaces a variable already set), as the iOS app reads Documents/env.txt and dm/env.txt. Then the player's saved choices: launcher.<VAR> strings in the app's preferences domain (its bundle ID), which a
  // front end or a settings window writes, each checked against the bundle's settings (Info.plist DMSettings, from launcher.json) and used only for a variable still unset; DM_SAVED_CHOICES=0 ignores them.
-@@ -11,7 +14,10 @@
+ // So the order is: the launch environment, the player's env.txt, the bundle's, saved choices, the host's tested defaults (docs/frontends.md, Saved choices).
+ // Before the host starts, the settings window (dm/mac/Launcher.swift dm_mac_launcher, linked in by pack_app.py) runs in this process and puts the player's settings into the environment; it keeps
  // what the launch environment and the env files set (DM_ENV_LAUNCH_KEYS, DM_ENV_FILE_KEYS). DM_LAUNCHER=0 or --no-launcher (open <app> --args --no-launcher) starts the game without the window,
- // with the saved choices; so does "Show this window at launch" turned off.
+-// with the saved choices; so does "Show this window at launch" turned off.
++// with the saved choices; so does "Show at launch" turned off.
  #include <CoreFoundation/CoreFoundation.h>
 +#include <copyfile.h>
  #include <ctype.h>
