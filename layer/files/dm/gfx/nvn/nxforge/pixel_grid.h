@@ -81,8 +81,9 @@ static inline int pxg_find(const uint32_t *h, int len, const pxg_axis *keep, pxg
             int whole = fabs(s - floor(s + 0.5)) < 1e-9;
             if (!whole && fabs(s - floor(s + 0.5)) < PXG_NEAR_WHOLE) continue;   // 720 / 241 = 2.99: a whole grid with an offset is that art; near-whole ones fit two misaligned 3x layers
             double step = pass || whole ? 1.0 : 0.5;   // a whole scale has whole offsets; an uneven one may sit between texels
-            for (double o = 0; o < s - 1e-9; o += step) {
-                double sc = pxg_score(h, len, s, o, total);
+            int n_o = (int)ceil(s / step - 1e-9);   // offsets 0, step, ... below s (counted whole: clang-tidy bugprone-float-loop-counter)
+            for (int oi = 0; oi < n_o; oi++) {
+                double o = oi * step, sc = pxg_score(h, len, s, o, total);
                 if (sc < PXG_ACCEPT) continue;
                 if (!whole && pxg_cover(h, len, s, o) < PXG_UNEVEN_COVER) continue;   // a few lines of text fit an uneven grid by chance
                 if (pxg_better(s, sc, whole, &best)) { best.s = s; best.o = o; best.score = sc; }

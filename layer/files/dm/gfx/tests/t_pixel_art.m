@@ -8,18 +8,20 @@ module_t *g_mod; int g_nmod;
 void svc_thread_dump(void) {}
 uint64_t now_ns(void) { return bp_now(); }
 static int checks, failed;
+static uint32_t g_rng = 7;   // a fixed sequence (not rand(): the same pictures every run, and no seeded generator for clang-tidy)
+static int rnd(int n) { g_rng = g_rng * 1664525u + 1013904223u; return (int)((g_rng >> 8) % (uint32_t)n); }
 #define CHECK(name, ok) do { int pass = !!(ok); checks++; failed += !pass; printf("%s: %s\n", name, pass ? "PASS" : "FAIL"); } while (0)
 
 // ---- the finder on made-up counts: art of aw pixels enlarged into len texels at scale s from offset o (outside the art: one more colour), changes counted over 96 lines
 static uint32_t g_h[4096];
 static void counts(int len, int aw, double s, double o, int chunk, int noise) {
-    memset(g_h, 0, sizeof g_h); srand(7);
+    memset(g_h, 0, sizeof g_h); g_rng = 7;
     static int art[4096];
     for (int line = 0; line < 96; line++) {
-        for (int i = 0; i < 4096; i++) art[i] = i % chunk ? art[i - 1] : rand() % 4;
+        for (int i = 0; i < 4096; i++) art[i] = i % chunk ? art[i - 1] : rnd(4);
         int prev = -1;
         for (int x = 0; x < len; x++) {
-            int k = (int)floor((x + 0.5 - o) / s), c = noise ? rand() % 4 : k < 0 || k >= aw ? 9 : art[k];
+            int k = (int)floor((x + 0.5 - o) / s), c = noise ? rnd(4) : k < 0 || k >= aw ? 9 : art[k];
             if (x && c != prev) g_h[x - 1]++;
             prev = c;
         }
@@ -57,7 +59,7 @@ static uint8_t g_art[AH][AW][4];
 static id<MTLTexture> picture(int w, int h, double sx, double sy) {   // the art enlarged into w x h by repeating pixels at scale sx, sy (nearest, as a game does)
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:w height:h mipmapped:NO];
     d.storageMode = MTLStorageModeShared; d.usage = MTLTextureUsageShaderRead;
-    id<MTLTexture> t = [g_dev newTextureWithDescriptor:d]; uint8_t *p = malloc((size_t)w * h * 4);
+    id<MTLTexture> t = [g_dev newTextureWithDescriptor:d]; uint8_t *p = malloc((size_t)w * h * 4); if (!p) abort();
     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
         int ax = (int)floor((x + 0.5) / sx), ay = (int)floor((y + 0.5) / sy);
         memcpy(p + ((size_t)y * w + x) * 4, g_art[ay < AH ? ay : AH - 1][ax < AW ? ax : AW - 1], 4);
@@ -78,7 +80,7 @@ static int window_present(id<MTLTexture> src, id<MTLTexture> out) {   // the win
 }
 // How many of out's pixels differ from the art enlarged k times (each art pixel a k x k block); out's size is the art's times k
 static long art_mismatch(id<MTLTexture> out, int k) {
-    int w = (int)out.width, h = (int)out.height; uint8_t *p = malloc((size_t)w * h * 4); long bad = 0;
+    int w = (int)out.width, h = (int)out.height; uint8_t *p = malloc((size_t)w * h * 4); long bad = 0; if (!p) abort();
     [out getBytes:p bytesPerRow:w * 4 fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) if (memcmp(p + ((size_t)y * w + x) * 4, g_art[y / k][x / k], 3)) bad++;
     free(p); return bad;
@@ -90,7 +92,7 @@ int main(void) { @autoreleasepool {
     setenv("DM_PRESENT_UPSCALE", "metalfx", 1);   // MetalFX wanted: pixel art must leave it out
     mtl_init();
     mtl_present_layer(W, H);
-    srand(11); for (int y = 0; y < AH; y++) for (int x = 0; x < AW; x++) { g_art[y][x][0] = (uint8_t)(rand() % 6 * 51); g_art[y][x][1] = (uint8_t)(rand() % 6 * 51); g_art[y][x][2] = (uint8_t)(rand() % 6 * 51); g_art[y][x][3] = 255; }
+    g_rng = 11; for (int y = 0; y < AH; y++) for (int x = 0; x < AW; x++) { g_art[y][x][0] = (uint8_t)(rnd(6) * 51); g_art[y][x][1] = (uint8_t)(rnd(6) * 51); g_art[y][x][2] = (uint8_t)(rnd(6) * 51); g_art[y][x][3] = 255; }
     id<MTLTexture> big = picture(W, H, SC, SC), out = target(AW * 2, AH * 2);
     char name[200]; float aw = 0, ah = 0, sc = 0;
 
@@ -127,7 +129,7 @@ int main(void) { @autoreleasepool {
     mtl_present_pixel_set(DM_PIXEL_SMOOTH);
     finder_settle(diag, out, PX_EVERY * 3);
     present_offscreen_wait(diag, NULL, out);
-    uint8_t *p = malloc(AW * 2 * AH * 2 * 4); [out getBytes:p bytesPerRow:AW * 2 * 4 fromRegion:MTLRegionMake2D(0, 0, AW * 2, AH * 2) mipmapLevel:0];
+    uint8_t *p = malloc(AW * 2 * AH * 2 * 4); if (!p) abort(); [out getBytes:p bytesPerRow:AW * 2 * 4 fromRegion:MTLRegionMake2D(0, 0, AW * 2, AH * 2) mipmapLevel:0];
     long other = 0, changed = 0;
     for (int y = 0; y < AH * 2; y++) for (int x = 0; x < AW * 2; x++) { uint8_t v = p[((size_t)y * AW * 2 + x) * 4]; other += v != 0 && v != 255; changed += (v == 255) != (g_art[y / 2][x / 2][0] == 255); }
     free(p);
