@@ -15,7 +15,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.3.1"
+let SIDEBAR_VERSION = "0.3.2"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -26,9 +26,12 @@ private let anisoDefault = 16               // front_mac.m graphics_start: 16x u
 private let sizeNames = ["Fit", "Stretch", "Pixel-perfect"]   // front.h DM_PSCALE_*, in that order
 private let scaleFixed = env["DM_PRESENT_SCALE"] != nil
 private let aaNames = ["Off", "FXAA"]   // front.h DM_PAA_*, in that order
-// Upscaling is the settings window's setting too (launcher.DM_PRESENT_UPSCALE): fixed here only when the launch environment or an env file set it, not when the window or a saved choice did
-private let upscaleFixed = env["DM_PRESENT_UPSCALE"] != nil && (env["DM_ENV_LAUNCH_KEYS"] == nil
-    || Set(((env["DM_ENV_LAUNCH_KEYS"] ?? "") + " " + (env["DM_ENV_FILE_KEYS"] ?? "")).split(separator: " ").map(String.init)).contains("DM_PRESENT_UPSCALE"))
+private let interpNames = ["Off", "On", "Auto"]   // front.h mtl_present_interp, in that order
+// Settings the game's settings window shows too (upscaling, anti-aliasing, HDR highlights and its strength, frame interpolation; front_mac_launcher_sync.inc): fixed here only when
+// the launch environment or an env file set them, not when the window or a saved choice did (the window puts every one of its settings into the environment)
+private let envSetKeys = Set(((env["DM_ENV_LAUNCH_KEYS"] ?? "") + " " + (env["DM_ENV_FILE_KEYS"] ?? "")).split(separator: " ").map(String.init))
+private func envFixed(_ v: String) -> Bool { env[v] != nil && (env["DM_ENV_LAUNCH_KEYS"] == nil || envSetKeys.contains(v)) }
+private let upscaleFixed = envFixed("DM_PRESENT_UPSCALE")
 
 // The Controls page's rows: actions 0–15 are the Switch's buttons in NpadButton order, 16–19 the left stick, 20 shaking (front_mac.m's map); the controller map has the first 12
 private let actionNames = ["A", "B", "X", "Y", "Left stick press", "Right stick press", "L", "R", "ZL", "ZR", "+ (Plus)", "− (Minus)", "D-pad left", "D-pad up", "D-pad right", "D-pad down",
@@ -49,7 +52,7 @@ enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
     case pauseOpen, duckOpen, backup, backupShow, settingsShow, settingsOpen, defaultsSave, defaultsUse
     case fullscreen, scale, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
-    case fps, corner, fpsMs, frameTimes, frameTimesFolder, resetPerformance
+    case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
     case section(String), cheat(Int), cheatsAllOff, cheatsRestore, cheatsOpen, cheatsRefresh
@@ -58,7 +61,7 @@ enum Nav: Hashable {
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .fullscreen, .scale, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .fullscreen, .scale, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
@@ -185,6 +188,8 @@ final class QuickSettings: ObservableObject {
     @Published var edr = false       // EDR highlights (front.h mtl_present_edr)
     @Published var edrStrength = 0.5
     @Published var edrHeadroom: Float = 1   // the screen's potential EDR headroom, 1 = SDR
+    @Published var interp = 0        // frame interpolation to 120 fps (front.h mtl_present_interp: 0 off, 1 on, 2 auto)
+    @Published var interpActive = false   // whether it applies now (auto: on a 120 Hz screen)
     @Published var aniso = 0      // the chosen anisotropic filtering floor (0: the game's own)
     @Published var anisoRun = 0   // the one this launch took
     @Published var scale = 0      // picture size (DM_PSCALE_*)
@@ -238,7 +243,7 @@ final class QuickSettings: ObservableObject {
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
         upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale())
-        edr = mtl_present_edr() != 0; edrStrength = Double(mtl_present_edr_strength()) / 100; edrHeadroom = mtl_present_edr_headroom()
+        edr = mtl_present_edr() != 0; edrStrength = Double(mtl_present_edr_strength()) / 100; edrHeadroom = mtl_present_edr_headroom(); interp = Int(mtl_present_interp()); interpActive = mtl_present_interp_active() != 0
         shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
         settingsPath = String(cString: front_qs_settings_path()); defaultsExist = front_qs_defaults_exist() != 0
         let kn = d.dictionary(forKey: optKey("keyNames")) as? [String: String] ?? [:], pn = d.dictionary(forKey: optKey("padNames")) as? [String: String] ?? [:]
@@ -348,14 +353,14 @@ final class QuickSettings: ObservableObject {
         if on { UserDefaults.standard.removeObject(forKey: "launcher.DM_PRESENT_UPSCALE") } else { UserDefaults.standard.set("off", forKey: "launcher.DM_PRESENT_UPSCALE") }
     }
     func setAA(_ n: Int) {
-        aa = n; mtl_present_aa_set(Int32(n)); if env["DM_PRESENT_AA"] == nil { UserDefaults.standard.set(n, forKey: optKey("aa")) }
+        aa = n; mtl_present_aa_set(Int32(n)); if !envFixed("DM_PRESENT_AA") { UserDefaults.standard.set(n, forKey: optKey("aa")) }
     }
     func setEDR(_ on: Bool) {   // at once, from the next frame
-        guard env["DM_PRESENT_EDR"] == nil else { return }
+        guard !envFixed("DM_PRESENT_EDR") else { return }
         edr = on; mtl_present_edr_set(on ? 1 : 0); UserDefaults.standard.set(on, forKey: optKey("edr"))
     }
     func setEDRStrength(_ k: Double) {
-        guard env["DM_PRESENT_EDR_STRENGTH"] == nil else { return }
+        guard !envFixed("DM_PRESENT_EDR_STRENGTH") else { return }
         edrStrength = k; mtl_present_edr_strength_set(Int32((k * 100).rounded())); UserDefaults.standard.set(k, forKey: optKey("edrStrength"))
     }
     func setScanline(_ r: Int) {
@@ -369,7 +374,7 @@ final class QuickSettings: ObservableObject {
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
         setUpscale(true); setScale(0)
-        if env["DM_PRESENT_AA"] == nil { setAA(0) }
+        if !envFixed("DM_PRESENT_AA") { setAA(0) }
         setEDR(false); setEDRStrength(0.5)
         if env["DM_ANISO"] == nil { setAniso(anisoDefault) }
     }
@@ -390,12 +395,17 @@ final class QuickSettings: ObservableObject {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(URL(fileURLWithPath: dir))
     }
-    var performanceChanged: Bool { fps || corner != 0 || frameTimes || fpsMs }
+    func setInterp(_ n: Int) {   // at once: the display link moves to 120 Hz (or back) on the next frame
+        guard !envFixed("DM_PRESENT_INTERP") else { return }
+        interp = n; mtl_present_interp_set(Int32(n)); interpActive = mtl_present_interp_active() != 0; UserDefaults.standard.set(n, forKey: optKey("interp"))
+    }
+    var performanceChanged: Bool { fps || corner != 0 || frameTimes || fpsMs || interp != 0 }
     func resetPerformance() {
         if env["DM_SHOW_FPS"] == nil && fps { setFps(false) }
         if corner != 0 { setCorner(0) }
         if fpsMs { setFpsMs(false) }
         if env["DM_FRAME_TIMES"] == nil && frameTimes { setFrameTimes(false) }
+        if interp != 0 { setInterp(0) }
     }
     func setMod(_ n: String, _ on: Bool) {
         wanted.removeAll { $0 == n }; if on { wanted.append(n) }
@@ -523,7 +533,7 @@ final class QuickSettings: ObservableObject {
         case pGeneral:
             return [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
         case pGraphics: return [[.fullscreen], [.scale], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
-        case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.frameTimes], [.frameTimesFolder], [.resetPerformance]]
+        case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
             return (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
@@ -580,7 +590,8 @@ final class QuickSettings: ObservableObject {
         case .upscale: setUpscale(d > 0)
         case .edr: setEDR(d > 0)
         case .edrStrength: if edr { setEDRStrength(min(max(edrStrength + 0.05 * Double(d), 0), 1)) }
-        case .aa: if env["DM_PRESENT_AA"] == nil { setAA(min(max(aa + d, 0), aaNames.count - 1)) }
+        case .aa: if !envFixed("DM_PRESENT_AA") { setAA(min(max(aa + d, 0), aaNames.count - 1)) }
+        case .interp: setInterp(min(max(interp + d, 0), interpNames.count - 1))
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[min(max(i + d, 0), anisoSteps.count - 1)]) }
         case .fps, .fpsQuick: setFps(d > 0)
         case .corner: if fps { setCorner((corner + d + 4) % 4) }
@@ -614,7 +625,8 @@ final class QuickSettings: ObservableObject {
         case .upscale: setUpscale(!upscale)
         case .edr: setEDR(!edr)
         case .edrStrength: if edr { setEDRStrength(edrStrength >= 0.999 ? 0 : min(edrStrength + 0.25, 1)) }
-        case .aa: if env["DM_PRESENT_AA"] == nil { setAA((aa + 1) % aaNames.count) }
+        case .aa: if !envFixed("DM_PRESENT_AA") { setAA((aa + 1) % aaNames.count) }
+        case .interp: setInterp((interp + 1) % interpNames.count)
         case .aniso: if env["DM_ANISO"] == nil, let i = anisoSteps.firstIndex(of: aniso) { setAniso(anisoSteps[(i + 1) % anisoSteps.count]) }
         case .resetGraphics: resetGraphics()
         case .corner: if fps { setCorner((corner + 1) % 4) }
@@ -929,7 +941,7 @@ struct QuickSettingsView: View {
             Row(title: "Anti-aliasing", changed: m.aa != 0) {
                 Picker("Anti-aliasing", selection: Binding(get: { m.aa }, set: { m.setAA($0) })) {
                     ForEach(aaNames.indices, id: \.self) { Text(aaNames[$0]).tag($0) }
-                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(env["DM_PRESENT_AA"] != nil)
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(envFixed("DM_PRESENT_AA"))
             }.nav(m, .aa)
             // Anisotropic filtering: sharper textures on surfaces seen at an angle; the game's samplers take it when they are made, so it applies at the next start
             Row(title: "Anisotropic filtering", changed: m.aniso != anisoDefault, nextLaunch: env["DM_ANISO"] == nil ? m.anisoPending : nil) {
@@ -940,17 +952,17 @@ struct QuickSettingsView: View {
             if env["DM_ANISO"] != nil { note("Set by DM_ANISO for this run") }
             // HDR highlights (EDR): the picture's brightest parts glow above SDR white on an XDR or HDR screen, an estimate from the game's SDR picture
             Row(title: "HDR highlights", changed: m.edr) {
-                Toggle("HDR highlights", isOn: Binding(get: { m.edr }, set: { on in withAnimation(motion) { m.setEDR(on) } })).toggleStyle(.switch).labelsHidden().disabled(env["DM_PRESENT_EDR"] != nil)
+                Toggle("HDR highlights", isOn: Binding(get: { m.edr }, set: { on in withAnimation(motion) { m.setEDR(on) } })).toggleStyle(.switch).labelsHidden().disabled(envFixed("DM_PRESENT_EDR"))
             }.nav(m, .edr)
             if m.edr {
                 Row(title: "Brightness boost", changed: abs(m.edrStrength - 0.5) > 0.001) {
                     HStack(spacing: 10) {
-                        Slider(value: Binding(get: { m.edrStrength }, set: { m.setEDRStrength($0) }), in: 0...1).disabled(env["DM_PRESENT_EDR_STRENGTH"] != nil)
+                        Slider(value: Binding(get: { m.edrStrength }, set: { m.setEDRStrength($0) }), in: 0...1).disabled(envFixed("DM_PRESENT_EDR_STRENGTH"))
                         Text("\(Int((m.edrStrength * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
                     }
                 }.nav(m, .edrStrength)
             }
-            note(env["DM_PRESENT_EDR"] != nil ? "Set by DM_PRESENT_EDR for this run"
+            note(envFixed("DM_PRESENT_EDR") ? "Set by DM_PRESENT_EDR for this run"
                  : m.edrHeadroom <= 1.01 ? "Needs an XDR or HDR screen; this one shows SDR, so the picture stays the same"
                  : "Sun, lava and shiny things glow brighter than white. White HUD text brightens too")
             resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
@@ -969,6 +981,15 @@ struct QuickSettingsView: View {
                     Toggle("Show milliseconds", isOn: Binding(get: { m.fpsMs }, set: { m.setFpsMs($0) })).toggleStyle(.switch).labelsHidden()
                 }.nav(m, .fpsMs)
             }
+            // Frame interpolation: an in-between picture on every other refresh of a 120 Hz screen, made from the game's last two frames (frame_interp.inc)
+            Row(title: "Frame interpolation", changed: m.interp != 0) {
+                Picker("Frame interpolation", selection: Binding(get: { m.interp }, set: { m.setInterp($0) })) {
+                    ForEach(interpNames.indices, id: \.self) { Text(interpNames[$0]).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(envFixed("DM_PRESENT_INTERP"))
+            }.nav(m, .interp)
+            note(envFixed("DM_PRESENT_INTERP") ? "Set by DM_PRESENT_INTERP for this run"
+                 : m.interp == 2 && !m.interpActive ? "Auto: off on this screen, which runs below 120 Hz"
+                 : "60 FPS games shown at 120 on a 120 Hz screen, about 8 ms later. Experimental: fast edges and the HUD can wobble")
             subhead("Frame times").padding(.top, 6)
             FrameGraph(paused: m.paused)
             subhead("Advanced").padding(.top, 6)

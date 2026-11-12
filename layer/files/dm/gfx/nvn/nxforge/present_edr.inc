@@ -11,7 +11,9 @@ static void edr_env(void) {
     if (g_edr >= 0) return;
     const char *e = getenv("DM_PRESENT_EDR"), *k = getenv("DM_PRESENT_EDR_STRENGTH"); int want = 0, kk = 50;
     if (e && *e) { if (!strcasecmp(e, "on") || !strcmp(e, "1")) want = 1; else if (strcasecmp(e, "off") && strcmp(e, "0")) MLOG("[RED] DM_PRESENT_EDR=%s: on or off; keeping off", e); }
-    if (k && *k) { char *end; long v = strtol(k, &end, 10); if (end != k && !*end && v >= 0 && v <= 100) kk = (int)v; else MLOG("[RED] DM_PRESENT_EDR_STRENGTH=%s: must be 0 to 100; keeping 50", k); }
+    // a percentage (50), or a fraction with a point (0.50: the settings window's slider, settings.tsv range 0:1)
+    if (k && *k) { char *end; double v = strtod(k, &end); if (end != k && !*end && v >= 0 && (strchr(k, '.') ? v <= 1 : v <= 100)) kk = (int)lround(strchr(k, '.') ? v * 100 : v);
+                   else MLOG("[RED] DM_PRESENT_EDR_STRENGTH=%s: 0 to 100, or 0.0 to 1.0; keeping 50", k); }
     int none = -1; atomic_compare_exchange_strong(&g_edr_k, &none, kk);
     none = -1; if (atomic_compare_exchange_strong(&g_edr, &none, want) && want) MLOG("present: EDR highlights on, strength %d (DM_PRESENT_EDR)", (int)g_edr_k);
 }

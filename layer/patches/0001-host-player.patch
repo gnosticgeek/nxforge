@@ -8,7 +8,7 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/gfx/gl/hle_gl.m    |  21 ++++--
  dm/gfx/vk/hle_vk.m    |   5 +-
  dm/host/Makefile      |  14 ++--
- dm/host/front.h       |  65 ++++++++++++++++-
+ dm/host/front.h       |  70 +++++++++++++++++-
  dm/host/front_mac.m   | 161 ++++++++++++++++++++++++++++++++----------
  dm/host/hle.h         |   2 +
  dm/host/hle_audio.c   |  15 +++-
@@ -16,7 +16,7 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/host/tests/t_hid.c |  18 +++--
  dm/host/web_apple.m   |  19 +++--
  dm/mac/launcher.c     | 106 ++++++++++++++++++++++++---
- 11 files changed, 359 insertions(+), 79 deletions(-)
+ 11 files changed, 364 insertions(+), 79 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
 index 285e675e42a3457972158496b2cba98f58fe54c0..31bc6a6619fc434ec224c61114e844f0f78483a9 100644
@@ -125,7 +125,7 @@ index 461132fb707e7b9b1053ccbd9da5116d582e87ab..c94a95cff67cb46103fbbed8bf914c66
  	rm -rf gen dmhost dmhost_* *.dSYM
  .PHONY: clean
 diff --git a/dm/host/front.h b/dm/host/front.h
-index b657e6c1c0dc37a39196167dc2608033150237e6..99b8f7646eb053befcf28ac2c9e2b9a700dd78bb 100644
+index b657e6c1c0dc37a39196167dc2608033150237e6..8a884a9d8214366741dd320a91cf3bbb4b34eeec 100644
 --- a/dm/host/front.h
 +++ b/dm/host/front.h
 @@ -1,5 +1,6 @@
@@ -143,7 +143,7 @@ index b657e6c1c0dc37a39196167dc2608033150237e6..99b8f7646eb053befcf28ac2c9e2b9a7
  // The pixel size of the display the game is shown on: on the Mac the window's screen in its current mode (the main display before the window is up) (a scaled Retina mode's pixels), an iPhone's or iPad's screen (nativeBounds).
  // Returns 0 and leaves w, h alone when not known (no front end: graphics unit tests). Any thread
  int front_display_pixels(int *w, int *h);
-@@ -23,6 +25,61 @@ int front_screen_variable_refresh(void);
+@@ -23,6 +25,66 @@ int front_screen_variable_refresh(void);
  // The frame rate the display link paces the game at (60, 30, 120; nvn_mtl.m link_sync): in fullscreen, a screen whose refresh rate is not a multiple of it is switched, while the game runs,
  // to a mode of the same size whose rate is, and back when the window leaves fullscreen or that screen (front_mac.m; none on iOS). Called from the present thread
  void front_screen_match(int fps);
@@ -172,6 +172,11 @@ index b657e6c1c0dc37a39196167dc2608033150237e6..99b8f7646eb053befcf28ac2c9e2b9a7
 +int mtl_present_edr_strength(void);
 +void mtl_present_edr_strength_set(int strength);
 +float mtl_present_edr_headroom(void);
++// Frame interpolation to 120 fps (NXForge, frame_interp.inc): 0 off, 1 on, 2 auto (on where the screen runs at 120 Hz or more); DM_PRESENT_INTERP=off|on|auto read the first time.
++// mtl_present_interp_active: whether it applies now (on, or auto on a 120 Hz screen)
++int mtl_present_interp(void);
++void mtl_present_interp_set(int mode);
++int mtl_present_interp_active(void);
 +// The CRT filters' scanline height (and the LCD grid's cell) in source rows, 1 to 8; 0 = auto (about 240 lines). DM_PRESENT_SCANLINE sets it from the environment
 +int mtl_present_scanline(void);
 +void mtl_present_scanline_set(int rows);
@@ -205,7 +210,7 @@ index b657e6c1c0dc37a39196167dc2608033150237e6..99b8f7646eb053befcf28ac2c9e2b9a7
  // The shape of the picture the game presents (nvn_mtl.m present_now, present_shape: the layer's, not the crop's, w x h), called when its width / height changes: the front end
  // lays the picture out in that shape instead of 16:9, so a profile with screen_aspect under DM_SCREEN_ASPECT (1920x1344) fills a 1.43:1 screen and touches map onto the picture
  // as drawn. Before the first call the picture is 16:9. Called from the present thread; the front end switches to its main thread and does not block
-@@ -68,10 +125,16 @@ void front_save_failed(int err);
+@@ -68,10 +130,16 @@ void front_save_failed(int err);
  
  // GPU lost (called by the graphics backend's nvn_mtl.m gpu_lost_check, once): the first command buffer came back MTL4CommandQueueErrorAccessRevoked, so macOS runs none of the process's GPU work
  // any more and nothing is drawn again. By then presents have stopped and the game's waits for the GPU are released, so the game runs on with nothing on screen until the front end ends it.
