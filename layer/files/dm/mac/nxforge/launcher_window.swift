@@ -1,14 +1,20 @@
 // NXForge's settings window for the Mac app (dm/mac/Launcher.swift shows it in place of nxnative's LauncherView, with the same model, store and callbacks).
-// A header with the game's icon, name and version over its artwork; General and Advanced tabs, each two columns of grouped boxes; Show at launch, Quit and Play at the bottom.
-// General: the basic settings (level=basic) and a few everyday controls, with Cloud saves. Advanced: the rest, and Reset to tested defaults.
+// A header with the game's icon, name and version over its artwork; General, Graphics and Advanced tabs, each two columns of grouped boxes; Show at launch, Quit and Play at the bottom.
+// General: the basic settings (level=basic) and a few everyday controls, with Cloud saves. Graphics: every picture setting, basic or not. Advanced: the rest, and Reset to tested defaults.
 // The rows are drawn here (a menu on the right, a switch, a slider with its value), each with a short Mac note; a row an env file or the launch sets is shown but disabled.
 import AppKit
 import SwiftUI
 
+enum NXFLauncherTab: String, CaseIterable { case general = "General", graphics = "Graphics", advanced = "Advanced" }
+
 enum NXFLauncherLayout {
-    /// Shown under Graphics, whatever settings.tsv's section says (its sections are the iPhone's single list)
-    static let graphics: [String] = ["DM_FPS_TARGET", "DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER", "DM_SCREEN_ASPECT",
-                                     "DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH", "DM_PRESENT_INTERP", "DM_PRESENT_AA"]
+    /// The Graphics tab's boxes and their rows in order, whatever settings.tsv's section or level says (its sections are the iPhone's single list)
+    static let graphicsBoxes: [(title: String, envs: [String])] = [
+        ("Resolution", ["DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER", "DM_SCREEN_ASPECT", "DM_PRESENT_AA"]),
+        ("Frame rate", ["DM_FPS_TARGET", "DM_PRESENT_INTERP"]),
+        ("HDR", ["DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH"]),
+    ]
+    static let graphics: [String] = graphicsBoxes.flatMap(\.envs)
     /// On the General tab though not level=basic: everyday controls
     static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
     /// The Mac window's shorter notes (the two-column boxes are narrow); a setting not listed keeps settings.tsv's note
@@ -25,35 +31,42 @@ enum NXFLauncherLayout {
         "DM_PSO_PREBUILD": "First launch may take a few minutes.",
     ]
 
-    static func onGeneral(_ s: Setting) -> Bool { s.basic || general.contains(s.env) }
-    static func group(_ s: Setting) -> String { graphics.contains(s.env) ? "Graphics" : s.sectionTitle }
+    static func tab(_ s: Setting) -> NXFLauncherTab {
+        graphics.contains(s.env) ? .graphics : s.basic || general.contains(s.env) ? .general : .advanced
+    }
+    static func group(_ s: Setting) -> String { graphicsBoxes.first { $0.envs.contains(s.env) }?.title ?? s.sectionTitle }
     static func note(_ s: Setting) -> String { notes[s.env] ?? s.note }
 
     static let cloudSaves = "Cloud saves"   // General's box that is not a group of settings
 
-    /// One tab's boxes, each a group's visible rows in the list's order (Graphics in its own order), split into two columns. General: Game on the left and Controls on the right,
-    /// then Graphics, Cloud saves and Performance each where the column is shorter so far (a slider counts as taller, a note adds a line)
-    static func columns(_ m: LauncherModel, general: Bool) -> (left: [String], right: [String]) {
-        let shown = m.settings.filter { onGeneral($0) == general && m.visible($0) }
+    /// One tab's boxes, each a group's visible rows in the list's order, split into two columns. General: Game on the left and Controls on the right, then Cloud saves and
+    /// any other group each where the column is shorter so far (a slider counts as taller, a note adds a line). Graphics: Resolution on the left, the others on the right
+    static func columns(_ m: LauncherModel, _ t: NXFLauncherTab) -> (left: [String], right: [String]) {
+        let shown = m.settings.filter { tab($0) == t && m.visible($0) }
         func height(_ g: String) -> Double {
             g == cloudSaves ? 3 : shown.filter { group($0) == g }.reduce(0) { $0 + ($1.kind == "range" ? 1.6 : 1) + (note($1).isEmpty ? 0 : 0.4) }
         }
-        if general {
+        let groups = shown.reduce(into: [String]()) { if !$0.contains(group($1)) { $0.append(group($1)) } }
+        switch t {
+        case .general:
             var left = height("Game") > 0 ? ["Game"] : [], right = height("Controls") > 0 ? ["Controls"] : []
             var l = height("Game"), r = height("Controls")
-            for g in ["Graphics", cloudSaves, "Performance"] where height(g) > 0 {
+            for g in [cloudSaves] + groups.filter({ $0 != "Game" && $0 != "Controls" }) where height(g) > 0 {
                 if l <= r { left.append(g); l += height(g) + 1 } else { right.append(g); r += height(g) + 1 }
             }
             return (left, right)
+        case .graphics:
+            let boxes = graphicsBoxes.map(\.title).filter { height($0) > 0 }
+            return (Array(boxes.prefix(1)), Array(boxes.dropFirst()))
+        case .advanced:
+            return (groups.filter { $0 != "Performance" }, groups.filter { $0 == "Performance" })
         }
-        let left = ["Graphics", "Game", "Controls"].filter { height($0) > 0 }
-        return (left, height("Performance") > 0 ? ["Performance"] : [])
     }
 
-    static func rows(_ m: LauncherModel, group g: String, general: Bool) -> [Setting] {
-        let rows = m.settings.filter { onGeneral($0) == general && m.visible($0) && group($0) == g }
-        guard g == "Graphics" else { return rows }
-        return rows.sorted { (graphics.firstIndex(of: $0.env) ?? 0) < (graphics.firstIndex(of: $1.env) ?? 0) }
+    static func rows(_ m: LauncherModel, group g: String, tab t: NXFLauncherTab) -> [Setting] {
+        let rows = m.settings.filter { tab($0) == t && m.visible($0) && group($0) == g }
+        guard let order = graphicsBoxes.first(where: { $0.title == g })?.envs else { return rows }
+        return rows.sorted { (order.firstIndex(of: $0.env) ?? 0) < (order.firstIndex(of: $1.env) ?? 0) }
     }
 }
 
@@ -62,17 +75,15 @@ struct NXFLauncherView: View {
     let done: (Bool) -> Void
     let fit: (CGFloat) -> Void
     @AppStorage("window.show") private var show = true
-    @AppStorage("window.advanced") private var advanced = false
+    @AppStorage("window.tab") private var tab = NXFLauncherTab.general
 
     var body: some View {
         VStack(spacing: 0) {
             NXFLauncherHeader()
             tabs
             ScrollView {
-                VStack(spacing: 14) {
-                    if advanced { advancedTab } else { generalTab }
-                }
-                .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 14)
+                VStack(spacing: 14) { page(tab) }
+                    .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 14)
             }
             .scrollBounceBehavior(.basedOnSize)
             .onScrollGeometryChange(for: CGFloat.self) {
@@ -98,9 +109,8 @@ struct NXFLauncherView: View {
     private var tabs: some View {
         HStack(spacing: 14) {
             VStack { Divider() }
-            Picker("", selection: $advanced) {
-                Text("General").tag(false)
-                Text("Advanced").tag(true)
+            Picker("", selection: $tab) {
+                ForEach(NXFLauncherTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented).labelsHidden().controlSize(.large).fixedSize()
             VStack { Divider() }
@@ -108,34 +118,26 @@ struct NXFLauncherView: View {
         .padding(.horizontal, 20).padding(.top, 4)
     }
 
-    private var generalTab: some View {
-        let c = NXFLauncherLayout.columns(m, general: true)
-        return VStack(spacing: 14) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(spacing: 14) { ForEach(c.left, id: \.self) { box($0, general: true) } }
-                    .frame(maxWidth: .infinity, alignment: .top)
-                VStack(spacing: 14) { ForEach(c.right, id: \.self) { box($0, general: true) } }
-                    .frame(maxWidth: .infinity, alignment: .top)
-            }
-            if !NXFLauncherLayout.columns(m, general: false).left.isEmpty || !NXFLauncherLayout.columns(m, general: false).right.isEmpty {
-                Text("More graphics and performance options in Advanced.").italic().font(.callout).foregroundStyle(.secondary)
-                    .padding(.top, 4)
-            }
-        }
-    }
+    private func empty(_ t: NXFLauncherTab) -> Bool { let c = NXFLauncherLayout.columns(m, t); return c.left.isEmpty && c.right.isEmpty }
 
-    private var advancedTab: some View {
-        let c = NXFLauncherLayout.columns(m, general: false)
-        return VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(spacing: 14) { ForEach(c.left, id: \.self) { box($0, general: false) } }
-                    .frame(maxWidth: .infinity, alignment: .top)
-                VStack(spacing: 14) { ForEach(c.right, id: \.self) { box($0, general: false) } }
-                    .frame(maxWidth: .infinity, alignment: .top)
+    @ViewBuilder private func page(_ t: NXFLauncherTab) -> some View {
+        let c = NXFLauncherLayout.columns(m, t)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(spacing: 14) { ForEach(c.left, id: \.self) { box($0, tab: t) } }
+                .frame(maxWidth: .infinity, alignment: .top)
+            VStack(spacing: 14) { ForEach(c.right, id: \.self) { box($0, tab: t) } }
+                .frame(maxWidth: .infinity, alignment: .top)
+        }
+        switch t {
+        case .general:
+            let more = [NXFLauncherTab.graphics, .advanced].filter { !empty($0) }.map(\.rawValue)
+            if !more.isEmpty {
+                Text("More options in \(more.joined(separator: " and ")).").italic().font(.callout).foregroundStyle(.secondary).padding(.top, 4)
             }
-            if c.left.isEmpty && c.right.isEmpty {
-                Text("This game has no advanced settings.").foregroundStyle(.secondary).padding(.vertical, 20)
-            }
+        case .graphics:
+            if empty(t) { Text("This game has no graphics settings.").foregroundStyle(.secondary).padding(.vertical, 20) }
+        case .advanced:
+            if empty(t) { Text("This game has no advanced settings.").foregroundStyle(.secondary).padding(.vertical, 20) }
             VStack(spacing: 6) {
                 Button { m.reset() } label: { Text("Reset to tested defaults").frame(minWidth: 220) }
                     .controlSize(.large).disabled(!m.changed)
@@ -145,12 +147,12 @@ struct NXFLauncherView: View {
         }
     }
 
-    // General: the title above the box; Advanced: inside it, over a line (as the mock-ups draw them)
-    @ViewBuilder private func box(_ group: String, general: Bool) -> some View {
-        let rows = NXFLauncherLayout.rows(m, group: group, general: general)
+    // General: the title above the box; Graphics and Advanced: inside it, over a line (as the mock-ups draw them). Sliders sit under their label except on Advanced
+    @ViewBuilder private func box(_ group: String, tab t: NXFLauncherTab) -> some View {
+        let rows = NXFLauncherLayout.rows(m, group: group, tab: t)
         if group == NXFLauncherLayout.cloudSaves {
             NXFCloudSavesBox()
-        } else if general {
+        } else if t == .general {
             VStack(alignment: .leading, spacing: 8) {
                 Text(group).font(.title3.weight(.semibold)).padding(.leading, 12)
                 NXFBox { rowList(rows, inline: false) }
@@ -160,7 +162,7 @@ struct NXFLauncherView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(group).font(.title3.weight(.semibold)).padding(.vertical, 8)
                     Divider()
-                    rowList(rows, inline: true)
+                    rowList(rows, inline: t == .advanced)
                 }
             }
         }
