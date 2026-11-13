@@ -2963,7 +2963,7 @@ index 1428c47e0a22d45d98a40415a9911c8c26a00b40..4d693eccceb0488ce4b206a93e39f1f5
 +R	346130326538323231646234616337305f62000000000000643364343830306134663737363633335f6200000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c0000004600000000000000000000000000000000000000000000000000000004010000040100000100000000000000ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000220000006900000869000010000000002500001800000000270000200000000011000028000000000000000000000000000000000000000000000000000000000c0000000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 +R	313838393465343137386161366236325f62000000000000343764666663303531623533643134645f6200000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c0000004600000000000000000000000000000000000000000000000000000004010000040100000100000000000000ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000220000006900000869000010000000002500001800000000270000200000000011000028000000000000000000000000000000000000000000000000000000000c0000000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 diff --git a/dm/games/0100152000022000/README.md b/dm/games/0100152000022000/README.md
-index d6fc17763059b595e0a8c7e9dafd7a35245f61e9..eeae8525e32079312c89e9f60d7c7a6192599314 100644
+index c85cf46010e979f5118f034f5bf432007824d7d6..c4344383ff4978dbe2ff50445bc596d3e104cf23 100644
 --- a/dm/games/0100152000022000/README.md
 +++ b/dm/games/0100152000022000/README.md
 @@ -4,6 +4,8 @@ Updates 4.0.0 (v1441792) and 4.0.1 (v1507328) over the base game, SDK 4.4.0, the
@@ -2984,7 +2984,7 @@ index d6fc17763059b595e0a8c7e9dafd7a35245f61e9..eeae8525e32079312c89e9f60d7c7a61
  
  ## Found on this game
 diff --git a/dm/games/0100535012974000/README.md b/dm/games/0100535012974000/README.md
-index 8885a0c91229a71efc9bf70edc2299e87a8d70e7..f69a11c228def5ee3f528cff98f9a623981c6e8d 100644
+index 2dc4e20c289a956ff4d2a141bff1366a448454af..5ee0a4ae67843fee474ba6bc08afb87dfdd42840 100644
 --- a/dm/games/0100535012974000/README.md
 +++ b/dm/games/0100535012974000/README.md
 @@ -24,7 +24,7 @@ The layer was written for this game (Super Mario Galaxy extended it later: [0100
@@ -3009,7 +3009,7 @@ index 0ab5187d572346461006792d2b88c7cc7cae6e45..80c51b24657d15743c36ede7333b1b08
  
  ## Open
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index b8357556ae6e2c5cbc449c7423444a473b391343..38be76cb7df4154195f4ab87a6ff843e7cf91b80 100644
+index 25e4c8cd6d9c8b2013621c1dce41a3e28d13b683..a24f67b38316cf5ddc4511921d2a3df067aa02c9 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -49,6 +49,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
@@ -3021,7 +3021,7 @@ index b8357556ae6e2c5cbc449c7423444a473b391343..38be76cb7df4154195f4ab87a6ff843e
  - Resolved: frames of 30–64 ms while walking into the castle town, with `new pipelines 0` and `6 re-uploads, 227.4 MB / 32.0 ms`: the loader fills a 1800x1380x8 R16 array (38.5 MB) and three block-compressed textures over several frames while they are drawn, and each use read the whole texture again, up to 8 times in one submission: [a texture written while it is drawn read whole at every use](../../../docs/reference/frame-rate.md#a-texture-written-while-it-is-drawn-read-whole-at-every-use). Now one look a submission and only the written layers: 25 ms at most there. The single-image textures (3072x2096 BC5, 3056x1152) are still read whole, once a submission (open).
  - Open: frames of 100–650 ms when an area first loads (640 first uploads, 321 MB, in one frame of 294 ms; another 640 ms of submit with 68 MB).
  - `DM_NVN_TBDR=1` was tried and does not help: p95 19 ms on the same walk, against 17.8.
-@@ -177,7 +179,9 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+@@ -186,7 +188,9 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
  - [Freeing a memory pool during a texture ID walk](../../../docs/reference/nvn-objects.md#freeing-a-memory-pool-during-a-texture-id-walk): the `-[NvPkg buffer]: unrecognized selector` crash after a save or a scene change.
  - [Extended products behind spirv-cross's optnone helper](../../../docs/reference/shaders.md#extended-products-behind-spirv-crosss-optnone-helper): 348,587 constant divisions left as unoptimized calls; the Kokiri Forest deck 54.0 → 59.1 fps on an M4 Pro.
  - [HMMA chains keep their matrices in the SIMD-group](../../../docs/reference/shaders.md#hmma-chains-keep-their-matrices-in-the-simd-group): the NDVE movie networks behind the title and the opening, 14.8 → 11.4 ms of compute a frame on this M6.
@@ -3137,10 +3137,10 @@ index dfb5802fc8d9e275ba29dc06edb9296c4e7eda5d..ecd227acf4748ede7ed8b34a581cc242
  - [A GPU copy into a texture uploaded from its storage uploaded all of it again](../../../docs/reference/nvn-objects.md#a-gpu-copy-into-a-texture-uploaded-from-its-storage-uploaded-all-of-it-again): 7.6 s and 10 s frames at the prologue's scene changes; measured on a build of our fork, not on `main`.
  - [The graphics scale does not follow the operation mode](../../../docs/reference/services.md#the-graphics-scale-does-not-follow-the-operation-mode): the 768x432 scene docked; measured on a build of the PR author's fork, not on `main`.
 diff --git a/dm/games/README.md b/dm/games/README.md
-index 4888adcaefac3948972da01c5db4460db3f67066..9aa6282082ca11d6347e58b67a389573f1cd1b54 100644
+index ba220750212350749b4690640210b1c114ee554a..6b032b963dba36344cf65b10069ae42ca2c2a60e 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -124,6 +124,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -125,6 +125,7 @@ One row per profile; the notes are each profile's `README.md`.
  | [Metroid Dread](010093801237C000/README.md) | `010093801237C000` | 2.1.0 | 11.4.3 | MercurySteam's engine | NVN |
  | [Metroid Prime 4: Beyond](010019A01E2F2000/README.md) | `010019A01E2F2000` | 1.1.0 | 19.3.15 | Retro Studios' engine | NVN |
  | [Metroid Prime Remastered](010012101468C000/README.md) | `010012101468C000` | 1.0.0 (base) | 12.3.1 | Retro Studios' engine | NVN |
@@ -3148,7 +3148,7 @@ index 4888adcaefac3948972da01c5db4460db3f67066..9aa6282082ca11d6347e58b67a389573
  | [Minecraft Dungeons II](0100A7C01B792000/README.md) | `0100A7C01B792000` | 1.1.3.0 | 20.5.15 | Unreal Engine 5, Wwise, Havok | NVN |
  | [Monster Hunter Rise](0100B04011742000/README.md) | `0100B04011742000` | 16.0.2 | 11.4.3 | Capcom's RE Engine | NVN |
  | [Monster Train 2](010051701FB46000/README.md) | `010051701FB46000` | 1.1.1 | 18.3.5 | Unity 2022.3.54f1 IL2CPP | NVN |
-@@ -211,7 +212,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -213,7 +214,7 @@ One row per profile; the notes are each profile's `README.md`.
  | Key | Meaning |
  |---|---|
  | `title_id`, `program_id` | Identity. `program_id` is what `svcGetInfo(ProgramId)` reports. The game's name is not stored: the NSP script reads it from the NSP's control data (NACP) |
@@ -3157,7 +3157,7 @@ index 4888adcaefac3948972da01c5db4460db3f67066..9aa6282082ca11d6347e58b67a389573
  | `ipa`, `app_category` | iOS app: the default IPA file name and the App Store category |
  | `build <ver> <display version> <module>=<build ID>…` | One row per version the game was brought up on. The NSP script builds any version (the base game alone, any update): a registered one from the profile as it is, any other from a profile derived from it (`<id>_build/profile`: the same keys, that version's own shader tables; `derive_profile`), with a red line naming the modules whose build no row registers, which the per-build cuts and host fixes do not reach. The host reports the display version by `main`'s build ID |
  | `package` | The version the profile's tables, prewarm list and notes were made on. The NSP script packs the newest version in the folder (`-p` / `PACKAGE` picks another) |
-@@ -256,6 +257,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -258,6 +259,7 @@ One row per profile; the notes are each profile's `README.md`.
  | `draw_barriers` | `full` (the default) / `game`: how draw passes are ordered. `full`: each waits for all earlier GPU work. `game`: by the game's own barriers (NVN asks for one before results of rendering are read), so a pass's vertex work overlaps the previous pass's fragments. Ocarina of Time's GPU time 25 → 18 ms, about 180 full barriers a frame halved. Only a barrier that orders primitives or indirect data waits for all earlier work; a fragment-only one keeps the overlap. Only vertex-stage reads of the previous pass's output without a barrier change order. `DM_NVN_BARRIER` overrides it |
  | `vconv_range` | `on` / `off` (the default): vertex attributes the replay converts on the CPU (integer shader inputs fed float-type formats and the like, `vconv_bind` in `nvn_mtl.m`) are converted only over the vertices each draw reads (first / count, or the smallest and largest index of a direct indexed draw, kept while the index pages stay unwritten) instead of the whole bound range. Age of Calamity binds whole mesh pools: in a battle that was millions of vertices a frame. Indirect draws, per-instance streams and indices with a GPU write queued on them keep the whole range. `DM_NVN_VCONV_CHECK=1` scans the indices again at every reuse and reports differences; `DM_NVN_VCONV_RANGE=0` / `1` overrides it |
  | `shader_key_skip` | `<offset>+<length>` (none by default): control-section bytes every shader key hashes as zeros, in `shader_split.py` (`key_ctl`) and the host (`hle_nvn.c` `keys_hash`), for an engine that shares one control section among shaders that differ only there. Batman: Arkham Knight: `0x770+0x78`, GLSLC's compile information (+0x778..+0x791 and +0x7d0..+0x7e7); without it the game asks for shaders the map does not have, each the control section of one record with the code area of another. It must stay clear of `+0x700..+0x75f`, which the tools read; it is a shader chain input, as every `shader_*` key |

@@ -42,6 +42,9 @@ static void levels(void) {
 #endif
     setenv("DM_NVN_RES_LIMIT_MB", "0", 1); memset(&g_guard, 0, sizeof g_guard);
 }
+static int queued_adds(void) {   // additions waiting in the residency queue (g_res_q)
+    pthread_mutex_lock(&g_res_mu); int n = 0; for (size_t i = 0; i < g_res_qn; i++) n += g_res_q[i].add; pthread_mutex_unlock(&g_res_mu); return n;
+}
 // The set's own size leaves out what was never committed, and the check before the commit needs it; the device's has what no set holds too
 static void commits(void) {
     id<MTLBuffer> a = [g_dev newBufferWithLength:64 << 20 options:MTLResourceStorageModePrivate], b = [g_dev newBufferWithLength:64 << 20 options:MTLResourceStorageModePrivate];
@@ -59,14 +62,14 @@ static void commits(void) {
     { uint64_t g1 = atomic_load(&g_guard_set); res_remove(a); CHECK(atomic_load(&g_guard_set) + (64 << 20) <= g1, "and a pending removal comes off it");
       res_add(a); }
     g_guard.evict = 1; g_guard.stop = 2; g_guard.wall = 3;   // anything is past these
-    res_commit();
-    CHECK(g_res_dirty && g_res_grew && g_res.allocatedSize == set, "a commit that adds is not made past the working set");
+    res_commit();   // queued: add b, remove a, add a
+    CHECK(queued_adds() == 2 && g_res.allocatedSize + (64 << 20) <= set, "past the working set a commit's removals go through and its additions stay queued");
     CHECK(atomic_load(&g_guard_lv) == GUARD_WALL, "and leaves the level for the submit thread");
-    pthread_mutex_lock(&g_res_mu); g_res_grew = 0; pthread_mutex_unlock(&g_res_mu);   // only removals left to commit
-    res_remove(a); res_commit();
-    CHECK(!g_res_dirty, "removals go through past it");
+    { uint64_t now = g_res.allocatedSize; res_commit(); CHECK(queued_adds() == 2 && g_res.allocatedSize == now, "they wait while it stays past"); }
     memset(&g_guard, 0, sizeof g_guard); atomic_store(&g_guard_lv, GUARD_OK);
-    res_remove(b); res_commit();
+    res_commit();
+    CHECK(!queued_adds() && g_res.allocatedSize >= set + (64 << 20), "and go in at the first commit under it");
+    res_remove(a); res_remove(b); res_commit();
 }
 static void eviction(void) {
     static pool_t pool = {.magic=MAGIC('P','O','O','L')};

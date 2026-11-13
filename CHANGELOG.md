@@ -2,6 +2,18 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.30.0 (2026-11-13)
+
+- **Up to nxnative `ce38664`** (59 commits past 0.28's engine `637f3fa`). For Ocarina of Time: streamed area transitions no longer thrash the finalized-texture table (frames of 100-490 ms, GitHub issue #2213); compute dispatches run in parallel between the game's own barriers instead of one at a time (PR #2250); residency changes are queued, so the submit thread no longer waits on another thread's 10-25 ms commit (PR #2379); large depth textures are zeroed by copies, which ended about half the save loads on an M3 Pro (PR #2306); pipeline prediction runs once per submission's first new miss (issue #2438); the visibility ring covers every submission in flight; a flush period's archive write no longer overlaps the pipeline compiles, which Metal crashed on; a staged shader's files stay until their batch has committed. Also: tessellation without a Metal tessellator, cube maps read by handle, M1/M2 compute kernels above 384 threads, the prewarm lists built into Mac apps (PR #2353), cloud-save fixes, Mario Golf: Super Rush and Trails in the Sky 2nd Chapter on the Mac. Shader chain `ad5985867476`: **every game's shaders rebuild once.**
+- **NXForge's GPU memory guard is ported onto upstream's queued residency changes**: at Metal's working set a commit's removals still go through and its additions wait in the queue.
+- **Open upstream pull requests taken early for Ocarina of Time** (each a patch, dropped once nxnative lands it):
+  - [#2344](https://github.com/seedds/nxnative/pull/2344), revised: read marks are aged only once they cover a quarter of Metal's working set (the first form slowed a Kokiri walk on a 16 GB Mac); it replaces 0.28.2's copy and is ported onto upstream's typed read marks.
+  - [#2497](https://github.com/seedds/nxnative/pull/2497): a full model heap no longer crashes the model rebuild (`DM_HEAP_RETRY`, on by default).
+  - [#2456](https://github.com/seedds/nxnative/pull/2456): the movie player takes up to two pictures a frame, so movies no longer fall behind their sound.
+  - [#2538](https://github.com/seedds/nxnative/pull/2538): **Wide screen** fills a Mac screen wider than 16:9 (the settings window's Game › Wide screen, Match screen by default; `DM_SCREEN_WIDE`). 2D UI art is stretched on very wide screens.
+  - [#2532](https://github.com/seedds/nxnative/pull/2532): **Render scale** above the Switch 2's resolution: 1.333 draws the 3D views at 2560x1440 docked, 2.0 at a native 3840x2160 output.
+- Takes a full rebuild of each game app, shaders included.
+
 ## 0.29.1 (2026-11-12)
 
 - **Frame interpolation no longer slows a game down in full screen.** On a variable-refresh screen in full screen, macOS showed each present one refresh late and the display link then skipped a tick. With an in-between picture on every refresh, the link called back about 80 times a second instead of 120, so Donkey Kong Country Returns HD was paced at 40 fps and ran in slow motion (it was smooth at 60 in a window). Interpolation now counts the link's callbacks. After a second at 30 to 100 a second, it turns itself off at that window size and the game's frames go up every other refresh, which holds 60 there. A new window size tries again. Takes a rebuild of the game app (no shader rebuild).

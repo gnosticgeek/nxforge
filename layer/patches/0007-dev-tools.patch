@@ -4,7 +4,10 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
- dm/gfx/tests/t_gl_imports.m          |  2 +-
+ dm/gfx/tests/t_res_commit.m          |  2 +-
+ dm/gfx/tests/t_upload_src.m          |  1 +
+ dm/gfx/tests/t_vk_swapchain_life.m   |  6 ++++--
+ dm/gfx/tests/t_zero_depth.m          |  7 ++++++-
  dm/tools/lint_c_baseline.tsv         |  5 ++---
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
@@ -13,21 +16,75 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 25 +++++++++++++++----------
- 9 files changed, 58 insertions(+), 31 deletions(-)
+ 12 files changed, 69 insertions(+), 34 deletions(-)
 
-diff --git a/dm/gfx/tests/t_gl_imports.m b/dm/gfx/tests/t_gl_imports.m
-index b373c43b15513f3d18c70e9ca3c4ce4e09ca2b41..28cd23f1b91a3d95748315d1bddd0f7af56b2788 100644
---- a/dm/gfx/tests/t_gl_imports.m
-+++ b/dm/gfx/tests/t_gl_imports.m
-@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
-     id<MTLCommandBuffer> rcb = [g_q commandBuffer]; id<MTLBlitCommandEncoder> rbe = [rcb blitCommandEncoder];   // after the upload: one queue runs its command buffers in commit order
-     [rbe copyFromTexture:dtex->tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(4, 4, 1) toBuffer:rb destinationOffset:0 destinationBytesPerRow:16 destinationBytesPerImage:64];
-     [rbe endEncoding]; [rcb commit]; [rcb waitUntilCompleted];
--    assert(!memcmp(rb.contents, depth, sizeof depth));
-+    assert(!memcmp(rb.contents, depth, sizeof depth));   // NOLINT(bugprone-suspicious-memory-comparison): the blit must copy the depth texels bit for bit
-     // A real link: the linked program keeps the stages' code (si, fn) whatever its attachments do afterwards; a relink without a stage fails. The same shader attached twice
-     // changes nothing (its count included)
-     void (*link)(GLuint) = import("glLinkProgram");
+diff --git a/dm/gfx/tests/t_res_commit.m b/dm/gfx/tests/t_res_commit.m
+index bee2fcc72ca7fd60b81c8a22e2394555bc547fe8..7f918c74c25cb41474c49027ba6dae512ddd4386 100644
+--- a/dm/gfx/tests/t_res_commit.m
++++ b/dm/gfx/tests/t_res_commit.m
+@@ -15,7 +15,7 @@ static int checks, failed;
+ 
+ enum { BIG_BYTES = 48u << 20 };
+ 
+-static id<MTLBuffer> buf(size_t n) { return [g_dev newBufferWithLength:n options:MTLResourceStorageModePrivate]; }
++static id<MTLBuffer> buf(size_t n) { id<MTLBuffer> b = [g_dev newBufferWithLength:n options:MTLResourceStorageModePrivate]; if (!b) abort(); return b; }   // NXForge (lint_c): never nil past here
+ 
+ int main(void) { @autoreleasepool {
+     mtl_init();
+diff --git a/dm/gfx/tests/t_upload_src.m b/dm/gfx/tests/t_upload_src.m
+index c4a36f721a25b9e0a119222cd7e42b3e57be29ef..60e98a3bdc24c639578ac96cabeae9ebbf785a10 100644
+--- a/dm/gfx/tests/t_upload_src.m
++++ b/dm/gfx/tests/t_upload_src.m
+@@ -33,6 +33,7 @@ static void make(upl *u, uint8_t *pool_mem, pool_t *pool, size_t off, unsigned w
+ static int same_texels(id<MTLTexture> tex, const upl *u) {
+     unsigned w = u->t.d.width, h = u->t.d.height;
+     id<MTLBuffer> rb = [g_dev newBufferWithLength:u->bytes options:MTLResourceStorageModeShared];
++    if (!rb) return 0;   // NXForge (lint_c): the readback buffer could not be made
+     id<MTLCommandBuffer> cb = q_cb(); id<MTLBlitCommandEncoder> ce = [cb blitCommandEncoder];
+     [ce copyFromTexture:tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1) toBuffer:rb destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:u->bytes];
+     [ce endEncoding]; [cb commit]; [cb waitUntilCompleted];
+diff --git a/dm/gfx/tests/t_vk_swapchain_life.m b/dm/gfx/tests/t_vk_swapchain_life.m
+index b56c63946138cb8853a8f950d73917014e3d770a..9eeb06bbfa2a6319d338dac23f9f6587c4252939 100644
+--- a/dm/gfx/tests/t_vk_swapchain_life.m
++++ b/dm/gfx/tests/t_vk_swapchain_life.m
+@@ -21,8 +21,10 @@ enum { CYCLES = 140, FRAMES = 3, IMAGES = 3 };   // more cycles than the present
+ static void one_cycle(__weak id<MTLTexture> *weak) {
+     @autoreleasepool {
+         VkSwapchainCreateInfoKHR ci = {.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .minImageCount = IMAGES, .imageFormat = VK_FORMAT_B8G8R8A8_UNORM,
+-                                       .imageExtent = {64, 32}, .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, .presentMode = VK_PRESENT_MODE_FIFO_KHR};
+-        VkSwapchainKHR sc; h_vkCreateSwapchainKHR(&g_device, &ci, NULL, &sc);
++                                       .imageExtent = {64, 32}, .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, .presentMode = VK_PRESENT_MODE_FIFO_KHR,
++                                       .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR, .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR};
++        VkSwapchainKHR sc = NULL;
++        if (h_vkCreateSwapchainKHR(&g_device, &ci, NULL, &sc) != VK_SUCCESS || !sc) { CHECK(0, "the swap chain"); return; }   // NXForge (lint_c)
+         for (uint32_t i = 0; i < sc->n; i++) weak[i] = sc->img[i]->tex;
+         for (int f = 0; f < FRAMES; f++) {
+             uint32_t k; h_vkAcquireNextImageKHR(&g_device, sc, UINT64_MAX, NULL, NULL, &k);
+diff --git a/dm/gfx/tests/t_zero_depth.m b/dm/gfx/tests/t_zero_depth.m
+index 75cb681b8481af615b129151917723959e979774..528495a6dd9f610cec211d68822e228f1e9afe6b 100644
+--- a/dm/gfx/tests/t_zero_depth.m
++++ b/dm/gfx/tests/t_zero_depth.m
+@@ -14,7 +14,10 @@ int main(void) { @autoreleasepool {
+     NSError *error = nil;
+     id<MTLLibrary> library = [g_dev newLibraryWithSource:@"#include <metal_stdlib>\nusing namespace metal;\n"
+         "kernel void count_nz(depth2d<float,access::read> d [[texture(0)]], device atomic_uint *o [[buffer(0)]], uint2 p [[thread_position_in_grid]]) { if (p.x < d.get_width() && p.y < d.get_height() && d.read(p) != 0.0f) atomic_fetch_add_explicit(o, 1u, memory_order_relaxed); }\n" options:nil error:&error];
+-    id<MTLComputePipelineState> counter = [g_dev newComputePipelineStateWithFunction:[library newFunctionWithName:@"count_nz"] error:&error];
++    id<MTLFunction> count_nz = [library newFunctionWithName:@"count_nz"];
++    CHECK(count_nz != nil, "the counter's function");   // NXForge (lint_c): a library that failed to compile has none
++    if (!count_nz) return 1;
++    id<MTLComputePipelineState> counter = [g_dev newComputePipelineStateWithFunction:count_nz error:&error];
+     CHECK(counter != nil, "synthetic non-zero counter compiles");
+     if (!counter) return 1;
+     id<MTLCommandQueue> queue = [g_dev newCommandQueue];
+@@ -36,6 +39,8 @@ int main(void) { @autoreleasepool {
+         if (!base) continue;
+         size_t bpp = base.pixelFormat == MTLPixelFormatDepth16Unorm ? 2 : 4, poison_bytes = (size_t)cases[i].w * cases[i].h * bpp;
+         id<MTLBuffer> poison = [g_dev newBufferWithLength:poison_bytes options:MTLResourceStorageModeShared];
++        CHECK(poison != nil, "the poison buffer allocates");
++        if (!poison) continue;   // NXForge (lint_c)
+         if (bpp == 2) for (size_t k = 0; k < poison_bytes / 2; k++) ((uint16_t *)poison.contents)[k] = 0xbfff;   // 0.75
+         else for (size_t k = 0; k < poison_bytes / 4; k++) ((float *)poison.contents)[k] = .75f;
+         id<MTLCommandBuffer> cb = [queue commandBuffer]; id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
 index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..f396b01e20cbe5d92e15fe9c444190d7090bc7d5 100644
 --- a/dm/tools/lint_c_baseline.tsv
@@ -92,7 +149,7 @@ index 47b05da3bfb292519667dee9a5729a2507b1c2a9..2d1727f78536d5254d6e85ea6857905b
  
      def test_home_redacted(self):
 diff --git a/dm/tools/tests/test_regress.py b/dm/tools/tests/test_regress.py
-index 20732d1fdf24f34fc264335ca7d580e49f3b06a3..4f850a1b3ea885e7fc6a68de7be77855060afc1e 100644
+index 1cba7396db737871215d5a418a7a9665edc27170..1e8500bc523faa7e7983823344e521abe8a03b10 100644
 --- a/dm/tools/tests/test_regress.py
 +++ b/dm/tools/tests/test_regress.py
 @@ -421,16 +421,16 @@ class Regress(unittest.TestCase):
@@ -243,7 +300,7 @@ index e63bbbbfc910a747b11fd3b090be67f1a2343341..dc069829654dc6341e8be1e963b0702c
      for d in dirs:
          if d.is_symlink() or not d.is_dir(): continue
 diff --git a/scripts/regress.py b/scripts/regress.py
-index 6b556df7dc7ecd4eec9253083f5618f35a97528c..d9b1bdd81d3fd6a2a60d9725e13ef0713c09aa64 100644
+index 798a7c5d2a2a7c1d81733cfa9e3e2fd9de208e4a..4f98c2728bd1ae970001b25880ae5130c58803bf 100644
 --- a/scripts/regress.py
 +++ b/scripts/regress.py
 @@ -96,7 +96,7 @@ rfs = shader_lib.romfs

@@ -1,0 +1,142 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: upstream-pr-2497: games/0400486024DEC000: a full model heap no longer
+ crashes the model rebuild: its CPU buffers and GPU memory are tried again in
+ the heap's parents (DM_HEAP_RETRY, on by default)
+
+From seedds/nxnative#2497 (open; 8e6cbe56), taken early for Ocarina of Time. Drop this patch when nxnative lands #2497.
+
+games/0400486024DEC000: a full model heap no longer crashes the model rebuild: its CPU buffers and GPU memory are tried again in the heap's parents (DM_HEAP_RETRY, on by default)
+
+Symptom: Ocarina of Time crashed about 11 minutes in on an iPhone (HookLink's test build): "BufferInitialize: pool has no storage", then h_nvnMemoryPoolGetFlags on a null pool, backtrace main+0x436fb4.
+
+Cause: the game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small per-model heaps and checks none of its four allocations: two CPU buffers from the heap's tryAlloc (lr main+0x436910, +0x436da4) and two blocks of GPU memory from main+0x502050 (lr main+0x436f1c, +0x437098). When the heap is full the game goes on with a null block. Hookshot found the same on PCs (NotRexed/Hookshot issue 1697); its notes give these sites and the sead heap layout (+0x38 the parent).
+
+Fix: patches.py heap_retry, stubs after the game's call: a failure is tried again in the heap's parents (at most 16 for the CPU buffers), the GPU memory last in the game's default heap, then the game goes on where it would have. State page +0x170 / +0x174 count the blocks made elsewhere and the power line logs them when they change; DM_HEAP_RETRY=0 (+0x17c) leaves the game as shipped. v131072 only.
+
+Checked: patch_nso.py on this game's v131072 main patches all four sites (main.changed.tsv) after checking each one's original word; host build; iOS compile check 263 files, 0 failed; test_patches, test_env_switches, test_docs pass. Not run in the game here, and HookLink had not run it on a device when it shipped in 1.8.5.
+
+Ported from HookLink's commit cc6e6b47 (https://github.com/dsi-hub/nxnative/tree/hooklink, MIT); the stubs are theirs. Changes from it: the call sits after dynamic_resolution (main's frame_step has no wide view or half-rate hooks), and a game note.
+
+Co-authored-by: dsi-hub <260802842+dsi-hub@users.noreply.github.com>
+---
+ dm/games/0400486024DEC000/README.md  |  1 +
+ dm/games/0400486024DEC000/patches.py | 41 +++++++++++++++++++++++++++-
+ dm/gfx/nvn/hle_nvn.c                 |  2 ++
+ dm/host/loader.c                     |  2 ++
+ docs/env_switches.tsv                |  1 +
+ 5 files changed, 46 insertions(+), 1 deletion(-)
+
+diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
+index 5836374c4fd1fe5e62e8c25a5e807e6a0f23d518..0d74450696a72a41a49dece83b079c85d3d9fff4 100644
+--- a/dm/games/0400486024DEC000/README.md
++++ b/dm/games/0400486024DEC000/README.md
+@@ -82,6 +82,7 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+ - This game took the Mac down before the fixes (kernel panic in `IOGPUGroupMemory` at 14.7 GB wired): [raw pool table](../../../docs/reference/memory.md#memory-pools-nothing-gave-an-address-to-stay-out-of-the-raw-pool-table), [textures made only when read](../../../docs/reference/memory.md#shaders-report-which-textures-they-read-through-a-pool), [out-of-memory exit](../../../docs/reference/memory.md#repeated-gpu-out-of-memory-failures-end-the-game).
+ - Why so much: the game's own memory is about the console's 9 GB application pool, and on the Mac its textures also exist as Metal textures, as Metal cannot sample the guest's block-linear storage.
+ - Resolved in part ([#1831](https://github.com/seedds/nxnative/issues/1831)): render targets that move in the game's 305 MB pool and change size with its dynamic resolution still get a new Metal texture each time. Their memory is now recycled ([Render targets that move with the dynamic resolution](../../../docs/reference/rendering.md#render-targets-that-move-with-the-dynamic-resolution-get-new-metal-memory-each-time)). Since 04419bc2 the resolution moves, and on a 16 GB MacBook Air M4 the game stuttered (p95 99 ms) with GPU allocation near 15 GB. On an M6, while the resolution moved in the village, the target site added 455-521 MB to the residency set per 300 frames without recycling and 27-37 MB with it once heaps were waiting, and frame p90 went from 33-50 ms to 17-18 ms. Open: the live targets' steady total, about 2.1 GB in the village. They cannot share the pool's memory as on the console: the game keeps live targets in the part of the full-size scene target its resolution leaves unused, which only NVN's layout allows (PR #1453). [A report of a GPU driver panic](https://github.com/seedds/nxnative/pull/1299) lines up with this churn. The reporter's Mac has not been tested.
++- A full model heap (`patches.py` `heap_retry`, `DM_HEAP_RETRY`, on by default): the model rebuild on the OptimizeChangeBank thread (main+0x4366e0) takes two CPU buffers and two blocks of GPU memory from small per-model heaps and checks none of them. HookLink's iPhone crashed 11 minutes in (`BufferInitialize: pool has no storage`, then `h_nvnMemoryPoolGetFlags` on a null pool, backtrace main+0x436fb4). Each failed allocation is now tried again in the heap's parents (at most 16), the GPU memory last in the game's default heap. The power line logs `full model heap` with the counts when they change. Hookshot found the same on PCs (NotRexed/Hookshot issue 1697). Open: not run in the game here, and the crash itself has not been reproduced on main.
+ 
+ ## Saves
+ 
+diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
+index cade577a2ea2a66be499e4cfaf85852ea814ac5e..650afb35e1442b477058101f27a0df29db47b86f 100644
+--- a/dm/games/0400486024DEC000/patches.py
++++ b/dm/games/0400486024DEC000/patches.py
+@@ -1,6 +1,6 @@
+ # The Legend of Zelda: Ocarina of Time (0400486024DEC000): the rewriter's patches of this game's own code. dm/tools/patch_nso.py loads every profile's patches.py;
+ # MATCH_FRAME_STEP as described there ("Registered patches"). Patches of Nintendo SDK module builds are in dm/tools/sdk_patches.py
+-from nso_asm import ADRP, B
++from nso_asm import ADRP, B, BL
+ 
+ # The game's frame ratio. Once a frame the function at main+0x6e6be0 (v131072) divides its base rate (60.0, or 30.0 while bit 0 of [x21+0x24f] is set) by the int frame rate at
+ # [x21+0x2c8] (fdiv s8,s1,s0 at +0xe4) and hands the result to the time object (main+0x3b4e300: ratio at +0x10, 1 / ratio at +0x14, round(60 / ratio) at +0x1c), which the game
+@@ -32,6 +32,7 @@ def frame_step(ctx):
+     emit(0x1e201828); emit(B(here(), site + 4))   # orig: fdiv s8,s1,s0; back
+     fs_put(site, [B(site, start)], 'frame ratio: the host\'s step × base rate / 60 instead of base rate / the game\'s frame rate (state page target fps; 0 = the game\'s ratio)')
+     dynamic_resolution(ctx)
++    heap_retry(ctx)
+ 
+ # The game's dynamic resolution (game__gfx__DynamicResolutionParam: LoadThreshold, ReduceCounterMax, IncreaseCounterMax and a list of levels, each a ResolutionReduceScale and a
+ # Priority; on v131072 levels 0..9 at 0.75..0.333 of 2048x1152, 1536x864 to 683x384). Its update (main+0x805aa0) reads the frame's GPU load (about 0.2 ms a unit) into +0x8, subtracts
+@@ -85,3 +86,41 @@ BINDING = [
+      'why': "the game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)",
+      'checked': 'v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09)'},
+ ]
++
++# A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
++# heaps of the model's own ("Model/....bfres", tens of KB), children of a large one, and checks none of these allocations: two CPU buffers made with the heap's
++# tryAlloc (vtable +0x30; lr main+0x436910 and main+0x436da4, sized in x21 and x22) and two blocks of GPU memory (main+0x502050 with a descriptor at sp+0x40 whose
++# heap is at +8; lr main+0x436f1c and main+0x437098). When the heap is full the game goes on with a null block: on the iPhone (test28-2) "BufferInitialize: pool
++# has no storage" and a crash in h_nvnMemoryPoolGetFlags 11 minutes in, backtrace main+0x436fb4. Hookshot found the same (NotRexed/Hookshot issue 1697, PR 2451):
++# its layout of these sead heaps (+0x28 memory, +0x30 size, +0x38 parent) and this function's sites are the ones used here; the stubs are our own. Each failure
++# is tried again in the heap's parents (at most 16), the first with room; the GPU memory last in the game's default heap (no heap named). The block goes back to
++# the heap whose range holds it when freed (the game frees by address). Each stub runs after the game's call has returned, so x0-x18 are free; the CPU stub saves
++# x19 / x20 for its walk. State +0x170 counts CPU blocks made in a parent, +0x174 GPU blocks made elsewhere; +0x17c != 0 (DM_HEAP_RETRY=0) leaves the game as shipped.
++# The words were assembled with clang; brk #n marks the patch-relative words written here (1 the state page, 2 back, 3 the game's failure path, 4 the call, 9 the
++# game's own instruction)
++heap_cpu_words = (0xb5000300, 0xd4200020, 0xb9417e11, 0x350002b1, 0xa9bf53f3, 0xf94027f3, 0xf9400673, 0x52800214, 0xf9401e73, 0xb40001d3, 0x71000694, 0x54000180,
++                  0xaa1303e0, 0xaa1503e1, 0x52800102, 0xf9400268, 0xf9401908, 0xd63f0100, 0xb4fffec0, 0xd4200020, 0xb9417211, 0x11000631, 0xb9017211, 0xa8c153f3,
++                  0xd4200120, 0xd4200040)
++heap_gpu_words = (0x370002a0, 0xb40002b3, 0xd4200020, 0xb9417e11, 0x35000231, 0xaa1303e9, 0xf9401d29, 0xf90027e9, 0x91038360, 0x910103e1, 0x52800022, 0xd4200080,
++                  0x37000080, 0xf94027e9, 0xb5ffff09, 0x14000005, 0xd4200020, 0xb9417611, 0x11000631, 0xb9017611, 0xf90027f3, 0xd4200040, 0xd4200060)
++def heap_retry(ctx):
++    if ctx.base != 0x6e6be0: return   # this build (v131072) only
++    here, emit, fs_site, fs_put, FS_STATE_OFF = ctx.here, ctx.emit, ctx.site, ctx.put, ctx.state
++    def stub(words, site, orig, subst, back, fail=None):
++        fs_site(site, orig.to_bytes(4, 'little').hex())
++        start = here()
++        for i, w in enumerate(words):
++            w = subst.get(i, w)
++            if w == 0xd4200020: w = ADRP(16, here(), FS_STATE_OFF)
++            elif w == 0xd4200040: w = B(here(), back)
++            elif w == 0xd4200060: w = B(here(), fail)
++            elif w == 0xd4200080: w = BL(here(), 0x502050)
++            elif w == 0xd4200120: w = orig
++            emit(w)
++        return start
++    for site, orig, size_mov in ((0x436910, 0xa90d577f, 0xaa1503e1), (0x436da4, 0x52800f13, 0xaa1603e1)):   # mov x1, x21 / x22: the size
++        start = stub(heap_cpu_words, site, orig, {13: size_mov}, site + 4)
++        fs_put(site, [B(site, start)], 'full model heap: a CPU buffer the heap had no room for is made in its parents (Hookshot issue 1697)')
++    for site, obj, fail in ((0x436f1c, 0x91038360, 0x437be4), (0x437098, 0xaa1503e0, 0x437c04)):            # add x0, x27, #0xe0 / mov x0, x21: the object
++        start = stub(heap_gpu_words, site, 0x37000040, {8: obj}, site + 8, fail)
++        fs_put(site, [B(site, start)], 'full model heap: GPU memory the heap had no room for is made in its parents or the default heap (Hookshot issue 1697)')
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index 3cce1492e0a0d45b8df960343e78b90697c6ab2d..ed7e1df3468e2e092860eaae02b93b0b38a9ca25 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -2003,6 +2003,8 @@ static void power_line(uint64_t frame) {
+         double nf = frame > pf ? (double)(frame - pf) : 1;   // per frame: the fair comparison when one build holds the frame rate better than another
+         LOG("[nvn] power up to frame %llu: CPU energy %.2f W, %.1f mJ per frame (%.1f fps); CPU %.0f%% (100 = one core), %.0f%% of it on performance cores; wakeups %.0f/s (out of platform idle %.0f); GPU %.1f ms/s; thermal %d; top yielders: %s", frame,
+             (e - pe) / 1e9 / s, (e - pe) / 1e6 / nf, nf / s, (cpu - pcpu) / 1e7 / s, cpu > pcpu ? 100.0 * (double)(p - pp) / (double)(cpu - pcpu) : 0, (iw - piw) / s, (idw - ppw) / s, (g - pg) / 1e6 / s, dm_thermal_now(), yt);
++        if (dm_fps_state) { uint32_t hc, hg; memcpy(&hc, dm_fps_state + 0x170, 4); memcpy(&hg, dm_fps_state + 0x174, 4);   // Ocarina of Time's patches.py heap_retry
++            static uint32_t phc, phg; if (hc != phc || hg != phg) { LOG("[nvn] full model heap up to frame %llu: %u CPU buffers made in a parent heap, %u GPU blocks made in a parent or the default heap (so far)", frame, hc, hg); phc = hc; phg = hg; } }
+         void mtl_dispatch_barrier_stats(uint64_t *, uint64_t *, uint64_t *, uint64_t *); static uint64_t pdg, pdc, pdu, pdn; uint64_t dg, dc, du, dn; mtl_dispatch_barrier_stats(&dg, &dc, &du, &dn);
+         if (dg + dc + du + dn != pdg + pdc + pdu + pdn) LOG("[nvn] compute dispatches up to frame %llu: %llu after a barrier of the game's, %llu after a copy's range, %llu in the full order (a binding with no range), %llu with no barrier (DM_NVN_DISPATCH_BARRIER)", frame,
+             (unsigned long long)(dg - pdg), (unsigned long long)(dc - pdc), (unsigned long long)(du - pdu), (unsigned long long)(dn - pdn));
+diff --git a/dm/host/loader.c b/dm/host/loader.c
+index ce63ce79cd8e5d8d2193fe9809bd245915e95ae2..61664c717bf0fbdf339589f603946a5e8c75b320 100644
+--- a/dm/host/loader.c
++++ b/dm/host/loader.c
+@@ -332,6 +332,8 @@ void dm_fps_state_apply(void) {
+     const char *dr = getenv("DM_DYNAMIC_RESOLUTION"); uint32_t dyn = dr && !strcmp(dr, "1");
+     if (dr && strcmp(dr, "0") && strcmp(dr, "1")) LOG("[RED] DM_DYNAMIC_RESOLUTION=%s: must be 0 or 1; keeping full resolution", dr);
+     memcpy(dm_fps_state + 0x40, &dyn, sizeof dyn);
++    // A full model heap (Ocarina of Time's patches.py heap_retry): DM_HEAP_RETRY=0 writes 1 at +0x17c, and the game's allocations that found their heap full stay as shipped
++    { const char *hr = getenv("DM_HEAP_RETRY"); if (hr && !strcmp(hr, "0")) { uint32_t off = 1; memcpy(dm_fps_state + 0x17c, &off, 4); LOG("%s: full model heap retry off (DM_HEAP_RETRY=0)", g_fps_mod); } }
+     // Screen shape: DM_SCREEN_ASPECT, the screen's width / height between 1.3 and 1.77, makes the builds with screen-shape stubs
+     // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
+     // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 2c312e40239504d24160dc6bfb7220348e8834b7..401dd6bc2394092c92d7046333594bbea31a3c85 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -78,6 +78,7 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
+ DM_GUEST_FILE_PUNCH	switch	`0` keeps the disk blocks of guest memory the game gives back (with `DM_GUEST_FILE=1`); by default they are punched out (`F_PUNCHHOLE`, which also drops the pages): the heap's at once, the alias region's by a sweep every 10 s once they have stayed given back over a whole interval
+ DM_GUEST_FILE_SCAN	diagnostic	`=1` (with `DM_GUEST_FILE=1`): every 30 s a `[mem] guest file scan` line, the dirty guest pages by region (heap, alias, stack, other) and how many of them read all 0
+ DM_GUEST_SPAWN_TEST	diagnostic	`=1` runs a self-test before `nnMain`: a host-started guest thread does SDK malloc / free and locks an `nn::os` mutex, and the result is logged; `=2` also keeps a resident thread
++DM_HEAP_RETRY	switch	`0`: Ocarina of Time's model rebuild (main+0x4366e0) goes on with a null block when its small model heap is full, as shipped; by default the CPU buffers and GPU memory are tried again in the heap's parents and the default heap (`patches.py` `heap_retry`, Hookshot issue 1697; state page +0x170 / +0x174 the counts, +0x17c the off flag)
+ DM_HID_LOG	diagnostic	`1` logs the HID button usage number of each button pressed on a raw HID gamepad (`pad_hid_mac.h`), to write a `DM_HID_MAP`
+ DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, `pad_hid.h`); Mac only
+ DM_HID_PADS	switch	`0` stops reading raw HID gamepads that GameController does not list, such as an 8BitDo in its own mode (`pad_hid_mac.h`); Mac only

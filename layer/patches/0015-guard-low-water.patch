@@ -16,7 +16,7 @@ Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
  5 files changed, 68 insertions(+), 13 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 0741ae2b6dc9b4d8e4021e064f29ce1c84e39714..1815baa09de93dd3536f17bd16fd819ce8d615d9 100644
+index 790913fbd3d8b935110c113ab1ee37725a24bee1..5836374c4fd1fe5e62e8c25a5e807e6a0f23d518 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -77,6 +77,7 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
@@ -28,10 +28,10 @@ index 0741ae2b6dc9b4d8e4021e064f29ce1c84e39714..1815baa09de93dd3536f17bd16fd819c
  - This game took the Mac down before the fixes (kernel panic in `IOGPUGroupMemory` at 14.7 GB wired): [raw pool table](../../../docs/reference/memory.md#memory-pools-nothing-gave-an-address-to-stay-out-of-the-raw-pool-table), [textures made only when read](../../../docs/reference/memory.md#shaders-report-which-textures-they-read-through-a-pool), [out-of-memory exit](../../../docs/reference/memory.md#repeated-gpu-out-of-memory-failures-end-the-game).
  - Why so much: the game's own memory is about the console's 9 GB application pool, and on the Mac its textures also exist as Metal textures, as Metal cannot sample the guest's block-linear storage.
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index ff024ca99aeb188910e5c01f3fcb572557e2fc64..6a8868569365729f4e841792a75c53b41bcd1da0 100644
+index 3b2ad12131cd7b4f6b81a2b3418e72cf7283f566..756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -474,10 +474,16 @@ static void res_check(id r, const char *what, int reg) {
+@@ -489,10 +489,16 @@ static void res_check(id r, const char *what, int reg) {
  // can hold g_mu, so it only reads the sizes and leaves a level for the submit thread (guard_act). A stuck submit thread never comes back to look, so a 100 ms timer reads them too (guard_tick).
  // DM_NVN_RES_LIMIT_MB: =<MB> stops at that size instead (a low one tests this), =0 turns the guard off. On iOS the system ends a process for its footprint long before this, and no front end has
  // been tried with this stop, so there the guard only evicts unless the switch asks for a limit
@@ -51,7 +51,7 @@ index ff024ca99aeb188910e5c01f3fcb572557e2fc64..6a8868569365729f4e841792a75c53b4
  // What the guard measures: the residency set after its next commit (g_guard_set: its size at the last commit and what res_add added since), not the device's currentAllocatedSize.
  // The device counts every no-copy buffer whole, and with large pools in lookup chunks, pool-table segments and sparse-run buffers several of them lie over the same guest pages:
  // PRAGMATA's boot load read 8,134 MB there with the set near 3 GB on an 8 GB Mac, and the wall refused the commits its textures needed. DM_NVN_GUARD_DEVICE=1: the larger of the two
-@@ -718,10 +724,38 @@ static void guard_stop(uint64_t used) {
+@@ -759,10 +765,38 @@ static void guard_stop(uint64_t used) {
      front_gpu_memory_stop(used >> 20, g_guard.wall >> 20);
  }
  // The submit thread decides while it comes round (guard_act). Past the working set, or a second over the stop level, it does not
@@ -90,7 +90,7 @@ index ff024ca99aeb188910e5c01f3fcb572557e2fc64..6a8868569365729f4e841792a75c53b4
      over = lv >= GUARD_STOP ? over + 1 : 0;
      if (lv == GUARD_WALL || over >= GUARD_TICKS) guard_stop(used);
  }
-@@ -732,6 +766,10 @@ static void guard_init(void) {
+@@ -773,6 +807,10 @@ static void guard_init(void) {
      if (ws && !(e && !lim)) { g_guard.wall = MAX(ws, lim); g_guard.stop = lim ? lim : ws / 100 * 95; g_guard.evict = g_guard.stop / 95 * 80;
  #if TARGET_OS_IPHONE
          if (!lim) g_guard.stop = g_guard.wall = UINT64_MAX;
@@ -101,7 +101,7 @@ index ff024ca99aeb188910e5c01f3fcb572557e2fc64..6a8868569365729f4e841792a75c53b4
  #endif
      }
      static dispatch_source_t timer;
-@@ -739,7 +777,8 @@ static void guard_init(void) {
+@@ -780,7 +818,8 @@ static void guard_init(void) {
      dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), 100 * NSEC_PER_MSEC, 20 * NSEC_PER_MSEC);
      dispatch_source_set_event_handler(timer, ^{ guard_tick(); });
      dispatch_resume(timer);
@@ -111,7 +111,7 @@ index ff024ca99aeb188910e5c01f3fcb572557e2fc64..6a8868569365729f4e841792a75c53b4
  }
  static void udc_selftest(void) {
      if (!getenv("DM_UDC_SELFTEST")) return;
-@@ -6728,7 +6767,7 @@ static uint32_t own_entries_locked(int with_ghosts, uint64_t **sers, void ***obj
+@@ -6896,7 +6935,7 @@ static uint32_t own_entries_locked(int with_ghosts, uint64_t **sers, void ***obj
      });
      *sers = sv; *objs = ov; return n;
  }
@@ -120,7 +120,7 @@ index ff024ca99aeb188910e5c01f3fcb572557e2fc64..6a8868569365729f4e841792a75c53b4
      os_unfair_lock_lock(&g_rmu);
      pthread_mutex_lock(&g_smu);
      CFMutableSetRef held = CFSetCreateMutable(NULL, 0, NULL); uint64_t *sv; void **ov; uint32_t ne = own_entries_locked(1, &sv, &ov);
-@@ -6739,7 +6778,7 @@ static unsigned alias_evict_idle(void) {
+@@ -6907,7 +6946,7 @@ static unsigned alias_evict_idle(void) {
      alias_key *ks = cap ? malloc(cap * sizeof *ks) : NULL; __block uint32_t n = 0;
      if (ks) own_alias_each_locked(^(const alias_key *k, id o) {
          if (n >= cap || CFSetContainsValue(held, (__bridge const void *)o)) return;
@@ -129,7 +129,7 @@ index ff024ca99aeb188910e5c01f3fcb572557e2fc64..6a8868569365729f4e841792a75c53b4
      });
      CFRelease(held);
      for (uint32_t j = 0; j < n; j++) own_alias_del_locked(&ks[j]);   // retired; residency follows the serial entries that still hold them (own_retire_locked)
-@@ -6771,20 +6810,23 @@ static unsigned pkg_trim(void) {
+@@ -6939,20 +6978,23 @@ static unsigned pkg_trim(void) {
      return n;
  }
  // From the eviction level: what can go. Everything here leaves behind the fences of the submissions that may use it, so the sizes fall a little later
@@ -161,10 +161,10 @@ index ff024ca99aeb188910e5c01f3fcb572557e2fc64..6a8868569365729f4e841792a75c53b4
      mtl_wait_at(fence, 2000000000ull, WS_DRAIN);
      defer_drain(); res_commit();
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index 144a73546901eea709f9d3d40b0eaa96ab3860e7..bdf2e787a55ed0779c261a288d269623439d73a7 100644
+index b085563cd69ddc101c2f15bb457f9d51a76bf119..549c57866f911f68906b855437d168084fdcee7e 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -181,6 +181,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -188,6 +188,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - process footprint and Metal allocation grow during stationary gameplay even after readback fences complete; the deferred-release queue and command allocator sizes remain bounded. → [Completion readbacks survive a guest waiter's pool](../reference/memory.md#completion-readbacks-survive-a-guest-waiters-pool)
  - the game plays its menu and movies, then at the first 3D load `GPU allocated` jumps by about 5 GB. The log has `[RED] GPU out of memory`, then a GPU page fault and `kIOGPUCommandBufferCallbackErrorSubmissionsIgnored`. The game keeps running with audio and a black screen, because every later submission is refused. Without guest files (`DM_GUEST_FILE`), the same load can instead end in a Jetsam report with reason `vm-pageshortage` on nearly every process. → [A Switch 2 game's first 3D load on an iPhone](../reference/memory.md#a-switch-2-games-first-3d-load-on-an-iphone)
  - a game ends stuck after `[RED] GPU out of memory`, or the Mac itself freezes until the power button; on an 8 GB Mac, WindowServer's watchdog restarts the desktop. Now: `[RED] GPU memory guard: ... stopping the game before the driver cannot wire more`, the report of what the residency set holds, and an alert before the app quits. → [GPU memory past Metal's working set freezes the Mac](../reference/memory.md#gpu-memory-past-metals-working-set-freezes-the-mac)
@@ -173,10 +173,10 @@ index 144a73546901eea709f9d3d40b0eaa96ab3860e7..bdf2e787a55ed0779c261a288d269623
  - the periodic `residency set up to frame` line shows hundreds of allocations added and removed per 300 frames in a scene where nothing loads: Ocarina of Time, 1,500 (`pool_gpu` 900 of 180 KB, `mrbuf_get` 600 of 0.5 MB), and 650 commits. → [Pool tables and readback buffers made anew each frame](../reference/memory.md#pool-tables-and-readback-buffers-made-anew-each-frame)
  - with a profile that has `tex_dirty_upload`, a texture in a sparse pool that the game draws into or writes as an image logs `CPU-written texture ser=…` at its first use, and takes its content from its storage. `t_sparse_tiles` crashed at `and unmapped, not drawn: its heap tile goes back` when built with such a profile, and passed with one without the key. → [A texture in a sparse pool came out CPU-written at its first use](../reference/memory.md#a-texture-in-a-sparse-pool-came-out-cpu-written-at-its-first-use)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 451a749744b889891ffb6a7cbfd97f9aac0280e0..466d8ba72ea989bb9ecf53342cc3647b61db54e0 100644
+index 7694b41748651392ae0aa6c1c81a75b15b6e09be..2c312e40239504d24160dc6bfb7220348e8834b7 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -184,6 +184,7 @@ DM_NVN_GPU_STORAGE	switch	`0` stops what the GPU writes into a texture in storag
+@@ -185,6 +185,7 @@ DM_NVN_GPU_STORAGE	switch	`0` stops what the GPU writes into a texture in storag
  DM_NVN_GPU_TS	switch	`submission` or `segment_gaps`: what timestamp reports record instead of the default `segment` (the GPU start / end of the segment holding each report, without the GPU's idle time between the submission's command buffers): one time for the whole submission, or segment times with that idle time
  DM_NVN_GPU_WATCHDOG	diagnostic	`=<seconds>` (default 4): a submission the GPU has not finished in that time is reported with the shaders it ran and the process stops before the Mac's GPU hangs; `0` off
  DM_NVN_GUARD_DEVICE	diagnostic	`1`: the GPU memory guard measures the larger of the residency set and the device's `currentAllocatedSize` (#1391's first form); default: the residency set after its next commit only, as the device counts overlapping no-copy buffers over the same pages once each
@@ -184,7 +184,7 @@ index 451a749744b889891ffb6a7cbfd97f9aac0280e0..466d8ba72ea989bb9ecf53342cc3647b
  DM_NVN_HILITE	diagnostic	`=<fragment shader key>,…`: those draws use a solid colour instead (magenta, green, cyan, yellow, blue, white in order), to tell wrong geometry from wrong shading
  DM_NVN_INDLOG	diagnostic	`=<n>`: the first n indirect draws (and those of pass-dumped frames) log their arguments at encode and as the GPU left them once the submission completed, with the first indices
  DM_NVN_IXCLOG	diagnostic	`=<n>` logs the first n indirect draw and dispatch conversions (record to arguments) once the GPU has run them
-@@ -213,6 +214,7 @@ DM_NVN_PROF	diagnostic	`=1` wraps the implemented NVN functions in a timing wrap
+@@ -214,6 +215,7 @@ DM_NVN_PROF	diagnostic	`=1` wraps the implemented NVN functions in a timing wrap
  DM_NVN_PROGTRACE	diagnostic	`=<vertex keys,...>` logs matching ProgramSetShaders calls and their guest backtraces
  DM_NVN_REGLUM	diagnostic	`=x0,y0,x1,y1:<file>` (normalized coordinates): on every present records the present number, time, mean luminance and a grayscale thumbnail of that region, to check animation speed against frame rate
  DM_NVN_REPORT_EXACT	switch	`0` refuses a partly covered uniform shadow over the whole 4 KB page of a counter report of a running submission, as before; by default only over the report's own 16 bytes, which the host writes when that submission completes
@@ -193,10 +193,10 @@ index 451a749744b889891ffb6a7cbfd97f9aac0280e0..466d8ba72ea989bb9ecf53342cc3647b
  DM_NVN_REUPLOADS	diagnostic	`=1` logs the first 400 re-uploads of textures taken from their storage: shape, size, how much was read from guest memory and how many images were copied from the texture it replaces, the frame and the submission, the pages written since the upload and where the first lies, and the GPU copies into it since then
  DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover the whole target, as before; by default a draw pass that loads what it keeps stops at the far corner of its scissor when that is at most half the target
 diff --git a/docs/reference/memory.md b/docs/reference/memory.md
-index 5973900ed8431d88a2ed9af0dfa2b55418e1ddf3..332d9dd4d1170db975a820788c7bf3f2dfc7ed65 100644
+index 3aaa982a2abd7da6692bae2513f996381e748850..65bc714c32ab32de75c113ec54e45f0b39170db4 100644
 --- a/docs/reference/memory.md
 +++ b/docs/reference/memory.md
-@@ -519,6 +519,15 @@ The guest address space, heaps, pools, virtual address memory and the allocators
+@@ -543,6 +543,15 @@ The guest address space, heaps, pools, virtual address memory and the allocators
  - **Check:** `t_res_guard`. In a game, a low `DM_NVN_RES_LIMIT_MB` ends the run with the report and exit code 0.
  - **Note:** the working set counts pools too, shared buffers over guest memory that add no bytes: a game's numbers look larger than its footprint. A 16 GB Mac has less margin: the report shows what filled it.
  

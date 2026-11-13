@@ -20,10 +20,10 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  12 files changed, 377 insertions(+), 83 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
-index 285e675e42a3457972158496b2cba98f58fe54c0..31bc6a6619fc434ec224c61114e844f0f78483a9 100644
+index 029e038206be48c3c258fca7380798375a749d92..5a4f40baf9b4b8e148ac5fade2846410d906168a 100644
 --- a/dm/gfx/gl/hle_gl.m
 +++ b/dm/gfx/gl/hle_gl.m
-@@ -559,7 +559,7 @@ static id<MTLSamplerState> tex_sampler(tex_t *t) {
+@@ -578,7 +578,7 @@ static id<MTLSamplerState> tex_sampler(tex_t *t) {
      d.lodMaxClamp = mips ? k.lv : 0;
      d.sAddressMode = wrap_of(k.ws); d.tAddressMode = wrap_of(k.wt); d.rAddressMode = wrap_of(k.wr);
      d.borderColor = k.b == 2.f ? MTLSamplerBorderColorOpaqueWhite : k.b == 1.f ? MTLSamplerBorderColorOpaqueBlack : MTLSamplerBorderColorTransparentBlack;
@@ -32,7 +32,7 @@ index 285e675e42a3457972158496b2cba98f58fe54c0..31bc6a6619fc434ec224c61114e844f0
      if (k.cmp) d.compareFunction = (MTLCompareFunction)(k.cmp - GL_NEVER);
      id<MTLSamplerState> s = [g_dev newSamplerStateWithDescriptor:d];
      if (n < 256) { cache[n].k = k; cache[n].s = s; n++; } else RED1("more than 256 distinct sampler parameter sets");
-@@ -1108,14 +1108,21 @@ GLB(glClear, void, GLbitfield mask) {
+@@ -1127,14 +1127,21 @@ GLB(glClear, void, GLbitfield mask) {
              if (nc < 16) { ck[nc] = key; cache[nc++] = pso; }
          }
          if (!pso) return;
@@ -61,7 +61,7 @@ index 285e675e42a3457972158496b2cba98f58fe54c0..31bc6a6619fc434ec224c61114e844f0
          [e setViewport:(MTLViewport){0, 0, P.w, P.h, 0, 1}];
          int sc[4] = {0, 0, (int)P.w, (int)P.h};
 diff --git a/dm/gfx/vk/hle_vk.m b/dm/gfx/vk/hle_vk.m
-index 125014a714ed8afee2edae931366e200658dc70a..b53a2ade8449af855b22c8565435f9eb83d4df76 100644
+index f29743af04d81788e7ce10afc6124124cb9a9a5b..3f84954af914cb769a6f20083ba6f4adc404ebd1 100644
 --- a/dm/gfx/vk/hle_vk.m
 +++ b/dm/gfx/vk/hle_vk.m
 @@ -698,7 +698,8 @@ VKB(vkCreateSampler, VkResult, VkDevice d, const VkSamplerCreateInfo *ci, const
@@ -673,7 +673,7 @@ index 99fb4b5cbd314095aabfa4d2c8c0b63f04274eaf..564bd8a2c3db0948fbcc2d3b29e1bd0e
  HLE_FORCE("_ZN2nn5audio31GetVirtualInputDevicePropertiesEPNS0_23VirtualDevicePropertiesERKNS0_15AudioDeviceNameE", "connect to auddmg:u; no such device", Result, h_is_Props, void *props, const char *name) { (void)props; (void)name; return RES_FAIL; }
  HLE_FORCE("_ZN2nn5audio15OpenInputStreamEPNS0_15InputStreamTypeEPvmRKNS0_15AudioDeviceNameERKNS0_12StreamFormatEi", "connect to auddmg:u; no microphone on the host: fails", Result, h_is_Open,
 diff --git a/dm/host/hle_hid.c b/dm/host/hle_hid.c
-index 764015e1134c241492b7ae5bdd3a1cfd6c4555c9..3e578aaee813ce613b612e2c0a481ec82f16003d 100644
+index d3f7e13dcae0b580001cdeb3dfb83c0df0b36331..60cc84d7ed193fb2a2a25c325b2b47c7c691e75a 100644
 --- a/dm/host/hle_hid.c
 +++ b/dm/host/hle_hid.c
 @@ -227,7 +227,10 @@ void hid_keys_init(void) {
@@ -850,7 +850,7 @@ index a990d05b401ba0dc40fcf7ba0b477d73262d1b8c..95cfe2f2213b9f7c3d86169c9f9b9931
          w.contentView = host
          host.layoutSubtreeIfNeeded()
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 029dccea4197250ccffb2ff9e74430970e4d73b0..ee202f0ea3704a608db8f17abf49eaa1c681b8ad 100644
+index 24cd44fed258efb757890b10f5cf3d6e2b95c69c..aca6d08755250cb67f388d5ee55b43522d71571f 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
 @@ -2,16 +2,22 @@
@@ -984,15 +984,15 @@ index 029dccea4197250ccffb2ff9e74430970e4d73b0..ee202f0ea3704a608db8f17abf49eaa1
      int window = !(getenv("DM_LAUNCHER") && !strcmp(getenv("DM_LAUNCHER"), "0"));
      for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--no-launcher")) window = 0;
      if (!window) fprintf(stderr, "launcher: no settings window (DM_LAUNCHER=0 or --no-launcher)\n");
-@@ -207,6 +287,7 @@ int main(int argc, char **argv) {
-     if (shown == 2) saved_choices();
+@@ -208,6 +288,7 @@ int main(int argc, char **argv) {
      cloud_saves_folder();
      setenv("DM_ROOT", sup, 0); setenv("DM_ROMFS", romfs, 0); setenv("DM_TEMP", temp, 0);
+     snprintf(p, sizeof p, "%s/Library/Application Support/nxnative/system", home); setenv("DM_SYSTEM_DIR", p, 0);   // the player's own console files, for every game
 +    snprintf(p, sizeof p, "%s/pso_user.tsv", sup); setenv("DM_PSO_USER", p, 0);   // the pipeline list (and pso_archive/ beside it) stays in the Library wherever the save is
      snprintf(p, sizeof p, "%s/msl", res); setenv("DM_MSL_DIR", p, 0);
      snprintf(p, sizeof p, "%s/font", dm); setenv("DM_FONT_DIR", p, 0);
      snprintf(p, sizeof p, "%s/shader_map.tsv", dm); if (!stat(p, &st)) setenv("DM_NVN_SHMAP", p, 0);
-@@ -220,13 +301,20 @@ int main(int argc, char **argv) {
+@@ -221,13 +302,20 @@ int main(int argc, char **argv) {
      sigemptyset(&sa.sa_mask);
      sigaction(SIGTERM, &sa, NULL); sigaction(SIGINT, &sa, NULL); sigaction(SIGHUP, &sa, NULL);
      char *host_argv[] = {host, dm, NULL};
