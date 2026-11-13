@@ -1,60 +1,84 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Konstantine Zhurakovskiy <konstantine.zhurakovskiy@gmail.com>
 Date: Wed, 11 Nov 2026 21:21:44 +0700
-Subject: upstream-pr-2344: Ocarina of Time: a texture ID's read mark goes with
- its next texture when the ID has not been read for 600 frames
+Subject: upstream-pr-2344: Read marks are aged once they cover a quarter of
+ the working set
 
-From seedds/nxnative PR #2344 (commit 4ec0c1c1), taken early for Ocarina of Time; dropped once nxnative lands it. Its message:
+From seedds/nxnative#2344 (open; commit b5ad4561, the revised form with a cap), taken early for Ocarina of Time's late-session area-load freezes; it replaces 0.28.2's first form. Ported onto upstream's typed read-mark sections: the first scan takes back and folds every section's marks. Drop this patch when nxnative lands #2344.
 
-A texture ID's read mark goes with its next texture when no shader has read the ID for 600 frames, so area loads late in a session no longer make every streamed texture at once: a read mark (pool_seen) stayed with its ID through every new texture (PR #2022) and was cleared only when the ID was emptied, so the marks grew with every area passed through. An hour into Ocarina of Time (0400486024DEC000, v131072) the pool walk line counted 19,201 of its 33,024 IDs as read (22.7 GB of textures), and a walk makes a marked ID's texture whatever its room (pool_entry, under POOL_REQ_BYTES, 128 MB a frame), so each area load, which streams thousands of textures into IDs earlier areas had read, had them made as fast as the read budget allowed: the loads into Hyrule Field and the passages around it froze in runs of 200-670 ms frames for seconds, with 100-300 first texture uploads a frame and GPU allocated at 9.8 GB against 3.9 GB in the session's first minutes. Now pool_seen_scan takes the GPU's marks back every 60 frames (SEEN_REARM; an exchange, so a mark set meanwhile stays for the next scan) and notes the frame each mark was last found in (g_seen_at, up to 60 frames after the read); the shaders set them again at their next read (dm_pool_mark is unchanged, so the chain is not). mtl_reg_tex keeps the mark for the ID's next texture only when the ID was read within the last DM_NVN_SEEN_KEEP frames (600 by default): the streamed replacement of a material on screen keeps it as PR #2022 needs, and a texture streamed into an ID left behind holds its stand-in until it is read (pool_stand). The marks are scanned in a pass of their own before the walk, which may stop at the read budget. A stale 1 read by work still running just after a take-back skips one mark, which a read after the next take-back sets. DM_NVN_SEEN_KEEP=0 keeps every mark until its ID is emptied, as before; the pool stand-ins line counts the marks kept and dropped. The reference entry (Area loads froze late in a session as read marks piled up) is new, the entry for PR #2022 and Ocarina's note link it. Checked: t_pool_seen_replace (60 checks, 8 new: a read notes its frame, the GPU's mark taken back while the host's stays, a mark not read within the window dropped with the next texture, an ID read again keeps its mark; 52 with DM_NVN_SEEN_KEEP=0), t_pool_standin, t_pool_notes, t_pool_chunks, make run in dm/gfx/tests (every suite passes; the six that import dmsh_side need Python 3.10 or later), test_docs. Two sessions of play on an M5 Pro (48 GB, macOS 26.6.2), not on the same route: without the change, the runs of 200-670 ms frames above after the first hour and tens of 300-frame windows with a p95 above 40 ms; with it, 78 minutes, one such window in 903, GPU allocated 7.2-9.6 GB from the 6th minute on, following the area rather than the time played, and the area loads single frames of 102 and 155 ms (658 and 248 first uploads). 92,703 new textures kept their ID's mark and 46,614 dropped it; stand-ins made 1,235,328 in 6.19 s over the session against about 128,000 without the change (23 us of the submit thread a frame on average). Not run: an A/B on one route, regress.py check (no other game here streams into a bindless pool this way), another game, a Mac with less memory, lint_c.py, iOS. Open: whether the area-load frames of 100-155 ms left come from the stand-ins made in them or from the first uploads. test_env_switches fails on main as here, for DM_NVN_VCONV_KEEP, which this does not touch
+nvn/pool: age read marks once they cover a quarter of the working set
 
+A read mark (pool_seen) stayed with its ID through every new texture (PR #2022) and was cleared only when the ID was emptied, so the marks grew with every area passed through. An hour into Ocarina of Time (0400486024DEC000, v131072) the pool walk line counted 19,201 of its 33,024 IDs as read (22.7 GB of textures), and a walk makes a marked ID's texture whatever its room (pool_entry, under POOL_REQ_BYTES, 128 MB a frame), so each area load, which streams thousands of textures into IDs earlier areas had read, had them made as fast as the read budget allowed: the loads into Hyrule Field and the passages around it froze in runs of 200-670 ms frames for seconds, with 100-300 first texture uploads a frame and GPU allocated at 9.8 GB against 3.9 GB in the session's first minutes. Another player saw the same on an M4 Pro (24 GB): loads around Kakariko and Lake Hylia at about 5 fps, 17,139 IDs marked (14.2 GB) after 41 minutes (PR #2344).
+
+The host now keeps the size of the marked IDs' textures (seen_size, g_seen_kb_all). While it is above a quarter of Metal's working set (SEEN_CAP_DIV; about 2.7 GB on a 16 GB Mac, 9 GB on a 48 GB one), pool_seen_scan takes the GPU's marks back every 60 frames (SEEN_REARM; an exchange, so a mark set meanwhile stays for the next scan) and notes the frame each mark was last found in (g_seen_at, up to 60 frames after the read); the shaders set them again at their next read (dm_pool_mark is unchanged, so the chain is not). mtl_reg_tex then keeps the mark for the ID's next texture only when the ID was read within the last DM_NVN_SEEN_KEEP frames (600 by default): the streamed replacement of a material on screen keeps it as PR #2022 needs, and a texture streamed into an ID left behind holds its stand-in until it is read (pool_stand). Below the cap nothing is taken back or dropped, as before: a mark makes the ID's next texture when it is registered, often hundreds of frames before its first read, and the first form of this change, which aged marks whatever their size, slowed a scripted walk out of Kokiri Forest on an M2 MacBook Air (16 GB) to 70-110 ms frames (GPU 44-60 ms) against 34 ms with DM_NVN_SEEN_KEEP=0 (dpadr's runs, PR #2344). The marks are scanned in a pass of their own before the walk, which may stop at the read budget. A stale 1 read by work still running just after a take-back skips one mark, which a read after the next take-back sets. DM_NVN_SEEN_KEEP=0 keeps every mark until its ID is emptied, as before; the pool stand-ins line counts the marks kept and dropped, with the cap and the marked size. The reference entry (Area loads froze late in a session as read marks piled up) is new, the entry for PR #2022 and Ocarina's note link it.
+
+Checked: t_pool_seen_replace (67 checks, 15 new: a read notes its frame and the ID counts its texture's size; below the cap the GPU's mark stays and an unread ID keeps its mark at its new texture's size; above it the GPU's mark is taken back while the host's stays, a mark not read within the window goes with the next texture, an ID read again keeps its mark; the size goes with the marks; 50 with DM_NVN_SEEN_KEEP=0), t_pool_standin, t_pool_notes, t_pool_chunks, make run in dm/gfx/tests on 713ac08e plus this (every suite passes), test_docs, env_switches.py --check. Two sessions of play on an M5 Pro (48 GB, macOS 26.6.2) with the first form (no cap), not on the same route: without the change, the runs of 200-670 ms frames above after the first hour and tens of 300-frame windows with a p95 above 40 ms; with it, 78 minutes, one such window in 903, GPU allocated 7.2-9.6 GB from the 6th minute on, following the area rather than the time played, and the area loads single frames of 102 and 155 ms (658 and 248 first uploads). 92,703 new textures kept their ID's mark and 46,614 dropped it; stand-ins made 1,235,328 in 6.19 s over the session against about 128,000 without the change (23 us of the submit thread a frame on average). Not run: any game with the cap (neither the long session nor the Kokiri walk), an A/B on one route, regress.py check (no other game here streams into a bindless pool this way), another game, lint_c.py (no LLVM clang-tidy here), iOS. Open: whether a quarter of the working set is the right cap; whether the area-load frames of 100-155 ms left come from the stand-ins made in them or from the first uploads.
 Co-authored-by: Cursor <cursoragent@cursor.com>
 ---
  dm/games/0400486024DEC000/README.md |  1 +
- dm/gfx/nvn/nvn_mtl.m                | 37 ++++++++++++++++++++++++-----
- dm/gfx/tests/t_pool_seen_replace.m  | 16 +++++++++++--
+ dm/gfx/nvn/nvn_mtl.m                | 50 +++++++++++++++++++++++++----
+ dm/gfx/tests/t_pool_seen_replace.m  | 26 +++++++++++++--
  docs/agents/symptoms.md             |  1 +
  docs/env_switches.tsv               |  1 +
- docs/reference/rendering.md         | 10 +++++++-
- 6 files changed, 57 insertions(+), 9 deletions(-)
+ docs/reference/rendering.md         | 10 +++++-
+ 6 files changed, 79 insertions(+), 10 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 38be76cb7df4154195f4ab87a6ff843e7cf91b80..0741ae2b6dc9b4d8e4021e064f29ce1c84e39714 100644
+index a24f67b38316cf5ddc4511921d2a3df067aa02c9..790913fbd3d8b935110c113ab1ee37725a24bee1 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
-@@ -156,6 +156,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+@@ -165,6 +165,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
  - [The pool walk's statistics made chunks of a large pool](../../../docs/reference/memory.md#the-pool-walks-statistics-made-chunks-of-a-large-pool): resolved, GPU allocated 3.3 to 15.8 GB in the area load on a 16 GB Mac (issue #2068); 77 overlapping 80 MB chunks of the 2,432 MB pool, made by two log statistics.
  - [Models black for one frame when a streaming step replaces their textures](../../../docs/reference/rendering.md#models-black-for-one-frame-when-a-streaming-step-replaces-their-textures): resolved, the castle town wall, Hyrule Castle, rocks and trees near the town and Lon Lon Ranch's barn black for one frame, twice, 4-5 frames apart, at the streaming steps that replace their material sets (PR #2022; seen on an M4 Pro and an M5 Max).
  - [A streamed texture's first read drew its surface dark for one frame](../../../docs/reference/rendering.md#a-streamed-textures-first-read-drew-its-surface-dark-for-one-frame): resolved, the cliff beside the castle town wall in Hyrule Field darker for one frame as the game streamed it a sharper texture set ([issue #1969](https://github.com/seedds/nxnative/issues/1969), PR #2075); the first read now samples the texture's own colours, coarse, for that frame. Seen also in Kakariko Village and its graveyard on a MacBook Air M5 (three flashes in 8 minutes before, none in 4 after, by eye).
-+- [Area loads froze late in a session as read marks piled up](../../../docs/reference/rendering.md#area-loads-froze-late-in-a-session-as-read-marks-piled-up): resolved, runs of 200-670 ms frames at the loads into Hyrule Field and the passages around it after about an hour of play, with 19,201 of 33,024 texture IDs marked as read; with the marks aged, area loads are single frames of 100-155 ms over a 78-minute session (M5 Pro).
++- [Area loads froze late in a session as read marks piled up](../../../docs/reference/rendering.md#area-loads-froze-late-in-a-session-as-read-marks-piled-up): resolved, runs of 200-670 ms frames at the loads into Hyrule Field and the passages around it after about an hour of play, with 19,201 of 33,024 texture IDs marked as read; with the marks aged, area loads are single frames of 100-155 ms over a 78-minute session (M5 Pro). Aged whatever their size, they slowed the walk out of Kokiri Forest on an M2 MacBook Air (70-110 ms frames against 34), so marks now age only once they cover more than a quarter of Metal's working set; that form is not yet run in the game.
  - [Vertex shaders with layer entry points left out of the prebuild](../../../docs/reference/shaders.md#vertex-shaders-with-layer-entry-points-left-out-of-the-prebuild): resolved, a 230 ms frame at a camera turn in Hyrule Field. The effect vertex shaders (no stage inputs, layer entry points of their own) had no base in the bundled archive and were compiled at their first draw; with the fix (measured with PR #2065's form of it, the same bases as the reflection's `layer_out` gives) the archive holds 33,365 bases instead of 30,690, and the worst frame on the `field-run` route is 39 ms (M6).
  - [Unused border corrections retain sample registers](../../../docs/reference/rendering.md#unused-border-corrections-retain-sample-registers): about 1.5 ms of GPU a frame at 1080p ([measurements](#unused-border-corrections)).
  
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 37edbc1c1646eb70b4d84936dc621210ac11f558..ff024ca99aeb188910e5c01f3fcb572557e2fc64 100644
+index 9c12c6d4e03ccbee294378e96dcccd318a19c114..4c2556abb3848569ab88721932e8c44426b652e1 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -6961,6 +6961,19 @@ static void pool_seen_clear(int id_) {
+@@ -7134,16 +7134,38 @@ static inline int pool_seen_t(int id_, int dtt) {
+     if (dtt < 0 || dtt >= POOL_SEEN_TYPES) return pool_seen(id_);
+     return id_ >= 0 && id_ < (int)(POOL_SEEN_WORDS * 32) && (g_seen_typed[seen_sec(dtt)][(unsigned)id_ >> 5] >> (id_ & 31) & 1);
+ }
++// What the marked IDs' textures come to, in KB: what a walk makes ahead of their reads (pool_entry). Caller holds g_rmu
++static uint32_t g_seen_kb[POOL_SEEN_WORDS * 32]; static uint64_t g_seen_kb_all;
++static uint64_t pool_tex_size(const tex_t *t);
++static void seen_size(int id_, uint64_t bytes) { uint32_t kb = (uint32_t)((bytes + 1023) >> 10); g_seen_kb_all += kb; g_seen_kb_all -= g_seen_kb[id_]; g_seen_kb[id_] = kb; }
+ // An emptied ID has not been read: what the game puts into it next is another use (mtl_reg_tex)
+ static void pool_seen_clear(int id_) {
+     if (id_ < 0 || id_ >= (int)(POOL_SEEN_WORDS * 32)) return;
+     uint32_t b = 1u << (id_ & 31);
++    if (g_seen_done[(unsigned)id_ >> 5] & b) seen_size(id_, 0);
      g_seen_done[(unsigned)id_ >> 5] &= ~b;
-     if (g_seen_buf) atomic_fetch_and((_Atomic uint32_t *)g_seen_buf.contents + ((unsigned)id_ >> 5), ~b);
+     for (unsigned s_ = 0; s_ < POOL_SEEN_TYPES; s_++) {
+         g_seen_typed[s_][(unsigned)id_ >> 5] &= ~b;
+         if (g_seen_buf) atomic_fetch_and((_Atomic uint32_t *)g_seen_buf.contents + s_ * POOL_SEEN_WORDS + ((unsigned)id_ >> 5), ~b);
+     }
  }
 +// How recent a read mark is. A mark kept for good through every new texture (mtl_reg_tex) covered, an hour into Ocarina of Time, 19,201 of its 33,024 IDs (22.7 GB of textures):
 +// the IDs every area it had passed through read once. Each area load streams thousands of new textures into those IDs, and a marked ID's texture is made under the read budget
 +// whatever the walk's room (pool_entry), so the loads into Hyrule Field made 100-300 textures a frame for seconds, at 200-670 ms a frame, with 9.8 GB allocated against 3.9 GB in
-+// the session's first minutes. So the host takes the GPU's marks back every SEEN_REARM frames (the shaders set them again at their next read, dm_pool_mark), notes the frame each
-+// mark was last found in (up to SEEN_REARM frames after the read), and a new texture keeps the ID's mark only when a shader read the ID within the last DM_NVN_SEEN_KEEP frames (600 by default): the streamed replacement of
-+// a material on screen (PR #2022) keeps it, a texture streamed into an ID left behind areas ago holds its stand-in until it is read. DM_NVN_SEEN_KEEP=0: marks stay for good, as before
-+enum { SEEN_REARM = 60 };
++// the session's first minutes. So once the marked IDs' textures come to more than a quarter of Metal's working set (SEEN_CAP_DIV: about 2.7 GB on a 16 GB Mac, 9 GB on a 48 GB one),
++// the host takes the GPU's marks back every SEEN_REARM frames (the shaders set them again at their next read, dm_pool_mark), notes the frame each mark was last found in (up to
++// SEEN_REARM frames after the read), and a new texture keeps the ID's mark only when a shader read the ID within the last DM_NVN_SEEN_KEEP frames (600 by default): the streamed
++// replacement of a material on screen (PR #2022) keeps it, a texture streamed into an ID left behind areas ago holds its stand-in until it is read. Below that the marks stay: a
++// mark makes the ID's next texture when it is registered, often hundreds of frames before its first read, and with marks aged whatever their size an M2 MacBook Air's walk out of
++// Kokiri Forest ran 70-110 ms frames against 34 ms (PR #2344). DM_NVN_SEEN_KEEP=0: marks stay for good, as before
++enum { SEEN_REARM = 60, SEEN_CAP_DIV = 4 };
 +static uint32_t g_seen_at[POOL_SEEN_WORDS * 32]; static uint64_t g_seen_rearm, g_seen_kept, g_seen_dropped;
 +static int seen_keep(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_SEEN_KEEP"); v = e ? MAX(atoi(e), 0) : 600; } return v; }
++static uint64_t seen_cap_kb(void) { return g_dev.recommendedMaxWorkingSetSize / SEEN_CAP_DIV >> 10; }
 +static int pool_seen_stale(int id_) {   // caller holds g_rmu
-+    if (!seen_keep() || id_ < 0 || id_ >= (int)(POOL_SEEN_WORDS * 32) || !pool_seen(id_)) return 0;
++    if (!seen_keep() || g_seen_kb_all <= seen_cap_kb() || id_ < 0 || id_ >= (int)(POOL_SEEN_WORDS * 32) || !pool_seen(id_)) return 0;
 +    return (uint32_t)atomic_load(&g_cur_frame) - g_seen_at[id_] > (uint32_t)seen_keep();
 +}
  void mtl_reg_tex_gone(int tid) {
      os_unfair_lock_lock(&g_rmu);
      if (tid >= 0 && tid < g_ntreg && g_treg[tid].ok) treg_gone(&g_treg[tid]);
-@@ -6981,7 +6994,10 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
+@@ -7164,10 +7186,14 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
          // Ocarina of Time allocates 15-18 GB against a 909 MB budget on a 24 GB Mac, and when its streaming replaced the 17 textures of the castle town wall's material set (3-7 MB each,
          // each step registered twice, 4-5 frames apart), each registration's first read found the dummy, and the wall, the rocks and the trees drew black for one frame, twice (PR #2022).
          // A render target no pass has written stays the dummy all the same (pool_unwritten_target). A texture streamed into an ID no shader has read yet holds its stand-in until its first read (pool_stand, issue #1969)
@@ -66,7 +90,11 @@ index 37edbc1c1646eb70b4d84936dc621210ac11f558..ff024ca99aeb188910e5c01f3fcb5725
          treg_unlink(id_); treg_drop_views(rr); treg_drop_stand(rr);
          rr->tt1 = 0; rr->reg_frame = atomic_load(&g_cur_frame);
          rr->ok = t != NULL; if (t) rr->t = *t; rr->has_v = v != NULL; if (v) rr->v = *v;
-@@ -10645,15 +10661,24 @@ static void pool_seen_scan(void) {
++        if (t && id_ < (int)(POOL_SEEN_WORDS * 32) && pool_seen(id_)) seen_size(id_, pool_tex_size(t));
+         rr->retired = 0; rr->transient_sub = 0;
+         if (t && t->serial) {
+             rr->retired = !own_tex_live(t->serial);
+@@ -11092,22 +11118,32 @@ static void pool_seen_scan(void) {
      g_seen_sub = g_sub_serial;
      uint64_t f = atomic_load(&g_cur_frame); if (f != g_walk_frame) { g_walk_frame = f; g_walk_spent = 0; g_walk_req = 0; }
      if (g_stand_todo_n) pool_stand_scan();
@@ -74,64 +102,83 @@ index 37edbc1c1646eb70b4d84936dc621210ac11f558..ff024ca99aeb188910e5c01f3fcb5725
 +    { static uint64_t at, was; uint64_t now = g_stand_made + g_first_stand + g_first_dummy + g_seen_kept + g_seen_dropped;   // the totals, every 300 frames in which they changed
        if (f >= at + 300 && now != was) { at = f; was = now;
 -          MLOG("pool stand-ins up to frame %llu: %llu made in %.1f ms (%llu of them a level cut down), %llu gave way to their texture, %llu held now in %d heaps of %u MB (%llu not made: the heaps were full), %u waiting; first reads of a texture not made found a stand-in %llu times%s and the dummy %llu times (%llu of them textures of 256 KB or more)",
-+          MLOG("pool stand-ins up to frame %llu: %llu made in %.1f ms (%llu of them a level cut down), %llu gave way to their texture, %llu held now in %d heaps of %u MB (%llu not made: the heaps were full), %u waiting; first reads of a texture not made found a stand-in %llu times%s and the dummy %llu times (%llu of them textures of 256 KB or more); a new texture kept its ID's read mark %llu times, dropped it %llu times (not read for %d frames)",
++          MLOG("pool stand-ins up to frame %llu: %llu made in %.1f ms (%llu of them a level cut down), %llu gave way to their texture, %llu held now in %d heaps of %u MB (%llu not made: the heaps were full), %u waiting; first reads of a texture not made found a stand-in %llu times%s and the dummy %llu times (%llu of them textures of 256 KB or more); a new texture kept its ID's read mark %llu times, dropped it %llu times (not read for %d frames, with the marked textures above %llu MB; %llu MB now)",
                 (unsigned long long)f, (unsigned long long)g_stand_made, g_stand_ns / 1e6, (unsigned long long)g_stand_picked, (unsigned long long)g_stand_done, (unsigned long long)g_stand_live, g_nstand_heap, (unsigned)(STAND_HEAP >> 20), (unsigned long long)g_stand_full, g_stand_todo_n, (unsigned long long)g_first_stand,
 -               g_first_stale ? [NSString stringWithFormat:@" (%llu written since the stand-in was made)", (unsigned long long)g_first_stale].UTF8String : "", (unsigned long long)g_first_dummy, (unsigned long long)g_first_dummy_big); } }
 -    const uint32_t *w = (const uint32_t *)g_seen_buf.contents; unsigned words = MIN((unsigned)g_ntreg / 32 + 1, (unsigned)POOL_SEEN_WORDS);
 +               g_first_stale ? [NSString stringWithFormat:@" (%llu written since the stand-in was made)", (unsigned long long)g_first_stale].UTF8String : "", (unsigned long long)g_first_dummy, (unsigned long long)g_first_dummy_big,
-+               (unsigned long long)g_seen_kept, (unsigned long long)g_seen_dropped, seen_keep()); } }
++               (unsigned long long)g_seen_kept, (unsigned long long)g_seen_dropped, seen_keep(), (unsigned long long)(seen_cap_kb() >> 10), (unsigned long long)(g_seen_kb_all >> 10)); } }
 +    uint32_t *w = (uint32_t *)g_seen_buf.contents; unsigned words = MIN((unsigned)g_ntreg / 32 + 1, (unsigned)POOL_SEEN_WORDS);
-+    // Every mark first, as the walk below may stop at the read budget: the frame of each mark found, and every SEEN_REARM frames the marks taken back (an exchange, so a bit a shader
-+    // sets meanwhile is either taken here or stays for the next scan)
-+    int keep = seen_keep() > 0, rearm = keep && f >= g_seen_rearm + SEEN_REARM; if (rearm) g_seen_rearm = f;
++    // Every mark first, as the walk below may stop at the read budget: the frame of each mark found, and every SEEN_REARM frames while the marked textures are above the cap the marks
++    // taken back (an exchange, so a bit a shader sets meanwhile is either taken here or stays for the next scan)
++    int keep = seen_keep() > 0, rearm = keep && g_seen_kb_all > seen_cap_kb() && f >= g_seen_rearm + SEEN_REARM; if (rearm) g_seen_rearm = f;
      for (unsigned i = 0; i < words; i++) {
--        uint32_t fresh = w[i] & ~g_seen_done[i];
-+        uint32_t got = rearm ? atomic_exchange_explicit((_Atomic uint32_t *)w + i, 0, memory_order_relaxed) : w[i];
+         uint32_t got = 0, typed_new = 0;   // every section's marks, and the marks new to their section
+         for (unsigned s_ = 0; s_ < POOL_SEEN_TYPES; s_++) {
+-            uint32_t g = w[s_ * POOL_SEEN_WORDS + i];
++            uint32_t *wp = w + s_ * POOL_SEEN_WORDS + i, g = rearm ? atomic_exchange_explicit((_Atomic uint32_t *)wp, 0, memory_order_relaxed) : *wp;
+             if (!g) continue;
+             typed_new |= g & ~g_seen_typed[s_][i]; g_seen_typed[s_][i] |= g; got |= g;
+         }
+         g_seen_todo[i] |= typed_new & g_seen_done[i];   // already read through another type: the tables of the new type take it in place
 +        if (!got) continue;
 +        if (keep) for (uint32_t bits = got; bits; bits &= bits - 1) g_seen_at[i * 32 + __builtin_ctz(bits)] = (uint32_t)f;
-+        uint32_t fresh = got & ~g_seen_done[i];
-         if (fresh) { g_seen_done[i] |= fresh; g_seen_todo[i] |= fresh; for (uint32_t bits = fresh; bits; bits &= bits - 1) { pool_ds_note((int)i * 32 + __builtin_ctz(bits)); pool_first_read((int)i * 32 + __builtin_ctz(bits), f); } }
+         uint32_t fresh = got & ~g_seen_done[i];
+-        if (fresh) { g_seen_done[i] |= fresh; g_seen_todo[i] |= fresh; for (uint32_t bits = fresh; bits; bits &= bits - 1) { pool_ds_note((int)i * 32 + __builtin_ctz(bits)); pool_first_read((int)i * 32 + __builtin_ctz(bits), f); } }
++        if (fresh) { g_seen_done[i] |= fresh; g_seen_todo[i] |= fresh;
++            for (uint32_t bits = fresh; bits; bits &= bits - 1) { int id_ = (int)i * 32 + __builtin_ctz(bits);
++                seen_size(id_, id_ < g_ntreg && g_treg[id_].ok ? pool_tex_size(&g_treg[id_].t) : 0); pool_ds_note(id_); pool_first_read(id_, f); } }
 +    }
 +    for (unsigned i = 0; i < words; i++) {
          for (uint32_t bits = g_seen_todo[i]; bits; bits &= bits - 1) {
              int b = __builtin_ctz(bits), id_ = (int)i * 32 + b;
              if (id_ <= 0 || id_ >= g_ntreg || !g_treg[id_].ok || g_treg[id_].gone || (!g_treg[id_].view && !tex_storage_live(&g_treg[id_].t))) { g_seen_todo[i] &= ~(1u << b); continue; } // NOLINT(clang-analyzer-core.BitwiseShift): bits is nonzero, so ctz returns 0..31
 diff --git a/dm/gfx/tests/t_pool_seen_replace.m b/dm/gfx/tests/t_pool_seen_replace.m
-index 5c66f94ec74f821508725e1f0cbaf181d5dd6af0..713ce5e618dab44719db5e2624ee81cd08db5cf8 100644
+index 5c66f94ec74f821508725e1f0cbaf181d5dd6af0..cc2461dd20790969c84ae5685d0ce8916292a06c 100644
 --- a/dm/gfx/tests/t_pool_seen_replace.m
 +++ b/dm/gfx/tests/t_pool_seen_replace.m
-@@ -1,4 +1,4 @@
+@@ -1,4 +1,5 @@
 -// A texture ID a shader has read keeps its read mark when the game puts another texture into it, and loses it only when emptied (mtl_reg_tex).
-+// A texture ID a shader has read keeps its read mark when the game puts another texture into it, and loses it when emptied or not read within DM_NVN_SEEN_KEEP frames (mtl_reg_tex).
++// A texture ID a shader has read keeps its read mark when the game puts another texture into it, and loses it when emptied, or, once the marked textures pass the cap, when not
++// read within DM_NVN_SEEN_KEEP frames (mtl_reg_tex).
  // Zero ordinary walk room exercises first-table materialization and GPU pixels.
  // Finalize-before-replace, a read ID whose texture is not made yet, unread IDs and unwritten render targets stay distinct.
  #include "../nvn/nvn_mtl.m"
-@@ -87,7 +87,19 @@ int main(void) { @autoreleasepool {
+@@ -87,7 +88,28 @@ int main(void) { @autoreleasepool {
      mtl_reg_tex(10,&t[0],NULL); id<MTLBuffer> reset=table();
      CHECK(!pool_seen(10),"empty then re-register does not resurrect history");
      (void)reset;
 -    mtl_reg_tex(10,NULL,NULL); mtl_reg_tex(20,NULL,NULL); mtl_reg_tex(30,NULL,NULL);
-+    // A mark found last more than DM_NVN_SEEN_KEEP frames ago goes with the ID's next texture; the GPU's marks are taken back every SEEN_REARM frames and a read sets them again
++    // Once the marked textures come to more than the cap (seen_cap_kb), a mark found last more than DM_NVN_SEEN_KEEP frames ago goes with the ID's next texture; the GPU's marks are
++    // taken back every SEEN_REARM frames and a read sets them again. Below the cap the marks stay as they are
 +    mtl_reg_tex(40,&t[2],NULL); read_mark(40); (void)table();
 +    CHECK(pool_seen(40) && (!seen_keep() || g_seen_at[40]==(uint32_t)atomic_load(&g_cur_frame)),"a read notes the frame it was found in");
++    CHECK(g_seen_kb[40]==(uint32_t)((pool_tex_size(&t[2])+1023)>>10) && g_seen_kb_all<=seen_cap_kb(),"a marked ID counts its texture's size");
 +    if (seen_keep()) {   // DM_NVN_SEEN_KEEP=0: marks stay for good
-+        atomic_fetch_add(&g_cur_frame,SEEN_REARM); (void)table();
-+        CHECK(!(((uint32_t *)g_seen_buf.contents)[40/32] & 1u<<(40%32)) && pool_seen(40),"the GPU's mark is taken back, the host's stays");
++        atomic_fetch_add(&g_cur_frame,(uint64_t)seen_keep()+SEEN_REARM+1); (void)table();
++        CHECK((((uint32_t *)g_seen_buf.contents)[40/32] & 1u<<(40%32)) && pool_seen(40),"below the cap the GPU's mark is not taken back");
++        g_seen_at[40]=0; mtl_reg_tex(40,&t[6],NULL);
++        CHECK(pool_seen(40) && g_seen_kb[40]==(uint32_t)((pool_tex_size(&t[6])+1023)>>10),"below the cap an unread ID keeps its mark, counted at its new texture's size");
++        uint64_t pad=seen_cap_kb()+1; g_seen_kb_all+=pad;   // the marked textures above the cap
++        (void)table();
++        CHECK(!(((uint32_t *)g_seen_buf.contents)[40/32] & 1u<<(40%32)) && pool_seen(40),"above the cap the GPU's mark is taken back, the host's stays");
 +        atomic_fetch_add(&g_cur_frame,(uint64_t)seen_keep()+1); (void)table();
-+        mtl_reg_tex(40,&t[6],NULL);
-+        CHECK(!pool_seen(40),"a texture streamed into an ID not read within the keep window drops its mark");
++        mtl_reg_tex(40,&t[2],NULL);
++        CHECK(!pool_seen(40) && !g_seen_kb[40],"above the cap a texture streamed into an ID not read within the keep window drops its mark and its size");
++        read_mark(40); (void)table(); mtl_reg_tex(40,&t[4],NULL);
++        CHECK(pool_seen(40),"above the cap an ID read again since keeps its mark through the next texture");
++        g_seen_kb_all-=pad;
 +    }
-+    read_mark(40); (void)table(); mtl_reg_tex(40,&t[4],NULL);
-+    CHECK(pool_seen(40),"an ID read again since keeps its mark through the next texture");
 +    mtl_reg_tex(10,NULL,NULL); mtl_reg_tex(20,NULL,NULL); mtl_reg_tex(30,NULL,NULL); mtl_reg_tex(40,NULL,NULL);
++    CHECK(g_seen_kb_all==0,"the marked textures' size goes with their marks");
      for(int n=0;n<N;n++) if(n!=1) mtl_tex_release(&t[n]);
      mtl_pool_del(mem); mtl_drain(); munmap(mem,LEN);
      fprintf(stderr,"pool_seen_replace: %d checks, %d failed\n",checks,failed);
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index b84799eef67b6d4e883de014ef36ed7cc5745cbf..144a73546901eea709f9d3d40b0eaa96ab3860e7 100644
+index 51777d1eaed2559fc34ebf61add8ecf15c8be159..fa1112ca427877e8a4b86d5119bb27e2c2becb20 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -746,6 +746,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -770,6 +770,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - in an Unreal Engine game, textures and lighting turn blurry and muddy about a second after an area loads and stay that way, whatever the frame rate, render scale or upscaling; no red line. → [Unreal's texture streaming pool](../reference/rendering.md#unreals-texture-streaming-pool)
  - large static and mesh-shader models (Ocarina of Time's castle town wall, rocks, trees, Lon Lon Ranch's barn) draw black for exactly one frame, with the fog in front and the terrain untouched, in pairs four or five frames apart; a few times a minute in play, at fixed places of a route. → [Models black for one frame when a streaming step replaces their textures](../reference/rendering.md#models-black-for-one-frame-when-a-streaming-step-replaces-their-textures)
  - a patch of scenery (Ocarina of Time's cliff beside the castle town wall) draws darker for exactly one frame, once, as the game gives it a sharper texture; a few times a minute while walking through Hyrule Field. Single frames, not the pairs of the entry above; no red line. → [A streamed texture's first read drew its surface dark for one frame](../reference/rendering.md#a-streamed-textures-first-read-drew-its-surface-dark-for-one-frame)
@@ -140,22 +187,22 @@ index b84799eef67b6d4e883de014ef36ed7cc5745cbf..144a73546901eea709f9d3d40b0eaa96
  - a model has correct geometry, base colour and normals but appears as a black silhouette; deferred lighting's material-ID depth texture stays zero. → [IMAGE usage does not split texture storage](../reference/rendering.md#image-usage-does-not-split-texture-storage)
  - a surface that Unreal draws from a runtime virtual texture (a landscape floor) stays black; its BC tile caches read all zero in a texture dump, and nothing writes them on the GPU or the CPU; no red line. → [Copies into an uncompressed alias of a compressed texture](../reference/rendering.md#copies-into-an-uncompressed-alias-of-a-compressed-texture)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 59812577ea02011ada008946b49d9725d71a8c03..451a749744b889891ffb6a7cbfd97f9aac0280e0 100644
+index 720fc8591298110a3f5d1eac5ee37794c3172b61..7694b41748651392ae0aa6c1c81a75b15b6e09be 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -220,6 +220,7 @@ DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render target
+@@ -221,6 +221,7 @@ DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render target
  DM_NVN_RT_RANGE	switch	`=1` (experimental, off by default; with `DM_NVN_TBDR=1`) keeps the pass open when the game sets the same colour and depth target again with a view that differs only in its level count
  DM_NVN_RT_RANGE_CHECK	diagnostic	With `DM_NVN_RT_RANGE=1` and `DM_NVN_PASSDUMP`, renders a candidate pass both ways in the same frame and logs and writes the comparison (`CHECK_RESULTS.tsv`, `[RED]` on a difference)
  DM_NVN_RT_RECYCLE	switch	`0` makes each render target in a GPU-only pool, each feedback snapshot and each resolution family heap its own exact Metal allocation, freed with its texture, as before; by default they are placed in heaps from one free list, and a freed one's heap waits, resident, for the next texture it fits (`ab` alternates it with the `DM_AB` phases)
-+DM_NVN_SEEN_KEEP	switch	`=<frames>` (600 by default): a texture ID's read mark goes with its next texture when no shader has read the ID for that many frames, so the walk makes that texture under its budget and holds the stand-in until it is read; `0` keeps every mark until its ID is emptied, as before
++DM_NVN_SEEN_KEEP	switch	`=<frames>` (600 by default): while the marked textures come to more than a quarter of Metal's working set, a texture ID's read mark goes with its next texture when no shader has read the ID for that many frames, so the walk makes that texture under its budget and holds the stand-in until it is read; `0` keeps every mark until its ID is emptied, as before
  DM_NVN_SHDUMP	diagnostic	`=<dir>` saves programs missing from the shader map as `<key>.ctl` (control section) and `<key>.code`, to find the files that hold them
  DM_NVN_SHMAP	path	The shader map (`shader_map.tsv`); `c1_full.tsv` and `pso_manifest.tsv` are taken from the same folder. Default: the game profile's folder on the Mac; the iOS app sets it
  DM_NVN_SHOT	diagnostic	`=<frame>[,<frame>…]:<path>` saves the swapchain texture as an image at those frames (`%d` in the path = frame number); a window the game crops is saved as presented (the crop drawn at the texture's own size)
 diff --git a/docs/reference/rendering.md b/docs/reference/rendering.md
-index 0ef00c2bf8c1f2ffea950cf111721b0d0e513eee..efccbff1e84193dd4c86ec71fea827c672901e6f 100644
+index 15f56804ed511abf38558e563eac202204f598e6..8f1a100631277896ea922adfa0609b297aa69686 100644
 --- a/docs/reference/rendering.md
 +++ b/docs/reference/rendering.md
-@@ -321,7 +321,7 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
+@@ -337,7 +337,7 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
  
  - **Symptom:** large static and mesh-shader models (Ocarina of Time's castle town wall, rocks, trees, Lon Lon Ranch's barn) draw black for exactly one frame, with the fog in front and the terrain untouched, in pairs four or five frames apart; a few times a minute in play, at fixed places of a route.
  - **Cause:** the models' shaders read their textures through the bindless pool table (`pool_gpu`). When a walk writes an ID's entry (`pool_entry`) it makes the ID's Metal texture if it fits the walk's room (`pool_room`, within `pool_budget()`), or, whatever the room, if a shader has read the ID (`pool_seen`, under `POOL_REQ_BYTES`); otherwise the entry is the dummy (black), and `pool_seen_scan` makes the texture after the first read. In Ocarina of Time the room is always 0: `pool_budget()` is a twentieth of Metal's working set (909 MB on a 24 GB Mac) against 15-18 GB of `currentAllocatedSize`, so only read IDs are made ahead. `mtl_reg_tex` cleared the mark whenever the game registered another texture into the ID, so when the game's streaming replaced the 17 textures of a material set at once (3-7 MB each, finalizing the old texture first; each step registered twice, 4-5 frames apart), the replacements counted as unread and their first reads found the dummy, one frame per registration.
@@ -164,7 +211,7 @@ index 0ef00c2bf8c1f2ffea950cf111721b0d0e513eee..efccbff1e84193dd4c86ec71fea827c6
  - **Check:** a replay of a route past the castle town wall, counting single-frame dips of a per-frame luminance grid, each checked by picture: 4-5 flagged per run before (2-4 at the wall's streaming steps), 0 after (PR #2022); `t_pool_chunks` checks which registrations keep the mark, `t_pool_seen_replace` the replacement's pixels in the first table with the walk's room at 0 (a live replacement, one after Finalize, one for an ID whose texture waited for the read budget).
  - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (a player's recording, M4 Pro, macOS 27.0.1).
  
-@@ -335,6 +335,14 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
+@@ -351,6 +351,14 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
  - **Check:** `t_pool_standin` (which registrations get a stand-in and what it holds, read back from the GPU; the first read; a frame's share), `t_tex` P (the picked blocks against the level decoded whole, in both GOB orders). `DM_NVN_POOL_FIRST=1` logs each first read of a texture not made yet and what it found; the totals go to the log every 300 frames (`pool stand-ins up to frame`). Replays of a player's route past the cliff, 10 with `DM_NVN_POOL_STANDIN=0` and 8 without: after the area load, 31 first reads of a texture not made found the dummy in the 10 runs and none in the 8, where 49 found a stand-in (none of them made from storage the game wrote afterwards). On a 32x18 luminance grid of every present, the cliff's first read is a connected group of 9-12 cells at 0.70-0.79 of the presents before and after in each of the 4 baseline runs in which its set streamed, and at most 2 cells, the grid's noise, in the 5 runs with stand-ins; by picture the cliff is dark for one frame in the one and a little soft in the other. At the area load 39 first reads a run found the dummy, and 5-11 with stand-ins (the frame's share). A run makes about 57,000 stand-ins in 355 ms (6 µs each on an M4 Pro) and holds about 6,000 at a time, in 16 MB of heaps. Resident memory, GPU allocated, the residency set, frame times and submit+present stay within the run-to-run range (medians: resident 10,830 and 10,883 MB; frame p95 16.85 and 17.19 ms, with runs of both kinds between 16.8 and 19.4).
  - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (a player's recording, M4 Pro, macOS 27.0.1).
  
@@ -172,8 +219,8 @@ index 0ef00c2bf8c1f2ffea950cf111721b0d0e513eee..efccbff1e84193dd4c86ec71fea827c6
 +
 +- **Symptom:** about an hour into a session, walking into an area or through a passage between areas freezes the picture in runs of 200-670 ms frames for seconds, where the same loads were smooth in the session's first minutes; GPU allocated climbs from 3.9 GB to 9.8 GB, and the `[longframe]` lines show 100-300 first texture uploads a frame. No red line.
 +- **Cause:** a read mark (`pool_seen`) stayed with its ID through every new texture ([previous entry](#models-black-for-one-frame-when-a-streaming-step-replaces-their-textures)) and was cleared only when the ID was emptied, so the marks grew with every area the player passed through: an hour in, the `pool walk` line counted 19,201 of 33,024 IDs as read, 22.7 GB of textures. A walk makes a marked ID's texture whatever its room (`pool_entry`, under `POOL_REQ_BYTES`, 128 MB a frame), so an area load, which streams thousands of textures into IDs that earlier areas had read, had them made as fast as the read budget allowed instead of leaving them to stand-ins until a shader read them.
-+- **Fix:** a mark lasts while its ID is read. `pool_seen_scan` takes the GPU's marks back every 60 frames (`SEEN_REARM`; an exchange, so a mark a shader sets meanwhile stays for the next scan), the shaders set them again at their next read (`dm_pool_mark`, unchanged), and the host notes the frame each mark was last found in (`g_seen_at`, up to 60 frames after the read). `mtl_reg_tex` keeps the mark for the ID's next texture only when the ID was read within the last `DM_NVN_SEEN_KEEP` frames (600 by default, 10 s at 60 fps): the streamed replacement of a material on screen keeps it as before, and a texture streamed into an ID left behind areas ago holds its stand-in until it is read. A stale 1 that work still running reads just after a take-back skips one mark, which a read after the next take-back sets. `DM_NVN_SEEN_KEEP=0` keeps every mark until its ID is emptied, as before. The `pool stand-ins` line counts the marks kept and dropped.
-+- **Check:** `t_pool_seen_replace` (a read notes its frame; the GPU's mark taken back while the host's stays; a mark not read within the window dropped with the next texture; an ID read again keeps its mark), also with `DM_NVN_SEEN_KEEP=0`; `t_pool_standin`, `t_pool_notes`, `t_pool_chunks`. Two sessions of play on one Mac (M5 Pro, 48 GB, macOS 26.6.2), not on the same route: without the change, the runs of 200-670 ms frames above at the area loads after the first hour, tens of 300-frame windows with a p95 above 40 ms (up to 380 ms) and GPU allocated at 9.8 GB; with it, 78 minutes, one such window in 903, GPU allocated 7.2-9.6 GB from the 6th minute to the end, following the area rather than the time played, and the area loads single frames of 102 and 155 ms (658 and 248 first uploads, 243 and 277 MB). 92,703 new textures kept their ID's mark and 46,614 dropped it. Stand-ins made: 1,235,328 in 6.19 s over the session, against about 128,000 in the session without the change, 23 µs of the submit thread a frame on average. Not run: an A/B on one route (`DM_NVN_SEEN_KEEP=0` against the default), another game that streams into a bindless pool, a Mac with less memory, the iPhone. Open: whether the area-load frames of 100-155 ms left come from the stand-ins made in them or from the first uploads.
++- **Fix:** once the marks cover more than a quarter of Metal's working set, a mark lasts while its ID is read. The host keeps the size of the marked IDs' textures (`seen_size`, `g_seen_kb_all`); while it is above `recommendedMaxWorkingSetSize / 4` (`SEEN_CAP_DIV`: about 2.7 GB on a 16 GB Mac, 9 GB on a 48 GB one), `pool_seen_scan` takes the GPU's marks back every 60 frames (`SEEN_REARM`; an exchange, so a mark a shader sets meanwhile stays for the next scan), the shaders set them again at their next read (`dm_pool_mark`, unchanged), and the host notes the frame each mark was last found in (`g_seen_at`, up to 60 frames after the read). `mtl_reg_tex` keeps the mark for the ID's next texture only when the ID was read within the last `DM_NVN_SEEN_KEEP` frames (600 by default, 10 s at 60 fps): the streamed replacement of a material on screen keeps it as before, and a texture streamed into an ID left behind areas ago holds its stand-in until it is read. A stale 1 that work still running reads just after a take-back skips one mark, which a read after the next take-back sets. Below the cap nothing is taken back or dropped, as before: a mark makes the ID's next texture when it is registered, often hundreds of frames before its first read, and aging marks whatever their size slowed an area load on a small Mac (below). `DM_NVN_SEEN_KEEP=0` keeps every mark until its ID is emptied, as before. The `pool stand-ins` line counts the marks kept and dropped, with the cap and the marked size.
++- **Check:** `t_pool_seen_replace` (a read notes its frame and the ID counts its texture's size; below the cap the GPU's mark stays and an unread ID keeps its mark; above it the GPU's mark is taken back while the host's stays, a mark not read within the window goes with the next texture, an ID read again keeps its mark; the size goes with the marks), also with `DM_NVN_SEEN_KEEP=0`; `t_pool_standin`, `t_pool_notes`, `t_pool_chunks`. Aging with no cap, as first written: on an M2 MacBook Air (16 GB), a scripted Kokiri Forest walk ran 70-110 ms frames (GPU 44-60 ms) at the exit from the village with the default against 34 ms with `DM_NVN_SEEN_KEEP=0` (dpadr's runs, PR #2344), which is why the cap is there. Two sessions of play on one Mac (M5 Pro, 48 GB, macOS 26.6.2) with no cap, not on the same route: without the change, the runs of 200-670 ms frames above at the area loads after the first hour, tens of 300-frame windows with a p95 above 40 ms (up to 380 ms) and GPU allocated at 9.8 GB; with it, 78 minutes, one such window in 903, GPU allocated 7.2-9.6 GB from the 6th minute to the end, following the area rather than the time played, and the area loads single frames of 102 and 155 ms (658 and 248 first uploads, 243 and 277 MB). 92,703 new textures kept their ID's mark and 46,614 dropped it. Stand-ins made: 1,235,328 in 6.19 s over the session, against about 128,000 in the session without the change, 23 µs of the submit thread a frame on average. Not run: any game with the cap (neither the long session nor the Kokiri walk), an A/B on one route, another game that streams into a bindless pool, the iPhone. Open: whether a quarter of the working set is the right cap; whether the area-load frames of 100-155 ms left come from the stand-ins made in them or from the first uploads.
 +- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (v131072, Hyrule Field and the passages around it).
 +
  ### Transient render targets shared by storage

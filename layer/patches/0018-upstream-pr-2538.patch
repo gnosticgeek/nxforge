@@ -1,0 +1,365 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: upstream-pr-2538: games/0400486024DEC000: Ocarina of Time fills a Mac
+ screen wider than 16:9 (Wide screen, DM_SCREEN_WIDE)
+
+From seedds/nxnative#2538 (open; 75308826), taken early for Ocarina of Time. Drop this patch when nxnative lands #2538.
+
+games/0400486024DEC000: Ocarina of Time fills a Mac screen wider than 16:9 (Wide screen, DM_SCREEN_WIDE)
+
+On a 21:9 monitor (3440x1440) the game showed its 16:9 picture with bars at the sides. It sizes its swap chain and its frame buffers from fixed constants (2560x1440 docked, 1920x1080 handheld), and three of its scene cameras copy a 16/9 aspect of their own into the view's projection. The engine lays everything else out from the size of its frame buffer: given a wider one it makes its 3D targets and its composite that wide and keeps the HUD at the screen's edges, with no further change.
+
+The game's patches.py gets screen_wide, stubs in five functions found by fingerprint under the frame step rule (others), all or none: nnMain's create arg (the swap chain's size), the framework constructor's docked and handheld frame buffer sizes, and the three camera updates (ldr s0,[x19,#0x140] before the store of the sead::PerspectiveProjection's aspect at +0xb0). A size stub gives the width of the screen's ratio at the site's own height, (height x ratio + 0x8000) >> 16, from the ratio in 16.16 fixed point at state +0xa0; a camera stub replaces an aspect within 0x100 ulps of 16/9 with the ratio as a float at state +0xa4, so a camera with a shape of its own keeps it. With 0 there every stub runs the original instruction. The stubs declare the SCREEN_WIDE capability, which the fixups table carries to the host (module_t screen_wide) and to the launcher.
+
+The loader (dm_fps_state_apply) reads DM_SCREEN_WIDE: <width>x<height> of a screen wider than 16:9, up to 32:9; auto, the main screen's size when it is wider than 16:9, asked of the front end through dm_front_screen, which front_mac.m sets; 0 for 16:9. A build with the stubs takes auto by default, so a build without them is never asked. It writes the ratio into the state page, gives the picture's shape to mtl_present_screen, and leaves the variable holding what it decided, by which the Mac front end opens a window of that shape. Handheld mode keeps 16:9: the game crops its handheld picture to 1920x1080 from somewhere the stubs do not reach. The launcher row Wide screen (settings.tsv, shown for fixups:SCREEN_WIDE) is Match screen by default on the Mac and 16:9 on iOS, where no front end answers.
+
+docs_patches.py placed a rule's other functions 16 MB apart in its dry run, which put the seventh beyond a b's reach of the patch area; they are 8 MB apart now (OTHER_STEP), room for twelve.
+
+The same three size sites are in PR #1460 (vladbondarenko97), as cuts made at build time for one size, with the output width as a float (main+0xecbc80) and the output resolution table (main+0x3f58540) and no camera. Tried here on top of the stubs, those two changed neither the play HUD nor the menus; with them and without the camera stubs, play in Goron City showed the 16:9 view stretched over the wide picture, so the cameras are needed.
+
+Checked on an M5 Pro MacBook Pro (48 GB, macOS 27.2, Xcode 27.2) with Ocarina of Time v131072. In the game, on 1ee02525 (the main this was written on), headless at DM_SCREEN_WIDE=3440x1440 from a Goron City save: the title, the load menu, play, the pause menu and the map as 3440x1440 screenshots, 3D targets 2580x1080, Link, the Goron and the pot at their 16:9 proportions with more of the scene at the sides, the hearts, item slots and minimap at the screen's edges, the same one red line as at 16:9 (stage 5 cb3 has no uniform buffer bound), GPU 11-12 ms a frame; in a window with auto: "the main screen is 3440x1440", a 1720x720 window; with the variable unset or 0, 2560x1440 as before. On 8d44aaf8, after the rebase: patch_nso.py finds all five functions and writes a main byte-identical to the one played; the host builds and at its start logs the wide screen for 3440x1440, nothing for 0 or unset without a window, the red line for 1920x1080 and the handheld line for DM_OPMODE=0; make -C dm/host/tests run (all passed), the tool tests (1,556, with test_docs, test_env_switches, test_patches and test_launcher_settings), docs_patches.py, env_switches.py, lint_python.py (0 new).
+
+Open, in the game note: the UI's 2D pictures (the pause menu's art, the load menu's panels, the minimap) are stretched over the wider picture, 1.34 times at 3440x1440, while text and 3D-rendered items keep their shape; the UI's 1280-wide orthographic projection was not found (the note lists what was ruled out). Handheld mode. Not run: the game on 8d44aaf8 (the shader chain changed since 1ee02525 and its library was not rebuilt here), cutscenes and movies, a 32:9 screen, the frame rate against 16:9 on a bench route, lint_c.py (no clang-tidy here), make -C dm/gfx/tests, regress.py (the stubs are one game's and the loader acts only on a build that declares SCREEN_WIDE), iOS.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+---
+ dm/games/0400486024DEC000/README.md  |  9 ++++
+ dm/games/0400486024DEC000/patches.py | 71 +++++++++++++++++++++++++++-
+ dm/games/settings.tsv                |  1 +
+ dm/host/dm.h                         |  1 +
+ dm/host/front_mac.m                  | 15 ++++++
+ dm/host/loader.c                     | 34 +++++++++++++
+ dm/tools/docs_patches.py             |  8 ++--
+ docs/agents/game-patches.md          |  1 +
+ docs/env_switches.tsv                |  1 +
+ docs/settings.md                     |  5 ++
+ 10 files changed, 141 insertions(+), 5 deletions(-)
+
+diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
+index adfe810ad19c79e504efa46ca6bc5898522f86ac..a27406b27a20883dae8baaf881fbff998414aff8 100644
+--- a/dm/games/0400486024DEC000/README.md
++++ b/dm/games/0400486024DEC000/README.md
+@@ -11,6 +11,7 @@ A Switch 2 game: update v131072, SDK 22.2.8 (`Ounce`). Nintendo EPD's engine (se
+ | `sys_resource 0x3000000` | `game.tsv` | 48 MB, as the NPDM declares |
+ | Dynamic-resolution stub | [`patches.py`](patches.py) (frame step rule, `others`) | full resolution unless the launcher's Dynamic resolution is on ([Dynamic resolution](#dynamic-resolution)) |
+ | Movie pictures a frame: up to 2 | [`patches.py`](patches.py) (`MATCH_CUTS`) | the game's movie player takes one picture a frame, so a frame of two vsyncs left the picture behind the movie's sound for good ([Frame rate](#frame-rate)) |
++| Wide-screen stubs | [`patches.py`](patches.py) (frame step rule, `others`) | on a Mac screen wider than 16:9 the picture takes the screen's shape unless the launcher's Wide screen is 16:9 ([Wide screen](#wide-screen)) |
+ | `draw_barriers game` | `game.tsv` | about 180 full barriers a frame NVN does not ask for: GPU 25 → 18 ms at full resolution. From 7f50222 until the fix in [Draw passes that wait for each other again while images share memory](../../../docs/reference/frame-rate.md#draw-passes-that-wait-for-each-other-again-while-images-share-memory) it had no effect, since the dynamic resolution's family heaps turned it off; with the fix, M1 Max gameplay GPU 22.2 → 20.3 ms; no change on an M2 Air or an M4 Pro |
+ | `tex_flush_upload on`, `tex_dirty_upload on` | `game.tsv` | as Tears of the Kingdom: the CPU writes the terrain tiles' height (R32F), blend and hole (RGBA8) maps into textures after creating them. Without the keys those textures stay zero: flat blue holes in the ground around the path with grass floating in them, and grey stone where the console shows dirt |
+ | `shader_groups`, `shader_note` | `game.tsv` | shaders grouped as `/Shader/`, `/Effect/`, `/Lib/`, `/UI/` |
+@@ -82,6 +83,14 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+ - Where the full-resolution GPU frame goes (M4 Pro, Metal System Trace, 2026-11-08): vertex/mesh 4.9, fragment 5.2, compute 4.3 ms per 1/60 s, and they do not overlap (their union is 14.4 ms, their sum 14.4). The heaviest passes: the main mesh pass (task `a5288d0a6c4971fd`, mesh `3439aaa071d868ae`, fragment `a1a56cf6d62ae798`), two foliage passes (task `47f9b38490dcf9a2`), and the upscaler's compute (`fa3033d05c0a41d6`, 177 HMMA calls, already on `simdgroup` matrices). Ruled out: the stage serialization is mostly the game's own barriers (about 70 a frame, 39 of them `ORDER_PRIMITIVES | INVALIDATE_TEXTURE`). The relaxed draw-pass barriers of `draw_barriers game` were then off whenever an image family heap existed (this game's dynamic-resolution depth buffer makes one). Keeping them on with the alias flush moved to a start barrier skipped 22% of the full barriers, but the real GPU span on this M4 Pro did not change (14.7 ms p50 either way, two runs each). That change is on main now, with fragment-only barriers no longer forcing the full one, for its gain on the M1 Max ([Draw passes that wait for each other again while images share memory](../../../docs/reference/frame-rate.md#draw-passes-that-wait-for-each-other-again-while-images-share-memory)). Also ruled out: mesh shaders writing only the vertices their primitives use (the highest index + 1, instead of all `max_v`), as an overlay of the 31 play mesh shaders against the same shaders recompiled: span 14.7 / 15.5 ms against 16.0 / 15.6, so the game's meshlets are full. A shader timeline needs the trace attached before the pipelines are made, and a recording from 3 s to the play window (9 GB, or 45 s with the shader profiler) never finished saving.
+ - Measured on the M4 Pro (20-core GPU, 2026-11-08, `kokiri-deck`, one run each): at full resolution (the main passes 1536x864 in pass dumps at 75, 100 and 125 s) 48.1 fps, frame p50 16.74 / p95 33.41 ms, GPU p50 15.0 / p95 16.9 ms: the GPU needs about one vsync a frame, so the frame step holds 2 vsyncs much of the time. With the game's own dynamic resolution and the host fixes above: 60 fps, GPU p50 12.6 ms, at a lower resolution. A second dynamic-resolution run wandered off the route into Saria's dialogue and is not counted.
+ 
++## Wide screen
++
++- Current: with `DM_SCREEN_WIDE=3440x1440` (launcher setting *Wide screen*, **Match screen** by default on the Mac; offered because the rewrite declares the `SCREEN_WIDE` capability) the game renders a 3440x1440 picture instead of 2560x1440: the swap chain and the composite 3440x1440, the 3D targets 2580x1080 instead of 1920x1080, the scene at 16:9's vertical angle with more at the sides, the HUD at the screen's edges (hearts and item slots in the corners, the minimap bottom right), the menus' panels centred, their text and the items they render in 3D at their 16:9 shape (the menus' 2D pictures are stretched: Open, below). The engine does the layout by itself once its frame buffer is wider; the stubs in [`patches.py`](patches.py) (`screen_wide`, five functions found by fingerprint, all or none) change only what holds 16:9: nnMain's create arg (the swap chain's 2560x1440), the framework constructor's docked and handheld frame buffer sizes, and three camera updates that copy a 16/9 aspect of their own into the view's `sead::PerspectiveProjection` (aspect at +0xb0). With the sizes alone the 16:9 view was stretched over the wide picture. The host side is `loader.c` (state +0xa0 the ratio in 16.16, +0xa4 as a float; `auto`, the default for a build whose fixups table has `SCREEN_WIDE`, asks the front end for the main screen's size), `mtl_present_screen` for the picture's shape, and `front_mac.m` (the screen's size; a window of the picture's shape).
++- Checked on an M5 Pro MacBook Pro (48 GB, macOS 27.2, 2026-11-12, headless, a Goron City save): the title, the load menu, the save's first frames and a walk: 3440x1440 screenshots whose centre matches the 16:9 run's pixel for pixel in proportions (Link, the Goron and the pot the same size), the same red lines as at 16:9 (`stage 5 cb3 has no uniform buffer bound`, which 16:9 prints too), GPU about 11-12 ms a frame in Goron City. In a window (`auto`): `the main screen is 3440x1440`, a 1720x720 window, the present's picture shape 3440x1440. With `DM_SCREEN_WIDE` unset or `0` the rewrite runs the original instructions: 2560x1440, as before.
++- Open: the UI's 2D pictures are stretched over the wider picture, 1.34 times at 3440x1440: the pause menu's art and slots, the load menu's panels and save pictures, the minimap. Text, glyphs and the items a menu renders in 3D keep their shape. The UI is drawn straight to the swap chain with an orthographic projection of 2/1280 by 2/720 (its uniform block at heap+0x226BD178 on this build, heap offsets being the same from run to run; written through a pool alias, so `DM_PROBE_POLL` sees the writes and `DM_PROBE_WATCH` does not), so its 1280 units span the whole width. The game has no nn::ui2d layouts (no `lyt1` or `pan1` tags), so it is another UI system and Breath of the Wild's layout rules do not apply. Ruled out as the source of the 1280, each set to 1720 with no visible change: the framework's +0xb78 (`main+0x108b698`), the 13-slot create arg (`main+0xf26e48`), the display defaults (`main+0x369a444`), the TV display's virtual size (`main+0x6549d0`, which does change the layers' virtual canvas and five other orthographic matrices to 2/1720), six 1280x720 constants in `main+0x1537d48..0x1539ae0`, and the size-getter classes at `main+0x20ec4a0`.
++- Against [PR 1460](https://github.com/seedds/nxnative/pull/1460), which widens the same three sizes at build time (an environment switch of the NSP script's run) together with the output width as a float (`main+0xecbc80`) and the output resolution table (`main+0x3f58540`, its 2560x1440 entry), and no camera: with those two also at 3440 on top of the stubs the pause menu's stretch and the play HUD did not change, so they are not among the stubs; with them and the three camera sites back at the original load, play in Goron City showed the 16:9 view stretched over the wide picture (Link, his shield and the Goron visibly wider), so the cameras are needed there (2026-11-12, words replaced in the rewritten main, one run each).
++- Stays 16:9 inside the wide picture: three targets made over and over in play, 2560x1440 (format 0x38), 1920x1080 (0x1) and 960x540 (0xd), created from `main+0x3b6345c`; not identified (the picture shows no 16:9 part). Open: handheld mode (`DM_OPMODE=0`) does not follow: the game crops its picture to 1920x1080 in the wide swap chain while the cameras take the wide ratio (a squeezed 16:9 picture in a corner), since its handheld size comes from somewhere the stubs do not reach (not the framework constructor's 1920x1080 at +0xb70, which the stub widens to no effect), so the loader keeps 16:9 in handheld mode. Not checked: cutscenes and movies (a movie is a 16:9 picture), the Deku Tree, a 32:9 screen, the frame rate against 16:9 on a bench route.
++
+ ## Memory
+ 
+ - Current, Mac: from about half of Metal's working set the GPU driver frees at every command buffer and the game runs at about 10 fps (Hyrule Field after 15 minutes on a 24 GB M4 Pro, 9.0-9.5 GB required): [the driver's low-water mark](../../../docs/reference/memory.md#the-gpu-driver-frees-at-every-command-buffer-from-about-half-the-working-set). The guard lets go of what has idled from 7.3 GB there and tells the player when the game is slow past 8.4 GB; saving and starting again empties it.
+diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
+index f9c38743f7c129cdea1d9361d509e4b550595c67..3a4f000a1edf02e2449ca79dfb7bcb9163d1ccfd 100644
+--- a/dm/games/0400486024DEC000/patches.py
++++ b/dm/games/0400486024DEC000/patches.py
+@@ -1,5 +1,6 @@
+ # The Legend of Zelda: Ocarina of Time (0400486024DEC000): the rewriter's patches of this game's own code. dm/tools/patch_nso.py loads every profile's patches.py;
+ # MATCH_FRAME_STEP as described there ("Registered patches"). Patches of Nintendo SDK module builds are in dm/tools/sdk_patches.py
++import struct
+ from nso_asm import ADRP, B, BL
+ 
+ # The game's frame ratio. Once a frame the function at main+0x6e6be0 (v131072) divides its base rate (60.0, or 30.0 while bit 0 of [x21+0x24f] is set) by the int frame rate at
+@@ -33,6 +34,7 @@ def frame_step(ctx):
+     fs_put(site, [B(site, start)], 'frame ratio: the host\'s step × base rate / 60 instead of base rate / the game\'s frame rate (state page target fps; 0 = the game\'s ratio)')
+     dynamic_resolution(ctx)
+     heap_retry(ctx)
++    screen_wide(ctx)
+ 
+ # The game's dynamic resolution (game__gfx__DynamicResolutionParam: LoadThreshold, ReduceCounterMax, IncreaseCounterMax and a list of levels, each a ResolutionReduceScale and a
+ # Priority; on v131072 levels 0..9 at 0.75..0.333 of 2048x1152, 1536x864 to 683x384). Its update (main+0x805aa0) reads the frame's GPU load (about 0.2 ms a unit) into +0x8, subtracts
+@@ -72,10 +74,74 @@ def dynamic_resolution(ctx):
+     fs_put(site, [B(site, start)], 'dynamic resolution level: 0 (full resolution), or with state +0x40 (DM_DYNAMIC_RESOLUTION) a climb on the load measured at each level')
+     ctx.capabilities.add('DYNAMIC_RESOLUTION')
+ 
++# A screen wider than 16:9 (DM_SCREEN_WIDE, loader.c: an ultrawide monitor's 3440x1440). The engine lays its picture out from the size of its frame buffer: given a wider one it
++# makes its swap chain, its 3D targets (1920x1080 → 2580x1080) and its composite that wide, and its layouts keep their size and stay at the screen's edges and centre (hearts and
++# items at the corners, menus in the middle), all with no further change. Two things hold 16:9 by themselves:
++#   the sizes. nnMain's create arg (main+0x1202ee0 on v131072: mov x8,#2560; movk x8,#1440,lsl #32; stur x8,[x21,#0x14]) sizes the swap chain, and the framework's constructor
++#     (main+0x31f39f4: 2560x1440 at +0xb68, the docked frame buffer; main+0x31f3a00: 1920x1080 at +0xb70, the handheld one) the frame buffer the views and layouts follow.
++#     With only the second widened the game composes 3440 wide and presents the left 2560 of it
++#   the scene cameras' aspect. Three camera updates copy their own aspect field (+0x140, 16/9 from their parameters) into the view's sead::PerspectiveProjection (near +0x98,
++#     far +0x9c, fovy +0xa0 and the half angle's sin / cos / tan, aspect +0xb0, offset +0xb4; each store sets the dirty flag at +8): main+0x4c5334, main+0x2e1bb64 and
++#     main+0x2e1c7c8, all ldr s0,[x19,#0x140]. With the sizes alone the 16:9 view was stretched over the wide picture (Link's hat 1.34 times as wide as at 16:9). The other
++#     writers of +0xb0 take the viewport's ratio (main+0x28e72a4, main+0x3b50988, main+0x3b50b50 under mIsCalcAspectFromViewport) or another projection's (main+0x653bd4,
++#     main+0x6545f4) and follow by themselves; main+0x2dd7164 is a fixed 1280x720 or 144x144 view of its own and stays
++# The size stubs give the width of the screen's ratio at the site's own height, (height x ratio + 0x8000) >> 16 with the ratio in 16.16 fixed point (state +0xa0; 1440 → 3440,
++# 1080 → 2580 for 3440x1440), and the site's original mov when it is 0 (16:9). The camera stubs run the original load and replace an aspect within 0x100 ulps of 16/9 with
++# the screen's ratio (state +0xa4, a float; 0 = off), so a camera with a shape of its own keeps it; they use no flags. x16 / x17 are free at every site (none of the five
++# functions uses them but main+0x4c48c0, as a temporary at +0xdc..+0xe4, far before its site). The picture keeps the vertical angle and shows more at the sides.
++# All five functions are needed (found by fingerprint, as the frame ratio's): with one missing nothing is patched, since sizes without the cameras stretch the picture
++_wide_sizes = (   # (function, offset in it, original word, the height the site sets, what)
++    ('wide: nnMain create arg', 0x200, 0xd2814008, 1440, 'swap chain size 2560x1440: the width of the screen\'s ratio'),
++    ('wide: framework constructor', 0x164, 0xd2814008, 1440, 'docked frame buffer 2560x1440: the width of the screen\'s ratio'),
++    ('wide: framework constructor', 0x170, 0xd280f008, 1080, 'handheld frame buffer 1920x1080: the width of the screen\'s ratio'))
++_wide_cameras = (('wide: camera update A', 0xa74), ('wide: camera update B', 0x204), ('wide: camera update C', 0x428))   # ldr s0,[x19,#0x140] before the projection's aspect store
++def screen_wide(ctx):
++    here, emit, fs_site, fs_put, FS_STATE_OFF = ctx.here, ctx.emit, ctx.site, ctx.put, ctx.state
++    fns = {label: ctx.others.get(label) for label in [l for l, *_ in _wide_sizes] + [l for l, _ in _wide_cameras]}
++    if any(v is None for v in fns.values()): return   # not all found in this build (a red line from the locator): the game's own 16:9
++    for label, off, orig, height, what in _wide_sizes:
++        site = fns[label] + off
++        fs_site(site, struct.pack('<I', orig).hex())
++        start = here(); emit(ADRP(16, here(), FS_STATE_OFF))
++        for w in (0xb940a210,                    # ldr w16,[x16,#0xa0]    the ratio, 16.16 (0 = 16:9)
++                  0x340000d0,                    # cbz w16,orig (+6)
++                  0x52800011 | height << 5,      # mov w17,#height
++                  0x9bb17e10,                    # umull x16,w16,w17
++                  0x91402210,                    # add x16,x16,#0x8000
++                  0xd350fe08):                   # lsr x8,x16,#16         the width
++            emit(w)
++        emit(B(here(), site + 4))
++        emit(orig); emit(B(here(), site + 4))    # orig: mov x8,#width; back
++        fs_put(site, [B(site, start)], what + ' (state +0xa0, DM_SCREEN_WIDE; 0 = the game\'s)')
++    for label, off in _wide_cameras:
++        site = fns[label] + off
++        fs_site(site, '604241bd')                # ldr s0,[x19,#0x140]
++        start = here(); emit(0xbd414260)         # the original load
++        emit(ADRP(16, here(), FS_STATE_OFF))
++        for w in (0xb940a611,                    # ldr w17,[x16,#0xa4]    the ratio as a float (0 = off)
++                  0x34000131,                    # cbz w17,back (+9)
++                  0x1e260010,                    # fmov w16,s0
++                  0x5291a731,                    # mov w17,#0x8d39
++                  0x72a7fc71,                    # movk w17,#0x3fe3,lsl #16   16/9 (0x3fe38e39) - 0x100
++                  0x4b110210,                    # sub w16,w16,w17
++                  0x53097e10,                    # lsr w16,w16,#9
++                  0x35000070):                   # cbnz w16,back (+3)     not within 0x100 of 16/9: the camera's own aspect
++            emit(w)
++        emit(ADRP(16, here(), FS_STATE_OFF))
++        emit(0xbd40a600)                         # ldr s0,[x16,#0xa4]
++        emit(B(here(), site + 4))
++        fs_put(site, [B(site, start)], 'scene camera: a 16:9 aspect becomes the screen\'s ratio in its projection (state +0xa4, DM_SCREEN_WIDE; 0 = the game\'s)')
++    ctx.capabilities.add('SCREEN_WIDE')
++
+ MATCH_FRAME_STEP = {'main': [
+     {'name': 'frame ratio from the host\'s step', 'size': 0x9b4, 'fingerprints': ['6ae2aff5344d14568e4dbaf93455e2d8278384bf892ed6c6eca87fef98fbcd1d'], 'stub': frame_step,   # v131072 main+0x6e6be0
+      'others': {'dynamic resolution': {'size': 0x294, 'fingerprints': ['7af6ceb0aedf8e0c17dc08ce17fcd6a7cba6d394a0d09e3b504c6d668dc418e7']},   # v131072 main+0x8065e0
+-                'dynamic resolution update': {'size': 0xb24, 'fingerprints': ['5a423697838976baf286cffa5e2ceef0d4e037abbcd9d371e90e9e702d61b3d4']}}},   # main+0x805aa0
++                'dynamic resolution update': {'size': 0xb24, 'fingerprints': ['5a423697838976baf286cffa5e2ceef0d4e037abbcd9d371e90e9e702d61b3d4']},   # main+0x805aa0
++                'wide: nnMain create arg': {'size': 0x570, 'fingerprints': ['f2c5558922a471ab585d374cc9293013d48da1562d43169367efdc8ea90a3fe8']},   # main+0x1202ce0
++                'wide: framework constructor': {'size': 0x273c, 'fingerprints': ['2227b93a9fa9dd0fd9aeb64359649df6e2ade519a8e47fa560f840efcdb5d7e7']},   # main+0x31f3890
++                'wide: camera update A': {'size': 0x1700, 'fingerprints': ['efc2b7111d6387f88960348730d936b4bec9e6d08a19f67bd33e75d752f61df8']},   # main+0x4c48c0
++                'wide: camera update B': {'size': 0xa40, 'fingerprints': ['876b8ff1dc66ff0cb867028d9043fc71adbfac31acc093d040644550e37ac770']},   # main+0x2e1b960
++                'wide: camera update C': {'size': 0x638, 'fingerprints': ['755b131403f6a7d8bb991716f403bb482bbcee61ec0dbf2f04421cc74a749166']}}},   # main+0x2e1c3a0
+ ]}
+ 
+ # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
+@@ -104,6 +170,9 @@ BINDING = [
+     {'what': 'dynamic resolution: full size, or a climb on the load measured at each level', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
+      'why': "the game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)",
+      'checked': 'v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09)'},
++    {'what': 'wide screen: the swap chain and frame buffer sizes and the scene cameras\' aspect (DM_SCREEN_WIDE)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
++     'why': "the game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)",
++     'checked': 'v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen\'s edges and the scene at 16:9\'s proportions with more at the sides (2026-11-12)'},
+ ]
+ 
+ # A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index 9df6d5816afbd9848a9616748fe55e331c900d02..71722e87f6e2db32653386e4f245c94bf3da8c29 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -36,6 +36,7 @@ DM_PAD_PRESS_TO_JOIN	toggle	-	0	always	Controls	Press a button to join
+ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
+ DM_SCREEN_ASPECT	choice	auto=Match screen?platform:ios,1.43=iPhone Duo screen (1.43:1),0=16:9 (Switch)	auto|0	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
+ DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
++DM_SCREEN_WIDE	choice	auto=Match screen?platform:mac,0=16:9 (Switch)	0|auto	fixups:SCREEN_WIDE	Game	Wide screen	On a screen wider than 16:9 the picture fills it, with more of the scene at the sides. Renders more pixels: a little slower.
+ DM_PRESENT_SNAP	toggle	-	DM_GAME_PRESENT_SNAP	gfxapi:nvn	Performance	Frame buffering	Up to one frame more display latency.
+ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
+ DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
+diff --git a/dm/host/dm.h b/dm/host/dm.h
+index f747eb00447dd5d6bcb260af0906f875edf39afa..3f4e6ad100df4aeeb6e7e58a046f6979d2988159 100644
+--- a/dm/host/dm.h
++++ b/dm/host/dm.h
+@@ -75,6 +75,7 @@ typedef struct {
+     uint32_t unity_qs_idx, unity_qs_arr, unity_qs_size, unity_qs_vsync;   // [obj + arr] + (int32)[obj + idx] * size + vsync; 0 = none
+     uint64_t fps_state_off;    // frame step state page (patch_nso.py FRAME_STEP: Tears of the Kingdom 1.4.3 and Breath of the Wild 1.9.0 main); 0 = none
+     uint32_t step_max;         // the largest step the frame step stubs give the game (the fixups table's STEP_MAX, patch_nso.py ctx.step_max); 0 = FSTEP_MAX
++    uint32_t screen_wide;      // wide-screen stubs (the fixups table's SCREEN_WIDE, a capability the build's stubs declare, patch_nso.py): DM_SCREEN_WIDE has something to act on; 0 = none
+     uint32_t render_scale_max; // a render-scale stub's largest scale (the fixups table's RENDER_SCALE, patch_nso.py): DM_RENDER_SCALE is held to it; 0 = no such stub
+     int64_t patch_off;         // patch area relative to the base; negative = before the base (image too large, see patch_nso.py FAR), and size does not include it
+     uint64_t image_size, file_image_len, patch_len;   // only with the patch area before the base: whole image (with bss and key page), length of the image part of the file, patch area length
+diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
+index 377056b935de97dcb85a9b70f31e6d9db534754b..f2e91d4139e4ea323ad13c7f5ab4a88598fc64d4 100644
+--- a/dm/host/front_mac.m
++++ b/dm/host/front_mac.m
+@@ -704,6 +704,17 @@ __attribute__((constructor)) static void prefs_from_old_id(void) {
+     }
+ }
+ 
++// The main screen's size in pixels, for the loader's DM_SCREEN_WIDE=auto (loader.c dm_front_screen; the settings window's Match screen): the loader writes the picture's shape
++// into the state page before the window exists (main.c dm_fps_state_apply), so it asks here. The main screen is the one with the menu bar, System Settings' main display
++extern int (*dm_front_screen)(unsigned *w, unsigned *h);
++static int mac_screen(unsigned *w, unsigned *h) {
++    @autoreleasepool {
++        NSScreen *sc = NSScreen.screens.firstObject; if (!sc) return 0;
++        NSSize px = [sc convertRectToBacking:sc.frame].size; *w = (unsigned)px.width; *h = (unsigned)px.height; return *w && *h;
++    }
++}
++__attribute__((constructor)) static void wide_hook(void) { dm_front_screen = mac_screen; }
++
+ // ---------- Cheats: the menu and the panel (hle_cheats.c holds every state; these only show it and call it) ----------
+ 
+ // A string of the engine as an NSString that is never nil: cheat names, sections and notes come from the player's files,
+@@ -1559,6 +1570,10 @@ void front_run(void (*guest)(void)) {
+         [NSApplication sharedApplication];
+         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+         NSRect r = NSMakeRect(0, 0, 1280, 720);
++        {   // A wide picture (DM_SCREEN_WIDE as the loader left it: <width>x<height> or 0, loader.c) gets a window of its shape
++            const char *sw = getenv("DM_SCREEN_WIDE"); unsigned ww = 0, wh = 0;
++            if (sw && sscanf(sw, "%ux%u", &ww, &wh) == 2 && wh && (double)ww / wh > 1.78 && (double)ww / wh <= 3.6) r = NSMakeRect(0, 0, round(720.0 * ww / wh), 720);
++        }
+         NSWindow *win = [[NSWindow alloc] initWithContentRect:r
+                                                     styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
+                                                       backing:NSBackingStoreBuffered defer:NO];
+diff --git a/dm/host/loader.c b/dm/host/loader.c
+index 61664c717bf0fbdf339589f603946a5e8c75b320..b3a7cb6ed4f3bc44dcdda8e2073b8b4805636aca 100644
+--- a/dm/host/loader.c
++++ b/dm/host/loader.c
+@@ -267,6 +267,7 @@ static void read_layout(module_t *m, const char *dir) {
+         else if (!strcmp(key, "FPS_STATE_OFF")) m->fps_state_off = v;
+         else if (!strcmp(key, "RENDER_SCALE")) m->render_scale_max = (uint32_t)v;
+         else if (!strcmp(key, "STEP_MAX")) m->step_max = (uint32_t)v;
++        else if (!strcmp(key, "SCREEN_WIDE")) m->screen_wide = (uint32_t)v;
+         else if (!strcmp(key, "UE_MALLOC_VT")) m->ue_malloc_vt = v;
+         else if (!strcmp(key, "UE_MALLOC_SLOT")) m->ue_malloc_slot = (unsigned)v;
+         else if (!strcmp(key, "FPS_TARGET_PTR")) m->fps_target_ptr = v;
+@@ -308,11 +309,14 @@ static void read_layout(module_t *m, const char *dir) {
+ uint8_t *dm_fps_state;
+ int dm_fps_step_max;   // the largest step the stubs give the game (STEP_MAX in its fixups table; 0 = FSTEP_MAX): the frame step holds frames and pays back within it (hle_nvn.c)
+ static const char *g_fps_mod;   // the module holding the state page (for the log)
++static int g_screen_wide;   // the build has wide-screen stubs (SCREEN_WIDE in its fixups table)
++int (*dm_front_screen)(unsigned *w, unsigned *h);   // the main screen's size in pixels, set by a front end that has one to match (front_mac.m); DM_SCREEN_WIDE=auto asks it
+ static float g_render_scale_max = 1.0f;   // the render-scale stub's largest scale (RENDER_SCALE in its fixups table; 1 for a stub that only lowers the game's size)
+ static void install_fps_state(module_t *m) {
+     if (m->fps_state_off + 0x40 > m->size || m->fps_state_off < m->key_page_off + m->key_page_size) die("%s: frame step state page out of range", m->name);
+     dm_fps_state = m->base + m->fps_state_off; g_fps_mod = m->name; dm_fps_step_max = (int)m->step_max;
+     if (m->render_scale_max > 1) g_render_scale_max = (float)m->render_scale_max;
++    g_screen_wide = m->screen_wide != 0;
+ }
+ // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
+ // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
+@@ -370,6 +374,36 @@ void dm_fps_state_apply(void) {
+             LOG("%s: screen shape %.3f: output 1920x%u, layout 1280x%u (DM_SCREEN_ASPECT; only builds with screen-shape stubs follow it)", g_fps_mod, a, oh, lh);
+         }
+     }
++    // Screen shape, wider than 16:9: DM_SCREEN_WIDE=<width>x<height> (a 21:9 monitor's 3440x1440) makes the builds with wide-screen stubs (the SCREEN_WIDE capability:
++    // Ocarina of Time's patches.py) render that shape: the output keeps the game's own height and takes the width that gives the ratio, and the scene's cameras take the
++    // ratio where they held 16:9. `auto` is the main screen's size when it is wider than 16:9, asked of the front end (dm_front_screen: the Mac's, with a window), else 16:9;
++    // it is the default for a build with the stubs, as the launcher shows (settings.tsv: Match screen), so a build without them is never asked. State +0xa0 u32 the ratio in
++    // 16.16 fixed point (a stub computes width = (height x ratio + 0x8000) >> 16 from the height it has: 1440 → 3440, 1080 → 2580), +0xa4 the ratio as a float; 0 = 16:9.
++    // The variable is left holding what was decided (<width>x<height> or 0), which the Mac front end sizes its window by
++    const char *ws = getenv("DM_SCREEN_WIDE"); int asked = ws && *ws;
++    if (!asked && g_screen_wide) ws = "auto";
++    if (ws && *ws && strcmp(ws, "0")) {
++        unsigned ww = 0, wh = 0; char tail = 0, res[32]; int ok = 0;
++        const char *om = getenv("DM_OPMODE");   // as dm_opmode (hle_oe.c), which is not yet asked here
++        if (!(om ? atoi(om) : DM_GAME_OPMODE)) {
++            if (asked) LOG("%s: DM_SCREEN_WIDE=%s: handheld mode keeps 16:9 (the handheld picture's size is not among the wide-screen stubs: Ocarina of Time crops it to 1920x1080)", g_fps_mod, ws);
++        } else if (!strcmp(ws, "auto")) {
++            if (!getenv("DM_WINDOW") || !dm_front_screen || !dm_front_screen(&ww, &wh)) { if (asked) LOG("%s: DM_SCREEN_WIDE=auto: no screen to match (no window), keeping 16:9", g_fps_mod); }
++            else if ((double)ww / wh > 1.8 && (double)ww / wh <= 3.6) { ok = 1; LOG("%s: DM_SCREEN_WIDE=auto: the main screen is %ux%u (%.3f:1)", g_fps_mod, ww, wh, (double)ww / wh); }
++            else LOG("%s: DM_SCREEN_WIDE=auto: the main screen, %ux%u, is not wider than 16:9; keeping 16:9", g_fps_mod, ww, wh);
++        } else if (sscanf(ws, "%ux%u%c", &ww, &wh, &tail) != 2 || !ww || !wh || (double)ww / wh <= 1.78 || (double)ww / wh > 3.6)
++            LOG("[RED] DM_SCREEN_WIDE=%s: <width>x<height> of a screen wider than 16:9 (up to 32:9), as 3440x1440, or auto; keeping 16:9", ws);
++        else ok = 1;
++        if (ok) {
++            double a = (double)ww / wh; uint32_t q = (uint32_t)(a * 65536.0 + 0.5); float af = (float)a;
++            memcpy(dm_fps_state + 0xa0, &q, 4); memcpy(dm_fps_state + 0xa4, &af, 4);
++            extern void mtl_present_screen(uint32_t w, uint32_t h); mtl_present_screen(ww, wh);   // the picture's shape for a texture that follows it (nvn_mtl.m present_shape)
++            LOG("%s: wide screen %ux%u (%.3f:1): output %u wide at 1440 rows, %u at 1080 (DM_SCREEN_WIDE; only builds with wide-screen stubs follow it)", g_fps_mod, ww, wh, a,
++                (unsigned)((1440ull * q + 0x8000) >> 16), (unsigned)((1080ull * q + 0x8000) >> 16));
++            snprintf(res, sizeof res, "%ux%u", ww, wh);
++        }
++        setenv("DM_SCREEN_WIDE", ok ? res : "0", 1);
++    }
+     char cap[32]; snprintf(cap, sizeof cap, ", capped at %d fps", t);
+     LOG("%s: frame step %s%s (%s)", g_fps_mod, !t ? "as the game sets it" : "in whole vsyncs decided by the host", t ? cap : "", e ? "DM_FPS_TARGET" : "game profile fps_target");
+ }
+diff --git a/dm/tools/docs_patches.py b/dm/tools/docs_patches.py
+index d164f274b6dd12ddd72d466fedae1556fd7e8413..78918e8d059e10f75f5a1d02c8dfb05f2db72be9 100644
+--- a/dm/tools/docs_patches.py
++++ b/dm/tools/docs_patches.py
+@@ -173,18 +173,18 @@ def build_rows(gs):   # {build ID: [(game, display version, module)]}
+     return out
+ 
+ 
+-OTHER_BASE = 0x8000000   # where the dry run puts a MATCH_FRAME_STEP rule's other functions, 16 MB apart, so their sites read as offsets in them; its patch area starts at 0x6000000,
+-                          # within a b's reach (128 MB) of a main's sites below it and of up to six other functions above
++OTHER_BASE, OTHER_STEP = 0x8000000, 0x800000   # where the dry run puts a MATCH_FRAME_STEP rule's other functions, 8 MB apart, so their sites read as offsets in them; its patch area
++                                               # starts at 0x6000000, within a b's reach (128 MB) of a main's sites below it and of up to twelve other functions above (Ocarina of Time has seven)
+ 
+ 
+ def frame_step_sites(fn, base=0, others=(), found=None):   # (offset, reason) of each site a FRAME_STEP function (or a MATCH_FRAME_STEP stub, its function at base) writes, whether it marks a
+     pos, puts = [0x6000000], []                    # render-scale stub, the sites in each of the rule's other functions ({label: [(offset, reason)]}) and the capabilities it declares
+     def emit(w): pos[0] += 4
+-    at = {label: OTHER_BASE + i * 0x1000000 for i, label in enumerate(others)}
++    at = {label: OTHER_BASE + i * OTHER_STEP for i, label in enumerate(others)}
+     ctx = types.SimpleNamespace(here=lambda: pos[0], emit=emit, site=lambda off, orig: None, put=lambda off, words, why: puts.append((off, why)), state=0x9000000, render_scale=0, step_max=0, base=base,
+                                 others=at, found=found, capabilities=set(), address=lambda off: 0)
+     fn(ctx)
+-    in_others = {label: sorted((off - a, why) for off, why in puts if a <= off < a + 0x1000000) for label, a in at.items()}
++    in_others = {label: sorted((off - a, why) for off, why in puts if a <= off < a + OTHER_STEP) for label, a in at.items()}
+     return sorted((off, why) for off, why in puts if off < OTHER_BASE), ctx.render_scale, in_others, sorted(ctx.capabilities)
+ 
+ 
+diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
+index f80fcbdc41a734093950920beb71c46cca04046d..24736ab4f39c3ab13b28f85437f2562f4fb927ff 100644
+--- a/docs/agents/game-patches.md
++++ b/docs/agents/game-patches.md
+@@ -595,6 +595,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ - **`game`**, frame rate, at goal, checked: v131072 main: one function with this fingerprint, the constructor, its one caller, the update and the advance read by disassembly; the limit and the count read in play with DM_PROBE, the opening movie timed at a 30 fps frame step without and with the cut (2026-11-12): movie pictures a frame: up to 2. The game's own movie player constructor, found by its function's fingerprint on any build that keeps the function; other games of this engine are unchecked
+ - **`game`**, frame rate, at goal, checked: v131072 main: one function with this fingerprint, the site and its free registers read by disassembly (2026-11-08): frame ratio from the host's step. The game's own frame-ratio division, found by its function's fingerprint on any build that keeps the function
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
++- **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen's edges and the scene at 16:9's proportions with more at the sides (2026-11-12): wide screen: the swap chain and frame buffer sizes and the scene cameras' aspect (DM_SCREEN_WIDE). The game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)
+ 
+ - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
+ - **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; launcher capabilities: DYNAMIC_RESOLUTION
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 401dd6bc2394092c92d7046333594bbea31a3c85..8ee1bc3003b42457574884f2e76663006dd1a23d 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -384,6 +384,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+ DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
+ DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
+ DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz), and a variable-refresh screen to a fixed-rate mode at a multiple (ProMotion 120 → 60 Hz at 60 and 30 fps)
++DM_SCREEN_WIDE	player	`=<width>x<height>` of a screen wider than 16:9 (up to 32:9, e.g. `3440x1440`) renders a game whose build has wide-screen stubs (the SCREEN_WIDE capability: Ocarina of Time) in that shape: the output keeps the game's own height and takes the width of the ratio (2560x1440 → 3440x1440, the 3D views 1920x1080 → 2580x1080), the scene keeps its vertical angle and shows more at the sides, the HUD stays at the screen's edges; `auto` (Mac, with a window) the main screen's size when it is wider than 16:9, else 16:9, and the default for a build with the stubs; `0`, handheld mode (`DM_OPMODE=0`) or a build without the stubs is 16:9; the loader leaves the variable holding what it decided (`<width>x<height>` or `0`); launcher setting
+ DM_SETTINGS_FILE	path	`0` turns off the Mac player's per-game settings file (`NXForge settings.txt` in DM_GAME_FOLDER, else `nxforge-settings.txt` in DM_ROOT), which mirrors the Quick settings sidebar's choices and wins at launch
+ DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
+ DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
+diff --git a/docs/settings.md b/docs/settings.md
+index aa34312abcd63ac767fe6f36221ff66634610d4e..7186023959a6105562c310d455818308ca362e19 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -90,6 +90,10 @@ iPhone and iPad. **Fit**, the default, shows the game's picture (16:9, or the ta
+ 
+ Games whose profile supports it (Breath of the Wild, Animal Crossing: New Horizons). **iPhone Duo screen (1.43:1)** renders a taller picture of the Duo's own shape: the sides of 16:9 with more above and below, and the HUD at the screen's edges. **16:9** is the Switch's picture. The taller picture has about a quarter more pixels, so it runs a little slower and warmer.
+ 
++### Wide screen
++
++Mac, games whose build supports it (Ocarina of Time). **Match screen**, the default, renders a picture of the main screen's own shape when it is wider than 16:9 (an ultrawide monitor, 3440x1440 for one): the same view up and down, more of the scene at the sides, and the HUD at the screen's edges. On a 16:9 or taller screen it is the Switch's 16:9 picture, as **16:9**. The game's window opens in that shape; choose **Fullscreen** in [Display mode](#display-mode) to fill the screen. The wider picture has about a third more pixels, so it runs a little slower. **Handheld** [console mode](#console-mode) keeps 16:9. In an `env.txt`: `DM_SCREEN_WIDE=auto`, `0`, or a size such as `3440x1440`.
++
+ ### Frame-rate counter
+ 
+ Shows the frames per second at the top left.
+@@ -314,6 +318,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+ | Cloud saves folder (Mac) | `DM_SAVE_SYNC` | a folder; `icloud`: iCloud Drive › nxnative Saves; `0`: off |
+ | Picture (iPhone and iPad) | `DM_PICTURE_FIT` | `fit` 16:9 with black bars, `fill` covers the screen, cropped |
+ | Picture shape | `DM_SCREEN_ASPECT` | `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1), else 16:9 (iOS only); `1.43` the iPhone Duo's shape, `0` 16:9 |
++| Wide screen (Mac) | `DM_SCREEN_WIDE` | `auto` the main screen's size when it is wider than 16:9, else 16:9; `<width>x<height>` that shape (`3440x1440`); `0` 16:9 |
+ | Frame-rate counter | `DM_SHOW_FPS` | `1`, `0` |
+ | Touch feedback | `DM_TOUCH_HAPTICS` | `1`, `0` |
+ | Game rumble | `DM_RUMBLE` | `1`, `0` |

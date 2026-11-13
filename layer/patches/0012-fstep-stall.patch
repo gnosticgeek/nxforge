@@ -18,10 +18,10 @@ frames after every pause stepped the hold to 3: about a second at 20 and 30 fps
  5 files changed, 47 insertions(+), 4 deletions(-)
 
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index f7c5fc5c74f05c1eaca5460f0ebea45a05adaa94..8610650a4b939ba169f0e938276e163611a37424 100644
+index a7ec53f9875a0e0391f9c3e5aa11b9c1dce265f8..7d3408b48f413cfb26f8f8f2985338bc44d5a284 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -2413,9 +2413,9 @@ static void fstep_tick(const win_t *o, int c) {
+@@ -2434,9 +2434,9 @@ static void fstep_tick(const win_t *o, int c) {
          if (o->presents % 1800 == 0) { LOG("[nvn] 120 fps: held 1 / 2 ticks %llu / %llu frames, %llu late, %llu up / %llu down (%llu probes, %llu failed trials)", (unsigned long long)held[1], (unsigned long long)held[2], (unsigned long long)g_fs.late, (unsigned long long)g_fs.ups, (unsigned long long)g_fs.downs, (unsigned long long)g_fs.probes, (unsigned long long)g_fs.failed); memset(held, 0, sizeof held); }
      } else if (o->presents % 1800 == 0) {   // game time against real time (1.000 = normal speed; lower when a device cannot hold 20 fps or after long stalls)
          uint64_t vs = __atomic_load_n((uint64_t *)(dm_fps_state + 0x30), __ATOMIC_RELAXED) + fixed_sum, t = now_ns();
@@ -113,10 +113,10 @@ index eb4272901404a46a6e49f667260ed98d0c093719..c49f5ba7298e5a30214fd485f6850457
      return fail != 0;
  }
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index 4edefc704751d85f2dd48491c134180c0b1fab4c..587347c219928af94efdf9f9cbc9cf1af19956af 100644
+index 3e2a84fa4456234fd7c12060ebf59644eb74d880..d6e27ef4a40133e695b40db3e6fe9588f644fb38 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -512,6 +512,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -523,6 +523,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - in a game the host steps at 60 fps (`FRAME_STEP`), a prerendered movie plays at twice its speed, its sound falls behind, and the frame counter shows 60 during it. The log has `[movie]` lines with pictures 33 ms apart (`time 0 / 33000 / 67000 µs`) and no `frame step cap 60 → 30` at the movie. → [Movies hold 30 fps under the frame step](../reference/frame-rate.md#movies-hold-30-fps-under-the-frame-step)
  - after a 30 fps cap ends (a prerendered movie, the thermal cap), a GPU-bound game stays at 30 fps in a scene that held 60 before the cap; the log shows `frame step cap 30 → 60 fps` and a few frames later `frame step: hold 1 → 2 vsyncs at present … (3 late frames; …)`, with no probe after it. → [The frame step after a 30 fps cap ends](../reference/frame-rate.md#the-frame-step-after-a-30-fps-cap-ends)
  - on a Mac, a GPU-bound game at 60 fps falls to 30 or 20 fps when the scene gets heavier and stays there until a menu or a lighter scene, while the GPU clock sits at its floor (338–400 MHz on an M5 Pro) and the GPU is powered 60–75% of the time; the log shows probes back to hold 1 that fail after about 33 frames (`frame step: hold 2 → 1 vsyncs … (probe, GPU 1.67× its time at hold 1)` then `the probe failed`), and the host's profiler (`@gpu_mhz`) shows the clock rising during each probe and falling back after it. → [A probe's grace lasts while its frames keep getting cheaper](../reference/frame-rate.md#a-probes-grace-lasts-while-its-frames-keep-getting-cheaper)
@@ -125,7 +125,7 @@ index 4edefc704751d85f2dd48491c134180c0b1fab4c..587347c219928af94efdf9f9cbc9cf1a
  - a fixed-step game runs at double speed (or slow motion at 30) after `DM_FPS_TARGET` is set, in `Documents/env.txt` or the launcher, on a build its profile's frame step stubs and limiter rows do not know. → [A present cap applies only with a frame step or an engine limit the host writes](../reference/frame-rate.md#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)
  - a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick. → [A present interval that is the game's only limit, in display mode](../reference/frame-rate.md#a-present-interval-that-is-the-games-only-limit-in-display-mode)
 diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
-index 4123271d82d594c07a09c673bbf0d25a00c44ab7..4cfffb534a18fad85db8b0b0da936481d09c21e6 100644
+index bd717e5bb377eaf65fa70552c7c1a3717c29d6f3..714512d4cf3ad176f133f3e1341a5e5f9e11053d 100644
 --- a/docs/reference/frame-rate.md
 +++ b/docs/reference/frame-rate.md
 @@ -94,6 +94,15 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an

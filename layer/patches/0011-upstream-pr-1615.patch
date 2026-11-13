@@ -18,13 +18,13 @@ set holds after its next commit. DM_NVN_GUARD_DEVICE=1 keeps the old measure.
  2 files changed, 15 insertions(+), 3 deletions(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 3199db64d3c5c9761ec0d764944ad22341147707..d35e78f534e7768bb705a74a7d92fc841cc62685 100644
+index 216f64378fdd44a875c1a326d4e86570d57de6a2..20b747f6f94fdcabb24f0c24b02d92dbfcc21b1c 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -325,6 +325,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {
-     [g_res removeAllocation:(id<MTLAllocation>)r];
+@@ -340,6 +340,10 @@ static void res_remove(id<MTLAllocation> r) { @autoreleasepool {
+     res_q_put(r, 0);
      [g_res_objects removeObject:r];
-     g_res_dirty = 1; g_rs_rm++;
+     g_rs_rm++;
 +    // what the set holds after its next commit (guard_used) leaves this out, as res_add_at counts what it adds: a load that retires and replaces buffers in one burst counted
 +    // only the additions, and PRAGMATA's guard stopped the game at 5,555 MB with the committed set never past 4,220 MB (8 GB Mac)
 +    { uint64_t was = atomic_load_explicit(&g_guard_set, memory_order_relaxed), sz = r.allocatedSize;
@@ -32,7 +32,7 @@ index 3199db64d3c5c9761ec0d764944ad22341147707..d35e78f534e7768bb705a74a7d92fc84
      pthread_mutex_unlock(&g_res_mu);
  } }
  // Recycled texture memory (GitHub issues #1831, #1823). An engine that keeps its render targets in a GPU-only pool and moves or resizes them with its dynamic resolution names new
-@@ -474,7 +478,14 @@ enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TI
+@@ -489,7 +493,14 @@ enum { GUARD_OK, GUARD_EVICT, GUARD_STOP, GUARD_WALL, GUARD_EVERY = 30, GUARD_TI
  static struct { uint64_t evict, stop, wall; } g_guard;   // bytes, all 0 with the guard off: the eviction level, the stop level, the size no commit grows past
  static _Atomic int g_guard_lv;   // the highest level met since the submit thread last looked (guard_act)
  static int guard_level(uint64_t used) { return !g_guard.stop ? GUARD_OK : used >= g_guard.wall ? GUARD_WALL : used >= g_guard.stop ? GUARD_STOP : used >= g_guard.evict ? GUARD_EVICT : GUARD_OK; }
@@ -47,17 +47,17 @@ index 3199db64d3c5c9761ec0d764944ad22341147707..d35e78f534e7768bb705a74a7d92fc84
 +}
  static void guard_raise(int lv) { int cur = atomic_load(&g_guard_lv); while (lv > cur && !atomic_compare_exchange_weak(&g_guard_lv, &cur, lv)) {} }
  static void guard_act(uint64_t fence);
- static void res_commit(void) {
-@@ -483,7 +494,7 @@ static void res_commit(void) {
-         uint64_t used = guard_used(); int lv = guard_level(used);
+ // Applies and commits every change made before the call. A change another thread's commit took is in the set when this returns too: that commit holds g_res_commit_mu until it is
+@@ -505,7 +516,7 @@ static void res_commit(void) { @autoreleasepool {
          if (lv) guard_raise(lv);
-         if (lv == GUARD_WALL && g_res_grew) {   // removals alone always go through: they are what brings the set down
+         int grew = 0; for (size_t i = 0; i < n; i++) grew |= q[i].add;
+         if (lv == GUARD_WALL && grew) {
 -            static uint64_t refused; if (!refused++) MLOG("[RED] GPU memory guard: %llu MB at Metal's working set of %llu MB: this residency commit and any after it that add to the set are not made", (unsigned long long)(used >> 20), (unsigned long long)(g_guard.wall >> 20));
 +            static uint64_t refused; if (!refused++) MLOG("[RED] GPU memory guard: %llu MB at Metal's working set of %llu MB (residency set after this commit %llu MB, device allocated %llu MB): this residency commit and any after it that add to the set are not made", (unsigned long long)(used >> 20), (unsigned long long)(g_guard.wall >> 20), (unsigned long long)(atomic_load(&g_guard_set) >> 20), (unsigned long long)(g_dev.currentAllocatedSize >> 20));
-             pthread_mutex_unlock(&g_res_mu); return;
-         }
-         uint64_t t0 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW); [g_res commit]; g_res_dirty = g_res_grew = 0; g_rs_commits++; uint64_t d_ = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - t0; g_rs_commit_ns += d_; atomic_fetch_add(&g_rs_commit_total_ns, d_);
-@@ -715,6 +726,7 @@ static void guard_tick(void) {
+             size_t k = 0;
+             for (size_t i = 0; i < n; i++) {
+                 if (!q[i].add) { q[k++] = q[i]; continue; }
+@@ -756,6 +767,7 @@ static void guard_tick(void) {
      if (lv == GUARD_WALL || over >= GUARD_TICKS) guard_stop(used);
  }
  static void guard_init(void) {
@@ -66,10 +66,10 @@ index 3199db64d3c5c9761ec0d764944ad22341147707..d35e78f534e7768bb705a74a7d92fc84
      if (!g_res) return;
      if (ws && !(e && !lim)) { g_guard.wall = MAX(ws, lim); g_guard.stop = lim ? lim : ws / 100 * 95; g_guard.evict = g_guard.stop / 95 * 80;
 diff --git a/docs/reference/memory.md b/docs/reference/memory.md
-index cebc5b2decfa631325b9f35ba7dc02811f47263c..5973900ed8431d88a2ed9af0dfa2b55418e1ddf3 100644
+index b8a24342202e78464f5200ffb4e9110cd8de9ba0..3aaa982a2abd7da6692bae2513f996381e748850 100644
 --- a/docs/reference/memory.md
 +++ b/docs/reference/memory.md
-@@ -509,7 +509,7 @@ The guest address space, heaps, pools, virtual address memory and the allocators
+@@ -533,7 +533,7 @@ The guest address space, heaps, pools, virtual address memory and the allocators
  
  - **Symptom:** a game ends stuck after `[RED] GPU out of memory`, or the Mac itself freezes until the power button; on an 8 GB Mac, WindowServer's watchdog restarts the desktop. Now: `[RED] GPU memory guard: ... stopping the game before the driver cannot wire more`, the report of what the residency set holds, and an alert before the app quits.
  - **Cause:** GPU memory is wired, and the driver refuses to wire past `recommendedMaxWorkingSetSize`: IOGPUScheduler's `freeToWireMemory` fails there (aCidcOde, GitHub issue #1326). The submit thread then waits in the kernel, where the process cannot be killed: 7 minutes in that report. Nothing in the host looked at the working set.

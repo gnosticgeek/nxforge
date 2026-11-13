@@ -4,7 +4,6 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
- dm/gfx/tests/t_gl_imports.m          |  2 +-
  dm/tools/lint_c_baseline.tsv         |  5 ++---
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
@@ -13,21 +12,8 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 25 +++++++++++++++----------
- 9 files changed, 58 insertions(+), 31 deletions(-)
+ 8 files changed, 57 insertions(+), 30 deletions(-)
 
-diff --git a/dm/gfx/tests/t_gl_imports.m b/dm/gfx/tests/t_gl_imports.m
-index b373c43b15513f3d18c70e9ca3c4ce4e09ca2b41..28cd23f1b91a3d95748315d1bddd0f7af56b2788 100644
---- a/dm/gfx/tests/t_gl_imports.m
-+++ b/dm/gfx/tests/t_gl_imports.m
-@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
-     id<MTLCommandBuffer> rcb = [g_q commandBuffer]; id<MTLBlitCommandEncoder> rbe = [rcb blitCommandEncoder];   // after the upload: one queue runs its command buffers in commit order
-     [rbe copyFromTexture:dtex->tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(4, 4, 1) toBuffer:rb destinationOffset:0 destinationBytesPerRow:16 destinationBytesPerImage:64];
-     [rbe endEncoding]; [rcb commit]; [rcb waitUntilCompleted];
--    assert(!memcmp(rb.contents, depth, sizeof depth));
-+    assert(!memcmp(rb.contents, depth, sizeof depth));   // NOLINT(bugprone-suspicious-memory-comparison): the blit must copy the depth texels bit for bit
-     // A real link: the linked program keeps the stages' code (si, fn) whatever its attachments do afterwards; a relink without a stage fails. The same shader attached twice
-     // changes nothing (its count included)
-     void (*link)(GLuint) = import("glLinkProgram");
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
 index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..f396b01e20cbe5d92e15fe9c444190d7090bc7d5 100644
 --- a/dm/tools/lint_c_baseline.tsv
@@ -92,7 +78,7 @@ index 47b05da3bfb292519667dee9a5729a2507b1c2a9..2d1727f78536d5254d6e85ea6857905b
  
      def test_home_redacted(self):
 diff --git a/dm/tools/tests/test_regress.py b/dm/tools/tests/test_regress.py
-index 20732d1fdf24f34fc264335ca7d580e49f3b06a3..4f850a1b3ea885e7fc6a68de7be77855060afc1e 100644
+index 1cba7396db737871215d5a418a7a9665edc27170..1e8500bc523faa7e7983823344e521abe8a03b10 100644
 --- a/dm/tools/tests/test_regress.py
 +++ b/dm/tools/tests/test_regress.py
 @@ -421,16 +421,16 @@ class Regress(unittest.TestCase):
@@ -243,7 +229,7 @@ index e63bbbbfc910a747b11fd3b090be67f1a2343341..dc069829654dc6341e8be1e963b0702c
      for d in dirs:
          if d.is_symlink() or not d.is_dir(): continue
 diff --git a/scripts/regress.py b/scripts/regress.py
-index 6b556df7dc7ecd4eec9253083f5618f35a97528c..d9b1bdd81d3fd6a2a60d9725e13ef0713c09aa64 100644
+index 798a7c5d2a2a7c1d81733cfa9e3e2fd9de208e4a..4f98c2728bd1ae970001b25880ae5130c58803bf 100644
 --- a/scripts/regress.py
 +++ b/scripts/regress.py
 @@ -96,7 +96,7 @@ rfs = shader_lib.romfs
