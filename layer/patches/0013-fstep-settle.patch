@@ -81,10 +81,10 @@ index ab7e74fe6da5bbfb17eda9689edb40b1f2c22b00..77bbce61efd51cb064c0f58164201404
      if (late) { s->late++; s->late_run = grace || sgrace ? 0 : s->late_run + 1; s->fit_run = 0; } else s->late_run = 0;
      // The cost of the frames on time (a hitch is not what the scene costs): at kmin, and at the longer hold
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 20b747f6f94fdcabb24f0c24b02d92dbfcc21b1c..9c12c6d4e03ccbee294378e96dcccd318a19c114 100644
+index a286f01346b52a843ad2929193fcc06221d1f8bd..822726879fb2f9b111c499f869ce28fa702c2e1b 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -16280,6 +16280,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }
+@@ -16313,6 +16313,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }
  // DM_FSTEP_PROBE_RAMP=1 (default) / 0 / ab: a frame-step probe's grace is renewed while its frames keep getting cheaper (nvn_fstep.h FSTEP_RAMP), the time macOS's GPU clock takes to rise for the shorter deadline
  static int probe_ramp_mode(void) { static int m = -1; if (m < 0) m = sw_mode("DM_FSTEP_PROBE_RAMP", 1); return m; }
  int mtl_probe_ramp_on(void) { return sw_on(probe_ramp_mode()); }
@@ -135,7 +135,7 @@ index 20b747f6f94fdcabb24f0c24b02d92dbfcc21b1c..9c12c6d4e03ccbee294378e96dcccd31
  static void sub_cut(void) {
      int n = cut_draws();
      if (!g_cb || g_enc) return;
-@@ -17681,6 +17725,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -17714,6 +17758,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      if (atomic_load(&g_gpu_lost)) return 0;   // the display command buffer would be ignored too: take no drawable from the screen the front end is about to close
      CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
      if (!layer) return 0;
@@ -168,10 +168,10 @@ index c49f5ba7298e5a30214fd485f68504575e950097..65c500913b33a1fafc0e3e02a890ad2c
      printf("== %d checks, %d failed ==\n", checks, fail);
      return fail != 0;
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index d6e27ef4a40133e695b40db3e6fe9588f644fb38..51777d1eaed2559fc34ebf61add8ecf15c8be159 100644
+index 5edf24968eecedad567f38ebabe659e7cda170a9..ca344ab3e296bc73de95229a02cf5d152dc26be7 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -524,6 +524,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -525,6 +525,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - after a 30 fps cap ends (a prerendered movie, the thermal cap), a GPU-bound game stays at 30 fps in a scene that held 60 before the cap; the log shows `frame step cap 30 → 60 fps` and a few frames later `frame step: hold 1 → 2 vsyncs at present … (3 late frames; …)`, with no probe after it. → [The frame step after a 30 fps cap ends](../reference/frame-rate.md#the-frame-step-after-a-30-fps-cap-ends)
  - on a Mac, a GPU-bound game at 60 fps falls to 30 or 20 fps when the scene gets heavier and stays there until a menu or a lighter scene, while the GPU clock sits at its floor (338–400 MHz on an M5 Pro) and the GPU is powered 60–75% of the time; the log shows probes back to hold 1 that fail after about 33 frames (`frame step: hold 2 → 1 vsyncs … (probe, GPU 1.67× its time at hold 1)` then `the probe failed`), and the host's profiler (`@gpu_mhz`) shows the clock rising during each probe and falling back after it. → [A probe's grace lasts while its frames keep getting cheaper](../reference/frame-rate.md#a-probes-grace-lasts-while-its-frames-keep-getting-cheaper)
  - after every pause (the game out of focus, then back), fullscreen switch or covered window, a game that held 60 fps plays at 20 and then 30 fps for about a second; the log shows `frame step: hold 1 → 3 vsyncs at present … (3 late frames; cost 3.00, GPU 0.89; …)` right after `oe focus state → 1` or `front end: window visible`, then a trial to 2 and a probe back to 1 that holds. → [A pause or a window switch steps the hold up](../reference/frame-rate.md#a-pause-or-a-window-switch-steps-the-hold-up)

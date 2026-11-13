@@ -113,10 +113,10 @@ index eb4272901404a46a6e49f667260ed98d0c093719..c49f5ba7298e5a30214fd485f6850457
      return fail != 0;
  }
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index 3e2a84fa4456234fd7c12060ebf59644eb74d880..d6e27ef4a40133e695b40db3e6fe9588f644fb38 100644
+index 97a5935db2d0345134158bc613976cae1d65aacd..5edf24968eecedad567f38ebabe659e7cda170a9 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -523,6 +523,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -524,6 +524,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - in a game the host steps at 60 fps (`FRAME_STEP`), a prerendered movie plays at twice its speed, its sound falls behind, and the frame counter shows 60 during it. The log has `[movie]` lines with pictures 33 ms apart (`time 0 / 33000 / 67000 µs`) and no `frame step cap 60 → 30` at the movie. → [Movies hold 30 fps under the frame step](../reference/frame-rate.md#movies-hold-30-fps-under-the-frame-step)
  - after a 30 fps cap ends (a prerendered movie, the thermal cap), a GPU-bound game stays at 30 fps in a scene that held 60 before the cap; the log shows `frame step cap 30 → 60 fps` and a few frames later `frame step: hold 1 → 2 vsyncs at present … (3 late frames; …)`, with no probe after it. → [The frame step after a 30 fps cap ends](../reference/frame-rate.md#the-frame-step-after-a-30-fps-cap-ends)
  - on a Mac, a GPU-bound game at 60 fps falls to 30 or 20 fps when the scene gets heavier and stays there until a menu or a lighter scene, while the GPU clock sits at its floor (338–400 MHz on an M5 Pro) and the GPU is powered 60–75% of the time; the log shows probes back to hold 1 that fail after about 33 frames (`frame step: hold 2 → 1 vsyncs … (probe, GPU 1.67× its time at hold 1)` then `the probe failed`), and the host's profiler (`@gpu_mhz`) shows the clock rising during each probe and falling back after it. → [A probe's grace lasts while its frames keep getting cheaper](../reference/frame-rate.md#a-probes-grace-lasts-while-its-frames-keep-getting-cheaper)

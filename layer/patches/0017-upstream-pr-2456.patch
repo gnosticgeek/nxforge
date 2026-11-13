@@ -63,9 +63,9 @@ The issue also reports item and chest jingles missing in play. Not reproduced, n
  dm/games/0400486024DEC000/patches.py | 19 +++++++++++++++++++
  dm/tools/tests/test_patches.py       | 13 +++++++++++++
  docs/agents/game-patches.md          |  4 +++-
- docs/agents/symptoms.md              |  1 +
+ docs/agents/symptoms.md              |  3 ++-
  docs/reference/movies.md             |  9 +++++++++
- 6 files changed, 54 insertions(+), 2 deletions(-)
+ 6 files changed, 55 insertions(+), 3 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
 index 0d74450696a72a41a49dece83b079c85d3d9fff4..adfe810ad19c79e504efa46ca6bc5898522f86ac 100644
@@ -188,10 +188,20 @@ index 0c8ddf09286bdff5db8ed67455146fa4648bf106..f80fcbdc41a734093950920beb71c46c
  
  ### The Legend of Zelda: Tears of the Kingdom
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index db1346caa3e76a627c788fab507f30c40038fb29..e4d94e618451a5c7a4c84fca1df815ddf3e0d0f6 100644
+index 549c57866f911f68906b855437d168084fdcee7e..f947fe2932b6d2a961f162f6bd81546f811f8e09 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -460,6 +460,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -36,8 +36,8 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - Ocarina of Time's `shader/cache/cas.db` occupies 40.8 GB: 30.4 GB of unique Mac and iOS Metal compilations, two complete generations of 42,848 per-shader records, variants and old staged outputs. Some results are useful for regression tests, but pruning old regression chain libraries does not reclaim their cache entries. → [Regression shader compilations grow the normal build cache](../reference/packing.md#regression-shader-compilations-grow-the-normal-build-cache)
+ - a game's shader libraries are slow to copy or delete: Skyward Sword HD's `b-<chain>/` held 12,064 files for 2,470 shaders, a third of its build folder's files, and each `regress.py` chain build held another set. A tar would not do: the host reads these files at every run. → [Shader libraries take a file per shader variant](../reference/packing.md#shader-libraries-take-a-file-per-shader-variant)
+ - a game's build folder holds tens of thousands of small files while its shaders build, and keeps them when the build stops: Octopath Traveler 0's `_build`, stopped in its compile, held 68,230 files (38,376 in `tmp/dmsh_*`, 29,757 in `shader/cache/b-<chain>/`), against 105 once a build finished. Every later build made another `tmp/dmsh_*` beside the old one. → [A shader build leaves a file per shader output while it runs or after a stop](../reference/packing.md#a-shader-build-leaves-a-file-per-shader-output-while-it-runs-or-after-a-stop)
+-- after a shader build on a nearly full drive (one `[RED] the shader compile cache … cannot be written` line), the library image lacks some outputs of a shader that built: the host finds no reflection or library for it. → [A full drive during a shader build drops finished outputs from the library](../reference/packing.md#a-full-drive-during-a-shader-build-drops-finished-outputs-from-the-library)
+ - `mds_stores` and `mdworker_shared` keep the Mac busy during and after a build: after a full Ocarina of Time build, `mds_stores` stayed at 100 to 156% CPU for more than 40 minutes with nothing else running, and `mdfind` found the build folder's `.metal` sources. → [Spotlight indexes the files a shader build writes](../reference/packing.md#spotlight-indexes-the-files-a-shader-build-writes)
++- after a shader build on a nearly full drive (one `[RED] the shader compile cache … cannot be written` line), the library image lacks some outputs of a shader that built: the host finds no reflection or library for it. → [A full drive during a shader build drops finished outputs from the library](../reference/packing.md#a-full-drive-during-a-shader-build-drops-finished-outputs-from-the-library)
+ - a game's `<id>-work` folder is too slow to count: Tears of the Kingdom's held 8,893,028 files and 509 GB, and its count ran past ten minutes. → [A work folder holds millions of small files](../reference/packing.md#a-work-folder-holds-millions-of-small-files)
+ - the NSP script stops at the shader split of a registered profile with `[RED] 13744 file(s) could not be read, their shaders are left out (first: AI/FileEntry/FileEntry.Product.100.byml.zs: CalledProcessError: Command ['zstd', '-d', '-c', '-q', '…/extract/v0/RomFS.img/AI/…'] returned non-zero exit status 1.)`. → [The zstd command given a path inside the image](../reference/packing.md#the-zstd-command-given-a-path-inside-the-image)
+ - an iPhone build of Super Mario 3D All-Stars with `--work-dir` (as NX2Apple runs the script) builds every program, then stops at the app build with `[RED] missing RomFS marker 'MovieData/BgMovieGalaxy.mp4' in <work dir>/extract/v393216/RomFS.img` and `FAIL: no RomFS at …`. → [Under `--work-dir` the programs of one game overwrote each other's RomFS](../reference/packing.md#under---work-dir-the-programs-of-one-game-overwrote-each-others-romfs)
+@@ -461,6 +461,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - a crash in `nn::codec::video::InitializeAv1DecoderByTransferMemory` when a movie starts. → [AV1 movies through SDK 22's decoder](../reference/movies.md#av1-movies-through-sdk-22s-decoder)
  - a 60 fps movie plays slowly in a game that shows fewer frames a second than the movie has, with its sound ahead of the picture and then silence where a scene's sound has already ended (Ocarina of Time's AV1 title movie at 0.44x on an Apple M1 Max, whose GPU gives it 28 frames a second; 22 on an M2 Pro). → [A game slower than its movie plays it by the movie's clock](../reference/movies.md#a-game-slower-than-its-movie-plays-it-by-the-movies-clock)
  - an abort in `nn::codec` (the SDK's own decoder client, which opens a service the host does not have) when a movie starts in a game built with SDK 19 for the Switch 2. → [SDK 19's decoder forms](../reference/movies.md#sdk-19s-decoder-forms)

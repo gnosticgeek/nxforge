@@ -28,7 +28,7 @@ index 790913fbd3d8b935110c113ab1ee37725a24bee1..5836374c4fd1fe5e62e8c25a5e807e6a
  - This game took the Mac down before the fixes (kernel panic in `IOGPUGroupMemory` at 14.7 GB wired): [raw pool table](../../../docs/reference/memory.md#memory-pools-nothing-gave-an-address-to-stay-out-of-the-raw-pool-table), [textures made only when read](../../../docs/reference/memory.md#shaders-report-which-textures-they-read-through-a-pool), [out-of-memory exit](../../../docs/reference/memory.md#repeated-gpu-out-of-memory-failures-end-the-game).
  - Why so much: the game's own memory is about the console's 9 GB application pool, and on the Mac its textures also exist as Metal textures, as Metal cannot sample the guest's block-linear storage.
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 4c2556abb3848569ab88721932e8c44426b652e1..4c9e7d1a766f235a4603ef871d5397ff96655a4f 100644
+index 3b2ad12131cd7b4f6b81a2b3418e72cf7283f566..756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -489,10 +489,16 @@ static void res_check(id r, const char *what, int reg) {
@@ -161,10 +161,10 @@ index 4c2556abb3848569ab88721932e8c44426b652e1..4c9e7d1a766f235a4603ef871d5397ff
      mtl_wait_at(fence, 2000000000ull, WS_DRAIN);
      defer_drain(); res_commit();
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index fa1112ca427877e8a4b86d5119bb27e2c2becb20..db1346caa3e76a627c788fab507f30c40038fb29 100644
+index b085563cd69ddc101c2f15bb457f9d51a76bf119..549c57866f911f68906b855437d168084fdcee7e 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -187,6 +187,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -188,6 +188,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - process footprint and Metal allocation grow during stationary gameplay even after readback fences complete; the deferred-release queue and command allocator sizes remain bounded. → [Completion readbacks survive a guest waiter's pool](../reference/memory.md#completion-readbacks-survive-a-guest-waiters-pool)
  - the game plays its menu and movies, then at the first 3D load `GPU allocated` jumps by about 5 GB. The log has `[RED] GPU out of memory`, then a GPU page fault and `kIOGPUCommandBufferCallbackErrorSubmissionsIgnored`. The game keeps running with audio and a black screen, because every later submission is refused. Without guest files (`DM_GUEST_FILE`), the same load can instead end in a Jetsam report with reason `vm-pageshortage` on nearly every process. → [A Switch 2 game's first 3D load on an iPhone](../reference/memory.md#a-switch-2-games-first-3d-load-on-an-iphone)
  - a game ends stuck after `[RED] GPU out of memory`, or the Mac itself freezes until the power button; on an 8 GB Mac, WindowServer's watchdog restarts the desktop. Now: `[RED] GPU memory guard: ... stopping the game before the driver cannot wire more`, the report of what the residency set holds, and an alert before the app quits. → [GPU memory past Metal's working set freezes the Mac](../reference/memory.md#gpu-memory-past-metals-working-set-freezes-the-mac)

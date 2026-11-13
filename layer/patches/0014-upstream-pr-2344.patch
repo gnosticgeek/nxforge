@@ -36,7 +36,7 @@ index a24f67b38316cf5ddc4511921d2a3df067aa02c9..790913fbd3d8b935110c113ab1ee3772
  - [Unused border corrections retain sample registers](../../../docs/reference/rendering.md#unused-border-corrections-retain-sample-registers): about 1.5 ms of GPU a frame at 1080p ([measurements](#unused-border-corrections)).
  
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 9c12c6d4e03ccbee294378e96dcccd318a19c114..4c2556abb3848569ab88721932e8c44426b652e1 100644
+index 822726879fb2f9b111c499f869ce28fa702c2e1b..3b2ad12131cd7b4f6b81a2b3418e72cf7283f566 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -7134,16 +7134,38 @@ static inline int pool_seen_t(int id_, int dtt) {
@@ -94,7 +94,7 @@ index 9c12c6d4e03ccbee294378e96dcccd318a19c114..4c2556abb3848569ab88721932e8c444
          rr->retired = 0; rr->transient_sub = 0;
          if (t && t->serial) {
              rr->retired = !own_tex_live(t->serial);
-@@ -11092,22 +11118,32 @@ static void pool_seen_scan(void) {
+@@ -11125,22 +11151,32 @@ static void pool_seen_scan(void) {
      g_seen_sub = g_sub_serial;
      uint64_t f = atomic_load(&g_cur_frame); if (f != g_walk_frame) { g_walk_frame = f; g_walk_spent = 0; g_walk_req = 0; }
      if (g_stand_todo_n) pool_stand_scan();
@@ -175,10 +175,10 @@ index 5c66f94ec74f821508725e1f0cbaf181d5dd6af0..cc2461dd20790969c84ae5685d0ce891
      mtl_pool_del(mem); mtl_drain(); munmap(mem,LEN);
      fprintf(stderr,"pool_seen_replace: %d checks, %d failed\n",checks,failed);
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index 51777d1eaed2559fc34ebf61add8ecf15c8be159..fa1112ca427877e8a4b86d5119bb27e2c2becb20 100644
+index ca344ab3e296bc73de95229a02cf5d152dc26be7..b085563cd69ddc101c2f15bb457f9d51a76bf119 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -770,6 +770,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -771,6 +771,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - in an Unreal Engine game, textures and lighting turn blurry and muddy about a second after an area loads and stay that way, whatever the frame rate, render scale or upscaling; no red line. → [Unreal's texture streaming pool](../reference/rendering.md#unreals-texture-streaming-pool)
  - large static and mesh-shader models (Ocarina of Time's castle town wall, rocks, trees, Lon Lon Ranch's barn) draw black for exactly one frame, with the fog in front and the terrain untouched, in pairs four or five frames apart; a few times a minute in play, at fixed places of a route. → [Models black for one frame when a streaming step replaces their textures](../reference/rendering.md#models-black-for-one-frame-when-a-streaming-step-replaces-their-textures)
  - a patch of scenery (Ocarina of Time's cliff beside the castle town wall) draws darker for exactly one frame, once, as the game gives it a sharper texture; a few times a minute while walking through Hyrule Field. Single frames, not the pairs of the entry above; no red line. → [A streamed texture's first read drew its surface dark for one frame](../reference/rendering.md#a-streamed-textures-first-read-drew-its-surface-dark-for-one-frame)
@@ -199,7 +199,7 @@ index 720fc8591298110a3f5d1eac5ee37794c3172b61..7694b41748651392ae0aa6c1c81a75b1
  DM_NVN_SHMAP	path	The shader map (`shader_map.tsv`); `c1_full.tsv` and `pso_manifest.tsv` are taken from the same folder. Default: the game profile's folder on the Mac; the iOS app sets it
  DM_NVN_SHOT	diagnostic	`=<frame>[,<frame>…]:<path>` saves the swapchain texture as an image at those frames (`%d` in the path = frame number); a window the game crops is saved as presented (the crop drawn at the texture's own size)
 diff --git a/docs/reference/rendering.md b/docs/reference/rendering.md
-index 15f56804ed511abf38558e563eac202204f598e6..8f1a100631277896ea922adfa0609b297aa69686 100644
+index a12cd5f3747721797fe2a874c43c442279e0fe1d..574e01bcf6c93b06130dbdb08119493d124dad56 100644
 --- a/docs/reference/rendering.md
 +++ b/docs/reference/rendering.md
 @@ -337,7 +337,7 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
