@@ -12,8 +12,8 @@ Joy-Con's sensor is switched on (subcommand 0x40) and read from its report
 negated (measured). DM_JOY1=0 keeps the old Pro-style pad.
 ---
  dm/host/front_mac.m                   |  14 ++-
- dm/host/nxforge/front_mac_joycon1.inc | 130 ++++++++++++++++++++++++++
- 2 files changed, 139 insertions(+), 5 deletions(-)
+ dm/host/nxforge/front_mac_joycon1.inc | 150 ++++++++++++++++++++++++++
+ 2 files changed, 159 insertions(+), 5 deletions(-)
  create mode 100644 dm/host/nxforge/front_mac_joycon1.inc
 
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
@@ -97,10 +97,10 @@ index f2e91d4139e4ea323ad13c7f5ab4a88598fc64d4..8a40d6432249ae22ae49cc77b466f3cf
      dm_switch2_start(&s2front);
 diff --git a/dm/host/nxforge/front_mac_joycon1.inc b/dm/host/nxforge/front_mac_joycon1.inc
 new file mode 100644
-index 0000000000000000000000000000000000000000..2fcedae891982acf0d20e4ad5c874451760fbb8a
+index 0000000000000000000000000000000000000000..7268f125c4609235a12198a22992291a763c17d3
 --- /dev/null
 +++ b/dm/host/nxforge/front_mac_joycon1.inc
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,150 @@
 +// NXForge: included by front_mac.m before pad_set (it shares that file's statics). Kept out of upstream's file so a merge of nxnative meets one #include line.
 +// Switch 1 Joy-Cons as Joy-Cons, each with its own motion sensor.
 +// macOS (checked on 27.2) joins a left and a right Joy-Con into one GameController controller, product category "Nintendo Switch Joy-Con (L/R)", with an extended gamepad and no
@@ -115,6 +115,12 @@ index 0000000000000000000000000000000000000000..2fcedae891982acf0d20e4ad5c874451
 +// DM_JOY1=0 turns all of this off (the pair plays as one Pro-style pad with no motion, as before); DM_MOTION=0 or DM_MOTION_HID=0 keep the sensors off.
 +typedef struct joy1_dev { IOHIDDeviceRef hid; int side; uint8_t report[512]; pro_motion motion; uint64_t heard, data_at, enabled_at; int enables; uint8_t counter; struct joy1_dev *next; } joy1_dev;
 +static IOHIDManagerRef g_j1_mgr;
++static CFRunLoopRef g_j1_loop;   // the Joy-Cons' own thread (nxf_joy1_start): their reports are not held up while the main thread is busy drawing
++// Everything that touches the devices or the routing runs on that thread; the main thread hands its part over here (inline before the thread exists)
++static void joy1_post(void (^b)(void)) {
++    if (!g_j1_loop) { b(); return; }
++    CFRunLoopPerformBlock(g_j1_loop, kCFRunLoopCommonModes, b); CFRunLoopWakeUp(g_j1_loop);
++}
 +static joy1_dev *g_j1_devs;
 +static int g_j1_on = -1, g_j1_active = 1, g_j1_motion;
 +static uint32_t g_j1_sides[DM_PLAYERS];   // the Joy-Cons each player's GameController controller holds: 1 left, 2 right
@@ -185,7 +191,7 @@ index 0000000000000000000000000000000000000000..2fcedae891982acf0d20e4ad5c874451
 +    while (*link && (*link)->hid != hid) link = &(*link)->next;
 +    if (!*link) return;
 +    joy1_dev *d = *link; *link = d->next;
-+    IOHIDDeviceRegisterInputReportCallback(hid, d->report, sizeof d->report, NULL, NULL);   // while its buffer still exists; the main run loop serializes this with its reports
++    IOHIDDeviceRegisterInputReportCallback(hid, d->report, sizeof d->report, NULL, NULL);   // while its buffer still exists; the Joy-Con thread's run loop serializes this with its reports
 +    CFRelease(d->hid); free(d);
 +    joy1_route();
 +}
@@ -198,25 +204,37 @@ index 0000000000000000000000000000000000000000..2fcedae891982acf0d20e4ad5c874451
 +    IOHIDManagerSetDeviceMatchingMultiple(g_j1_mgr, (__bridge CFArrayRef)@[@{@kIOHIDVendorIDKey: @0x057E, @kIOHIDProductIDKey: @0x2006}, @{@kIOHIDVendorIDKey: @0x057E, @kIOHIDProductIDKey: @0x2007}]);
 +    IOHIDManagerRegisterDeviceMatchingCallback(g_j1_mgr, joy1_found, NULL);
 +    IOHIDManagerRegisterDeviceRemovalCallback(g_j1_mgr, joy1_removed, NULL);
-+    IOHIDManagerScheduleWithRunLoop(g_j1_mgr, CFRunLoopGetMain(), kCFRunLoopCommonModes);
-+    IOReturn r = IOHIDManagerOpen(g_j1_mgr, kIOHIDOptionsTypeNone);   // not exclusive: GameController keeps the buttons
++    // Their own thread at the input QoS: on the main run loop a report waits behind whatever the main thread is doing (a frame, a window event), and a swing's samples arrive
++    // late and bunched. The thread opens the manager and runs its loop for the life of the process; the main thread waits for the open's answer
++    dispatch_semaphore_t opened = dispatch_semaphore_create(0); __block IOReturn r = kIOReturnError;
++    NSThread *t = [[NSThread alloc] initWithBlock:^{
++        CFRunLoopRef loop = CFRunLoopGetCurrent();
++        IOHIDManagerScheduleWithRunLoop(g_j1_mgr, loop, kCFRunLoopDefaultMode);
++        r = IOHIDManagerOpen(g_j1_mgr, kIOHIDOptionsTypeNone);   // not exclusive: GameController keeps the buttons
++        if (r != kIOReturnSuccess) { IOHIDManagerUnscheduleFromRunLoop(g_j1_mgr, loop, kCFRunLoopDefaultMode); dispatch_semaphore_signal(opened); return; }
++        g_j1_loop = (CFRunLoopRef)CFRetain(loop);
++        dispatch_semaphore_signal(opened);
++        for (;;) CFRunLoopRun();
++    }];
++    t.name = @"joycon-hid"; t.qualityOfService = NSQualityOfServiceUserInteractive; [t start];
++    dispatch_semaphore_wait(opened, DISPATCH_TIME_FOREVER);
 +    if (r != kIOReturnSuccess) {
 +        LOG("[RED] [joycon] cannot open the Joy-Cons' HID devices (0x%x): no Joy-Con motion", r);
-+        IOHIDManagerUnscheduleFromRunLoop(g_j1_mgr, CFRunLoopGetMain(), kCFRunLoopCommonModes); CFRelease(g_j1_mgr); g_j1_mgr = NULL; g_j1_motion = 0;
++        CFRelease(g_j1_mgr); g_j1_mgr = NULL; g_j1_motion = 0;
 +    }
 +}
 +// A GameController controller took player p (pads_changed, pad_read's press to join): a Joy-Con pair is shown to the game as Joy-Cons
 +static void nxf_joy1_attach(GCController *c, int p) {
 +    if (!joy1_on() || p < 0 || p >= DM_PLAYERS) return;
 +    uint32_t s = joy1_sides_of(c); if (!s || g_j1_sides[p] == s) return;
-+    g_j1_sides[p] = s; dm_joy_attach(p, s); joy1_route();
++    g_j1_sides[p] = s; dm_joy_attach(p, s); joy1_post(^{ joy1_route(); });
 +    LOG("[joycon] '%s': player %d is a Joy-Con pair to the game", c.vendorName.UTF8String ?: "?", p + 1);
 +}
 +static void nxf_joy1_detach(int p) {
 +    if (p < 0 || p >= DM_PLAYERS || !g_j1_sides[p]) return;
 +    g_j1_sides[p] = 0;
 +    for (int s = 0; s < 2; s++) { dm_joy_set(p, s, 0, 0, 0); dm_motion_clear_joy(p, s); }
-+    dm_joy_attach(p, 0); joy1_route();
++    dm_joy_attach(p, 0); joy1_post(^{ joy1_route(); });
 +}
 +// Each half's own buttons and stick (hle_hid.c fill_joy); the whole controller's state goes on through dm_pad_set_player as before
 +static void nxf_joy1_set(int p, uint64_t m, int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
@@ -227,7 +245,9 @@ index 0000000000000000000000000000000000000000..2fcedae891982acf0d20e4ad5c874451
 +}
 +static void nxf_joy1_release(void) { for (int p = 0; p < DM_PLAYERS; p++) if (g_j1_sides[p]) for (int s = 0; s < 2; s++) dm_joy_set(p, s, 0, 0, 0); }
 +static void nxf_joy1_active(int on) {   // focus lost or back (input_release / input_resume): no motion reaches the game while it is out of focus
-+    g_j1_active = on;
-+    if (!on) for (int s = 0; s < 2; s++) if (g_j1_owner[s] >= 0) { dm_motion_clear_joy(g_j1_owner[s], s); dm_motion_clear_hid(g_j1_owner[s]); }
-+    for (joy1_dev *d = g_j1_devs; d; d = d->next) d->motion = (pro_motion){0};
++    joy1_post(^{
++        g_j1_active = on;
++        if (!on) for (int s = 0; s < 2; s++) if (g_j1_owner[s] >= 0) { dm_motion_clear_joy(g_j1_owner[s], s); dm_motion_clear_hid(g_j1_owner[s]); }
++        for (joy1_dev *d = g_j1_devs; d; d = d->next) d->motion = (pro_motion){0};
++    });
 +}
