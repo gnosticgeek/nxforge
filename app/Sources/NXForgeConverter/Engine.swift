@@ -238,6 +238,30 @@ enum Engine {
         return true
     }
 
+    private static var exactCache: [String: [String]] = [:]   // "<commit> <HEAD>" → files, for a clean checkout only
+    /// changedFiles with the layer looked into: a changed patch counts for the engine files whose patched content differs
+    /// (Layer.patchedFiles), a moved pin for the files that differ between the two nxnative commits. changedFiles itself
+    /// counts either as the whole engine, which is right for "is this build current" and too coarse for what a rebuild
+    /// redoes. nil when git cannot tell (a pin whose commits the checkout does not have).
+    static func changedEngineFiles(since commit: String, repo: String, head: EngineVersion) -> [String]? {
+        let key = "\(commit) \(head.commit)"
+        if !head.dirty, let c = exactCache[key] { return c }
+        guard let files = changedFiles(since: commit, repo: repo, head: head) else { return nil }
+        let marker = "dm/host/layer/"
+        var out = files.filter { !$0.hasPrefix(marker) }
+        if files.contains(where: { $0.hasPrefix(marker + "patches/") }) {
+            guard let d = git(repo, ["diff", "--no-renames", "-U1000000", commit, "--", "layer/patches"]) else { return nil }
+            out += Layer.patchedFiles(diff: d)
+        }
+        if files.contains(marker + "ENGINE") {
+            guard let old = Layer.pin(repo: repo, ref: commit, git: git), let now = (try? String(contentsOfFile: repo + "/" + Layer.engineFile, encoding: .utf8)).flatMap(Layer.parsePin),
+                  let d = git(repo, ["diff", "--name-only", "--no-renames", old, now, "--"]) else { return nil }
+            out += d.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        }
+        if !head.dirty { exactCache[key] = out }
+        return out
+    }
+
     private static var changedCache: [String: [String]] = [:]   // "<commit> <HEAD>" → files, for a clean checkout only
     /// The files that differ between a recorded commit and the checkout as it is now (its working tree, so uncommitted changes
     /// count); nil when git cannot tell, such as a commit the checkout does not have.

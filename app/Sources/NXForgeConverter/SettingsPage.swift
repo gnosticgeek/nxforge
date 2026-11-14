@@ -23,7 +23,7 @@ struct SettingsPage: View {
     @ViewBuilder var form: some View {
         Group {
             Section("General") {
-                setting("Appearance", "Choose how NXForge Converter looks.") {
+                setting("Appearance", "Choose how the converter looks.") {
                     Picker("", selection: $model.settings.appearance) {
                         ForEach(Appearance.allCases, id: \.self) { Text($0.rawValue) }
                     }
@@ -99,7 +99,7 @@ struct SettingsPage: View {
                     Toggle("", isOn: $model.settings.saveBackupPush).toggleStyle(.switch).labelsHidden().disabled(model.settings.saveBackupRepo == nil)
                 }
             }
-            Section("NXForge Converter") {
+            Section("NXForge") {
                 setting("Version", model.converterUpdate.map { "Converter \($0.version) is ready to install from the engine checkout." } ?? "Up to date with the engine checkout.") {
                     Text(CONVERTER_VERSION).monospacedDigit().foregroundStyle(.secondary)
                     Button("What's New") { model.showWhatsNew() }

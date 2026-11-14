@@ -18,6 +18,9 @@ struct Job {
     var keepBackup = true
     /// false: delete the stage keys in <id>_build first, so every step runs again
     var reuseCache = true
+    /// Rebuild from scratch: empty <id>_build first (all but its logs, profile and run folders), so the game is unpacked and its
+    /// shaders are translated again. The Metal cache every game shares is left alone.
+    var scratch = false
     /// what a successful build deletes from <id>_build (--cleanup)
     var cleanup: Cleanup = .off
     /// "Base game + update" for the build record; nil = read from the folder's file names
@@ -60,6 +63,35 @@ struct StageDone: Hashable, Identifiable {
     }
 }
 
+/// One step of a Preview build (the script's "plan" event): reused, done again, or after the step the check stopped at.
+struct PlanRow: Hashable, Identifiable {
+    enum State: String { case reused, redo, follows }
+    var id: String { stage }
+    let stage: String
+    let state: State
+    let why: String
+    /// how long the step took the last time it did its work; nil when no build recorded it
+    let seconds: Double?
+
+    /// The rows of a "plan" event; a row with a state this converter does not know is left out.
+    static func rows(_ event: [String: Any]) -> [PlanRow] {
+        (event["rows"] as? [[String: Any]] ?? []).compactMap { r in
+            guard let stage = r["stage"] as? String, let state = (r["state"] as? String).flatMap(State.init(rawValue:)) else { return nil }
+            return PlanRow(stage: stage, state: state, why: r["why"] as? String ?? "", seconds: (r["secs"] as? NSNumber)?.doubleValue)
+        }
+    }
+
+    /// "About 18 min", "About 18 min, up to 44 min if every later step is redone", "Nothing to redo: the app is up to date"
+    static func total(_ rows: [PlanRow]) -> String {
+        let redo = rows.filter { $0.state == .redo }, later = rows.filter { $0.state == .follows }
+        if redo.isEmpty { return later.isEmpty ? "Nothing to redo: the app is up to date" : "Nothing is redone for certain" }
+        let est = redo.compactMap(\.seconds).reduce(0, +), worst = est + later.compactMap(\.seconds).reduce(0, +)
+        let n = "\(redo.count) step\(redo.count == 1 ? "" : "s") redone"
+        if est == 0 { return "\(n); no earlier build timed \(redo.count == 1 ? "it" : "them")" }
+        return "\(n), about \(duration(est))" + (worst > est ? ", up to \(duration(worst)) if every later step is redone too" : "")
+    }
+}
+
 @MainActor @Observable
 final class BuildRun {
     var running = false
@@ -73,6 +105,8 @@ final class BuildRun {
     var result: Result<String, ConverterError>?
     /// the run is a --plan (Preview build): its result is the plan, and nothing was built
     var planning = false
+    /// a Preview build's steps, from the script's "plan" event (empty on an engine from before it: the plan is then only text)
+    var plan: [PlanRow] = []
     /// when the build and the running stage started, and when the script last said anything (a stage that has been quiet
     /// for minutes is still working: the window says so instead of looking frozen)
     var startedAt: Date?
@@ -91,7 +125,7 @@ final class BuildRun {
     var onChange: (() -> Void)?
 
     func start(_ job: Job, expected: [String: Double] = [:]) {
-        running = true; stage = Stage(); done = []; log = []; app = nil; ipa = nil; backup = nil; result = nil; planning = job.plan; stopNote = nil; logFile = nil
+        running = true; stage = Stage(); done = []; log = []; app = nil; ipa = nil; backup = nil; result = nil; planning = job.plan; plan = []; stopNote = nil; logFile = nil
         startedAt = Date(); stageStartedAt = nil; lastActivity = Date(); self.expected = job.plan ? [:] : expected
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "Building a Mac app")
         Thread.detachNewThread { [weak self] in
@@ -110,7 +144,7 @@ final class BuildRun {
     /// Back to the state before any build (after a successful one has been handed to Builds).
     func reset() {
         guard !running else { return }
-        stage = Stage(); done = []; log = []; app = nil; ipa = nil; backup = nil; result = nil; planning = false; stopNote = nil; logFile = nil; startedAt = nil; stageStartedAt = nil
+        stage = Stage(); done = []; log = []; app = nil; ipa = nil; backup = nil; result = nil; planning = false; plan = []; stopNote = nil; logFile = nil; startedAt = nil; stageStartedAt = nil
     }
 
     /// Ask the script to stop as Ctrl-C would (it ends the stage and exits with 130).
@@ -167,7 +201,10 @@ final class BuildRun {
                 say("old app moved to \(b)")
                 DispatchQueue.main.async { r.backup = b }
             }
-            if !job.reuseCache { forgetStageKeys(job.folder); say("cached build steps cleared: every step runs again") }
+            if job.scratch {
+                let n = emptyBuildFolder(job.folder)
+                say(n > 0 ? "from scratch: the build folder is emptied (logs, profile and run kept), so every step runs again" : "from scratch: there was no build folder to empty")
+            } else if !job.reuseCache { forgetStageKeys(job.folder); say("cached build steps cleared: every step runs again") }
             do {
                 let app = try build(job, repo: repo, run: r)
                 let (steps, shaders, stages, seconds) = DispatchQueue.main.sync {
@@ -225,6 +262,24 @@ final class BuildRun {
                 try? fm.removeItem(atPath: "\(root)/\(rel)")
             }
         }
+    }
+
+    /// What a from-scratch rebuild keeps of <id>_build: the logs (with the stage times the estimates read), a provisional
+    /// profile and the run folder, as the script's own --cleanup all does.
+    nonisolated static let scratchKeeps: Set<String> = ["logs", "profile", "run"]
+
+    /// Empty the game's build folder for a rebuild from scratch; returns how many entries went.
+    @discardableResult
+    nonisolated static func emptyBuildFolder(_ gameDir: String) -> Int {
+        let fm = FileManager.default, dir = Disk.buildHome(gameDir)
+        var n = 0
+        for b in ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).filter({ $0.hasSuffix("_build") }) {
+            let root = "\(dir)/\(b)"
+            for e in ((try? fm.contentsOfDirectory(atPath: root)) ?? []) where !scratchKeeps.contains(e) {
+                if (try? fm.removeItem(atPath: "\(root)/\(e)")) != nil { n += 1 }
+            }
+        }
+        return n
     }
 
     /// "12,691 of 12,691 shaders ready, reused" → "12,691"
@@ -333,6 +388,8 @@ final class BuildRun {
                 r.done.append(StageDone(k: r.stage.k, n: r.stage.n, name: r.stage.name, ok: (v["ok"] as? Bool) ?? true, seconds: Int(num("elapsed") ?? 0), summary: str("summary")))
                 r.stage.fraction = 1
                 r.stage.eta = nil
+            case "plan":
+                r.plan = PlanRow.rows(v)
             case "say":
                 r.log += str("msg").split(separator: "\n").map(String.init)
             default:

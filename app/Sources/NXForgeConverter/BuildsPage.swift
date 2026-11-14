@@ -177,6 +177,8 @@ struct BuildRow: View {
             Button("Show in Finder") { reveal(build.app) }
             Button(model.isCurrent(build) ? "Rebuild" : "Rebuild on \(model.engine?.short ?? "the Current Engine")") { model.rebuildAsked(build) }
                 .disabled(model.run.running || !model.allOK)
+            Button("Rebuild from Scratch…") { model.rebuildAsked(build, scratch: true) }
+                .disabled(model.run.running || !model.allOK)
             Button(build.kept == true ? "Stop Keeping This Build" : "Keep This Build") { model.setKept(build, build.kept != true) }
             Divider()
             Button("Remove from List") { Engine.forget(build.app); model.revision += 1 }

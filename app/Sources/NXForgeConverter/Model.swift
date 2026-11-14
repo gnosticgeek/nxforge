@@ -95,6 +95,8 @@ final class AppModel {
     var selectedBuild: String? { didSet { if selectedBuild != oldValue { rememberWindowState() } } }
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
     var rebuildQueue: [BuildRecord] = []
+    /// rebuildCost's answers; emptied when a build ends (the build folder changed)
+    @ObservationIgnored var costCache: [String: RebuildCost] = [:]
     var queueMessage: String?
     /// the converter's own Python being set up: (running, what it says)
     var pythonSetup: (running: Bool, text: String)?
@@ -137,6 +139,18 @@ final class AppModel {
     var libraryColumns = 1
     /// the couch: the Library's covers full screen, driven by a controller (ControllerNav)
     var couchMode = false
+    /// the front end (Stage.swift): the games as covers on a dark stage, shown instead of the converter's pages
+    var frontEnd = true
+    var stageTab: StageTab = .home
+    var stageFilter: StageFilter = .all
+    var stageColumns = 6
+    var stageSettings = false
+    var stageSearch = ""
+    /// the box on a game's page shows its back
+    var caseFlipped = false
+    /// the Play options panel open over the front end, and the launch screen while a game starts
+    var playOptions: PlayOptionsState?
+    var launching: Launching?
     var commandPalette = false
     /// the last Library move, to undo (files moved into a folder of their own, or beside their game)
     var lastMove: LibraryMove?
@@ -177,6 +191,9 @@ final class AppModel {
         recheck()
         watchMounts()
         trackPlay()
+        watchLaunch()
+        frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
+        stageTab = settings.startIn == .library ? .library : .home
         restoreBatchQueue()
         if settings.gameDir != nil { validate() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
@@ -367,7 +384,8 @@ final class AppModel {
     var outputFolder: String? { settings.outDir ?? gameFolder.map(Disk.buildHome) }
 
     /// Build the chosen game, or with plan only say what a build would reuse and redo (--plan).
-    func build(rebuild: String? = nil, plan: Bool = false) {
+    /// scratch: the build folder is emptied first, so every step runs again (scratchAsked asks first).
+    func build(rebuild: String? = nil, plan: Bool = false, scratch: Bool = false) {
         guard let env, let dir = settings.gameDir, let folder = gameFolder else { return }
         let keys = needsKeys ? settings.keys : nil
         if needsKeys && keys == nil { return }
@@ -376,11 +394,22 @@ final class AppModel {
         let name = game?.name ?? ""
         let out = settings.outDir.flatMap { $0 == folder || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
         let bytes = gameBytes
-        let exp = settings.reuseCache ? expected : Estimates.expected(gameDir: folder, gameBytes: bytes, builds: Engine.builds())
+        let exp = settings.reuseCache && !scratch ? expected : Estimates.expected(gameDir: folder, gameBytes: bytes, builds: Engine.builds())
         run.start(Job(gameDir: dir, keys: keys, sign: settings.signIdentity, env: env, rebuild: plan ? nil : rebuild, out: plan ? (rebuild ?? out) : out,
-                      keepBackup: settings.keepBackups, reuseCache: plan || settings.reuseCache, cleanup: settings.cleanup,
+                      keepBackup: settings.keepBackups, reuseCache: plan || settings.reuseCache, scratch: scratch && !plan, cleanup: settings.cleanup,
                       gameFiles: source?.describe, plan: plan, gameBytes: bytes), expected: exp)
         if !plan { watchDisk(Disk.watched(gameDir: folder, outDir: settings.outDir)) }
+    }
+
+    /// Rebuild the chosen game from scratch, once confirmed: its build folder is emptied, so the game is unpacked and its shaders
+    /// are translated again. A normal rebuild already redoes every step whose inputs changed; this is for a build that looks wrong.
+    func scratchAsked(app: String?) {
+        guard !run.running, let folder = gameFolder else { return }
+        let total = Estimates.plan(Estimates.expected(gameDir: folder, gameBytes: gameBytes, builds: Engine.builds())).map(\.seconds).reduce(0, +)
+        let took = total > 0 ? "A full build of this game takes about \(duration(total))." : "A full build takes 20 to 60 minutes for most games, and hours for the largest."
+        let text = "This empties the game's build folder (its unpacked files, translated shaders and pipeline archive) and runs every step again. \(took) It reads the game files\(needsKeys ? " and keys" : "") again and needs as much free space as a first build.\n\nKept: your saves, the build's logs, and the Metal cache all games share. A normal rebuild already redoes every step whose inputs changed, so use this when a build looks wrong and a normal rebuild did not fix it."
+        guard confirm("Rebuild from scratch?", text, action: "Rebuild from Scratch") else { return }
+        build(rebuild: app, scratch: true)
     }
 
     /// The game's size in bytes: a Switch 2 game's files as source_info.py read them, else the packages in the folder.
@@ -421,7 +450,10 @@ final class AppModel {
 
     /// Open a built app, noting that its first (slow) launch is done.
     func openApp(_ app: String) {
-        NSWorkspace.shared.open(app.url)
+        // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
+        let cfg = NSWorkspace.OpenConfiguration()
+        if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
+        NSWorkspace.shared.openApplication(at: app.url, configuration: cfg) { _, _ in }
         Engine.setLaunched(app)
         revision += 1
     }
@@ -469,13 +501,13 @@ final class AppModel {
     }
 
     /// Rebuild a kept app only once it is confirmed, since the new build replaces the one that plays well.
-    func rebuildAsked(_ b: BuildRecord) {
+    func rebuildAsked(_ b: BuildRecord, scratch: Bool = false) {
         if b.kept == true, !confirm("Rebuild a kept build?", "\(b.app.url.deletingPathExtension().lastPathComponent) is kept because it plays well. A rebuild replaces it (the old app goes to app-backups when Keep previous app builds is on) and the new build is not kept.", action: "Rebuild") { return }
-        rebuild(b)
+        rebuild(b, scratch: scratch)
     }
 
     /// Rebuild a recorded app: its own game folder becomes the chosen one first.
-    func rebuild(_ b: BuildRecord) {
+    func rebuild(_ b: BuildRecord, scratch: Bool = false) {
         guard offlineGuard(b.gameDir) else {
             if !rebuildQueue.isEmpty || queueMessage == "" { queueMessage = "Rebuild all stopped: \(b.app.lastComponent)'s game files are offline."; rebuildQueue = [] }
             return
@@ -484,7 +516,7 @@ final class AppModel {
         page = .convert
         Task {
             while validating { try? await Task.sleep(for: .milliseconds(200)) }
-            if ready { build(rebuild: b.app) }
+            if ready { if scratch { scratchAsked(app: b.app) } else { build(rebuild: b.app) } }
             else if !rebuildQueue.isEmpty || queueMessage == "" {
                 queueMessage = "Rebuild all stopped: \(b.app.lastComponent) could not be checked against its keys."
                 rebuildQueue = []
@@ -502,6 +534,23 @@ final class AppModel {
         guard let repo = env?.repo, let files = Engine.changedFiles(since: b.engine.commit, repo: repo, head: e) else { return false }
         let title = VerifiedGames.titleID(ofApp: b.app)
         return !files.contains { Engine.affects($0, titleID: title) }
+    }
+
+    /// What rebuilding this app on the engine in use would redo (RebuildCost), for the Older engine badge; nil when the engine
+    /// or the game's folder cannot be read. Kept per app, build and engine commit, since lists ask on every redraw.
+    func rebuildCost(_ b: BuildRecord) -> RebuildCost? {
+        guard let e = engine, let repo = env?.repo else { return nil }
+        let key = "\(b.app)\n\(b.builtAt)\n\(e.commit)\(e.dirty ? "+" : "")\(e.local ?? "")"
+        if !e.dirty, let c = costCache[key] { return c }
+        let folder = Source.folder(of: b.gameDir), home = Disk.buildHome(folder)
+        let buildFolder = ((try? FileManager.default.contentsOfDirectory(atPath: home)) ?? []).first { $0.hasSuffix("_build") }.map { "\(home)/\($0)" }
+        let chain = (try? String(contentsOfFile: Layer.file(repo, "dm/gfx/nvn/dmsh_chain.h"), encoding: .utf8)).flatMap(RebuildCost.chain(header:))
+        let title = VerifiedGames.titleID(ofApp: b.app)
+        let kind = RebuildCost.kind(chain: chain, built: buildFolder.map(RebuildCost.builtChains(buildFolder:)),
+                                    changed: Engine.changedEngineFiles(since: b.engine.commit, repo: repo, head: e), titleID: title)
+        let cost = RebuildCost(kind: kind, seconds: RebuildCost.seconds(kind, times: Estimates.ownTimes(folder)))
+        if !e.dirty { costCache[key] = cost }
+        return cost
     }
 
     /// Built on the engine in use now, commit for commit (isCurrent also takes an older engine with nothing changed for the build).
@@ -524,11 +573,13 @@ final class AppModel {
     }
 
     /// ⌘R: the app selected on Builds, else the newest app beside the chosen game files.
-    func rebuildCurrent() {
+    func rebuildCurrent(scratch: Bool = false) {
         guard !run.running else { return }
         let builds = Engine.builds()
-        if page == .builds, let b = builds.first(where: { $0.app == selectedBuild }) ?? builds.max(by: { $0.builtAt < $1.builtAt }) { rebuildAsked(b); return }
-        if let dir = gameFolder, let a = Engine.apps(in: Disk.appHome(dir)).first ?? Engine.apps(in: dir).first, ready { build(rebuild: a.app) }
+        if page == .builds, let b = builds.first(where: { $0.app == selectedBuild }) ?? builds.max(by: { $0.builtAt < $1.builtAt }) { rebuildAsked(b, scratch: scratch); return }
+        if let dir = gameFolder, let a = Engine.apps(in: Disk.appHome(dir)).first ?? Engine.apps(in: dir).first, ready {
+            if scratch { scratchAsked(app: a.app) } else { build(rebuild: a.app) }
+        }
     }
 
     /// A folder (or a game file in it) dropped on the window or the Dock icon becomes the game folder.
@@ -568,6 +619,7 @@ final class AppModel {
     var ownPython: Bool { env?.python?.hasPrefix(Settings.supportDir.path) == true }
 
     private func buildEnded(_ r: Result<String, ConverterError>) {
+        costCache = [:]
         diskWatch?.cancel(); diskWatch = nil; diskWarning = nil
         if run.planning { return }   // a preview: it stays on Convert, with its plan
         if case .failure(let e) = r { lastErrorSummary = errorSummary(e.description) }

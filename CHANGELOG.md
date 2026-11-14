@@ -2,12 +2,22 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.32.0 (unreleased)
+## 0.33.0 (unreleased)
 
-- **Up to nxnative `8d89c3c`** (78 commits past 0.30's engine `ce38664`). Graphics: a frame no longer stays queued after a hitch (PR #2467, #2578); one texture view cache keyed by the Metal texture (PR #2542), and views of a finalized texture kept while its ID still resolves (PR #2482); a submission's commit reads only the storage-write pages it noted, not all 16,384 slots; indirect-count multi-draws are copied before the render pass opens instead of splitting it (Mario Kart World); MetalFX reads the game's whole input texture in its own format (PR #2559); a pipeline archive file Metal refuses is removed (PR #2539); float colours into normalized targets round as NVIDIA's do. Frame step: a frame fits the shorter hold while the hold's mean does (PR #2367); standing frames in the display link's queue are drained once. Host: thread-handle use-after-free and pause fixes; the cache-storage list from the game's control data (PR #1053); a first shader-cache build on an exFAT drive no longer stops with "attempt to write a readonly database". New on the Mac: Resident Evil 4, Sonic Frontiers, Persona 5 Royal, Chained Echoes, Orbitals, Fast Fusion. Shader chain `274c7c5c5ca7`: **every game's shaders rebuild once.**
+- **Up to nxnative `8d89c3c`** (78 commits past 0.32's engine `ce38664`). Graphics: a frame no longer stays queued after a hitch (PR #2467, #2578); one texture view cache keyed by the Metal texture (PR #2542), and views of a finalized texture kept while its ID still resolves (PR #2482); a submission's commit reads only the storage-write pages it noted, not all 16,384 slots; indirect-count multi-draws are copied before the render pass opens instead of splitting it (Mario Kart World); MetalFX reads the game's whole input texture in its own format (PR #2559); a pipeline archive file Metal refuses is removed (PR #2539); float colours into normalized targets round as NVIDIA's do. Frame step: a frame fits the shorter hold while the hold's mean does (PR #2367); standing frames in the display link's queue are drained once. Host: thread-handle use-after-free and pause fixes; the cache-storage list from the game's control data (PR #1053); a first shader-cache build on an exFAT drive no longer stops with "attempt to write a readonly database". New on the Mac: Resident Evil 4, Sonic Frontiers, Persona 5 Royal, Chained Echoes, Orbitals, Fast Fusion. Shader chain `274c7c5c5ca7`: **every game's shaders rebuild once.**
 - NXForge's present pass keeps drawing MetalFX's output itself (upstream's new direct write, `DM_FX_DIRECT`, is not used), since anti-aliasing, pixel art, the filters and HDR highlights follow there. Upstream's standing-frame drain and NXForge's stall count share the frame-step log line.
 - Upstream [#2631](https://github.com/seedds/nxnative/pull/2631) (Ocarina's Render scale up to 2560x1440) is not taken: NXForge already carries [#2532](https://github.com/seedds/nxnative/pull/2532), which goes up to a native 3840x2160 output.
 - Takes a full rebuild of each game app, shaders included.
+
+## 0.32.0 (2026-11-14)
+
+- **The Mac app is now NXForge, with a library front end** (Converter 0.9.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). It opens on your games as box covers (front and back art from GameTDB, a 3D case you can turn on each game's page) and **Play goes straight into the game**: the game's own settings window stays closed, and its options are now per-game **Play options** in NXForge, with Battery, Balanced and Quality presets and "Play once". Works from a controller; a button takes it full screen. The converter is the Converter tab, unchanged. `NXForge Converter.app` is replaced by `NXForge.app` on update. App only: no game rebuild.
+
+## 0.31.1 (2026-11-14)
+
+- **NXForge Converter 0.8.0: a rebuild from scratch, a preview of every step, and what a rebuild costs on the Older engine badge** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). A normal rebuild keeps reusing every step whose inputs are unchanged; Rebuild from Scratch empties the game's build folder first.
+- **`--plan` says more** (`scripts/build_ipa_from_nsp.py`, the converter's Preview build): the Mac app is listed as redone whenever a step before it is (it was among the maybes, so the time was a range), a shader step that runs again says whether the translation chain changed, and with `--progress json` the plan is also a `plan` event of rows.
+- No game rebuild needed.
 
 ## 0.31.0 (2026-11-14)
 

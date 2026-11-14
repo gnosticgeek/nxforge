@@ -131,6 +131,7 @@ extension AppModel {
         Playtime.add(key: p.key, name: p.name, app: p.app, start: p.start, end: Date())
         revision += 1
         backUpSaveAfterPlay(app: p.app, name: p.name)
+        gameQuit(app: p.app)
     }
 
     /// Whether a game is being played now.

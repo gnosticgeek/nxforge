@@ -59,27 +59,35 @@ final class ControllerNav {
                 }
             }
         }
-        on(pad.dpad.left) { $0.moveLibraryFocus(dx: -1) }
-        on(pad.dpad.right) { $0.moveLibraryFocus(dx: 1) }
-        on(pad.dpad.up) { $0.moveLibraryFocus(dy: -1) }
-        on(pad.dpad.down) { $0.moveLibraryFocus(dy: 1) }
-        on(pad.leftThumbstick.left) { $0.moveLibraryFocus(dx: -1) }
-        on(pad.leftThumbstick.right) { $0.moveLibraryFocus(dx: 1) }
-        on(pad.leftThumbstick.up) { $0.moveLibraryFocus(dy: -1) }
-        on(pad.leftThumbstick.down) { $0.moveLibraryFocus(dy: 1) }
-        on(pad.buttonA) { m in
+        // the front end takes every button (stagePad); the converter's pages keep the couch's
+        func key(_ b: GCControllerButtonInput, _ k: PadKey, _ f: @escaping @MainActor (AppModel) -> Void) {
+            on(b) { m in if m.frontEnd { m.stagePad(k) } else { f(m) } }
+        }
+        key(pad.dpad.left, .left) { $0.moveLibraryFocus(dx: -1) }
+        key(pad.dpad.right, .right) { $0.moveLibraryFocus(dx: 1) }
+        key(pad.dpad.up, .up) { $0.moveLibraryFocus(dy: -1) }
+        key(pad.dpad.down, .down) { $0.moveLibraryFocus(dy: 1) }
+        key(pad.leftThumbstick.left, .left) { $0.moveLibraryFocus(dx: -1) }
+        key(pad.leftThumbstick.right, .right) { $0.moveLibraryFocus(dx: 1) }
+        key(pad.leftThumbstick.up, .up) { $0.moveLibraryFocus(dy: -1) }
+        key(pad.leftThumbstick.down, .down) { $0.moveLibraryFocus(dy: 1) }
+        key(pad.buttonA, .a) { m in
             if let p = m.preview { m.openGame(p) }
             else if let g = m.gameDetail { m.play(g) }
             else if let r = m.focusedGame() { m.page = .library; m.openGame(r) }
         }
-        on(pad.buttonB) { m in
+        key(pad.buttonB, .b) { m in
             if m.preview != nil { m.preview = nil }
             else if m.gameDetail != nil { m.goBack() }
             else if m.couchMode { m.toggleCouch() }
         }
-        on(pad.buttonX) { m in if let r = m.gameDetail ?? m.focusedGame() { m.play(r) } }
-        on(pad.buttonY) { m in m.preview = m.preview == nil ? m.focusedGame() : nil }
-        on(pad.buttonMenu) { $0.toggleCouch() }
+        key(pad.buttonX, .x) { m in if let r = m.gameDetail ?? m.focusedGame() { m.play(r) } }
+        key(pad.buttonY, .y) { m in m.preview = m.preview == nil ? m.focusedGame() : nil }
+        key(pad.leftShoulder, .l) { _ in }
+        key(pad.rightShoulder, .r) { _ in }
+        key(pad.buttonMenu, .menu) { $0.toggleCouch() }
+        // the right stick turns the box on screen (CaseModelView)
+        pad.rightThumbstick.valueChangedHandler = { _, x, _ in CaseStick.x = NSApp.isActive ? Double(x) : 0 }
     }
 }
 
@@ -139,7 +147,7 @@ struct WhatsNewSheet: View {
             HStack(spacing: 14) {
                 Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("What's New in NXForge Converter").font(.title2.weight(.bold))
+                    Text("What's New in NXForge").font(.title2.weight(.bold))
                     Text("Version \(news.version)").foregroundStyle(.secondary)
                 }
             }
@@ -223,9 +231,9 @@ struct CommandPalette: View {
         out.append(PaletteItem(id: "act-couch", title: m.couchMode ? "Leave Couch Mode" : "Couch Mode", detail: "Action", symbol: "sofa") { m.toggleCouch() })
         out.append(PaletteItem(id: "act-check", title: "Check the Toolchain Again", detail: "Action", symbol: "checkmark.seal") { m.page = .toolchain; m.recheck() })
         out.append(PaletteItem(id: "act-updates", title: "Check for Updates", detail: "Action", symbol: "arrow.down.circle") { m.page = .updates; m.engineAction(update: false) })
-        out.append(PaletteItem(id: "act-new", title: "What's New in NXForge Converter", detail: "Action", symbol: "sparkles") { m.showWhatsNew() })
+        out.append(PaletteItem(id: "act-new", title: "What's New in NXForge", detail: "Action", symbol: "sparkles") { m.showWhatsNew() })
         if m.converterUpdate != nil {
-            out.append(PaletteItem(id: "act-update", title: "Update NXForge Converter…", detail: "Action", symbol: "arrow.down.circle") { m.updateConverter() })
+            out.append(PaletteItem(id: "act-update", title: "Update NXForge…", detail: "Action", symbol: "arrow.down.circle") { m.updateConverter() })
         }
         let open = openSettings
         out.append(PaletteItem(id: "act-settings", title: "Settings…", detail: "Action", symbol: "gearshape") { open() })
