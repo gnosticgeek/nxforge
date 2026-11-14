@@ -4,7 +4,12 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 ## 0.32.0 (2026-11-14)
 
-- **The Mac app is now NXForge, with a library front end** (Converter 0.8.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). It opens on your games as box covers (front and back art from GameTDB, a 3D case you can turn on each game's page) and **Play goes straight into the game**: the game's own settings window stays closed, and its options are now per-game **Play options** in NXForge, with Battery, Balanced and Quality presets and "Play once". Works from a controller; a button takes it full screen. The converter is the Converter tab, unchanged. `NXForge Converter.app` is replaced by `NXForge.app` on update. App only: no game rebuild.
+- **The Mac app is now NXForge, with a library front end** (Converter 0.9.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). It opens on your games as box covers (front and back art from GameTDB, a 3D case you can turn on each game's page) and **Play goes straight into the game**: the game's own settings window stays closed, and its options are now per-game **Play options** in NXForge, with Battery, Balanced and Quality presets and "Play once". Works from a controller; a button takes it full screen. The converter is the Converter tab, unchanged. `NXForge Converter.app` is replaced by `NXForge.app` on update. App only: no game rebuild.
+## 0.31.1 (2026-11-14)
+
+- **NXForge Converter 0.8.0: a rebuild from scratch, a preview of every step, and what a rebuild costs on the Older engine badge** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). A normal rebuild keeps reusing every step whose inputs are unchanged; Rebuild from Scratch empties the game's build folder first.
+- **`--plan` says more** (`scripts/build_ipa_from_nsp.py`, the converter's Preview build): the Mac app is listed as redone whenever a step before it is (it was among the maybes, so the time was a range), a shader step that runs again says whether the translation chain changed, and with `--progress json` the plan is also a `plan` event of rows.
+- No game rebuild needed.
 
 ## 0.31.0 (2026-11-14)
 

@@ -600,7 +600,11 @@ struct StatusBadges: View {
             GameBadge(text: "Profile", color: .blue).help("NXForge has a profile for this game, but it is not listed as tested yet")
         }
         if let b = build {
-            if model.outdated(b) { GameBadge(text: "Older engine", color: .orange).help("\(b.app.lastComponent) was built on \(b.record?.engine.short ?? "an older engine"): rebuild for the newest fixes") }
+            if model.outdated(b) {
+                let c = b.record.flatMap { model.rebuildCost($0) }
+                GameBadge(text: c.map { "Older engine · \($0.short)" } ?? "Older engine", color: .orange)
+                    .help("\(b.app.lastComponent) was built on \(b.record?.engine.short ?? "an older engine"): rebuild for the newest fixes." + (c.map { " \($0.title): \($0.detail)" } ?? ""))
+            }
             else { GameBadge(text: "Built", color: .green).help(b.app) }
         }
     }

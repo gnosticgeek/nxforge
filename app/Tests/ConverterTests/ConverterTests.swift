@@ -827,6 +827,111 @@ import Testing
     }
 }
 
+/// Converter 0.8.0: a Preview build's rows, what a rebuild would redo, and the from-scratch rebuild.
+@Suite struct RebuildChoices {
+    @Test func planRowsFromTheEvent() throws {
+        let line = #"{"ev": "plan", "rows": [{"stage": "rewrite", "state": "reused", "why": "", "secs": null}, {"stage": "Mac shaders", "state": "redo", "why": "the translation chain changed", "secs": 900}, {"stage": "Pipeline archive", "state": "follows", "why": "", "secs": 1567}, {"stage": "Mac app", "state": "redo", "why": "it packs the new Mac shaders", "secs": 191}, {"stage": "later", "state": "unheard of"}], "est": 1091, "worst": 2658}"#
+        let v = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        let rows = PlanRow.rows(v)
+        #expect(rows.map(\.stage) == ["rewrite", "Mac shaders", "Pipeline archive", "Mac app"])   // a state it does not know is left out
+        #expect(rows.map(\.state) == [.reused, .redo, .follows, .redo])
+        #expect(rows[0].seconds == nil && rows[1].seconds == 900)
+        #expect(PlanRow.total(rows) == "2 steps redone, about 18 min, up to 44 min if every later step is redone too")
+        #expect(PlanRow.total([rows[0]]) == "Nothing to redo: the app is up to date")
+        #expect(PlanRow.total([PlanRow(stage: "Mac host", state: .redo, why: "", seconds: nil)]) == "1 step redone; no earlier build timed it")
+        #expect(PlanRow.rows(["ev": "plan"]).isEmpty)
+    }
+
+    @Test func chainFromTheHeader() {
+        #expect(RebuildCost.chain(header: "// generated\n#define DMSH_CHAIN \"ad5985867476\"\n") == "ad5985867476")
+        #expect(RebuildCost.chain(header: "#define X \"not a chain\"\n") == nil)
+    }
+
+    @Test func whatARebuildRedoes() {
+        let id = "0400486024DEC000"
+        // no build folder: everything again
+        #expect(RebuildCost.kind(chain: "bbbbbbbbbbbb", built: nil, changed: ["dm/host/main.m"], titleID: id) == .full)
+        // the folder's shaders are another chain's: every shader again, whatever else changed
+        #expect(RebuildCost.kind(chain: "bbbbbbbbbbbb", built: ["aaaaaaaaaaaa"], changed: ["dm/host/main.m"], titleID: id) == .shaders)
+        // the same chain and only the player's files: the player and the app
+        #expect(RebuildCost.kind(chain: "bbbbbbbbbbbb", built: ["aaaaaaaaaaaa", "bbbbbbbbbbbb"], changed: ["dm/host/main.m", "dm/gfx/nvn/nvn_metal.m", "docs/development.md"], titleID: id) == .quick)
+        // the build's tools or this game's own profile: some steps again; another game's profile is not read
+        #expect(RebuildCost.kind(chain: "bbbbbbbbbbbb", built: ["bbbbbbbbbbbb"], changed: ["scripts/build_ipa_from_nsp.py"], titleID: id) == .partial)
+        #expect(RebuildCost.kind(chain: "bbbbbbbbbbbb", built: ["bbbbbbbbbbbb"], changed: ["dm/games/\(id)/game.tsv"], titleID: id) == .partial)
+        #expect(RebuildCost.kind(chain: "bbbbbbbbbbbb", built: ["bbbbbbbbbbbb"], changed: ["dm/games/0100000000010000/game.tsv", "dm/host/main.m"], titleID: id) == .quick)
+        // a game with no chain libraries (Vulkan, OpenGL) goes by the files; git that cannot tell is not called quick
+        #expect(RebuildCost.kind(chain: "bbbbbbbbbbbb", built: [], changed: ["dm/mac/pack_app.py"], titleID: id) == .quick)
+        #expect(RebuildCost.kind(chain: "bbbbbbbbbbbb", built: ["bbbbbbbbbbbb"], changed: nil, titleID: id) == .partial)
+    }
+
+    @Test func rebuildTimesFromTheLastRuns() {
+        let times: [String: Double] = ["unpack": 600, "Mac shaders": 2940, "Mac host": 15, "Pipeline archive": 2160, "Mac app": 13]
+        #expect(RebuildCost.seconds(.quick, times: times) == 28)
+        #expect(RebuildCost.seconds(.shaders, times: times) == 5128)
+        #expect(RebuildCost.seconds(.full, times: times) == 5728)
+        #expect(RebuildCost.seconds(.partial, times: times) == nil)
+        #expect(RebuildCost.seconds(.shaders, times: ["Mac app": 13]) == nil)   // the shader step was never timed: no guess
+        #expect(RebuildCost(kind: .quick, seconds: 28).title == "Quick rebuild, about 28 s")
+        #expect(RebuildCost(kind: .shaders, seconds: nil).title == "Shader rebuild")
+    }
+
+    @Test func builtChainsAndTheScratchRebuild() throws {
+        let fm = FileManager.default
+        let game = NSTemporaryDirectory() + "nxc-scratch-\(UUID().uuidString)", build = game + "/0400486024DEC000_build"
+        defer { try? fm.removeItem(atPath: game) }
+        for d in ["shader.noindex/cache", "extract/v0", "logs", "profile", "run/save"] { try fm.createDirectory(atPath: "\(build)/\(d)", withIntermediateDirectories: true) }
+        for f in ["shader.noindex/mac-b-aaaaaaaaaaaa.key", "shader.noindex/mac-b-bbbbbbbbbbbb.key", "shader.noindex/pso.key", "rewrite.key", "logs/stage_times.json", "run/save/file"] {
+            try "k\n".write(toFile: "\(build)/\(f)", atomically: true, encoding: .utf8)
+        }
+        #expect(RebuildCost.builtChains(buildFolder: build).sorted() == ["aaaaaaaaaaaa", "bbbbbbbbbbbb"])
+        #expect(BuildRun.emptyBuildFolder(game) == 3)   // shader.noindex, extract, rewrite.key
+        #expect(try fm.contentsOfDirectory(atPath: build).sorted() == ["logs", "profile", "run"])
+        #expect(fm.fileExists(atPath: "\(build)/logs/stage_times.json") && fm.fileExists(atPath: "\(build)/run/save/file"))
+        #expect(RebuildCost.builtChains(buildFolder: build).isEmpty)
+        #expect(BuildRun.emptyBuildFolder(game) == 0)
+    }
+
+    @Test func enginefilesAChangedPatchTouches() {
+        let diff = """
+        diff --git a/layer/patches/0006-packing.patch b/layer/patches/0006-packing.patch
+        index 1111111..2222222 100644
+        --- a/layer/patches/0006-packing.patch
+        +++ b/layer/patches/0006-packing.patch
+         Subject: packing
+         ---
+        - scripts/build_ipa_from_nsp.py | 10 +-
+        + scripts/build_ipa_from_nsp.py | 12 +-
+         diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
+         index aaaaaaa..bbbbbbb 100644
+         --- a/dm/mac/pack_app.py
+         +++ b/dm/mac/pack_app.py
+         @@ -1,2 +1,3 @@
+          unchanged
+         diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+        -index ccccccc..ddddddd 100755
+        +index ccccccc..eeeeeee 100755
+         --- a/scripts/build_ipa_from_nsp.py
+         +++ b/scripts/build_ipa_from_nsp.py
+         @@ -5,3 +5,4 @@
+          context
+        ++    a new line
+        diff --git a/layer/patches/0024-later.patch b/layer/patches/0024-later.patch
+        --- a/layer/patches/0024-later.patch
+        +++ b/layer/patches/0024-later.patch
+         diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+        -index ddddddd..fffffff 100755
+        +index eeeeeee..9999999 100755
+        -@@ -3382,7 +3382,9 @@ def report
+        +@@ -3414,7 +3414,9 @@ def report
+         diff --git a/dm/games/x.tsv b/dm/games/x.tsv
+          context only
+        """
+        // the later patch's index and hunk position moved with the earlier one's change: nothing of its own changed
+        #expect(Layer.patchedFiles(diff: diff) == ["scripts/build_ipa_from_nsp.py"])
+    }
+}
+
+// The library front end (Converter 0.9.0): a game's option list, presets, cover matching and the new settings
 @Suite struct FrontEnd {
     static let list: [LaunchSetting] = {
         let json = #"""

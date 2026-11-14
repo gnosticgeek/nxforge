@@ -1,6 +1,6 @@
 # NXForge (the Mac app)
 
-Since 0.8.0 the app is named **NXForge** and opens on a library front end: your games as box covers (art from GameTDB, a 3D case on each game's page), Play straight into the game with per-game Play options and presets, all usable from a controller. [CONVERTER_CHANGELOG.md](../CONVERTER_CHANGELOG.md) describes it. The converter below is its Converter tab.
+Since 0.9.0 the app is named **NXForge** and opens on a library front end: your games as box covers (art from GameTDB, a 3D case on each game's page), Play straight into the game with per-game Play options and presets, all usable from a controller. [CONVERTER_CHANGELOG.md](../CONVERTER_CHANGELOG.md) describes it. The converter below is its Converter tab.
 
 A native Mac app (SwiftUI, macOS 26 or later) over `scripts/build_ipa_from_nsp.py --platform mac-app`: it turns one game's folder into a native Mac app ([A Mac app](../docs/development.md#a-mac-app)) without the command line. It needs only Xcode to build: the key check uses the system's CommonCrypto.
 

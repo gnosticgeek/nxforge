@@ -227,16 +227,25 @@ struct MacAppCard: View {
                 .disabled(!model.ready)
                 .help(model.ready ? "" : !model.missingForGame.isEmpty ? "This game needs \(model.missingForGame.map(\.name).joined(separator: ", ")): install it above" : !model.allOK ? "Some toolchain checks failed: see Toolchain" : model.needsKeys ? "Choose a game folder and keys that validate" : "Choose a .nup or a dump folder that reads")
                 if model.buildCache != nil {
-                    Button { model.build(rebuild: latestApp?.0, plan: true) } label: {
-                        Label("Preview build", systemImage: "list.bullet.clipboard").frame(maxWidth: .infinity)
+                    // a build reuses every step whose inputs are unchanged: Preview says which, From scratch reuses none
+                    HStack {
+                        Button { model.build(rebuild: latestApp?.0, plan: true) } label: {
+                            Label("Preview build", systemImage: "list.bullet.clipboard").frame(maxWidth: .infinity)
+                        }
+                        .help("Lists which steps a build would reuse and which it would redo, with how long each took last time; builds nothing")
+                        Button { model.scratchAsked(app: latestApp?.0) } label: {
+                            Label("From scratch…", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
+                        }
+                        .help("Empties this game's build folder and runs every step again. A normal build reuses the steps whose inputs have not changed, so this is for a build that looks wrong.")
                     }
                     .buttonStyle(.glass).controlSize(.large).disabled(!model.ready)
-                    .help("Lists which steps a build would reuse and which it would redo, with how long each took last time; builds nothing")
                 }
             }
             if model.run.planning, !model.run.running, let r = model.run.result {
                 switch r {
-                case .success(let plan):
+                case .success where !model.run.plan.isEmpty:
+                    PlanList(rows: model.run.plan)
+                case .success(let plan):   // an engine from before the plan's rows: its text
                     Text(plan).font(.callout.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10).background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 8))
                 case .failure(let e):
@@ -265,6 +274,9 @@ struct MacAppCard: View {
                         Text(current ? "Latest build ready" : "Built on an older engine").font(.headline)
                         Text(b.map { "\($0.date.map(relativeDay) ?? $0.builtAt) · Engine \($0.engine.short)" } ?? "Engine unknown: built before the converter recorded engines")
                             .foregroundStyle(.secondary).help(b?.engine.subject ?? "")
+                        if !current, let c = b.flatMap({ model.rebuildCost($0) }) {
+                            Text("\(c.title): \(c.detail)").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 if b?.launched != true { FirstLaunchNote() }
@@ -292,6 +304,36 @@ struct MacAppCard: View {
         let apps = dirs.flatMap { Engine.apps(in: $0) }
         let mt = { (p: String) in (try? FileManager.default.attributesOfItem(atPath: p))?[.modificationDate] as? Date ?? .distantPast }
         return apps.max { mt($0.app) < mt($1.app) }.map { ($0.app, $0.build) }
+    }
+}
+
+/// A Preview build's steps: reused, done again (with why and how long it took last time), or after the step the check stopped at.
+struct PlanList: View {
+    let rows: [PlanRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(rows) { r in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: r.state == .reused ? "checkmark.circle.fill" : r.state == .redo ? "arrow.clockwise.circle.fill" : "questionmark.circle")
+                        .foregroundStyle(r.state == .reused ? Color.green : r.state == .redo ? Color.orange : Color.secondary)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(friendly(r.stage))
+                        Text(r.state == .reused ? "Reused" : r.state == .redo ? "Redone: \(r.why)" : "Redone only if a step above changes what it reads")
+                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    }
+                    Spacer(minLength: 8)
+                    if r.state != .reused, let s = r.seconds { Text(duration(s)).font(.callout.monospacedDigit()).foregroundStyle(.secondary).help("How long this step took the last time it did its work") }
+                }
+                .accessibilityElement(children: .combine)
+            }
+            Divider()
+            Text(PlanRow.total(rows)).font(.callout.weight(.semibold))
+            Text("Nothing was built or changed.").font(.caption).foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10).background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 8))
     }
 }
 

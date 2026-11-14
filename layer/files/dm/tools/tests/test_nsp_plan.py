@@ -44,9 +44,37 @@ class Plan(unittest.TestCase):
         text = self.out.getvalue()
         self.assertIn('reused: rewrite, Mac host', text)
         self.assertIn('redone: Mac shaders, the translator changed (last time 15:00)', text)
-        self.assertIn('then, each redone only if what it reads changed: shader split, Pipeline archive (last time 26:07), Mac app (last time 3:11)', text)
+        # the app is packed again whenever a stage before it is redone, so it counts as redone; the stages between may be reused
+        self.assertIn('redone: Mac app, it packs the new Mac shaders (last time 3:11)', text)
+        self.assertIn('then, each redone only if what it reads changed: shader split, Pipeline archive (last time 26:07)', text)
         self.assertNotIn('shader split (last', text)
-        self.assertIn('about 15:00, up to 44:18', text)
+        self.assertIn('about 18:11, up to 44:18', text)
+
+    def test_the_plan_is_also_an_event_of_rows_for_the_converter(self):
+        nsp.STAGE_TIMES.parent.mkdir(parents=True); nsp.STAGE_TIMES.write_text(json.dumps({'Mac shaders': 900, 'Mac app': 191}))
+        prog = nsp.Progress('json')
+        with mock.patch.object(nsp, 'PROG', prog):
+            nsp.PLAN.append(('rewrite', 'reused', ''))
+            with self.assertRaises(nsp.PlanStop): nsp.plan_redo('Mac shaders', 'the translation chain changed')
+            nsp.plan_report(True)
+        ev = next(e for e in map(json.loads, self.out.getvalue().splitlines()) if e.get('ev') == 'plan')
+        self.assertEqual([(r['stage'], r['state'], r['secs']) for r in ev['rows']],
+                         [('rewrite', 'reused', None), ('Mac shaders', 'redo', 900), ('shader split', 'follows', None), ('Mac host', 'follows', None),
+                          ('Pipeline archive', 'follows', None), ('Mac app', 'redo', 191)])
+        self.assertEqual((ev['est'], ev['worst']), (1091, 1091))
+
+    def test_a_redone_shader_stage_says_whether_the_chain_changed(self):
+        sh = self.tmp / 'sh'; (sh / 'cache').mkdir(parents=True)
+        g = mock.Mock(); table = self.tmp / 'shader_map.tsv'; g.table.return_value = table
+        table.write_text(''.join(f'a.bin\t0\t0\t{k:016x}\tx\n' for k in range(1200)))
+        self.assertIn('1,200 shaders are not built yet', nsp.shader_plan_note(sh, 'bbbbbbbbbbbb', g))
+        (sh / 'mac-b-aaaaaaaaaaaa.key').write_text('k\n'); (sh / 'cache/cas.db').write_bytes(b'')
+        note = nsp.shader_plan_note(sh, 'bbbbbbbbbbbb', g)
+        self.assertIn('the translation chain changed (aaaaaaaaaaaa -> bbbbbbbbbbbb): all 1,200 shaders are translated again', note)
+        (sh / 'mac-b-bbbbbbbbbbbb.key').write_text('k\n')
+        self.assertIn('on the same translation chain (bbbbbbbbbbbb)', nsp.shader_plan_note(sh, 'bbbbbbbbbbbb', g))
+        (sh / 'cache/cas.db').unlink()
+        self.assertIn('the shader cache is gone', nsp.shader_plan_note(sh, 'bbbbbbbbbbbb', g))
 
     def test_a_host_only_change_carries_on_to_the_app(self):
         nsp.plan_redo('Mac host', 'its sources changed', stop=False)

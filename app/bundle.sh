@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds "NXForge.app" (named "NXForge Converter.app" before Converter 0.8.0) from this package: swift build -c release, then a minimal bundle, signed ad-hoc
+# Builds "NXForge.app" (named "NXForge Converter.app" before Converter 0.9.0) from this package: swift build -c release, then a minimal bundle, signed ad-hoc
 # (or with the identity in $SIGN). Usage: app/bundle.sh [output folder, default app/.build]
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -53,7 +53,7 @@ cat > "$app/Contents/Info.plist" <<EOF
 </dict></plist>
 EOF
 codesign --force --sign "${SIGN:--}" "$app"
-# the copy under the old name goes, so there is one app. An updater from before 0.8.0 opens the old name afterwards, which
+# the copy under the old name goes, so there is one app. An updater from before 0.9.0 opens the old name afterwards, which
 # is gone: open the new one for it here.
 if [ -d "$old" ]; then
   rm -rf "$old"

@@ -33,6 +33,78 @@ struct RebuildAdvice {
     let worth: Bool
 }
 
+/// What a rebuild on the engine in use would have to redo, told from the build folder and the files that changed, with nothing
+/// run: Preview build on Convert asks the build script itself and is exact.
+struct RebuildCost: Hashable {
+    enum Kind { case quick, partial, shaders, full }
+    let kind: Kind
+    /// the steps' times the last time they did their work (<id>_build/logs/stage_times.json); nil when none is recorded
+    let seconds: Double?
+
+    /// for the badge: "quick rebuild", "shader rebuild"
+    var short: String {
+        switch kind {
+        case .quick: "quick rebuild"
+        case .partial: "partial rebuild"
+        case .shaders: "shader rebuild"
+        case .full: "full rebuild"
+        }
+    }
+    var title: String {
+        let t = seconds.map { ", about \(duration($0))" } ?? ""
+        return short.prefix(1).uppercased() + short.dropFirst() + t
+    }
+    var detail: String {
+        switch kind {
+        case .quick: "only the player and the app are made again; the unpacked game and its shaders are reused."
+        case .partial: "the build's tools or this game's profile changed, so some steps run again; shaders whose inputs are unchanged come back from the cache. Preview build lists the steps."
+        case .shaders: "the engine's shader chain changed, so every shader is translated again and the pipeline archive is made again."
+        case .full: "the build folder is gone, so the game is unpacked and its shaders are built again; it needs the game files."
+        }
+    }
+
+    /// The chain version the engine's shader libraries are named by: the 12 hex digits in dm/gfx/nvn/dmsh_chain.h.
+    static func chain(header text: String) -> String? {
+        text.range(of: #""[0-9a-f]{12}""#, options: .regularExpression).map { String(text[$0].dropFirst().dropLast()) }
+    }
+
+    /// The chains a build folder's Mac shader step finished on: shader.noindex/mac-b-<chain>.key.
+    static func builtChains(buildFolder: String) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: buildFolder + "/shader.noindex")) ?? [])
+            .filter { $0.hasPrefix("mac-b-") && $0.hasSuffix(".key") }.map { String($0.dropFirst(6).dropLast(4)) }
+    }
+
+    /// The kind from what is known. chain: the engine's now; built: the chains the build folder holds (nil: no build folder);
+    /// changed: the engine files that differ since the build (nil: git cannot tell). A game with no chain libraries at all
+    /// (a Vulkan or OpenGL game) is judged by the files alone.
+    static func kind(chain: String?, built: [String]?, changed: [String]?, titleID: String?) -> Kind {
+        guard let built else { return .full }
+        if let chain, !built.isEmpty, !built.contains(chain) { return .shaders }
+        guard let changed else { return .partial }
+        // what the unpack, rewrite and shader steps read (Engine.affects has already left out other games' profiles); the rest of a
+        // build's inputs (dm/host, dm/gfx's own sources, dm/mac, the libraries) only make the player and the app
+        let deep = changed.contains { p in
+            guard Engine.affects(p, titleID: titleID) else { return false }
+            return ["dm/tools/", "dm/gfx/tools/", "dm/games/", "dm/ios/tools/"].contains { p.hasPrefix($0) } || p == "scripts/build_ipa_from_nsp.py"
+        }
+        return deep ? .partial : .quick
+    }
+
+    /// The steps a rebuild of each kind runs for certain, for its time from the last run of each.
+    static func seconds(_ kind: Kind, times: [String: Double]) -> Double? {
+        let steps: [String]
+        switch kind {
+        case .quick: steps = ["Mac host", "Mac app"]
+        case .shaders: steps = ["Mac shaders", "Mac host", "Pipeline archive", "Pipeline prebuild", "Mac app"]
+        case .full: steps = Array(times.keys)
+        case .partial: return nil
+        }
+        let known = steps.compactMap { times[$0] }
+        if known.isEmpty || (kind == .shaders && times["Mac shaders"] == nil) || (kind == .quick && times["Mac app"] == nil) { return nil }
+        return known.reduce(0, +)
+    }
+}
+
 enum GameInsights {
     static func notes(repo: String, titleID: String) -> ProfileNotes? {
         let path = Layer.file(repo, "dm/games/\(titleID.uppercased())/README.md")

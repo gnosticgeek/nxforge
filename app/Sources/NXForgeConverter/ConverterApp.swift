@@ -103,6 +103,7 @@ struct ConverterApp: App {
             CommandMenu("Build") {
                 Button("Build Mac App") { model.build() }.keyboardShortcut("b").disabled(!model.ready)
                 Button("Rebuild") { model.rebuildCurrent() }.keyboardShortcut("r").disabled(model.run.running || !model.allOK)
+                Button("Rebuild from Scratch…") { model.rebuildCurrent(scratch: true) }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(model.run.running || !model.allOK)
                 Button("Rebuild All on Older Engines") { model.rebuildAll() }.disabled(model.run.running || !model.allOK || model.outdatedBuilds.isEmpty)
                 Button("Build iPhone and iPad IPA…") { model.buildIPA() }.keyboardShortcut("b", modifiers: [.command, .option]).disabled(!model.ready)
                 Divider()
