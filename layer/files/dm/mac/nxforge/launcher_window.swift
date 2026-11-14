@@ -14,6 +14,7 @@ enum NXFLauncherLayout {
         ("Frame rate", ["DM_FPS_TARGET", "DM_PRESENT_INTERP"]),
         ("HDR", ["DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH"]),
         ("Pixel art", ["DM_PIXEL_ART"]),
+        ("Detail", ["DM_FOLIAGE", "DM_MODEL_LOD", "DM_SHADOW_CASCADES"]),
     ]
     static let graphics: [String] = graphicsBoxes.flatMap(\.envs)
     /// The Advanced tab's boxes: Performance split in two so the columns match
@@ -23,7 +24,7 @@ enum NXFLauncherLayout {
     ]
     static let boxes = graphicsBoxes + advancedBoxes
     /// On the General tab though not level=basic: everyday controls
-    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_STICK_DEADZONE_L", "DM_STICK_DEADZONE_R", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
+    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_STICK_DEADZONE_L", "DM_STICK_DEADZONE_R", "DM_PAD_PRESS_TO_JOIN", "DM_SW2", "DM_MOUSE_CAMERA", "DM_MOUSE_CAMERA_SPEED", "DM_MIC"]
     /// The Mac window's shorter notes (the two-column boxes are narrow); a setting not listed keeps settings.tsv's note
     static let notes: [String: String] = [
         "DM_DYNAMIC_RESOLUTION": "Lets the game lower its resolution under load.",
@@ -38,6 +39,9 @@ enum NXFLauncherLayout {
         "DM_PRESENT_SNAP": "Adds up to one frame of display latency.",
         "DM_PSO_MTL4": "Caches pipelines; uses more memory.",
         "DM_PSO_PREBUILD": "First launch may take a few minutes.",
+        "DM_FOLIAGE": "Off saves GPU time: no grass, ferns or moss.",
+        "DM_MODEL_LOD": "Lower uses simpler models nearer the camera.",
+        "DM_MEMORY_GB": "Lower if other apps need memory while you play.",
     ]
 
     /// The Mac window's names for rows whose settings.tsv label is the iPhone's ("Picture shape" there): both screen-shape rows read as one Aspect ratio choice

@@ -58,6 +58,8 @@ const char *dm_cheat_section_at(int i);
 // Pause while open (General page): whether the game is paused now, and the switch (saved per game; applies at once while the sidebar is up). Main thread
 int front_qs_paused(void);
 void front_qs_pause_set(int on);
+// Library keeps the game (NXForge): the game paused with the sidebar up while the NXForge library is in front; back in front, the sidebar's own pause rule again. Main thread
+void front_qs_suspend(void);
 // The game's sound after a change to the volume, mute or "quieter while open" settings (front_mac.m reads them from the user defaults). Main thread
 void front_qs_volume_apply(void);
 // Full screen (Display section). Main thread

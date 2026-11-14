@@ -72,7 +72,7 @@ index bc17c2990195af82327830986cf913086d28a9ea..59e5f7ac809f3a677f46c0a1ba213604
  | [Mario + Rabbids Kingdom Battle](010067300059A000/README.md) | `010067300059A000` | 1.9.589692 | 4.4.0 | Ubisoft Snowdrop | NVN |
 diff --git a/dm/tools/tests/test_nsp_registered_update.py b/dm/tools/tests/test_nsp_registered_update.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..a573f3f9536a58d21a43e1cac0d9e9dfcab3ce74
+index 0000000000000000000000000000000000000000..d1a5b2cdb67d3bea72002416788925ea7fc94e53
 --- /dev/null
 +++ b/dm/tools/tests/test_nsp_registered_update.py
 @@ -0,0 +1,62 @@
@@ -118,7 +118,7 @@ index 0000000000000000000000000000000000000000..a573f3f9536a58d21a43e1cac0d9e9df
 +    def derive(self, ver, bid):
 +        d = self.tmp / 'extract' / ver; nso(d / 'ExeFS/main', bid)
 +        reg = game.load(f'{PROFILE:016X}'); out = self.tmp / 'derived' / ver
-+        nsp.derive_profile(reg, out, ver, d, ['main'])
++        nsp.derive_profile(reg, out, ver, d, ['main']); self.said.clear()   # its own line (made again, no folder yet) is not the status report
 +        return reg, game.Game(out)
 +
 +    def test_a_registered_update_is_not_red(self):

@@ -1,0 +1,134 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: EmmanueleC <ai.emmanuelecrifasi@gmail.com>
+Date: Tue, 10 Nov 2026 22:31:33 +0100
+Subject: memory-setting: a Memory setting (DM_MEMORY_GB: auto, or a number of
+ GB) says how much of the Mac the game plans for
+
+Ported from Fasen24-AI/swordboiMacNative 790245d6 and d343de61 (EmmanueleC, MIT) onto nxnative bee218d9.
+rule_ws() is Metal's working set, or that of a device with the memory the player names (0.74 of it), when that
+is less. It moves where the GPU memory guard begins to let go (guard_init), how many textures are made ahead of
+their first read (pool_budget) and from when NXForge's read marks age (seen_cap_kb). Where the guard stops the
+game stays the device's own limit. The fork's other reader, the takeover's hold of compressible sharing entries,
+is gone from nvn_mtl.m (nxnative's nvn_owner.m now owns the sharing table). settings.tsv: a Memory choice row in
+Performance for NVN games.
+---
+ dm/games/settings.tsv                    |  1 +
+ dm/gfx/nvn/nvn_mtl.m                     | 23 ++++++++++++++++++++---
+ dm/tools/tests/test_launcher_settings.py |  2 +-
+ docs/env_switches.tsv                    |  1 +
+ docs/settings.md                         |  5 +++++
+ 5 files changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index 693f7ae618bc9ec3b53b1838d3010dbef5fe8b1e..85fb4e914b5abcc32490925da67e835a5ee12a5e 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -44,4 +44,5 @@ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines
+ DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
+ DM_NVN_ENC_THREAD	toggle	-	1|DM_GAME_ENC_THREAD	gfxapi:nvn	Performance	Encode thread
+ DM_FPS_HOLD	toggle	on/off	DM_GAME_FPS_HOLD	DM_GAME_FPS_TARGET!=0	Performance	Hold frames when late
++DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
+ DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 147d16596f9befa85a151a8ef7ca1b15144b7d1f..0dcdd5a0a27e868ac4911bedc8fd26f00d40770e 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -522,6 +522,23 @@ static void res_check(id r, const char *what, int reg) {
+         MLOG("[RED] missing residency #%d: %s slot %d %s %p (parent chain %d deep) allocated %lu B storage mode %lu%s", nbad, what, reg, is_tex ? "texture" : "buffer", (__bridge void *)a, hops, (unsigned long)a.allocatedSize, (unsigned long)a.storageMode,
+              t ? [NSString stringWithFormat:@" format %lu %lux%lu type %lu usage %#lx", (unsigned long)t.pixelFormat, (unsigned long)t.width, (unsigned long)t.height, (unsigned long)t.textureType, (unsigned long)t.usage].UTF8String : ""); }
+ }
++// NXForge: the memory the host's rules plan for (the Memory setting; from Fasen24-AI/swordboiMacNative 790245d6 and d343de61, by EmmanueleC, MIT): Metal's working set for this
++// device, or less when the player says so (DM_MEMORY_GB=<GB>: the working set of a device with that much memory, taken as 0.74 of it, which is what a 24 GB Mac reports). The rules
++// that read it: where the memory guard begins to let go (guard_init), how many textures are made ahead of their first read (pool_budget) and from when read marks age
++// (seen_cap_kb). Where the guard stops the game stays the device's own limit: a player who leaves room for other apps is not asking for the game to end sooner. A value at or over
++// the device's own changes nothing
++static uint64_t rule_ws(void) {
++    static uint64_t v; if (v) return v;
++    uint64_t ws = g_dev.recommendedMaxWorkingSetSize; const char *e = getenv("DM_MEMORY_GB");
++    if (e && *e && strcmp(e, "auto")) {
++        double gb = atof(e);
++        if (!(gb >= 4 && gb <= 512)) MLOG("[RED] DM_MEMORY_GB=%s: auto, or a number of GB from 4 to 512; planning for this device's own memory", e);
++        else { uint64_t d = (uint64_t)(gb * 0.74 * 1024) << 20;
++            if (d < ws) { MLOG("memory: planning for a device with %g GB (DM_MEMORY_GB): a working set of %llu MB instead of this device's %llu MB", gb, (unsigned long long)(d >> 20), (unsigned long long)(ws >> 20)); ws = d; }
++            else MLOG("memory: DM_MEMORY_GB=%s is not under this device's own (working set %llu MB): nothing changes", e, (unsigned long long)(ws >> 20)); }
++    }
++    return v = ws;
++}
+ // GPU memory guard. GPU memory is wired, and the driver refuses to wire past Metal's working set (recommendedMaxWorkingSetSize: IOGPUScheduler freeToWireMemory fails there). The submit thread
+ // then waits in the kernel, where nothing can kill the process: GitHub issue #1326 ended with a Mac frozen until the power button, PR #1319's 8 GB Mac with WindowServer's watchdog. So every commit
+ // of the residency set looks first, at the larger of what the commit would leave (the set's allocatedSize, which counts only what was committed, and what was added since) and the device's
+@@ -848,7 +865,7 @@ static void guard_init(void) {
+     { const char *d = getenv("DM_NVN_GUARD_DEVICE"); g_guard_dev = d && atoi(d); }
+     const char *e = getenv("DM_NVN_RES_LIMIT_MB"); uint64_t ws = g_dev.recommendedMaxWorkingSetSize, lim = e ? strtoull(e, NULL, 0) << 20 : 0;
+     if (!g_res) return;
+-    if (ws && !(e && !lim)) { g_guard.wall = MAX(ws, lim); g_guard.stop = lim ? lim : ws / 100 * 95; g_guard.evict = g_guard.stop / 95 * 80;
++    if (ws && !(e && !lim)) { g_guard.wall = MAX(ws, lim); g_guard.stop = lim ? lim : ws / 100 * 95; g_guard.evict = lim ? g_guard.stop / 95 * 80 : rule_ws() / 100 * 80;   // NXForge: letting go begins by what the player plans for (rule_ws), stopping by the device
+ #if TARGET_OS_IPHONE
+         if (!lim) g_guard.stop = g_guard.wall = UINT64_MAX;
+ #endif
+@@ -7536,7 +7553,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
+ enum { SEEN_REARM = 60, SEEN_CAP_DIV = 4 };
+ static uint32_t g_seen_at[POOL_SEEN_WORDS * 32]; static uint64_t g_seen_rearm, g_seen_kept, g_seen_dropped;
+ static int seen_keep(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_SEEN_KEEP"); v = e ? MAX(atoi(e), 0) : 600; } return v; }
+-static uint64_t seen_cap_kb(void) { return g_dev.recommendedMaxWorkingSetSize / SEEN_CAP_DIV >> 10; }
++static uint64_t seen_cap_kb(void) { return rule_ws() / SEEN_CAP_DIV >> 10; }   // NXForge: the Memory setting (rule_ws)
+ static int pool_seen_stale(int id_) {   // caller holds g_rmu
+     if (!seen_keep() || g_seen_kb_all <= seen_cap_kb() || id_ < 0 || id_ >= (int)(POOL_SEEN_WORDS * 32) || !pool_seen(id_)) return 0;
+     return (uint32_t)atomic_load(&g_cur_frame) - g_seen_at[id_] > (uint32_t)seen_keep();
+@@ -11509,7 +11526,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
+ static uint64_t g_walk_frame = ~0ull, g_walk_spent, g_walk_sub = ~0ull; static double g_walk_ms; static int g_walk_over;
+ static uint64_t pool_tex_size(const tex_t *t) { return t->L.size ? t->L.size : 1; }
+ static int pool_size_cmp(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }
+-static uint64_t pool_budget(void) { return g_dev.recommendedMaxWorkingSetSize / 20; }
++static uint64_t pool_budget(void) { return rule_ws() / 20; }
+ static uint64_t g_walk_req;
+ // A render target no pass has written holds nothing to read, and a pass makes its texture when it renders. Made for a read, one that only registers next frame's target took three times the
+ // textures and 17 GB allocated on Ocarina of Time: the game re-registers its IDs with transient targets, whose IDs a shader read as the previous texture
+diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
+index 0069eca826718305095ffe09f426e13bb157f017..09a96a6babfdafda8447a18b3a1eb3116ed44acd 100644
+--- a/dm/tools/tests/test_launcher_settings.py
++++ b/dm/tools/tests/test_launcher_settings.py
+@@ -15,7 +15,7 @@ settings = importlib.util.module_from_spec(spec)
+ spec.loader.exec_module(settings)
+ 
+ BOTW, WONDER = '01007EF00011E000', '010015100B514000'
+-PERFORMANCE_NVN = ['DM_PRESENT_SNAP', 'DM_PSO_MTL4', 'DM_PSO_PREBUILD', 'DM_NVN_ENC_THREAD', 'DM_FPS_HOLD', 'DM_METAL_HUD']
++PERFORMANCE_NVN = ['DM_PRESENT_SNAP', 'DM_PSO_MTL4', 'DM_PSO_PREBUILD', 'DM_NVN_ENC_THREAD', 'DM_FPS_HOLD', 'DM_MEMORY_GB', 'DM_METAL_HUD']
+ 
+ 
+ def build(gid, api, platform=None):
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 397d15bd2226282f81232684686b5c46feef279f..b5c0df0730effeb984381a10c196af044c82a73d 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -117,6 +117,7 @@ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz M
+ DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
+ DM_LONGFRAME	diagnostic	`0` turns off the long-frame log (on by default), a line for a frame over 20 ms or with GPU time over 16.7 ms that is clearly above recent frames
+ DM_MEASURE_LOCK	path	`=<file>`: `scripts/regress.py`'s default `--lock`, the measuring lock `scripts/bench.py --lock` shares: held only while a game runs, and the harness's shader builds pause while another process holds it
++DM_MEMORY_GB	player	`auto` (default) or a number of GB: the device memory the host's rules plan for (the launcher's Memory): where the memory guard begins to let go, how many textures are made ahead
+ DM_MEMSTAT	diagnostic	`=<tsv>` writes one line per second of memory accounting: footprint, Metal allocation and resident and charged memory by region class (guest, code, malloc, gpu, …)
+ DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second writes every VM region of 1 MiB or more to `<tsv>.regions`
+ DM_MEM_CAP_GB	switch	`=<GB>`: the memory watchdog exits when resident memory exceeds that many GB (default 24 on the Mac, none on iOS; `0` turns it off)
+diff --git a/docs/settings.md b/docs/settings.md
+index 8ee683ec6a02b2ece364c4f554a71555d77824ca..ea321dbf437a79d186e60198791c1bd9d0387493 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -216,6 +216,10 @@ flowchart LR
+ - **Off:** the game keeps aiming at 60; a late frame is shown one refresh later and the next one goes on as usual, so heavy scenes look less even but stay closer to 60 on average.
+ - **When to change it:** turn it off if the game often falls to 30 fps although it is only slightly late.
+ 
++### Memory
++
++Shown for games drawn through NVN. How much of the device's memory the game plans for. **Automatic**, the default, plans for all the device has. A number of GB (8, 12, 16, 18, 24, 32) plans for a device of that size: the host's memory guard then begins to let go of the textures a game has stopped using at a lower level, and fewer are made ahead of their first use, which leaves room for other apps and can make an area change cost a little more. A value at or above the device's own memory changes nothing, and the setting does not move the point where the host ends a game that is about to run the device out of memory. `DM_MEMORY_GB` takes `auto` or any number of GB.
++
+ ### Performance HUD
+ 
+ Apple's performance overlay over the game: frame rate, frame and GPU times, memory. Useful to see what a setting changes; leave it off for play.
+@@ -334,6 +338,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+ | Pipeline prebuild | `DM_PSO_PREBUILD` | `1`, `0` |
+ | Encode thread | `DM_NVN_ENC_THREAD` | `1`, `0` |
+ | Hold frames when late | `DM_FPS_HOLD` | `on`, `off` |
++| Memory | `DM_MEMORY_GB` | `auto`, `8`, `12`, `16`, `18`, `24`, `32` |
+ | Performance HUD | `DM_METAL_HUD` | `1`, `0` |
+ 
+ `DM_LAUNCHER=0` skips the settings screen; the choices you saved there still apply. `DM_SAVED_CHOICES=0` starts with the tested defaults and keeps your saved choices for later. How the settings are listed for each game: [dm/games/settings.tsv](../dm/games/settings.tsv).
