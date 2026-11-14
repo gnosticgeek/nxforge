@@ -170,10 +170,10 @@ index aa8568ec7013b35c093a51022a7d73a662e36add..e6900ff59f347c63f1e2cd22f3217d66
  
  - **Symptom:** `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder ([issue #1265](https://github.com/seedds/nxnative/issues/1265)). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`.
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index ede27bfc7d993fac8ab5353dfa0b09f3a7493264..8267435906beab7a7c0388484da7e7a308d7cf68 100755
+index 2affd3113c70fb2208af8922879274c165a27597..a0319f1d735be1d137169c38b1e2cfd40e71ccab 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3379,7 +3379,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
+@@ -3411,7 +3411,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
          known = {(m, b) for row in reg.builds().values() for m, b in row.items() if m != 'display'}
          other = [m for m, b in g.builds()[pkg_ver].items() if m != 'display' and (m, b) not in known]
          registered_builds = ", ".join(f'{v} {b["display"]}' for v, b in reg.builds().items())
