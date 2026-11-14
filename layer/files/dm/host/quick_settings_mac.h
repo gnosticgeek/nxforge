@@ -80,3 +80,8 @@ void front_qs_toast_text(const char *msg);
 // GPU memory nearly full with the game slow (nvn_mtl.m guard_low_tick): a longer toast, and a note on the Performance page for the rest of the run. Main thread
 void dm_qs_toast_long(void *parent, const char *msg, double seconds);
 void dm_qs_gpu_memory_low(unsigned long long used_mb, unsigned long long low_mb);
+// Quick-save slots (quick_settings_mac.swift SaveSlots): a clone of the committed save taken under the host's commit locks (hle_fs.c; -1 with errno on failure), and the
+// Save Slots menu's save and load (load asks twice). Main thread
+int dm_fs_clone_committed(const char *dir, const char *to);
+void dm_qs_slot_save(int slot);
+void dm_qs_slot_load(int slot);

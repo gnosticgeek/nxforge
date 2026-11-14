@@ -53,7 +53,7 @@ private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods =
 // What the controller and keyboard selection can be on (dm_qs_nav)
 enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
-    case pauseOpen, duckOpen, backup, backupShow, settingsShow, settingsOpen, defaultsSave, defaultsUse
+    case pauseOpen, duckOpen, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
     case fullscreen, scale, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
@@ -126,7 +126,7 @@ enum SaveBackup {
     static let encoder: JSONEncoder = { let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]; e.dateEncodingStrategy = .iso8601; return e }()
     static let decoder: JSONDecoder = { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }()
     /// A checked copy of the save in save-snapshots/<id> (the Converter lists and restores it); the time it was made
-    static func make() throws -> Date {
+    static func make(reason: String = "manual") throws -> Date {
         guard let save = save, let folder = folder else { throw Failure(text: "this launch has no save folder (DM_SAVE)") }
         let fm = FileManager.default, parts = [("save", save), ("save_device", save + "_device")]
         let has = parts.contains { ((try? fm.contentsOfDirectory(atPath: $0.1)) ?? []).contains { $0 != ".DS_Store" } }
@@ -146,7 +146,7 @@ enum SaveBackup {
         let copied = try inventory(inv.directories.filter { !$0.contains("/") }.map { ($0, "\(stage)/data/\($0)") })
         guard copied == inv else { throw Failure(text: "The copy did not match the save; try again") }
         guard try inventory(parts) == inv else { throw Failure(text: "The game saved while it was being copied; try again") }
-        let m = BackupManifest(id: id, titleID: String(cString: front_qs_title_id()).uppercased(), created: now, reason: "manual", inventory: inv)
+        let m = BackupManifest(id: id, titleID: String(cString: front_qs_title_id()).uppercased(), created: now, reason: reason, inventory: inv)
         try encoder.encode(m).write(to: URL(fileURLWithPath: stage + "/manifest.json"), options: .atomic)
         try fm.moveItem(atPath: stage, toPath: "\(folder)/\(id)")
         return now
@@ -161,6 +161,120 @@ enum SaveBackup {
         return nil
     }
 }
+
+// Quick-save slots (General page, the Save Slots menu: ⌘1–⌘3 save, ⌥⌘1–⌥⌘3 load): a slot holds a copy of the game's own save as the game last committed it, not the moment on
+// screen. Saving clones the committed save under the host's commit locks (hle_fs.c dm_fs_clone_committed), so a slot is always one whole save, taken in a moment even while the
+// game writes. Loading checks the slot against its manifest, keeps the save it replaces as a save snapshot ("Before a restore", which the Converter lists and restores), names the
+// slot in the launcher's DM_LAUNCHER_SLOT_LOAD file and restarts the game: the launcher swaps the slot in with the host stopped (dm/mac/nxforge/launcher_slots.inc).
+// <save's folder>/save-slots/<n>/{manifest.json, data/save, data/save_device}: the snapshots' layout, so a slot can be copied into save-snapshots/ by hand and restored there
+struct SlotManifest: Codable { var schema = 1; var slot: Int; var titleID: String; var created: Date; var gameSaved: Date?; var inventory: BackupInventory }
+struct SlotInfo: Equatable { var created: Date; var gameSaved: Date? }
+enum SaveSlots {
+    static let count = 3
+    static let changed = Notification.Name("NXForgeSaveSlotsChanged")
+    static var folder: String? { SaveBackup.save.map { ($0 as NSString).deletingLastPathComponent + "/save-slots" } }
+    static var canLoad: Bool { front_qs_can_restart() != 0 && env["DM_LAUNCHER_SLOT_LOAD"].map { !$0.isEmpty } == true }
+    private static func path(_ n: Int) -> String? { folder.map { "\($0)/\(n)" } }
+    static func manifest(_ n: Int) -> SlotManifest? {
+        guard let p = path(n), let d = FileManager.default.contents(atPath: p + "/manifest.json"), let m = try? SaveBackup.decoder.decode(SlotManifest.self, from: d),
+              m.schema == 1, m.slot == n, m.titleID == String(cString: front_qs_title_id()).uppercased() else { return nil }
+        return m
+    }
+    static func info(_ n: Int) -> SlotInfo? { manifest(n).map { SlotInfo(created: $0.created, gameSaved: $0.gameSaved) } }
+    /// The newest file's modification time under the save parts in dir: when the game last saved what is there
+    private static func newest(_ roots: [String]) -> Date? {
+        let fm = FileManager.default; var best: Date?
+        for r in roots { for case let rel as String in fm.enumerator(atPath: r) ?? NSEnumerator() {
+            if let a = try? fm.attributesOfItem(atPath: "\(r)/\(rel)"), a[.type] as? FileAttributeType == .typeRegular, let d = a[.modificationDate] as? Date, d > (best ?? .distantPast) { best = d }
+        } }
+        return best
+    }
+    /// Save the game's committed save into slot n (replacing what the slot held once the new copy is checked); the manifest written. Any thread
+    static func save(_ n: Int) throws -> SlotManifest {
+        guard let save = SaveBackup.save, let folder = folder, let dest = path(n) else { throw SaveBackup.Failure(text: "This launch has no save folder (DM_SAVE)") }
+        let fm = FileManager.default, parts = [("save", save), ("save_device", save + "_device")]
+        guard parts.contains(where: { ((try? fm.contentsOfDirectory(atPath: $0.1)) ?? []).contains { $0 != ".DS_Store" } }) else { throw SaveBackup.Failure(text: "The game has not saved anything yet") }
+        try fm.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        let stage = "\(folder)/.making-\(UUID().uuidString)", old = "\(folder)/.old-\(UUID().uuidString)"
+        defer { try? fm.removeItem(atPath: stage); try? fm.removeItem(atPath: old) }
+        try fm.createDirectory(atPath: stage + "/data", withIntermediateDirectories: true)
+        var copied: [(String, String)] = []
+        for (name, root) in parts where fm.fileExists(atPath: root) {
+            let to = "\(stage)/data/\(name)"
+            if dm_fs_clone_committed(root, to) != 0 {
+                // No folder cloning here (a DM_SAVE on a drive that is not APFS): a plain copy, kept only when the save did not change while it was copied
+                let e = errno; try? fm.removeItem(atPath: to)
+                guard e == ENOTSUP || e == EXDEV else { throw SaveBackup.Failure(text: "Could not copy the save (\(String(cString: strerror(e))))") }
+                let before = try SaveBackup.inventory([(name, root)])
+                try fm.copyItem(atPath: root, toPath: to)
+                guard try SaveBackup.inventory([(name, root)]) == before else { throw SaveBackup.Failure(text: "The game saved while it was being copied; try again") }
+            }
+            copied.append((name, to))
+        }
+        let inv = try SaveBackup.inventory(copied)
+        let m = SlotManifest(slot: n, titleID: String(cString: front_qs_title_id()).uppercased(), created: Date(), gameSaved: newest(copied.map { $0.1 }), inventory: inv)
+        try SaveBackup.encoder.encode(m).write(to: URL(fileURLWithPath: stage + "/manifest.json"), options: .atomic)
+        if fm.fileExists(atPath: dest) { try fm.moveItem(atPath: dest, toPath: old) }
+        try fm.moveItem(atPath: stage, toPath: dest)
+        return m
+    }
+    /// Load slot n: check it, keep the current save as a snapshot, then ask the launcher to swap it in and restart the game. Throws before anything changed. Any thread but the restart, which goes to the main thread
+    static func load(_ n: Int) throws {
+        guard canLoad, let req = env["DM_LAUNCHER_SLOT_LOAD"], let dir = path(n) else { throw SaveBackup.Failure(text: "Loading a slot needs the game opened from its app (it restarts the game)") }
+        guard let m = manifest(n) else { throw SaveBackup.Failure(text: "Slot \(n) is empty") }
+        let parts = m.inventory.directories.filter { !$0.contains("/") }
+        guard try SaveBackup.inventory(parts.map { ($0, "\(dir)/data/\($0)") }) == m.inventory else { throw SaveBackup.Failure(text: "Slot \(n) no longer matches what was saved in it (a file changed or is missing)") }
+        do { _ = try SaveBackup.make(reason: "beforeRestore") }
+        catch let e as SaveBackup.Failure where e.text == "The game has not saved anything yet" {}   // nothing to keep
+        try (dir + "/data\n").write(toFile: req, atomically: true, encoding: .utf8)
+        DispatchQueue.main.async { front_qs_restart() }
+    }
+}
+private func ago(_ d: Date) -> String { d.formatted(.relative(presentation: .named)) }
+private var slotBusy = false
+private var slotArmed: (slot: Int, at: Date)?
+/// The Save Slots menu and its shortcuts (front_mac_quick_settings.inc): save now, a toast when done. Main thread
+@_cdecl("dm_qs_slot_save")
+public func dm_qs_slot_save(_ n: Int32) {
+    let n = Int(n)
+    guard !slotBusy else { return }
+    slotBusy = true; NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+    DispatchQueue.global(qos: .userInitiated).async {
+        let r = Result<SlotManifest, Error>(catching: { try SaveSlots.save(n) })
+        DispatchQueue.main.async {
+            slotBusy = false
+            switch r {
+            case .success(let m): front_qs_toast_text("Slot \(n) saved: the game's save from \(m.gameSaved.map(ago) ?? "now")")
+            case .failure(let e): front_qs_toast_text("Slot \(n) not saved: \((e as? SaveBackup.Failure)?.text ?? e.localizedDescription)")
+            }
+            NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+        }
+    }
+}
+/// Load: the first press arms it for 4 seconds (a toast says what will happen), the second loads. Main thread
+@_cdecl("dm_qs_slot_load")
+public func dm_qs_slot_load(_ n: Int32) {
+    let n = Int(n)
+    guard !slotBusy else { return }
+    guard SaveSlots.canLoad else { front_qs_toast_text("Loading a slot needs the game opened from its app"); return }
+    guard let info = SaveSlots.info(n) else { front_qs_toast_text("Slot \(n) is empty"); return }
+    if let a = slotArmed, a.slot == n, Date().timeIntervalSince(a.at) < 4 {
+        slotArmed = nil; slotBusy = true; NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+        front_qs_toast_text("Loading slot \(n)…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = Result<Void, Error>(catching: { try SaveSlots.load(n) })
+            DispatchQueue.main.async {
+                slotBusy = false; NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+                if case .failure(let e) = r { front_qs_toast_text("Slot \(n) not loaded: \((e as? SaveBackup.Failure)?.text ?? e.localizedDescription)") }
+            }
+        }
+        return
+    }
+    slotArmed = (n, Date()); NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+    dm_qs_toast_long_text("Press again to load slot \(n) (the game's save from \(ago(info.gameSaved ?? info.created))). The game restarts; unsaved progress is lost", 4)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4.1) { NotificationCenter.default.post(name: SaveSlots.changed, object: nil) }
+}
+private func dm_qs_toast_long_text(_ t: String, _ seconds: Double) { toastSeconds = seconds; front_qs_toast_text(t) }
 
 final class QuickSettings: ObservableObject {
     let game: String, modsDir: String, modsRun: Set<String>?, modsRunOrder: [String]?, close: () -> Void, fpsChanged: () -> Void
@@ -206,6 +320,9 @@ final class QuickSettings: ObservableObject {
     @Published var lastBackup: Date?
     @Published var backupBusy = false
     @Published var backupNote = ""
+    @Published var slots: [SlotInfo?] = Array(repeating: nil, count: SaveSlots.count)   // what each quick-save slot holds (index 0 is slot 1)
+    @Published var slotsBusy = false
+    @Published var slotArmedNow: Int?   // the slot whose Load waits for its second press
     var gpuMemoryLow: (used: UInt64, low: UInt64)? { didSet { objectWillChange.send() } }   // set once the host finds GPU memory nearly full with the game slow
     @Published var settingsPath = ""
     @Published var defaultsExist = false
@@ -231,7 +348,12 @@ final class QuickSettings: ObservableObject {
         for n in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.fullscreen = front_qs_fullscreen() != 0 })
         }
+        observers.append(NotificationCenter.default.addObserver(forName: SaveSlots.changed, object: nil, queue: .main) { [weak self] _ in self?.refreshSlots() })
         refresh()
+    }
+    func refreshSlots() {
+        slots = (1...SaveSlots.count).map { SaveSlots.info($0) }; slotsBusy = slotBusy
+        slotArmedNow = slotArmed.flatMap { Date().timeIntervalSince($0.at) < 4 ? $0.slot : nil }
     }
     private func pfxKey(_ what: String) -> String { "DMPresentFilter.\(what).\(game)" }
     private func optKey(_ what: String) -> String { "DMQuickSettings.\(what).\(game)" }
@@ -266,6 +388,7 @@ final class QuickSettings: ObservableObject {
         mods = order + found.filter { !order.contains($0) }
         refreshModClash()
         lastBackup = SaveBackup.latest()
+        refreshSlots()
         refreshCheats()
         refreshCaptures()
     }
@@ -558,7 +681,7 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+            return [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
         case pGraphics: return [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
@@ -642,6 +765,8 @@ final class QuickSettings: ObservableObject {
         case .duckOpen: setDuck(!duckOpen)
         case .backup: backup()
         case .backupShow: showBackups()
+        case .slotSave(let n): dm_qs_slot_save(Int32(n))
+        case .slotLoad(let n): dm_qs_slot_load(Int32(n))
         case .settingsShow: showSettingsFile()
         case .settingsOpen: openSettingsFile()
         case .defaultsSave: saveDefaults()
@@ -879,6 +1004,19 @@ struct QuickSettingsView: View {
         Button { withAnimation(motion) { action() } } label: { Label(title, systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
             .modifier(GlassButton(prominent: false)).controlSize(.large).disabled(!enabled).padding(.top, 4).nav(m, n)
     }
+    private func slotRow(_ n: Int) -> some View {
+        let info = m.slots[n - 1], armed = m.slotArmedNow == n
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Slot \(n)").font(.body.weight(.medium))
+                Text(info.map { "Game saved \(($0.gameSaved ?? $0.created).formatted(.relative(presentation: .named)))" } ?? "Empty").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Button { dm_qs_slot_save(Int32(n)) } label: { Label("Save", systemImage: "square.and.arrow.down").frame(maxWidth: 80) }
+                .modifier(GlassButton(prominent: false)).disabled(m.slotsBusy || SaveBackup.save == nil).nav(m, .slotSave(n))
+            Button { dm_qs_slot_load(Int32(n)) } label: { Label(armed ? "Press again" : "Load", systemImage: "arrow.counterclockwise").frame(maxWidth: 110) }
+                .modifier(GlassButton(prominent: armed)).tint(armed ? Color.orange : nil).disabled(m.slotsBusy || info == nil || !SaveSlots.canLoad).nav(m, .slotLoad(n))
+        }.controlSize(.large)
+    }
     private var general: some View {
         VStack(alignment: .leading, spacing: 12) {
             subhead("While this menu is open")
@@ -902,6 +1040,11 @@ struct QuickSettingsView: View {
                 else if let d = m.lastBackup { Text("Last backup \(d.formatted(.relative(presentation: .named))). The NXForge Converter's Builds page restores it (Save snapshots).").foregroundStyle(.secondary) }
                 else { Text("A checked copy of this game's save, kept beside it; the NXForge Converter's Builds page restores it.").foregroundStyle(.secondary) }
             }.font(.caption).fixedSize(horizontal: false, vertical: true)
+            subhead("Quick-save slots").padding(.top, 6)
+            ForEach(1...SaveSlots.count, id: \.self) { n in slotRow(n) }
+            Text(SaveSlots.canLoad ? "A slot keeps the game's own save as it last saved it (not this exact moment). Loading restarts the game from that save; ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too."
+                 : "A slot keeps the game's own save as it last saved it. Loading one needs the game opened from its app, which restarts it.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if !m.settingsPath.isEmpty {
                 subhead("Settings file").padding(.top, 6)
                 Text(tilde(m.settingsPath)).font(.callout).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
