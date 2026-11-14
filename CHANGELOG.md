@@ -2,9 +2,13 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.5 (2026-11-14)
+
+- **Wide game art from Nintendo's store in the Mac app** (Converter 0.11.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): each game's banner from its Nintendo UK store page fills the top of its page and of Home, found by title ID and kept on the Mac; Settings › Artwork turns it off. No game rebuild needed.
+
 ## 0.35.4 (2026-11-14)
 
-- **Wide game art from Nintendo's store in the Mac app** (Converter 0.11.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): each game's banner from its Nintendo UK store page fills the top of its page and of Home, found by title ID and kept on the Mac; Settings › Artwork turns it off. No game rebuild needed.
+- **Covers no longer hold up a scroll in the Mac app** (Converter 0.11.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the shelf and the grid draw a smaller copy of each cover, read off the main thread, and a cover's colour is kept between starts. Measured on an M4 Pro: a cover cost about 4 ms of the main thread at its first draw (a new grid row of seven about 30 ms, several refreshes at 120 Hz) and now costs none; 40 covers hold 72 MB instead of 167 MB. No game rebuild needed.
 
 ## 0.35.3 (2026-11-14)
 
