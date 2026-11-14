@@ -142,20 +142,20 @@ index 50d3419504794fa74ef33ecd704ff6311bd95188..2d6644c1c7b58fc451ea5eac135455e9
  - in fullscreen on a MacBook Pro's ProMotion screen, a 60 fps game held 40 fps with its GPU at 10 ms a frame: frame times alternated 16.7 and 33.3 ms, and each `on-screen` line counted half its frames as held too long (`dropped 150` of 300, `discarded 0`). The same route in a window held 60.0 fps, and the title screen showed the same 40 fps in fullscreen. → [The 60 Hz link at 40 fps in fullscreen on a ProMotion screen](../reference/frame-rate.md#the-60-hz-link-at-40-fps-in-fullscreen-on-a-promotion-screen)
  - on a MacBook Air M2's fixed 60 Hz built-in display, the reporter measured about 50 ms from the game's present call to on-screen presentation with the display link, at both requested frame latencies 1 and 2, versus 29 ms with `DM_PRESENT_LINK=0`. After loading, all three runs held 60 fps with 0.3% of on-screen intervals outside 16.7 ± 2 ms and no frame-step changes. → [Fixed-rate display-link delay remains at latency 1](../reference/frame-rate.md#fixed-rate-display-link-delay-remains-at-latency-1)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 27e0724acce95f97dd09f857d4a1480c1d5690b6..228a6fb4eacc5a2e9e7f8ad9638e199c2d8e4ac4 100644
+index 27e0724acce95f97dd09f857d4a1480c1d5690b6..d43ee90456b48f1aa28b6e0e1e737701f97ac857 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -113,6 +113,8 @@ DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once;
  DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz Mac screens; by default the link counts only the refreshes nearest a steady 1/60 s clock
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
  DM_LONGFRAME	diagnostic	`0` turns off the long-frame log (on by default), a line for a frame over 20 ms or with GPU time over 16.7 ms that is clearly above recent frames
-+DM_LOW_LAG	player	`0` turns off NXForge's lower input lag on the Mac (on by default; the settings window's Lower input lag): while a game has frame time to spare its presents skip the display link, and a full queue of drawables is emptied by one frame, so a frame is on screen about 30 ms (fullscreen) or 46 ms (window) after the game presents it instead of 60 and 80 ms; a game without headroom keeps the display link. `DM_PRESENT_LINK` and `DM_PRESENT_LATENCY` turn it off too (`nxforge/low_lag.h`)
++DM_LOW_LAG	player	`0` turns off NXForge's lower input lag on the Mac (on by default; the settings window's Lower input lag): while a game has frame time to spare its presents skip the display link, and a full queue of drawables is emptied by one frame, so a frame is on screen about 30 to 36 ms (fullscreen) or 42 to 52 ms (window) after the game presents it instead of 60 and 80 ms; a game without headroom keeps the display link. `DM_PRESENT_LINK` and `DM_PRESENT_LATENCY` turn it off too (`nxforge/low_lag.h`)
 +DM_LOW_LAG_TEST	diagnostic	`=<frames>` ends each run of direct presents after that many frames, to test the way back to the display link (`nxforge/low_lag.inc`)
  DM_MEASURE_LOCK	path	`=<file>`: `scripts/regress.py`'s default `--lock`, the measuring lock `scripts/bench.py --lock` shares: held only while a game runs, and the harness's shader builds pause while another process holds it
  DM_MEMSTAT	diagnostic	`=<tsv>` writes one line per second of memory accounting: footprint, Metal allocation and resident and charged memory by region class (guest, code, malloc, gpu, …)
  DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second writes every VM region of 1 MiB or more to `<tsv>.regions`
 diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
-index 676d7f073ce17f8850f4e3b7f18df770aa1f4288..92435d0ed54670712b8dd239815194d530cd93f9 100644
+index 676d7f073ce17f8850f4e3b7f18df770aa1f4288..841df011666172a900b02f9096a1ccff7c6ad3e4 100644
 --- a/docs/reference/frame-rate.md
 +++ b/docs/reference/frame-rate.md
 @@ -437,6 +437,25 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
@@ -172,7 +172,7 @@ index 676d7f073ce17f8850f4e3b7f18df770aa1f4288..92435d0ed54670712b8dd239815194d5
 +  | Game and scene | Before | After |
 +  |---|---|---|
 +  | Nintendo Switch Sports Resort, title, window (GPU 1.5 to 2.9 ms) | 80 to 81 ms | 42 to 51 ms (it follows the phase between the game's clock and the screen's), every on-screen interval 16.7 ms |
-+  | The same in fullscreen | 57 to 61 ms | 30 ms |
++  | The same in fullscreen | 57 to 61 ms | 30 to 36 ms (two runs) |
 +  | Bloodstained: Curse of the Moon, window, by `DM_PRESENT_LINK` (GPU 0.5 ms) | 66.5 ms (link) | 34.9 ms (mode 0), 49.8 ms (120 Hz link); every interval 16.67 ms in all three |
 +  | Ocarina of Time standing in the field, window, by `DM_PRESENT_LINK` (GPU 16.8 ms, 3,080 draws) | 66 ms at 54.3 fps, 10 % of the intervals over 20 ms (link) | 41 ms at 46.2 fps with 60 % (mode 0): why a game at the edge of its frame keeps the link |
 +
