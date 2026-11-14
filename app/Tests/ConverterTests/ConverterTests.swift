@@ -1042,6 +1042,7 @@ import Testing
         <img data-xs="https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_02_TM_Standard.jpg"/><img data-xs="https://evil.example/x.jpg"/></ul>
         <img data-xs="https://www.nintendo.com/eu/media/images/other.jpg"/>
         """
+        #expect(StoreSource.plainText("<ul><li>Co-op</li><li>Arcade &amp; feel</li></ul>") == "• Co-op\n• Arcade & feel")
         #expect(StoreSource.about(html) == ["In Blazing Chrome, machines rule the world.", "Co-op play & more"])
         #expect(StoreSource.gallery(html) == ["https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_01.jpg", "https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_02.jpg"])
     }

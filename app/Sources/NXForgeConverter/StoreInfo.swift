@@ -124,13 +124,15 @@ enum StoreSource {
 
     /// Text without tags, entities read, white space folded
     static func plainText(_ s: String) -> String {
-        var t = s.replacingOccurrences(of: "<br[^>]*>", with: " ", options: .regularExpression)
+        // list items on lines of their own
+        var t = s.replacingOccurrences(of: "<li[^>]*>", with: "\n• ", options: .regularExpression)
+            .replacingOccurrences(of: "<br[^>]*>", with: " ", options: .regularExpression)
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
         for (e, c) in [("&amp;", "&"), ("&quot;", "\""), ("&#39;", "'"), ("&apos;", "'"), ("&lt;", "<"), ("&gt;", ">"), ("&nbsp;", " "),
                        ("&rsquo;", "’"), ("&lsquo;", "‘"), ("&ldquo;", "“"), ("&rdquo;", "”"), ("&hellip;", "…"), ("&ndash;", "–"), ("&mdash;", "—")] {
             t = t.replacingOccurrences(of: e, with: c)
         }
-        return t.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return t.split(separator: "\n").map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 }
 
