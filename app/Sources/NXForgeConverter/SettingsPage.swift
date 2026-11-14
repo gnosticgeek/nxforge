@@ -138,7 +138,8 @@ struct SettingsPage: View {
     /// The whole <id>_build folder goes to the Trash: the next build extracts and compiles everything again.
     func clearCache() {
         guard let c = model.buildCache else { return }
-        guard model.confirm("Clear the build cache?", "\(c.lastComponent) moves to the Trash. The next build extracts the game and compiles its shaders again, which takes much longer. Built apps are not affected.", action: "Move to Trash") else { return }
+        let size = Disk.size(c)
+        guard model.confirm("Clear the build cache?", "\(c.lastComponent) (\(Disk.gb(size))) moves to the Trash. The next build extracts the game and compiles its shaders again, which takes much longer. Built apps are not affected.", action: size > 0 ? "Move \(Disk.gb(size)) to Trash" : "Move to Trash") else { return }
         try? FileManager.default.trashItem(at: c.url, resultingItemURL: nil)
         model.revision += 1
     }

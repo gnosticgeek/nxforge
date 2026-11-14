@@ -282,7 +282,7 @@ struct InfoButton: View {
     @State private var shown = false
 
     var body: some View {
-        Button { shown.toggle() } label: { Image(systemName: "info.circle").foregroundStyle(.secondary) }
+        Button { shown.toggle() } label: { Label("About this check", systemImage: "info.circle").labelStyle(.iconOnly).foregroundStyle(.secondary) }
             .buttonStyle(.plain)
             .frame(width: 40)
             .help("About \(check.name)")

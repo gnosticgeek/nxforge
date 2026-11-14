@@ -48,7 +48,7 @@ struct LogView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField("Search the log…", text: $search).textFieldStyle(.plain)
-                    if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain) }
+                    if !search.isEmpty { Button { search = "" } label: { Label("Clear Search", systemImage: "xmark.circle.fill").labelStyle(.iconOnly).foregroundStyle(.secondary) }.buttonStyle(.plain) }
                 }
                 .padding(.horizontal, 10).frame(height: 32).frame(maxWidth: 520)
                 .background(Theme.card, in: .rect(cornerRadius: 9))
