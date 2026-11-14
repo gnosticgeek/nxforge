@@ -193,11 +193,19 @@ struct StoragePage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HeroHeader(symbol: "internaldrive", title: "Storage", subtitle: "What NXForge keeps on disk, and what can go.")
-                // every drive plugged in, two or three to a row, the space to reclaim last
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
-                    ForEach(volumes) { v in volumeCard(v) }
-                    reclaimCard
+                // every drive plugged in, up to three to a row of equal heights, the space to reclaim last
+                let cards = volumes.map(Optional.some) + [nil]
+                let perRow = min(cards.count, 3)
+                Grid(horizontalSpacing: 16, verticalSpacing: 16) {
+                    ForEach(Array(stride(from: 0, to: cards.count, by: perRow)), id: \.self) { start in
+                        GridRow {
+                            ForEach(start..<min(start + perRow, cards.count), id: \.self) { i in
+                                if let v = cards[i] { volumeCard(v) } else { reclaimCard }
+                            }
+                        }
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 filterBar
                 if scanning && items.isEmpty {
                     Card { HStack { ProgressView().controlSize(.small); Text("Measuring the build caches and apps…").foregroundStyle(.secondary) } }
@@ -253,7 +261,7 @@ struct StoragePage: View {
             .foregroundStyle(low ? .orange : .primary)
         }
         .padding(18)
-        .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.card, in: .rect(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
         .contextMenu { Button("Show in Finder") { NSWorkspace.shared.open(v.path.url) } }
@@ -278,7 +286,7 @@ struct StoragePage: View {
                 .help(deletableItems.isEmpty ? "Nothing can be deleted now" : "Delete every build cache, older app copy and the shader cache that no build is using")
         }
         .padding(18)
-        .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Theme.card, in: .rect(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
     }
