@@ -9,7 +9,7 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  dm/gfx/tests/t_sparse_copy.m         |  5 ++++-
  dm/gfx/tests/t_upload_src.m          |  1 +
  dm/gfx/tests/t_vk_swapchain_life.m   |  6 ++++--
- dm/gfx/tests/t_wline.m               |  6 ++++--
+ dm/gfx/tests/t_wline.m               |  9 ++++++---
  dm/gfx/tests/t_zero_depth.m          |  7 ++++++-
  dm/tools/lint_c_baseline.tsv         |  7 +++----
  dm/tools/tests/test_bench.py         |  7 +++++++
@@ -19,7 +19,7 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 25 +++++++++++++++----------
- 15 files changed, 79 insertions(+), 39 deletions(-)
+ 15 files changed, 81 insertions(+), 40 deletions(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
 index 180a28d5462d298d0178cb0519ec68d4f6ebeb88..24024b06bf1ac968a59c909fd6b9d8706317310f 100644
@@ -106,10 +106,10 @@ index b56c63946138cb8853a8f950d73917014e3d770a..9eeb06bbfa2a6319d338dac23f9f6587
          for (int f = 0; f < FRAMES; f++) {
              uint32_t k; h_vkAcquireNextImageKHR(&g_device, sc, UINT64_MAX, NULL, NULL, &k);
 diff --git a/dm/gfx/tests/t_wline.m b/dm/gfx/tests/t_wline.m
-index 05101b70c5410fee37d8f811a3e7e3b9c2b81518..20acb76ee823e69d81a60fbaa95618f8187ac81d 100644
+index 05101b70c5410fee37d8f811a3e7e3b9c2b81518..b4870d17a66c5ffeddd263ecbc8bc9cef01f239f 100644
 --- a/dm/gfx/tests/t_wline.m
 +++ b/dm/gfx/tests/t_wline.m
-@@ -48,10 +48,12 @@ static long covered(int x0, int y0, int x1, int y1) { long n = 0; for (int y = y
+@@ -48,12 +48,15 @@ static long covered(int x0, int y0, int x1, int y1) { long n = 0; for (int y = y
  int main(void) { @autoreleasepool {
      dev = MTLCreateSystemDefaultDevice(); q = [dev newCommandQueue]; NSError *e = nil;
      char dir[] = "/tmp/t_wline.XXXXXX"; if (!mkdtemp(dir)) return 1;
@@ -122,8 +122,12 @@ index 05101b70c5410fee37d8f811a3e7e3b9c2b81518..20acb76ee823e69d81a60fbaa95618f8
 +    if (system(cmd)) {   // NOLINT(bugprone-command-processor): the test runs the dmsh_pull Python helper on files it wrote itself
 +        fprintf(stderr, "dmsh_pull.variant failed\n"); return 1; }
      NSString *pull = [NSString stringWithContentsOfFile:out encoding:NSUTF8StringEncoding error:nil];
-     [NSFileManager.defaultManager removeItemAtPath:@(dir) error:nil];
+-    [NSFileManager.defaultManager removeItemAtPath:@(dir) error:nil];
++    [NSFileManager.defaultManager removeItemAtPath:base error:nil];
++    if (!pull) { fprintf(stderr, "dmsh_pull.variant wrote nothing\n"); return 1; }
      MTLCompileOptions *o = [MTLCompileOptions new]; o.preserveInvariance = YES;
+     id<MTLLibrary> lp = [dev newLibraryWithSource:pull options:o error:&e], lf = lp ? [dev newLibraryWithSource:k_fs options:o error:&e] : nil;
+     if (!lp || !lf) { fprintf(stderr, "compile: %s\n", e.localizedDescription.UTF8String); return 1; }
 diff --git a/dm/gfx/tests/t_zero_depth.m b/dm/gfx/tests/t_zero_depth.m
 index 75cb681b8481af615b129151917723959e979774..528495a6dd9f610cec211d68822e228f1e9afe6b 100644
 --- a/dm/gfx/tests/t_zero_depth.m
