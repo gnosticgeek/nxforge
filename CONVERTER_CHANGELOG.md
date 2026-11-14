@@ -4,6 +4,19 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.10.0 (2026-11-14)
+
+A design pass over the whole app. Ships in NXForge 0.33.0.
+
+- **The room is lit by the game's own art.** The cover of the game in focus, far out of focus, fills the stage behind everything, with its colour brightest top left; the corners fall away, a fine grain stops the big gradients banding, and the two lights drift slowly. Moving to another game fades one room into the next. The converter's pages sit in the same room, dimmer.
+- **Cases look like cases.** A cover has the crease at its spine and light along its top edge, leans towards the pointer with a highlight under it, and in focus lifts inside a ring that glows in the game's colour. Home's shelf reflects its covers in the floor.
+- **The 3D case stands on a floor that reflects it**, in a pool of its own colour with a second light behind it, on Home, on a game's page and while a game starts.
+- **Covers drawn for games without box art** (Switch 2 games) use the game's icon as artwork across the whole cover, with the icon sharp on top, instead of an icon on a flat colour. An app built without an icon gets a controller symbol rather than the system's blank icon.
+- **Real glass** for the top bar's tabs (the selection slides between them), the search field, the round buttons, the big buttons beside Play, and the Play options and Settings panels. The app's icon sits beside its name.
+- **Type and detail**: small labels are set wide, titles tighter with a soft shade; the line under a game's name has a symbol for each fact; the preset in use is a chip in the game's colour; Play glows in it. Cards have a lit top edge and a symbol for what they hold; presets have symbols; the Library's filters show how many games each holds, and its covers fade out under the heading as they scroll.
+- **Starting a game** shows its case turning in its own light over a bar with a light running along it.
+- Buttons press in a little when clicked, in the converter's pages too. With Reduce Motion on, the lights stay still.
+
 ## 0.9.1 (2026-11-14)
 
 One app, one look: the converter's pages take the library's. Ships in NXForge 0.32.1.

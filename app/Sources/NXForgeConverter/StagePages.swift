@@ -14,11 +14,11 @@ struct StageGamePage: View {
         let (_, record) = model.resolve(g.ref)
         GeometryReader { geo in
             let wide = geo.size.width > 900
-            let caseH = min(max(geo.size.height - 150, 220), 560)
+            let caseH = min(max(geo.size.height - 110, 240), 680)
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Button { model.gameDetail = nil } label: { Label(model.stageTab.rawValue, systemImage: "chevron.backward") }
-                        .buttonStyle(StageButton(height: 36))
+                        .buttonStyle(StageButton(height: 36, glass: true))
                     Spacer()
                     Menu {
                         StageGameMenu(model: model, game: g)
@@ -28,24 +28,28 @@ struct StageGamePage: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis").font(.system(size: 15, weight: .bold)).frame(width: 36, height: 36)
-                            .background(.white.opacity(0.10), in: .circle).overlay(Circle().strokeBorder(.white.opacity(0.14)))
+                            .glassEffect(.regular.interactive(), in: .circle)
                     }
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("More")
                 }
                 .padding(.horizontal, 40).padding(.top, 6)
                 HStack(alignment: .center, spacing: wide ? 50 : 20) {
                     if wide {
-                        VStack(spacing: 10) {
-                            GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.82, height: caseH)
-                            Button { model.caseFlipped.toggle() } label: { Label(model.caseFlipped ? "Show the front" : "Turn over", systemImage: "arrow.triangle.2.circlepath") }
-                                .buttonStyle(.plain).font(.system(size: 12.5, weight: .medium)).foregroundStyle(StageLook.soft)
+                        GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.74, height: caseH)
+                            .overlay(alignment: .bottom) {
+                                Button { model.caseFlipped.toggle() } label: {
+                                    Label(model.caseFlipped ? "Show the front" : "Turn over", systemImage: "arrow.triangle.2.circlepath")
+                                        .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 14).frame(height: 30)
+                                        .glassEffect(.regular.interactive(), in: .capsule).contentShape(.capsule)
+                                }
+                                .buttonStyle(.plain).padding(.bottom, caseH * 0.045)
                                 .help("Drag the box to turn it, or use a controller's right stick")
-                        }
+                            }
                         .padding(.leading, geo.size.width > 1250 ? 60 : 10)
                     }
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            StageHero(model: model, game: g, first: false, titleSize: geo.size.width > 1100 ? 58 : 42)
+                            StageHero(model: model, game: g, first: false, titleSize: geo.size.width > 1100 ? 60 : 42, showDetails: false)
                             if let app = g.app { PlaysWith(model: model, game: g, app: app) }
                             cards(g, record)
                         }
@@ -66,34 +70,37 @@ struct StageGamePage: View {
             if let app = g.app, let t = g.titleID {
                 let loc = SaveSnapshots.location(app: app, titleID: t)
                 let n = SaveSnapshots.list(loc).count
-                card("SAVE", SaveSnapshots.hasSave(loc) ? "Save on this Mac" : "No save yet",
+                card("externaldrive.fill", "SAVE", SaveSnapshots.hasSave(loc) ? "Save on this Mac" : "No save yet",
                      model.backupStatus[t]?.text ?? (n > 0 ? "\(n) snapshot\(n == 1 ? "" : "s") kept" : "No snapshots yet"))
             }
             if let app = g.app {
                 if let r = FrameTimes.all(app: app, titleID: g.titleID).last {
-                    card("LAST RECORDING", String(format: "%.1f fps average", r.summary.fps), r.summary.hitches == 0 ? "No hitches" : "\(r.summary.hitches) hitch\(r.summary.hitches == 1 ? "" : "es")")
+                    card("waveform.path.ecg", "LAST RECORDING", String(format: "%.1f fps average", r.summary.fps), r.summary.hitches == 0 ? "No hitches" : "\(r.summary.hitches) hitch\(r.summary.hitches == 1 ? "" : "es")")
                 } else {
-                    card("PLAYTIME", g.total > 0 ? Playtime.text(g.total) : "Not played yet", g.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Counted while NXForge is open")
+                    card("clock.fill", "PLAYTIME", g.total > 0 ? Playtime.text(g.total) : "Not played yet", g.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Counted while NXForge is open")
                 }
             }
             if let record {
-                card("BUILD", g.outdated ? "Update ready" : record.kept == true ? "Kept as it is" : "Up to date",
+                card("hammer.fill", "BUILD", g.outdated ? "Update ready" : record.kept == true ? "Kept as it is" : "Up to date",
                      "NXForge \(record.engine.short) · built \(record.date.map { $0.formatted(.dateTime.day().month(.abbreviated)) } ?? record.builtAt)")
             } else if g.app == nil {
-                card("BUILD", "Not built yet", "Build turns the game's files into a Mac app.")
+                card("hammer.fill", "BUILD", "Not built yet", "Build turns the game's files into a Mac app.")
             }
         }
     }
 
-    func card(_ title: String, _ value: String, _ note: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 12, weight: .bold)).kerning(1.6).foregroundStyle(StageLook.soft)
+    func card(_ symbol: String, _ title: String, _ value: String, _ note: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                Image(systemName: symbol).font(.system(size: 11, weight: .bold)).foregroundStyle(CoverArt.tint(game)).brightness(0.25)
+                Text(title).font(.system(size: 10.5, weight: .bold)).fontWidth(.expanded).kerning(1.4).foregroundStyle(StageLook.soft)
+            }
             Text(value).font(.system(size: 17, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
             Text(note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).lineLimit(2)
         }
-        .padding(16).frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-        .background(.white.opacity(0.07), in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.12)))
+        .padding(16).frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+        .background(StageLook.card, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(StageLook.edge, lineWidth: 1))
     }
 }
 
@@ -110,15 +117,18 @@ struct PlaysWith: View {
         if !summary.isEmpty {
             Button { model.openPlayOptions(game.ref) } label: {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("PLAYS WITH").font(.system(size: 12, weight: .bold)).kerning(1.6).foregroundStyle(StageLook.soft)
+                    HStack(spacing: 7) {
+                        Image(systemName: "slider.horizontal.3").font(.system(size: 11, weight: .bold)).foregroundStyle(CoverArt.tint(game)).brightness(0.25)
+                        Text("PLAYS WITH").font(.system(size: 10.5, weight: .bold)).fontWidth(.expanded).kerning(1.4).foregroundStyle(StageLook.soft)
                         Spacer()
-                        Text("\(PlayOptions.current(settings: list, values: values).rawValue) preset · Change").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(StageLook.soft)
+                        Text("\(PlayOptions.current(settings: list, values: values).rawValue) preset").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(StageLook.soft)
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(StageLook.faint)
                     }
-                    HStack(alignment: .top, spacing: 12) {
-                        ForEach(Array(summary.enumerated()), id: \.offset) { _, s in
+                    HStack(alignment: .top, spacing: 0) {
+                        ForEach(Array(summary.enumerated()), id: \.offset) { i, s in
+                            if i > 0 { Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 44).padding(.trailing, 16) }
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(s.value).font(.system(size: 22, weight: .bold)).lineLimit(1).minimumScaleFactor(0.6)
+                                Text(s.value).font(.system(size: 24, weight: .heavy)).tracking(-0.4).lineLimit(1).minimumScaleFactor(0.6)
                                 Text(s.label).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -126,8 +136,8 @@ struct PlaysWith: View {
                     }
                 }
                 .padding(18)
-                .background(.white.opacity(0.07), in: .rect(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.12)))
+                .background(StageLook.card, in: .rect(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(StageLook.edge, lineWidth: 1))
                 .contentShape(.rect(cornerRadius: 18))
             }
             .buttonStyle(.plain)
@@ -160,14 +170,17 @@ struct PlayOptionsPanel: View {
                     let on = state.preset == p
                     Button { state.choose(p) } label: {
                         VStack(alignment: .leading, spacing: 4) {
+                            Image(systemName: symbol(p)).font(.system(size: 15, weight: .semibold)).frame(height: 20)
+                                .foregroundStyle(on ? Color.black : Color.white.opacity(p == .custom ? 0.5 : 0.9))
                             Text(p.rawValue).font(.system(size: 14, weight: .bold))
                             Text(p.note).font(.system(size: 11)).foregroundStyle(on ? Color(white: 0.25) : StageLook.faint)
                                 .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(11).frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
+                        .padding(11).frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
                         .foregroundStyle(on ? Color.black : Color.white)
-                        .background(on ? Color.white : Color.white.opacity(0.07), in: .rect(cornerRadius: 14))
-                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(on ? 0 : 0.14)))
+                        .background(on ? AnyShapeStyle(LinearGradient(colors: [.white, Color(white: 0.86)], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(StageLook.card), in: .rect(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(on ? AnyShapeStyle(Color.clear) : AnyShapeStyle(StageLook.edge), lineWidth: 1))
+                        .shadow(color: .white.opacity(on ? 0.22 : 0), radius: 14, y: 4)
                         .contentShape(.rect(cornerRadius: 14))
                     }
                     .buttonStyle(.plain).disabled(p == .custom)
@@ -202,7 +215,7 @@ struct PlayOptionsPanel: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     Button { model.playWithOptions(save: true) } label: { Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity) }
-                        .buttonStyle(StageButton(primary: true, height: 50))
+                        .buttonStyle(StageButton(primary: true, height: 50, glow: .white))
                     Button("Play once, don't keep") { model.playWithOptions(save: false) }.buttonStyle(StageButton(height: 50))
                         .disabled(state.changed.isEmpty)
                         .help("Starts the game with these options for this run only. The options kept for the game stay as they were.")
@@ -218,10 +231,18 @@ struct PlayOptionsPanel: View {
         .padding(24)
         .frame(width: 600)
         .frame(maxHeight: .infinity)
-        .background(StageLook.panel.opacity(0.86), in: .rect(cornerRadius: 26))
-        .background(.ultraThinMaterial, in: .rect(cornerRadius: 26))
-        .overlay(RoundedRectangle(cornerRadius: 26).strokeBorder(.white.opacity(0.16)))
+        .background(StageLook.panel.opacity(0.78), in: .rect(cornerRadius: 28))
+        .glassEffect(.regular, in: .rect(cornerRadius: 28))
         .shadow(color: .black.opacity(0.55), radius: 50, y: 24)
+    }
+
+    func symbol(_ p: PlayPreset) -> String {
+        switch p {
+        case .battery: "leaf.fill"
+        case .balanced: "circle.lefthalf.filled"
+        case .quality: "sparkles"
+        case .custom: "slider.horizontal.3"
+        }
     }
 
     @ViewBuilder func row(_ s: LaunchSetting, focused: Bool) -> some View {

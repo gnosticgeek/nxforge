@@ -91,9 +91,11 @@ private struct PillButtonBody: View {
             .lineLimit(1)
             .padding(.horizontal, m.pad).frame(height: m.h)
             .foregroundStyle(primary ? Color.black : Color.white)
-            .background(primary ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.white.opacity(0.12)), in: .capsule)
-            .overlay(Capsule().strokeBorder(.white.opacity(primary ? 0 : 0.18)))
-            .opacity(!enabled ? 0.38 : configuration.isPressed ? 0.7 : 1)
+            .background(primary ? AnyShapeStyle(LinearGradient(colors: [.white, Color(white: 0.86)], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(StageLook.card), in: .capsule)
+            .overlay(Capsule().strokeBorder(primary ? AnyShapeStyle(Color.clear) : AnyShapeStyle(StageLook.edge), lineWidth: 1))
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(!enabled ? 0.38 : configuration.isPressed ? 0.85 : 1)
+            .animation(.spring(duration: 0.2), value: configuration.isPressed)
             .contentShape(.capsule)
     }
 }
