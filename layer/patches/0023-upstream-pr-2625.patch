@@ -42,7 +42,7 @@ index 4e35082efe11d4c83077f98773f85948c773c3d5..8e67561240adff1c8ca1330346dc6fb5
  // submits on both from two threads; the second submission arrived while the first was replaying and the host stopped with "submit re-entered" at the ninth frame. NVN orders work on different queues only
  // through syncs and events. The continuation scheduler parks unresolved queues and serializes only ready prefixes onto this Metal queue.
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index e2fc9418be9ce3a137669eba6be2c5e0e0aec36e..57a204bf9251d70ce60d0d9f0e576df3bf843e9f 100644
+index 7a40712e93685c71c7478a9a316de24d29c0a48e..33e7d2d9cf596aa7d9a0960ca7b997687d731852 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -9483,6 +9483,7 @@ static id arch_lookup(MTL4PipelineDescriptor *d, int plain, int *from_run) {
