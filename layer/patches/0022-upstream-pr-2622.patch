@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Adya <114347520+AdyaGMD@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 01:22:56 +0000
+Subject: upstream-pr-2622: A 60-picture nn::codec movie holds the frame step
+ at 60, so a 30 fps cap no longer plays Ocarina of Time's movies at half speed
+
+Ocarina of Time's title and opening movies are AV1 streams of 60 pictures a second, decoded through
+nn::codec, and its player takes one picture per game frame. At DM_FPS_TARGET=30 the frame step held 30,
+so the movie got 30 pictures a second: 2 s of movie in 4 s (measured from the pictures' times against
+the clock). nn::movie's decoders already set the movie state (hle_movie.c dm_movie_playing, which holds
+30 for players paced for the Switch's 30); nn::codec's did not.
+
+hle_codec_video.c now keeps the picture rate of a video handing out pictures (dm_codec_movie_hz, from
+the pictures' time stamps; half a second without one ends it), and fps_step_cap holds 60 while it is 50
+or more, unless the thermal cap is on.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit a3214e1d4e5ffccc97cf690c16825e4eacc92566)
+---
+ dm/gfx/nvn/hle_nvn.c      |  2 ++
+ dm/host/hle.h             |  1 +
+ dm/host/hle_codec_video.c | 12 ++++++++++++
+ 3 files changed, 15 insertions(+)
+
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index ed7e1df3468e2e092860eaae02b93b0b38a9ca25..e124db90281f38c906e11d8a1292a516b575f486 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -2185,6 +2185,7 @@ static int g_engine_stub = 1;   // the weak dm_fps_lock_engine's answer, for gra
+ __attribute__((weak)) int dm_fps_lock_engine(void) { return g_engine_stub; }   // hle_fpslock.c: the host writes fps_target into an engine limiter of this main
+ __attribute__((weak)) void dm_ue_cvar_tick(void) {}   // hle_uecvar.c: Unreal's texture streaming pool (profile ue_texture_pool)
+ __attribute__((weak)) int dm_movie_playing(void) { return 0; }   // hle_movie.c: a movie's pictures are being handed out; graphics unit tests have no movie decoder
++__attribute__((weak)) int dm_codec_movie_hz(void) { return 0; }   // hle_codec_video.c; graphics unit tests have no decoder
+ // Thermal cap (iOS): while the device is thermally serious or worse (NSProcessInfo thermalState >= 2) the frame step holds 30 fps, and it goes back to the cap after the device
+ // has been fair or better for THERMAL_CALM_NS, so it does not flap. At "serious" iOS caps the GPU clock to about a third: Breath of the Wild's vistas (about 3,000 G-buffer draws)
+ // then took 17-26 ms a frame and dropped a frame in most windows; a steady 30 instead also lets the device cool. DM_THERMAL_CAP=0 turns it off; the Mac reports no thermal state
+@@ -2244,6 +2245,7 @@ static int fps_step_cap(void) {
+     // Movies and a 30 fps target still need thermal samples: heat must reset the
+     // calm interval, and cooling during those caps counts towards recovery.
+     int thermal = thermal_capped();
++    if (dm_codec_movie_hz() >= 50 && !thermal) return 60;   // an nn::codec video of 60 pictures a second, taken one a game frame (Ocarina of Time): 60 whatever the target, or it plays at half speed
+     return dm_movie_playing() || t <= 30 || thermal ? 30 : 60;   // a movie: its player takes a picture per game frame, paced for the Switch's 30 (hle_movie.c)
+ }
+ static int fstep_on(void) { return fps_step_cap() != 0; }   // the host decides the steps in whole vsyncs
+diff --git a/dm/host/hle.h b/dm/host/hle.h
+index 33b96a8f366c299e63eb275b25bd33a99b9b63ad..14e7f40d533196c4af4f6dd415b8a5c924df33b8 100644
+--- a/dm/host/hle.h
++++ b/dm/host/hle.h
+@@ -71,6 +71,7 @@ static inline void dm_applet_leave_(const char *const *name) { (void)name; dm_ap
+ extern uint8_t *dm_fps_state;   // frame step state page (loader.c install_fps_state): +0 float target fps, +4 movie flag (dm_movie_playing, written by the host at each present: Tears of the Kingdom's step stub caps its first, undecided steps by it), +0x10 float render scale, +0x18 double game seconds stepped; NULL when the build has none
+ extern int dm_fps_step_max;   // loader.c: the largest step the frame step stubs give the game (patch_nso.py ctx.step_max; 0 = FSTEP_MAX)
+ int dm_movie_playing(void);   // hle_movie.c: a video decoder of the SDK's movie library handed out a picture in the last half second (the frame step then holds 30 fps)
++int dm_codec_movie_hz(void);   // hle_codec_video.c: the picture rate of an nn::codec video handing out pictures in the last half second, 0 when none (the frame step follows a 60)
+ void dm_audio_suspend(int on);
+ uint64_t dm_audio_render_calls(void);   // Cumulative sound card callback count (the silent sink is not counted)
+ void dm_audio_reset(void);   // iOS media services reset: recreate the AudioUnits (hle_audio.c)
+diff --git a/dm/host/hle_codec_video.c b/dm/host/hle_codec_video.c
+index f7a9ff62cea4f15ca8d2ff1218db3ed937bed07d..2b8ac775f01d979ffba4791fa601f07fd4d578ce 100644
+--- a/dm/host/hle_codec_video.c
++++ b/dm/host/hle_codec_video.c
+@@ -19,6 +19,7 @@
+ // nvnNativeImage to an RGBA texture (hle_nvn.c "Native images"), so a pool whose handle was asked for keeps each picture as RGBA in the pool's own memory, which the texture is made over
+ #include "hle.h"
+ #include <pthread.h>
++#include <stdatomic.h>
+ #include <stdbool.h>
+ #include <sys/mman.h>
+ #include "vpx/vpx_decoder.h"
+@@ -161,6 +162,16 @@ static void cv_skip_late(cv_dec *d) {   // decoder lock held, at least one pictu
+ // Mario Tennis Fever's player counts each signal as one packet it may send: raised at every release, its count grew while a seek held back the samples (a skipped cutscene),
+ // and the packets it then sent overran CV_HOLD
+ static int cv_pending(const cv_dec *d) { return d->nheld + (int)d->qcount + d->busy; }   // what the decoder holds for the client: packets not yet decoded and pictures no released buffer has taken (decoder lock held)
++// A video's picture rate while it plays, for the frame step (hle_nvn.c fps_step_cap): a player that takes one picture per game frame plays a 60-picture stream at half speed
++// at a 30 fps cap. Ocarina of Time's title and opening movies (AV1, 60 pictures a second, nn::codec) did; nn::movie's decoders are counted in hle_movie.c. Half a second
++// without a picture ends it
++static _Atomic uint64_t g_codec_pic_ns; static _Atomic int g_codec_hz;
++static void codec_pace(int64_t ts) {
++    static int64_t last; int64_t dt = ts - last; last = ts;
++    if (dt > 4000000 && dt < 200000000) atomic_store_explicit(&g_codec_hz, (int)((1000000000 + dt / 2) / dt), memory_order_relaxed);   // a picture's time in ns: 250 to 5 a second
++    atomic_store_explicit(&g_codec_pic_ns, now_ns(), memory_order_relaxed);
++}
++int dm_codec_movie_hz(void) { uint64_t t = atomic_load_explicit(&g_codec_pic_ns, memory_order_relaxed); return t && now_ns() - t < 500000000ull ? atomic_load_explicit(&g_codec_hz, memory_order_relaxed) : 0; }
+ // Pictures and end of stream into the released buffers, in order (decoder lock held). decoded: the decoder's thread calls, with the pictures of the packet it has just decoded:
+ // a buffer they go into was waiting for them
+ static void fill(cv_dec *d, int decoded) {
+@@ -176,6 +187,7 @@ static void fill(cv_dec *d, int decoded) {
+             b->w = (uint16_t)im->d_w; b->h = (uint16_t)im->d_h; b->ts = ts; b->eos = eos; d->clk_last = ts; d->take_frame = dm_guest_frame(); d->take_wall = now_ns();
+             if (b->pool && b->pidx < b->pool->count) { pool_native_write(b->pool, b->pidx, im); if (b->pool->img[b->pidx]) vpx_img_free(b->pool->img[b->pidx]); b->pool->img[b->pidx] = im; } else vpx_img_free(im);
+             if (!d->pictures++) LOG("[codec] %s decoder %u: first picture %ux%u into buffer %u", k_cv_name[d->codec], d->id, b->w, b->h, i);
++            codec_pace(ts);
+             if (decoded) d->st.late++;
+         } else { b->w = b->h = 0; b->ts = 0; b->eos = 1; d->eos_pending = 0; }
+         if (b->eos) LOG("[codec] %s decoder %u: end of stream after %llu pictures (%llu packets refused and sent again so far)", k_cv_name[d->codec], d->id, (unsigned long long)d->pictures, (unsigned long long)d->refused);

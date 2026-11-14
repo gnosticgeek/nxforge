@@ -1,0 +1,185 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: seedds <seedds@gmail.com>
+Date: Fri, 13 Nov 2026 19:01:35 -0600
+Subject: upstream-pr-2621: games/0400C3F00006E000: register Mario Kart World
+ 1.8.0's build row, and report a registered update packed with its own shader
+ tables as registered
+
+The profile registered only the base game (v0), so a 1.8.0 (v917504) NUP was packed from a derived profile with `[RED] ... was not brought up on` and an unknown display version.
+
+- game.tsv: `build v917504 1.8.0` with the four modules' build IDs, read from the files of a v917504 NUP (main d00e4f39, subsdk0 746302f4, subsdk1 8dec9c0b, sdk 7a68b13d). `package` and `shader_versions` stay v0: the shader tables are the base game's, so 1.8.0 still gets a derived profile for its own shaders, which now carries the registered display version (1.8.0, not "?").
+- scripts/build_ipa_from_nsp.py report_profile_status: it compared the derived profile's whole build table with the registered one. A derived profile keeps only the packed version's row, so a game registering more than one build never matched and the registered update was still red. It compares the packed version's own row now; a module the profile does not register is red as before.
+- dm/tools/tests/test_nsp_registered_update.py: a registered update is reported as registered, with no red line (fails without the change), and an unregistered one is red.
+- Notes: the game note's 1.8.0 section says what the registration reaches. This game has no fixed-address cuts (the frame step is function-matched, applied to 1.8.0 at main+0x69cc54) and no host code keyed to its build IDs, so there was nothing to carry from v0's main with nso_fnmap.py. Open: the two SDK-wide address-region patches match no function in SDK 21.4.0 and are not applied; the region check passes without them, later play is not measured.
+
+Checked: test_docs, test_game_profile, test_patches, test_nso_match, test_nsp_alias / dump / aarch64 / chain / registered_update; derive_profile and report_profile_status run on the real 1.8.0 extraction (display 1.8.0, no red line). Not run: regress.py, lint_python (ruff not installed), a full rebuild with the change, iOS.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+(cherry picked from commit 988bc773cfd98c5b21fd50e54dcbf7c908e690d7)
+---
+ dm/games/0400C3F00006E000/README.md          |  2 +-
+ dm/games/0400C3F00006E000/game.tsv           |  3 +-
+ dm/games/README.md                           |  2 +-
+ dm/tools/tests/test_nsp_registered_update.py | 61 ++++++++++++++++++++
+ docs/agents/symptoms.md                      |  1 +
+ docs/reference/packing.md                    |  7 +++
+ scripts/build_ipa_from_nsp.py                |  4 +-
+ 7 files changed, 76 insertions(+), 4 deletions(-)
+ create mode 100644 dm/tools/tests/test_nsp_registered_update.py
+
+diff --git a/dm/games/0400C3F00006E000/README.md b/dm/games/0400C3F00006E000/README.md
+index 40ec194f0983d7b1043185ae9c5975f198c24dfb..3eb7a33c01ad1565101319810e1efa208dbc19fc 100644
+--- a/dm/games/0400C3F00006E000/README.md
++++ b/dm/games/0400C3F00006E000/README.md
+@@ -104,7 +104,7 @@ The work folder `0400C3F00006E000-work` beside the dump has `rewrite.sh`, `rebui
+ 
+ ## 1.8.0
+ 
+-Update 1.8.0 (v917504, SDK 21.4.0). Pull request #1116 ported it, and its facts (not its code) went into the host for this profile: the packing of a version with a `subsdk1`, and the Switch 2 services 1.8.0 calls at boot, which the base game does not import (the Nmouse pointer, GameChat's room event and camera storage, the camera context, the graphics system check, the HDR Bezier metadata and its clears; [services.md](../../../docs/reference/services.md#the-camera-through-the-graphics-system)). The NSP script packs it from a profile derived from this one, with its own shader tables.
++Update 1.8.0 (v917504, SDK 21.4.0). Pull request #1116 ported it, and its facts (not its code) went into the host for this profile: the packing of a version with a `subsdk1`, and the Switch 2 services 1.8.0 calls at boot, which the base game does not import (the Nmouse pointer, GameChat's room event and camera storage, the camera context, the graphics system check, the HDR Bezier metadata and its clears; [services.md](../../../docs/reference/services.md#the-camera-through-the-graphics-system)). Its build is registered (the `build v917504` row of [`game.tsv`](game.tsv), the four modules' build IDs read from the files of a v917504 NUP on 2026-11-13), so the NSP script packs it with this profile's settings and every fix for its builds, from a profile derived from this one for its own shader tables (the profile's are the base game's): no red line for an unregistered build. What the registration reaches: this game has no fixed-address cuts (`patches.py` has only the function-matched frame step, applied to 1.8.0 by its fingerprint at `main+0x69cc54`) and no host code keyed to its build IDs, so there was nothing to carry from v0's `main` with `nso_fnmap.py` (and no v0 `main` was at hand). Open: the SDK-wide function patches for the address regions (`AddressRegionManager node area 1 GB → 62 MB`, `AllocateAddressRegion` alignment, [`sdk_patches.py`](../../tools/sdk_patches.py)) match no function in 1.8.0's `sdk` (SDK 21.4.0) and are not applied; the address-region check passes without them (alias +2.47 GB in the first 15 s of `nnMain`, within the 4 GB alias region), and whether play needs them later is not measured.
+ 
+ Frame step (current): the framework's interval function is `main+0x69cbb0` on 1.8.0, 0x28c bytes where v0's is 0x290. Its mode load is at +0xa4 and its interval store at +0x140, 0x9c apart as on v0, so the v0 fingerprint did not match and 1.8.0 ran the game's own interval logic (`[RED] frame step "frame interval from the host's step" skipped`), the slow motion of [Frame rate](#frame-rate) on a slower Mac. The rule now has a second reviewed implementation with 1.8.0's fingerprint and offsets, read by disassembly: nothing branches to the instruction after the site (two branches reach the site, two the store), and the function uses neither x16 nor x17. There is no v0 main on this Mac, so it was found by the mode load and the interval store 0x9c apart (the only such pair in 1.8.0's main), not with `nso_fnmap.py`. It stays fingerprint-bound: of the function's calls, `nn::vi::QueryDisplayHdrStatus` and `QueryDisplayHdrPaperWhite` have two callers each, so no rule anchored on an import can find it. On the 48 GB M4 Pro (2026-11-12, the build's host on chain `cb2e91c138e3`, `DM_FPS_TARGET=60`), from the title into the Mushroom Cup's first race at 50cc with items, the game time for each of six 30 s windows was 1.000, 1.000, 0.984, 0.980, 0.984, 1.000 of real time. Each window under 1 held 31–33 frames for 3 vsyncs, where the stub gives the game at most 2, as on v0 before the stub declared its largest step; the 1.8.0 rewrite now has `STEP_MAX 2` as well (not run since). Not run: iOS, and a check against Time Trials' clock.
+ 
+diff --git a/dm/games/0400C3F00006E000/game.tsv b/dm/games/0400C3F00006E000/game.tsv
+index 10f143d53ee49bfef2e5bd9927a9029c18dd9056..94b8ed38c480b4ad48c75d9865ac105d17ff7ea5 100644
+--- a/dm/games/0400C3F00006E000/game.tsv
++++ b/dm/games/0400C3F00006E000/game.tsv
+@@ -14,11 +14,12 @@ pad_layout	full
+ 
+ # ---- Versions ----
+ build	v0	v0	main=9e244438c3d8ef1c703a6a85ef99c4f0	subsdk0=d39a7a3d44530bb61b35690e5b0383d5	sdk=90ebba182862b9ecdc21fcb87b999012
++build	v917504	1.8.0	main=d00e4f399e411d0613aa8d26b1c02fef	subsdk0=746302f49f095cfca3d2188423c2bd77	subsdk1=8dec9c0b1bed821364e77b10a07b9a28	sdk=7a68b13d88183767fb9c7babffe89f3d
+ package	v0
+ shader_versions	v0
+ 
+ # ---- Files ----
+-# The base game's subsdk0 is a Mono runtime (nn::ecli); 1.8.0's subsdk0 is the movie player and its subsdk1 a C library (build IDs from pull request #1116, not checked here).
++# The base game's subsdk0 is a Mono runtime (nn::ecli); 1.8.0's subsdk0 is the movie player and its subsdk1 a C library (1.8.0's build IDs read from the files of its NUP, 2026-11-13; the shader tables below are the base game's, so 1.8.0 is packed from a profile derived from this one for its own shaders).
+ # Each build row names its own modules, and the host loads those of main's build (main.c profile_modules)
+ modules	main subsdk0 subsdk1 sdk
+ romfs_marker	Movie/StaffRoll_00.webm
+diff --git a/dm/games/README.md b/dm/games/README.md
+index 6b032b963dba36344cf65b10069ae42ca2c2a60e..b22f7bf4dc262eb8cbfd5372d141159e10de41ce 100644
+--- a/dm/games/README.md
++++ b/dm/games/README.md
+@@ -115,7 +115,7 @@ One row per profile; the notes are each profile's `README.md`.
+ | [Luigi's Mansion 3](0100DCA0064A6000/README.md) | `0100DCA0064A6000` | 1.4.0 | 7.3.2 | Next Level Games' engine | NVN |
+ | [Mario & Luigi: Brothership](01006D0017F7A000/README.md) | `01006D0017F7A000` | 1.0.0 | 12.3.2 | Unreal Engine 4.27.2, Wwise | NVN |
+ | [Mario Golf: Super Rush](0100C9C00E25C000/README.md) | `0100C9C00E25C000` | 4.0.0 | 11.4.0 | Camelot's engine, NintendoWare | NVN |
+-| [Mario Kart World](0400C3F00006E000/README.md) | `0400C3F00006E000` | v0 (Switch 2) | 19.3.3 (Ounce) | Nintendo EPD (sead / agl / gsys, Pia) | NVN2 |
++| [Mario Kart World](0400C3F00006E000/README.md) | `0400C3F00006E000` | v0, v917504 (Switch 2) | 19.3.3 (Ounce) | Nintendo EPD (sead / agl / gsys, Pia) | NVN2 |
+ | [Mario Tennis Fever](0400D4201C6EA000/README.md) | `0400D4201C6EA000` | v327680 (Switch 2) | 20.5.17 (Ounce) | Camelot's engine, NintendoWare | NVN2 |
+ | [Mario Kart 8 Deluxe](0100152000022000/README.md) | `0100152000022000` | 4.0.0, 4.0.1 | 4.4.0 | Nintendo (sead / agl / gsys, NintendoWare, Pia) | NVN |
+ | [Mario + Rabbids Kingdom Battle](010067300059A000/README.md) | `010067300059A000` | 1.9.589692 | 4.4.0 | Ubisoft Snowdrop | NVN |
+diff --git a/dm/tools/tests/test_nsp_registered_update.py b/dm/tools/tests/test_nsp_registered_update.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6bce1904bb9d8a9a3964ba3dc8f4635a00429134
+--- /dev/null
++++ b/dm/tools/tests/test_nsp_registered_update.py
+@@ -0,0 +1,61 @@
++"""NSP script: an update whose build the profile registers, packed from a profile derived for its own shader tables (the profile's are the base game's), is reported as the registered
++build, with no red line, although the derived profile keeps only that version's build row (Mario Kart World 1.8.0); an update whose modules the profile does not register still is red.
++No game files, keys or Xcode needed (temporary files only)."""
++import importlib.util
++import os
++from pathlib import Path
++import shutil
++import sys
++import tempfile
++import unittest
++from unittest import mock
++
++REPO = Path(__file__).resolve().parents[3]
++sys.path.insert(0, str(REPO / 'dm/games')); sys.path.insert(0, str(REPO / 'dm/tools'))
++import game, nacp, profile_guess
++spec = importlib.util.spec_from_file_location('build_ipa_from_nsp', REPO / 'scripts/build_ipa_from_nsp.py')
++nsp = importlib.util.module_from_spec(spec); spec.loader.exec_module(nsp)
++nsp.pg, nsp.nacp = profile_guess, nacp   # main sets them
++
++PROFILE = 0x0100AAAA00000000
++BASE, UPD, NEW = 'ab' * 16, 'cd' * 16, 'ef' * 16
++
++
++def nso(path, bid):   # an NSO header: the build ID at +0x40
++    path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'NSO0' + bytes(0x3c) + bytes.fromhex(bid) + bytes(0x50))
++
++
++class RegisteredUpdate(unittest.TestCase):
++    def setUp(self):
++        self.tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.tmp)
++        prof = self.tmp / 'games' / f'{PROFILE:016X}'; prof.mkdir(parents=True)
++        (prof / 'game.tsv').write_text('\n'.join([f'title_id\t{PROFILE:016X}', f'program_id\t{PROFILE:016X}', 'name\tTest Game', 'modules\tmain',
++                                                  f'build\tv0\t1.0.0\tmain={BASE}', f'build\tv65536\t1.1.0\tmain={UPD}', 'package\tv0', 'shader_versions\tv0', 'pad_layout\tfull']) + '\n')
++        (prof / 'shader_map.tsv').write_text('# made again from the build\n')
++        self.said = []
++        for cm in (mock.patch.dict(os.environ, {'DM_GAMES_DIR': str(self.tmp / 'games')}), mock.patch.object(nsp, 'PROG', mock.Mock()), mock.patch.object(nsp, 'say', self.said.append)):
++            cm.__enter__(); self.addCleanup(cm.__exit__, None, None, None)
++
++    def derive(self, ver, bid):
++        d = self.tmp / 'extract' / ver; nso(d / 'ExeFS/main', bid)
++        reg = game.load(f'{PROFILE:016X}'); out = self.tmp / 'derived' / ver
++        nsp.derive_profile(reg, out, ver, d, ['main'])
++        return reg, game.Game(out)
++
++    def test_a_registered_update_is_not_red(self):
++        reg, g = self.derive('v65536', UPD)
++        self.assertEqual(list(g.builds()), ['v65536'])   # a derived profile keeps only the packed version's row
++        nsp.report_profile_status(g, reg, 'v65536', 'its shader tables are the base game\'s', False)
++        self.assertEqual(len(self.said), 1)
++        self.assertIn('uses the registered v65536 (1.1.0) builds and every fix for them', self.said[0])
++        self.assertNotIn('[RED]', self.said[0])
++
++    def test_an_update_the_profile_does_not_register_is_red(self):
++        reg, g = self.derive('v131072', NEW)
++        nsp.report_profile_status(g, reg, 'v131072', 'not a version the profile registers', False)
++        self.assertTrue(self.said[0].startswith('[RED] '), self.said)
++        self.assertIn('was not brought up on', self.said[0])
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
+index 6837149d04837b30419093585ab55c990b9df3c4..50d3419504794fa74ef33ecd704ff6311bd95188 100644
+--- a/docs/agents/symptoms.md
++++ b/docs/agents/symptoms.md
+@@ -6,6 +6,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ 
+ - package identification stops with `ValueError: subsection not found` in `pfs0_names`, or LibHac reports `ResultFsPathNotFound` opening the last file of an NSP. → [PFS0 file-name table missing its final NUL](../reference/packing.md#pfs0-file-name-table-missing-its-final-nul)
+ - `no base game, only update packages: pack the base game and its update into one NUP`, even when the update carries the complete game's files (issue #1195). → [A NUP with complete standalone updates stops at "no base game"](../reference/packing.md#a-nup-with-complete-standalone-updates-stops-at-no-base-game)
++- the build prints `[RED] this Mac app uses v917504 (1.8.0), which game profile 0400C3F00006E000 was not brought up on (v0 1.0.0, v917504 1.8.0): its settings, with this version's own shaders; every module is a registered build`, naming the version among the registered ones. → [A registered update packed with its own shader tables is reported as one the profile was not brought up on](../reference/packing.md#a-registered-update-packed-with-its-own-shader-tables-is-reported-as-one-the-profile-was-not-brought-up-on)
+ - `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder (issue #1265). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`. → [A NUP or a dump of a game with no profile stops before the survey](../reference/packing.md#a-nup-or-a-dump-of-a-game-with-no-profile-stops-before-the-survey)
+ - the game reloads one asset for ever: a background loader takes about a core and the process several (Ocarina of Time: 412% CPU on the Mac, `OptimizeChangeBanc` and `ParallelDecompThread` busy all session, one model and its texture opened about 22 times a second). Or, from the NSP script: `vN: K file(s) whose bytes do not start as their names promise (a .zs file that is not a zstd stream), so the game files are damaged`, then the files. → [A damaged file in a NUP or a dump has no hash to fail](../reference/packing.md#a-damaged-file-in-a-nup-or-a-dump-has-no-hash-to-fail)
+ - the survey of a Switch 2 game says `SDK: ?` and `no SDK version string found`, and its provisional profile has `app_pool 0xCD500000`. → [A provisional profile of a Switch 2 game shows no SDK and a Switch 1 memory pool](../reference/packing.md#a-provisional-profile-of-a-switch-2-game-shows-no-sdk-and-a-switch-1-memory-pool)
+diff --git a/docs/reference/packing.md b/docs/reference/packing.md
+index bac289e43c873951bd0d171d6d7e392b3e95a95c..dcaa59bd0aea84539e3e0c61b1664ab0c26edd33 100644
+--- a/docs/reference/packing.md
++++ b/docs/reference/packing.md
+@@ -17,6 +17,13 @@
+ - **Not known from the file:** whether the update is the whole game. The flag does not promise it (the spec says such an update needs a matching base elsewhere), and an update holding only changed files would pack and then fail at boot, after a full shader build. The scripts print that the update is taken as the whole game. Measured: both NUPs at hand have an update RomFS that holds every path of its base (Age of Imprisonment: 2,065 base files, 2,153 in the update, none missing; Yoshi and the Mysterious Book: 147 and 147, none missing).
+ - **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md). Reproduced with its base dump repackaged by the reference tool as a standalone-update fixture; this checks packaging, not the reported 1.8.0's contents or gameplay. Synthetic tests cover both entry points, both forms of no base, multiple versions, control data, DLC and incomplete updates.
+ 
++### A registered update packed with its own shader tables is reported as one the profile was not brought up on
++
++- **Symptom:** the build prints `[RED] this Mac app uses v917504 (1.8.0), which game profile 0400C3F00006E000 was not brought up on (v0 1.0.0, v917504 1.8.0): its settings, with this version's own shaders; every module is a registered build`, naming the version among the registered ones.
++- **Cause:** a version whose shader tables are not the profile's (the profile's are the base game's) is packed from a derived profile, which keeps only that version's build row. `report_profile_status` compared the derived profile's whole build table with the registered one, so a game that registers more than one build (an update beside the base game) never matched and always got the red line.
++- **Fix:** it compares the packed version's own row. A registered update reports `uses the registered <version> (<display>) builds and every fix for them, with derived shader tables`; a version with a module the profile does not register is red as before. `dm/tools/tests/test_nsp_registered_update.py` covers both.
++- **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) 1.8.0 (v917504), once its build row was registered.
++
+ ### A NUP or a dump of a game with no profile stops before the survey
+ 
+ - **Symptom:** `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder ([issue #1265](https://github.com/seedds/nxnative/issues/1265)). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`.
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index 06b9b62ef1fb51d7f625957dab9a1d5c9e1d9484..9465a48d2b263b7f578a6a08ba6b9bf40a144c2a 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -3382,7 +3382,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
+         known = {(m, b) for row in reg.builds().values() for m, b in row.items() if m != 'display'}
+         other = [m for m, b in g.builds()[pkg_ver].items() if m != 'display' and (m, b) not in known]
+         registered_builds = ", ".join(f'{v} {b["display"]}' for v, b in reg.builds().items())
+-        if g.title_id == reg.title_id and g.builds() == reg.builds():
++        # the packed version's own row, not the whole table: a derived profile keeps only that row, so a game that registers more than one build (an update beside the base game) never matched
++        # its registered one and said it was not brought up on a version whose every module it registers (Mario Kart World 1.8.0)
++        if g.title_id == reg.title_id and g.builds().get(pkg_ver) == reg.builds().get(pkg_ver):
+             say(f'this {artifact} uses the registered {pkg_ver} ({disp}) builds and every fix for them, with derived shader tables ({derived})')
+         elif g.title_id != reg.title_id and not other and pkg_ver in reg.builds():   # a registered build under another title ID (same_build): every fix applies
+             say(f'this {artifact} is game profile {reg.id}\'s {pkg_ver} ({disp}) under title ID {g.title_id:016X}: its settings and every fix for its builds, with shaders split from this title\'s own files')

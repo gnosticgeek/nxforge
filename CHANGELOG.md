@@ -6,6 +6,11 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 - **Aspect ratio in the settings window: 16:9, 16:10 or Auto** (Graphics › Resolution › Aspect ratio), for the games whose build can render another shape: Ocarina of Time (`DM_SCREEN_WIDE`), Breath of the Wild and Animal Crossing: New Horizons (`DM_SCREEN_ASPECT`). **Auto**, the default, matches the main screen below a MacBook's notch, so a MacBook's 16:10 screen is filled in full screen instead of showing bars above and below; a 16:9 monitor keeps 16:9 and an ultrawide one still gets the wide picture. Ocarina at 16:10 renders 2304x1440 with a little less at the sides (upstream #2538 only took screens wider than 16:9); Breath of the Wild and Animal Crossing render 1920x1200 with more above and below. The game's window opens in the picture's shape. Other games keep 16:9: their builds have no screen-shape patches.
 - **A Switch 2 game built from a NUP with its base game and an update gets its icon** (Ocarina of Time). The NUP keeps the icon on the base game, and only the update is packed, so the app came out with a blank icon; an update-only NUP (Mario Kart World) was not affected. The update now takes the base game's icon when it carries none. Takes a rebuild of the game app (no shader rebuild; the unpacked game files are reused).
+- **Three more open upstream pull requests taken early** (each a patch, dropped once nxnative lands it):
+  - [#2622](https://github.com/seedds/nxnative/pull/2622): a 60-picture movie holds the frame step at 60, so a 30 fps cap no longer plays Ocarina of Time's movies at half speed.
+  - [#2625](https://github.com/seedds/nxnative/pull/2625): a run that ends during its pipeline prewarm keeps what it compiled. The prewarm writes its archive every minute (doubling up to 16 minutes, `DM_PSO_ARCH_WARM_FLUSH_MS`), and quitting gives the archive's write up to 8 s more (`DM_EXIT_ARCH_MS`), so Ocarina's next run takes those pipelines from the archive instead of compiling them again.
+  - [#2621](https://github.com/seedds/nxnative/pull/2621): Mario Kart World 1.8.0's build row is registered, and an update packed with its own shader tables is no longer reported red.
+- Takes a rebuild of the game app for Ocarina (no shader rebuild).
 
 ## 0.30.0 (2026-11-13)
 
