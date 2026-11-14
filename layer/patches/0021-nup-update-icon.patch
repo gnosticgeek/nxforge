@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Sat, 14 Nov 2026 07:28:57 +0000
+Subject: nup-update-icon: an update packed from a NUP takes the base game's
+ icon when it carries none
+
+A NUP with a base game and an update (Ocarina of Time, 0400486024DEC000 v131072) keeps the icon on the base game's record, and the build packs only the update: pack_version passed no fallback when a base game was there, so extract/v<update>/ had no icon.jpg and the Mac app had a blank icon, while an update-only NUP (Mario Kart World) took it from the empty base record. Now the update's icon, else the base game's. The base game's NACP is still not taken (its display version is the base game's).
+---
+ dm/tools/tests/test_nsp_nup.py |  1 +
+ scripts/pack_nup.py            | 15 +++++++++++----
+ 2 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/dm/tools/tests/test_nsp_nup.py b/dm/tools/tests/test_nsp_nup.py
+index ec70044455713a2e0742d4266ffc6e24950720d7..f7a12958bf3d2a0b088cfcdfb32674fe020bfe4a 100644
+--- a/dm/tools/tests/test_nsp_nup.py
++++ b/dm/tools/tests/test_nsp_nup.py
+@@ -448,6 +448,7 @@ class Pack(Base):
+         names = romfs_image.read_index(u / 'RomFS.img')
+         self.assertIn('dir/new', names); self.assertNotIn('dir/old', names); self.assertEqual(names['empty'], (False, names['empty'][1], 0))
+         self.assertFalse((u / 'control.nacp').exists())   # the update carries no control data: the script takes the base's
++        self.assertEqual((u / 'icon.jpg').read_bytes(), b'\xff\xd8 icon')   # but its icon is the base game's: the build packs only the update, and the app had no icon
+         pack_nup.pack_version(n, base, base, app, self.out() / 'b', say=lambda s: None)
+         b = self.out() / 'b'
+         self.assertEqual((nacp.name(b / 'control.nacp'), nacp.version(b / 'control.nacp')), ('Test Game', '1.2.3'))
+diff --git a/scripts/pack_nup.py b/scripts/pack_nup.py
+index 24e5de09a0e2b44c3f138d7857a3d7d2ce840788..8fab07c6cf51c010c5f174a8e4ddf0fe8197fd69 100644
+--- a/scripts/pack_nup.py
++++ b/scripts/pack_nup.py
+@@ -321,12 +321,19 @@ def app_package(n):   # the record that holds application metadata when no base
+     return next((k for k in n.packages if k.kind == BASE), n.packages[0])
+ 
+ 
+-def control(k, out, fallback=None):   # the package's control data beside its ExeFS; what it lacks comes from fallback
++def icon_of(meta):   # the icon a meta block carries: the plain one, else the American English localized one, else the first localized one
++    icons = localized(meta.get(T_LICONS, b''))
++    return meta.get(T_ICON) or pick(icons, 'en-US') or next(iter(icons.values()), None)
++
++
++def control(k, out, fallback=None, icon_from=None):   # the package's control data beside its ExeFS; what it lacks comes from fallback
++    # icon_from: a package whose icon is taken when neither has one. An update packed beside its base game often carries no icon (Ocarina of Time's NUP: the
++    # update has none, the base game has it), and the build packs only the update, so the app had no icon. The NACP is not taken from it: the base game's
++    # would give the update the base game's display version
+     meta = fallback.meta() if fallback is not None else {}
+     meta.update(k.meta())
+     nacp_bytes = meta.get(T_NACP)
+-    icons = localized(meta.get(T_LICONS, b''))
+-    icon = meta.get(T_ICON) or pick(icons, 'en-US') or next(iter(icons.values()), None)
++    icon = icon_of(meta) or (icon_of(icon_from.meta()) if icon_from is not None and icon_from is not k else None)
+     for name, data in (('control.nacp', nacp_bytes), ('icon.jpg', icon)):
+         if data: (out / name).write_bytes(data)
+         else: (out / name).unlink(missing_ok=True)
+@@ -345,7 +352,7 @@ def pack_version(n, k, base, app, out, say=print, step=lambda s: None):   # one
+     out.mkdir(parents=True, exist_ok=True)
+     exefs(n, k, out / 'ExeFS')
+     how = pack(n, d, out / 'RomFS.img', say, step)
+-    control(k, out, app_package(n) if base is None else None)
++    control(k, out, app_package(n) if base is None else None, icon_from=base)
+     return how
+ 
+ 

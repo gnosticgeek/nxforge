@@ -1,0 +1,407 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: computerguy526 <355510486+computerguy526@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 16:48:27 +0000
+Subject: upstream-pr-2625: nvn/archive: a run that ends during its prewarm
+ writes the pipelines it compiled, so Ocarina of Time's next run takes them
+ from the archive instead of compiling them again
+
+Since #1879 the timer's flushes wait for the prewarm's end, so a period is written only when it is full (2,000) or at exit. Ocarina of Time's prewarm (31,663 lines after the first frame, on 5 workers) outlives a play session, and the graceful exit gave the archive what was left of 1.5 s (a write takes 1.8-4 s per 900 bases), or nothing when a draw was still compiling its pipeline. Every warm-up run ended with 400-500 bases not written; the next run compiled 57-167 bases again and area loads stalled over 20 s.
+
+- nvn_mtl.m: during a prewarm that is not compacting, the timer's flush hands the period over once it is DM_PSO_ARCH_WARM_FLUSH_MS old (default 60 s, 0 = off), then 120 s, 240 s, ... up to 16 min; while captures wait the timer looks again every 10 s
+- hle_lifecycle.c: the graceful exit (SIGTERM) starts the archive's write before the drain (dm_gfx_quit_begin) and gives it DM_EXIT_ARCH_MS (8 s, 3 s on iOS) beyond the 1.5 s; when graphics do not suspend in 1.5 s (a draw under way) the fallback still waits for the write within the deadline, and one claim flag lets only one of the two paths write, run the exit's continuation and end the process; a hard deadline ends the process at 1.5 s + budget + 0.5 s
+- nvn_mtl.m pso4_init: a start removes a <file>.mtl4a.tmp a stopped write left (the hard deadline can end the process inside a write)
+- t_pso_archive / test_pso_archive.py: in fresh processes, a timer flush in the prewarm then _exit SIGTERM in the prewarm with and without a draw holding the graphics layer, and a torn write beside a good file; the timer-flush and held-draw cases write no file without the change, and the torn write's .tmp stays
+- docs/reference/rendering.md: new entry; symptom index; docs/development.md; env_switches.tsv rows
+
+Co-authored-by: uncraftablexd <352372032+uncraftablexd@users.noreply.github.com>
+(cherry picked from commit 0f1ad3d87609b899d186bb87874dd092c97a589d)
+---
+ dm/gfx/nvn/hle_nvn.c             |  1 +
+ dm/gfx/nvn/nvn_mtl.m             | 33 +++++++++++++++++++-----
+ dm/gfx/tests/Makefile            |  4 +--
+ dm/gfx/tests/t_pso_archive.m     | 38 ++++++++++++++++++++++++++-
+ dm/gfx/tests/test_pso_archive.py | 44 ++++++++++++++++++++++++++++++++
+ dm/host/dm.h                     |  1 +
+ dm/host/hle_lifecycle.c          | 37 ++++++++++++++++++++++-----
+ docs/agents/symptoms.md          |  1 +
+ docs/development.md              |  2 +-
+ docs/env_switches.tsv            |  3 +++
+ docs/reference/rendering.md      |  8 ++++++
+ 11 files changed, 156 insertions(+), 16 deletions(-)
+
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index e124db90281f38c906e11d8a1292a516b575f486..624e12d42693fd9bfcc047a88631b5dbd38ba729 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -1748,6 +1748,7 @@ void dm_gfx_suspend(int on) {
+     // the pipeline archive starts writing what it holds: a process in the background may be ended without a word (iOS), and a prewarm's captures wait for a full period
+ }
+ void dm_gfx_quit(int wait_ms) { mtl_arch_save(wait_ms, 1); }
++void dm_gfx_quit_begin(void) { mtl_arch_save(0, 0); }   // the graceful exit's first step: what the pipeline archive holds starts writing beside the drain (dm_gfx_suspend can wait on a draw that compiles)
+ // One submission at a time: the Metal replay keeps one command buffer and one upload batch for the submission in progress (nvn_mtl.m g_cb). Fire Emblem: Three Houses initializes two queues and
+ // submits on both from two threads; the second submission arrived while the first was replaying and the host stopped with "submit re-entered" at the ninth frame. NVN orders work on different queues only
+ // through syncs and events. The continuation scheduler parks unresolved queues and serializes only ready prefixes onto this Metal queue.
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1..39cc3ce4cdcaff61f3049373323dba0827eef479 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -9207,6 +9207,7 @@ static id arch_lookup(MTL4PipelineDescriptor *d, int plain, int *from_run) {
+     return nil;
+ }
+ static ArchEpoch *g_ep; static os_unfair_lock g_ep_lock = OS_UNFAIR_LOCK_INIT;   // the current period
++static _Atomic uint64_t g_ep_t0;   // when the current period began (bp_now): a prewarm's timer flush hands it over once it is old enough (arch_warm_flush_due)
+ static int g_arch_cap;   // compiles are captured (an archive folder, a serializer): immutable after pso4_init
+ static dispatch_group_t g_arch_pending;   // periods handed over and not written yet
+ static _Atomic uint64_t g_pb_built, g_pb_archived, g_pb_reused, g_pb_spec, g_pb_legacy, g_pb_base_ns;
+@@ -9534,6 +9535,10 @@ static void pso4_init(void) {
+             });
+ #endif
+             uint64_t t0 = bp_now(); unsigned long long bytes = 0;
++            // A write a stopped run left (arch_write_file writes <file>.mtl4a.tmp and renames it once its index is written; the graceful exit's hard deadline can end the
++            // process inside the write). Nothing writes the folder yet
++            for (NSString *f in [NSFileManager.defaultManager contentsOfDirectoryAtPath:g_arch_dir error:nil])
++                if ([f hasSuffix:@".mtl4a.tmp"]) { [NSFileManager.defaultManager removeItemAtPath:[g_arch_dir stringByAppendingPathComponent:f] error:nil]; MLOG("pipeline archive: %s removed (a write a stopped run left)", f.UTF8String); }
+             NSMutableArray<NSString *> *runf = [NSMutableArray array];
+             NSArray<NSString *> *all = [NSFileManager.defaultManager contentsOfDirectoryAtPath:g_arch_dir error:nil]; NSSet<NSString *> *present = [NSSet setWithArray:all ?: @[]];
+             NSArray<NSString *> *names = [[all filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"self ENDSWITH '.mtl4a'"]] sortedArrayUsingComparator:^NSComparisonResult(NSString *x, NSString *y) {
+@@ -9594,7 +9599,7 @@ static void pso4_init(void) {
+         NSError *ce = nil; g_comp4 = [g_dev newCompilerWithDescriptor:[MTL4CompilerDescriptor new] error:&ce];
+         if (!g_comp4) MLOG("[RED] no Metal 4 compiler (%s): render pipelines are built through the MTLDevice", ce.localizedDescription.UTF8String);
+         else if (g_arch_dir) {
+-            g_ep = ep_new(); g_arch_cap = g_ep != nil;
++            g_ep = ep_new(); g_arch_cap = g_ep != nil; atomic_store(&g_ep_t0, bp_now());
+             if (g_arch_cap) atexit(arch_at_exit);   // what is not written yet, written at quit (mtl_arch_save)
+             if (!g_ep) MLOG("[RED] pipeline archive: Metal made no pipeline serializer: nothing is captured into %s", g_arch_dir.UTF8String);
+         }
+@@ -9716,8 +9721,21 @@ static void arch_write_file(ArchEpoch *ep) {
+ // ahead during the prewarm, where the timer's flushes wait so that its bases, compiled or captured again, make as few files as they can: a cold start's timer flushes wrote a
+ // file each 10 s (Ocarina of Time: 80 files; GitHub issue #1747's, 43), more than PSO_ARCH_COMPACT, and the next start compacted them all. any_time: hand it over during the
+ // prewarm too (going to the background, quitting: mtl_arch_save)
++// A timer flush during a prewarm (DM_PSO_ARCH_WARM_FLUSH_MS, default 60000; 0: none, the prewarm writes full periods alone): the period is handed over once it is that old, and each
++// next one waits twice as long, up to 16 times (60 s, 120 s, ... 16 min), so a long cold start's prewarm adds a file per doubling and not one per 10 s. Without it, a prewarm that
++// outlived the run (Ocarina of Time: 31,663 lines after the first frame on 5 workers, every warm-up run of 2026-11-10) wrote nothing until the exit, and the 1.3 s the SIGTERM exit
++// left could not write the ~425 bases it held (1.8-4 s for 900): every next run compiled them again, 57-167 bases and stalls of more than 20 s at area loads. Not while a
++// compaction runs: its recaptured bases go into as few files as they can
++static int g_warm_flush_ms = -1; static _Atomic int g_warm_flushes;
++static int arch_warm_flush_due(void) {
++    if (g_warm_flush_ms < 0) { const char *e = getenv("DM_PSO_ARCH_WARM_FLUSH_MS"); g_warm_flush_ms = e && *e ? MAX(atoi(e), 0) : 60000; }
++    if (!g_warm_flush_ms || g_compact_enabled) return 0;
++    uint64_t wait_ns = ((uint64_t)g_warm_flush_ms << MIN(atomic_load(&g_warm_flushes), 4)) * NSEC_PER_MSEC;
++    return bp_now() - atomic_load(&g_ep_t0) >= wait_ns;
++}
+ static void arch_hand_over(ArchEpoch *only, int any_time) {
+-    if (!g_arch_cap || (!only && !any_time && atomic_load(&g_warm_running))) return;
++    int warm_due = 0;
++    if (!g_arch_cap || (!only && !any_time && atomic_load(&g_warm_running) && !(warm_due = arch_warm_flush_due()))) return;
+     os_unfair_lock_lock(&g_ep_lock); int any = (!only || g_ep == only) && (atomic_load(&g_ep->n) || atomic_load(&g_ep->active)); os_unfair_lock_unlock(&g_ep_lock);
+     // nothing captured or under way: the period goes on. A compaction due to close (the prewarm over, no recapture queued) closes all the same: its recaptures are all in periods
+     // handed over, and the last of them to be written finishes it, or this does when they all are (before, it stayed open for the run and the next start compacted again)
+@@ -9731,7 +9749,8 @@ static void arch_hand_over(ArchEpoch *only, int any_time) {
+     os_unfair_lock_lock(&g_ep_lock);
+     ArchEpoch *old = g_ep; any = (!only || old == only) && (atomic_load(&old->n) || atomic_load(&old->active));   // again: another flush may just have handed it over
+     if (any) {
+-        g_ep = ne;
++        g_ep = ne; atomic_store(&g_ep_t0, bp_now());
++        if (warm_due) atomic_fetch_add(&g_warm_flushes, 1);
+         // Every period from the first recaptured base on may hold some (see arch_compact_allowed); the first one handed over after the prewarm is the compaction's last
+         if (g_compact_enabled && atomic_load(&g_compacted) && !atomic_load(&g_compact_closed)) {
+             old->compacting = 1; atomic_fetch_add(&g_compact_periods, 1);
+@@ -9759,17 +9778,19 @@ void mtl_arch_save(int wait_ms, int ending) {
+     int n = atomic_load(&g_arch_new);
+     arch_hand_over(nil, 1);
+     if (!wait_ms && !ending) return;
++    if (n && wait_ms > 0) MLOG("pipeline archive at exit: writing %d pipelines (up to %d ms)", n, wait_ms);
+     late = (wait_ms > 0 && dispatch_group_wait(g_arch_pending, until)) || late;
+     if (ending) arch_mark(-1);
+-    if (n || late) MLOG("pipeline archive at exit: %d pipelines not written yet, %s (%.0f ms)", n,
+-                        late ? "not all written in time: those left are built again at the next start" : !wait_ms ? "not waited for" : "written", (bp_now() - t0) / 1e6);
++    if (n || late) MLOG("pipeline archive at exit: %d pipelines not written yet, %s (%d left, %.0f ms)", n,
++                        late ? "not all written in time: those left are built again at the next start" : !wait_ms ? "not waited for" : "written", atomic_load(&g_arch_new), (bp_now() - t0) / 1e6);
+ }
+ static void arch_at_exit(void) { mtl_arch_save(ARCH_QUIT_WAIT_MS, 1); }
+ // What the harvest queue holds captured, then a flush, then every period handed over is written (not on g_arch_q, which writes them, nor on the harvest queue)
+ static void arch_flush_wait(void) { arch_harvest_wait(DISPATCH_TIME_FOREVER); arch_flush(); if (g_arch_pending) dispatch_group_wait(g_arch_pending, DISPATCH_TIME_FOREVER); }
+ static void arch_note_new(void) {   // a base was compiled: flush 10 s later (one flush for a burst of them)
+     if (!g_arch_q || atomic_exchange(&g_arch_sched, 1)) return;
+-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * (int64_t)NSEC_PER_SEC), g_arch_q, ^{ atomic_store(&g_arch_sched, 0); arch_flush(); });
++    // during a prewarm the flush waits for the period's age (arch_warm_flush_due): look again 10 s later while captures wait, new ones or not
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * (int64_t)NSEC_PER_SEC), g_arch_q, ^{ atomic_store(&g_arch_sched, 0); arch_flush(); if (atomic_load(&g_warm_running) && atomic_load(&g_arch_new) > 0) arch_note_new(); });
+ }
+ static void arch_compact_finish(void) {   // after every period that may hold recaptured bases is written (arch_write): the old files go once their bases are in the new ones
+     if (!g_compact_files || !g_compacted) return;
+diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
+index b431062ece55e3004442f599f691f7960c882ffe..7c9ed4bd1a42770799e64246c50646f30b27ebbc 100644
+--- a/dm/gfx/tests/Makefile
++++ b/dm/gfx/tests/Makefile
+@@ -398,8 +398,8 @@ check_t_pull: RUN_ENV = MTL_DEBUG_LAYER=1
+ t_pull_inv: t_pull_inv.m ../tools/dmsh_pull.py ../tools/dmsh_pull.metal
+ 	clang -O1 -g -Wall -fobjc-arc -o $@ t_pull_inv.m -framework Metal -framework Foundation
+ check_t_pull_inv: RUN_ENV = MTL_DEBUG_LAYER=1
+-t_pso_archive: t_pso_archive.m $(MTL_T_DEP)
+-	clang $(CFLAGS) -fobjc-arc -o $@ t_pso_archive.m $(MTL_T_SRC) $(FW)
++t_pso_archive: t_pso_archive.m $(MTL_T_DEP) ../../host/hle_lifecycle.c
++	clang $(CFLAGS) -fobjc-arc -o $@ t_pso_archive.m $(MTL_T_SRC) ../../host/hle_lifecycle.c $(FW)
+ .PHONY: check_t_pso_archive
+ check_t_pso_archive: t_pso_archive
+ 	MTL_DEBUG_LAYER=1 ./t_pso_archive
+diff --git a/dm/gfx/tests/t_pso_archive.m b/dm/gfx/tests/t_pso_archive.m
+index fa9ef7028aeef117a75127dd5889b74a98486fee..781ce6b8ba525d95a9017bb610b7e4a752d75120 100644
+--- a/dm/gfx/tests/t_pso_archive.m
++++ b/dm/gfx/tests/t_pso_archive.m
+@@ -4,7 +4,8 @@
+ // Metal 4 descriptor keeps the MTLDevice path; pso_key_norm drops what no pipeline depends on; compaction merges the files the prewarm took bases from into one per full period despite a
+ // mid-prewarm timer flush, removing them only after its last period, counting them for the prepare line, and a compaction that did not finish is not tried again on the same system build; a timer flush waits for any prewarm, so a cold start writes a file per full period; depth-only draws write depth; concurrent colour variants compile
+ // one base; archive flushes preserve unrelated compiler state; a function with function constants is specialized by its pipeline's descriptor, not through its library,
+-// and an MTLDevice pipeline gets it specialized; the descriptor for a specialization is the caller's whether the driver returns it retained or autoreleased; a compute pipeline is captured into a plain file and taken from it later, one without a Metal 4 descriptor never looked up; a native mesh pipeline is captured into a p file and taken from it later, with or without a task shader or a pixel shader, captured again by a compaction, and one without a Metal 4 descriptor built through the MTLDevice; a capture that fails builds the pipeline all the same and hands a full period over, or stops capturing after a failure in a period that captured nothing; run files are compacted by size tier from the pipeline count in their names (a tier of more than PSO_ARCH_COMPACT files and every smaller one, never a full period's, old and malformed names as the largest tier, the same across fresh processes), and a compute or task / mesh pipeline in a file left out is not captured again
++// and an MTLDevice pipeline gets it specialized; the descriptor for a specialization is the caller's whether the driver returns it retained or autoreleased; a compute pipeline is captured into a plain file and taken from it later, one without a Metal 4 descriptor never looked up; a native mesh pipeline is captured into a p file and taken from it later, with or without a task shader or a pixel shader, captured again by a compaction, and one without a Metal 4 descriptor built through the MTLDevice; a capture that fails builds the pipeline all the same and hands a full period over, or stops capturing after a failure in a period that captured nothing; run files are compacted by size tier from the pipeline count in their names (a tier of more than PSO_ARCH_COMPACT files and every smaller one, never a full period's, old and malformed names as the largest tier, the same across fresh processes), and a compute or task / mesh pipeline in a file left out is not captured again; a run that ends in its prewarm keeps what it compiled, through the prewarm's timer flush or through SIGTERM's graceful exit while a draw holds the graphics layer
++#include <signal.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+@@ -30,6 +31,7 @@ module_t *module_of(const void *p) { (void)p; return NULL; }
+ module_t *g_mod; int g_nmod;
+ void svc_thread_dump(void) {}
+ uint64_t now_ns(void) { return bp_now(); }
++void hlecount_flush(void) {} void dm_rec_finish(void) {} void dm_cheats_exit(void) {} void dm_audio_suspend(int on) { (void)on; }   // what the graceful exit (hle_lifecycle.c) calls besides graphics
+ static int checks, failed;
+ #define EXPECT(name, want, got) do { uint64_t w = (want), g = (got); checks++; if (w != g) { fprintf(stderr, "%s: expected %llu, got %llu\n", name, (unsigned long long)w, (unsigned long long)g); failed++; } } while (0)
+ 
+@@ -630,6 +632,40 @@ int main(int argc, char **argv) { @autoreleasepool {
+         printf("t_pso_archive %s: %d checks, %d failed\n", argv[1], checks, failed);
+         return failed != 0;
+     }
++    // Across fresh processes: a run ends in its prewarm, before any full period (Ocarina of Time's warm-up runs of 2026-11-10: 400-500 bases held, none written). --warmflush-:
++    // the prewarm's timer flush hands the period over once it is DM_PSO_ARCH_WARM_FLUSH_MS old, so a run killed after it (no exit write) keeps them. --term-: SIGTERM while a draw
++    // is still in the graphics layer (DM_TEST_STUCK_DRAW: it never leaves, as one compiling its pipeline did), so the graceful exit's suspend never returns; the archive is
++    // written all the same. Then the next start takes every base from the archive and compiles none
++    if (argc == 3 && (!strncmp(argv[1], "--warmflush-", 12) || !strncmp(argv[1], "--term-", 7))) {
++        int term = !strncmp(argv[1], "--term-", 7), seed = strstr(argv[1], "-seed") != NULL; enum { K = 5 };
++        if (seed && term) { void dm_term_install(void); dm_term_install(); }
++        pso4_init();
++        uint64_t arch0 = g_pb_archived, built0 = g_pb_built;
++        atomic_store(&g_warm_running, 1);
++        for (int i = 0; i < K; i++) {
++            MTLRenderPipelineDescriptor *cd = desc(MTLPixelFormatRGBA8Unorm, 0, MTLPixelFormatRGBA8Unorm, MTLColorWriteMaskAll, 1);
++            cd.vertexDescriptor.layouts[16].stride = 16 * (i + 120);
++            EXPECT("end in the prewarm: pipeline", 1, pso_build(cd, 0, &err) != nil);
++        }
++        if (seed) {
++            EXPECT("end in the prewarm: compiled", K, (int)(g_pb_built - built0));
++            if (!term) {   // the timer's flush, once the period is old enough; then the run is killed (no exit write)
++                usleep(400 * 1000); dispatch_sync(g_arch_q, ^{ arch_flush(); }); dispatch_group_wait(g_arch_pending, DISPATCH_TIME_FOREVER);
++                printf("t_pso_archive %s: %d checks, %d failed\n", argv[1], checks, failed); fflush(stdout);
++                _exit(failed != 0);
++            }
++            if (getenv("DM_TEST_STUCK_DRAW")) { void dm_gfx_enter(void); dm_gfx_enter(); }   // a draw under way that does not return
++            printf("t_pso_archive %s: %d checks, %d failed\n", argv[1], checks, failed); fflush(stdout);
++            if (failed) _exit(1);
++            kill(getpid(), SIGTERM);   // to the process, as a harness sends it: raise() aims it at this thread, where the ignored signal never reaches the GCD signal source
++            for (;;) pause();
++        }
++        atomic_store(&g_warm_running, 0); arch_flush_wait();
++        EXPECT("after an end in the prewarm: every base from the archive", K, (int)(g_pb_archived - arch0));
++        EXPECT("after an end in the prewarm: none compiled", 0, (int)(g_pb_built - built0));
++        printf("t_pso_archive %s: %d checks, %d failed\n", argv[1], checks, failed);
++        return failed != 0;
++    }
+     // A fresh process is essential: a compiler that built the source archives still has their online binaries.
+     if (argc == 3 && !strncmp(argv[1], "--oldname-", 10)) {   // across fresh processes: nine run files named before the count (the test renames them) are compacted once, then not again
+         int seed = !strcmp(argv[1], "--oldname-seed"), replay = !strcmp(argv[1], "--oldname-replay");
+diff --git a/dm/gfx/tests/test_pso_archive.py b/dm/gfx/tests/test_pso_archive.py
+index 7ccfa5a901ae81ce045a1b08dd333a62e80df4b4..c6aac5964f94f437eb4b76fb017780ce8db56be8 100644
+--- a/dm/gfx/tests/test_pso_archive.py
++++ b/dm/gfx/tests/test_pso_archive.py
+@@ -75,6 +75,50 @@ class ArchiveRestartTests(unittest.TestCase):
+                 self.assertEqual(len(list(Path(folder).glob('*.mtl4a'))), files, phase)
+                 self.assertTrue((Path(folder) / 'compacting').exists(), phase)
+ 
++    def _end_in_prewarm(self, mode, extra, seed_files):
++        with tempfile.TemporaryDirectory(prefix='pso-' + mode + '-') as folder:
++            env = dict(os.environ, DM_PSO_MTL4='1', MTL_DEBUG_LAYER='1', **extra)
++            for name in ('DM_GPU_CAPTURE', 'MTL_CAPTURE_ENABLED', 'DM_TEST_ARCHIVE_CONSTANTS', 'DM_TEST_ARCHIVE_MIXED'):
++                env.pop(name, None)
++            for phase, files in (('seed', seed_files), ('after', seed_files)):
++                result = subprocess.run([executable, '--' + mode + '-' + phase, folder],
++                                        env=env, capture_output=True, text=True, timeout=60)
++                self.assertEqual(result.returncode, 0, phase + '\n' + result.stdout + result.stderr)
++                self.assertEqual(len(list(Path(folder).glob('*.mtl4a'))), files, phase + '\n' + result.stderr)
++                self.assertEqual(list(Path(folder).glob('*.tmp')), [], phase)
++
++    def test_prewarm_timer_flush_then_killed(self):
++        # five new bases in a prewarm, the timer's flush after DM_PSO_ARCH_WARM_FLUSH_MS, then _exit: one file, and the next start compiles none
++        self._end_in_prewarm('warmflush', {'DM_PSO_ARCH_WARM_FLUSH_MS': '300'}, 1)
++
++    def test_sigterm_in_prewarm(self):
++        # SIGTERM in the prewarm: the graceful exit writes the five bases
++        self._end_in_prewarm('term', {'DM_PSO_ARCH_WARM_FLUSH_MS': '0'}, 1)
++
++    def test_sigterm_with_a_draw_under_way(self):
++        # SIGTERM while a draw holds the graphics layer (its suspend never returns): the five bases are written all the same
++        self._end_in_prewarm('term', {'DM_PSO_ARCH_WARM_FLUSH_MS': '0', 'DM_TEST_STUCK_DRAW': '1', 'DM_EXIT_ARCH_MS': '4000'}, 1)
++
++    def test_write_cut_short_keeps_the_archive(self):
++        # a write a killed run left (its .tmp, its index without the file) and a file that is not an archive: the next start removes the leftovers, skips the bad file and
++        # takes every base from the good one
++        with tempfile.TemporaryDirectory(prefix='pso-torn-') as folder:
++            env = dict(os.environ, DM_PSO_MTL4='1', MTL_DEBUG_LAYER='1', DM_PSO_ARCH_WARM_FLUSH_MS='0')
++            for name in ('DM_GPU_CAPTURE', 'MTL_CAPTURE_ENABLED', 'DM_TEST_ARCHIVE_CONSTANTS', 'DM_TEST_ARCHIVE_MIXED', 'DM_TEST_STUCK_DRAW'):
++                env.pop(name, None)
++            result = subprocess.run([executable, '--term-seed', folder], env=env, capture_output=True, text=True, timeout=60)
++            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
++            good = list(Path(folder).glob('*.mtl4a'))
++            self.assertEqual(len(good), 1)
++            data = good[0].read_bytes()
++            (Path(folder) / '00090-5.mtl4a.tmp').write_bytes(data[:len(data) // 2])
++            (Path(folder) / '00091-5.keys').write_bytes(b'\0' * 64)
++            (Path(folder) / '00092-5.mtl4a').write_bytes(data[:len(data) // 3])
++            result = subprocess.run([executable, '--term-after', folder], env=env, capture_output=True, text=True, timeout=60)
++            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
++            self.assertFalse((Path(folder) / '00090-5.mtl4a.tmp').exists())
++            self.assertFalse((Path(folder) / '00091-5.keys').exists())
++
+     def test_compaction_with_fresh_bases_and_restart(self):
+         for constants in (False, True):
+             with self.subTest(constants=constants), tempfile.TemporaryDirectory(prefix='pso-restart-') as folder:
+diff --git a/dm/host/dm.h b/dm/host/dm.h
+index 3f4e6ad100df4aeeb6e7e58a046f6979d2988159..da3f0939e85eb27cb70e13688c4420087387ec97 100644
+--- a/dm/host/dm.h
++++ b/dm/host/dm.h
+@@ -224,6 +224,7 @@ void dm_cheats_exit(void);            // a clean exit (hle_lifecycle.c, atexit):
+ // Graphics lifecycle (hle_nvn.c): on=1 suspends (afterwards submit / present block, and in-flight GPU work is drained before returning), on=0 resumes; called by the iOS front end when entering and leaving the background
+ void dm_gfx_suspend(int on);
+ void dm_gfx_quit(int wait_ms);   // hle_nvn.c: the process is ending (the graceful exit): what the pipeline archive has not written yet, written, waiting up to wait_ms
++void dm_gfx_quit_begin(void);   // hle_nvn.c: the graceful exit starts: the pipeline archive starts writing what it holds, without waiting
+ void dm_gfx_enter(void); void dm_gfx_leave(void);   // hle_nvn.c: the gate dm_gfx_suspend closes, for graphics layers other than NVN (dm/gfx/vk)
+ void dm_gfx_shot_at(long k, const char *path);
+ void dm_shot_written(const char *path, int ok);   // The graphics side finished writing a screenshot to disk (diag.c: DM_TICK_HOLD=E:SHOT unfreezes on this)
+diff --git a/dm/host/hle_lifecycle.c b/dm/host/hle_lifecycle.c
+index 53fb4faaf7f1541dfde061a8b4a7687bcc66ca4e..1cb7df8dde6fb1e2d3314b106160ccb1015a03fa 100644
+--- a/dm/host/hle_lifecycle.c
++++ b/dm/host/hle_lifecycle.c
+@@ -1,23 +1,48 @@
+ // Host lifecycle: graceful exit (SIGTERM; on iOS the App termination callback calls dm_host_shutdown).
+-// Pause audio, suspend graphics (wait for in-flight NVN calls to end and drain GPU work), then _exit(0); a 1.5 s fallback goes straight to _exit(0).
+-// The default action also exits in about 0.08 s (exit code 143); the value of this function is stopping background threads in order, exit code 0, and giving the iOS lifecycle callback an entry.
++// Pause audio, start the pipeline archive's write, suspend graphics (wait for in-flight NVN calls to end and drain GPU work), wait for the archive's write, then _exit(0).
++// The default action also exits in about 0.08 s (exit code 143); the value of this function is stopping background threads in order, exit code 0, keeping the pipelines the run
++// compiled, and giving the iOS lifecycle callback an entry.
+ #include "hle.h"
++#include <TargetConditionals.h>
+ #include <dispatch/dispatch.h>
+ #include <stdatomic.h>
+ #include <signal.h>
++#include <stdlib.h>
+ #include <unistd.h>
+ void hlecount_flush(void); void dm_rec_finish(void);
++// The time the exit gives the pipeline archive beyond the 1.5 s for the rest (DM_EXIT_ARCH_MS). Writing takes 1.8-4 s for 900 bases on Macs; with 1.3 s in all, every warm-up run of
++// Ocarina of Time (2026-11-10) ended with 400-500 bases not written, built again at the next start. iOS ends an app about 5 s after its termination callback: 3 s there. A write the
++// deadline cuts short leaves only its .tmp, which the next start removes (nvn_mtl.m pso4_init)
++enum { EXIT_BASE_MS = 1500,
++#if TARGET_OS_IPHONE
++       EXIT_ARCH_MS = 3000
++#else
++       EXIT_ARCH_MS = 8000
++#endif
++};
++static int exit_arch_ms(void) { const char *e = getenv("DM_EXIT_ARCH_MS"); int v = e && *e ? atoi(e) : EXIT_ARCH_MS; return v < 0 ? 0 : v; }
++static int ms_left(uint64_t t0, int budget_ms) { int64_t left = budget_ms - (int64_t)((now_ns() - t0) / 1000000); return left > 0 ? (int)left : 0; }
+ void dm_host_shutdown_then(const char *why, void (*then)(void *), void *arg) {
+     static _Atomic int once; if (atomic_exchange(&once, 1)) return;
+-    uint64_t t0 = now_ns(); LOG("received %s: graceful exit", why);
+-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1500 * NSEC_PER_MSEC), dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
+-        LOG("[RED] graceful exit not done in 1.5 seconds, exiting at once"); if (then) then(arg); _exit(0); });
++    static _Atomic int claimed;   // the one path that runs dm_gfx_quit, then and _exit: the main path after the suspend, or the 1.5 s fallback if graphics are not suspended by then
++    uint64_t t0 = now_ns(); int arch_ms = exit_arch_ms(); LOG("received %s: graceful exit", why);
++    // Graphics not suspended in 1.5 s: a draw is still under way, most often one compiling its pipeline (the stall the harness's watcher stops a run for). The archive has been
++    // writing since the start (dm_gfx_quit_begin): what it holds is written still, within the same deadline, and then the process ends
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, EXIT_BASE_MS * NSEC_PER_MSEC), dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
++        if (atomic_exchange(&claimed, 1)) return;
++        LOG("[RED] graceful exit: graphics not suspended in 1.5 seconds, exiting after the pipeline archive's write (up to %d ms)", ms_left(t0, EXIT_BASE_MS + arch_ms));
++        dm_gfx_quit(ms_left(t0, EXIT_BASE_MS + arch_ms)); if (then) then(arg); _exit(0); });
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(EXIT_BASE_MS + arch_ms + 500) * NSEC_PER_MSEC), dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
++        int mine = !atomic_exchange(&claimed, 1);   // then runs once: here only if neither path above got to it
++        LOG("[RED] graceful exit not done in %.1f seconds, exiting at once", (EXIT_BASE_MS + arch_ms + 500) / 1e3); if (mine && then) then(arg); _exit(0); });
+     hlecount_flush();                               // DM_HLECOUNT: _exit does not run atexit, write a copy here
+     dm_rec_finish();                                // DM_REC: the held state and the buffered steps (hle_hid.c)
+     dm_cheats_exit();                               // a clean exit: no safe mode for the cheats at the next launch (atexit does not run either)
+     dm_audio_suspend(1);
++    dm_gfx_quit_begin();                            // the pipeline archive starts writing what it holds now, not after the drain
+     dm_gfx_suspend(1);
+-    { int64_t left = 1300 - (int64_t)((now_ns() - t0) / 1000000); dm_gfx_quit(left > 0 ? (int)left : 0); }   // the pipeline archive's unwritten captures, within the 1.5 s
++    if (atomic_exchange(&claimed, 1)) for (;;) pause();   // the suspend returned after the fallback took over: it writes the archive and ends the process
++    dm_gfx_quit(ms_left(t0, EXIT_BASE_MS - 200 + arch_ms));   // what the archive has not written yet (captures since), within the budget
+     LOG("graceful exit done (%.3f s)", (now_ns() - t0) / 1e9);
+     if (then) then(arg);
+     _exit(0);
+diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
+index f947fe2932b6d2a961f162f6bd81546f811f8e09..6837149d04837b30419093585ab55c990b9df3c4 100644
+--- a/docs/agents/symptoms.md
++++ b/docs/agents/symptoms.md
+@@ -883,6 +883,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - hundreds of `[RED] background render pipeline creation failed: error: cannot commit transaction no. '50463' on '…/com.apple.gpuarchiver/gpuarchiver-…/PersistentState': MDB_MAP_FULL: Environment mapsize limit reached` (or `cannot write 'UNITSMAPPINGS' database: MDB_MAP_FULL`), then `pipeline archive: compaction left the old files (the flush failed)`; the draws of those pipelines are missing and the frame rate falls (Ocarina of Time's Kakariko Village at 30-70 ms a frame, 1,502 such lines in one session). → [Metal's archiver store filled by one flush period](../reference/rendering.md#metals-archiver-store-filled-by-one-flush-period)
+ - the pipeline prebuild (`DM_PSO_PREBUILD=tool`, the NSP script's `[RED] dmhost exit code -11`), or a run that captures pipelines, dies with SIGSEGV and no `CRASH` line of its own. macOS's crash report has `objc_msgSend` ← `MultiLevelAirntBinaryCache::getElementAtDestination` ← `-[MTLCompiler compileFunctionRequestInternal:…]` ← `arch_capture`, and a thread on the `MTLBinaryArchive_Serialize` queue in `airntSerializeToURL` ← `arch_write_file`. → [A pipeline compile crashes while an archive period is written](../reference/rendering.md#a-pipeline-compile-crashes-while-an-archive-period-is-written)
+ - the start after a cold start spends minutes in the prepare step ("Preparing shaders"), with MTLCompilerService at 700-980% CPU, yet the log says no base was compiled: `pipeline prepare: 30838 lines (…) in 761.61 s on 10 workers before the first frame, progress screen shown; bases 0 compiled, 8608 from the archive, 637 reused`, then `pipeline archive compacted: 80 files of bases with a vertex layout gave 8859 bases to the files just written and were removed` (issue #1747: a cold start of 457 s, then a warm one of 309 s with 0 compiled). → [A cold start leaves a file per timer flush, and the next start compacts them all](../reference/rendering.md#a-cold-start-leaves-a-file-per-timer-flush-and-the-next-start-compacts-them-all)
++- every start compiles the same few dozen to few hundred bases again, and area loads stall on them (a draw waits in `pso_get` → `arch_capture` → `MTLCompiler`), although each run compiled them before. The run's last lines say `pipeline archive at exit: 425 pipelines not written yet, not all written in time: those left are built again at the next start (968 ms)`, or `[RED] graceful exit not done in 1.5 seconds, exiting at once` with no archive line at all. → [A run that ends in its prewarm loses what it compiled](../reference/rendering.md#a-run-that-ends-in-its-prewarm-loses-what-it-compiled)
+ - a start after some play spends minutes in the prepare step and the log says `pipeline archive compacted: N files of bases with a vertex layout gave M bases to the files just written and were removed`: Ocarina of Time on an M4, 9 files of play beside a compaction's 5 made the next start capture 8,543 bases again, 713 s before the first frame (PR #1880); after a cold start's 80 files, 762 s (A cold start leaves a file per timer flush, issue #1747). → [Archive lookups asked every file, so a few files made a start compile every base again](../reference/rendering.md#archive-lookups-asked-every-file-so-a-few-files-made-a-start-compile-every-base-again)
+ - the first start of an app with a big prewarm list sits in the prepare step ("Preparing shaders") for minutes with MTLCompilerService at full CPU: Ocarina of Time (40,154 lines) took 450-475 s on an M5 Max with an empty device archive, and the log says `pipeline prepare: … bases N compiled`. The start after it takes the bases from `pso_archive` in seconds. → [A first start builds every base of the prewarm list before the first frame](../reference/rendering.md#a-first-start-builds-every-base-of-the-prewarm-list-before-the-first-frame)
+ - the NSP script's `[RED] prewarm pipelines: the host's prebuild tool failed (see …/logs/pso_prewarm_mac.log); the app is packed without them and builds them on its first start`, though the tool's log ends at `pipeline prebuild: N files (… MB) for the app to bundle in …` with 0 failed; the tool's crash report (`EXC_BREAKPOINT`) has the main thread in `mtl_arch_save` under `exit` → `__cxa_finalize_ranges`, and the crashing thread on `dm.nvn.pso-archive` in `localeconv_l` ← `strtod_l` ← `libllvm-flatbuffers` ← `-[_MTL4PipelineDataSetSerializer serializeAsPipelinesScriptWithError:]` ← `prewarm_script` ← `arch_write_file`. Not every build: one of two of the same inputs. → [Captures still queued on the harvest queue left out of a waiting flush](../reference/rendering.md#captures-still-queued-on-the-harvest-queue-left-out-of-a-waiting-flush)
+diff --git a/docs/development.md b/docs/development.md
+index 049d4819463738b9ff8f338773434a9f9013da75..97e29d01dc3d66df81bb5f24148a730b38904d5c 100644
+--- a/docs/development.md
++++ b/docs/development.md
+@@ -781,7 +781,7 @@ Compute pipelines go through the same archives whole (`cps_make`: there is no ba
+ Every start adds a file or more: Breath of the Wild wrote 5–7 per start, and play writes one per timer flush. Each file gets an index beside it, `<file>.keys`, the keys of the pipelines in it ([Archive lookups asked every file](reference/rendering.md#archive-lookups-asked-every-file-so-a-few-files-made-a-start-compile-every-base-again)): a pipeline's key digests what its Metal 4 descriptor sets (its functions by library file, entry name and constant values; the vertex layout, the colour attachments and the other fields), and a start reads every index, so a lookup asks the one file that holds the pipeline and a miss asks none. The files are opened in parallel (about 15 ms each one at a time). A file without an index (written before it) is still asked in turn, about 0.06 ms for each one a base is not in. A run file's name holds how many pipelines it holds (`00012-6.mtl4a`), and compaction takes files by size tier, 8 times the one below (`PSO_ARCH_COMPACT`: under 8 pipelines, 64, 512, then up to a full period of 2,000, `ARCH_PERIOD_MAX`): when a tier holds more than 8 files, its files and those of every smaller tier are compacted. The bases the prewarm takes from them are captured again through the compiler from their original shader functions, without lookup archives; the flushes write them into a file per 2,000, and the compacted files and their indexes are removed once the last is written (`arch_compact_finish`). A full period's file is never compacted, and a base found in another file is used as it is: a capture is a full compile, and with every file compacted a start after a few files of play captured the whole archive again ([Every start after play captures the whole pipeline archive again](reference/rendering.md#every-start-after-play-captures-the-whole-pipeline-archive-again)). A file named before (`00012.mtl4a`) counts as the largest tier below a full period. Bases the prewarm did not take (no `pso_user.tsv` line names them) go with the compacted files and are built again when drawn. The log says `pipeline archive compacted: N files gave M bases …`. Importing bases through lookup archives could crash Metal during serialization ([issue #342](reference/shaders.md#a-compaction-flush-that-crashes-then-crashes-every-start)); capturing the original functions avoids that framework defect, at the cost of more compiler work on a compaction start.
+ The log shows `pipeline archive …: N files, … MB, opened in … ms` at start, `pipeline archive: N new pipeline bases written to …` after each flush (`… and M compute pipelines …` when it holds compute pipelines), and after the prewarm a line counting the bases compiled, taken from the archive and reused. Native task / mesh pipelines go into the same archive whole, with no base (a game has some hundred, each with functions of its own), as compute pipelines do: one no file holds is built through the `MTLDevice` for its draw or the prewarm and compiled again into the flush period in the background (`arch_harvest`). A flush that holds only them is a `p` file, as they have no vertex layout; the flush line names them (`… and M task / mesh pipelines …`), and the prewarm's line `pipeline prewarm: N native task / mesh pipelines; so far … taken from the pipeline archive, … built and captured for it, … built without it` counts where they came from. `DM_PSO_ARCHIVE=off` turns the archive off; `DM_PSO_ARCHIVE=<folder>` puts it elsewhere. `DM_PSO_MTL4=0` builds every pipeline through the `MTLDevice` as before, with no bases and no archive. The Metal 4 path, with the hybrid pipelines and the prebuild, is on by default on the Mac. On iOS it is on for a game whose profile sets `pso_mtl4 on` (Breath of the Wild, tested on an iPhone 17 Pro Max) or with `DM_PSO_MTL4=1`, and off otherwise: the archive's memory is not measured against an iPhone's limit yet. For such a game the standard on iOS is the prebuild's bases made on the Mac and shipped in the app ([The pipeline archive made offline](#the-pipeline-archive-made-offline)); the device builds them itself only as a fallback. Pipelines whose functions have no Metal 4 descriptor (the diagnostic `DM_NVN_HILITE` and `DM_NVN_MAGSCAN` overrides) always take the `MTLDevice` path.
+ 
+-Timed flushes defer while the prewarm runs, compacting or not, so a cold start writes a file per 2,000 bases, not one per 10 s ([A cold start leaves a file per timer flush](reference/rendering.md#a-cold-start-leaves-a-file-per-timer-flush-and-the-next-start-compacts-them-all)); a period that reaches 2,000 captures is handed over all the same, and what the prewarm holds unwritten is written when the player quits (waiting up to 10 s) and starts writing when the app goes to the background or the window is minimized. Once the prewarm finishes, the first flush hands over its last period, and a compaction's old files are removed once every period that may hold recaptured bases is written. The prepare line says how many bases a compaction captured again.
++Timed flushes defer while the prewarm runs, compacting or not, so a cold start writes a file per 2,000 bases, not one per 10 s ([A cold start leaves a file per timer flush](reference/rendering.md#a-cold-start-leaves-a-file-per-timer-flush-and-the-next-start-compacts-them-all)); a period that reaches 2,000 captures is handed over all the same, and what the prewarm holds unwritten is written when the player quits (waiting up to 10 s) and starts writing when the app goes to the background or the window is minimized. Once the prewarm finishes, the first flush hands over its last period, and a compaction's old files are removed once every period that may hold recaptured bases is written. The prepare line says how many bases a compaction captured again. A prewarm that is not compacting still hands its period over once it is 60 s old, then 120 s, 240 s and so on up to 16 minutes (`DM_PSO_ARCH_WARM_FLUSH_MS`, `0` turns it off), so a run that ends during a long prewarm keeps most of what it compiled. The graceful exit (`SIGTERM`) gives the archive 8 s beyond its 1.5 s (`DM_EXIT_ARCH_MS`; 3 s on iOS) and writes it even when a draw is still under way, as long as that draw's compile returns within the budget ([A run that ends in its prewarm loses what it compiled](reference/rendering.md#a-run-that-ends-in-its-prewarm-loses-what-it-compiled)).
+ 
+ ### Hybrid pipelines
+ 
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index c72c5e586bd01df3e7ba2037ac81d18bc7ef5a8e..11aeaf04b3d05d29a98a0563f300ae617f2c4dc3 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -39,6 +39,7 @@ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into
+ DM_ENV_FILE_KEYS	switch	Set by the iOS app and the Mac launcher at launch to the space-separated names an env file set; the settings screen keeps those values and shows them greyed out
+ DM_ENV_LAUNCH_KEYS	switch	Set at launch by the Mac launcher (the launcher settings already in the environment) and the iOS app (every DM_* variable already in it) to the space-separated names; the settings screen keeps those values and shows them greyed out
+ DM_EXEC_OUT	path	File `oe::ExecuteProgram` records the next program and its parameters in, then the app ends (the iOS app of a game of several programs sets it to `Documents/program.bin`)
++DM_EXIT_ARCH_MS	switch	`=<ms>`: the time the graceful exit (SIGTERM) gives the pipeline archive's write beyond its 1.5 s (default 8000 on the Mac, 3000 on iOS; `0`: the main path waits for what is left of the 1.5 s, as before, a fallback at 1.5 s hands the archive over without waiting, and the hard deadline is 2.0 s)
+ DM_FD_LOG	diagnostic	`=<seconds>` logs, every that many seconds, the number and kinds of file descriptors the process has open
+ DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
+ DM_FOCUS_KEEP	switch	`1` keeps the game in focus while its Mac window is up, whichever app is active (minimizing still counts); `scripts/regress.py` sets it, so another app taking the key window during a run does not pause a game that stops out of focus
+@@ -328,6 +329,7 @@ DM_PROGRAM	switch	`=<index>`: the program of a game of several programs that a h
+ DM_PROGRAMS	path	Table of a game's programs on the Mac (`programs.tsv`: index, host, modules, run folder, environment): `oe::ExecuteProgram` starts the named one in this process's place; the NSP script's run command and the Mac app set it
+ DM_PROGRAM_ID	switch	`=<hex>`: the program ID the host reports from `svcGetInfo(ProgramId)` (default: the profile's `program_id`)
+ DM_PSO_ARCHIVE	path	The folder of the per-game Metal 4 pipeline archive of pipeline bases (default `pso_archive/` beside `pso_user.tsv`); `off` keeps no archive
++DM_PSO_ARCH_WARM_FLUSH_MS	switch	`=<ms>`: during a prewarm that is not compacting, the timer's flush hands the archive's period over once it is that old, then twice as long each time up to 16 times (default 60000; `0`: no flush until the prewarm ends or the period is full)
+ DM_PSO_BUNDLE	path	The pipeline archive made offline (`<GPU architecture>.mtl4a`, `prebuilt.tsv`), read only; the iOS app and Mac launcher set it to their `pso/` folder; `off` ignores it
+ DM_PSO_GPUS	switch	`build_ipa.sh`: the GPU architectures, comma-separated, to build the offline pipeline archive for (`none` builds none); unset, a profile with `pso_mtl4 on` gets its `pso_gpu` list or `g18p` when absent; profiles with `pso_mtl4 off` get none
+ DM_PSO_HYBRID	switch	`0`: a draw whose pipeline is not built yet waits for it instead of drawing with its shader pair's pulling pipeline meanwhile (on by default with the Metal 4 path)
+@@ -426,6 +428,7 @@ DM_TEST_LEAK_GPU	diagnostic	`=1` allocates and keeps a 1 MB shared Metal buffer
+ DM_TEST_LINK_STALL	diagnostic	`=<start s>,<duration s>`: counting from the first present, pauses the display link at that point for that long, to check the present fallback
+ DM_TEST_NO_METAL4	diagnostic	`=1` treats the GPU as one without Metal 4, as on a virtual Mac: the NVN layer starts only its classic part and drops every present
+ DM_TEST_PRESENT_LAG	diagnostic	`=<every n>,<ms>[,<in a row>][;…]` sleeps that long before every nth present (and the ones after it in the run): a slow frame on demand
++DM_TEST_STUCK_DRAW	test	In t_pso_archive's SIGTERM case, holds a draw in the graphics layer (dm_gfx_enter with no leave) so the graceful exit's suspend never returns
+ DM_TEST_SWKBD_HOLD_MS	diagnostic	`=<ms>` (with `DM_KBD`) keeps the system keyboard up that long before `DM_KBD`'s text is returned, as a player typing would
+ DM_TEST_SWKBD_LAG_MS	diagnostic	`=<ms>` sleeps that long between the keyboard handing back its text and the game's thread getting the result, to check that auto-accept does not act early
+ DM_TEST_TESS	test	Path to the native t_tess executable that test_dmsh_tess.py runs the tessellation layout and expansion kernel through on the GPU (`make check_t_tess` sets it)
+diff --git a/docs/reference/rendering.md b/docs/reference/rendering.md
+index 574e01bcf6c93b06130dbdb08119493d124dad56..b675d6958064116192e383dab06b972ce74329d5 100644
+--- a/docs/reference/rendering.md
++++ b/docs/reference/rendering.md
+@@ -1313,6 +1313,14 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
+ - **See also:** [Metal's archiver store filled by one flush period](#metals-archiver-store-filled-by-one-flush-period).
+ - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) on an M4 (16 GB, macOS 27.2 26B123); #1747 on an M4 Pro.
+ 
++### A run that ends in its prewarm loses what it compiled
++
++- **Symptom:** every start compiles the same few dozen to few hundred bases again, and area loads stall on them (a draw waits in `pso_get` → `arch_capture` → `MTLCompiler`), although each run compiled them before. The run's last lines say `pipeline archive at exit: 425 pipelines not written yet, not all written in time: those left are built again at the next start (968 ms)`, or `[RED] graceful exit not done in 1.5 seconds, exiting at once` with no archive line at all.
++- **Cause:** since [A cold start leaves a file per timer flush](#a-cold-start-leaves-a-file-per-timer-flush-and-the-next-start-compacts-them-all), the timer's flushes wait for the prewarm's end, and a period is written only when full (`ARCH_PERIOD_MAX`, 2,000) or at exit. Ocarina of Time's prewarm (31,663 lines after the first frame, on 5 workers) outlives a play session, so everything a session compiled waited for the exit. The graceful exit gave the archive what was left of 1.5 s, while writing takes 1.8–4 s per 900 bases. When a draw was still compiling its pipeline, `dm_gfx_suspend` waited on that draw, and the 1.5 s fallback ended the process before any write. A test harness that stops a run for "no new frame" sends `SIGTERM` exactly then.
++- **Fix:** during a prewarm that is not compacting, the timer's flush hands the period over once it is `DM_PSO_ARCH_WARM_FLUSH_MS` old (60 s by default, `0` turns it off). Each later one waits twice as long, up to 16 times, so a cold start adds about one file per doubling, not one per 10 s. While captures wait, the timer looks again every 10 s. In the graceful exit (`hle_lifecycle.c`), the archive starts writing first (`dm_gfx_quit_begin`), before the drain, and gets `DM_EXIT_ARCH_MS` (8 s, or 3 s on iOS) beyond the 1.5 s. If graphics are not suspended within 1.5 s, the fallback waits for the archive's write inside the same deadline; only one of the two paths writes and ends the process. A draw that is still compiling its pipeline holds its period open, so that period is written only if the compile returns within the budget; the periods before it are written either way. A hard deadline at 1.5 s plus the archive's budget plus 0.5 s ends the process whatever happens (2.0 s with `DM_EXIT_ARCH_MS=0`, whose fallback then hands the archive over without waiting). Files are still written as `.tmp` and renamed after their index, so a write the deadline cuts short leaves the files already there valid; a start removes a `.mtl4a.tmp` a stopped write left, and an index whose file never came.
++- **Check:** `test_pso_archive.py`, in fresh processes. Five new bases in a prewarm, then the timer's flush after `DM_PSO_ARCH_WARM_FLUSH_MS=300`, then `_exit`: one file, and the next start takes all five and compiles none (before: no file, five compiled). `SIGTERM` in a prewarm, with and without a draw that holds the graphics layer (`dm_gfx_enter` with no leave): one file, all five taken at the next start (before: none with the draw held). A torn write's `.tmp` and an index without its file, beside a file that is not an archive: the leftovers are removed, the bad file is skipped, and all five bases come from the good file (before: the `.tmp` stays).
++- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) on an M4 Pro (macOS 26.6): every warm-up run ended with 400–500 bases not written, and the next runs compiled 57–167 bases and missed the archive 57–256 times. Hyrule Field, Zora's Domain and Kakariko stalled for more than 20 s at the load.
++
+ ### Archive lookups asked every file, so a few files made a start compile every base again
+ 
+ - **Symptom:** a start after some play spends minutes in the prepare step and the log says `pipeline archive compacted: N files of bases with a vertex layout gave M bases to the files just written and were removed`: Ocarina of Time on an M4, 9 files of play beside a compaction's 5 made the next start capture 8,543 bases again, 713 s before the first frame (PR #1880); after a cold start's 80 files, 762 s ([A cold start leaves a file per timer flush](#a-cold-start-leaves-a-file-per-timer-flush-and-the-next-start-compacts-them-all), [issue #1747](https://github.com/seedds/nxnative/issues/1747)).

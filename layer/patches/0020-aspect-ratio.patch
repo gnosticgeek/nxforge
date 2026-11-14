@@ -1,0 +1,159 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Sat, 14 Nov 2026 07:10:22 +0000
+Subject: aspect-ratio: Aspect ratio choice on the Mac (16:9, 16:10, Auto) for
+ games with screen-shape stubs
+
+The Mac settings window shows the two screen-shape rows (DM_SCREEN_WIDE, Ocarina of Time; DM_SCREEN_ASPECT, Breath of the Wild and Animal Crossing) as Aspect ratio with 16:9, 16:10 and Auto (match the screen).
+
+DM_SCREEN_WIDE takes shapes from 1.3:1 to 32:9 other than 16:9, so 16x10 renders Ocarina at 2304x1440 with the cameras at 1.6 (upstream #2538 takes only wider than 16:9). DM_SCREEN_ASPECT=auto is resolved on the Mac from the main screen (the iOS front end resolves its own), and left holding the ratio. The main screen's size leaves out a MacBook's notch (safeAreaInsets.top), where a full-screen window does not reach: 3456x2160, 16:10. The window opens in the picture's shape for a taller one too (1152x720).
+---
+ dm/games/settings.tsv |  4 ++--
+ dm/host/front_mac.m   |  8 ++++++--
+ dm/host/loader.c      | 26 +++++++++++++++++++++-----
+ docs/env_switches.tsv |  4 ++--
+ docs/settings.md      |  8 ++++----
+ 5 files changed, 35 insertions(+), 15 deletions(-)
+
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index 71722e87f6e2db32653386e4f245c94bf3da8c29..74fbb73b851b5602786f8397a8b1d3890a6e0c99 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -34,9 +34,9 @@ DM_RUMBLE_GAIN	range	0:3:0.1	1.0	always	Controls	Rumble strength		needs=DM_RUMBL
+ DM_RUMBLE_MIN	range	0:0.9:0.05	0	always	Controls	Rumble cutoff
+ DM_PAD_PRESS_TO_JOIN	toggle	-	0	always	Controls	Press a button to join
+ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
+-DM_SCREEN_ASPECT	choice	auto=Match screen?platform:ios,1.43=iPhone Duo screen (1.43:1),0=16:9 (Switch)	auto|0	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
++DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
+ DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
+-DM_SCREEN_WIDE	choice	auto=Match screen?platform:mac,0=16:9 (Switch)	0|auto	fixups:SCREEN_WIDE	Game	Wide screen	On a screen wider than 16:9 the picture fills it, with more of the scene at the sides. Renders more pixels: a little slower.
++DM_SCREEN_WIDE	choice	0=16:9 (Switch),16x10=16:10?platform:mac,auto=Auto (match the screen)?platform:mac	0|auto	fixups:SCREEN_WIDE	Game	Aspect ratio	Fills a 16:10 or ultrawide screen instead of showing bars: Auto matches the screen the game opens on. 16:10 shows a little less at the sides, wider screens more.
+ DM_PRESENT_SNAP	toggle	-	DM_GAME_PRESENT_SNAP	gfxapi:nvn	Performance	Frame buffering	Up to one frame more display latency.
+ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
+ DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
+diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
+index f2e91d4139e4ea323ad13c7f5ab4a88598fc64d4..73f6582ad0e2df398100b6788cd8519bde19f163 100644
+--- a/dm/host/front_mac.m
++++ b/dm/host/front_mac.m
+@@ -710,7 +710,9 @@ extern int (*dm_front_screen)(unsigned *w, unsigned *h);
+ static int mac_screen(unsigned *w, unsigned *h) {
+     @autoreleasepool {
+         NSScreen *sc = NSScreen.screens.firstObject; if (!sc) return 0;
+-        NSSize px = [sc convertRectToBacking:sc.frame].size; *w = (unsigned)px.width; *h = (unsigned)px.height; return *w && *h;
++        NSRect fr = sc.frame;
++        if (@available(macOS 12.0, *)) fr.size.height -= sc.safeAreaInsets.top;   // NXForge: below a MacBook's notch, where a full-screen window sits (3456x2160, 16:10, not 3456x2234)
++        NSSize px = [sc convertRectToBacking:fr].size; *w = (unsigned)px.width; *h = (unsigned)px.height; return *w && *h;
+     }
+ }
+ __attribute__((constructor)) static void wide_hook(void) { dm_front_screen = mac_screen; }
+@@ -1572,7 +1574,9 @@ void front_run(void (*guest)(void)) {
+         NSRect r = NSMakeRect(0, 0, 1280, 720);
+         {   // A wide picture (DM_SCREEN_WIDE as the loader left it: <width>x<height> or 0, loader.c) gets a window of its shape
+             const char *sw = getenv("DM_SCREEN_WIDE"); unsigned ww = 0, wh = 0;
+-            if (sw && sscanf(sw, "%ux%u", &ww, &wh) == 2 && wh && (double)ww / wh > 1.78 && (double)ww / wh <= 3.6) r = NSMakeRect(0, 0, round(720.0 * ww / wh), 720);
++            if (sw && sscanf(sw, "%ux%u", &ww, &wh) == 2 && wh && (double)ww / wh >= 1.3 && (double)ww / wh <= 3.6) r = NSMakeRect(0, 0, round(720.0 * ww / wh), 720);   // NXForge: 16:10 too (1152x720)
++            const char *sa = getenv("DM_SCREEN_ASPECT"); double a = sa ? atof(sa) : 0;   // NXForge: and a taller picture (DM_SCREEN_ASPECT as the loader left it, 1.6 for 16:10)
++            if (a >= 1.3 && a < 1.77) r = NSMakeRect(0, 0, round(720.0 * a), 720);
+         }
+         NSWindow *win = [[NSWindow alloc] initWithContentRect:r
+                                                     styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
+diff --git a/dm/host/loader.c b/dm/host/loader.c
+index b3a7cb6ed4f3bc44dcdda8e2073b8b4805636aca..a3d84bea926a7de6a116795e43a39cc36cdb3d9a 100644
+--- a/dm/host/loader.c
++++ b/dm/host/loader.c
+@@ -320,6 +320,12 @@ static void install_fps_state(module_t *m) {
+ }
+ // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
+ // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
++// NXForge: the shapes DM_SCREEN_WIDE takes: 1.3:1 to 32:9, not within 1 % of 16:9 (upstream #2538 takes only wider than 16:9; NXForge adds 16:10 and other taller screens)
++static int wide_shape_ok(unsigned w, unsigned h) {
++    double a = w && h ? (double)w / h : 0;
++    double d = a / (16.0 / 9.0) - 1;
++    return a >= 1.3 && a <= 3.6 && (d < 0 ? -d : d) >= 0.01;
++}
+ void dm_fps_state_apply(void) {
+     if (!dm_fps_state) return;
+     const char *e = getenv("DM_FPS_TARGET"); int t = e ? atoi(e) : DM_GAME_FPS_TARGET;
+@@ -342,7 +348,15 @@ void dm_fps_state_apply(void) {
+     // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
+     // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
+     const char *as = getenv("DM_SCREEN_ASPECT");
+-    if (as && *as && strcmp(as, "0") && strcmp(as, "auto")) {   // 0: 16:9; auto: the iOS front end resolves it to the screen's shape (a Mac window has none)
++    char asb[16];
++    if (as && !strcmp(as, "auto")) {   // NXForge (the Mac settings window's Auto): the iOS front end resolves auto itself; on the Mac the main screen's shape below its notch
++        unsigned sw = 0, sh = 0; double r = 0;   // (dm_front_screen, front_mac.m), when it is taller than 16:9 (a MacBook's 16:10), else 16:9
++        if (getenv("DM_WINDOW") && dm_front_screen && dm_front_screen(&sw, &sh)) r = (double)sw / sh;
++        if (r >= 1.3 && r < 1.77) { snprintf(asb, sizeof asb, "%.3f", r); as = asb; LOG("%s: DM_SCREEN_ASPECT=auto: the main screen is %ux%u (%.3f:1)", g_fps_mod, sw, sh, r); }
++        else if (r > 0) LOG("%s: DM_SCREEN_ASPECT=auto: the main screen, %ux%u, is not taller than 16:9; keeping 16:9", g_fps_mod, sw, sh);
++        if (r > 0) setenv("DM_SCREEN_ASPECT", as == asb ? asb : "0", 1);   // left holding what was decided, which the Mac front end shapes its window by
++    }
++    if (as && *as && strcmp(as, "0") && strcmp(as, "auto")) {   // 0: 16:9; auto: the iOS front end resolves it to the screen's shape, the Mac's just above
+         char *end; float a = strtof(as, &end);
+         if (end == as || *end || !(a >= 1.3f && a < 1.77f)) LOG("[RED] DM_SCREEN_ASPECT=%s: a width / height from 1.3 to 1.77; keeping 16:9", as);
+         else {
+@@ -388,11 +402,13 @@ void dm_fps_state_apply(void) {
+         if (!(om ? atoi(om) : DM_GAME_OPMODE)) {
+             if (asked) LOG("%s: DM_SCREEN_WIDE=%s: handheld mode keeps 16:9 (the handheld picture's size is not among the wide-screen stubs: Ocarina of Time crops it to 1920x1080)", g_fps_mod, ws);
+         } else if (!strcmp(ws, "auto")) {
++            // NXForge: a screen taller than 16:9 counts too (a MacBook's 16:10 below its notch, front_mac.m): the stubs then give a narrower output at the same height
++            // (2304x1440) and the cameras the screen's ratio, so the picture fills it with a little less at the sides. Within 1 % of 16:9 is 16:9 (a 1920x1080 or 2560x1440 monitor)
+             if (!getenv("DM_WINDOW") || !dm_front_screen || !dm_front_screen(&ww, &wh)) { if (asked) LOG("%s: DM_SCREEN_WIDE=auto: no screen to match (no window), keeping 16:9", g_fps_mod); }
+-            else if ((double)ww / wh > 1.8 && (double)ww / wh <= 3.6) { ok = 1; LOG("%s: DM_SCREEN_WIDE=auto: the main screen is %ux%u (%.3f:1)", g_fps_mod, ww, wh, (double)ww / wh); }
+-            else LOG("%s: DM_SCREEN_WIDE=auto: the main screen, %ux%u, is not wider than 16:9; keeping 16:9", g_fps_mod, ww, wh);
+-        } else if (sscanf(ws, "%ux%u%c", &ww, &wh, &tail) != 2 || !ww || !wh || (double)ww / wh <= 1.78 || (double)ww / wh > 3.6)
+-            LOG("[RED] DM_SCREEN_WIDE=%s: <width>x<height> of a screen wider than 16:9 (up to 32:9), as 3440x1440, or auto; keeping 16:9", ws);
++            else if (wide_shape_ok(ww, wh)) { ok = 1; LOG("%s: DM_SCREEN_WIDE=auto: the main screen is %ux%u (%.3f:1)", g_fps_mod, ww, wh, (double)ww / wh); }
++            else LOG("%s: DM_SCREEN_WIDE=auto: the main screen, %ux%u, is 16:9 or out of range (1.3:1 to 32:9); keeping 16:9", g_fps_mod, ww, wh);
++        } else if (sscanf(ws, "%ux%u%c", &ww, &wh, &tail) != 2 || !wide_shape_ok(ww, wh))
++            LOG("[RED] DM_SCREEN_WIDE=%s: <width>x<height> of a screen from 1.3:1 to 32:9 other than 16:9, as 3440x1440 or 16x10, or auto; keeping 16:9", ws);
+         else ok = 1;
+         if (ok) {
+             double a = (double)ww / wh; uint32_t q = (uint32_t)(a * 65536.0 + 0.5); float af = (float)a;
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 8ee1bc3003b42457574884f2e76663006dd1a23d..c72c5e586bd01df3e7ba2037ac81d18bc7ef5a8e 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -379,12 +379,12 @@ DM_SAVED_CHOICES	switch	`0` ignores the player's saved choices (launcher.<VAR> i
+ DM_SAVE_SYNC	player	Cloud saves: the folder whose `<title ID>/save.dmsync` the save is synced through, `icloud` for iCloud Drive/nxnative Saves (the Mac); `0` or unset, off. The Mac launcher sets the folder chosen in its settings window's Cloud saves, the iPhone app the one picked in its launcher (dm/host/save_sync.h); regress.py, bench.py and the NSP script's own host runs set `0`
+ DM_SAVE_SYNC_CHOICE	switch	Cloud saves: set by a front end that asks the player when the cloud's save and this device's both changed (any value: a save that changed on both sides is replaced on neither without a choice); `ask`: no choice yet, `cloud:<hash>` brings in the cloud's save with that hash, `local:<hash>` sends this device's over the cloud's save with that hash (`local:none`: the cloud had none), `offline`: the cloud could not be read before the start, so the host does not wait for it; unset, the newer save wins (dm/host/save_sync.c, docs/frontends.md)
+ DM_SCHEME_NAME	switch	Set by `build_ipa.sh` itself for xcodegen's `project.yml`: the Xcode scheme name, `DmIOS`, or `<display name> (<title ID>)` for a project prepared with `--prepare-xcode`
+-DM_SCREEN_ASPECT	player	`=<width/height>` (1.3 to 1.77, e.g. `1.43` for the iPhone Duo) renders a game whose profile has `screen_aspect on` in that shape: output 1920 wide, 1280-wide layout space, the HUD at the taller edges and 16:9's sides in view; `auto` (iOS) the app window's own shape when it is taller than 16:9, else 16:9; `0` or unset is 16:9; launcher setting
++DM_SCREEN_ASPECT	player	`=<width/height>` (1.3 to 1.77, e.g. `1.43` for the iPhone Duo) renders a game whose profile has `screen_aspect on` in that shape: output 1920 wide, 1280-wide layout space, the HUD at the taller edges and 16:9's sides in view; `auto` the app window's own shape (iOS) or the main screen's below its notch (Mac, with a window; the loader then leaves the variable holding the ratio or `0`) when it is taller than 16:9, else 16:9; `0` or unset is 16:9; launcher setting
+ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the profile's layout-size conversion stubs follow the taller layout, one bit each (default all)
+ DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
+ DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
+ DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz), and a variable-refresh screen to a fixed-rate mode at a multiple (ProMotion 120 → 60 Hz at 60 and 30 fps)
+-DM_SCREEN_WIDE	player	`=<width>x<height>` of a screen wider than 16:9 (up to 32:9, e.g. `3440x1440`) renders a game whose build has wide-screen stubs (the SCREEN_WIDE capability: Ocarina of Time) in that shape: the output keeps the game's own height and takes the width of the ratio (2560x1440 → 3440x1440, the 3D views 1920x1080 → 2580x1080), the scene keeps its vertical angle and shows more at the sides, the HUD stays at the screen's edges; `auto` (Mac, with a window) the main screen's size when it is wider than 16:9, else 16:9, and the default for a build with the stubs; `0`, handheld mode (`DM_OPMODE=0`) or a build without the stubs is 16:9; the loader leaves the variable holding what it decided (`<width>x<height>` or `0`); launcher setting
++DM_SCREEN_WIDE	player	`=<width>x<height>` of a screen from 1.3:1 to 32:9 other than 16:9 (e.g. `3440x1440`, or `16x10` where NXForge renders the same height a little narrower) renders a game whose build has wide-screen stubs (the SCREEN_WIDE capability: Ocarina of Time) in that shape: the output keeps the game's own height and takes the width of the ratio (2560x1440 → 3440x1440, the 3D views 1920x1080 → 2580x1080), the scene keeps its vertical angle and shows more at the sides, the HUD stays at the screen's edges; `auto` (Mac, with a window) the main screen's size below its notch when it is not 16:9, else 16:9, and the default for a build with the stubs; `0`, handheld mode (`DM_OPMODE=0`) or a build without the stubs is 16:9; the loader leaves the variable holding what it decided (`<width>x<height>` or `0`); launcher setting
+ DM_SETTINGS_FILE	path	`0` turns off the Mac player's per-game settings file (`NXForge settings.txt` in DM_GAME_FOLDER, else `nxforge-settings.txt` in DM_ROOT), which mirrors the Quick settings sidebar's choices and wins at launch
+ DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
+ DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
+diff --git a/docs/settings.md b/docs/settings.md
+index 7186023959a6105562c310d455818308ca362e19..51b1859242a87d4d0b85ff7033608daba51855b5 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -88,11 +88,11 @@ iPhone and iPad. **Fit**, the default, shows the game's picture (16:9, or the ta
+ 
+ ### Picture shape
+ 
+-Games whose profile supports it (Breath of the Wild, Animal Crossing: New Horizons). **iPhone Duo screen (1.43:1)** renders a taller picture of the Duo's own shape: the sides of 16:9 with more above and below, and the HUD at the screen's edges. **16:9** is the Switch's picture. The taller picture has about a quarter more pixels, so it runs a little slower and warmer.
++Games whose profile supports it (Breath of the Wild, Animal Crossing: New Horizons); the Mac settings window calls it **Aspect ratio**, with **16:9**, **16:10** and **Auto (match the screen)**, the default: the main screen's shape below a MacBook's notch when it is taller than 16:9, so 16:10 on a MacBook and 16:9 on most monitors. **iPhone Duo screen (1.43:1)** (iOS) renders a taller picture of the Duo's own shape: the sides of 16:9 with more above and below, and the HUD at the screen's edges. **16:9** is the Switch's picture. The taller picture has about a quarter more pixels, so it runs a little slower and warmer.
+ 
+ ### Wide screen
+ 
+-Mac, games whose build supports it (Ocarina of Time). **Match screen**, the default, renders a picture of the main screen's own shape when it is wider than 16:9 (an ultrawide monitor, 3440x1440 for one): the same view up and down, more of the scene at the sides, and the HUD at the screen's edges. On a 16:9 or taller screen it is the Switch's 16:9 picture, as **16:9**. The game's window opens in that shape; choose **Fullscreen** in [Display mode](#display-mode) to fill the screen. The wider picture has about a third more pixels, so it runs a little slower. **Handheld** [console mode](#console-mode) keeps 16:9. In an `env.txt`: `DM_SCREEN_WIDE=auto`, `0`, or a size such as `3440x1440`.
++Mac, games whose build supports it (Ocarina of Time); the Mac settings window calls it **Aspect ratio**. **Auto (match the screen)**, the default, renders a picture of the main screen's own shape (below a MacBook's notch, so 16:10 there) when it is wider than 16:9 (an ultrawide monitor, 3440x1440 for one): the same view up and down, more of the scene at the sides, and the HUD at the screen's edges; or when it is taller, from 1.3:1 (a MacBook's 16:10): the same height with a little less at the sides, filling the screen without bars. On a 16:9 screen it is the Switch's 16:9 picture, as **16:9**. **16:10** always renders 16:10 (2304x1440 docked). The game's window opens in that shape; choose **Fullscreen** in [Display mode](#display-mode) to fill the screen. The wider picture has about a third more pixels, so it runs a little slower. **Handheld** [console mode](#console-mode) keeps 16:9. In an `env.txt`: `DM_SCREEN_WIDE=auto`, `0`, or a size such as `3440x1440` or `16x10`.
+ 
+ ### Frame-rate counter
+ 
+@@ -317,8 +317,8 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+ | Display mode (Mac) | `DM_FULLSCREEN` | `1` fullscreen, `0` a window |
+ | Cloud saves folder (Mac) | `DM_SAVE_SYNC` | a folder; `icloud`: iCloud Drive › nxnative Saves; `0`: off |
+ | Picture (iPhone and iPad) | `DM_PICTURE_FIT` | `fit` 16:9 with black bars, `fill` covers the screen, cropped |
+-| Picture shape | `DM_SCREEN_ASPECT` | `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1), else 16:9 (iOS only); `1.43` the iPhone Duo's shape, `0` 16:9 |
+-| Wide screen (Mac) | `DM_SCREEN_WIDE` | `auto` the main screen's size when it is wider than 16:9, else 16:9; `<width>x<height>` that shape (`3440x1440`); `0` 16:9 |
++| Picture shape (Mac: Aspect ratio) | `DM_SCREEN_ASPECT` | `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1; on the Mac the main screen below its notch, 16:10 on a MacBook), else 16:9; `1.6` 16:10 (Mac), `1.43` the iPhone Duo's shape, `0` 16:9 |
++| Wide screen (Mac: Aspect ratio) | `DM_SCREEN_WIDE` | `auto` the main screen's size below its notch when it is not 16:9 (1.3:1 to 32:9), else 16:9; `<width>x<height>` that shape (`3440x1440`, `16x10`); `0` 16:9 |
+ | Frame-rate counter | `DM_SHOW_FPS` | `1`, `0` |
+ | Touch feedback | `DM_TOUCH_HAPTICS` | `1`, `0` |
+ | Game rumble | `DM_RUMBLE` | `1`, `0` |

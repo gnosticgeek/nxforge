@@ -10,7 +10,7 @@ enum NXFLauncherTab: String, CaseIterable { case general = "General", graphics =
 enum NXFLauncherLayout {
     /// The Graphics tab's boxes and their rows in order, whatever settings.tsv's section or level says (its sections are the iPhone's single list)
     static let graphicsBoxes: [(title: String, envs: [String])] = [
-        ("Resolution", ["DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER", "DM_SCREEN_ASPECT", "DM_PRESENT_AA"]),
+        ("Resolution", ["DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER", "DM_SCREEN_ASPECT", "DM_SCREEN_WIDE", "DM_PRESENT_AA"]),
         ("Frame rate", ["DM_FPS_TARGET", "DM_PRESENT_INTERP"]),
         ("HDR", ["DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH"]),
         ("Pixel art", ["DM_PIXEL_ART"]),
@@ -28,7 +28,8 @@ enum NXFLauncherLayout {
     static let notes: [String: String] = [
         "DM_DYNAMIC_RESOLUTION": "Lets the game lower its resolution under load.",
         "DM_PRESENT_UPSCALE": "Uses more GPU time and can increase heat.",
-        "DM_SCREEN_ASPECT": "Renders about a quarter more pixels.",
+        "DM_SCREEN_ASPECT": "Auto matches the screen. 16:10 renders a little more.",
+        "DM_SCREEN_WIDE": "Auto matches the screen: fills 16:10 or ultrawide.",
         "DM_PRESENT_EDR": "On an XDR or HDR screen, highlights glow above white.",
         "DM_PRESENT_INTERP": "Shows 60 fps at 120 fps, about 8 ms later. Experimental.",
         "DM_PRESENT_AA": "Smooths jagged edges; small text softens a little.",
@@ -39,11 +40,15 @@ enum NXFLauncherLayout {
         "DM_PSO_PREBUILD": "First launch may take a few minutes.",
     ]
 
+    /// The Mac window's names for rows whose settings.tsv label is the iPhone's ("Picture shape" there): both screen-shape rows read as one Aspect ratio choice
+    static let labels: [String: String] = ["DM_SCREEN_ASPECT": "Aspect ratio", "DM_SCREEN_WIDE": "Aspect ratio"]
+
     static func tab(_ s: Setting) -> NXFLauncherTab {
         graphics.contains(s.env) ? .graphics : s.basic || general.contains(s.env) ? .general : .advanced
     }
     static func group(_ s: Setting) -> String { boxes.first { $0.envs.contains(s.env) }?.title ?? s.sectionTitle }
     static func note(_ s: Setting) -> String { notes[s.env] ?? s.note }
+    static func label(_ s: Setting) -> String { labels[s.env] ?? s.label }
 
     static let cloudSaves = "Cloud saves"   // General's box that is not a group of settings
 
@@ -248,14 +253,14 @@ struct NXFSettingRow: View {
 
     private var label: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(s.label)
+            Text(NXFLauncherLayout.label(s))
             if !note.isEmpty { Text(note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
     }
 
     private var slider: some View {
         Slider(value: rangeValue, in: (s.min ?? 0)...(s.max ?? 1), step: s.step ?? 0.05)
-            .labelsHidden().accessibilityLabel(s.label).accessibilityValue(rangeText)
+            .labelsHidden().accessibilityLabel(NXFLauncherLayout.label(s)).accessibilityValue(rangeText)
     }
 
     var body: some View {
@@ -264,7 +269,7 @@ struct NXFSettingRow: View {
             case "choice":   // the note under the whole row, so the menu keeps its width
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 12) {
-                        Text(s.label).fixedSize(horizontal: false, vertical: true)
+                        Text(NXFLauncherLayout.label(s)).fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 8)
                         NXFMenu(s: s, selection: m.binding(s))
                     }
@@ -303,7 +308,7 @@ struct NXFMenu: View {
     let s: Setting
     @Binding var selection: String
     var body: some View {
-        let p = Picker(s.label, selection: $selection) {
+        let p = Picker(NXFLauncherLayout.label(s), selection: $selection) {
             ForEach(s.options ?? [], id: \.[0]) { Text($0[1]).tag($0[0]) }
         }
         .pickerStyle(.menu).labelsHidden()
