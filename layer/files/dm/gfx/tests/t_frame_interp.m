@@ -1,7 +1,7 @@
 // NXForge: frame interpolation through the display-link callback (frame_interp.inc), offscreen drawables and no window: 60 fps frames on a 120 Hz link, each frame an
 // in-between picture on one tick and the held frame on the next. Then what 0.28.3 changed: a callback on another thread (CA runs deferred display links from the thread that
 // flushes a window change) and the first second after the drawable changes size present the game's frames only, and a rescue in mode 1 is not ended by the 120 Hz link it asks for.
-// 0.29.1: a link that calls back only about 80 times a second turns them off at that drawable size
+// 0.29.1: a link that calls back only about 80 times a second turns them off at that drawable size; 0.32.1: a stall inside the measured second does not
 #include "../nvn/nvn_mtl.m"
 @interface FakeLinkUpdate : NSObject
 @property id<CAMetalDrawable> drawable;
@@ -79,6 +79,16 @@ int main(void) { @autoreleasepool {
     frames(2); usleep(1100000); frames(10);
     CHECK("a new size tries them again", g_fi_mid_n >= m3 + 9);
     CHECK("every present completed after that", drain() == 0);
+
+    // 0.32.1: a stall inside the second that is measured (going full screen the window is covered and the link goes silent, 497 ms on DKC Returns HD) is not a slow link:
+    // 30 frames at about 120 callbacks a second, half a second of silence, then 60 more. Counted across the stall it read 50 a second and turned interpolation off for good
+    uint64_t m4 = g_fi_mid_n;
+    for (int i = 0; i < 30; i++) { present_enqueue(i & 1 ? &g_b : &g_a, 1. / 60, NULL, 0, NULL); tick(); usleep(6000); tick(); usleep(6000); }
+    usleep(500000);
+    for (int i = 0; i < 60; i++) { present_enqueue(i & 1 ? &g_b : &g_a, 1. / 60, NULL, 0, NULL); tick(); usleep(6000); tick(); usleep(6000); }
+    snprintf(name, sizeof name, "a stall in the measured second leaves them on (%llu in-between pictures, slow %d)", (unsigned long long)(g_fi_mid_n - m4), g_fi_slow);
+    CHECK(name, !g_fi_slow && g_fi_mid_n - m4 >= 85);
+    CHECK("every present completed after the stall", drain() == 0);
 
     // A rescue of mode 1 (link_sync): the 120 Hz link that interpolation asks for does not end it
     g_rescue_mode = 1; g_rescue_back_at = now_ns() + 3000000000ull; link_sync();
