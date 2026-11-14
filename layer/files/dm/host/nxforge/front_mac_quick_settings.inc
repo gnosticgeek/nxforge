@@ -158,7 +158,7 @@ static void qs_pause(int on) {
 // Pause once the picture has slid aside and a frame has been presented there (a window macOS has hidden presents nothing meanwhile, so it waits up to 2 s, then pauses anyway)
 static void qs_pause_when_aside(int tries) {
     static uint64_t seen;
-    if (!g_menu_open || !qs_pause_wanted() || g_paused) return;
+    if (!g_menu_open || g_peek || !qs_pause_wanted() || g_paused) return;
     if (tries == 0) seen = 0;
     if (g_inset_timer) seen = 0;
     else if (!seen) seen = mtl_present_count() + 1;   // the inset is final: the next present shows it
@@ -166,6 +166,32 @@ static void qs_pause_when_aside(int tries) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ qs_pause_when_aside(tries + 1); });
 }
 int front_qs_paused(void) { return g_paused; }
+// Hold to peek (Sidebar 0.5.0): while held, the sidebar fades out, the picture slides back to the whole window and the game runs (a paused game shows nothing new), its input still
+// released, so the player sees what a graphics change did at full size; let go and the sidebar comes back, the picture slides aside and the game pauses again when that is on.
+// The header's eye button (quick_settings_mac.swift), P (qs_peek_key) or a controller's top face button (front_mac_pad_nav.inc pad_nav) hold it; g_peek is there
+static void qs_peek(int on) {
+    if (!g_menu_open || !g_opts.view) on = 0;
+    if (on == g_peek) return;
+    g_peek = on;
+    NSView *v = g_opts.view, *gv = g_win.contentView; BOOL still = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *c) { c.duration = still ? 0 : 0.18; v.animator.alphaValue = on ? 0 : 1; } completionHandler:nil];
+    if (on) { qs_pause(0); inset_to(0); LOG("front end: Quick settings peek"); }
+    else if (g_menu_open) {
+        CGFloat W = gv.bounds.size.width, w = v.frame.size.width;
+        inset_to(w < W ? (float)(w / W) : 0);
+        if (qs_pause_wanted()) qs_pause_when_aside(0);
+    }
+    dm_qs_peeked(on);
+}
+void front_qs_peek(int on) { qs_peek(on != 0); }
+// P held while the sidebar is up (front_mac.m's key monitor): a peek. Not while a text field (the cheats' search) takes the typing
+static BOOL qs_peek_key(NSEvent *e) {
+    if (e.keyCode != 35) return NO;   // P
+    if (e.type == NSEventTypeKeyUp) { if (!g_peek) return NO; qs_peek(0); return YES; }
+    if ((e.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption)) || [g_win.firstResponder isKindOfClass:NSText.class]) return NO;
+    if (!e.isARepeat) qs_peek(1);
+    return YES;
+}
 void front_qs_pause_set(int on) {   // the General page's switch, while the sidebar is up: applies at once
     [NSUserDefaults.standardUserDefaults setBool:on != 0 forKey:opt_key(@"pauseOpen")];
     if (g_menu_open) { if (on) qs_pause_when_aside(0); else qs_pause(0); }
@@ -233,7 +259,7 @@ void front_qs_defaults_use(void) {
             self.view.autoresizingMask = NSViewMinXMargin | NSViewHeightSizable;
             NSView *gv = g_win.contentView; gv.postsFrameChangedNotifications = YES;
             [NSNotificationCenter.defaultCenter addObserverForName:NSViewFrameDidChangeNotification object:gv queue:nil usingBlock:^(NSNotification *n) {   // a resize while it is up: the picture keeps beside it
-                (void)n; if (!g_menu_open || g_inset_timer) return; CGFloat W = gv.bounds.size.width, sw = self.view.frame.size.width;
+                (void)n; if (!g_menu_open || g_inset_timer || g_peek) return; CGFloat W = gv.bounds.size.width, sw = self.view.frame.size.width;
                 g_inset_now = g_inset_to = sw < W ? (float)(sw / W) : 0; mtl_present_inset(g_inset_now); }];
         }
         NSView *gv = g_win.contentView; CGFloat w = MIN(460, gv.bounds.size.width);
@@ -248,6 +274,7 @@ void front_qs_defaults_use(void) {
         LOG("front end: Quick settings open");
     } else {
         qs_pause(0);
+        if (g_peek) { g_peek = 0; self.view.alphaValue = 1; dm_qs_peeked(0); }
         [self.view removeFromSuperview]; g_menu_open = 0; inset_to(0); g_pad_quiet = 1; g_assign = -1; qs_volume_apply();
         [g_win makeFirstResponder:g_win.contentView];
         if (g_win.isKeyWindow) { input_resume(); dm_focus_set(1); }   // otherwise the window's becoming key resumes them
@@ -323,7 +350,9 @@ static void graphics_start(void) {   // main thread, before the guest runs: the 
     settings_apply(1);
 }
 const char *front_qs_title_id(void) { return DM_GAME_ID; }   // the save backups' manifest and the mods' Atmosphere folders
-void front_qs_toast_text(const char *msg) { toast(@(msg)); }   // the sidebar's own toasts (a save backed up, a capture copied)
+void front_qs_toast_text(const char *msg) { toast(@(msg)); }
+// Undo this session (quick_settings_mac.swift undoSession): the user defaults are back as the game started them; put them to work and write the settings file, as after reading it
+void front_qs_settings_reapply(void) { settings_apply(0); settings_file_write(); }   // the sidebar's own toasts (a save backed up, a capture copied)
 // GPU memory at the driver's low-water mark with the game slow (nvn_mtl.m guard_low_tick, from its timer's thread): macOS's GPU driver frees at every command buffer from about half
 // the working set, and the game drops to about 10 fps (Ocarina of Time in Hyrule Field after 15 minutes, 24 GB M4 Pro). Nothing the player can change in the run brings it back,
 // so a toast that stays 8 seconds says what does, and the sidebar's Performance page keeps the note

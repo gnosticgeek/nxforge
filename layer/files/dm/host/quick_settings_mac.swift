@@ -15,7 +15,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.4.0"
+let SIDEBAR_VERSION = "0.5.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -36,6 +36,110 @@ private let envSetKeys = Set(((env["DM_ENV_LAUNCH_KEYS"] ?? "") + " " + (env["DM
 private func envFixed(_ v: String) -> Bool { env[v] != nil && (env["DM_ENV_LAUNCH_KEYS"] == nil || envSetKeys.contains(v)) }
 private let upscaleFixed = envFixed("DM_PRESENT_UPSCALE")
 
+// The game's own look (Sidebar 0.5.0), as the NXForge app lights its stage with a game (Covers.swift tint): the app's icon, its name, and a colour from its banner or icon made
+// vivid enough to show on black. The panel glows in it and the sidebar's controls take it. A bare dmhost (no app around it) gets the app's blue and the settings' game name
+enum GameLook {
+    private static let app: String? = { let p = Bundle.main.bundlePath; return p.hasSuffix(".app") ? p : nil }()
+    static let icon: NSImage? = app.map { NSWorkspace.shared.icon(forFile: $0) }
+    static let name: String? = app.flatMap { _ in
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String) }
+    static let colour: Color = {
+        let res = Bundle.main.resourcePath ?? ""
+        let banner = ["dm/banner.jpg", "dm/banner.png"].lazy.compactMap { app == nil ? nil : NSImage(contentsOfFile: (res as NSString).appendingPathComponent($0)) }.first
+        return Color(nsColor: vivid((banner ?? icon).flatMap(average) ?? NSColor(srgbRed: 0.25, green: 0.35, blue: 0.75, alpha: 1)))
+    }()
+    private static func average(_ img: NSImage) -> NSColor? {
+        guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        var px = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .medium
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard px[3] > 8 else { return nil }
+        let a = CGFloat(px[3])   // premultiplied: an icon's transparent margin must not darken it
+        return NSColor(srgbRed: CGFloat(px[0]) / a, green: CGFloat(px[1]) / a, blue: CGFloat(px[2]) / a, alpha: 1)
+    }
+    /// An average colour is often a muddy grey: keep its hue, lift its saturation and hold its brightness in a middle band (Covers.swift vivid)
+    private static func vivid(_ c: NSColor) -> NSColor {
+        guard let rgb = c.usingColorSpace(.sRGB) else { return c }
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        rgb.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return NSColor(hue: h, saturation: min(max(s * 1.6, 0.45), 0.9), brightness: min(max(b, 0.6), 0.88), alpha: 1)
+    }
+}
+
+// Presets (Sidebar 0.5.0), the NXForge app's Play options presets (PlayOptions.swift) in the game: Battery, Balanced and Quality set the frame rate, render scale, MetalFX upscaling,
+// HDR highlights and frame interpolation together, by the same rule, each from the choices the game's own list offers (Resources/dm/launcher.json, what its settings window shows).
+// Upscaling, HDR highlights and interpolation change at once; the frame rate and render scale are the settings window's (launcher.<VAR>) and apply at the next launch or Restart game
+struct LaunchRow: Decodable {
+    let env, kind, label, def: String
+    let options: [[String]]?
+    let min, max, step: Double?
+    let on, off: String?
+    enum CodingKeys: String, CodingKey { case env, kind, label, def = "default", options, min, max, step, on, off }
+    var onValue: String { on ?? "1" }
+    var offValue: String { off ?? "0" }
+    func accepts(_ v: String) -> Bool {
+        switch kind {
+        case "choice": return options?.contains { $0.first == v } ?? false
+        case "range": guard let n = Double(v), n.isFinite, let lo = min, let hi = max else { return false }; return n >= lo - 1e-9 && n <= hi + 1e-9
+        case "toggle": return v == onValue || v == offValue
+        default: return true
+        }
+    }
+    func same(_ a: String, _ b: String) -> Bool { kind == "range" ? abs((Double(a) ?? .nan) - (Double(b) ?? .nan)) < 1e-6 : a == b }
+    func label(of v: String) -> String {
+        if kind == "range" { return (max ?? 1) <= 4 ? "\(Int(((Double(v) ?? 0) * 100).rounded()))%" : v }
+        return (options ?? []).first { $0.first == v }.map { $0.count > 1 ? $0[1] : $0[0] } ?? v
+    }
+}
+private struct LaunchFile: Decodable { let settings: [LaunchRow] }
+private let launchRows: [LaunchRow] = {
+    guard let r = Bundle.main.resourcePath, let d = FileManager.default.contents(atPath: (r as NSString).appendingPathComponent("dm/launcher.json")),
+          let f = try? JSONDecoder().decode(LaunchFile.self, from: d) else { return [] }
+    return f.settings
+}()
+enum Preset: Int, CaseIterable {
+    case battery, balanced, quality
+    var name: String { ["Battery", "Balanced", "Quality"][rawValue] }
+    var symbol: String { ["leaf.fill", "circle.lefthalf.filled", "sparkles"][rawValue] }   // the app's (StagePages.swift)
+    var note: String { ["Lower frame rate and resolution. Cooler and quieter.", "The tested defaults for this game.", "Full resolution, MetalFX and HDR where the game has them."][rawValue] }
+}
+private let presetKeys = ["DM_FPS_TARGET", "DM_RENDER_SCALE", "DM_PRESENT_UPSCALE", "DM_PRESENT_EDR", "DM_PRESENT_INTERP"]
+private let presetLaunchKeys: Set = ["DM_FPS_TARGET", "DM_RENDER_SCALE"]   // the settings window's alone: taken when the game starts
+private let presetRows = launchRows.filter { presetKeys.contains($0.env) }
+/// What a preset gives one setting (PlayOptions.value): only values the game offers
+private func presetValue(_ p: Preset, _ s: LaunchRow) -> String {
+    func offered(_ v: String) -> String { s.accepts(v) ? v : s.def }
+    func snap(_ v: Double) -> String {
+        let lo = s.min ?? 0, hi = s.max ?? 1, step = s.step ?? 0.05
+        let n = Swift.min(Swift.max(step > 0 ? lo + ((v - lo) / step).rounded() * step : v, lo), hi)
+        return String(format: step < 1 ? "%.2f" : "%.0f", n)
+    }
+    switch (s.env, p) {
+    case ("DM_FPS_TARGET", .battery): return (s.options ?? []).compactMap { $0.first }.compactMap { v in Double(v).map { (v, $0) } }.min { $0.1 < $1.1 }?.0 ?? s.def
+    case ("DM_RENDER_SCALE", .battery): return snap(Swift.min(Double(s.def) ?? 1, 0.75))
+    case ("DM_RENDER_SCALE", .quality): return snap(Swift.max(Double(s.def) ?? 1, s.max ?? 1))
+    case ("DM_PRESENT_UPSCALE", .battery): return offered("off")
+    case ("DM_PRESENT_UPSCALE", .quality): return offered("metalfx")
+    case ("DM_PRESENT_EDR", .battery): return s.offValue
+    case ("DM_PRESENT_EDR", .quality): return s.onValue
+    case ("DM_PRESENT_INTERP", .battery): return offered("off")
+    default: return s.def
+    }
+}
+
+// Undo this session (Sidebar 0.5.0): the settings as the game started, kept when the sidebar is first made, and what each stored key is called on the list of changes.
+// Every setting the sidebar or the settings window keeps for this game is in the user defaults under these prefixes (the page shown is not a setting)
+private let sessionPrefixes = ["DMQuickSettings.", "DMPresentFilter.", "launcher.", "nxforge.mirror."]
+private let sessionNames = ["fps": "FPS counter", "fpsPos": "Counter corner", "fpsMs": "Milliseconds", "frameTimes": "Record frame times", "mods": "Mods", "modOrder": "Mod load order",
+                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
+                            "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size",
+                            "keys": "Keyboard controls", "keyNames": "Keyboard controls", "pad": "Controller buttons", "padNames": "Controller buttons", "captureDir": "Capture folder",
+                            "mode": "CRT filter", "strength": "CRT strength", "scanline": "Line size", "DM_PRESENT_UPSCALE": "MetalFX upscaling"]
+// The settings window's own variables the sidebar keeps under its names too (front_mac_launcher_sync.inc): listed once, by the sidebar's name
+private let sessionMirrored: Set = ["DM_PRESENT_AA", "DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH", "DM_PRESENT_INTERP", "DM_PIXEL_ART"]
+
 // The Controls page's rows: actions 0–15 are the Switch's buttons in NpadButton order, 16–19 the left stick, 20 shaking (front_mac.m's map); the controller map has the first 12
 private let actionNames = ["A", "B", "X", "Y", "Left stick press", "Right stick press", "L", "R", "ZL", "ZR", "+ (Plus)", "− (Minus)", "D-pad left", "D-pad up", "D-pad right", "D-pad down",
                            "Left stick up", "Left stick left", "Left stick down", "Left stick right", "Shake"]
@@ -53,6 +157,7 @@ private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods =
 // What the controller and keyboard selection can be on (dm_qs_nav)
 enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
+    case undoSession, preset(Int)
     case pauseOpen, duckOpen, backup, backupShow, settingsShow, settingsOpen, defaultsSave, defaultsUse
     case fullscreen, scale, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
@@ -220,6 +325,10 @@ final class QuickSettings: ObservableObject {
     @Published var pad = false            // a controller drives the sidebar (the legend shows its buttons), else the keyboard
     @Published var glyphs: [String?] = [nil, nil, nil, nil]   // that controller's SF Symbols for choose, close, previous and next page
     @Published var assigning = -1
+    @Published var peeking = false        // a peek is held (front_qs_peek): the sidebar has faded
+    @Published var peekGlyph: String?     // the controller's symbol for the peek button (its top face button)
+    private var baseline: [String: NSObject] = [:]   // Undo this session: the stored settings when the sidebar was first made
+    private var cheatsBaseline: [Int: Bool] = [:]
     @Published var keyNames: [String] = keyDefaults
     @Published var padNames: [String] = padDefaults
     @Published var keyClash: [Int: String] = [:]   // an action whose key another action has too: that action's name
@@ -232,6 +341,7 @@ final class QuickSettings: ObservableObject {
             observers.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.fullscreen = front_qs_fullscreen() != 0 })
         }
         refresh()
+        baseline = sessionSnapshot(); cheatsBaseline = Dictionary(cheats.filter { $0.kind == 0 }.map { ($0.id, $0.on) }, uniquingKeysWith: { a, _ in a })
     }
     private func pfxKey(_ what: String) -> String { "DMPresentFilter.\(what).\(game)" }
     private func optKey(_ what: String) -> String { "DMQuickSettings.\(what).\(game)" }
@@ -533,6 +643,75 @@ final class QuickSettings: ObservableObject {
     }
     var modsOn: Int { mods.filter { wanted.contains($0) }.count }
 
+    // Presets: each one's value for each setting the game has, the one the settings now are (Balanced first), and choosing one
+    var hasPresets: Bool { !presetRows.isEmpty }
+    /// A setting's value now as the presets see it: the sidebar's for those it changes at once, the saved choice (else the default) for the launch ones, the environment's where it is fixed
+    func presetNow(_ s: LaunchRow) -> String {
+        if envFixed(s.env), let e = env[s.env] { return e }
+        switch s.env {
+        case "DM_PRESENT_UPSCALE": return upscale ? "metalfx" : "off"
+        case "DM_PRESENT_EDR": return edr ? s.onValue : s.offValue
+        case "DM_PRESENT_INTERP": return ["off", "on", "auto"][min(max(interp, 0), 2)]
+        default: return UserDefaults.standard.string(forKey: "launcher." + s.env).flatMap { s.accepts($0) ? $0 : nil } ?? s.def
+        }
+    }
+    var preset: Preset? { [Preset.balanced, .quality, .battery].first { p in presetRows.allSatisfy { $0.same(presetValue(p, $0), presetNow($0)) } } }
+    func choosePreset(_ p: Preset) {
+        for s in presetRows where !envFixed(s.env) {
+            let v = presetValue(p, s)
+            switch s.env {
+            case "DM_PRESENT_UPSCALE": setUpscale(v == "metalfx")
+            case "DM_PRESENT_EDR": setEDR(v == s.onValue)
+            case "DM_PRESENT_INTERP": setInterp(["off", "on", "auto"].firstIndex(of: v) ?? 0)
+            default: if s.same(v, s.def) { UserDefaults.standard.removeObject(forKey: "launcher." + s.env) } else { UserDefaults.standard.set(v, forKey: "launcher." + s.env) }
+            }
+        }
+        objectWillChange.send()
+        front_qs_toast_text("\(p.name) preset" + (presetPending.isEmpty ? "" : ": \(presetPending.map(\.label).joined(separator: " and ").lowercased()) at the next launch"))
+    }
+    /// The launch settings a preset changed that this run does not have yet: what the launcher put into the environment, else the default
+    var presetPending: [LaunchRow] { presetRows.filter { presetLaunchKeys.contains($0.env) && !envFixed($0.env) && !$0.same(presetNow($0), env[$0.env] ?? $0.def) } }
+
+    // Undo this session: the stored settings now against the baseline, named for the list, and put back
+    private func sessionSnapshot() -> [String: NSObject] {
+        let mine = "." + game
+        return UserDefaults.standard.dictionaryRepresentation().reduce(into: [:]) { r, kv in
+            guard let v = kv.value as? NSObject, sessionPrefixes.contains(where: { kv.key.hasPrefix($0) }) else { return }
+            if kv.key.hasPrefix("DMQuickSettings.") || kv.key.hasPrefix("DMPresentFilter.") { guard kv.key.hasSuffix(mine), !kv.key.hasPrefix("DMQuickSettings.page.") else { return } }
+            r[kv.key] = v
+        }
+    }
+    private func sessionDiff() -> [String] {
+        let now = sessionSnapshot()
+        return Set(now.keys).union(baseline.keys).filter { k in !(now[k].map { v in baseline[k].map { v.isEqual($0) } ?? false } ?? (baseline[k] == nil)) }.sorted()
+    }
+    /// What changed since the game started, by the names the pages use, each once
+    var sessionChanges: [String] {
+        var out: [String] = []
+        func add(_ n: String) { if !out.contains(n) { out.append(n) } }
+        for k in sessionDiff() {
+            if k.hasPrefix("nxforge.mirror.") { continue }
+            if k.hasPrefix("launcher.") {
+                let v = String(k.dropFirst("launcher.".count))
+                if sessionMirrored.contains(v) { continue }
+                add(sessionNames[v] ?? launchRows.first { $0.env == v }?.label ?? v); continue
+            }
+            let what = k.split(separator: ".").dropFirst().first.map(String.init) ?? k
+            add(sessionNames[what] ?? what)
+        }
+        if cheats.contains(where: { c in c.kind == 0 && cheatsBaseline[c.id].map { $0 != c.on } ?? c.on }) { add("Cheats") }
+        return out
+    }
+    func undoSession() {
+        let d = UserDefaults.standard
+        for k in sessionDiff() where !k.hasPrefix("nxforge.mirror.") && !k.hasPrefix("launcher.") { if let v = baseline[k] { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } }
+        for k in sessionDiff() { if let v = baseline[k] { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } }   // then the window's store, as it was beside them
+        for c in cheats where c.kind == 0 && (cheatsBaseline[c.id] ?? false) != c.on { dm_cheat_toggle(Int32(c.id)) }
+        front_qs_settings_reapply(); front_qs_controls_reload()
+        refresh(); front_qs_pause_set(pauseOpen ? 1 : 0); paused = front_qs_paused() != 0; fpsChanged()
+        front_qs_toast_text("Settings put back as the game started")
+    }
+
     // What applies at the next launch: one count for the footer and the names under it, the same test as each row's tag
     var anisoPending: Bool { env["DM_ANISO"] == nil && aniso != anisoRun }
     var frameTimesPending: Bool { env["DM_FRAME_TIMES"] == nil && frameTimes != (frameTimesNow != nil) }
@@ -546,6 +725,7 @@ final class QuickSettings: ObservableObject {
     var pendingNames: [String] {
         (anisoPending ? ["Anisotropic filtering"] : []) + (frameTimesPending ? ["Record frame times"] : [])
             + mods.filter(modPending).map { "Mod \($0) \(wanted.contains($0) ? "on" : "off")" } + (modOrderPending ? ["Mod load order"] : [])
+            + presetPending.map { "\($0.label) \($0.label(of: presetNow($0)))" }
     }
     var restartCount: Int { pendingNames.count }
     /// Restart game (front_mac.m front_qs_restart): the first press arms it, the second quits and the launcher starts the game again
@@ -558,8 +738,8 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
-        case pGraphics: return [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
@@ -640,6 +820,8 @@ final class QuickSettings: ObservableObject {
         case .tab(let i): setPage(i); sel = firstOnPage
         case .pauseOpen: setPauseOpen(!pauseOpen)
         case .duckOpen: setDuck(!duckOpen)
+        case .undoSession: undoSession()
+        case .preset(let i): if let p = Preset(rawValue: i) { choosePreset(p) }
         case .backup: backup()
         case .backupShow: showBackups()
         case .settingsShow: showSettingsFile()
@@ -709,23 +891,32 @@ final class QuickSettings: ObservableObject {
                 if (rows.first(where: { $0.contains(s) })?.count ?? 1) > 1 { r.append(Hint(caps: [side], text: "Move")) }
             }
         } else { r.append(Hint(caps: [Cap(symbol: nil, text: pad ? "▲▼" : "↑↓")], text: "Move")) }
-        return r + [Hint(caps: [back], text: "Close"), Hint(caps: turn, text: "Page")]
+        return r + [Hint(caps: [back], text: "Close"), Hint(caps: turn, text: "Page"), Hint(caps: [pad ? Cap(symbol: peekGlyph, text: "X") : Cap(symbol: nil, text: "P")], text: "Hold to peek")]
     }
 }
 
-// The panel: Liquid Glass with a dark tint on macOS 26 and later, so the game behind does not compete with the text; a dark material before
-// With Reduce Transparency or Increase Contrast on, a solid panel instead (after RetroReplay's PauseGlassSurface)
+// The panel: Liquid Glass with a dark tint in the game's colour, so the game behind does not compete with the text, lit from the top left in that colour with a lit top edge, as the
+// NXForge app's cards and stage are (Sidebar 0.5.0). With Reduce Transparency or Increase Contrast on, a solid panel instead (after RetroReplay's PauseGlassSurface)
 private struct Panel: ViewModifier {
+    let glow: Color
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    private var light: some View {
+        ZStack {
+            RadialGradient(colors: [glow.opacity(0.34), glow.opacity(0.10), .clear], center: UnitPoint(x: 0.08, y: 0), startRadius: 0, endRadius: 560)
+            LinearGradient(colors: [.white.opacity(0.05), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3))
+        }.clipShape(.rect(cornerRadius: 26)).allowsHitTesting(false)
+    }
+    private var edge: some View {
+        RoundedRectangle(cornerRadius: 26).strokeBorder(LinearGradient(colors: [.white.opacity(0.34), .white.opacity(0.08), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            .allowsHitTesting(false)
+    }
     func body(content: Content) -> some View {
         if reduceTransparency || contrast == .increased {
-            content.background(Color(red: 0.14, green: 0.15, blue: 0.18), in: .rect(cornerRadius: 26))
+            content.background(Color(red: 0.14, green: 0.15, blue: 0.18).mix(with: glow, by: 0.08), in: .rect(cornerRadius: 26))
                 .overlay(RoundedRectangle(cornerRadius: 26).stroke(.white.opacity(contrast == .increased ? 0.5 : 0.12)))
-        } else if #available(macOS 26, *) {
-            content.glassEffect(.regular.tint(.black.opacity(0.55)), in: .rect(cornerRadius: 26))
         } else {
-            content.background(.ultraThickMaterial, in: .rect(cornerRadius: 26))
+            content.background(light).glassEffect(.regular.tint(Color.black.mix(with: glow, by: 0.16).opacity(0.62)), in: .rect(cornerRadius: 26)).overlay(edge)
         }
     }
 }
@@ -744,7 +935,7 @@ private struct GlassButton: ViewModifier {
 private struct NavMark: ViewModifier {
     let on: Bool
     func body(content: Content) -> some View {
-        content.padding(4).overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor, lineWidth: 2).opacity(on ? 1 : 0)).padding(-4)
+        content.padding(4).overlay(RoundedRectangle(cornerRadius: 10).stroke(.tint, lineWidth: 2).opacity(on ? 1 : 0)).padding(-4)
     }
 }
 extension View { fileprivate func nav(_ m: QuickSettings, _ n: Nav) -> some View { id(n).modifier(NavMark(on: m.sel == n)) } }
@@ -768,7 +959,7 @@ private struct Row<C: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 6) {
-                Circle().fill(Color.accentColor).frame(width: 6, height: 6).opacity(changed ? 1 : 0).help("Changed from the default")
+                Circle().fill(.tint).frame(width: 6, height: 6).opacity(changed ? 1 : 0).help("Changed from the default")
                 VStack(alignment: .leading, spacing: 3) { Text(title); if let n = nextLaunch { NextLaunchTag(pending: n) } }
             }.frame(width: 150, alignment: .leading)
             control().frame(maxWidth: .infinity, alignment: .trailing)
@@ -800,20 +991,41 @@ struct QuickSettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onGeometryChange(for: Bool.self) { $0.size.height < 640 } action: { compact = $0 }
-        .modifier(Panel())
+        .modifier(Panel(glow: GameLook.colour))
         .padding(12)
+        .tint(GameLook.colour)
         .environment(\.colorScheme, .dark)
     }
+    // The game's icon in its own glow, its name (heavy, set tight, with a soft shade) under a wide-set "Quick settings" label, as the app's pages head; a Paused chip; peek and close
     private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Quick settings").font(compact ? .title2.bold() : .title.bold())
-                Text(m.game).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+        HStack(alignment: .center, spacing: 12) {
+            if let icon = GameLook.icon {
+                Image(nsImage: icon).resizable().interpolation(.high).aspectRatio(contentMode: .fit).frame(width: compact ? 42 : 54, height: compact ? 42 : 54)
+                    .shadow(color: GameLook.colour.opacity(0.6), radius: 14).accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("QUICK SETTINGS").font(.caption2.weight(.semibold)).kerning(1.4).foregroundStyle(.secondary)
+                    if m.paused {
+                        Label("Paused", systemImage: "pause.fill").font(.caption2.weight(.bold)).labelStyle(DotLabel()).padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(GameLook.colour.opacity(0.25), in: .capsule).foregroundStyle(GameLook.colour)
+                    }
+                }
+                Text(GameLook.name ?? m.game).font(.system(size: compact ? 20 : 24, weight: .heavy)).tracking(-0.5).lineLimit(1).minimumScaleFactor(0.7)
+                    .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
             }
             Spacer(minLength: 8)
+            peekButton
             Button(action: m.close) { Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 22, height: 22) }
                 .modifier(GlassButton(prominent: false)).buttonBorderShape(.circle).controlSize(.large).help("Close (Esc)")
         }
+    }
+    // Hold to peek with the pointer: pressed, the sidebar fades and the game shows whole; let go and it is back (front_qs_peek)
+    private var peekButton: some View {
+        Image(systemName: m.peeking ? "eye.fill" : "eye").font(.body.weight(.semibold)).frame(width: 22, height: 22).padding(9)
+            .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
+            .gesture(DragGesture(minimumDistance: 0).onChanged { _ in if !m.peeking { front_qs_peek(1) } }.onEnded { _ in front_qs_peek(0) })
+            .help("Hold to see the game at full size (or hold P)").accessibilityLabel("Peek at the game").accessibilityAddTraits(.isButton)
     }
     // What a player reaches for mid-game, on every page
     private var quickBar: some View {
@@ -838,8 +1050,9 @@ struct QuickSettingsView: View {
     private func tabBadge(_ i: Int) -> Color? {
         switch i {
         case pCapture: return m.recording ? .red : nil
-        case pMods: return m.modsOn > 0 ? .accentColor : nil
-        case pCheats: return m.cheatsOn > 0 ? .accentColor : nil
+        case pGeneral: return m.sessionChanges.isEmpty ? nil : GameLook.colour
+        case pMods: return m.modsOn > 0 ? GameLook.colour : nil
+        case pCheats: return m.cheatsOn > 0 ? GameLook.colour : nil
         case pControls: return m.keyClash.isEmpty && m.padClash.isEmpty ? nil : .orange
         default: return nil
         }
@@ -881,7 +1094,14 @@ struct QuickSettingsView: View {
     }
     private var general: some View {
         VStack(alignment: .leading, spacing: 12) {
-            subhead("While this menu is open")
+            let changes = m.sessionChanges
+            if !changes.isEmpty {
+                subhead("This session")
+                Text("Changed since the game started: " + changes.joined(separator: ", ")).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button { withAnimation(motion) { m.undoSession() } } label: { Label("Put it all back", systemImage: "arrow.uturn.backward.circle").frame(maxWidth: .infinity) }
+                    .modifier(GlassButton(prominent: false)).controlSize(.large).nav(m, .undoSession)
+                subhead("While this menu is open").padding(.top, 6)
+            } else { subhead("While this menu is open") }
             Row(title: "Pause the game", changed: !m.pauseOpen) {
                 Toggle("Pause the game", isOn: Binding(get: { m.pauseOpen }, set: { m.setPauseOpen($0) })).toggleStyle(.switch).labelsHidden()
             }.nav(m, .pauseOpen)
@@ -923,11 +1143,38 @@ struct QuickSettingsView: View {
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
+    // The app's presets as cards: the one the settings are now lit white, as in the app's Play options; a mix of its own is Custom
+    private var presets: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            subhead("Preset")
+            HStack(spacing: 8) {
+                ForEach(Preset.allCases, id: \.self) { p in
+                    let on = m.preset == p
+                    Button { withAnimation(motion) { m.choosePreset(p) } } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Image(systemName: p.symbol).font(.system(size: 14, weight: .semibold)).frame(height: 18)
+                            Text(p.name).font(.system(size: 13, weight: .bold))
+                        }
+                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundStyle(on ? Color.black : Color.white)
+                        .background(on ? AnyShapeStyle(LinearGradient(colors: [.white, Color(white: 0.86)], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(.white.opacity(0.07)), in: .rect(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? Color.clear : .white.opacity(0.12)))
+                        .shadow(color: .white.opacity(on ? 0.2 : 0), radius: 10, y: 3)
+                        .contentShape(.rect(cornerRadius: 12))
+                    }.buttonStyle(.plain).help(p.note).accessibilityAddTraits(on ? .isSelected : []).nav(m, .preset(p.rawValue))
+                }
+            }
+            let pending = m.presetPending
+            Text((m.preset?.note ?? "Custom: your own mix of the settings below.") + (pending.isEmpty ? "" : " \(pending.map(\.label).joined(separator: " and ")) apply at the next launch."))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
     private var graphics: some View {
         VStack(alignment: .leading, spacing: 12) {
             if m.paused { Label("The game is paused: changes here show when it resumes. Turn off General › Pause the game to see them at once.", systemImage: "pause.circle")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-            subhead("Display")
+            if m.hasPresets { presets }
+            subhead("Display").padding(.top, m.hasPresets ? 6 : 0)
             Row(title: "Full screen", changed: false) {
                 Toggle("Full screen", isOn: Binding(get: { m.fullscreen }, set: { _ in m.toggleFullscreen() })).toggleStyle(.switch).labelsHidden()
             }.nav(m, .fullscreen)
@@ -1094,7 +1341,7 @@ struct QuickSettingsView: View {
                 if c.video { Image(systemName: "video.fill").font(.caption2).padding(4).background(.black.opacity(0.5), in: .rect(cornerRadius: 4)).padding(4) }
             }
             .clipShape(.rect(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? Color.accentColor : .white.opacity(0.12), lineWidth: on ? 2 : 1))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? AnyShapeStyle(.tint) : AnyShapeStyle(.white.opacity(0.12)), lineWidth: on ? 2 : 1))
             .contentShape(.rect)
         }.buttonStyle(.plain).help("\((c.path as NSString).lastPathComponent), \(c.date.formatted(date: .abbreviated, time: .shortened))")
         .contextMenu {
@@ -1248,7 +1495,7 @@ struct QuickSettingsView: View {
             }
             HStack(spacing: 10) {
                 Button(action: m.close) { Text("Resume game").font(.headline).frame(maxWidth: .infinity) }
-                    .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction).nav(m, .resume)
+                    .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction).shadow(color: GameLook.colour.opacity(0.45), radius: 14, y: 2).nav(m, .resume)
                 Button(action: m.quit) { Label(m.quitArmed ? "Press again" : "Quit", systemImage: "power").frame(minWidth: 96) }
                     .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.quitArmed ? Color.red : nil).help("Ends the game, as ⌘Q does. Asks twice.").nav(m, .quit)
             }
@@ -1390,6 +1637,10 @@ public func dm_qs_opened(_ pad: Int32) {
     m.quitArmed = false; m.restartArmed = false
     if pad != 0 { m.pad = true; m.sel = m.firstOnPage } else { m.sel = nil }
 }
+@_cdecl("dm_qs_peeked")
+public func dm_qs_peeked(_ on: Int32) { shared?.peeking = on != 0 }
+@_cdecl("dm_qs_peek_glyph")
+public func dm_qs_peek_glyph(_ symbol: UnsafePointer<CChar>?) { shared?.peekGlyph = symbol.map { String(cString: $0) } }
 @_cdecl("dm_qs_input")
 public func dm_qs_input(_ pad: Int32, _ ok: UnsafePointer<CChar>?, _ back: UnsafePointer<CChar>?, _ prev: UnsafePointer<CChar>?, _ next: UnsafePointer<CChar>?) {
     guard let m = shared else { return }

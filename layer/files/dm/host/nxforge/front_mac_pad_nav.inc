@@ -4,11 +4,13 @@
 // B (the bottom one), + or Home close the sidebar, L / R turn the page; a held direction repeats. quick_settings_mac.swift dm_qs_nav keeps the selection
 enum { NAV_UP = 1, NAV_DOWN, NAV_LEFT, NAV_RIGHT, NAV_OK, NAV_BACK, NAV_PREV, NAV_NEXT };
 static uint32_t g_nav_prev; static NSTimer *g_nav_rep;
+static int g_peek;   // a peek is held (front_mac_quick_settings.inc qs_peek): the sidebar faded, the picture whole
+static void qs_peek(int on);
 // The sidebar's button legend shows this controller's own glyphs (its elements' SF Symbols: an Xbox pad's B where a Nintendo pad has A) for the buttons pad_nav reads
 static void pad_glyphs(GCExtendedGamepad *g) {
     static const void *last;   // only compared: a new controller (or the first) sends its glyphs
     if (last == (__bridge const void *)g) { dm_qs_input(1, NULL, NULL, NULL, NULL); return; }
-    last = (__bridge const void *)g;
+    last = (__bridge const void *)g; dm_qs_peek_glyph(g.buttonY.sfSymbolsName.UTF8String);
     dm_qs_input(1, g.buttonB.sfSymbolsName.UTF8String, g.buttonA.sfSymbolsName.UTF8String, g.leftShoulder.sfSymbolsName.UTF8String, g.rightShoulder.sfSymbolsName.UTF8String);
 }
 static void pad_nav(GCExtendedGamepad *g) {
@@ -21,6 +23,9 @@ static void pad_nav(GCExtendedGamepad *g) {
     if (g.buttonA.isPressed || g.buttonMenu.isPressed || g.buttonHome.isPressed) now |= 1u << NAV_BACK;
     if (g.leftShoulder.isPressed) now |= 1u << NAV_PREV;
     if (g.rightShoulder.isPressed) now |= 1u << NAV_NEXT;
+    // The top face button held: a peek, and nothing else moves meanwhile
+    if (g_menu_open && g.buttonY.isPressed != (g_peek != 0)) { if (!g_peek) pad_glyphs(g); qs_peek(g.buttonY.isPressed); }
+    if (g_peek) { g_nav_prev = now; [g_nav_rep invalidate]; g_nav_rep = nil; return; }
     uint32_t pressed = now & ~g_nav_prev, dirs = (1u << NAV_UP) | (1u << NAV_DOWN) | (1u << NAV_LEFT) | (1u << NAV_RIGHT); g_nav_prev = now;
     if (pressed && g_menu_open) pad_glyphs(g);
     for (int c = NAV_UP; c <= NAV_NEXT && g_menu_open; c++) if (pressed & (1u << c)) dm_qs_nav(c);

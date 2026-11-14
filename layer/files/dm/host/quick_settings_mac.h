@@ -80,3 +80,11 @@ void front_qs_toast_text(const char *msg);
 // GPU memory nearly full with the game slow (nvn_mtl.m guard_low_tick): a longer toast, and a note on the Performance page for the rest of the run. Main thread
 void dm_qs_toast_long(void *parent, const char *msg, double seconds);
 void dm_qs_gpu_memory_low(unsigned long long used_mb, unsigned long long low_mb);
+// Hold to peek (Sidebar 0.5.0): while it is held (the header's eye button, the P key or a controller's top face button) the sidebar fades, the picture takes the whole window and the
+// game runs; let go and the sidebar is back (paused again when that is on). front_qs_peek starts or ends one; dm_qs_peeked tells the sidebar, dm_qs_peek_glyph gives it the
+// controller's symbol for that button (NULL: the keyboard's P). Main thread
+void front_qs_peek(int on);
+void dm_qs_peeked(int on);
+void dm_qs_peek_glyph(const char *symbol);
+// The saved settings put to work again after the sidebar put several back at once (Undo this session), as after the settings file is read while the game runs. Main thread
+void front_qs_settings_reapply(void);

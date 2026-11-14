@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.34.0 (2026-11-14)
+
+- **NXForge Sidebar 0.5.0: four improvements to the in-game sidebar** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): it glows in the game's own colour with the game's icon and name at the top, like the app's 0.33.0 design; hold P, a controller's top face button or the eye button to peek at the game at full size; the app's Battery, Balanced and Quality presets on the Graphics page; and "Put it all back" on the General page undoes this session's changes.
+- **Restart game takes the saved launch choices again** (`dm/mac/launcher.c`): a frame rate or render scale changed since the game started (a sidebar preset, or the app's Play options) now applies after Restart game, as after quitting and opening the game. What the launch environment or an env file set stays.
+- Games pick up the new sidebar when they are rebuilt (or their player swapped in).
+
 ## 0.33.0 (2026-11-14)
 
 - **A design pass over the Mac app** (Converter 0.10.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the stage is lit by the art of the game in focus, covers look like cases and lean towards the pointer, Home's shelf and the 3D case reflect in the floor, covers drawn for games without box art use the icon as artwork, the top bar and the panels are real glass, and starting a game shows its case turning in its own light. The converter's pages take the same look. App only: no game rebuild.
