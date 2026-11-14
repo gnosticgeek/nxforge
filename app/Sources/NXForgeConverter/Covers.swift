@@ -73,6 +73,14 @@ enum CoverSource {
     }
 
     /// A picture as a JPEG no taller than `maxHeight`, or the part of it `unit` names
+    /// Whether a downloaded front is a box's shape. Download-only games have a wide shop banner there, which is no cover.
+    static func boxShaped(_ data: Data) -> Bool {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = p[kCGImagePropertyPixelWidth] as? Double, let h = p[kCGImagePropertyPixelHeight] as? Double, h > 0 else { return false }
+        return (0.5...0.75).contains(w / h)
+    }
+
     static func jpeg(_ data: Data, unit: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1), maxHeight: Int = 1400) -> Data? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil), let full = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
         let w = CGFloat(full.width), h = CGFloat(full.height)
@@ -215,7 +223,7 @@ final class CoverStore {
                 var got = false
                 for id in CoverSource.match(g.name, in: list).prefix(4) {
                     guard let data = await Self.first(CoverSource.urls(id: id, kind: "coverHQ") + CoverSource.urls(id: id, kind: "cover")),
-                          let jpg = CoverSource.jpeg(data) else { continue }
+                          CoverSource.boxShaped(data), let jpg = CoverSource.jpeg(data) else { continue }
                     try? jpg.write(to: front)
                     if let wrap = await Self.first(CoverSource.urls(id: id, kind: "coverfullHQ") + CoverSource.urls(id: id, kind: "coverfull")) {
                         if let b = CoverSource.jpeg(wrap, unit: CoverSource.wrap(.back)) { try? b.write(to: Self.dir.appending(path: "\(g.key)-back.jpg")) }

@@ -138,7 +138,8 @@ struct ConverterApp: App {
             model.frontEnd = true
             model.stageTab = st == "library" ? .library : .home
             try? await Task.sleep(for: .seconds(2))
-            let g = model.stageGames().first { $0.app != nil }
+            // NXC_GAME=<part of a name> picks the game instead
+            let g = env["NXC_GAME"].flatMap { n in model.stageGames().first { $0.name.localizedCaseInsensitiveContains(n) } } ?? model.stageGames().first { $0.app != nil }
             if let g, ["game", "back", "options"].contains(st) { model.gameDetail = g.ref; model.caseFlipped = st == "back" }
             if let g, st == "options" { model.openPlayOptions(g.ref) }
             if st == "settings" { model.stageSettings = true }

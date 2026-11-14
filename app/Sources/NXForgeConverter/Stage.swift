@@ -68,7 +68,15 @@ extension AppModel {
                                  console: b.record.map { Console.of($0) } ?? (t.hasPrefix("04") ? .switch2 : .switch1), titleID: t, icon: nil, app: b.app,
                                  version: nil, last: rec?.last, total: rec?.total ?? 0, outdated: outdated(b), game: nil))
         }
-        return out.sorted { a, b in
+        // two copies of one game under different title IDs (a second dump, another region) are one cover: the built one, else the first
+        var seen: [String: Int] = [:], one: [StageGame] = []
+        for g in out {
+            let k = "\(g.console)|\(CoverSource.normalize(g.name))"
+            if let i = seen[k] {
+                if one[i].app == nil && g.app != nil { one[i] = g }
+            } else { seen[k] = one.count; one.append(g) }
+        }
+        return one.sorted { a, b in
             if (a.app != nil) != (b.app != nil) { return a.app != nil }
             if a.last != b.last { return (a.last ?? .distantPast) > (b.last ?? .distantPast) }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
@@ -574,12 +582,13 @@ struct StageLibrary: View {
         let (text, color): (String, Color) = building ? ("Building · \(Int((model.run.overall(now: Date()).fraction * 100).rounded())) %", Color(red: 0.38, green: 0.65, blue: 0.98))
             : g.app == nil ? ("Not built yet", Color(white: 0.55))
             : model.isPlaying(app: g.app ?? "") ? ("Playing now", Color(red: 0.38, green: 0.65, blue: 0.98))
-            : g.outdated ? ("Update ready", Color(red: 0.98, green: 0.75, blue: 0.14))
-            : (StageLook.played(g.last), Color(red: 0.29, green: 0.87, blue: 0.50))
+            : g.outdated && g.last == nil ? ("Update ready", Color(red: 0.98, green: 0.75, blue: 0.14))
+            : (StageLook.played(g.last), g.outdated ? Color(red: 0.98, green: 0.75, blue: 0.14) : Color(red: 0.29, green: 0.87, blue: 0.50))
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(g.app == nil ? StageLook.faint : StageLook.soft).lineLimit(1)
         }
+        .help(g.outdated ? "A newer NXForge can rebuild this game. It still plays as it is." : "")
     }
 }
 
