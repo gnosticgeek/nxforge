@@ -132,7 +132,7 @@ struct ConverterApp: App {
     private func snapshotIfAsked() async {
         let env = ProcessInfo.processInfo.environment
         guard let out = env["NXC_SNAPSHOT"] else { return }
-        if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.page = page }
+        if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.frontEnd = false; model.page = page }
         // NXC_STAGE=home, library, game, back, options, settings or launch: the front end on that screen (game and the ones
         // after it: the first built game's)
         if let st = env["NXC_STAGE"] {
