@@ -986,7 +986,12 @@ struct StageSettings: View {
                 toggle("Play goes straight into the game", "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.", $model.settings.straightPlay, row: .straightPlay)
                 toggle("Show Play options the first time", "A game you have not played yet opens its options once before it starts.", $model.settings.firstPlayOptions, row: .firstPlayOptions)
                 toggle("Battery preset on battery", "Unplugged, a run takes the Battery preset. Your saved options are not changed.", $model.settings.batteryPreset, row: .batteryPreset)
-                toggle("Return here when a game quits", "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.", $model.settings.returnToLibrary, last: true, row: .returnToLibrary)
+                toggle("Return here when a game quits", "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.", $model.settings.returnToLibrary, row: .returnToLibrary)
+                toggle("Show a recap when a game quits", "How long you played this time and in total, with the game's peak memory.", $model.settings.sessionRecap)
+                toggle("Rest while a game runs", "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.", $model.settings.lightWhilePlaying)
+                row("Controllers", "See every button, stick and trigger as a game reads it, and try the rumble.", last: true) {
+                    Button("Test…") { model.stageSettings = false; model.showControllerTest = true }.buttonStyle(StageButton(height: 32))
+                }
             }
             group("ARTWORK") {
                 toggle("Download box art", "Front and back covers from GameTDB, matched by the game's name. Only a cover's ID is sent.", $model.settings.downloadCovers, row: .downloadCovers)

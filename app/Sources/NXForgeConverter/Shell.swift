@@ -84,7 +84,7 @@ final class ControllerNav {
         }
         // the front end takes every button (stagePad); the converter's pages keep the couch's
         func key(_ b: GCControllerButtonInput, _ k: PadKey, repeating: Bool = false, _ f: @escaping @MainActor (AppModel) -> Void) {
-            let act: @MainActor (AppModel) -> Void = { m in if m.frontEnd { m.stagePad(k) } else { f(m) } }
+            let act: @MainActor (AppModel) -> Void = { m in if m.controllerTest { return }; if m.frontEnd { m.stagePad(k) } else { f(m) } }
             if repeating { held(b, act) } else { on(b, act) }
         }
         key(pad.dpad.left, .left, repeating: true) { $0.moveLibraryFocus(dx: -1) }

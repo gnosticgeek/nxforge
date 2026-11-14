@@ -1128,3 +1128,135 @@ import Testing
         #expect(KeysFile.candidates(gamesRoot: "/Volumes/Games/Switch 1").prefix(2) == ["/Volumes/Games/Switch 1/prod.keys", "/Volumes/Games/prod.keys"])
     }
 }
+
+@Suite struct Cheats {
+    @Test func parsesAndWritesBack() {
+        let t = "[Infinite Health]\n04000000 0149D940 00000003\n\n{Master}\n580F0000 0149D940\n[Moon Jump]\n80000002\n20000000\n"
+        let e = CheatFile.parse(t)
+        #expect(e.map(\.name) == ["Infinite Health", "Master", "Moon Jump"])
+        #expect(e[1].master && !e[0].master)
+        #expect(CheatFile.parse(CheatFile.text(e)) == e)
+    }
+
+    @Test func addsOnlyWhatIsNew() {
+        let old = CheatFile.parse("[Infinite Health]\n04000000 0149D940 00000003\n")
+        let new = CheatFile.parse("[Unlimited HP]\n04000000  0149d940 00000003\n[Infinite Health]\n04000000 0149D940 00000063\n[Coins]\n02100000 619ED858 0000270F\n", source: "db")
+        let add = CheatFile.additions(to: old, from: new)
+        #expect(add.map(\.name) == ["Infinite Health (2)", "Coins"])   // the same code under another name is not added; a different code of the same name is renamed
+    }
+
+    @Test func switchKeysNameDuplicates() {
+        let e = CheatFile.parse("[A]\n1\n[B]\n2\n[A]\n3\n")
+        #expect(CheatFile.keys(e) == ["A", "B", "A #2"])
+    }
+
+    @Test func tellsInstructionPatches() {
+        let patch = CheatFile.parse("[60 fps]\n04000000 004BF2A4 52800020\n")[0]
+        let data = CheatFile.parse("[Coins]\n04000000 0149D940 0000270F\n")[0]
+        let heap = CheatFile.parse("[Lives]\n04100000 0000D940 00000063\n")[0]
+        #expect(patch.patchesCode(textEnd: 0xa2ad60))
+        #expect(!data.patchesCode(textEnd: 0xa2ad60))
+        #expect(!heap.patchesCode(textEnd: 0xa2ad60))
+    }
+
+    @Test func readsTheGeneralCollection() {
+        let json = #"{"B424BE150A8E7D78": {"[Coins]": "[Coins]\n02100000 619ED858 0000270f\n\n"}, "3CA12DFAAF9C82DA": {"[X]": "[X]\n1\n"}, "attribution": {"a.txt": "By someone\n"}}"#
+        let hit = CheatSources.parseGeneral(Data(json.utf8), build: "b424be150a8e7d78")
+        #expect(hit.cheats.map(\.name) == ["Coins"] && hit.cheats[0].source == "switch-cheats-db")
+        let miss = CheatSources.parseGeneral(Data(json.utf8), build: "0000000000000000")
+        #expect(miss.cheats.isEmpty && miss.otherBuilds == ["3CA12DFAAF9C82DA", "B424BE150A8E7D78"])
+    }
+
+    @Test func savesSwitchesAndAddsToTheFile() throws {
+        let d = NSTemporaryDirectory() + "cheats-\(UUID().uuidString)"
+        let n = try CheatFile.add(CheatFile.parse("[A]\n1\n[B]\n2\n"), dir: d, build: "0123456789ABCDEF")
+        #expect(n == 2)
+        #expect(try CheatFile.add(CheatFile.parse("[A]\n1\n[C]\n3\n"), dir: d, build: "0123456789ABCDEF") == 1)
+        #expect(CheatFile.load(dir: d, build: "0123456789ABCDEF").map(\.name) == ["A", "B", "C"])
+        try CheatFile.setEnabled(["C", "A"], order: ["A", "B", "C"], dir: d, build: "0123456789ABCDEF")
+        #expect(try String(contentsOfFile: d + "/0123456789ABCDEF.enabled", encoding: .utf8) == "A\nC\n")
+        #expect(CheatFile.enabled(dir: d, build: "0123456789ABCDEF") == ["A", "C"])
+    }
+}
+
+@Suite struct ModFolders {
+    let tid = "0100000000010000"
+
+    func tree(_ files: [String]) -> String {
+        let d = NSTemporaryDirectory() + "mods-\(UUID().uuidString)"
+        for f in files {
+            try? FileManager.default.createDirectory(atPath: (d + "/" + f as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            try? "x".write(toFile: d + "/" + f, atomically: true, encoding: .utf8)
+        }
+        return d
+    }
+
+    @Test func findsTheGameFilesInEachLayout() throws {
+        let a = tree(["romfs/a.bin"])
+        #expect(try Mods.locate(in: a, titleID: tid) == a)
+        let b = tree(["My Mod/atmosphere/contents/0100000000010000/romfs/a.bin", "My Mod/readme.txt"])
+        #expect(try Mods.locate(in: b, titleID: tid) == b + "/My Mod/atmosphere/contents/0100000000010000")
+        let c = tree(["Pack/ObjectData/Mario.szs"])
+        #expect(try Mods.locate(in: c, titleID: tid) == c)   // bare game files: the folder is the mod
+        #expect(try Mods.locate(in: c, titleID: tid, wrapper: "pack") == c + "/Pack")   // unless its one folder is named as the download
+        let other = tree(["atmosphere/contents/0100ABCDEF012000/romfs/a.bin"])
+        #expect(throws: ModError.self) { try Mods.locate(in: other, titleID: tid) }
+    }
+
+    @Test func installsListsAndFindsClashes() throws {
+        let mods = NSTemporaryDirectory() + "installed-\(UUID().uuidString)"
+        let one = try Mods.install(from: tree(["romfs/Data/a.bin", "romfs/Data/b.bin"]), titleID: tid, name: "One: first", modsDir: mods)
+        let two = try Mods.install(from: tree(["Wrap/contents/0100000000010000/romfs/Data/B.bin", "Wrap/contents/0100000000010000/exefs/main.ips"]), titleID: tid, name: "Two", modsDir: mods)
+        #expect(one == "One- first" && two == "Two")
+        let infos = Mods.ordered(Mods.names(dir: mods), saved: ["Two"]).map { Mods.info(dir: mods, name: $0, titleID: tid) }
+        #expect(infos.map(\.name) == ["Two", "One- first"])
+        #expect(infos[0].files == ["Data/B.bin"] && infos[0].hasCode && !infos[1].hasCode)
+        let clash = Mods.clashes(infos)
+        #expect(clash.count == 1 && clash[0].winner == "Two" && clash[0].losers == ["One- first"])
+    }
+
+    @Test func settingsFileLines() {
+        let t = "# NXForge Sidebar settings for Super Mario Odyssey (0100000000010000)\nfps_counter = on\n# mods_on =    (folder names, separated by |)\n# mod_order =    (folder names, separated by |)\n"
+        #expect(ModState.fileValue(t, "mods_on") == nil)
+        let n = ModState.fileSetting(ModState.fileSetting(t, "mods_on", ["A", "B c"]), "mod_order", ["B c", "A"])
+        #expect(ModState.fileValue(n, "mods_on").map(ModState.list) == ["A", "B c"])
+        #expect(ModState.fileValue(n, "mod_order").map(ModState.list) == ["B c", "A"])
+        #expect(ModState.fileValue(n, "fps_counter") == "on")
+        #expect(ModState.fileSetting(n, "mods_on", []).contains("# mods_on ="))
+        #expect(ModState.fileValue(ModState.fileSetting("", "mods_on", ["A"]), "mods_on") == "A")
+    }
+}
+
+@Suite struct GameBananaAnswers {
+    @Test func readsModsAndFiles() {
+        let feed = #"{"_aMetadata": {"_nRecordCount": 640, "_nPerpage": 15}, "_aRecords": [{"_idRow": 738419, "_sModelName": "Mod", "_sName": "Remove Assist Mode Logo", "_sProfileUrl": "https://gamebanana.com/mods/738419", "_tsDateModified": 1794237711, "_sVersion": "1.4.1", "_aSubmitter": {"_sName": "Sukalibur"}, "_aRootCategory": {"_sName": "GUIs"}, "_aPreviewMedia": {"_aImages": [{"_sBaseUrl": "https://images.gamebanana.com/img/ss/mods", "_sFile": "a.jpg", "_sFile530": "530-90_a.jpg"}]}}]}"#
+        let p = GameBanana.parseMods(try? JSONSerialization.jsonObject(with: Data(feed.utf8)))
+        #expect(p.total == 640 && p.mods.count == 1)
+        #expect(p.mods[0].author == "Sukalibur" && p.mods[0].thumb?.absoluteString == "https://images.gamebanana.com/img/ss/mods/530-90_a.jpg")
+        let dl = #"{"_aFiles": [{"_idRow": 1, "_sFile": "m.zip", "_nFilesize": 1333, "_sDownloadUrl": "https://gamebanana.com/dl/1", "_sMd5Checksum": "ABC", "_sAvResult": "clean", "_sAnalysisResult": "ok"}, {"_idRow": 2, "_sFile": "bad.zip", "_nFilesize": 1, "_sDownloadUrl": "https://gamebanana.com/dl/2", "_sAvResult": "infected"}]}"#
+        let f = GameBanana.parseFiles(try? JSONSerialization.jsonObject(with: Data(dl.utf8)))
+        #expect(f.map(\.clean) == [true, false] && f[0].md5 == "abc" && f[0].bytes == 1333)
+    }
+
+    @Test func gameNames() {
+        #expect(GameBanana.searchName("SUPER MARIO ODYSSEY™ [NSZ]") == "SUPER MARIO ODYSSEY")
+        let g = [GameBanana.Game(id: 1, name: "Super Mario Odyssey 2"), GameBanana.Game(id: 2, name: "Super Mario Odyssey")]
+        #expect(GameBanana.best(g, for: "SUPER MARIO ODYSSEY™")?.id == 2)
+    }
+}
+
+@Suite struct Sessions {
+    @Test func olderPlaytimeFilesStillRead() throws {
+        let old = #"{"start": "2026-11-01T10:00:00Z", "seconds": 600}"#
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        let s = try dec.decode(PlaySession.self, from: Data(old.utf8))
+        #expect(s.seconds == 600 && s.peakMB == nil && s.fps == nil)
+    }
+
+    @Test func memoryAddsUp() {
+        var s = PlayStats()
+        s.add(0); s.add(2 * 1_048_576 * 1024); s.add(4 * 1_048_576 * 1024)
+        #expect(s.peakMB == 4096 && s.averageMB == 3072)
+        #expect(memoryText(4096) == "4.0 GB" && memoryText(512) == "512 MB")
+    }
+}

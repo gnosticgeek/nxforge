@@ -86,6 +86,12 @@ struct GamePage: View {
                         if let b { PerformanceCard(app: b.app, titleID: tid, name: name) }
                     }
                 }
+                if let b, let tid {
+                    layout {
+                        ModsCard(model: model, app: b.app, titleID: tid, name: name)
+                        CheatsCard(model: model, app: b.app, titleID: tid, name: name)
+                    }
+                }
                 if let b {
                     SaveSnapshotsCard(model: model, build: b)
                     BuildDetail(model: model, build: b, name: name)
@@ -333,6 +339,7 @@ struct PlaytimeCard: View {
                 }
                 .chartYAxisLabel("minutes")
                 .frame(height: 110)
+                SessionsList(record: r)
             } else {
                 Text(app == nil ? "Build it to start counting." : "Not played yet while the converter was open.").foregroundStyle(.secondary)
             }
