@@ -231,7 +231,8 @@ struct PlayOptionsPanel: View {
         .padding(24)
         .frame(width: 600)
         .frame(maxHeight: .infinity)
-        .glassEffect(.regular.tint(StageLook.panel.opacity(0.68)), in: .rect(cornerRadius: 28))
+        .background(StageLook.panel.opacity(0.78), in: .rect(cornerRadius: 28))
+        .glassEffect(.regular, in: .rect(cornerRadius: 28))
         .shadow(color: .black.opacity(0.55), radius: 50, y: 24)
     }
 

@@ -297,10 +297,10 @@ struct StageBackdrop: View {
                 if let art {
                     Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                         .frame(width: w, height: h).scaleEffect(1.3).blur(radius: 60).saturation(1.5)
-                        .opacity(0.46 * strength)
+                        .opacity(0.42 * strength)
                         .id(artKey).transition(.opacity)
                 }
-                Circle().fill(RadialGradient(colors: [tint.opacity(0.46 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.48))
+                Circle().fill(RadialGradient(colors: [tint.opacity(0.42 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.48))
                     .frame(width: w * 0.96, height: w * 0.96).position(x: w * 0.22, y: h * 0.12)
                 Circle().fill(RadialGradient(colors: [tint.opacity(0.24 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.40))
                     .frame(width: w * 0.8, height: w * 0.8).hueRotation(.degrees(48)).position(x: w * 0.92, y: h * 0.08)
@@ -308,7 +308,7 @@ struct StageBackdrop: View {
                 LinearGradient(stops: [.init(color: StageLook.background.opacity(0), location: 0), .init(color: StageLook.background.opacity(0.86), location: 0.72),
                                        .init(color: StageLook.background, location: 1)], startPoint: .top, endPoint: .bottom)
                     .frame(height: h * 0.62).frame(maxHeight: .infinity, alignment: .bottom)
-                Image(nsImage: StageLook.grain).resizable(resizingMode: .tile).blendMode(.overlay).opacity(0.11)
+                Image(nsImage: StageLook.grain).resizable(resizingMode: .tile).blendMode(.overlay).opacity(0.07)
             }
             .frame(width: w, height: h).clipped()
         }
@@ -486,7 +486,7 @@ struct StageHero: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 9) {
                 Circle().fill(g.app == nil ? Color(white: 0.6) : playing ? Color(red: 0.38, green: 0.65, blue: 0.98) : tint)
-                    .frame(width: 8, height: 8).shadow(color: tint.opacity(g.app == nil ? 0 : 0.9), radius: 6)
+                    .brightness(g.app == nil ? 0 : 0.3).frame(width: 8, height: 8).shadow(color: tint.opacity(g.app == nil ? 0 : 0.9), radius: 6)
                 Text(eyebrow).font(.system(size: 11.5, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
             }
             Text(g.name).font(.system(size: titleSize, weight: .heavy)).tracking(-1.4).lineLimit(2).minimumScaleFactor(0.6)
@@ -805,7 +805,7 @@ struct LaunchScreen: View {
     var body: some View {
         ZStack {
             StageBackdrop(tint: game.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75),
-                          art: game.flatMap { CoverArt.ambient($0) }, artKey: game?.id ?? "", strength: 1.35)
+                          art: game.flatMap { CoverArt.ambient($0) }, artKey: game?.id ?? "", strength: 1.1)
             GeometryReader { geo in
                 let caseH = min(max(geo.size.height * 0.52, 240), 560)
                 VStack(spacing: 20) {
@@ -880,7 +880,8 @@ struct StageSettings: View {
         }
         .padding(28)
         .frame(width: 640)
-        .glassEffect(.regular.tint(StageLook.panel.opacity(0.72)), in: .rect(cornerRadius: 28))
+        .background(StageLook.panel.opacity(0.80), in: .rect(cornerRadius: 28))
+        .glassEffect(.regular, in: .rect(cornerRadius: 28))
         .shadow(color: .black.opacity(0.55), radius: 50, y: 24)
     }
 

@@ -21,7 +21,8 @@ struct DrawnFront: View {
             LinearGradient(colors: [tint, tint.opacity(0.45)], startPoint: .top, endPoint: .bottom)
             if let wash {
                 Image(nsImage: wash).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
-                    .frame(width: 420, height: 680).scaleEffect(1.25).blur(radius: 18).saturation(1.35).clipped()
+                    .frame(width: 420, height: 680).scaleEffect(1.25).blur(radius: 18).saturation(1.9).contrast(1.15).clipped()
+                tint.opacity(0.22)
             }
             LinearGradient(stops: [.init(color: .black.opacity(0.30), location: 0), .init(color: .black.opacity(0.02), location: 0.32),
                                    .init(color: .black.opacity(0.10), location: 0.55), .init(color: .black.opacity(0.78), location: 1)],
@@ -120,7 +121,10 @@ enum CoverArt {
 
     static func icon(_ g: StageGame) -> NSImage? {
         if let i = g.icon, let img = NSImage(contentsOfFile: i) { return img }
-        if let a = g.app { return NSWorkspace.shared.icon(forFile: a) }
+        // an app built without an icon has the system's blank one: no picture is better than that
+        if let a = g.app, let b = Bundle(path: a), let name = b.object(forInfoDictionaryKey: "CFBundleIconFile") as? String,
+           let file = b.path(forResource: name, ofType: name.hasSuffix(".icns") ? nil : "icns"),
+           ((try? FileManager.default.attributesOfItem(atPath: file))?[.size] as? Int ?? 0) > 2048 { return NSWorkspace.shared.icon(forFile: a) }
         return nil
     }
 
@@ -210,7 +214,7 @@ struct CoverTile: View {
                     Rectangle().fill(.white.opacity(0.16)).frame(width: 1)
                 }
             }
-            .overlay { if dim { Color.black.opacity(0.52) } }
+            .overlay { if dim { Color.black.opacity(0.44) } }
             .clipShape(shape)
             .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
             .overlay {
@@ -317,7 +321,6 @@ struct CaseModelView: NSViewRepresentable {
                 m.lightingModel = .blinn
                 m.diffuse.contents = NSColor(white: 0.12, alpha: 1)
                 m.specular.contents = NSColor.black
-                m.cullMode = .front   // the holder's scale turns the faces inside out
                 return m
             }
             under.materials = mirrorMaterials
@@ -418,7 +421,7 @@ struct GameCase: View {
         let tint = CoverArt.tint(game)
         CaseModelView(front: CoverArt.front(game), back: CoverArt.back(game), spine: CoverArt.spine(game), rest: flipped ? 0.48 + .pi : 0.48)
             .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: Self.floor + 0.004),
-                                         .init(color: .black.opacity(0.30), location: Self.floor + 0.03), .init(color: .clear, location: 0.97)],
+                                         .init(color: .black.opacity(0.24), location: Self.floor + 0.03), .init(color: .clear, location: 0.93)],
                                  startPoint: .top, endPoint: .bottom))
             .background {
                 GeometryReader { geo in
