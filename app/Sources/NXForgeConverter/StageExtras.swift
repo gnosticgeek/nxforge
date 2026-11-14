@@ -69,6 +69,10 @@ struct GameAttention: Hashable, Identifiable {
 }
 
 extension AppModel {
+    /// The mark a cover carries: a crash or a save with no copy elsewhere. Update ready stays in the line under the cover, not on
+    /// it: after an NXForge update every built game has it, and a mark on every cover marks nothing.
+    func coverMark(_ g: StageGame) -> GameAttention? { attention[g.id]?.first { $0.kind != .update } }
+
     /// Reads what the built games need (GameAttention) off the main thread; the covers show it when it comes.
     func refreshAttention(_ games: [StageGame]) async {
         let items = games.compactMap { g in g.app.map { (id: g.id, app: $0, titleID: g.titleID, outdated: g.outdated, playing: isPlaying(app: $0)) } }

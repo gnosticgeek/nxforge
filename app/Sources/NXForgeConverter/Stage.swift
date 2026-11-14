@@ -663,7 +663,7 @@ struct StageHome: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: 24) {
                             ForEach(games) { g in
-                                CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, reflect: true, attention: model.attention[g.id]?.first).frame(width: tile)
+                                CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, reflect: true, attention: model.coverMark(g)).frame(width: tile)
                                     .id(g.id)
                                     .onTapGesture(count: 2) { model.libraryFocus = g.id; model.playFromStage(g.ref) }
                                     .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
@@ -723,7 +723,7 @@ struct StageLibrary: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cell, maximum: Self.cell + 44), spacing: Self.gap, alignment: .top)], alignment: .leading, spacing: 28) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 9) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.attention[g.id]?.first)
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g))
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(g.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                                         status(g)

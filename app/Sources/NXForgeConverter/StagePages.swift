@@ -51,7 +51,7 @@ struct StageGamePage: View {
                         VStack(alignment: .leading, spacing: 16) {
                             StageHero(model: model, game: g, first: false, titleSize: geo.size.width > 1100 ? 60 : 42, showDetails: false)
                             if let app = g.app { PlaysWith(model: model, game: g, app: app) }
-                            AttentionRows(items: model.attention[g.id] ?? [])
+                            AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build card says Update ready
                             cards(g, record)
                             if let app = g.app { ScreenshotStrip(app: app, tint: CoverArt.tint(g)) }
                         }
