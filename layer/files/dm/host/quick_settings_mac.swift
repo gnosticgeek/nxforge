@@ -891,7 +891,9 @@ final class QuickSettings: ObservableObject {
                 if (rows.first(where: { $0.contains(s) })?.count ?? 1) > 1 { r.append(Hint(caps: [side], text: "Move")) }
             }
         } else { r.append(Hint(caps: [Cap(symbol: nil, text: pad ? "▲▼" : "↑↓")], text: "Move")) }
-        return r + [Hint(caps: [back], text: "Close"), Hint(caps: turn, text: "Page"), Hint(caps: [pad ? Cap(symbol: peekGlyph, text: "X") : Cap(symbol: nil, text: "P")], text: "Hold to peek")]
+        r += [Hint(caps: [back], text: "Close"), Hint(caps: turn, text: "Page")]
+        // Hold to peek where the line has room (no selection, or one with a single hint): else the eye button's help says it
+        return r.count <= 3 ? r + [Hint(caps: [pad ? Cap(symbol: peekGlyph, text: "X") : Cap(symbol: nil, text: "P")], text: "Hold to peek")] : r
     }
 }
 
@@ -994,6 +996,7 @@ struct QuickSettingsView: View {
         .modifier(Panel(glow: GameLook.colour))
         .padding(12)
         .tint(GameLook.colour)
+        .environment(\.controlActiveState, .key)   // the game's colour stays while another window is key: the panel must not look disabled
         .environment(\.colorScheme, .dark)
     }
     // The game's icon in its own glow, its name (heavy, set tight, with a soft shade) under a wide-set "Quick settings" label, as the app's pages head; a Paused chip; peek and close
@@ -1011,7 +1014,7 @@ struct QuickSettingsView: View {
                             .background(GameLook.colour.opacity(0.25), in: .capsule).foregroundStyle(GameLook.colour)
                     }
                 }
-                Text(GameLook.name ?? m.game).font(.system(size: compact ? 20 : 24, weight: .heavy)).tracking(-0.5).lineLimit(1).minimumScaleFactor(0.7)
+                Text(GameLook.name ?? m.game).font(.system(size: compact ? 20 : 24, weight: .heavy)).tracking(-0.5).lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
             }
             Spacer(minLength: 8)
