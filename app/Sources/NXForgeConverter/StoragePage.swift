@@ -343,6 +343,7 @@ struct StoragePage: View {
                 }
                 .onDeleteCommand { deleteMany(deletable) }
                 .scrollContentBackground(.hidden)
+                .alternatingRowBackgrounds(.disabled)
                 .frame(height: min(max(CGFloat(list.count) * 62 + 30, 200), 620))
             }
             Divider()
