@@ -69,7 +69,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, downloadCovers, downloadHeroes, downloadStoreInfo, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, downloadCovers, downloadHeroes, downloadStoreInfo, startIn }
 
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
 
@@ -252,6 +252,7 @@ extension AppModel {
         case .firstPlayOptions: flip(&settings.firstPlayOptions)
         case .batteryPreset: flip(&settings.batteryPreset)
         case .returnToLibrary: flip(&settings.returnToLibrary)
+        case .localShaders: flip(&settings.localShaders)
         case .downloadCovers: flip(&settings.downloadCovers)
         case .downloadHeroes: flip(&settings.downloadHeroes)
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
@@ -987,6 +988,7 @@ struct StageSettings: View {
                 toggle("Show Play options the first time", "A game you have not played yet opens its options once before it starts.", $model.settings.firstPlayOptions, row: .firstPlayOptions)
                 toggle("Battery preset on battery", "Unplugged, a run takes the Battery preset. Your saved options are not changed.", $model.settings.batteryPreset, row: .batteryPreset)
                 toggle("Return here when a game quits", "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.", $model.settings.returnToLibrary, row: .returnToLibrary)
+                toggle("Keep shaders on this Mac", "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.", $model.settings.localShaders, row: .localShaders)
                 toggle("Show a recap when a game quits", "How long you played this time and in total, with the game's peak memory.", $model.settings.sessionRecap)
                 toggle("Rest while a game runs", "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.", $model.settings.lightWhilePlaying)
                 row("Controllers", "See every button, stick and trigger as a game reads it, and try the rumble.", last: true) {

@@ -205,6 +205,7 @@ final class AppModel {
         applyAppearance()
         restoreWindowState()
         purgeLeftoverDeletes()
+        Task.detached(priority: .utility) { LocalShaders.removeOrphans() }
         recheck()
         watchMounts()
         trackPlay()
@@ -467,7 +468,10 @@ final class AppModel {
         // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
         let cfg = NSWorkspace.OpenConfiguration()
         if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
-        cfg.environment = AppModel.frontEndEnvironment
+        var env = AppModel.frontEndEnvironment
+        // the copy of its pipeline archive on this Mac, when a Play from the front end has made one (LocalShaders)
+        if settings.localShaders, let s = LocalShaders.source(app: app), let dir = LocalShaders.ready(app: app, source: s) { env["DM_PSO_BUNDLE"] = dir.path }
+        cfg.environment = env
         NSWorkspace.shared.openApplication(at: app.url, configuration: cfg) { _, _ in }
         Engine.setLaunched(app)
         revision += 1

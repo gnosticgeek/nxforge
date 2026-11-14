@@ -1260,3 +1260,65 @@ import Testing
         #expect(memoryText(4096) == "4.0 GB" && memoryText(512) == "512 MB")
     }
 }
+
+@Suite struct LocalShaderCopies {
+    /// A built app with a pso folder of two files, and an empty cache root, in a new temporary folder
+    private func make() throws -> (base: URL, app: String, root: URL) {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appending(path: "nxc-pso-\(UUID().uuidString)")
+        let pso = base.appending(path: "Drive/Game.app/Contents/Resources/pso")
+        try fm.createDirectory(at: pso, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 4096).write(to: pso.appending(path: "applegpu_g16s.mtl4a"))
+        try Data("chain\tabc\n".utf8).write(to: pso.appending(path: "prebuilt.tsv"))
+        try Data().write(to: pso.appending(path: ".DS_Store"))
+        return (base, base.appending(path: "Drive/Game.app").path, base.appending(path: "cache"))
+    }
+
+    @Test func aCopyIsMadeOnceAndAgainAfterARebuild() throws {
+        let (base, app, root) = try make()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let pso = app.url.appending(path: "Contents/Resources/pso")
+        let s = try #require(LocalShaders.read(pso))
+        #expect(s.bytes == 4096 + 10 && !s.stamp.contains(".DS_Store"))
+        #expect(LocalShaders.ready(app: app, source: s, root: root) == nil)
+        let made = LocalShaders.copy(app: app, source: s, root: root, free: 100 << 30)
+        let dir = try #require(LocalShaders.ready(app: app, source: s, root: root))
+        #expect(made == .ready(dir))
+        #expect(try Data(contentsOf: dir.appending(path: "applegpu_g16s.mtl4a")).count == 4096)
+        #expect(FileManager.default.fileExists(atPath: dir.appending(path: "prebuilt.tsv").path))
+        // a rebuild: another size, so another stamp, and the old copy no longer counts
+        try Data(repeating: 2, count: 8192).write(to: pso.appending(path: "applegpu_g16s.mtl4a"))
+        let s2 = try #require(LocalShaders.read(pso))
+        #expect(s2.stamp != s.stamp && LocalShaders.ready(app: app, source: s2, root: root) == nil)
+        #expect(LocalShaders.copy(app: app, source: s2, root: root, free: 100 << 30) == .ready(dir))
+        #expect(try Data(contentsOf: dir.appending(path: "applegpu_g16s.mtl4a")).count == 8192)
+    }
+
+    @Test func noCopyWhenTheDiskWouldBeLeftShort() throws {
+        let (base, app, root) = try make()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let s = try #require(LocalShaders.read(app.url.appending(path: "Contents/Resources/pso")))
+        let free = LocalShaders.keepFree + 100
+        #expect(LocalShaders.copy(app: app, source: s, root: root, free: free) == .noRoom(needed: s.bytes, free: free))
+        #expect(LocalShaders.ready(app: app, source: s, root: root) == nil)
+        // an app on the home folder's own volume has nothing to copy
+        #expect(LocalShaders.source(app: app, home: base.path) == nil)
+        #expect(LocalShaders.source(app: base.appending(path: "None.app").path, home: "/nowhere") == nil)
+    }
+
+    @Test func aCopyGoesWithItsGameButStaysForAnUnpluggedDrive() throws {
+        let (base, app, root) = try make()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let s = try #require(LocalShaders.read(app.url.appending(path: "Contents/Resources/pso")))
+        _ = LocalShaders.copy(app: app, source: s, root: root, free: 100 << 30)
+        let std = app.url.standardizedFileURL.path
+        #expect(LocalShaders.removeOrphans(root: root).isEmpty)                                    // the app is there
+        #expect(LocalShaders.removeOrphans(root: root, exists: { _ in false }).isEmpty)            // its drive is not connected
+        #expect(LocalShaders.removeOrphans(root: root, exists: { $0 != std }) == [std])            // the drive is there, the app is gone
+        #expect(LocalShaders.ready(app: app, source: s, root: root) == nil)
+        #expect(LocalShaders.volume(of: "/Volumes/Games/Switch 2/Zelda.app") == "/Volumes/Games")
+        #expect(LocalShaders.volume(of: "/Users/tom/Applications/Zelda.app") == "/")
+        #expect(LocalShaders.folder(app: "/a/Zelda: OoT.app", root: root) != LocalShaders.folder(app: "/b/Zelda: OoT.app", root: root))
+        #expect(LocalShaders.folder(app: "/a/Zelda: OoT.app", root: root).lastPathComponent.hasPrefix("Zelda OoT "))
+    }
+}

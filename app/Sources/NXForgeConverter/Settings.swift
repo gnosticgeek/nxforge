@@ -75,6 +75,8 @@ struct Settings: Codable, Equatable {
     var batteryPreset = true
     /// the front end comes back to the front when a game quits
     var returnToLibrary = true
+    /// a game on another drive gets its pipeline archive copied to this Mac before it starts (LocalShaders)
+    var localShaders = true
     /// box art is downloaded from GameTDB for games that have none
     var downloadCovers = true
     /// wide art for the game page and Home is downloaded from Nintendo's European store for games that have none
@@ -101,6 +103,7 @@ struct Settings: Codable, Equatable {
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
         case startIn = "start_in", straightPlay = "straight_play", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
         case returnToLibrary = "return_to_library", downloadCovers = "download_covers", downloadHeroes = "download_heroes", downloadStoreInfo = "download_store_info", favorites
+        case localShaders = "local_shaders"
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
     }
 
@@ -147,6 +150,7 @@ struct Settings: Codable, Equatable {
         downloadHeroes = (try? c.decodeIfPresent(Bool.self, forKey: .downloadHeroes)) ?? true
         downloadStoreInfo = (try? c.decodeIfPresent(Bool.self, forKey: .downloadStoreInfo)) ?? true
         favorites = (try? c.decodeIfPresent([String].self, forKey: .favorites)) ?? []
+        localShaders = (try? c.decodeIfPresent(Bool.self, forKey: .localShaders)) ?? true
         sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true
         lightWhilePlaying = (try? c.decodeIfPresent(Bool.self, forKey: .lightWhilePlaying)) ?? true
     }
