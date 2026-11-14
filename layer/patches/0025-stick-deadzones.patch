@@ -33,7 +33,7 @@ index 74fbb73b851b5602786f8397a8b1d3890a6e0c99..693f7ae618bc9ec3b53b1838d3010dbe
  DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
  DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
 diff --git a/dm/host/hle_hid.c b/dm/host/hle_hid.c
-index 60cc84d7ed193fb2a2a25c325b2b47c7c691e75a..bbef30a364839c3d8d12c1a1599a78791118c1c1 100644
+index a3dd59334409ae5d4263889f702f6ce9a8412e3b..a1b94d00ab4497075d47072457cc03939f88c10f 100644
 --- a/dm/host/hle_hid.c
 +++ b/dm/host/hle_hid.c
 @@ -8,6 +8,7 @@
@@ -44,7 +44,7 @@ index 60cc84d7ed193fb2a2a25c325b2b47c7c691e75a..bbef30a364839c3d8d12c1a1599a7879
  #include "front.h"
  #include <stdatomic.h>
  #include <stdbool.h>
-@@ -60,8 +61,16 @@ void dm_input_set(uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t
+@@ -61,8 +62,16 @@ void dm_input_set(uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t
      uint64_t old = atomic_exchange(&g_btn, buttons); atomic_fetch_or(&g_latch, buttons & ~old); atomic_fetch_or(&g_peek_latch, buttons & ~old); atomic_store(&g_axes, pack(lx, ly, rx, ry));
      shake_note();
  }
@@ -95,10 +95,10 @@ index 0000000000000000000000000000000000000000..36fa9e797fa94166fc165dd605c490cf
 +    *y = (int32_t)lrintf(fmaxf(-1, fminf(1, fy * scale)) * DM_STICK_MAX);
 +}
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 64cb94278f84202cae46ef13bbb06dcd17271f5f..50eaffe7896a1cfae53282bbaf7f7c3ba0282f39 100644
+index 1b7c405fb91a43fa812b13240e2f1866d915cce8..6d14eb057d577486f907c13e74a5847ec9d79cb4 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
-@@ -80,6 +80,9 @@ run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_siz
+@@ -82,6 +82,9 @@ run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_siz
  	TMPDIR="$(abspath $(B))" $(B)/t_cheats $(QUIET)
  	$(B)/t_nro
  	$(B)/t_symbols
@@ -167,10 +167,10 @@ index 0000000000000000000000000000000000000000..d9ac75c2b4809ebca2dcbacbbf9dd17e
 +    return 0;
 +}
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 27e0724acce95f97dd09f857d4a1480c1d5690b6..02309eb10b140eaec3c5e2a36a5ddcd61a7c931a 100644
+index ff051a6480c0c6beedca4bd7e572f59ad17ad413..397d15bd2226282f81232684686b5c46feef279f 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -400,6 +400,8 @@ DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log on
+@@ -414,6 +414,8 @@ DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log on
  DM_SPIN	switch	`0` makes the rewriter's spin gate return at once, so guest poll loops spin with no sleep; the gate stays (on by default)
  DM_SPIN_LIST	diagnostic	`=1` makes `patch_nso.py` print every guest poll loop it found and sends through a spin gate
  DM_SPIN_POLL	switch	`=<µs>`: how long a spin-gate wait polls before it sleeps with the yield back-off (default 2000; `0` yields on every pass)

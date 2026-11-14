@@ -11,10 +11,10 @@ A NUP with a base game and an update (Ocarina of Time, 0400486024DEC000 v131072)
  2 files changed, 12 insertions(+), 4 deletions(-)
 
 diff --git a/dm/tools/tests/test_nsp_nup.py b/dm/tools/tests/test_nsp_nup.py
-index ec70044455713a2e0742d4266ffc6e24950720d7..f7a12958bf3d2a0b088cfcdfb32674fe020bfe4a 100644
+index 316ccb2e0bf318dc6dcf0612acaa58c5ffbb6964..22cfb7d7ba8baccf1608c855dcdc2b5dda01de77 100644
 --- a/dm/tools/tests/test_nsp_nup.py
 +++ b/dm/tools/tests/test_nsp_nup.py
-@@ -448,6 +448,7 @@ class Pack(Base):
+@@ -461,6 +461,7 @@ class Pack(Base):
          names = romfs_image.read_index(u / 'RomFS.img')
          self.assertIn('dir/new', names); self.assertNotIn('dir/old', names); self.assertEqual(names['empty'], (False, names['empty'][1], 0))
          self.assertFalse((u / 'control.nacp').exists())   # the update carries no control data: the script takes the base's
@@ -23,10 +23,10 @@ index ec70044455713a2e0742d4266ffc6e24950720d7..f7a12958bf3d2a0b088cfcdfb32674fe
          b = self.out() / 'b'
          self.assertEqual((nacp.name(b / 'control.nacp'), nacp.version(b / 'control.nacp')), ('Test Game', '1.2.3'))
 diff --git a/scripts/pack_nup.py b/scripts/pack_nup.py
-index 24e5de09a0e2b44c3f138d7857a3d7d2ce840788..8fab07c6cf51c010c5f174a8e4ddf0fe8197fd69 100644
+index a6c3f6dc604200d8f4a55dca31ac7e8319b64a63..1067670b4929ce30ba07a91d7b7f1a2dc829f947 100644
 --- a/scripts/pack_nup.py
 +++ b/scripts/pack_nup.py
-@@ -321,12 +321,19 @@ def app_package(n):   # the record that holds application metadata when no base
+@@ -336,12 +336,19 @@ def app_package(n):   # the record that holds application metadata when no base
      return next((k for k in n.packages if k.kind == BASE), n.packages[0])
  
  
@@ -49,7 +49,7 @@ index 24e5de09a0e2b44c3f138d7857a3d7d2ce840788..8fab07c6cf51c010c5f174a8e4ddf0fe
      for name, data in (('control.nacp', nacp_bytes), ('icon.jpg', icon)):
          if data: (out / name).write_bytes(data)
          else: (out / name).unlink(missing_ok=True)
-@@ -345,7 +352,7 @@ def pack_version(n, k, base, app, out, say=print, step=lambda s: None):   # one
+@@ -360,7 +367,7 @@ def pack_version(n, k, base, app, out, say=print, step=lambda s: None):   # one
      out.mkdir(parents=True, exist_ok=True)
      exefs(n, k, out / 'ExeFS')
      how = pack(n, d, out / 'RomFS.img', say, step)

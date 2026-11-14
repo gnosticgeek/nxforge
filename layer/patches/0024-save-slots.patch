@@ -11,7 +11,7 @@ With the host stopped, the slot the sidebar named in DM_LAUNCHER_SLOT_LOAD is cl
  2 files changed, 7 insertions(+), 2 deletions(-)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 6d66576af8ad524f33d75dba3f581ec4b3844147..3b1e1bda1afb927b0746bc4ec286c577d85377f6 100644
+index c706afe5f22be3f276672654c717e34b13eb2a79..55e4e7b16178aa8eeffd49d2b3491c922ed9854a 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
 @@ -252,6 +252,8 @@ static void programs_table(const char *contents, const char *res, const char *su
@@ -43,15 +43,15 @@ index 6d66576af8ad524f33d75dba3f581ec4b3844147..3b1e1bda1afb927b0746bc4ec286c577
          restart_choices();
      }
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index ee3104c4a6ee4c05e8d4fce4ec539a53728dd603..8d7bebcc909cc5bc86bff6ff5e3600b2b0e3b9d0 100755
+index 9b4714a092b6f6b4c89d911e2975e6a91083197b..725834459e31bbf8b928b9e4f3217beca552265a 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
-@@ -329,7 +329,7 @@ def pack(a):
+@@ -334,7 +334,7 @@ def pack(a):
          if not codesign: raise SystemExit('codesign is not available')
          codesign = Path(codesign).resolve()
          minos = min_os(a.host)
 -        sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'tools/romfs.py'] + swift_sources()
 +        sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE / 'nxforge/launcher_slots.inc', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'tools/romfs.py'] + swift_sources()
-         inputs = {'options': {k: v for k, v in vars(a).items() if k != 'check'}, 'files': [(str(p), p.stat().st_mode, digest(p), os.readlink(p) if p.is_symlink() else None) for p in files + sources],
+         large = {*msls, *pso, *(p for x in programs for p in x[5])}   # the shader libraries and pipeline archives (13.5 GB for Ocarina of Time): by stat, as the RomFS trees below
+         inputs = {'options': {k: v for k, v in vars(a).items() if k != 'check'}, 'files': [file_row(p, p in large) for p in files + sources],
                    'trees': [(p, inventory(Path(p))) for p in (a.romfs, a.aoc, a.html, *(str(x[1]) for x in programs), *(str(x[3]) for x in programs)) if p and Path(p).exists()],
-                   'tools': [[str(c), c.stat().st_mode, c.stat().st_size, c.stat().st_mtime_ns, c.stat().st_ctime_ns, run([c, '--version']).strip()] for c in (clang, swiftc)] + [
