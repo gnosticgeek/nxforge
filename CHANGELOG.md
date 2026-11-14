@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.37.0 (unreleased)
+## Unreleased
 
 - **The engine moves to the newest nxnative** (upstream `bee218d9`, 110 commits past the last pin `ce38664`): upstream's own fixes since 11 Nov come in, among them data bundles for game files, a faster per-object host build, render targets that other passes have drawn over released after 3 s, Switch 2 stick deadzones and MetalFX writing the screen directly. NXForge's layer patches are rebased onto it; #2622 and #2625, which NXForge carried early, are upstream now and their patches are gone. **The shader chain changes (`6aafe4305c7e`), so every game needs one full rebuild.**
 - **Memory setting** (layer patch 0027): Automatic, or 8 to 32 GB, says how much of the Mac a game plans for (its residency budget, the eviction point and the texture caches); lower it when other apps need memory while you play (`DM_MEMORY_GB`). From EmmanueleC's swordboiMacNative fork (MIT).
