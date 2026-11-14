@@ -34,6 +34,28 @@ enum StageLook {
     static let faint = Color(white: 0.66)
     static let panel = Color(red: 0.11, green: 0.118, blue: 0.15)
 
+    /// the light along a card's or a button's top edge
+    static let edge = LinearGradient(colors: [.white.opacity(0.30), .white.opacity(0.07)], startPoint: .top, endPoint: .bottom)
+    /// a card's fill: a little lighter at the top
+    static let card = LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom)
+
+    /// Fine grey noise, tiled over the stage: it breaks up the banding of the big soft gradients
+    @MainActor static let grain: NSImage = {
+        let n = 192
+        var px = [UInt8](repeating: 255, count: n * n * 4)
+        var seed: UInt64 = 0x9E3779B97F4A7C15
+        for i in 0..<(n * n) {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            let v = UInt8(truncatingIfNeeded: seed >> 40)
+            px[i * 4] = v; px[i * 4 + 1] = v; px[i * 4 + 2] = v
+        }
+        guard let provider = CGDataProvider(data: Data(px) as CFData),
+              let cg = CGImage(width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: n * 4, space: CGColorSpaceCreateDeviceRGB(),
+                               bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: provider, decode: nil,
+                               shouldInterpolate: false, intent: .defaultIntent) else { return NSImage(size: NSSize(width: 1, height: 1)) }
+        return NSImage(cgImage: cg, size: NSSize(width: n / 2, height: n / 2))
+    }()
+
     static func played(_ d: Date?) -> String {
         guard let d else { return "Not played yet" }
         let cal = Calendar.current
@@ -216,16 +238,30 @@ extension AppModel {
 struct StageButton: ButtonStyle {
     var primary = false
     var height: CGFloat = 46
+    /// the main action's glow, in the game's colour
+    var glow: Color? = nil
+    /// real glass, for the few large buttons over the stage itself
+    var glass = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let label = configuration.label
             .font(.system(size: primary ? 17 : 15, weight: primary ? .bold : .semibold))
             .padding(.horizontal, primary ? 26 : 20).frame(height: height)
             .foregroundStyle(primary ? Color.black : Color.white)
-            .background(primary ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.white.opacity(0.12)), in: .capsule)
-            .overlay(Capsule().strokeBorder(.white.opacity(primary ? 0 : 0.18)))
-            .opacity(configuration.isPressed ? 0.7 : 1)
-            .contentShape(.capsule)
+        Group {
+            if primary {
+                label.background(LinearGradient(colors: [.white, Color(white: 0.86)], startPoint: .top, endPoint: .bottom), in: .capsule)
+                    .shadow(color: (glow ?? .white).opacity(glow == nil ? 0.18 : 0.60), radius: height * 0.42, y: height * 0.12)
+            } else if glass {
+                label.glassEffect(.regular.interactive(), in: .capsule)
+            } else {
+                label.background(StageLook.card, in: .capsule).overlay(Capsule().strokeBorder(StageLook.edge, lineWidth: 1))
+            }
+        }
+        .scaleEffect(configuration.isPressed ? 0.96 : 1)
+        .opacity(configuration.isPressed ? 0.85 : 1)
+        .animation(.spring(duration: 0.2), value: configuration.isPressed)
+        .contentShape(.capsule)
     }
 }
 
@@ -243,9 +279,13 @@ struct PadGlyph: View {
     }
 }
 
-/// The stage's light: the focused game's colour top left, a cooler turn of it top right, fading to black below.
+/// The stage's light: the focused game's own art, far out of focus, fills the room; its colour is brightest top left with
+/// a cooler turn of it top right, the corners fall away, and it all fades to black below, under a fine grain.
 struct StageBackdrop: View {
     let tint: Color
+    /// the game's art, small (CoverArt.ambient), and what names it, so one game's fades into the next's
+    var art: NSImage? = nil
+    var artKey = ""
     /// how bright the light is: full on the front end, lower behind the converter's pages of text
     var strength: Double = 1
 
@@ -254,15 +294,26 @@ struct StageBackdrop: View {
             let w = geo.size.width, h = geo.size.height
             ZStack {
                 StageLook.background
-                Circle().fill(RadialGradient(colors: [tint.opacity(0.62 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.48))
+                if let art {
+                    Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                        .frame(width: w, height: h).scaleEffect(1.3).blur(radius: 60).saturation(1.5)
+                        .opacity(0.46 * strength)
+                        .id(artKey).transition(.opacity)
+                }
+                Circle().fill(RadialGradient(colors: [tint.opacity(0.46 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.48))
                     .frame(width: w * 0.96, height: w * 0.96).position(x: w * 0.22, y: h * 0.12)
-                Circle().fill(RadialGradient(colors: [tint.opacity(0.30 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.40))
+                Circle().fill(RadialGradient(colors: [tint.opacity(0.24 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.40))
                     .frame(width: w * 0.8, height: w * 0.8).hueRotation(.degrees(48)).position(x: w * 0.92, y: h * 0.08)
-                LinearGradient(colors: [StageLook.background.opacity(0), StageLook.background], startPoint: .top, endPoint: .bottom)
-                    .frame(height: h * 0.55).frame(maxHeight: .infinity, alignment: .bottom)
+                RadialGradient(colors: [.clear, .black.opacity(0.50)], center: UnitPoint(x: 0.5, y: 0.35), startRadius: w * 0.30, endRadius: w * 0.95)
+                LinearGradient(stops: [.init(color: StageLook.background.opacity(0), location: 0), .init(color: StageLook.background.opacity(0.86), location: 0.72),
+                                       .init(color: StageLook.background, location: 1)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: h * 0.62).frame(maxHeight: .infinity, alignment: .bottom)
+                Image(nsImage: StageLook.grain).resizable(resizingMode: .tile).blendMode(.overlay).opacity(0.11)
             }
+            .frame(width: w, height: h).clipped()
         }
         .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.55), value: artKey)
         .animation(.easeInOut(duration: 0.45), value: tint)
         .accessibilityHidden(true)
     }
@@ -279,7 +330,7 @@ struct StageView: View {
         let focus = detail ?? model.stageFocus(shown)
         let tint = focus.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
         ZStack {
-            StageBackdrop(tint: tint)
+            StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "")
             VStack(spacing: 0) {
                 if detail == nil { StageTopBar(model: model) }
                 Group {
@@ -336,10 +387,15 @@ struct StageView: View {
 
 struct StageTopBar: View {
     @Bindable var model: AppModel
+    @Namespace private var marks
 
     var body: some View {
         HStack(spacing: 14) {
-            Text("NXForge").font(.system(size: 19, weight: .heavy))
+            HStack(spacing: 9) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().interpolation(.high).frame(width: 26, height: 26)
+                    .shadow(color: .black.opacity(0.4), radius: 4, y: 2).accessibilityHidden(true)
+                Text("NXForge").font(.system(size: 18, weight: .heavy)).fontWidth(.expanded).tracking(-0.4)
+            }
             HStack(spacing: 4) {
                 ForEach(StageTab.allCases, id: \.self) { t in
                     tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
@@ -348,21 +404,20 @@ struct StageTopBar: View {
                     .help("Convert, Game Files, Builds, Storage, Toolchain and Updates")
             }
             .padding(4)
-            .background(.white.opacity(0.08), in: .capsule)
-            .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
-            .padding(.leading, 14)
+            .glassEffect(.regular, in: .capsule)
+            .animation(.spring(duration: 0.32), value: model.stageTab)
+            .padding(.leading, 12)
             if model.run.running && !model.run.planning {
                 Button { model.showConverter(); model.page = .convert } label: {
                     HStack(spacing: 8) { Text("Building").font(.callout.weight(.semibold)); SidebarBuildProgress(run: model.run) }
-                        .padding(.horizontal, 12).frame(height: 36).background(.white.opacity(0.08), in: .capsule)
+                        .padding(.horizontal, 12).frame(height: 36).glassEffect(.regular, in: .capsule)
                 }
                 .buttonStyle(.plain).help("Show the build")
             }
             Spacer(minLength: 0)
             if let pad = GCController.controllers().first?.vendorName {
                 Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).foregroundStyle(StageLook.soft)
-                    .padding(.horizontal, 12).frame(height: 36).background(.white.opacity(0.08), in: .capsule)
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
+                    .padding(.horizontal, 12).frame(height: 36).glassEffect(.regular, in: .capsule)
             }
             if let s = search {
                 HStack(spacing: 8) {
@@ -373,8 +428,7 @@ struct StageTopBar: View {
                             .buttonStyle(.plain).accessibilityLabel("Clear Search")
                     }
                 }
-                .padding(.horizontal, 14).frame(height: 36).background(.white.opacity(0.08), in: .capsule)
-                .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
+                .padding(.horizontal, 14).frame(height: 36).glassEffect(.regular, in: .capsule)
             }
             round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
             round("slider.horizontal.3", "Settings") { model.stageSettings = true }
@@ -396,8 +450,8 @@ struct StageTopBar: View {
     func tab(_ title: String, on: Bool, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             Text(title).font(.system(size: 14, weight: .semibold)).padding(.horizontal, 16).frame(height: 30)
-                .foregroundStyle(on ? Color.black : Color(white: 0.9))
-                .background(on ? Color.white.opacity(0.92) : Color.clear, in: .capsule)
+                .foregroundStyle(on ? Color.black : Color(white: 0.92))
+                .background { if on { Capsule().fill(.white.opacity(0.94)).matchedGeometryEffect(id: "tab", in: marks) } }
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)
@@ -407,7 +461,7 @@ struct StageTopBar: View {
     func round(_ symbol: String, _ label: String, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             Image(systemName: symbol).font(.system(size: 14, weight: .semibold)).frame(width: 36, height: 36)
-                .background(.white.opacity(0.08), in: .circle).overlay(Circle().strokeBorder(.white.opacity(0.12))).contentShape(.circle)
+                .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
         }
         .buttonStyle(.plain).help(label).accessibilityLabel(label)
     }
@@ -419,36 +473,53 @@ struct StageHero: View {
     let game: StageGame
     var first = false
     var titleSize: CGFloat = 52
+    /// off on the game's own page
+    var showDetails = true
 
     var body: some View {
         let _ = model.revision
         let g = game
         let list = g.app.map { LaunchSettings.load(app: $0) } ?? []
         let values = Dictionary(list.map { ($0.env, LaunchSettings.value($0, app: g.app ?? "")) }, uniquingKeysWith: { a, _ in a })
+        let tint = CoverArt.tint(g)
+        let playing = model.isPlaying(app: g.app ?? "")
         VStack(alignment: .leading, spacing: 14) {
-            Text(eyebrow).font(.system(size: 12, weight: .bold)).kerning(2.2).foregroundStyle(StageLook.soft)
-            Text(g.name).font(.system(size: titleSize, weight: .heavy)).tracking(-1.2).lineLimit(2).minimumScaleFactor(0.6)
+            HStack(spacing: 9) {
+                Circle().fill(g.app == nil ? Color(white: 0.6) : playing ? Color(red: 0.38, green: 0.65, blue: 0.98) : tint)
+                    .frame(width: 8, height: 8).shadow(color: tint.opacity(g.app == nil ? 0 : 0.9), radius: 6)
+                Text(eyebrow).font(.system(size: 11.5, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
+            }
+            Text(g.name).font(.system(size: titleSize, weight: .heavy)).tracking(-1.4).lineLimit(2).minimumScaleFactor(0.6)
+                .foregroundStyle(LinearGradient(colors: [.white, Color(white: 0.80)], startPoint: .top, endPoint: .bottom))
+                .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(meta).font(.system(size: 16)).foregroundStyle(StageLook.soft).lineLimit(2)
+            HStack(spacing: 14) {
+                ForEach(Array(facts.enumerated()), id: \.offset) { _, f in
+                    Label(f.1, systemImage: f.0).labelStyle(.titleAndIcon).font(.system(size: 14.5, weight: .medium)).lineLimit(1)
+                }
+            }
+            .foregroundStyle(StageLook.soft)
             if !list.isEmpty {
                 HStack(spacing: 8) {
-                    chip(PlayOptions.current(settings: list, values: values).rawValue)
+                    chip(PlayOptions.current(settings: list, values: values).rawValue, lead: true, tint: tint)
                     ForEach(Array(PlayOptions.summary(settings: list, values: values).enumerated()), id: \.offset) { _, s in chip(s.value) }
                 }
             }
             HStack(spacing: 10) {
                 if g.app != nil {
-                    Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(model.isPlaying(app: g.app ?? "") ? "Resume" : "Play", systemImage: "play.fill") }
-                        .buttonStyle(StageButton(primary: true, height: 52))
+                    Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(playing ? "Resume" : "Play", systemImage: "play.fill").padding(.horizontal, 8) }
+                        .buttonStyle(StageButton(primary: true, height: 54, glow: tint))
                     Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: { Label("Play options", systemImage: "slider.horizontal.3") }
-                        .buttonStyle(StageButton(height: 52))
+                        .buttonStyle(StageButton(height: 54, glass: true))
                 } else {
-                    Button { model.playFromStage(g.ref) } label: { Label("Build", systemImage: "hammer.fill") }
-                        .buttonStyle(StageButton(primary: true, height: 52)).disabled(model.run.running || model.batchRunning)
+                    Button { model.playFromStage(g.ref) } label: { Label("Build", systemImage: "hammer.fill").padding(.horizontal, 8) }
+                        .buttonStyle(StageButton(primary: true, height: 54, glow: tint)).disabled(model.run.running || model.batchRunning)
                 }
-                Button("Details") { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref }.buttonStyle(StageButton(height: 52))
+                if showDetails {
+                    Button("Details") { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref }.buttonStyle(StageButton(height: 54, glass: true))
+                }
             }
-            .padding(.top, 6)
+            .padding(.top, 8)
         }
     }
 
@@ -459,18 +530,19 @@ struct StageHero: View {
         return first ? "CONTINUE PLAYING" : "RECENTLY PLAYED"
     }
 
-    var meta: String {
-        var parts = [game.console.rawValue]
-        if let v = game.version, !v.isEmpty { parts.append("Version \(v)") }
-        if game.total > 0 { parts.append("Played \(Playtime.text(game.total))") }
-        if game.app != nil { parts.append(game.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet") }
-        return parts.joined(separator: " · ")
+    /// The line under the name, each part with its symbol
+    var facts: [(String, String)] {
+        var out = [("gamecontroller.fill", game.console.rawValue)]
+        if let v = game.version, !v.isEmpty { out.append(("number", "Version \(v)")) }
+        if game.total > 0 { out.append(("clock.fill", "\(Playtime.text(game.total)) played")) }
+        if game.app != nil { out.append(("calendar", game.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet")) }
+        return out
     }
 
-    func chip(_ t: String) -> some View {
-        Text(t).font(.system(size: 13, weight: .semibold)).padding(.horizontal, 11).padding(.vertical, 5)
-            .background(.white.opacity(0.10), in: .rect(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.14)))
+    func chip(_ t: String, lead: Bool = false, tint: Color = .white) -> some View {
+        Text(t).font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 11).padding(.vertical, 5)
+            .background(lead ? AnyShapeStyle(tint.opacity(0.30)) : AnyShapeStyle(StageLook.card), in: .capsule)
+            .overlay(Capsule().strokeBorder(lead ? AnyShapeStyle(tint.opacity(0.65)) : AnyShapeStyle(StageLook.edge), lineWidth: 1))
     }
 }
 
@@ -482,33 +554,42 @@ struct StageHome: View {
 
     var body: some View {
         GeometryReader { geo in
-            let tile = min(max(geo.size.height * 0.19, 92), 150)
-            let shelf = tile / CoverSource.aspect + 50
-            let caseH = min(max(geo.size.height - shelf - 70, 180), 470)
+            let tile = min(max(geo.size.height * 0.185, 92), 150)
+            let tileH = tile / CoverSource.aspect
+            let shelf = tileH * 1.24 + 44
+            let caseH = min(max(geo.size.height - shelf - 30, 220), 600)
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 24) {
                     if let g = focus {
-                        StageHero(model: model, game: g, first: games.first?.id == g.id && g.last != nil, titleSize: geo.size.width > 1000 ? 54 : 40)
+                        StageHero(model: model, game: g, first: games.first?.id == g.id && g.last != nil, titleSize: geo.size.width > 1000 ? 56 : 40)
                             .frame(maxWidth: 700, alignment: .leading)
+                            .id(g.id)
+                            .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 14)), removal: .opacity))
                     }
                     Spacer(minLength: 0)
                     if let g = focus, geo.size.width > 880 {
-                        GameCase(game: g).frame(width: caseH * 0.82, height: caseH).padding(.trailing, geo.size.width > 1200 ? 70 : 10)
+                        GameCase(game: g).frame(width: caseH * 0.72, height: caseH).padding(.trailing, geo.size.width > 1200 ? 70 : 10)
+                            .padding(.bottom, -caseH * 0.16)
                     }
                 }
                 .padding(.horizontal, 56)
                 .frame(maxHeight: .infinity)
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Your games").font(.system(size: 20, weight: .bold))
+                .animation(.easeOut(duration: 0.32), value: focus?.id)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("YOUR GAMES").font(.system(size: 12, weight: .bold)).fontWidth(.expanded).kerning(1.8)
+                    Text("\(games.count) ready").font(.system(size: 12.5, weight: .medium)).foregroundStyle(StageLook.faint)
                     Spacer()
-                    Button("See all \(total)") { model.stageTab = .library }.buttonStyle(.plain).font(.callout.weight(.semibold)).foregroundStyle(StageLook.soft)
+                    Button { model.stageTab = .library } label: {
+                        HStack(spacing: 5) { Text("See all \(total)"); Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)) }
+                    }
+                    .buttonStyle(.plain).font(.callout.weight(.semibold)).foregroundStyle(StageLook.soft)
                 }
                 .padding(.horizontal, 56)
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: 24) {
                             ForEach(games) { g in
-                                CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil).frame(width: tile)
+                                CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, reflect: true).frame(width: tile)
                                     .id(g.id)
                                     .onTapGesture(count: 2) { model.libraryFocus = g.id; model.playFromStage(g.ref) }
                                     .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
@@ -516,7 +597,7 @@ struct StageHome: View {
                                     .accessibilityLabel(g.name).accessibilityAddTraits(.isButton)
                             }
                         }
-                        .padding(.horizontal, 56).padding(.top, 26).padding(.bottom, 24)
+                        .padding(.horizontal, 56).padding(.top, 28).frame(height: shelf, alignment: .top)
                     }
                     .frame(height: shelf)
                     .onChange(of: model.libraryFocus) { _, f in if let f { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) } } }
@@ -531,7 +612,7 @@ struct StageLibrary: View {
     let all: [StageGame]
     let games: [StageGame]
     let focus: StageGame?
-    static let cell: CGFloat = 136, gap: CGFloat = 26, side: CGFloat = 56
+    static let cell: CGFloat = 142, gap: CGFloat = 28, side: CGFloat = 56
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -541,12 +622,17 @@ struct StageLibrary: View {
                 Spacer(minLength: 8)
                 HStack(spacing: 8) {
                     ForEach(StageFilter.allCases, id: \.self) { f in
+                        let on = model.stageFilter == f
                         Button { model.stageFilter = f } label: {
-                            Text(f.rawValue).font(.system(size: 13, weight: .semibold)).padding(.horizontal, 14).frame(height: 32)
-                                .foregroundStyle(model.stageFilter == f ? Color.black : Color(white: 0.9))
-                                .background(model.stageFilter == f ? Color.white.opacity(0.92) : Color.white.opacity(0.07), in: .capsule)
-                                .overlay(Capsule().strokeBorder(.white.opacity(model.stageFilter == f ? 0 : 0.16)))
-                                .contentShape(.capsule)
+                            HStack(spacing: 7) {
+                                Text(f.rawValue).font(.system(size: 13, weight: .semibold))
+                                Text("\(count(f))").font(.system(size: 11.5, weight: .bold).monospacedDigit()).foregroundStyle(on ? Color(white: 0.35) : StageLook.faint)
+                            }
+                            .padding(.horizontal, 14).frame(height: 32)
+                            .foregroundStyle(on ? Color.black : Color(white: 0.92))
+                            .background(on ? AnyShapeStyle(Color.white.opacity(0.94)) : AnyShapeStyle(StageLook.card), in: .capsule)
+                            .overlay(Capsule().strokeBorder(on ? AnyShapeStyle(Color.clear) : AnyShapeStyle(StageLook.edge), lineWidth: 1))
+                            .contentShape(.capsule)
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(model.stageFilter == f ? .isSelected : [])
@@ -577,14 +663,27 @@ struct StageLibrary: View {
                                 .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
                             }
                         }
-                        .padding(.horizontal, Self.side).padding(.top, 18).padding(.bottom, 26)
+                        .padding(.horizontal, Self.side).padding(.top, 22).padding(.bottom, 30)
                     }
+                    // the covers fade out under the heading instead of being cut by it
+                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.035), .init(color: .black, location: 0.97),
+                                                 .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
                     .onChange(of: model.libraryFocus) { _, f in if let f { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) } } }
                 }
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { w in
             model.stageColumns = max(Int((w - 2 * Self.side + Self.gap) / (Self.cell + Self.gap)), 1)
+        }
+    }
+
+    func count(_ f: StageFilter) -> Int {
+        switch f {
+        case .all: all.count
+        case .ready: all.filter { $0.app != nil }.count
+        case .switch2: all.filter { $0.console == .switch2 }.count
+        case .switch1: all.filter { $0.console == .switch1 }.count
+        case .notBuilt: all.filter { $0.app == nil }.count
         }
     }
 
@@ -596,7 +695,7 @@ struct StageLibrary: View {
             : g.outdated && g.last == nil ? ("Update ready", Color(red: 0.98, green: 0.75, blue: 0.14))
             : (StageLook.played(g.last), g.outdated ? Color(red: 0.98, green: 0.75, blue: 0.14) : Color(red: 0.29, green: 0.87, blue: 0.50))
         HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 7, height: 7)
+            Circle().fill(color).frame(width: 7, height: 7).shadow(color: color.opacity(g.app == nil ? 0 : 0.8), radius: 4)
             Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(g.app == nil ? StageLook.faint : StageLook.soft).lineLimit(1)
         }
         .help(g.outdated ? "A newer NXForge can rebuild this game. It still plays as it is." : "")
@@ -679,7 +778,25 @@ struct StageHints: View {
     }
 }
 
-/// Over the stage while a game starts: its cover, its name, and what it plays with.
+/// A thin bar with a light running along it: something is on its way, with no telling how far it is
+struct RunningBar: View {
+    var width: CGFloat = 380
+
+    var body: some View {
+        TimelineView(.animation) { t in
+            let p = t.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.7) / 1.7
+            Capsule().fill(.white.opacity(0.14)).frame(width: width, height: 4)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(LinearGradient(colors: [.white.opacity(0), .white, .white.opacity(0)], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: width * 0.42, height: 4).offset(x: (width * 1.42) * p - width * 0.42)
+                }
+                .clipShape(.capsule)
+        }
+        .accessibilityLabel("Starting")
+    }
+}
+
+/// Over the stage while a game starts: its box turning slowly in its own light, its name, and what it plays with.
 struct LaunchScreen: View {
     let model: AppModel
     let launch: Launching
@@ -687,29 +804,29 @@ struct LaunchScreen: View {
 
     var body: some View {
         ZStack {
-            StageLook.background
-            if let g = game, let img = CoverArt.front(g) {
-                Image(nsImage: img).resizable().aspectRatio(contentMode: .fill).blur(radius: 60).opacity(0.75)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
-            }
-            RadialGradient(colors: [StageLook.background.opacity(0.25), StageLook.background.opacity(0.9)], center: .center, startRadius: 80, endRadius: 760)
-            VStack(spacing: 26) {
-                if let g = game { CoverTile(game: g).frame(width: 210) }
-                Text(launch.name).font(.system(size: 40, weight: .heavy)).tracking(-0.8).lineLimit(2).multilineTextAlignment(.center)
-                ProgressView().progressViewStyle(.linear).tint(.white).frame(width: 380)
-                VStack(spacing: 6) {
-                    Text("Starting the game").font(.system(size: 15, weight: .semibold))
-                    if !launch.summary.isEmpty { Text(launch.summary).font(.system(size: 13)).foregroundStyle(StageLook.soft) }
-                    if let n = launch.note { Text(n).font(.system(size: 13, weight: .medium)).foregroundStyle(Color(red: 0.98, green: 0.75, blue: 0.14)) }
+            StageBackdrop(tint: game.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75),
+                          art: game.flatMap { CoverArt.ambient($0) }, artKey: game?.id ?? "", strength: 1.35)
+            GeometryReader { geo in
+                let caseH = min(max(geo.size.height * 0.52, 240), 560)
+                VStack(spacing: 20) {
+                    Spacer(minLength: 0)
+                    if let g = game { GameCase(game: g).frame(width: caseH * 0.78, height: caseH).padding(.bottom, -caseH * 0.14).allowsHitTesting(false) }
+                    Text(launch.name).font(.system(size: 40, weight: .heavy)).tracking(-0.9).lineLimit(2).multilineTextAlignment(.center)
+                        .shadow(color: .black.opacity(0.4), radius: 12, y: 5)
+                    RunningBar()
+                    VStack(spacing: 6) {
+                        Text("STARTING THE GAME").font(.system(size: 11.5, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
+                        if !launch.summary.isEmpty { Text(launch.summary).font(.system(size: 13.5, weight: .medium)).foregroundStyle(StageLook.soft) }
+                        if let n = launch.note { Text(n).font(.system(size: 13, weight: .medium)).foregroundStyle(Color(red: 0.98, green: 0.75, blue: 0.14)) }
+                    }
+                    Spacer(minLength: 0)
+                    Button { model.launching = nil } label: {
+                        HStack(spacing: 7) { PadGlyph(text: "B"); Text("Hide").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
+                    }
+                    .buttonStyle(.plain).padding(.bottom, 26)
                 }
-            }
-            .padding(40)
-            VStack {
-                Spacer()
-                Button { model.launching = nil } label: {
-                    HStack(spacing: 7) { PadGlyph(text: "B"); Text("Hide").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
-                }
-                .buttonStyle(.plain).padding(.bottom, 26)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 40)
             }
         }
         .ignoresSafeArea()
@@ -725,7 +842,7 @@ struct StageSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Settings").font(.system(size: 26, weight: .heavy))
+                Text("Settings").font(.system(size: 26, weight: .heavy)).tracking(-0.5)
                 Spacer()
                 Button { model.stageSettings = false } label: {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).frame(width: 32, height: 32)
@@ -763,19 +880,17 @@ struct StageSettings: View {
         }
         .padding(28)
         .frame(width: 640)
-        .background(StageLook.panel.opacity(0.92), in: .rect(cornerRadius: 26))
-        .background(.ultraThinMaterial, in: .rect(cornerRadius: 26))
-        .overlay(RoundedRectangle(cornerRadius: 26).strokeBorder(.white.opacity(0.16)))
+        .glassEffect(.regular.tint(StageLook.panel.opacity(0.72)), in: .rect(cornerRadius: 28))
         .shadow(color: .black.opacity(0.55), radius: 50, y: 24)
     }
 
     func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 12, weight: .bold)).kerning(1.6).foregroundStyle(StageLook.soft)
+            Text(title).font(.system(size: 11, weight: .bold)).fontWidth(.expanded).kerning(1.6).foregroundStyle(StageLook.soft)
             VStack(spacing: 0) { content() }
                 .padding(.horizontal, 18)
-                .background(.white.opacity(0.06), in: .rect(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.10)))
+                .background(StageLook.card, in: .rect(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(StageLook.edge, lineWidth: 1))
         }
     }
 

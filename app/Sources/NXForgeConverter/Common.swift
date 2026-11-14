@@ -45,15 +45,15 @@ struct ConverterRoot: View {
     @State private var width: CGFloat = 1200
 
     /// The light is the game's whose page is open, else the one the front end was on, so changing tabs keeps the room as it was.
-    var tint: Color {
+    var lit: StageGame? {
         let games = model.stageGames()
-        let g = model.gameDetail.flatMap { r in games.first { $0.isRef(r) } } ?? model.stageFocus(model.stageShown(games))
-        return g.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
+        return model.gameDetail.flatMap { r in games.first { $0.isRef(r) } } ?? model.stageFocus(model.stageShown(games))
     }
 
     var body: some View {
         ZStack {
-            StageBackdrop(tint: tint, strength: 0.55)
+            let g = lit
+            StageBackdrop(tint: g.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75), art: g.flatMap { CoverArt.ambient($0) }, artKey: g?.id ?? "", strength: 0.55)
             VStack(spacing: 0) {
                 if !model.couchMode {
                     StageTopBar(model: model)
