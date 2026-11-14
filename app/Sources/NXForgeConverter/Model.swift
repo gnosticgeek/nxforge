@@ -675,21 +675,27 @@ final class AppModel {
     }
 
     /// Asks on a sheet over the window in front (HIG: alerts about a window's work attach to it), waiting for the answer.
-    /// An action that deletes, stops or quits gets the red destructive style; "OK" alone is a notice with no Cancel.
+    /// An action that deletes, stops or quits gets the caution icon; "OK" alone is a notice with no Cancel.
+    /// Not `hasDestructiveAction`: on macOS 26 and later in dark mode that button's red label sits on a red fill
+    /// (Apple FB20158292) and can vanish altogether, which left only Cancel showing on the delete questions.
     func confirm(_ title: String, _ text: String, action: String, destructive: Bool? = nil) -> Bool {
         let a = NSAlert()
         a.messageText = title
         a.informativeText = text
-        let ok = a.addButton(withTitle: action)
+        a.addButton(withTitle: action)
         let notice = action == "OK"
         if !notice { a.addButton(withTitle: "Cancel") }
-        let words = ["Trash", "Delete", "Stop", "Quit", "Clear", "Remove"]
-        if destructive ?? words.contains(where: { action.contains($0) }) { ok.hasDestructiveAction = true }
+        if destructive ?? Self.isDestructive(action) { a.alertStyle = .critical }
         else if notice { a.alertStyle = .warning }
         guard let w = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) else {
             return a.runModal() == .alertFirstButtonReturn
         }
         a.beginSheetModal(for: w) { NSApp.stopModal(withCode: $0) }
         return NSApp.runModal(for: a.window) == .alertFirstButtonReturn
+    }
+
+    /// An answer that deletes, stops or quits something.
+    nonisolated static func isDestructive(_ action: String) -> Bool {
+        ["Trash", "Delete", "Stop", "Quit", "Clear", "Remove"].contains(where: { action.contains($0) })
     }
 }

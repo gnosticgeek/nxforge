@@ -6,6 +6,10 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 - **NXForge Converter 0.7.0: ten changes to its look and feel** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the build's progress and time left on the sidebar, Storage as a sortable table with a card for every drive plugged in, Storage deletes that can be undone for 20 seconds, delete buttons that name the size, VoiceOver names for icon buttons and covers, a cover size slider and console sections in the Library, banners instead of alerts for background work, recent games on Convert, a Dock menu with recently played games, and the window opening where it was. Converter only: no game rebuild.
 
+## 0.30.2 (2026-11-14)
+
+- **NXForge Converter 0.6.2: the Delete button shows on delete questions again** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). In dark mode the converter's red Delete, Move to Trash and Stop buttons could vanish (only Cancel showed); they are now normal buttons and the question carries the caution icon. No game rebuilds needed.
+
 ## 0.30.1 (2026-11-14)
 
 - **Aspect ratio in the settings window: 16:9, 16:10 or Auto** (Graphics › Resolution › Aspect ratio), for the games whose build can render another shape: Ocarina of Time (`DM_SCREEN_WIDE`), Breath of the Wild and Animal Crossing: New Horizons (`DM_SCREEN_ASPECT`). **Auto**, the default, matches the main screen below a MacBook's notch, so a MacBook's 16:10 screen is filled in full screen instead of showing bars above and below; a 16:9 monitor keeps 16:9 and an ultrawide one still gets the wide picture. Ocarina at 16:10 renders 2304x1440 with a little less at the sides (upstream #2538 only took screens wider than 16:9); Breath of the Wild and Animal Crossing render 1920x1200 with more above and below. The game's window opens in the picture's shape. Other games keep 16:9: their builds have no screen-shape patches.
