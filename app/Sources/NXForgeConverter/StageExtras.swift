@@ -90,6 +90,8 @@ enum GameCaptures {
     static let kinds: Set<String> = ["png", "jpg", "jpeg", "heic"]
 
     static func folders(app: String, home: String = NSHomeDirectory()) -> [(path: String, prefix: String?)] {
+        // snapshots of the game page: NXC_SHOTS=<folder> stands in for every game's screenshots
+        if let d = ProcessInfo.processInfo.environment["NXC_SHOTS"] { return [(d, nil)] }
         var out: [(String, String?)] = []
         if let d = LaunchSettings.defaults(app: app) {
             for (k, v) in d.dictionaryRepresentation() where k.hasPrefix("DMQuickSettings.captureDir.") {
@@ -268,15 +270,15 @@ struct GameKeyArt: View {
                 ZStack(alignment: .top) {
                     Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                         .frame(width: w, height: h * 0.78).clipped()
-                        .saturation(shot == nil ? 1.25 : 1.05)
-                        .opacity(shot == nil ? 0.62 : 0.72)
-                        .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.45), .init(color: .clear, location: 1)],
-                                             startPoint: .top, endPoint: .bottom))
+                        .saturation(shot == nil ? 1.2 : 1.05)
+                        .opacity(shot == nil ? 0.55 : 0.75)
                     // the left darker, where the box and the title stand
                     LinearGradient(stops: [.init(color: StageLook.background.opacity(0.80), location: 0), .init(color: StageLook.background.opacity(0.35), location: 0.5),
                                            .init(color: .clear, location: 0.85)], startPoint: .leading, endPoint: .trailing)
                         .frame(height: h * 0.78)
                 }
+                .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.40), .init(color: .clear, location: 1)],
+                                     startPoint: .top, endPoint: .bottom).frame(height: h * 0.78).frame(maxHeight: .infinity, alignment: .top))
                 .frame(width: w, height: h, alignment: .top)
                 .id(shot == nil ? "cover" : "shot").transition(.opacity)
             }
@@ -306,10 +308,10 @@ extension CoverArt {
     static func wide(_ g: StageGame) -> NSImage? {
         let store = CoverStore.shared
         let art = store.image(g.coverKey, .front)
-        return store.drawn(g.coverKey + "-wide-" + (art == nil ? "icon" : "art")) {
-            guard let src = (art ?? icon(g)).flatMap({ small($0, 320) }), let cg = src.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return store.drawn(g.coverKey + "-wide2-" + (art == nil ? "icon" : "art")) {
+            guard let src = (art ?? icon(g)).flatMap({ small($0, art == nil ? 320 : 640) }), let cg = src.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
             let ci = CIImage(cgImage: cg)
-            guard let f = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputImageKey: ci.clampedToExtent(), kCIInputRadiusKey: 9]),
+            guard let f = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputImageKey: ci.clampedToExtent(), kCIInputRadiusKey: art == nil ? 7 : 3.5]),
                   let out = f.outputImage?.cropped(to: ci.extent),
                   let done = CIContext(options: [.useSoftwareRenderer: false]).createCGImage(out, from: ci.extent) else { return src }
             return NSImage(cgImage: done, size: src.size)

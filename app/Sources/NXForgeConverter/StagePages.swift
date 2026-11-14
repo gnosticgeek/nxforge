@@ -15,7 +15,7 @@ struct StageGamePage: View {
         let (_, record) = model.resolve(g.ref)
         GeometryReader { geo in
             let showCase = geo.size.width > 820
-            let caseH = min(max(geo.size.height * 0.50, 260), 470)
+            let caseH = min(max(geo.size.height * 0.48, 260), 540)
             let gutter: CGFloat = geo.size.width > 1250 ? 64 : 40
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
@@ -37,6 +37,7 @@ struct StageGamePage: View {
                 .padding(.horizontal, gutter - 18).padding(.top, 6)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        Spacer(minLength: 0)
                         HStack(alignment: .center, spacing: showCase ? 44 : 0) {
                             if showCase {
                                 GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.74, height: caseH)
@@ -56,14 +57,16 @@ struct StageGamePage: View {
                             Spacer(minLength: 0)
                         }
                         .padding(.top, 4)
+                        Spacer(minLength: 26)
                         if let app = g.app {
-                            ScreenshotRow(app: app).padding(.top, 26)
+                            ScreenshotRow(app: app)
                         }
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 28)
                         infoRow(g, record).padding(.vertical, 18)
                     }
                     .padding(.horizontal, gutter)
                     .padding(.bottom, 8)
+                    .frame(minHeight: geo.size.height - 44)   // the box and title take the room the rest leaves
                 }
                 .scrollIndicators(.never)
             }
