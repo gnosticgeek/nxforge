@@ -11,9 +11,9 @@ Joy-Con's sensor is switched on (subcommand 0x40) and read from its report
 0x30 as the Pro Controller's (motion_pro.h), the right one with y and z
 negated (measured). DM_JOY1=0 keeps the old Pro-style pad.
 ---
- dm/host/front_mac.m                   |  14 ++-
- dm/host/nxforge/front_mac_joycon1.inc | 150 ++++++++++++++++++++++++++
- 2 files changed, 159 insertions(+), 5 deletions(-)
+ dm/host/front_mac.m                   |  14 +-
+ dm/host/nxforge/front_mac_joycon1.inc | 188 ++++++++++++++++++++++++++
+ 2 files changed, 197 insertions(+), 5 deletions(-)
  create mode 100644 dm/host/nxforge/front_mac_joycon1.inc
 
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
@@ -97,10 +97,10 @@ index f2e91d4139e4ea323ad13c7f5ab4a88598fc64d4..8a40d6432249ae22ae49cc77b466f3cf
      dm_switch2_start(&s2front);
 diff --git a/dm/host/nxforge/front_mac_joycon1.inc b/dm/host/nxforge/front_mac_joycon1.inc
 new file mode 100644
-index 0000000000000000000000000000000000000000..7268f125c4609235a12198a22992291a763c17d3
+index 0000000000000000000000000000000000000000..bc159399fa18d7cf15227ca3e5ecba7aa31fb602
 --- /dev/null
 +++ b/dm/host/nxforge/front_mac_joycon1.inc
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,188 @@
 +// NXForge: included by front_mac.m before pad_set (it shares that file's statics). Kept out of upstream's file so a merge of nxnative meets one #include line.
 +// Switch 1 Joy-Cons as Joy-Cons, each with its own motion sensor.
 +// macOS (checked on 27.2) joins a left and a right Joy-Con into one GameController controller, product category "Nintendo Switch Joy-Con (L/R)", with an extended gamepad and no
@@ -125,6 +125,24 @@ index 0000000000000000000000000000000000000000..7268f125c4609235a12198a22992291a
 +static int g_j1_on = -1, g_j1_active = 1, g_j1_motion;
 +static uint32_t g_j1_sides[DM_PLAYERS];   // the Joy-Cons each player's GameController controller holds: 1 left, 2 right
 +static int g_j1_owner[2] = {-1, -1}, g_j1_logged[2] = {-2, -2};   // the player each side's sensor goes to (-1: none, or not one unambiguous one)
++// Buttons straight from the HID reports (joy1_report, on the Joy-Cons' thread). GameController hands a press to the main thread, where it waits behind whatever that thread is
++// doing; the same press is in the 0x30 report this thread already reads for the sensor. While a side's reports are live its buttons come from them, its stick stays
++// GameController's (calibrated). The whole-controller state a Pro-style game reads (dm_pad_set_player) is GameController's as before.
++static _Atomic uint64_t g_j1_hid_btn[2], g_j1_hid_at[2], g_j1_hid_changed[2];   // per side: the buttons in its last report, when that report came, when they last changed
++static _Atomic uint64_t g_j1_stick[DM_PLAYERS][2];   // per player and side: GameController's stick, x in the high half
++static uint64_t g_j1_gc_btn[2]; static uint64_t g_j1_lag_n, g_j1_lag_sum, g_j1_lag_max;   // main thread: how much later GameController brought the same change
++static uint64_t joy1_buttons(int side, const uint8_t *r) {
++    uint8_t own = r[side ? 3 : 5], sh = r[4]; uint64_t m = 0;
++    if (side) {
++        if (own & 0x01) m |= DM_BTN_Y; if (own & 0x02) m |= DM_BTN_X; if (own & 0x04) m |= DM_BTN_B; if (own & 0x08) m |= DM_BTN_A;
++        if (own & 0x40) m |= DM_BTN_R; if (own & 0x80) m |= DM_BTN_ZR; if (sh & 0x02) m |= DM_BTN_PLUS; if (sh & 0x04) m |= DM_BTN_RS;
++    } else {
++        if (own & 0x01) m |= DM_BTN_DOWN; if (own & 0x02) m |= DM_BTN_UP; if (own & 0x04) m |= DM_BTN_RIGHT; if (own & 0x08) m |= DM_BTN_LEFT;
++        if (own & 0x40) m |= DM_BTN_L; if (own & 0x80) m |= DM_BTN_ZL; if (sh & 0x01) m |= DM_BTN_MINUS; if (sh & 0x08) m |= DM_BTN_LS;
++    }
++    return m;
++}
++static int joy1_hid_live(int side, uint64_t now) { uint64_t at = atomic_load(&g_j1_hid_at[side]); return at && now - at < 200000000ull; }
 +static int joy1_on(void) { if (g_j1_on < 0) { const char *e = getenv("DM_JOY1"); g_j1_on = !e || atoi(e); } return g_j1_on; }
 +static uint32_t joy1_sides_of(GCController *c) { return [c.productCategory isEqualToString:@"Nintendo Switch Joy-Con (L/R)"] ? 3u : 0u; }
 +static void joy1_route(void) {
@@ -160,6 +178,12 @@ index 0000000000000000000000000000000000000000..7268f125c4609235a12198a22992291a
 +    if (!was) joy1_route();
 +    int p = g_j1_owner[d->side];
 +    if (!g_j1_motion || p < 0) return;
++    if (g_j1_active) {
++        uint64_t m = joy1_buttons(d->side, r), st = atomic_load(&g_j1_stick[p][d->side]);
++        if (atomic_exchange(&g_j1_hid_btn[d->side], m) != m) atomic_store(&g_j1_hid_changed[d->side], now);
++        atomic_store(&g_j1_hid_at[d->side], now);
++        dm_joy_set(p, d->side, m, (int32_t)(st >> 32), (int32_t)(uint32_t)st);
++    }
 +    int data = 0; for (int i = 13; i < 49 && !data; i++) data = r[i] != 0;
 +    if (data) d->data_at = now;
 +    else {   // its sensor is off: on now, again every 2 s while it stays off (macOS may turn it off at a reconnect), five times at most
@@ -241,12 +265,26 @@ index 0000000000000000000000000000000000000000..7268f125c4609235a12198a22992291a
 +    if (p < 0 || p >= DM_PLAYERS || !g_j1_sides[p]) return;
 +    const uint64_t left = DM_BTN_LEFT | DM_BTN_UP | DM_BTN_RIGHT | DM_BTN_DOWN | DM_BTN_L | DM_BTN_ZL | DM_BTN_MINUS | DM_BTN_LS;
 +    const uint64_t right = DM_BTN_A | DM_BTN_B | DM_BTN_X | DM_BTN_Y | DM_BTN_R | DM_BTN_ZR | DM_BTN_PLUS | DM_BTN_RS;
-+    dm_joy_set(p, 0, m & left, lx, ly); dm_joy_set(p, 1, m & right, rx, ry);
++    uint64_t now = now_ns(), want[2] = {m & left, m & right}; int32_t sx[2] = {lx, rx}, sy[2] = {ly, ry};
++    for (int s = 0; s < 2; s++) {
++        atomic_store(&g_j1_stick[p][s], (uint64_t)(uint32_t)sx[s] << 32 | (uint32_t)sy[s]);
++        int live = g_j1_owner[s] == p && joy1_hid_live(s, now);
++        if (live && want[s] != g_j1_gc_btn[s] && want[s] == atomic_load(&g_j1_hid_btn[s])) {   // the change the report already brought: how much later it is here
++            uint64_t ch = atomic_load(&g_j1_hid_changed[s]), lag = now > ch ? now - ch : 0;
++            if (lag < 1000000000ull) {
++                g_j1_lag_n++; g_j1_lag_sum += lag; if (lag > g_j1_lag_max) g_j1_lag_max = lag;
++                if (g_j1_lag_n % 100 == 0) { LOG("[joycon] buttons: the last 100 changes reached GameController %.1f ms after the Joy-Con's own report on average, %.1f ms at most (the game got them from the report)", (double)g_j1_lag_sum / 100 / 1e6, (double)g_j1_lag_max / 1e6); g_j1_lag_sum = g_j1_lag_max = 0; }
++            }
++        }
++        g_j1_gc_btn[s] = want[s];
++        dm_joy_set(p, s, live ? atomic_load(&g_j1_hid_btn[s]) : want[s], sx[s], sy[s]);
++    }
 +}
 +static void nxf_joy1_release(void) { for (int p = 0; p < DM_PLAYERS; p++) if (g_j1_sides[p]) for (int s = 0; s < 2; s++) dm_joy_set(p, s, 0, 0, 0); }
 +static void nxf_joy1_active(int on) {   // focus lost or back (input_release / input_resume): no motion reaches the game while it is out of focus
 +    joy1_post(^{
 +        g_j1_active = on;
++        if (!on) for (int s = 0; s < 2; s++) { atomic_store(&g_j1_hid_at[s], 0); atomic_store(&g_j1_hid_btn[s], 0); if (g_j1_owner[s] >= 0) dm_joy_set(g_j1_owner[s], s, 0, 0, 0); }
 +        if (!on) for (int s = 0; s < 2; s++) if (g_j1_owner[s] >= 0) { dm_motion_clear_joy(g_j1_owner[s], s); dm_motion_clear_hid(g_j1_owner[s]); }
 +        for (joy1_dev *d = g_j1_devs; d; d = d->next) d->motion = (pro_motion){0};
 +    });
