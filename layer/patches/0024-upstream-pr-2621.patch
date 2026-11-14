@@ -170,7 +170,7 @@ index bac289e43c873951bd0d171d6d7e392b3e95a95c..dcaa59bd0aea84539e3e0c61b1664ab0
  
  - **Symptom:** `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder ([issue #1265](https://github.com/seedds/nxnative/issues/1265)). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`.
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 8d4e0b0e533ffc907f8f70581c2b839a83bba128..55f94488f6bfe4068ffa8d655b8cb420a7802eb1 100755
+index 4c37bcba50a3ac57bdf71170fa08b1da0068de4a..c4e2bb5a184b480cf0b26f4408c84a991051af03 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
 @@ -3414,7 +3414,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',

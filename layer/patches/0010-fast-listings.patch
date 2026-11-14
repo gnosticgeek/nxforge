@@ -237,7 +237,7 @@ index 1310dd1d9990b62f9a3ed2a7ab348393dee22625..fc425fc4de914012e1b97e3dbf0fbf08
      """The DLC set replaces Documents/aoc over AFC, and nothing else in the app's data container: devicectl's --remove-existing-content empties the whole
      container (CoreDevice 651.32, docs/reference/packing.md), saves included, so the script never passes it."""
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 0c51809f0dbf48590a81bccccaea3527008904a4..8d4e0b0e533ffc907f8f70581c2b839a83bba128 100755
+index fc061778b73bae003e89ae1b6a2e4abad6dc6d5b..4c37bcba50a3ac57bdf71170fa08b1da0068de4a 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
 @@ -316,18 +316,8 @@ def progress_mode(want):   # auto: redraw in a terminal or in Spyder (IPython ha

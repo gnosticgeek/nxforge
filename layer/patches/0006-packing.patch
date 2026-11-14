@@ -886,7 +886,7 @@ index 79b96862ce6b27ae3ebd752fb1d8bee37a9a14b5..1310dd1d9990b62f9a3ed2a7ab348393
          (self.src / 'a').write_bytes(b'old'); image.pack(self.src, self.dst)
          original = self.dst.read_bytes()
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 9346fecdd0811cdbd40c7836e156e7294362a366..0c51809f0dbf48590a81bccccaea3527008904a4 100755
+index 9346fecdd0811cdbd40c7836e156e7294362a366..fc061778b73bae003e89ae1b6a2e4abad6dc6d5b 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
 @@ -22,7 +22,7 @@
@@ -1219,7 +1219,7 @@ index 9346fecdd0811cdbd40c7836e156e7294362a366..0c51809f0dbf48590a81bccccaea3527
          say(f'reusing the extracted {name}: {dst}')
          PROG.end(f'{note}, reused (inputs unchanged)' if note else 'reused')
          return dst
-+    PROG.stage(f'extract {name}'); plan_redo('extract', 'the game files are not extracted yet')
++    PROG.stage(f'extract {name}'); plan_redo('extract', 'the extracted files have no key matching these game files and this extractor (an older build made them, or the game files changed): they are extracted again' if reusable else 'the game files are not extracted yet')
      tmp = ex / (name + '.partial'); rmtree(tmp)
      last = extracted(log)   # the last extraction of this version (its log is about to be overwritten) has the exact size; without one, the NSPs' size is the estimate
      def poll():
