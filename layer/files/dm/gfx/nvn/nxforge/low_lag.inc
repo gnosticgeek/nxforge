@@ -1,5 +1,5 @@
 // NXForge: included by nvn_mtl.m above link_sync (it shares its statics). The glue of low_lag.h: direct presents in a window while the game has headroom.
-// DM_LOW_LAG=0 turns it off; DM_PRESENT_LINK and DM_PRESENT_LATENCY, which choose the pacing themselves, do too. Mac only.
+// DM_LOW_LAG=0 turns it off (DM_LOW_LAG_TEST=<frames> makes a direct run end after that many, to test the way back); DM_PRESENT_LINK and DM_PRESENT_LATENCY, which choose the pacing themselves, do too. Mac only.
 #include "low_lag.h"
 static nxf_low_lag g_ll; static _Atomic int g_ll_direct;
 static int nxf_ll_on(void) {
@@ -16,6 +16,8 @@ void mtl_low_lag_tick(uint64_t start_ns, int k) {
     if (prev && start_ns > prev) {
         double gpu = 0; uint64_t f = atomic_load(&g_cur_frame);
         for (uint64_t i = f; i-- > 0 && f - i <= 8;) { double g = mtl_gpu_ms(i); if (g >= 0) { gpu = g * 1e6 / v; break; } }
+        static int test = -1; if (test < 0) { const char *e = getenv("DM_LOW_LAG_TEST"); test = e ? atoi(e) : 0; }   // a test's fall back: after this many direct frames the next ones count as late
+        if (test > 0 && g_ll.direct && g_ll.calm >= test) prev = start_ns - (uint64_t)((k + 1) * v);
         int was = g_ll.direct, wait = g_ll.wait_next, now = nxf_low_lag_next(&g_ll, (start_ns - prev) / v, gpu, cpu > cpu_prev ? (cpu - cpu_prev) / v : 0, k);
         if (now != was) {
             atomic_store(&g_ll_direct, now);
