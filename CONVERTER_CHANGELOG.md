@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.6.2 (2026-11-14)
+
+Ships in NXForge 0.30.2.
+
+- **The Delete button shows on delete questions again.** Questions that delete, stop or quit something (Storage's Delete… and Clean Up…, Move to Trash, Stop Build, Stop and Quit) drew their answer with Apple's red destructive style. In dark mode on macOS 26 and later that style puts a red label on a red fill (Apple FB20158292), and it could vanish completely: "Delete shared metal shader cache (14 GB)?" showed only Cancel. The answer is now the normal default button (Return still picks it), and the question shows the caution icon instead.
+
 ## 0.6.1 (2026-11-11)
 
 Ships in NXForge 0.27.2.

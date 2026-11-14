@@ -1,6 +1,6 @@
 // The app and its one window. NXC_SNAPSHOT=<file.png> saves a picture of the window a few seconds after it
 // opens and quits (NXC_PAGE=library, builds, storage or toolchain for another page; NXC_AUTOBUILD=1 builds the chosen
-// folder first), for checking the layout without a screen capture.
+// folder first, NXC_CONFIRM=1 puts a delete confirmation over it), for checking the layout without a screen capture.
 import AppKit
 import SwiftUI
 import UserNotifications
@@ -120,6 +120,13 @@ struct ConverterApp: App {
         guard let out = env["NXC_SNAPSHOT"] else { return }
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.page = page }
         try? await Task.sleep(for: .seconds(5))
+        // NXC_CONFIRM=1 puts a delete confirmation over the window, to check how its buttons draw
+        if env["NXC_CONFIRM"] != nil {
+            DispatchQueue.main.async { [model] in
+                _ = model.confirm("Delete shared metal shader cache (14 GB)?", "~/Library/Caches/NXForge is deleted permanently. Compiled shaders shared by every game.", action: "Delete")
+            }
+            try? await Task.sleep(for: .seconds(1))
+        }
         if env["NXC_AUTOBUILD"] != nil {
             while !model.ready && model.run.result == nil { try? await Task.sleep(for: .milliseconds(300)) }
             model.build()
