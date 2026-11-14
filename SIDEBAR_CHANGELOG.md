@@ -4,6 +4,14 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.5.0 (2026-11-14)
+
+Hand-off to and from NXForge's library. Ships in NXForge 0.34.0.
+
+- **Library** (a game NXForge's Play started: `NXFORGE_FRONT_END`): beside Quit in the footer, asks twice like Quit; ends the game and brings NXForge to the front on its page (the distributed notification `org.nxforge.showGame`).
+- **The window shows with the game's first frame** when NXForge started it (`dm/host/nxforge/front_mac_front_end.inc`): see-through until the first present (at most 15 s), then a short fade, and NXForge is told (`org.nxforge.gameShown`) so its launch screen goes at the same moment. `DM_FRONT_END_FADE=0` shows it at once.
+- **The cloud save check runs on a straight-in start** (`--no-launcher`, NXForge's Play): `launcher.c` calls `dm_mac_save_check` (`dm/mac/nxforge/launcher_window.swift`), which asks only when the two saves need the player's pick. `DM_LAUNCHER=0` still asks nothing.
+
 ## 0.4.0 (2026-11-12)
 
 Pixel art. Ships in NXForge 0.29.0.

@@ -4,6 +4,21 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.11.0 (2026-11-14)
+
+Ten improvements to the app. Ships in NXForge 0.34.0.
+
+- **Quit to Library.** A game NXForge starts has **Library** beside Quit in its sidebar: press it twice and the game ends and NXForge comes to the front on that game's page. (Needs the game rebuilt with NXForge 0.34.0, which brings Sidebar 0.5.0.)
+- **Play checks the cloud save.** Play from a cover goes straight into the game and now still compares this Mac's save with the cloud's first, asking only when both changed (or the cloud's file is slow to come). Before, only the game's own settings window ran that check. (Needs the game rebuilt.)
+- **From the launch screen straight into the picture.** The game's window stays see-through until the game draws its first frame, so the turning case leads into the game with no empty black window between; the launch screen leaves at that moment. Games built before 0.34.0 hand over as soon as their window is on screen.
+- **What's New reads the app's own notes.** The changelog is inside NXForge.app, so the sheet always describes the version you run, whatever branch the engine checkout is on.
+- **Favourites.** The star beside Play (or F, or − on a controller) adds a game to Favourites: Home's shelf starts with them, the Library has a Favourites filter, and their covers carry a star. Home opens on the game you played last.
+- **Marks on covers when a game needs a look**: its last run crashed, a newer NXForge can rebuild it, or its save is only on this Mac (no Cloud saves and no snapshot). The Library's line under the cover and the game's page say what it is and what to do.
+- **Screenshots on a game's page**: the ones its sidebar took, newest first, from the game's own folder, the folder chosen in the sidebar or ~/Pictures/NXForge. Click to open; the menu shows one in Finder, copies or shares it.
+- **Controller**: a held direction repeats, Settings works from a pad (up and down, A or left and right to change), − adds or removes a Favourite, and the hint bar says so.
+- **Reduce Motion and Reduce Transparency**: with Reduce Motion the case does not sway or spin when turned over, covers do not tilt under the pointer and the starting bar glows instead of running; with Reduce Transparency the room shows the game's colour without its art and the Play options and Settings panels are solid.
+- **Lighter on big displays**: the room's blurred art is blurred once, small, instead of the whole window every frame; the stage is composited as one layer; the 3D case stops drawing while NXForge is covered (a game in front of it) and uses lighter antialiasing on screens over 4K wide.
+
 ## 0.10.0 (2026-11-14)
 
 A design pass over the whole app. Ships in NXForge 0.33.0.
