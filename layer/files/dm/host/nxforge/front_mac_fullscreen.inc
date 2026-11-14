@@ -19,4 +19,5 @@
 @end
 // The game window's delegate from the start: front_mac.m sets one only for DM_FULLSCREEN's startup request, and the
 // green button, ⌃⌘F and the sidebar enter full screen through the delegate too
-static void nxf_fullscreen_window(NSWindow *win) { static DmWinDelegate *d; if (!win.delegate) { d = [DmWinDelegate new]; win.delegate = d; } }
+#include "front_mac_front_end.inc"   // the hand-off from NXForge's front end: the window shows with the game's first frame
+static void nxf_fullscreen_window(NSWindow *win) { static DmWinDelegate *d; if (!win.delegate) { d = [DmWinDelegate new]; win.delegate = d; } nxf_front_end_window(win); }

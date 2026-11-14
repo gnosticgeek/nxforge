@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.34.0 (2026-11-14)
+
+- **Ten improvements to the Mac app** (Converter 0.11.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Favourites, marks on covers when a game needs a look, screenshots on a game's page, What's New from the app's own notes, controller repeat and Settings from a pad, Reduce Motion and Reduce Transparency, and a lighter stage on big displays.
+- **Sidebar 0.5.0** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): **Quit to Library** from the in-game sidebar; the game window **shows with its first frame**, so NXForge's launch screen leads straight into the game; and **Play from NXForge checks the cloud save** without the settings window (new layer patch `front-end-save-check`).
+- The sidebar and player changes reach a game when it is rebuilt. The app changes need no rebuild.
+
 ## 0.33.0 (2026-11-14)
 
 - **A design pass over the Mac app** (Converter 0.10.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the stage is lit by the art of the game in focus, covers look like cases and lean towards the pointer, Home's shelf and the 3D case reflect in the floor, covers drawn for games without box art use the icon as artwork, the top bar and the panels are real glass, and starting a game shows its case turning in its own light. The converter's pages take the same look. App only: no game rebuild.

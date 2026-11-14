@@ -280,7 +280,8 @@ extension AppModel {
         launch(ref, app: app, name: g?.displayName ?? app.url.deletingPathExtension().lastPathComponent, settings: list, saved: saved, once: once, note: note)
     }
 
-    /// Play through the game's own settings window, as before the front end: the one place its cloud save check runs.
+    /// Play through the game's own settings window, as before the front end. (Its cloud save check also runs on a straight-in Play
+    /// from NXForge 0.34.0's player on: launcher.c's --no-launcher calls it without the window.)
     func playWithOwnWindow(_ r: GameRef) {
         let (g, b) = resolve(r)
         guard let app = r.app ?? b?.app, FileManager.default.fileExists(atPath: app) else { return }
@@ -297,7 +298,7 @@ extension AppModel {
         let cfg = NSWorkspace.OpenConfiguration()
         if settings.straightPlay && !ownWindow { cfg.arguments = ["--no-launcher"] }
         // added to the environment the game starts with; its launcher takes what is set there as fixed for the run
-        if !once.isEmpty { cfg.environment = once }
+        cfg.environment = once.merging(Self.frontEndEnvironment) { a, _ in a }
         cfg.activates = true
         let id = launching?.id
         NSWorkspace.shared.openApplication(at: app.url, configuration: cfg) { [weak self] _, error in
@@ -312,28 +313,82 @@ extension AppModel {
         }
         Engine.setLaunched(app)
         revision += 1
-        // the launch screen goes when the game comes to the front (watchLaunch), or after a while if that is never seen
+        // the launch screen goes when the game's window shows (watchLaunch), or after a while if that is never seen
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(25))
+            try? await Task.sleep(for: .seconds(30))
             if self?.launching?.id == id { self?.launching = nil }
         }
     }
 
-    /// The launch screen leaves once the game is the active app.
+    /// What a game NXForge starts finds in its environment: NXForge's own path (NXFORGE_FRONT_END). With it the game's sidebar has Quit to Library,
+    /// and its window stays see-through until its first frame (dm/host/nxforge/front_mac_front_end.inc), so the launch screen leads straight into the picture.
+    static var frontEndEnvironment: [String: String] { ["NXFORGE_FRONT_END": Bundle.main.bundlePath] }
+
+    /// The launch screen leaves when the game's window shows: the game says so (org.nxforge.gameShown, a build from NXForge 0.34.0 on, at its first frame),
+    /// or, for an older build, its window is seen on screen and opaque once the game is the active app.
     func watchLaunch() {
         let nc = NSWorkspace.shared.notificationCenter
         playObservers.append(nc.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in
             let a = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            let path = a?.bundleURL?.standardizedFileURL.path
+            let path = a?.bundleURL?.standardizedFileURL.path, pid = a?.processIdentifier
             MainActor.assumeIsolated {
-                guard let self, let l = self.launching, let path, l.app.url.standardizedFileURL.path == path else { return }
-                let id = l.id
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(1500))
-                    if self.launching?.id == id { self.launching = nil }
-                }
+                guard let self, let l = self.launching, let path, let pid, l.app.url.standardizedFileURL.path == path else { return }
+                self.waitForWindow(pid: pid, launch: l.id)
             }
         })
+        let dc = DistributedNotificationCenter.default()
+        playObservers.append(dc.addObserver(forName: Notification.Name("org.nxforge.gameShown"), object: nil, queue: .main) { [weak self] n in
+            let path = (n.object as? String).map { $0.url.standardizedFileURL.path }
+            MainActor.assumeIsolated {
+                guard let self, let l = self.launching, path == nil || l.app.url.standardizedFileURL.path == path else { return }
+                self.launching = nil
+            }
+        })
+        // Quit to Library in the game's sidebar: NXForge comes to the front on that game's page
+        playObservers.append(dc.addObserver(forName: Notification.Name("org.nxforge.showGame"), object: nil, queue: .main) { [weak self] n in
+            let path = n.object as? String
+            MainActor.assumeIsolated { if let self, let path { self.showGameFromPlayer(app: path) } }
+        })
+    }
+
+    /// Polls the window server for the game's window (any of the process's on-screen windows at full opacity), then lets the launch screen go
+    private func waitForWindow(pid: pid_t, launch id: UUID) {
+        Task { @MainActor [weak self] in
+            for _ in 0..<300 {
+                guard let self, self.launching?.id == id else { return }
+                if Self.hasVisibleWindow(pid: pid) {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    if self.launching?.id == id { self.launching = nil }
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    nonisolated static func hasVisibleWindow(pid: pid_t) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+        return list.contains { w in
+            (w[kCGWindowOwnerPID as String] as? Int).map { pid_t($0) } == pid && (w[kCGWindowLayer as String] as? Int) == 0
+                && ((w[kCGWindowAlpha as String] as? Double) ?? 0) > 0.9
+                && ((w[kCGWindowBounds as String] as? [String: Double])?["Height"] ?? 0) > 100
+        }
+    }
+
+    /// The game's sidebar said Quit to Library: its page on the front end, with NXForge in front
+    func showGameFromPlayer(app: String) {
+        let path = app.url.standardizedFileURL.path
+        launching = nil
+        playOptions = nil
+        stageSettings = false
+        frontEnd = true
+        if let g = stageGames().first(where: { $0.app.map { $0.url.standardizedFileURL.path } == path }) {
+            libraryFocus = g.id
+            caseFlipped = false
+            gameDetail = g.ref
+        }
+        NSApp.activate()
+        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }?.makeKeyAndOrderFront(nil)
     }
 
     /// A game quit: the front end comes back to the front (a setting), ready for the next one.
