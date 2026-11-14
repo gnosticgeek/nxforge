@@ -996,7 +996,6 @@ struct QuickSettingsView: View {
         .modifier(Panel(glow: GameLook.colour))
         .padding(12)
         .tint(GameLook.colour)
-        .environment(\.controlActiveState, .key)   // the game's colour stays while another window is key: the panel must not look disabled
         .environment(\.colorScheme, .dark)
     }
     // The game's icon in its own glow, its name (heavy, set tight, with a soft shade) under a wide-set "Quick settings" label, as the app's pages head; a Paused chip; peek and close
