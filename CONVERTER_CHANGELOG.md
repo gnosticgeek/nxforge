@@ -4,6 +4,20 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.9.1 (2026-11-14)
+
+One app, one look: the converter's pages take the library's. Ships in NXForge 0.32.1.
+
+- **The converter is on the same stage as your games.** Its pages (Convert, Game Files, Builds, Storage, Toolchain, Updates) sit under the same top bar as Home and Library, on the same dark backdrop lit in the colour of the game you were on, so going to Converter changes the page and nothing else. The sidebar, its "NXForge · Game Conversion Toolkit" header, the window's toolbar and the painted banners are gone.
+- **The pages are a row of capsules** under the top bar, like the Library's filters; Updates carries the number waiting. Toolchain's state ("Toolchain ready") is at the right of the row and opens Toolchain; a waiting update shows beside it.
+- **The same pieces everywhere**: the Library's heavy page titles with each page's actions beside them (Scan Again, Measure Again, Rebuild All, the Builds filters), the white capsule for a view's main action and translucent capsules for the rest, translucent cards, white instead of blue for step numbers, the drop area and the log's tabs.
+- **One search field**, in the top bar: games on Library and Game Files, builds on Builds.
+- **Settings (the sliders button, or + on a controller) opens from the converter too**, with Converter Settings… (⌘,) for the build's own.
+- **The converter's own Library page is named Game Files**, so there is one Library. It is the same page (⌘2).
+- **The app is always dark**, like the stage. Settings › Appearance is gone.
+- Fixed: opening Game Files on the game it showed last time could end the app ("ScrollViewProxy may not be accessed during view updates"), also at launch when Game Files was the last page.
+- Couch Mode's sofa button is gone from Game Files (Home and Library are the couch now); View › Couch Mode (⇧⌘F) still works.
+
 ## 0.9.0 (2026-11-14)
 
 The app is now **NXForge**, and it opens on your games. Ships in NXForge 0.32.0.

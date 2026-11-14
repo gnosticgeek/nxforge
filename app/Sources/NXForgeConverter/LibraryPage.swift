@@ -452,7 +452,7 @@ struct LibraryPage: View {
             .help(model.run.running ? "Not while a build runs" : "Build them one after another, now or later; a failed one is noted and the next one starts")
         }
         .padding(12)
-        .glassEffect(.regular.tint(Color.accentColor.opacity(0.12)), in: .rect(cornerRadius: 14))
+        .glassEffect(.regular.tint(Color.white.opacity(0.08)), in: .rect(cornerRadius: 14))
     }
 
     var laterPicker: some View {
@@ -533,8 +533,8 @@ struct LibraryPage: View {
                 .frame(minWidth: 86)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(picked ? Color.accentColor.opacity(0.08) : .clear)
-        .overlay { if focus { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: 2).padding(2) } }
+        .background(picked ? Color.white.opacity(0.07) : .clear)
+        .overlay { if focus { RoundedRectangle(cornerRadius: 8).strokeBorder(.white, lineWidth: 2).padding(2) } }
         .contentShape(.rect)
         .onTapGesture(count: 2) { model.openGame(GameRef(libraryID: g.id, app: b?.app)) }
         .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
@@ -662,7 +662,7 @@ struct GameTile: View {
             }
             .aspectRatio(1, contentMode: .fit)
             .clipShape(.rect(cornerRadius: big ? 22 : 16))
-            .overlay(RoundedRectangle(cornerRadius: big ? 22 : 16).strokeBorder(focus ? Color.accentColor : picked ? Color.accentColor.opacity(0.6) : .white.opacity(0.08), lineWidth: focus ? 4 : picked ? 2 : 1))
+            .overlay(RoundedRectangle(cornerRadius: big ? 22 : 16).strokeBorder(focus ? Color.white : picked ? Color.white.opacity(0.6) : .white.opacity(0.08), lineWidth: focus ? 4 : picked ? 2 : 1))
             .shadow(color: (focus ? tint : .black).opacity(focus ? 0.6 : 0.25), radius: focus ? 14 : 5, y: 3)
             .scaleEffect(focus && big ? 1.05 : 1)
             .animation(.easeOut(duration: 0.15), value: focus)
