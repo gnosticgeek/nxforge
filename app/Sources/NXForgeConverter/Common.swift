@@ -12,7 +12,8 @@ struct RootView: View {
     var body: some View {
         ZStack {
             // the games and the converter are one window on one stage: the same top bar, the same light
-            if model.frontEnd { StageView(model: model).transition(.opacity) } else { ConverterRoot(model: model).transition(.opacity) }
+            if model.standby { StandbyView(model: model).transition(.opacity) }
+            else if model.frontEnd { StageView(model: model).transition(.opacity) } else { ConverterRoot(model: model).transition(.opacity) }
             if model.stageSettings {
                 Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { model.stageSettings = false }
                 StageSettings(model: model, openConverterSettings: { openSettings() }).transition(.scale(scale: 0.96).combined(with: .opacity))
@@ -31,6 +32,16 @@ struct RootView: View {
             }
         }
         .animation(.spring(duration: 0.35), value: model.banner?.id)
+        // what the session that just ended came to (PlayExtras)
+        .overlay(alignment: .bottomTrailing) {
+            if let r = model.recap, !model.standby {
+                RecapCard(model: model, recap: r).id(r.id).padding(24)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.4), value: model.recap?.id)
+        .sheet(isPresented: $model.showControllerTest) { ControllerTestSheet(model: model) }
+        .sheet(isPresented: $model.showLeftovers) { LeftoversSheet(model: model) }
         .sheet(item: $model.whatsNew) { WhatsNewSheet(model: model, news: $0) }
         .sheet(item: $model.updateOffer) { UpdateOfferSheet(model: model, offer: $0) }
         .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }

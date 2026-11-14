@@ -83,6 +83,10 @@ struct Settings: Codable, Equatable {
     var downloadHeroes = true
     /// a game's description, details and official screenshots are downloaded from its Nintendo store page when its page is opened
     var downloadStoreInfo = true
+    /// a card with the session's time, memory and frame rate when a game quits
+    var sessionRecap = true
+    /// while a game runs and NXForge is behind it, the window shows a plain card and holds no artwork
+    var lightWhilePlaying = true
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -100,6 +104,7 @@ struct Settings: Codable, Equatable {
         case startIn = "start_in", straightPlay = "straight_play", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
         case returnToLibrary = "return_to_library", downloadCovers = "download_covers", downloadHeroes = "download_heroes", downloadStoreInfo = "download_store_info", favorites
         case localShaders = "local_shaders"
+        case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
     }
 
     init() {}
@@ -146,6 +151,8 @@ struct Settings: Codable, Equatable {
         downloadStoreInfo = (try? c.decodeIfPresent(Bool.self, forKey: .downloadStoreInfo)) ?? true
         favorites = (try? c.decodeIfPresent([String].self, forKey: .favorites)) ?? []
         localShaders = (try? c.decodeIfPresent(Bool.self, forKey: .localShaders)) ?? true
+        sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true
+        lightWhilePlaying = (try? c.decodeIfPresent(Bool.self, forKey: .lightWhilePlaying)) ?? true
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

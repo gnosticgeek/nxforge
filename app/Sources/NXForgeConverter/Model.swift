@@ -172,6 +172,16 @@ final class AppModel {
     /// the summary a failed build's notification copies (Copy error summary)
     var lastErrorSummary: String?
     var playObservers: [NSObjectProtocol] = []
+    /// each running game's memory samples, the task taking them, and the card shown when a game quits (PlayExtras)
+    var playStats: [pid_t: PlayStats] = [:]
+    var playSampler: Task<Void, Never>?
+    var recap: SessionRecap?
+    /// NXForge is the app in front (while it is not and a game runs, the window rests: PlayExtras standby)
+    var appActive = true
+    /// the controller test is open (the app's own controller navigation waits), and the sheets Settings opens
+    var controllerTest = false
+    var showControllerTest = false
+    var showLeftovers = false
     /// the note at the foot of the window (UIExtras: banners), and what Storage deleted that Undo can still put back
     var banner: Banner?
     var pendingDeletes: [PendingDelete] = []
@@ -199,6 +209,7 @@ final class AppModel {
         recheck()
         watchMounts()
         trackPlay()
+        watchActive()
         watchLaunch()
         frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
         stageTab = settings.startIn == .library ? .library : .home

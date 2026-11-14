@@ -23,7 +23,7 @@ enum NXFLauncherLayout {
     ]
     static let boxes = graphicsBoxes + advancedBoxes
     /// On the General tab though not level=basic: everyday controls
-    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
+    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_STICK_DEADZONE_L", "DM_STICK_DEADZONE_R", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
     /// The Mac window's shorter notes (the two-column boxes are narrow); a setting not listed keeps settings.tsv's note
     static let notes: [String: String] = [
         "DM_DYNAMIC_RESOLUTION": "Lets the game lower its resolution under load.",

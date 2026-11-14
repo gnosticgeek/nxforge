@@ -151,6 +151,13 @@ struct ConverterApp: App {
             try? await Task.sleep(for: .seconds(2))
             if let g = model.stageGames().first(where: { $0.app != nil }) { model.openGame(g.ref) }
         }
+        // NXC_SHEET=controllers, keeps or recap: that sheet (or the recap card) over the window
+        switch env["NXC_SHEET"] {
+        case "controllers": model.showControllerTest = true
+        case "keeps": model.showLeftovers = true
+        case "recap": model.recap = SessionRecap.sample
+        default: break
+        }
         try? await Task.sleep(for: .seconds(5))
         // NXC_CONFIRM=1 puts a delete confirmation over the window, to check how its buttons draw
         if env["NXC_CONFIRM"] != nil {
