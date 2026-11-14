@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.11.4 (2026-11-14)
+
+Covers that do not hold up a scroll. Ships in NXForge 0.35.4.
+
+- **Smaller copies for the shelf and the grid**: a tile read its whole 864 x 1400 cover on the main thread at its first draw (about 4 ms each on an M4 Pro, so a new grid row of seven about 30 ms) and kept it whole. A tile now draws a copy no longer than 920 pixels, the grid's largest cover on a Retina screen, decoded on a background task; for the moment that takes it shows its plain case. 40 covers hold 72 MB instead of 167 MB. A game's own case on its page still uses the whole cover.
+- **A cover's colour is read once**: the colour a game lights the stage and its focus ring with comes from a 64-pixel read of the cover (about 3 ms) and is kept between starts in `tints.json` beside the covers; a new or changed cover reads it again. A game without a cover still takes its icon's colour, which is not kept (a rebuild can change the icon).
+
 ## 0.11.3 (2026-11-14)
 
 Your prod.keys, chosen once. Ships in NXForge 0.35.3.

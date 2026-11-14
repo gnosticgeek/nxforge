@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.4 (2026-11-14)
+
+- **Covers no longer hold up a scroll in the Mac app** (Converter 0.11.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the shelf and the grid draw a smaller copy of each cover, read off the main thread, and a cover's colour is kept between starts. Measured on an M4 Pro: a cover cost about 4 ms of the main thread at its first draw (a new grid row of seven about 30 ms, several refreshes at 120 Hz) and now costs none; 40 covers hold 72 MB instead of 167 MB. No game rebuild needed.
+
 ## 0.35.3 (2026-11-14)
 
 - **Choose your prod.keys once, in Settings** (Converter 0.11.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Mac app saves one keys file and every build, rebuild and `nxforge build` uses it, with its status shown in Settings and a prod.keys found in the usual places offered. A build asks only when none is saved or it is missing. No game rebuild needed.
