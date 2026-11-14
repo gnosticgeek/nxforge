@@ -588,6 +588,13 @@ def script_has(repo, py, opt):
     return opt in r.stdout
 
 
+def saved_keys(s, game_dir):
+    """The keys a build uses, as the app picks them: the keys file saved in Settings, else the game folder's prod.keys, else the last chosen."""
+    for k in (s.get('default_keys'), str(Path(game_dir) / 'prod.keys'), s.get('keys')):
+        if k and Path(k).expanduser().is_file(): return k
+    return None
+
+
 def build_command(game_dir, *, plan=False, rebuild=None, out=None, keys=None, cleanup=None, sign=None):
     s = settings()
     repo = find_repo(s)
@@ -600,8 +607,8 @@ def build_command(game_dir, *, plan=False, rebuild=None, out=None, keys=None, cl
     if not plan and (needs := game_needs(gd, repo)):   # as the converter does before it starts a build: a missing one would stop the build partway (nsz at the start, zbic at the unpack)
         tools = optional_tools(py, tool_env(repo))
         if gone := [n for n in needs if not tools[n][0]]: raise Refused('; '.join(f'{n} is needed ({needs[n]}): {tools[n][2]}' for n in gone))
-    keys = keys or (str(gd / 'prod.keys') if (gd / 'prod.keys').is_file() else s.get('default_keys') or s.get('keys'))
-    if not keys or not Path(keys).expanduser().is_file(): raise Refused('no prod.keys: put one in the game folder or pass --keys')
+    keys = keys or saved_keys(s, gd)
+    if not keys or not Path(keys).expanduser().is_file(): raise Refused('no prod.keys: choose one in NXForge Settings (Keys file), put one in the game folder or pass --keys')
     if plan and not script_has(repo, py, '--plan'): raise Refused(f'the engine at {repo} has no --plan yet (update it)')
     args = [py, '-u', f'{tree_of(repo)}/{SCRIPT}', str(gd), '-k', str(Path(keys).expanduser()), '--platform', 'mac-app', '--progress', 'json']
     if plan: args.append('--plan')
@@ -874,7 +881,7 @@ def main(argv=None):
     p.add_argument('--plan', action='store_true', help='dry run: list the stages that will be reused or redone')
     p.add_argument('--rebuild', help='the existing app to replace (moved to app-backups/ first)')
     p.add_argument('--out', help='where the app goes (default: the settings, else beside the game files)')
-    p.add_argument('--keys', help='prod.keys (default: the game folder\'s, else the settings\')')
+    p.add_argument('--keys', help='prod.keys (default: the one saved in NXForge Settings, else the game folder\'s)')
     p.add_argument('--cleanup', choices=('off', 'unused', 'all'), help='after the build (default: the settings)')
     p.add_argument('--sign', help='codesign identity (default: the settings, else ad-hoc)')
     p.add_argument('--background', action='store_true', help='start it detached and print the job')

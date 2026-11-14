@@ -4,6 +4,17 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.11.3 (2026-11-14)
+
+Your prod.keys, chosen once. Ships in NXForge 0.35.3.
+
+- **Keys file in Settings**: Settings (on the stage, under Building, and the converter's Settings window, under Files & Folders) keeps one prod.keys for every build, rebuild, Rebuild all, Build Selected and the Library's Convert. It shows whether the file is found (with how many keys), missing (a drive not connected), unreadable or incomplete (no header_key).
+- **Found for you**: while none is saved, NXForge looks in the usual places (your games folder and the folder above it, `~/.switch`, the Ryujinx and yuzu-style emulators' keys folders, Documents, Downloads, Desktop) and offers the one it finds with **Use This**.
+- **Asked once**: a build or rebuild with no keys file asks for one (offering the one it found) and saves the answer, so the next build does not ask. The first keys chosen or dropped on Convert are saved too.
+- The saved keys file now wins over a prod.keys in the game's folder, which is used only when none is saved or the saved one is not there. **Change Keys…** on Convert still picks other keys for one game.
+- The command line follows: `NXForgeConverter --validate / --convert / --rebuild / --library` without a keys file use the saved one, and so does `nxforge build`.
+- Only the file's location is saved. Its keys are read to check it and are never copied, logged or put in a report.
+
 ## 0.11.2 (2026-11-14)
 
 A new look for Home, to match the game's page. Ships in NXForge 0.35.2.

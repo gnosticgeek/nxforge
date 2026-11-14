@@ -201,6 +201,23 @@ class Doctor(unittest.TestCase):   # the optional tools a game needs, decided as
             repo, args = nx.build_command(str(oot))
             self.assertEqual(args[:3], ['/py', '-u', f'{self.repo}/scripts/build_ipa_from_nsp.py'])
 
+    def test_build_uses_the_keys_saved_in_settings_first(self):
+        oot = self.game('oot', ['0400486024DEC000_build', 'prod.keys'])
+        saved = write(self.root / 'keys/prod.keys')
+        tools = {'glslang': (True, '', ''), 'nsz': (True, '', ''), 'zbic': (True, '', '')}
+        with mock.patch.object(nx, 'find_repo', lambda s: str(self.repo)), mock.patch.object(nx, 'find_python', lambda s, r: ('/py', [])), \
+             mock.patch.object(nx, 'optional_tools', lambda py, env: tools):
+            with mock.patch.object(nx, 'settings', lambda: {'default_keys': str(saved)}):
+                args = nx.build_command(str(oot))[1]
+                self.assertEqual(args[args.index('-k') + 1], str(saved))
+            with mock.patch.object(nx, 'settings', lambda: {'default_keys': str(self.root / 'gone/prod.keys')}):   # a drive not connected: the game folder's
+                args = nx.build_command(str(oot))[1]
+                self.assertEqual(args[args.index('-k') + 1], str(oot / 'prod.keys'))
+            (oot / 'prod.keys').unlink()
+            with mock.patch.object(nx, 'settings', dict):
+                with self.assertRaises(nx.Refused) as e: nx.build_command(str(oot))
+                self.assertIn('NXForge Settings', str(e.exception))
+
 
 class StatusLines(unittest.TestCase):   # status printed the interpreter's path (cut at 100 characters, before the script's name) and the converter's caffeinate wrapper as a second build
     def test_a_build_reads_from_its_script_once(self):

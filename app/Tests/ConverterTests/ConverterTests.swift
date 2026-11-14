@@ -1037,3 +1037,36 @@ import Testing
         #expect(h.favoriteKey == "/B.app")
     }
 }
+
+/// The keys file saved in Settings: its status, and which keys a game folder builds with.
+@Suite struct SavedKeys {
+    func temp() -> String {
+        let d = NSTemporaryDirectory() + "keys-\(UUID().uuidString)"
+        try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    @Test func status() {
+        let d = temp()
+        #expect(KeysFile.status(nil) == .notSet)
+        #expect(KeysFile.status(d + "/none.keys") == .missing)
+        try? "not keys".write(toFile: d + "/bad.keys", atomically: true, encoding: .utf8)
+        #expect(KeysFile.status(d + "/bad.keys") == .unreadable)
+        try? "master_key_00 = 00112233445566778899aabbccddeeff\n".write(toFile: d + "/part.keys", atomically: true, encoding: .utf8)
+        #expect(KeysFile.status(d + "/part.keys") == .incomplete)
+        try? "header_key = 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff\nmaster_key_00 = 00112233445566778899aabbccddeeff\n"
+            .write(toFile: d + "/prod.keys", atomically: true, encoding: .utf8)
+        #expect(KeysFile.status(d + "/prod.keys") == .ok(2))
+    }
+
+    @Test func savedWinsThenBesideTheGame() {
+        let d = temp(), game = d + "/Game"
+        try? FileManager.default.createDirectory(atPath: game, withIntermediateDirectories: true)
+        try? "x".write(toFile: d + "/prod.keys", atomically: true, encoding: .utf8)
+        try? "x".write(toFile: game + "/prod.keys", atomically: true, encoding: .utf8)
+        #expect(KeysFile.resolve(saved: d + "/prod.keys", gameFolder: game) == d + "/prod.keys")
+        #expect(KeysFile.resolve(saved: d + "/gone.keys", gameFolder: game) == game + "/prod.keys")
+        #expect(KeysFile.resolve(saved: nil, gameFolder: d + "/Other") == nil)
+        #expect(KeysFile.candidates(gamesRoot: "/Volumes/Games/Switch 1").prefix(2) == ["/Volumes/Games/Switch 1/prod.keys", "/Volumes/Games/prod.keys"])
+    }
+}

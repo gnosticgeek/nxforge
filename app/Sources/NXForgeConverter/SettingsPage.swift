@@ -52,15 +52,13 @@ struct SettingsPage: View {
                     .labelsHidden().fixedSize()
                     Button("Change…") { if let d = model.choose(folder: true, start: model.settings.outDir) { model.settings.outDir = d } }
                 }
-                setting("Default keys file", "Used for a game folder without its own prod.keys.") {
-                    Picker("", selection: Binding(get: { model.settings.defaultKeys ?? "" }, set: { model.settings.defaultKeys = $0.isEmpty ? nil : $0 })) {
-                        Text("None").tag("")
-                        if let k = model.settings.defaultKeys { Text(k.tildePath).tag(k) }
-                        if let k = model.settings.keys, k != model.settings.defaultKeys { Text(k.tildePath).tag(k) }
-                    }
-                    .labelsHidden().fixedSize()
-                    Button("Choose…") { if let f = model.choose(folder: false) { model.settings.defaultKeys = f } }
+                setting("Keys file (prod.keys)", "Saved once and used for every build, rebuild and the nxforge command. A game folder's own prod.keys is used only when none is saved.") {
+                    Text(model.settings.defaultKeys?.tildePath ?? "None").foregroundStyle(model.settings.defaultKeys == nil ? .secondary : .primary)
+                        .lineLimit(1).truncationMode(.middle).frame(maxWidth: 220, alignment: .trailing)
+                    Button("Choose…") { model.chooseSavedKeys() }
+                    if model.settings.defaultKeys != nil { Button("Clear") { model.saveKeys(nil) } }
                 }
+                KeysStatusRow(model: model, dark: false)
             }
             Section("Builds") {
                 setting("Reuse cached build steps", "Skip work when source files have not changed.") {
@@ -136,5 +134,32 @@ struct SettingsPage: View {
         guard model.confirm("Clear the build cache?", "\(c.lastComponent) (\(Disk.gb(size))) moves to the Trash. The next build extracts the game and compiles its shaders again, which takes much longer. Built apps are not affected.", action: size > 0 ? "Move \(Disk.gb(size)) to Trash" : "Move to Trash") else { return }
         try? FileManager.default.trashItem(at: c.url, resultingItemURL: nil)
         model.revision += 1
+    }
+}
+
+/// The saved keys file's status (found, missing, unreadable, incomplete) and, while none reads, a prod.keys found in a usual place.
+struct KeysStatusRow: View {
+    @Bindable var model: AppModel
+    /// true on the front end's dark panel
+    let dark: Bool
+
+    var body: some View {
+        let st = model.keysStatus
+        VStack(alignment: .leading, spacing: 6) {
+            Label(st.text, systemImage: st.symbol)
+                .foregroundStyle(st.ok ? Color.green : st == .notSet ? (dark ? Color.white.opacity(0.6) : Color.secondary) : Color.orange)
+                .font(.system(size: 12.5, weight: .medium))
+            if let s = model.keysSuggestion {
+                HStack(spacing: 8) {
+                    Text("Found one at \(s.tildePath)").font(.system(size: 12.5)).foregroundStyle(dark ? Color.white.opacity(0.6) : Color.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    if dark { Button("Use This") { model.saveKeys(s) }.buttonStyle(StageButton(height: 28)) }
+                    else { Button("Use This") { model.saveKeys(s) } }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: "\(model.settings.defaultKeys ?? "")|\(model.settings.gamesRoot ?? "")") { model.refreshKeysStatus() }
     }
 }

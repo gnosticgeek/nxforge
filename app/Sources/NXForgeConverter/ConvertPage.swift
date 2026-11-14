@@ -591,7 +591,10 @@ struct DropZone: View {
                 VStack(alignment: .leading, spacing: 8) {
                     line(game.isNupFileish ? "shippingbox.fill" : "folder.fill", "Game", game.tildePath)
                     if keyless { line("key", "Keys", "Not needed: a .nup or a dump folder is not encrypted", dim: true) }
-                    else { line("key.fill", "Keys", model.settings.keys?.tildePath ?? "Not chosen", dim: model.settings.keys == nil) }
+                    else {
+                        let k = model.settings.keys
+                        line("key.fill", "Keys", k.map { $0.tildePath + ($0 == model.settings.defaultKeys ? " (saved in Settings)" : "") } ?? "Not chosen: set them once in Settings", dim: k == nil)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -627,7 +630,13 @@ struct DropZone: View {
     }
 
     func chooseGame() { if let d = model.chooseGame(start: model.settings.gameDir) { model.setGameDir(d) } }
-    func chooseKeys() { if let f = model.choose(folder: false, start: model.gameFolder) { model.settings.keys = f; model.validate() } }
+    /// A keys file for this game; the first one chosen is also saved in Settings for every build after it.
+    func chooseKeys() {
+        guard let f = model.choose(folder: false, start: model.gameFolder) else { return }
+        model.settings.keys = f
+        if model.settings.defaultKeys == nil { model.saveKeys(f) }
+        model.validate()
+    }
 }
 
 /// The seven steps of a build as numbered tiles: done ones ticked, the running one lit, a failed one red.

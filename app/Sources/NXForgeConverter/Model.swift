@@ -145,6 +145,9 @@ final class AppModel {
     var stageFilter: StageFilter = .all
     var stageColumns = 6
     var stageSettings = false
+    /// the saved keys file as Settings shows it, and a prod.keys found in a usual place while none is saved (KeysFile)
+    var keysStatus: KeysStatus = .notSet
+    var keysSuggestion: String?
     /// the Settings row a controller is on (StageSettingRow)
     var settingsFocus = 0
     var stageSearch = ""
@@ -233,6 +236,7 @@ final class AppModel {
 
     func recheck() {
         checking = true
+        refreshKeysStatus()
         let s = settings
         Task.detached {
             let (c, e) = Toolchain.checkAll(s)
@@ -301,7 +305,7 @@ final class AppModel {
         let d = DropFiles.sort(urls)
         guard d.usable, !run.running else { return false }
         if let dir = d.gameDir { setGameDir(dir) }
-        if let k = d.keys { settings.keys = k; validate() }
+        if let k = d.keys { settings.keys = k; if settings.defaultKeys == nil { saveKeys(k) }; validate() }
         return true
     }
 
@@ -322,10 +326,8 @@ final class AppModel {
     }
 
     func setGameDir(_ dir: String) {
-        // prod.keys beside the game files is the usual layout; else the default keys file, else the one chosen before
-        let beside = Source.folder(of: dir) + "/prod.keys"
-        if FileManager.default.fileExists(atPath: beside) { settings.keys = beside }
-        else if let d = settings.defaultKeys, FileManager.default.fileExists(atPath: d) { settings.keys = d }
+        // the keys file saved in Settings; else a prod.keys beside the game files; else the one chosen before
+        if let k = KeysFile.resolve(saved: settings.defaultKeys, gameFolder: Source.folder(of: dir)) { settings.keys = k }
         settings.gameDir = dir
         validate()
         if settings.keys == nil { measure() }   // validate measures only with keys chosen
@@ -389,7 +391,7 @@ final class AppModel {
     func build(rebuild: String? = nil, plan: Bool = false, scratch: Bool = false) {
         guard let env, let dir = settings.gameDir, let folder = gameFolder else { return }
         let keys = needsKeys ? settings.keys : nil
-        if needsKeys && keys == nil { return }
+        if needsKeys && keys == nil { _ = ensureKeys(); return }
         if !plan, let d = diskNeed, d.short, rebuildQueue.isEmpty, batchCurrent == nil,
            !confirm("Build with too little free space?", "\(d.text). The converter stops the build if free space drops below \(Disk.gb(Disk.stopBelow)); the steps it finished are kept for the next try. Storage lists what can be deleted.", action: "Build Anyway") { return }
         let name = game?.name ?? ""
@@ -515,6 +517,10 @@ final class AppModel {
             return
         }
         if settings.gameDir != b.gameDir { setGameDir(b.gameDir) }
+        guard ensureKeys() else {
+            if !rebuildQueue.isEmpty || queueMessage == "" { queueMessage = "Rebuild all stopped: no keys file (prod.keys). Set one in Settings."; rebuildQueue = [] }
+            return
+        }
         page = .convert
         Task {
             while validating { try? await Task.sleep(for: .milliseconds(200)) }
@@ -670,6 +676,52 @@ final class AppModel {
         needs = [:]; diskNeed = nil; expected = [:]
         run.reset()
         page = .builds
+    }
+
+    // MARK: keys
+
+    /// Checks the saved keys file off the main thread for Settings, and looks for one in the usual places while none is saved.
+    func refreshKeysStatus() {
+        let saved = settings.defaultKeys, root = settings.gamesRoot
+        Task.detached {
+            let st = KeysFile.status(saved)
+            let found = st.ok ? nil : KeysFile.suggestion(gamesRoot: root)
+            await MainActor.run {
+                guard self.settings.defaultKeys == saved else { return }
+                self.keysStatus = st
+                self.keysSuggestion = found == saved ? nil : found
+            }
+        }
+    }
+
+    /// Saves a keys file for every build, and uses it for the game on Convert unless that game was given its own.
+    func saveKeys(_ path: String?) {
+        let old = settings.defaultKeys
+        settings.defaultKeys = path
+        if let path, settings.keys == nil || settings.keys == old { settings.keys = path; if settings.gameDir != nil { validate() } }
+        keysStatus = KeysFile.status(path)
+        refreshKeysStatus()
+    }
+
+    /// Settings' Choose…: a file panel that opens where the keys file is, or in the usual place.
+    func chooseSavedKeys() {
+        let start = (settings.defaultKeys ?? keysSuggestion ?? settings.gamesRoot.map { $0 + "/x" }).map { ($0 as NSString).deletingLastPathComponent }
+        if let f = choose(folder: false, start: start) { saveKeys(f) }
+    }
+
+    /// Before a build of a game read with keys: true when it has a keys file; else asks once (the one found in a usual place, or a
+    /// file panel) and saves the answer in Settings, so the next build does not ask.
+    @discardableResult func ensureKeys() -> Bool {
+        guard needsKeys, settings.keys == nil || !FileManager.default.fileExists(atPath: settings.keys!) else { return true }
+        let why = settings.defaultKeys.map { "The keys file saved in Settings (\($0.tildePath)) is not there. " } ?? ""
+        if let s = KeysFile.suggestion(gamesRoot: settings.gamesRoot),
+           confirm("Use the keys found at \(s.tildePath)?", "\(why)Builds of Switch games need your prod.keys. NXForge saves this choice in Settings and uses it for every build.", action: "Use These Keys") {
+            saveKeys(s); return true
+        }
+        guard confirm("Choose your prod.keys", "\(why)Builds of Switch games need your prod.keys, dumped from your own console. NXForge remembers where it is in Settings, so it asks only once.", action: "Choose…") else { return false }
+        guard let f = choose(folder: false, start: settings.gamesRoot) else { return false }
+        saveKeys(f)
+        return true
     }
 
     func requestNotifications() {
