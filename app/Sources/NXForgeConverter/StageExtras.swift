@@ -255,8 +255,8 @@ struct ScreenshotRow: View {
 }
 
 /// The game page's key art, filling the top of the window behind the box and the title and fading into the stage below and to the
-/// left. GameTDB has covers only, no wide art, so it is the game's newest screenshot, sharp; a game with none gets its front cover,
-/// enlarged and blurred.
+/// left: the game's wide art from Nintendo's store (CoverStore.hero), else its newest screenshot, sharp; a game with neither gets its
+/// front cover, enlarged and blurred.
 struct GameKeyArt: View {
     let game: StageGame
     /// the blurred cover when the game has no screenshot (the game's page); Home shows the 3D case instead
@@ -265,24 +265,27 @@ struct GameKeyArt: View {
     @Environment(\.accessibilityReduceTransparency) private var solid
     @MainActor static var cache: [String: NSImage] = [:]
 
-    /// Whether a built game has a screenshot to show as its key art (read off the main thread)
-    static func hasShot(app: String?) async -> Bool {
-        guard let app else { return false }
+    /// Whether a game has wide art or a screenshot to show as its key art (screenshots are looked for off the main thread)
+    static func hasArt(_ g: StageGame?) async -> Bool {
+        guard let g else { return false }
+        if await MainActor.run(body: { CoverStore.shared.hero(g.coverKey) != nil }) { return true }
+        guard let app = g.app else { return false }
         if await MainActor.run(body: { cache[app] != nil }) { return true }
         return await Task.detached(priority: .userInitiated) { !GameCaptures.screenshots(app: app, limit: 1).isEmpty }.value
     }
 
     var body: some View {
-        let _ = CoverStore.shared.revision
-        let art = shot ?? (coverFallback ? CoverArt.wide(game) : nil)
+        let hero = CoverStore.shared.hero(game.coverKey)
+        let sharp = hero ?? shot
+        let art = sharp ?? (coverFallback ? CoverArt.wide(game) : nil)
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
             if let art, !solid {
                 ZStack(alignment: .top) {
                     Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                         .frame(width: w, height: h * 0.78).clipped()
-                        .saturation(shot == nil ? 1.2 : 1.05)
-                        .opacity(shot == nil ? 0.55 : 0.75)
+                        .saturation(sharp == nil ? 1.2 : 1.05)
+                        .opacity(sharp == nil ? 0.55 : hero != nil ? 0.8 : 0.75)
                     // the left darker, where the box and the title stand
                     LinearGradient(stops: [.init(color: StageLook.background.opacity(0.80), location: 0), .init(color: StageLook.background.opacity(0.35), location: 0.5),
                                            .init(color: .clear, location: 0.85)], startPoint: .leading, endPoint: .trailing)
@@ -291,13 +294,13 @@ struct GameKeyArt: View {
                 .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.40), .init(color: .clear, location: 1)],
                                      startPoint: .top, endPoint: .bottom).frame(height: h * 0.78).frame(maxHeight: .infinity, alignment: .top))
                 .frame(width: w, height: h, alignment: .top)
-                .id(shot == nil ? "cover" : "shot").transition(.opacity)
+                .id(hero != nil ? "hero" : shot == nil ? "cover" : "shot").transition(.opacity)
             }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .animation(.easeInOut(duration: 0.4), value: shot == nil)
+        .animation(.easeInOut(duration: 0.4), value: hero != nil ? 2 : shot == nil ? 0 : 1)
         .task(id: game.app) {
             guard let app = game.app else { shot = nil; return }
             if let c = Self.cache[app] { shot = c; return }
