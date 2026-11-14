@@ -4,7 +4,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 ## 0.31.0 (2026-11-14)
 
-- **NXForge Converter 0.7.0: ten changes to its look and feel** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the build's progress and time left on the sidebar, Storage as a sortable table, Storage deletes that can be undone for 20 seconds, delete buttons that name the size, VoiceOver names for icon buttons and covers, a cover size slider and console sections in the Library, banners instead of alerts for background work, recent games on Convert, a Dock menu with recently played games, and the window opening where it was. Converter only: no game rebuild.
+- **NXForge Converter 0.7.0: ten changes to its look and feel** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the build's progress and time left on the sidebar, Storage as a sortable table with a card for every drive plugged in, Storage deletes that can be undone for 20 seconds, delete buttons that name the size, VoiceOver names for icon buttons and covers, a cover size slider and console sections in the Library, banners instead of alerts for background work, recent games on Convert, a Dock menu with recently played games, and the window opening where it was. Converter only: no game rebuild.
 
 ## 0.30.1 (2026-11-14)
 

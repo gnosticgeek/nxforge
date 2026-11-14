@@ -6,7 +6,7 @@ What counts as the converter: everything under `app/` (the SwiftUI app, its test
 
 ## 0.7.0 (2026-11-14)
 
-Ten changes to how the converter looks and behaves. Ships in NXForge 0.31.0.
+Ten changes to how the converter looks and behaves, and every drive on Storage. Ships in NXForge 0.31.0.
 
 - **The build on the sidebar.** While a build runs, the Convert row shows a ring filling with it and the time left ("1 h 12 m"), so it stays in sight from Library, Storage and the rest.
 - **Storage is a real table.** Click a heading (Item, Size, Type) to sort by it and again to reverse, drag the edges to resize, click, ⌘-click or ⇧-click rows, ⌘A for all, ⌫ to delete. Right-click for Show in Finder, Copy Path and Delete; a double-click shows the item in Finder. Apps and game files can be picked too, and are left out of a delete.
@@ -17,6 +17,7 @@ Ten changes to how the converter looks and behaves. Ships in NXForge 0.31.0.
 - **Banners instead of alerts** for what ended in the background: a deleted or freed item, a restored app or a failed restore, a game to quit before its save is changed, an update that has to wait for a build. They go by themselves, have Undo or Copy where it helps, and VoiceOver reads them.
 - **Recent games on Convert**: the last five games chosen show under the drop area, one click to choose one again (an offline one says so; right-click to remove it).
 - **A Dock menu**: right-click the Dock icon for the recently played games, each with Play, Rebuild, Game Page and Show in Finder, the build running now with Stop Build…, and Build for the chosen game.
+- **Every drive on Storage**: a card with used and free space for each drive and share plugged in (USB, Thunderbolt, SD card, network share), not only the ones the games are on, marked External drive or Network share. It updates when a drive is plugged in or ejected; right-click to show it in Finder.
 - **The window opens where it was**: the same page, the build picked on Builds and the game the Library was on, scrolled into view.
 
 ## 0.6.1 (2026-11-11)

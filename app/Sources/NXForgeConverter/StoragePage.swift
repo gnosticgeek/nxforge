@@ -50,10 +50,20 @@ struct StorageItem: Identifiable, Hashable {
 }
 
 struct VolumeInfo: Identifiable, Hashable {
-    var id: String { name }
+    enum Kind: Hashable { case startup, internalDrive, external, network }
+    var id: String { path }
     let name: String
     let free: Int64
     let total: Int64
+    var path = "/"
+    var kind: Kind = .startup
+
+    var symbol: String {
+        switch kind { case .startup, .internalDrive: "internaldrive"; case .external: "externaldrive"; case .network: "server.rack" }
+    }
+    var kindText: String {
+        switch kind { case .startup: "Startup disk"; case .internalDrive: "Internal"; case .external: "External drive"; case .network: "Network share" }
+    }
 }
 
 enum Storage {
@@ -97,14 +107,31 @@ enum Storage {
             if fm.fileExists(atPath: bk) { items.append(StorageItem(kind: .backups, game: d.lastComponent, path: bk, bytes: Disk.size(bk))) }
         }
         if fm.fileExists(atPath: Disk.cacheDir) { items.append(StorageItem(kind: .metal, game: "All games", path: Disk.cacheDir, bytes: Disk.size(Disk.cacheDir))) }
-        // the volumes these live on
+        return (items.sorted { $0.bytes > $1.bytes }, volumes(also: [NSHomeDirectory()] + dirs))
+    }
+
+    /// The startup disk, every drive and share plugged in now (USB, Thunderbolt, SD cards, SMB), and the drives the games are
+    /// on: the startup disk first, then by name.
+    static func volumes(also paths: [String] = []) -> [VolumeInfo] {
+        let keys: [URLResourceKey] = [.volumeLocalizedNameKey, .volumeTotalCapacityKey, .volumeIsInternalKey, .volumeIsLocalKey,
+                                      .volumeIsRootFileSystemKey, .volumeIsBrowsableKey, .volumeURLKey]
+        let mounted = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? []
         var vols: [String: VolumeInfo] = [:]
-        for p in [NSHomeDirectory()] + dirs {
-            let keys: Set<URLResourceKey> = [.volumeLocalizedNameKey, .volumeTotalCapacityKey]
-            guard let v = try? p.url.resourceValues(forKeys: keys), let name = v.volumeLocalizedName else { continue }
-            vols[name] = VolumeInfo(name: name, free: Disk.free(p) ?? 0, total: Int64(v.volumeTotalCapacity ?? 0))
+        for u in mounted + paths.map(\.url) {
+            guard let v = try? u.resourceValues(forKeys: Set(keys)), let name = v.volumeLocalizedName,
+                  let root = v.volume?.path ?? (u.path == "/" ? "/" : nil) else { continue }
+            if v.volumeIsBrowsable == false { continue }   // system volumes (Preboot, VM, Recovery)
+            let total = Int64(v.volumeTotalCapacity ?? 0)
+            guard total > 0, vols[root] == nil else { continue }
+            let kind: VolumeInfo.Kind = v.volumeIsRootFileSystem == true || root == "/" ? .startup
+                : v.volumeIsLocal == false ? .network : v.volumeIsInternal == true ? .internalDrive : .external
+            vols[root] = VolumeInfo(name: name, free: Disk.free(root) ?? 0, total: total, path: root, kind: kind)
         }
-        return (items.sorted { $0.bytes > $1.bytes }, vols.values.sorted { $0.name < $1.name })
+        // the Data volume and "/" are one disk to the user: keep the startup one
+        if let startup = vols.values.first(where: { $0.kind == .startup }) {
+            vols = vols.filter { $0.value.kind != .internalDrive || $0.value.name != startup.name }
+        }
+        return vols.values.sorted { ($0.kind == .startup ? 0 : 1, $0.name.localizedLowercase) < ($1.kind == .startup ? 0 : 1, $1.name.localizedLowercase) }
     }
 }
 
@@ -166,11 +193,11 @@ struct StoragePage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HeroHeader(symbol: "internaldrive", title: "Storage", subtitle: "What NXForge keeps on disk, and what can go.")
-                HStack(alignment: .top, spacing: 16) {
+                // every drive plugged in, two or three to a row, the space to reclaim last
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
                     ForEach(volumes) { v in volumeCard(v) }
                     reclaimCard
                 }
-                .fixedSize(horizontal: false, vertical: true)
                 filterBar
                 if scanning && items.isEmpty {
                     Card { HStack { ProgressView().controlSize(.small); Text("Measuring the build caches and apps…").foregroundStyle(.secondary) } }
@@ -189,6 +216,8 @@ struct StoragePage: View {
             }
         }
         .task(id: model.revision) { scan() }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in scan() }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in scan() }
     }
 
     var deletableItems: [StorageItem] { items.filter { $0.deletable && canDelete($0) } }
@@ -201,9 +230,12 @@ struct StoragePage: View {
         let low = v.free < Disk.warnBelow
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label(v.name, systemImage: "internaldrive").font(.title3.weight(.semibold))
+                Label(v.name, systemImage: v.symbol).font(.title3.weight(.semibold)).lineLimit(1)
                 Spacer()
                 Text("\(Disk.gb(v.total)) total").foregroundStyle(.secondary)
+            }
+            if v.kind != .startup {
+                Text(v.kindText).font(.caption).foregroundStyle(.secondary).padding(.top, -10)
             }
             GeometryReader { g in
                 ZStack(alignment: .leading) {
@@ -221,9 +253,11 @@ struct StoragePage: View {
             .foregroundStyle(low ? .orange : .primary)
         }
         .padding(18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
         .background(Theme.card, in: .rect(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
+        .contextMenu { Button("Show in Finder") { NSWorkspace.shared.open(v.path.url) } }
+        .help(v.path)
     }
 
     func legend(_ c: Color, _ t: String) -> some View {
@@ -244,7 +278,7 @@ struct StoragePage: View {
                 .help(deletableItems.isEmpty ? "Nothing can be deleted now" : "Delete every build cache, older app copy and the shader cache that no build is using")
         }
         .padding(18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
         .background(Theme.card, in: .rect(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.cardStroke))
     }

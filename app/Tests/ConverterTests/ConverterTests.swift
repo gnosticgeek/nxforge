@@ -810,4 +810,11 @@ import Testing
         #expect(old.libraryCoverSize == Settings.coverSizes.upperBound)
         #expect(old.recentSources.isEmpty && old.lastPage == nil && !old.libraryGroupByConsole)
     }
+
+    @Test func storageListsTheStartupDiskFirst() {
+        let v = Storage.volumes()
+        #expect(v.first?.kind == .startup)
+        #expect(v.filter { $0.kind == .startup }.count == 1)
+        #expect(v.allSatisfy { $0.total > 0 })
+    }
 }
