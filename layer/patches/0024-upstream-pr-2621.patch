@@ -59,10 +59,10 @@ index 10f143d53ee49bfef2e5bd9927a9029c18dd9056..94b8ed38c480b4ad48c75d9865ac105d
  modules	main subsdk0 subsdk1 sdk
  romfs_marker	Movie/StaffRoll_00.webm
 diff --git a/dm/games/README.md b/dm/games/README.md
-index 6b032b963dba36344cf65b10069ae42ca2c2a60e..b22f7bf4dc262eb8cbfd5372d141159e10de41ce 100644
+index 57bb67cc4d638a0f0626be0870ff0f4be484babc..dfbc4d10b13391ef5bfbb0cb1708dc3c234f2334 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -115,7 +115,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -117,7 +117,7 @@ One row per profile; the notes are each profile's `README.md`.
  | [Luigi's Mansion 3](0100DCA0064A6000/README.md) | `0100DCA0064A6000` | 1.4.0 | 7.3.2 | Next Level Games' engine | NVN |
  | [Mario & Luigi: Brothership](01006D0017F7A000/README.md) | `01006D0017F7A000` | 1.0.0 | 12.3.2 | Unreal Engine 4.27.2, Wwise | NVN |
  | [Mario Golf: Super Rush](0100C9C00E25C000/README.md) | `0100C9C00E25C000` | 4.0.0 | 11.4.0 | Camelot's engine, NintendoWare | NVN |
@@ -140,7 +140,7 @@ index 0000000000000000000000000000000000000000..a573f3f9536a58d21a43e1cac0d9e9df
 +if __name__ == '__main__':
 +    unittest.main()
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index 6837149d04837b30419093585ab55c990b9df3c4..50d3419504794fa74ef33ecd704ff6311bd95188 100644
+index 55341c82d151c09c0a1752927ccf3d4b6ee746af..e7da033e13a2029133bc25eb5135af1c1acf7dce 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
 @@ -6,6 +6,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
@@ -150,9 +150,9 @@ index 6837149d04837b30419093585ab55c990b9df3c4..50d3419504794fa74ef33ecd704ff631
 +- the build prints `[RED] this Mac app uses v917504 (1.8.0), which game profile 0400C3F00006E000 was not brought up on (v0 1.0.0, v917504 1.8.0): its settings, with this version's own shaders; every module is a registered build`, naming the version among the registered ones. → [A registered update packed with its own shader tables is reported as one the profile was not brought up on](../reference/packing.md#a-registered-update-packed-with-its-own-shader-tables-is-reported-as-one-the-profile-was-not-brought-up-on)
  - `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder (issue #1265). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`. → [A NUP or a dump of a game with no profile stops before the survey](../reference/packing.md#a-nup-or-a-dump-of-a-game-with-no-profile-stops-before-the-survey)
  - the game reloads one asset for ever: a background loader takes about a core and the process several (Ocarina of Time: 412% CPU on the Mac, `OptimizeChangeBanc` and `ParallelDecompThread` busy all session, one model and its texture opened about 22 times a second). Or, from the NSP script: `vN: K file(s) whose bytes do not start as their names promise (a .zs file that is not a zstd stream), so the game files are damaged`, then the files. → [A damaged file in a NUP or a dump has no hash to fail](../reference/packing.md#a-damaged-file-in-a-nup-or-a-dump-has-no-hash-to-fail)
- - the survey of a Switch 2 game says `SDK: ?` and `no SDK version string found`, and its provisional profile has `app_pool 0xCD500000`. → [A provisional profile of a Switch 2 game shows no SDK and a Switch 1 memory pool](../reference/packing.md#a-provisional-profile-of-a-switch-2-game-shows-no-sdk-and-a-switch-1-memory-pool)
+ - `pack_nup.py`, or the NSP script on a NUP, ends in a Python traceback (`RecursionError` in `tree_bytes`) instead of a `[RED]` line. → [A NUP whose folder contains itself](../reference/packing.md#a-nup-whose-folder-contains-itself)
 diff --git a/docs/reference/packing.md b/docs/reference/packing.md
-index bac289e43c873951bd0d171d6d7e392b3e95a95c..dcaa59bd0aea84539e3e0c61b1664ab0c26edd33 100644
+index aa8568ec7013b35c093a51022a7d73a662e36add..e6900ff59f347c63f1e2cd22f3217d6658b7faf0 100644
 --- a/docs/reference/packing.md
 +++ b/docs/reference/packing.md
 @@ -17,6 +17,13 @@
@@ -170,10 +170,10 @@ index bac289e43c873951bd0d171d6d7e392b3e95a95c..dcaa59bd0aea84539e3e0c61b1664ab0
  
  - **Symptom:** `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder ([issue #1265](https://github.com/seedds/nxnative/issues/1265)). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`.
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 06b9b62ef1fb51d7f625957dab9a1d5c9e1d9484..9465a48d2b263b7f578a6a08ba6b9bf40a144c2a 100755
+index ede27bfc7d993fac8ab5353dfa0b09f3a7493264..8267435906beab7a7c0388484da7e7a308d7cf68 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3382,7 +3382,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
+@@ -3379,7 +3379,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
          known = {(m, b) for row in reg.builds().values() for m, b in row.items() if m != 'display'}
          other = [m for m, b in g.builds()[pkg_ver].items() if m != 'display' and (m, b) not in known]
          registered_builds = ", ".join(f'{v} {b["display"]}' for v, b in reg.builds().items())

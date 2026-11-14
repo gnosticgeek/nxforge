@@ -35,7 +35,7 @@ Checked on an M5 Max (docked, a window, kokiri-deck from the deck save, two runs
  3 files changed, 71 insertions(+), 5 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index a27406b27a20883dae8baaf881fbff998414aff8..41ebffdc432550bbd1c2a4dfa48e74928377b1c9 100644
+index 218dfbd8c03932204d4587370686046cb7e56004..5bd8576d4050e5567296e0db467a7a9f76792d27 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -12,6 +12,7 @@ A Switch 2 game: update v131072, SDK 22.2.8 (`Ounce`). Nintendo EPD's engine (se
@@ -157,7 +157,7 @@ index 3a4f000a1edf02e2449ca79dfb7bcb9163d1ccfd..47e6aa4f434645ee760b0a9e02ad2941
  
  # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index 24736ab4f39c3ab13b28f85437f2562f4fb927ff..96db3b8275c2238d48d3deaa097df3014a9603aa 100644
+index 3495d436112bebebfa2c11d09319e1d151bd81e1..c9328aa3053f41ca1840f188656c67f8f41dd16f 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
 @@ -83,7 +83,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep

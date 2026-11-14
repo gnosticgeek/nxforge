@@ -30,10 +30,10 @@ Co-authored-by: uncraftablexd <352372032+uncraftablexd@users.noreply.github.com>
  11 files changed, 156 insertions(+), 16 deletions(-)
 
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index e124db90281f38c906e11d8a1292a516b575f486..624e12d42693fd9bfcc047a88631b5dbd38ba729 100644
+index 4e35082efe11d4c83077f98773f85948c773c3d5..8e67561240adff1c8ca1330346dc6fb541683426 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -1748,6 +1748,7 @@ void dm_gfx_suspend(int on) {
+@@ -1770,6 +1770,7 @@ void dm_gfx_suspend(int on) {
      // the pipeline archive starts writing what it holds: a process in the background may be ended without a word (iOS), and a prewarm's captures wait for a full period
  }
  void dm_gfx_quit(int wait_ms) { mtl_arch_save(wait_ms, 1); }
@@ -42,10 +42,10 @@ index e124db90281f38c906e11d8a1292a516b575f486..624e12d42693fd9bfcc047a88631b5db
  // submits on both from two threads; the second submission arrived while the first was replaying and the host stopped with "submit re-entered" at the ninth frame. NVN orders work on different queues only
  // through syncs and events. The continuation scheduler parks unresolved queues and serializes only ready prefixes onto this Metal queue.
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1..39cc3ce4cdcaff61f3049373323dba0827eef479 100644
+index e2fc9418be9ce3a137669eba6be2c5e0e0aec36e..57a204bf9251d70ce60d0d9f0e576df3bf843e9f 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -9207,6 +9207,7 @@ static id arch_lookup(MTL4PipelineDescriptor *d, int plain, int *from_run) {
+@@ -9483,6 +9483,7 @@ static id arch_lookup(MTL4PipelineDescriptor *d, int plain, int *from_run) {
      return nil;
  }
  static ArchEpoch *g_ep; static os_unfair_lock g_ep_lock = OS_UNFAIR_LOCK_INIT;   // the current period
@@ -53,7 +53,7 @@ index 756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1..39cc3ce4cdcaff61f3049373323dba08
  static int g_arch_cap;   // compiles are captured (an archive folder, a serializer): immutable after pso4_init
  static dispatch_group_t g_arch_pending;   // periods handed over and not written yet
  static _Atomic uint64_t g_pb_built, g_pb_archived, g_pb_reused, g_pb_spec, g_pb_legacy, g_pb_base_ns;
-@@ -9534,6 +9535,10 @@ static void pso4_init(void) {
+@@ -9810,6 +9811,10 @@ static void pso4_init(void) {
              });
  #endif
              uint64_t t0 = bp_now(); unsigned long long bytes = 0;
@@ -64,7 +64,7 @@ index 756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1..39cc3ce4cdcaff61f3049373323dba08
              NSMutableArray<NSString *> *runf = [NSMutableArray array];
              NSArray<NSString *> *all = [NSFileManager.defaultManager contentsOfDirectoryAtPath:g_arch_dir error:nil]; NSSet<NSString *> *present = [NSSet setWithArray:all ?: @[]];
              NSArray<NSString *> *names = [[all filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"self ENDSWITH '.mtl4a'"]] sortedArrayUsingComparator:^NSComparisonResult(NSString *x, NSString *y) {
-@@ -9594,7 +9599,7 @@ static void pso4_init(void) {
+@@ -9874,7 +9879,7 @@ static void pso4_init(void) {
          NSError *ce = nil; g_comp4 = [g_dev newCompilerWithDescriptor:[MTL4CompilerDescriptor new] error:&ce];
          if (!g_comp4) MLOG("[RED] no Metal 4 compiler (%s): render pipelines are built through the MTLDevice", ce.localizedDescription.UTF8String);
          else if (g_arch_dir) {
@@ -73,7 +73,7 @@ index 756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1..39cc3ce4cdcaff61f3049373323dba08
              if (g_arch_cap) atexit(arch_at_exit);   // what is not written yet, written at quit (mtl_arch_save)
              if (!g_ep) MLOG("[RED] pipeline archive: Metal made no pipeline serializer: nothing is captured into %s", g_arch_dir.UTF8String);
          }
-@@ -9716,8 +9721,21 @@ static void arch_write_file(ArchEpoch *ep) {
+@@ -9996,8 +10001,21 @@ static void arch_write_file(ArchEpoch *ep) {
  // ahead during the prewarm, where the timer's flushes wait so that its bases, compiled or captured again, make as few files as they can: a cold start's timer flushes wrote a
  // file each 10 s (Ocarina of Time: 80 files; GitHub issue #1747's, 43), more than PSO_ARCH_COMPACT, and the next start compacted them all. any_time: hand it over during the
  // prewarm too (going to the background, quitting: mtl_arch_save)
@@ -96,7 +96,7 @@ index 756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1..39cc3ce4cdcaff61f3049373323dba08
      os_unfair_lock_lock(&g_ep_lock); int any = (!only || g_ep == only) && (atomic_load(&g_ep->n) || atomic_load(&g_ep->active)); os_unfair_lock_unlock(&g_ep_lock);
      // nothing captured or under way: the period goes on. A compaction due to close (the prewarm over, no recapture queued) closes all the same: its recaptures are all in periods
      // handed over, and the last of them to be written finishes it, or this does when they all are (before, it stayed open for the run and the next start compacted again)
-@@ -9731,7 +9749,8 @@ static void arch_hand_over(ArchEpoch *only, int any_time) {
+@@ -10011,7 +10029,8 @@ static void arch_hand_over(ArchEpoch *only, int any_time) {
      os_unfair_lock_lock(&g_ep_lock);
      ArchEpoch *old = g_ep; any = (!only || old == only) && (atomic_load(&old->n) || atomic_load(&old->active));   // again: another flush may just have handed it over
      if (any) {
@@ -106,7 +106,7 @@ index 756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1..39cc3ce4cdcaff61f3049373323dba08
          // Every period from the first recaptured base on may hold some (see arch_compact_allowed); the first one handed over after the prewarm is the compaction's last
          if (g_compact_enabled && atomic_load(&g_compacted) && !atomic_load(&g_compact_closed)) {
              old->compacting = 1; atomic_fetch_add(&g_compact_periods, 1);
-@@ -9759,17 +9778,19 @@ void mtl_arch_save(int wait_ms, int ending) {
+@@ -10039,17 +10058,19 @@ void mtl_arch_save(int wait_ms, int ending) {
      int n = atomic_load(&g_arch_new);
      arch_hand_over(nil, 1);
      if (!wait_ms && !ending) return;
@@ -130,13 +130,13 @@ index 756f77b3df47a6bbe6d604f7ec31c9c4ab1a10b1..39cc3ce4cdcaff61f3049373323dba08
  static void arch_compact_finish(void) {   // after every period that may hold recaptured bases is written (arch_write): the old files go once their bases are in the new ones
      if (!g_compact_files || !g_compacted) return;
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index b431062ece55e3004442f599f691f7960c882ffe..7c9ed4bd1a42770799e64246c50646f30b27ebbc 100644
+index f0161a769bb90a94a39c975c9d99bbc43fe07694..3a92628b71bdf3626bcada08de17d8a54467fbef 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
-@@ -398,8 +398,8 @@ check_t_pull: RUN_ENV = MTL_DEBUG_LAYER=1
- t_pull_inv: t_pull_inv.m ../tools/dmsh_pull.py ../tools/dmsh_pull.metal
- 	clang -O1 -g -Wall -fobjc-arc -o $@ t_pull_inv.m -framework Metal -framework Foundation
- check_t_pull_inv: RUN_ENV = MTL_DEBUG_LAYER=1
+@@ -417,8 +417,8 @@ check_t_pull_inv: RUN_ENV = MTL_DEBUG_LAYER=1
+ t_wline: t_wline.m ../tools/dmsh_pull.py ../tools/dmsh_pull.metal
+ 	clang -O1 -g -Wall -fobjc-arc -o $@ t_wline.m -framework Metal -framework Foundation
+ check_t_wline: RUN_ENV = MTL_DEBUG_LAYER=1
 -t_pso_archive: t_pso_archive.m $(MTL_T_DEP)
 -	clang $(CFLAGS) -fobjc-arc -o $@ t_pso_archive.m $(MTL_T_SRC) $(FW)
 +t_pso_archive: t_pso_archive.m $(MTL_T_DEP) ../../host/hle_lifecycle.c
@@ -208,10 +208,10 @@ index fa9ef7028aeef117a75127dd5889b74a98486fee..781ce6b8ba525d95a9017bb610b7e4a7
      if (argc == 3 && !strncmp(argv[1], "--oldname-", 10)) {   // across fresh processes: nine run files named before the count (the test renames them) are compacted once, then not again
          int seed = !strcmp(argv[1], "--oldname-seed"), replay = !strcmp(argv[1], "--oldname-replay");
 diff --git a/dm/gfx/tests/test_pso_archive.py b/dm/gfx/tests/test_pso_archive.py
-index 7ccfa5a901ae81ce045a1b08dd333a62e80df4b4..c6aac5964f94f437eb4b76fb017780ce8db56be8 100644
+index 87050ee78555e929f4d549e5d49b14ef20283be4..54c6c881dfc6381d260929d39a9d12b9447ed8ed 100644
 --- a/dm/gfx/tests/test_pso_archive.py
 +++ b/dm/gfx/tests/test_pso_archive.py
-@@ -75,6 +75,50 @@ class ArchiveRestartTests(unittest.TestCase):
+@@ -97,6 +97,50 @@ class ArchiveRestartTests(unittest.TestCase):
                  self.assertEqual(len(list(Path(folder).glob('*.mtl4a'))), files, phase)
                  self.assertTrue((Path(folder) / 'compacting').exists(), phase)
  
@@ -334,10 +334,10 @@ index 53fb4faaf7f1541dfde061a8b4a7687bcc66ca4e..1cb7df8dde6fb1e2d3314b106160ccb1
      if (then) then(arg);
      _exit(0);
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index f947fe2932b6d2a961f162f6bd81546f811f8e09..6837149d04837b30419093585ab55c990b9df3c4 100644
+index 1a48400d24af0a86d4c24486a54ff560c0be2516..55341c82d151c09c0a1752927ccf3d4b6ee746af 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -883,6 +883,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -925,6 +925,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - hundreds of `[RED] background render pipeline creation failed: error: cannot commit transaction no. '50463' on '…/com.apple.gpuarchiver/gpuarchiver-…/PersistentState': MDB_MAP_FULL: Environment mapsize limit reached` (or `cannot write 'UNITSMAPPINGS' database: MDB_MAP_FULL`), then `pipeline archive: compaction left the old files (the flush failed)`; the draws of those pipelines are missing and the frame rate falls (Ocarina of Time's Kakariko Village at 30-70 ms a frame, 1,502 such lines in one session). → [Metal's archiver store filled by one flush period](../reference/rendering.md#metals-archiver-store-filled-by-one-flush-period)
  - the pipeline prebuild (`DM_PSO_PREBUILD=tool`, the NSP script's `[RED] dmhost exit code -11`), or a run that captures pipelines, dies with SIGSEGV and no `CRASH` line of its own. macOS's crash report has `objc_msgSend` ← `MultiLevelAirntBinaryCache::getElementAtDestination` ← `-[MTLCompiler compileFunctionRequestInternal:…]` ← `arch_capture`, and a thread on the `MTLBinaryArchive_Serialize` queue in `airntSerializeToURL` ← `arch_write_file`. → [A pipeline compile crashes while an archive period is written](../reference/rendering.md#a-pipeline-compile-crashes-while-an-archive-period-is-written)
  - the start after a cold start spends minutes in the prepare step ("Preparing shaders"), with MTLCompilerService at 700-980% CPU, yet the log says no base was compiled: `pipeline prepare: 30838 lines (…) in 761.61 s on 10 workers before the first frame, progress screen shown; bases 0 compiled, 8608 from the archive, 637 reused`, then `pipeline archive compacted: 80 files of bases with a vertex layout gave 8859 bases to the files just written and were removed` (issue #1747: a cold start of 457 s, then a warm one of 309 s with 0 compiled). → [A cold start leaves a file per timer flush, and the next start compacts them all](../reference/rendering.md#a-cold-start-leaves-a-file-per-timer-flush-and-the-next-start-compacts-them-all)
@@ -346,7 +346,7 @@ index f947fe2932b6d2a961f162f6bd81546f811f8e09..6837149d04837b30419093585ab55c99
  - the first start of an app with a big prewarm list sits in the prepare step ("Preparing shaders") for minutes with MTLCompilerService at full CPU: Ocarina of Time (40,154 lines) took 450-475 s on an M5 Max with an empty device archive, and the log says `pipeline prepare: … bases N compiled`. The start after it takes the bases from `pso_archive` in seconds. → [A first start builds every base of the prewarm list before the first frame](../reference/rendering.md#a-first-start-builds-every-base-of-the-prewarm-list-before-the-first-frame)
  - the NSP script's `[RED] prewarm pipelines: the host's prebuild tool failed (see …/logs/pso_prewarm_mac.log); the app is packed without them and builds them on its first start`, though the tool's log ends at `pipeline prebuild: N files (… MB) for the app to bundle in …` with 0 failed; the tool's crash report (`EXC_BREAKPOINT`) has the main thread in `mtl_arch_save` under `exit` → `__cxa_finalize_ranges`, and the crashing thread on `dm.nvn.pso-archive` in `localeconv_l` ← `strtod_l` ← `libllvm-flatbuffers` ← `-[_MTL4PipelineDataSetSerializer serializeAsPipelinesScriptWithError:]` ← `prewarm_script` ← `arch_write_file`. Not every build: one of two of the same inputs. → [Captures still queued on the harvest queue left out of a waiting flush](../reference/rendering.md#captures-still-queued-on-the-harvest-queue-left-out-of-a-waiting-flush)
 diff --git a/docs/development.md b/docs/development.md
-index 049d4819463738b9ff8f338773434a9f9013da75..97e29d01dc3d66df81bb5f24148a730b38904d5c 100644
+index 0c36d6fad7b2355a63c33a0d16cefda2dbe18df1..f4c66a7bc6f2fbb5b2ccc510aef23825cca0df37 100644
 --- a/docs/development.md
 +++ b/docs/development.md
 @@ -781,7 +781,7 @@ Compute pipelines go through the same archives whole (`cps_make`: there is no ba
@@ -359,18 +359,18 @@ index 049d4819463738b9ff8f338773434a9f9013da75..97e29d01dc3d66df81bb5f24148a730b
  ### Hybrid pipelines
  
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index c72c5e586bd01df3e7ba2037ac81d18bc7ef5a8e..11aeaf04b3d05d29a98a0563f300ae617f2c4dc3 100644
+index 27add9ff97968e86398ed2db15da9ca80f8c6355..b5aac0c2dffb974f0c0f6360f31ec484c54e574d 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -39,6 +39,7 @@ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into
- DM_ENV_FILE_KEYS	switch	Set by the iOS app and the Mac launcher at launch to the space-separated names an env file set; the settings screen keeps those values and shows them greyed out
+@@ -41,6 +41,7 @@ DM_ENV_FILE_KEYS	switch	Set by the iOS app and the Mac launcher at launch to the
  DM_ENV_LAUNCH_KEYS	switch	Set at launch by the Mac launcher (the launcher settings already in the environment) and the iOS app (every DM_* variable already in it) to the space-separated names; the settings screen keeps those values and shows them greyed out
  DM_EXEC_OUT	path	File `oe::ExecuteProgram` records the next program and its parameters in, then the app ends (the iOS app of a game of several programs sets it to `Documents/program.bin`)
+ DM_EXFAT_DIR	test	`=<folder on an exFAT volume>`: `test_shader_cache.py` (`Renumbered`) makes its cache files there, so `test_on_the_drive` writes and reads 200 entries on that drive, whose new file may take another inode at its first write (issue #2434), without checking how often the store opened it
 +DM_EXIT_ARCH_MS	switch	`=<ms>`: the time the graceful exit (SIGTERM) gives the pipeline archive's write beyond its 1.5 s (default 8000 on the Mac, 3000 on iOS; `0`: the main path waits for what is left of the 1.5 s, as before, a fallback at 1.5 s hands the archive over without waiting, and the hard deadline is 2.0 s)
  DM_FD_LOG	diagnostic	`=<seconds>` logs, every that many seconds, the number and kinds of file descriptors the process has open
  DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
  DM_FOCUS_KEEP	switch	`1` keeps the game in focus while its Mac window is up, whichever app is active (minimizing still counts); `scripts/regress.py` sets it, so another app taking the key window during a run does not pause a game that stops out of focus
-@@ -328,6 +329,7 @@ DM_PROGRAM	switch	`=<index>`: the program of a game of several programs that a h
+@@ -340,6 +341,7 @@ DM_PROGRAM	switch	`=<index>`: the program of a game of several programs that a h
  DM_PROGRAMS	path	Table of a game's programs on the Mac (`programs.tsv`: index, host, modules, run folder, environment): `oe::ExecuteProgram` starts the named one in this process's place; the NSP script's run command and the Mac app set it
  DM_PROGRAM_ID	switch	`=<hex>`: the program ID the host reports from `svcGetInfo(ProgramId)` (default: the profile's `program_id`)
  DM_PSO_ARCHIVE	path	The folder of the per-game Metal 4 pipeline archive of pipeline bases (default `pso_archive/` beside `pso_user.tsv`); `off` keeps no archive
@@ -378,7 +378,7 @@ index c72c5e586bd01df3e7ba2037ac81d18bc7ef5a8e..11aeaf04b3d05d29a98a0563f300ae61
  DM_PSO_BUNDLE	path	The pipeline archive made offline (`<GPU architecture>.mtl4a`, `prebuilt.tsv`), read only; the iOS app and Mac launcher set it to their `pso/` folder; `off` ignores it
  DM_PSO_GPUS	switch	`build_ipa.sh`: the GPU architectures, comma-separated, to build the offline pipeline archive for (`none` builds none); unset, a profile with `pso_mtl4 on` gets its `pso_gpu` list or `g18p` when absent; profiles with `pso_mtl4 off` get none
  DM_PSO_HYBRID	switch	`0`: a draw whose pipeline is not built yet waits for it instead of drawing with its shader pair's pulling pipeline meanwhile (on by default with the Metal 4 path)
-@@ -426,6 +428,7 @@ DM_TEST_LEAK_GPU	diagnostic	`=1` allocates and keeps a 1 MB shared Metal buffer
+@@ -439,6 +441,7 @@ DM_TEST_LEAK_GPU	diagnostic	`=1` allocates and keeps a 1 MB shared Metal buffer
  DM_TEST_LINK_STALL	diagnostic	`=<start s>,<duration s>`: counting from the first present, pauses the display link at that point for that long, to check the present fallback
  DM_TEST_NO_METAL4	diagnostic	`=1` treats the GPU as one without Metal 4, as on a virtual Mac: the NVN layer starts only its classic part and drops every present
  DM_TEST_PRESENT_LAG	diagnostic	`=<every n>,<ms>[,<in a row>][;…]` sleeps that long before every nth present (and the ones after it in the run): a slow frame on demand
@@ -387,10 +387,10 @@ index c72c5e586bd01df3e7ba2037ac81d18bc7ef5a8e..11aeaf04b3d05d29a98a0563f300ae61
  DM_TEST_SWKBD_LAG_MS	diagnostic	`=<ms>` sleeps that long between the keyboard handing back its text and the game's thread getting the result, to check that auto-accept does not act early
  DM_TEST_TESS	test	Path to the native t_tess executable that test_dmsh_tess.py runs the tessellation layout and expansion kernel through on the GPU (`make check_t_tess` sets it)
 diff --git a/docs/reference/rendering.md b/docs/reference/rendering.md
-index 574e01bcf6c93b06130dbdb08119493d124dad56..b675d6958064116192e383dab06b972ce74329d5 100644
+index 92845836ba6b6f2e90f832d615b0f7ae8a640212..47bca17e4adc294b4d231056afa5bf5aef2b8b23 100644
 --- a/docs/reference/rendering.md
 +++ b/docs/reference/rendering.md
-@@ -1313,6 +1313,14 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
+@@ -1365,6 +1365,14 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
  - **See also:** [Metal's archiver store filled by one flush period](#metals-archiver-store-filled-by-one-flush-period).
  - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) on an M4 (16 GB, macOS 27.2 26B123); #1747 on an M4 Pro.
  

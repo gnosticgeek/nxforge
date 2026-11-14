@@ -23,10 +23,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  3 files changed, 15 insertions(+)
 
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index ed7e1df3468e2e092860eaae02b93b0b38a9ca25..e124db90281f38c906e11d8a1292a516b575f486 100644
+index 404ec1ee36c0b123cb96317a42234f9208c889de..4e35082efe11d4c83077f98773f85948c773c3d5 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -2185,6 +2185,7 @@ static int g_engine_stub = 1;   // the weak dm_fps_lock_engine's answer, for gra
+@@ -2308,6 +2308,7 @@ static int g_engine_stub = 1;   // the weak dm_fps_lock_engine's answer, for gra
  __attribute__((weak)) int dm_fps_lock_engine(void) { return g_engine_stub; }   // hle_fpslock.c: the host writes fps_target into an engine limiter of this main
  __attribute__((weak)) void dm_ue_cvar_tick(void) {}   // hle_uecvar.c: Unreal's texture streaming pool (profile ue_texture_pool)
  __attribute__((weak)) int dm_movie_playing(void) { return 0; }   // hle_movie.c: a movie's pictures are being handed out; graphics unit tests have no movie decoder
@@ -34,7 +34,7 @@ index ed7e1df3468e2e092860eaae02b93b0b38a9ca25..e124db90281f38c906e11d8a1292a516
  // Thermal cap (iOS): while the device is thermally serious or worse (NSProcessInfo thermalState >= 2) the frame step holds 30 fps, and it goes back to the cap after the device
  // has been fair or better for THERMAL_CALM_NS, so it does not flap. At "serious" iOS caps the GPU clock to about a third: Breath of the Wild's vistas (about 3,000 G-buffer draws)
  // then took 17-26 ms a frame and dropped a frame in most windows; a steady 30 instead also lets the device cool. DM_THERMAL_CAP=0 turns it off; the Mac reports no thermal state
-@@ -2244,6 +2245,7 @@ static int fps_step_cap(void) {
+@@ -2367,6 +2368,7 @@ static int fps_step_cap(void) {
      // Movies and a 30 fps target still need thermal samples: heat must reset the
      // calm interval, and cooling during those caps counts towards recovery.
      int thermal = thermal_capped();
@@ -43,10 +43,10 @@ index ed7e1df3468e2e092860eaae02b93b0b38a9ca25..e124db90281f38c906e11d8a1292a516
  }
  static int fstep_on(void) { return fps_step_cap() != 0; }   // the host decides the steps in whole vsyncs
 diff --git a/dm/host/hle.h b/dm/host/hle.h
-index 33b96a8f366c299e63eb275b25bd33a99b9b63ad..14e7f40d533196c4af4f6dd415b8a5c924df33b8 100644
+index 75dbb0fb828937cb91ba337cf0f7fb4b7b87f226..8561290aaf4757a7d586cbea62d2e3de3758a649 100644
 --- a/dm/host/hle.h
 +++ b/dm/host/hle.h
-@@ -71,6 +71,7 @@ static inline void dm_applet_leave_(const char *const *name) { (void)name; dm_ap
+@@ -92,6 +92,7 @@ static inline void dm_applet_leave_(const char *const *name) { (void)name; dm_ap
  extern uint8_t *dm_fps_state;   // frame step state page (loader.c install_fps_state): +0 float target fps, +4 movie flag (dm_movie_playing, written by the host at each present: Tears of the Kingdom's step stub caps its first, undecided steps by it), +0x10 float render scale, +0x18 double game seconds stepped; NULL when the build has none
  extern int dm_fps_step_max;   // loader.c: the largest step the frame step stubs give the game (patch_nso.py ctx.step_max; 0 = FSTEP_MAX)
  int dm_movie_playing(void);   // hle_movie.c: a video decoder of the SDK's movie library handed out a picture in the last half second (the frame step then holds 30 fps)

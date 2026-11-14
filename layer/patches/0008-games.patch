@@ -10,7 +10,7 @@ Subject: games: Game profiles and notes
  dm/games/0100535012974000/README.md        |    2 +-
  dm/games/0100B99019412000/README.md        |    1 +
  dm/games/0400486024DEC000/README.md        |    4 +
- dm/games/0400C3F00006E000/README.md        |   16 +
+ dm/games/0400C3F00006E000/README.md        |   15 +
  dm/games/0400C3F00006E000/game.tsv         |   17 +
  dm/games/0400E88025B1A000/README.md        |    2 +
  dm/games/README.md                         |    4 +-
@@ -18,10 +18,10 @@ Subject: games: Game profiles and notes
  dm/games/settings.py                       |    1 +
  dm/games/settings.tsv                      |    9 +-
  dm/tools/tests/test_launcher_settings.py   |    2 +-
- 14 files changed, 2984 insertions(+), 9 deletions(-)
+ 14 files changed, 2983 insertions(+), 9 deletions(-)
 
 diff --git a/dm/games/010014E00DB56000/README.md b/dm/games/010014E00DB56000/README.md
-index ab12954e0eb151145a32595fd27f95457b4ae0d3..5ef90fc6145af4c7e0b69bc70f1ef9c49c186a9c 100644
+index ef593c948d258d20fcded8b4bb65a5df8c2b7dad..fa111afefdba52e00d42b3497a071049039c52ec 100644
 --- a/dm/games/010014E00DB56000/README.md
 +++ b/dm/games/010014E00DB56000/README.md
 @@ -14,7 +14,7 @@ On the Mac: the logos, the title, the privacy policy, the DigiLab story choice,
@@ -2963,7 +2963,7 @@ index 1428c47e0a22d45d98a40415a9911c8c26a00b40..4d693eccceb0488ce4b206a93e39f1f5
 +R	346130326538323231646234616337305f62000000000000643364343830306134663737363633335f6200000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c0000004600000000000000000000000000000000000000000000000000000004010000040100000100000000000000ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000220000006900000869000010000000002500001800000000270000200000000011000028000000000000000000000000000000000000000000000000000000000c0000000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 +R	313838393465343137386161366236325f62000000000000343764666663303531623533643134645f6200000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c0000004600000000000000000000000000000000000000000000000000000004010000040100000100000000000000ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000220000006900000869000010000000002500001800000000270000200000000011000028000000000000000000000000000000000000000000000000000000000c0000000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 diff --git a/dm/games/0100152000022000/README.md b/dm/games/0100152000022000/README.md
-index c85cf46010e979f5118f034f5bf432007824d7d6..c4344383ff4978dbe2ff50445bc596d3e104cf23 100644
+index 64212deeacea4af2f799d6627995ef16fb4d99aa..a6e944e654b17aa6dfb41e1d789ae58935427890 100644
 --- a/dm/games/0100152000022000/README.md
 +++ b/dm/games/0100152000022000/README.md
 @@ -4,6 +4,8 @@ Updates 4.0.0 (v1441792) and 4.0.1 (v1507328) over the base game, SDK 4.4.0, the
@@ -3009,7 +3009,7 @@ index 0ab5187d572346461006792d2b88c7cc7cae6e45..80c51b24657d15743c36ede7333b1b08
  
  ## Open
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 25e4c8cd6d9c8b2013621c1dce41a3e28d13b683..a24f67b38316cf5ddc4511921d2a3df067aa02c9 100644
+index 7baf4462e93cb69a2a219053917830f482d62b56..0c48f5bfbd473a9616efa4d14c58bae4ea07ba2f 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -49,6 +49,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
@@ -3021,7 +3021,7 @@ index 25e4c8cd6d9c8b2013621c1dce41a3e28d13b683..a24f67b38316cf5ddc4511921d2a3df0
  - Resolved: frames of 30–64 ms while walking into the castle town, with `new pipelines 0` and `6 re-uploads, 227.4 MB / 32.0 ms`: the loader fills a 1800x1380x8 R16 array (38.5 MB) and three block-compressed textures over several frames while they are drawn, and each use read the whole texture again, up to 8 times in one submission: [a texture written while it is drawn read whole at every use](../../../docs/reference/frame-rate.md#a-texture-written-while-it-is-drawn-read-whole-at-every-use). Now one look a submission and only the written layers: 25 ms at most there. The single-image textures (3072x2096 BC5, 3056x1152) are still read whole, once a submission (open).
  - Open: frames of 100–650 ms when an area first loads (640 first uploads, 321 MB, in one frame of 294 ms; another 640 ms of submit with 68 MB).
  - `DM_NVN_TBDR=1` was tried and does not help: p95 19 ms on the same walk, against 17.8.
-@@ -186,7 +188,9 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+@@ -198,7 +200,9 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
  - [Freeing a memory pool during a texture ID walk](../../../docs/reference/nvn-objects.md#freeing-a-memory-pool-during-a-texture-id-walk): the `-[NvPkg buffer]: unrecognized selector` crash after a save or a scene change.
  - [Extended products behind spirv-cross's optnone helper](../../../docs/reference/shaders.md#extended-products-behind-spirv-crosss-optnone-helper): 348,587 constant divisions left as unoptimized calls; the Kokiri Forest deck 54.0 → 59.1 fps on an M4 Pro.
  - [HMMA chains keep their matrices in the SIMD-group](../../../docs/reference/shaders.md#hmma-chains-keep-their-matrices-in-the-simd-group): the NDVE movie networks behind the title and the opening, 14.8 → 11.4 ms of compute a frame on this M6.
@@ -3032,7 +3032,7 @@ index 25e4c8cd6d9c8b2013621c1dce41a3e28d13b683..a24f67b38316cf5ddc4511921d2a3df0
  - [The uniform copy thread's hand-off convoys on its mutex](../../../docs/reference/frame-rate.md#the-uniform-copy-threads-hand-off-convoys-on-its-mutex): resolved. On one host build (M4 Pro) the replay thread spent half its busy samples in `ubc_wait`, 221-333k instructions a draw and 23-57 ms of submit CPU a frame against 38.9k and 7.1 ms with `DM_NVN_UB_COPY_THREAD=0`; about 35 shadows a frame that `um_overlay` writes into are now copied on the submit thread (PR #2078).
  - [The 30 Hz display link in fullscreen on a fixed-rate screen](../../../docs/reference/frame-rate.md#the-30-hz-display-link-in-fullscreen-on-a-fixed-rate-screen): 66.7 ms frames at a 30 fps cap in fullscreen on a MacBook Air M4, with the frame-delta change that applies the cap.
 diff --git a/dm/games/0400C3F00006E000/README.md b/dm/games/0400C3F00006E000/README.md
-index 97c0199cec623b7678470625743c7efe2e55935c..40ec194f0983d7b1043185ae9c5975f198c24dfb 100644
+index 15badebc4defb41bf28b5b09da6bd25ffd7ac982..40ec194f0983d7b1043185ae9c5975f198c24dfb 100644
 --- a/dm/games/0400C3F00006E000/README.md
 +++ b/dm/games/0400C3F00006E000/README.md
 @@ -9,6 +9,7 @@ A Switch 2 game. Brought up on the base game (v0), SDK 19.3.3 built for the Swit
@@ -3069,15 +3069,7 @@ index 97c0199cec623b7678470625743c7efe2e55935c..40ec194f0983d7b1043185ae9c5975f1
  ## Terrain and movies
  
  The flat ground with blocky seams behind the title and the menu was terrain tiles the CPU wrote with no flush, read as zeros: [Uncompressed storage the CPU wrote, in a pool the GPU has not written](../../../docs/reference/nvn-objects.md#uncompressed-storage-the-cpu-wrote-in-a-pool-the-gpu-has-not-written). The title now shows real terrain, with hills, lawns and road edges.
-@@ -111,6 +124,7 @@ Frame step (current): the framework's interval function is `main+0x69cbb0` on 1.
- - [Three late frames among frames on time raised the hold](../../../docs/reference/frame-rate.md#three-late-frames-among-frames-on-time-raised-the-hold): about 40 fps in races on an M4 Max (issue #1823)
- - [Frames held longer than the game's largest step](../../../docs/reference/frame-rate.md#frames-held-longer-than-the-games-largest-step): hold 3 at 2/3 speed
- - [Render targets that move with the dynamic resolution get new Metal memory each time](../../../docs/reference/rendering.md#render-targets-that-move-with-the-dynamic-resolution-get-new-metal-memory-each-time): its resized targets, family heaps and feedback snapshots (issue #1823)
-+- [Indirect-count multi-draws split the pass an earlier draw opened](../../../docs/reference/rendering.md#indirect-count-multi-draws-split-the-pass-an-earlier-draw-opened): the scene passes' colour and depth loaded again.
- 
- - [A NUP with complete standalone updates stops at "no base game"](../../../docs/reference/packing.md#a-nup-with-complete-standalone-updates-stops-at-no-base-game) (packing reproduced with the base dump)
- - [Large sparse textures as Metal placement sparse textures](../../../docs/reference/nvn-objects.md#large-sparse-textures-as-metal-placement-sparse-textures)
-@@ -131,7 +145,9 @@ Frame step (current): the framework's interval function is `main+0x69cbb0` on 1.
+@@ -132,7 +145,9 @@ Frame step (current): the framework's interval function is `main+0x69cbb0` on 1.
  - [Compute shared memory past 32 KB](../../../docs/reference/shaders.md#compute-shared-memory-past-32-kb)
  - [Uniform references past the first kilobyte](../../../docs/reference/shaders.md#uniform-references-past-the-first-kilobyte)
  - [A control section's words read as a BAHS entry](../../../docs/reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry) (resolved, [issue #1592](https://github.com/seedds/nxnative/issues/1592)): `cs_lib.bin` 74, `797e77c2ec4341c5` at `agl_common.sharcb#BAHS@0x5c778`, was no shader. Dropping it and its fact moved the 69 `cs_lib.bin` rows after it (`agl_common`, `agl_ndsr`, `agl_technique_pfx`, gsys `common`) down one index, as the reporter's split of the base game has them; not split again here, as the game's files are not on this Mac.
@@ -3137,10 +3129,10 @@ index dfb5802fc8d9e275ba29dc06edb9296c4e7eda5d..ecd227acf4748ede7ed8b34a581cc242
  - [A GPU copy into a texture uploaded from its storage uploaded all of it again](../../../docs/reference/nvn-objects.md#a-gpu-copy-into-a-texture-uploaded-from-its-storage-uploaded-all-of-it-again): 7.6 s and 10 s frames at the prologue's scene changes; measured on a build of our fork, not on `main`.
  - [The graphics scale does not follow the operation mode](../../../docs/reference/services.md#the-graphics-scale-does-not-follow-the-operation-mode): the 768x432 scene docked; measured on a build of the PR author's fork, not on `main`.
 diff --git a/dm/games/README.md b/dm/games/README.md
-index ba220750212350749b4690640210b1c114ee554a..6b032b963dba36344cf65b10069ae42ca2c2a60e 100644
+index 27b6d7a8b68ac802330c9a0d39a8a275eaa9072a..57bb67cc4d638a0f0626be0870ff0f4be484babc 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -125,6 +125,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -127,6 +127,7 @@ One row per profile; the notes are each profile's `README.md`.
  | [Metroid Dread](010093801237C000/README.md) | `010093801237C000` | 2.1.0 | 11.4.3 | MercurySteam's engine | NVN |
  | [Metroid Prime 4: Beyond](010019A01E2F2000/README.md) | `010019A01E2F2000` | 1.1.0 | 19.3.15 | Retro Studios' engine | NVN |
  | [Metroid Prime Remastered](010012101468C000/README.md) | `010012101468C000` | 1.0.0 (base) | 12.3.1 | Retro Studios' engine | NVN |
@@ -3148,7 +3140,7 @@ index ba220750212350749b4690640210b1c114ee554a..6b032b963dba36344cf65b10069ae42c
  | [Minecraft Dungeons II](0100A7C01B792000/README.md) | `0100A7C01B792000` | 1.1.3.0 | 20.5.15 | Unreal Engine 5, Wwise, Havok | NVN |
  | [Monster Hunter Rise](0100B04011742000/README.md) | `0100B04011742000` | 16.0.2 | 11.4.3 | Capcom's RE Engine | NVN |
  | [Monster Train 2](010051701FB46000/README.md) | `010051701FB46000` | 1.1.1 | 18.3.5 | Unity 2022.3.54f1 IL2CPP | NVN |
-@@ -213,7 +214,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -218,7 +219,7 @@ One row per profile; the notes are each profile's `README.md`.
  | Key | Meaning |
  |---|---|
  | `title_id`, `program_id` | Identity. `program_id` is what `svcGetInfo(ProgramId)` reports. The game's name is not stored: the NSP script reads it from the NSP's control data (NACP) |
@@ -3157,7 +3149,7 @@ index ba220750212350749b4690640210b1c114ee554a..6b032b963dba36344cf65b10069ae42c
  | `ipa`, `app_category` | iOS app: the default IPA file name and the App Store category |
  | `build <ver> <display version> <module>=<build ID>…` | One row per version the game was brought up on. The NSP script builds any version (the base game alone, any update): a registered one from the profile as it is, any other from a profile derived from it (`<id>_build/profile`: the same keys, that version's own shader tables; `derive_profile`), with a red line naming the modules whose build no row registers, which the per-build cuts and host fixes do not reach. The host reports the display version by `main`'s build ID |
  | `package` | The version the profile's tables, prewarm list and notes were made on. The NSP script packs the newest version in the folder (`-p` / `PACKAGE` picks another) |
-@@ -258,6 +259,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -263,6 +264,7 @@ One row per profile; the notes are each profile's `README.md`.
  | `draw_barriers` | `full` (the default) / `game`: how draw passes are ordered. `full`: each waits for all earlier GPU work. `game`: by the game's own barriers (NVN asks for one before results of rendering are read), so a pass's vertex work overlaps the previous pass's fragments. Ocarina of Time's GPU time 25 → 18 ms, about 180 full barriers a frame halved. Only a barrier that orders primitives or indirect data waits for all earlier work; a fragment-only one keeps the overlap. Only vertex-stage reads of the previous pass's output without a barrier change order. `DM_NVN_BARRIER` overrides it |
  | `vconv_range` | `on` / `off` (the default): vertex attributes the replay converts on the CPU (integer shader inputs fed float-type formats and the like, `vconv_bind` in `nvn_mtl.m`) are converted only over the vertices each draw reads (first / count, or the smallest and largest index of a direct indexed draw, kept while the index pages stay unwritten) instead of the whole bound range. Age of Calamity binds whole mesh pools: in a battle that was millions of vertices a frame. Indirect draws, per-instance streams and indices with a GPU write queued on them keep the whole range. `DM_NVN_VCONV_CHECK=1` scans the indices again at every reuse and reports differences; `DM_NVN_VCONV_RANGE=0` / `1` overrides it |
  | `shader_key_skip` | `<offset>+<length>` (none by default): control-section bytes every shader key hashes as zeros, in `shader_split.py` (`key_ctl`) and the host (`hle_nvn.c` `keys_hash`), for an engine that shares one control section among shaders that differ only there. Batman: Arkham Knight: `0x770+0x78`, GLSLC's compile information (+0x778..+0x791 and +0x7d0..+0x7e7); without it the game asks for shaders the map does not have, each the control section of one record with the code area of another. It must stay clear of `+0x700..+0x75f`, which the tools read; it is a shader chain input, as every `shader_*` key |
@@ -3166,7 +3158,7 @@ index ba220750212350749b4690640210b1c114ee554a..6b032b963dba36344cf65b10069ae42c
  
  ### What the game files decide at every build
 diff --git a/dm/games/profile_guess.py b/dm/games/profile_guess.py
-index 9eb67939fd0bfaae234fdcd82687670d73d00b8e..9d7800a40ce97132bf60642c92544bd043fde0df 100644
+index cbdede64cf244cbfe3405046fba2105fab00d895..537b442d6517115d942c9af75d0f2ba4164866b9 100644
 --- a/dm/games/profile_guess.py
 +++ b/dm/games/profile_guess.py
 @@ -20,8 +20,10 @@ MAGICS = [(b'UnityFS\0', 'UnityFS'), (b'UnityWeb', 'UnityWeb'), (b'UnityRaw', 'U

@@ -37,7 +37,7 @@ Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
  10 files changed, 141 insertions(+), 5 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index adfe810ad19c79e504efa46ca6bc5898522f86ac..a27406b27a20883dae8baaf881fbff998414aff8 100644
+index 1f88c49234c4e365edeccd350d1702ffb58d988d..218dfbd8c03932204d4587370686046cb7e56004 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -11,6 +11,7 @@ A Switch 2 game: update v131072, SDK 22.2.8 (`Ounce`). Nintendo EPD's engine (se
@@ -317,7 +317,7 @@ index d164f274b6dd12ddd72d466fedae1556fd7e8413..78918e8d059e10f75f5a1d02c8dfb05f
  
  
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index f80fcbdc41a734093950920beb71c46cca04046d..24736ab4f39c3ab13b28f85437f2562f4fb927ff 100644
+index 5f303cba44004673a76119e98d6d1d5ac9e8c18b..3495d436112bebebfa2c11d09319e1d151bd81e1 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
 @@ -595,6 +595,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
@@ -329,10 +329,10 @@ index f80fcbdc41a734093950920beb71c46cca04046d..24736ab4f39c3ab13b28f85437f2562f
  - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
  - **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; launcher capabilities: DYNAMIC_RESOLUTION
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 401dd6bc2394092c92d7046333594bbea31a3c85..8ee1bc3003b42457574884f2e76663006dd1a23d 100644
+index 282232268155185098b769fc2cdd409a13426b10..dd3e1aacf10bbd57521ffc07bd6f70ab4cefa8eb 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -384,6 +384,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+@@ -397,6 +397,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
  DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
  DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
  DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz), and a variable-refresh screen to a fixed-rate mode at a multiple (ProMotion 120 → 60 Hz at 60 and 30 fps)

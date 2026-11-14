@@ -210,7 +210,7 @@ index 47120c47e74fde2cc4e6565e3e5fc27aa2403b76..f7a9ff62cea4f15ca8d2ff1218db3ed9
      if (sync_reached(s)) { spt_unarm(e); hle_signal_system_event(e); }
      return 0;
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index a4233de2f5e8863f16fa77ce1a12db2b53fc9c88..64cb94278f84202cae46ef13bbb06dcd17271f5f 100644
+index 18cf424563dd31a91e8ccabdfd5365da9e5edb9a..f8e8b3dcb32fdefd00c383a0643834593bfeeb3f 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
 @@ -12,12 +12,14 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
@@ -229,7 +229,7 @@ index a4233de2f5e8863f16fa77ce1a12db2b53fc9c88..64cb94278f84202cae46ef13bbb06dcd
  	$(B)/t_fs $(QUIET)
  	TMPDIR="$(abspath $(B))" $(B)/t_fs_commit_list
  	$(B)/t_thread_leak
-@@ -262,6 +264,8 @@ $(B)/t_time: t_time.c ../hle_time.c ../hle.h ../dm.h $(GAME_H) | $(B)
+@@ -272,6 +274,8 @@ $(B)/t_time: t_time.c ../hle_time.c ../hle.h ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_time.c
  $(B)/t_oe: t_oe.c ../hle_oe.c ../hle.h ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_oe.c

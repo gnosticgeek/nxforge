@@ -20,10 +20,10 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  12 files changed, 377 insertions(+), 83 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
-index 029e038206be48c3c258fca7380798375a749d92..5a4f40baf9b4b8e148ac5fade2846410d906168a 100644
+index 10b5730e130300d242c98d94de71324fec308a0d..a4f8ec8ce30639334bd6b60bc98449a15eab7b07 100644
 --- a/dm/gfx/gl/hle_gl.m
 +++ b/dm/gfx/gl/hle_gl.m
-@@ -578,7 +578,7 @@ static id<MTLSamplerState> tex_sampler(tex_t *t) {
+@@ -588,7 +588,7 @@ static id<MTLSamplerState> tex_sampler(tex_t *t) {
      d.lodMaxClamp = mips ? k.lv : 0;
      d.sAddressMode = wrap_of(k.ws); d.tAddressMode = wrap_of(k.wt); d.rAddressMode = wrap_of(k.wr);
      d.borderColor = k.b == 2.f ? MTLSamplerBorderColorOpaqueWhite : k.b == 1.f ? MTLSamplerBorderColorOpaqueBlack : MTLSamplerBorderColorTransparentBlack;
@@ -32,7 +32,7 @@ index 029e038206be48c3c258fca7380798375a749d92..5a4f40baf9b4b8e148ac5fade2846410
      if (k.cmp) d.compareFunction = (MTLCompareFunction)(k.cmp - GL_NEVER);
      id<MTLSamplerState> s = [g_dev newSamplerStateWithDescriptor:d];
      if (n < 256) { cache[n].k = k; cache[n].s = s; n++; } else RED1("more than 256 distinct sampler parameter sets");
-@@ -1127,14 +1127,21 @@ GLB(glClear, void, GLbitfield mask) {
+@@ -1146,14 +1146,21 @@ GLB(glClear, void, GLbitfield mask) {
              if (nc < 16) { ck[nc] = key; cache[nc++] = pso; }
          }
          if (!pso) return;
@@ -61,10 +61,10 @@ index 029e038206be48c3c258fca7380798375a749d92..5a4f40baf9b4b8e148ac5fade2846410
          [e setViewport:(MTLViewport){0, 0, P.w, P.h, 0, 1}];
          int sc[4] = {0, 0, (int)P.w, (int)P.h};
 diff --git a/dm/gfx/vk/hle_vk.m b/dm/gfx/vk/hle_vk.m
-index f29743af04d81788e7ce10afc6124124cb9a9a5b..3f84954af914cb769a6f20083ba6f4adc404ebd1 100644
+index d6e7c4b2a5e31264633dcf508acf2793d798c7b1..a45662714135bd254abd9a3adea6e399c2ef5cac 100644
 --- a/dm/gfx/vk/hle_vk.m
 +++ b/dm/gfx/vk/hle_vk.m
-@@ -698,7 +698,8 @@ VKB(vkCreateSampler, VkResult, VkDevice d, const VkSamplerCreateInfo *ci, const
+@@ -700,7 +700,8 @@ VKB(vkCreateSampler, VkResult, VkDevice d, const VkSamplerCreateInfo *ci, const
          sd.magFilter = ci->magFilter == VK_FILTER_LINEAR ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
          sd.mipFilter = ci->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
          sd.sAddressMode = addr_mode(ci->addressModeU); sd.tAddressMode = addr_mode(ci->addressModeV); sd.rAddressMode = addr_mode(ci->addressModeW);
@@ -74,7 +74,7 @@ index f29743af04d81788e7ce10afc6124124cb9a9a5b..3f84954af914cb769a6f20083ba6f4ad
          if (ci->compareEnable) sd.compareFunction = (MTLCompareFunction)ci->compareOp;   // VkCompareOp and MTLCompareFunction share their values
          sd.borderColor = ci->borderColor >= VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE ? MTLSamplerBorderColorOpaqueWhite :
                           ci->borderColor >= VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK ? MTLSamplerBorderColorOpaqueBlack : MTLSamplerBorderColorTransparentBlack;
-@@ -1242,7 +1243,7 @@ static id<MTLBlitCommandEncoder> blit(rs_t *s, uint32_t op) {
+@@ -1250,7 +1251,7 @@ static id<MTLBlitCommandEncoder> blit(rs_t *s, uint32_t op) {
  // The occlusion query running counts the render encoder there is, each from a slot of its own in the submit's visibility buffer. It may have begun outside a render pass (Vulkan lets a query span
  // from before a pass to after it: Super Mario 3D All-Stars' Sunshine, Hagi's GX) and a pass's encoder may be split for a copy: every encoder started while it runs gets a slot
  static void occ_start(rs_t *s) {
@@ -613,7 +613,7 @@ index 278bf27240597f784ec258cc39cc62caa4087aa7..377056b935de97dcb85a9b70f31e6d9d
 +                                                 "Please report it on GitHub with python3 scripts/bug_report.py %@, which collects the log.", @(DM_GAME_ID)]);
 +}
 diff --git a/dm/host/hle.h b/dm/host/hle.h
-index ec39624471bd5de5e121a93f011f05893974e0c2..33b96a8f366c299e63eb275b25bd33a99b9b63ad 100644
+index 8c62b6efdba91fd035664735635c1f32c0d37fe7..75dbb0fb828937cb91ba337cf0f7fb4b7b87f226 100644
 --- a/dm/host/hle.h
 +++ b/dm/host/hle.h
 @@ -27,6 +27,8 @@ uint64_t guest_ns(void);              // Guest clock (hle_os.c; does not advance
@@ -626,7 +626,7 @@ index ec39624471bd5de5e121a93f011f05893974e0c2..33b96a8f366c299e63eb275b25bd33a9
  void guest_clock_freeze_for(int reason, int on);   // Freeze by reason (1 background, 2 system keyboard); see hle_os.c
  void guest_clock_read_wait(void);     // A guest read of the system counter: counts it in dm_clock_reads and waits while the app is in the background (hle_os.c)
 diff --git a/dm/host/hle_audio.c b/dm/host/hle_audio.c
-index 99fb4b5cbd314095aabfa4d2c8c0b63f04274eaf..564bd8a2c3db0948fbcc2d3b29e1bd0e6a2c5aaf 100644
+index 6f5081d2b8b9dc216b0ec59a270db49b6b8b829b..8190080d5be876f99b365d0df3cde1b760a36653 100644
 --- a/dm/host/hle_audio.c
 +++ b/dm/host/hle_audio.c
 @@ -3,6 +3,7 @@
@@ -673,10 +673,10 @@ index 99fb4b5cbd314095aabfa4d2c8c0b63f04274eaf..564bd8a2c3db0948fbcc2d3b29e1bd0e
  HLE_FORCE("_ZN2nn5audio31GetVirtualInputDevicePropertiesEPNS0_23VirtualDevicePropertiesERKNS0_15AudioDeviceNameE", "connect to auddmg:u; no such device", Result, h_is_Props, void *props, const char *name) { (void)props; (void)name; return RES_FAIL; }
  HLE_FORCE("_ZN2nn5audio15OpenInputStreamEPNS0_15InputStreamTypeEPvmRKNS0_15AudioDeviceNameERKNS0_12StreamFormatEi", "connect to auddmg:u; no microphone on the host: fails", Result, h_is_Open,
 diff --git a/dm/host/hle_hid.c b/dm/host/hle_hid.c
-index d3f7e13dcae0b580001cdeb3dfb83c0df0b36331..60cc84d7ed193fb2a2a25c325b2b47c7c691e75a 100644
+index 56e635f8aa21d5b01442ecb12a0fff26a8e443ee..a3dd59334409ae5d4263889f702f6ce9a8412e3b 100644
 --- a/dm/host/hle_hid.c
 +++ b/dm/host/hle_hid.c
-@@ -227,7 +227,10 @@ void hid_keys_init(void) {
+@@ -228,7 +228,10 @@ void hid_keys_init(void) {
  //   saves a host texture's level 0 raw, every slice (a cube's six faces, a 3D texture's depth slices) (nvn_mtl.m dm_gfx_texraw), "addr <hex address>" logs what the host knows of a guest
  //   address (nvn_mtl.m dm_gfx_addr_note: its memory pool, a texture's storage, a recorded GPU write, the raw memory table, a sparse pool's page), "drag <x0> <y0> <x1> <y1> [seconds=0.3]" moves one finger in a straight line between the two normalized picture
  //   points over that time and lifts it (the touch screen's pans and swipes, hle_touch.c gesture_sample), "dump" logs what each guest thread waits on and the graphics wait points
@@ -688,7 +688,7 @@ index d3f7e13dcae0b580001cdeb3dfb83c0df0b36331..60cc84d7ed193fb2a2a25c325b2b47c7
  //   Look at a screen, decide, press, look again: menus whose timing moves from run to run (loading) need no blind timed script
  static void *ctl_main(void *arg) {
      const char *path = arg; long off = 0; char line[1100];
-@@ -243,6 +246,7 @@ static void *ctl_main(void *arg) {
+@@ -244,6 +247,7 @@ static void *ctl_main(void *arg) {
                  if (!n || line[0] == '#') continue;
                  if (!strcmp(line, "dump")) { crash_dump_now("DM_CTL dump"); continue; }
                  if (!strncmp(line, "atrace ", 7)) { void probe_atrace(uint64_t lo, uint64_t n); char *e2; uint64_t a = strtoull(line + 7, &e2, 16); probe_atrace(a, strtoull(e2, NULL, 0)); continue; }   // probe.c
@@ -696,7 +696,7 @@ index d3f7e13dcae0b580001cdeb3dfb83c0df0b36331..60cc84d7ed193fb2a2a25c325b2b47c7
                  if (!strncmp(line, "program ", 8)) { void dm_oe_execute(int index, const void *param, size_t n); LOG("DM_CTL: oe::ExecuteProgram(%d)", atoi(line + 8)); dm_oe_execute(atoi(line + 8), NULL, 0); continue; }
                  if (!strncmp(line, "webshot ", 8)) { void front_web_shot(const char *path); front_web_shot(line + 8); continue; }
                  if (!strncmp(line, "shot ", 5)) { dm_gfx_shot_at(1, line + 5); LOG("DM_CTL: screenshot of the next frame → %s", line + 5); continue; }
-@@ -250,6 +254,8 @@ static void *ctl_main(void *arg) {
+@@ -251,6 +255,8 @@ static void *ctl_main(void *arg) {
                  if (!strcmp(line, "restop")) { void dm_gfx_restop(void); dm_gfx_restop(); continue; }   // what the residency set holds (nvn_mtl.m res_top)
                  if (!strncmp(line, "addr ", 5)) { void dm_gfx_addr_note(uint64_t a, char *note, size_t n); char note[600]; uint64_t a = strtoull(line + 5, NULL, 16);   // what the host knows of a guest address
                      dm_gfx_addr_note(a, note, sizeof note); LOG("DM_CTL: addr %#llx:%s", (unsigned long long)a, note[0] ? note : " nothing known"); continue; }
@@ -705,7 +705,7 @@ index d3f7e13dcae0b580001cdeb3dfb83c0df0b36331..60cc84d7ed193fb2a2a25c325b2b47c7
                  if (!strncmp(line, "texraw ", 7)) { void dm_gfx_texraw(uint64_t serial, const char *path); char *e2; uint64_t s = strtoull(line + 7, &e2, 10); while (*e2 == ' ') e2++; dm_gfx_texraw(s, e2); continue; }
                  if (!strncmp(line, "bufsnap ", 8)) {   // bufsnap <shader key> <hex address> <bytes> <path>: guest memory as the GPU left it right after that shader's next dispatch (nvn_mtl.m dm_gfx_bufsnap)
                      void dm_gfx_bufsnap(const char *key, uint64_t a, size_t n, const char *path); char key[32] = {0}, path[512] = {0}; unsigned long long a = 0, n = 0;
-@@ -1561,7 +1567,9 @@ static void vib_send(const uint32_t *handles, const dm_vibration *values, int n)
+@@ -1577,7 +1583,9 @@ static void vib_send(const uint32_t *handles, const dm_vibration *values, int n)
      }
      dm_haptics_send(updates, count);
  }
@@ -717,7 +717,7 @@ index d3f7e13dcae0b580001cdeb3dfb83c0df0b36331..60cc84d7ed193fb2a2a25c325b2b47c7
  // On Horizon handles are computed from npad id and style (libnx _hidGetVibrationDeviceHandles); vib_send checks for an output at each send. With rumble off they are handed out too,
  // as on a Switch whose vibration setting is off (IsVibrationPermitted answers false and nothing is felt), so turning it on while the game runs works in a game that asked only once.
 diff --git a/dm/host/tests/t_hid.c b/dm/host/tests/t_hid.c
-index 782e5ad4ae8875b70fd6592bc8dca8fcf2df354b..124d8c228ec08917db5a2c5f0d156b03e7407489 100644
+index c5eec3cd79d6838b14a6ae0ab3df267c0596fffb..210c2f554e8f6bad9154c3f7fe605aba21e2c73a 100644
 --- a/dm/host/tests/t_hid.c
 +++ b/dm/host/tests/t_hid.c
 @@ -54,6 +54,9 @@ void dm_gfx_texlist(int target) { (void)target; }
@@ -766,10 +766,10 @@ index 782e5ad4ae8875b70fd6592bc8dca8fcf2df354b..124d8c228ec08917db5a2c5f0d156b03
      CHECK(!h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_HANDHELD) == 2, "rumble disabled: not permitted, but the handles exist, as on a Switch");
      dm_haptics_set_enabled(1);
 diff --git a/dm/host/web_apple.m b/dm/host/web_apple.m
-index ba25f6862ef212f48398beb5ddd25b748999c550..9f6886a5e4cebe326b20e5d44c394aec93c9e857 100644
+index fd97d9077d57e79c12024f70468b07313c370cf6..e5eaea108989f11386b9493a6b33cc60a10e8729 100644
 --- a/dm/host/web_apple.m
 +++ b/dm/host/web_apple.m
-@@ -213,7 +213,7 @@ int front_web_touch(void) { return g_touch; }
+@@ -301,7 +301,7 @@ int front_web_touch(void) { return g_touch; }
  static NSString *json(NSString *s) {   // a JavaScript string literal
      NSData *d = [NSJSONSerialization dataWithJSONObject:@[s ?: @""] options:0 error:nil];
      NSString *a = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
@@ -778,7 +778,7 @@ index ba25f6862ef212f48398beb5ddd25b748999c550..9f6886a5e4cebe326b20e5d44c394aec
  }
  static NSString *mime(NSString *ext) {
      NSDictionary *m = @{@"html": @"text/html", @"htm": @"text/html", @"css": @"text/css", @"js": @"text/javascript", @"json": @"application/json", @"png": @"image/png",
-@@ -282,12 +282,15 @@ static NSString *mime(NSString *ext) {
+@@ -370,12 +370,15 @@ static NSString *mime(NSString *ext) {
  
  // The document's files; anything else is not served
  - (void)serve:(id<WKURLSchemeTask>)t {
@@ -796,7 +796,7 @@ index ba25f6862ef212f48398beb5ddd25b748999c550..9f6886a5e4cebe326b20e5d44c394aec
          d = [NSData dataWithContentsOfFile:f];
      } else if (rel.length && ![rel containsString:@".."] && [f hasPrefix:_dir]) {
          d = [NSData dataWithContentsOfFile:f];
-@@ -301,7 +304,8 @@ static NSString *mime(NSString *ext) {
+@@ -389,7 +392,8 @@ static NSString *mime(NSString *ext) {
      NSHTTPURLResponse *r = [[NSHTTPURLResponse alloc] initWithURL:u statusCode:d ? 200 : 404 HTTPVersion:@"HTTP/1.1"
                                                       headerFields:@{@"Content-Type": mime(f.pathExtension), @"Content-Length": [NSString stringWithFormat:@"%lu", (unsigned long)d.length]}];
      if (!d) LOG("[RED] web: the page asked for %s, which its document does not have", u.absoluteString.UTF8String);
@@ -806,7 +806,7 @@ index ba25f6862ef212f48398beb5ddd25b748999c550..9f6886a5e4cebe326b20e5d44c394aec
  }
  
  - (void)webView:(WKWebView *)wv decidePolicyForNavigationAction:(WKNavigationAction *)a decisionHandler:(void (^)(WKNavigationActionPolicy))done {
-@@ -372,7 +376,9 @@ int front_web_open(const char *dir, const char *path, const char *callback, int
+@@ -462,7 +466,9 @@ int front_web_open(const char *dir, const char *path, const char *callback, int
          front_web_attach(box);
          [box place];
          NSString *q = [p stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLFragmentAllowedCharacterSet];
@@ -817,7 +817,7 @@ index ba25f6862ef212f48398beb5ddd25b748999c550..9f6886a5e4cebe326b20e5d44c394aec
          if (!hidden) { box.shown = YES; g_touch = 1; [box setHiddenState:NO]; [box startInput]; }
      });
      return 0;
-@@ -398,8 +404,7 @@ void front_web_shot(const char *path) {
+@@ -488,8 +494,7 @@ void front_web_shot(const char *path) {
      dispatch_async(dispatch_get_main_queue(), ^{
          if (!g_box) { LOG("webshot: no page"); return; }
          [g_box.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *im, NSError *e) {

@@ -29,7 +29,7 @@ Co-authored-by: dsi-hub <260802842+dsi-hub@users.noreply.github.com>
  5 files changed, 46 insertions(+), 1 deletion(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 5836374c4fd1fe5e62e8c25a5e807e6a0f23d518..0d74450696a72a41a49dece83b079c85d3d9fff4 100644
+index 045f38fd6d21a327d449363874c59ae2cba83650..a065460e808269ffbe85dfaed88bace6f608def2 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -82,6 +82,7 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
@@ -103,10 +103,10 @@ index cade577a2ea2a66be499e4cfaf85852ea814ac5e..650afb35e1442b477058101f27a0df29
 +        start = stub(heap_gpu_words, site, 0x37000040, {8: obj}, site + 8, fail)
 +        fs_put(site, [B(site, start)], 'full model heap: GPU memory the heap had no room for is made in its parents or the default heap (Hookshot issue 1697)')
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 3cce1492e0a0d45b8df960343e78b90697c6ab2d..ed7e1df3468e2e092860eaae02b93b0b38a9ca25 100644
+index dc59b39b4dede6d5b95e5f48288caca3c0611e37..404ec1ee36c0b123cb96317a42234f9208c889de 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -2003,6 +2003,8 @@ static void power_line(uint64_t frame) {
+@@ -2037,6 +2037,8 @@ static void power_line(uint64_t frame) {
          double nf = frame > pf ? (double)(frame - pf) : 1;   // per frame: the fair comparison when one build holds the frame rate better than another
          LOG("[nvn] power up to frame %llu: CPU energy %.2f W, %.1f mJ per frame (%.1f fps); CPU %.0f%% (100 = one core), %.0f%% of it on performance cores; wakeups %.0f/s (out of platform idle %.0f); GPU %.1f ms/s; thermal %d; top yielders: %s", frame,
              (e - pe) / 1e9 / s, (e - pe) / 1e6 / nf, nf / s, (cpu - pcpu) / 1e7 / s, cpu > pcpu ? 100.0 * (double)(p - pp) / (double)(cpu - pcpu) : 0, (iw - piw) / s, (idw - ppw) / s, (g - pg) / 1e6 / s, dm_thermal_now(), yt);
@@ -129,10 +129,10 @@ index ce63ce79cd8e5d8d2193fe9809bd245915e95ae2..61664c717bf0fbdf339589f603946a5e
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 2c312e40239504d24160dc6bfb7220348e8834b7..401dd6bc2394092c92d7046333594bbea31a3c85 100644
+index 2debdc45376a7183d518ed95ccb6e04c2c661e08..282232268155185098b769fc2cdd409a13426b10 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -78,6 +78,7 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
+@@ -81,6 +81,7 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
  DM_GUEST_FILE_PUNCH	switch	`0` keeps the disk blocks of guest memory the game gives back (with `DM_GUEST_FILE=1`); by default they are punched out (`F_PUNCHHOLE`, which also drops the pages): the heap's at once, the alias region's by a sweep every 10 s once they have stayed given back over a whole interval
  DM_GUEST_FILE_SCAN	diagnostic	`=1` (with `DM_GUEST_FILE=1`): every 30 s a `[mem] guest file scan` line, the dirty guest pages by region (heap, alias, stack, other) and how many of them read all 0
  DM_GUEST_SPAWN_TEST	diagnostic	`=1` runs a self-test before `nnMain`: a host-started guest thread does SDK malloc / free and locks an `nn::os` mutex, and the result is logged; `=2` also keeps a resident thread
