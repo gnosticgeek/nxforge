@@ -1037,13 +1037,15 @@ import Testing
         #expect(StoreSource.parse(Data(json.utf8), name: "Blazing Chrome [NSP]")?.publisher == "The Arcade Crew")
         #expect(StoreSource.parse(Data(json.utf8), id: "0100000000010000") == nil)
         let html = """
-        <div class="row row-content"> <div class="col-xs-12 content"> <p>In Blazing Chrome, machines rule&nbsp;the world.</p>\n<p><strong>Co-op</strong> play &amp; more</p><p>This description was provided by the publisher.</p></div></div>
+        <div class="row row-content"> <div class="col-xs-12 content"> <p>In Blazing Chrome, machines rule&nbsp;the world.</p>\n<p><strong>Co-op</strong> play &amp; more, with a friend on the couch</p><p>Short caption</p><p>This description was provided by the publisher.</p></div></div>
+        <div class="col-xs-12 content"><p>A second block of the designed page, long enough to keep.</p></div>
         <div class="col-xs-12 mediagallery" data-tr-lp="15"><ul><li><img alt="a" src="grey.gif" data-xs="https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_01_TM_Standard.jpg" />
         <img data-xs="https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_02_TM_Standard.jpg"/><img data-xs="https://evil.example/x.jpg"/></ul>
         <img data-xs="https://www.nintendo.com/eu/media/images/other.jpg"/>
         """
         #expect(StoreSource.plainText("<ul><li>Co-op</li><li>Arcade &amp; feel</li></ul>") == "• Co-op\n• Arcade & feel")
-        #expect(StoreSource.about(html) == ["In Blazing Chrome, machines rule the world.", "Co-op play & more"])
+        #expect(StoreSource.about(html) == ["In Blazing Chrome, machines rule the world.", "Co-op play & more, with a friend on the couch",
+                                            "A second block of the designed page, long enough to keep."])
         #expect(StoreSource.gallery(html) == ["https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_01.jpg", "https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_02.jpg"])
     }
 

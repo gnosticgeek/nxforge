@@ -104,22 +104,32 @@ enum StoreSource {
         return out
     }
 
-    /// The description: the paragraphs of the page's first content block, without the publisher note
+    /// The description: the paragraphs of the page's first content blocks (a game with its own designed page splits its text over
+    /// several), without headings, short captions or the publisher note; about 900 characters at most
     static func about(_ html: String) -> [String] {
-        guard let start = html.range(of: "class=\"col-xs-12 content\"") else { return [] }
-        let rest = html[start.upperBound...]
-        let block = String(rest[..<(rest.range(of: "class=\"col-xs-12", options: [], range: rest.index(rest.startIndex, offsetBy: min(20, rest.count))..<rest.endIndex)?.lowerBound
-                                    ?? rest.index(rest.startIndex, offsetBy: min(8000, rest.count)))])
-        var out: [String] = []
-        var at = block.startIndex
-        while let o = block.range(of: "<p", range: at..<block.endIndex), let c = block.range(of: "</p>", range: o.upperBound..<block.endIndex) {
-            let inner = block[o.upperBound..<c.lowerBound]
-            let body = inner.firstIndex(of: ">").map { inner[inner.index(after: $0)...] } ?? inner
-            let text = plainText(String(body))
-            if !text.isEmpty, !text.hasPrefix("This description was provided") { out.append(text) }
-            at = c.upperBound
+        var out: [String] = [], total = 0
+        var from = html.startIndex
+        for _ in 0..<4 {
+            guard total < 600, let start = html.range(of: "class=\"col-xs-12 content\"", range: from..<html.endIndex) else { break }
+            let rest = html[start.upperBound...]
+            let end = rest.range(of: "class=\"col-xs-12", range: rest.index(rest.startIndex, offsetBy: min(20, rest.count))..<rest.endIndex)?.lowerBound
+                ?? rest.index(rest.startIndex, offsetBy: min(8000, rest.count))
+            let block = rest[..<end]
+            from = end
+            var at = block.startIndex
+            while let o = block.range(of: "<p[ >]", options: .regularExpression, range: at..<block.endIndex),
+                  let c = block.range(of: "</p>", range: o.upperBound..<block.endIndex) {
+                let inner = block[block.index(before: o.upperBound)..<c.lowerBound]
+                let body = inner.firstIndex(of: ">").map { inner[inner.index(after: $0)...] } ?? inner
+                let text = plainText(String(body))
+                at = c.upperBound
+                guard text.count >= 30 || text.hasPrefix("•"), !text.hasPrefix("This description was provided"), !out.contains(text) else { continue }
+                guard total + text.count <= 1400 || out.isEmpty else { break }
+                out.append(text)
+                total += text.count
+            }
         }
-        return Array(out.prefix(8))
+        return out
     }
 
     /// Text without tags, entities read, white space folded
@@ -288,7 +298,7 @@ struct StoreAbout: View {
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 6)
-        .background(StageLook.card, in: .rect(cornerRadius: 14))
+        .background(StageLook.panel.opacity(0.82), in: .rect(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(StageLook.edge, lineWidth: 1))
     }
 
