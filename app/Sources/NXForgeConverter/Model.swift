@@ -39,12 +39,13 @@ enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2
 
 @MainActor @Observable
 final class AppModel {
-    var page: Page = .convert
+    var page: Page = .convert { didSet { if page != oldValue { rememberWindowState() } } }
     var settings = Settings.load() {
         didSet {
             guard settings != oldValue else { return }
             settings.save()
             if settings.appearance != oldValue.appearance { applyAppearance() }
+            if let g = settings.gameDir, g != oldValue.gameDir { settings.recentSources = RecentSources.adding(g, to: settings.recentSources) }
             if settings.outDir != oldValue.outDir { Disk.outDir = settings.outDir; measure() }   // the app's drive is checked for room too
         }
     }
@@ -91,7 +92,7 @@ final class AppModel {
     var libraryTask: Task<Void, Never>?
     var detailsTask: Task<Void, Never>?
     var mountObserver: NSObjectProtocol?
-    var selectedBuild: String?
+    var selectedBuild: String? { didSet { if selectedBuild != oldValue { rememberWindowState() } } }
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
     var rebuildQueue: [BuildRecord] = []
     var queueMessage: String?
@@ -132,7 +133,7 @@ final class AppModel {
     var gameDetail: GameRef?
     var preview: GameRef?
     /// the game the keyboard or a controller is on, in the Library (and the grid's columns, for up and down)
-    var libraryFocus: String?
+    var libraryFocus: String? { didSet { if libraryFocus != oldValue { rememberWindowState() } } }
     var libraryColumns = 1
     /// the couch: the Library's covers full screen, driven by a controller (ControllerNav)
     var couchMode = false
@@ -150,6 +151,9 @@ final class AppModel {
     /// the summary a failed build's notification copies (Copy error summary)
     var lastErrorSummary: String?
     var playObservers: [NSObjectProtocol] = []
+    /// the note at the foot of the window (UIExtras: banners), and what Storage deleted that Undo can still put back
+    var banner: Banner?
+    var pendingDeletes: [PendingDelete] = []
     private var diskWatch: Task<Void, Never>?
     private var activeObserver: NSObjectProtocol?
     /// the window's model, for the Dock (a folder dropped on its icon) and the menu commands
@@ -168,6 +172,8 @@ final class AppModel {
             self.buildEnded(r)
         }
         applyAppearance()
+        restoreWindowState()
+        purgeLeftoverDeletes()
         recheck()
         watchMounts()
         trackPlay()

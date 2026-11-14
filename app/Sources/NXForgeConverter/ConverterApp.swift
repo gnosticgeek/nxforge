@@ -42,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return .terminateLater
         }
     }
+    /// The Dock icon's menu: recently played games with Play and Rebuild, and the build running now (idea 9)
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        MainActor.assumeIsolated { AppModel.shared?.dockMenu() }
+    }
     /// A game folder dropped on the Dock icon (Info.plist lists folders as a document type)
     func application(_ app: NSApplication, open urls: [URL]) {
         MainActor.assumeIsolated { AppModel.shared?.openDropped(urls) }
@@ -106,6 +110,12 @@ struct ConverterApp: App {
                 Button("Go to Anything…") { model.commandPalette = true }.keyboardShortcut("k")
                 Button(model.couchMode ? "Leave Couch Mode" : "Couch Mode") { model.toggleCouch() }.keyboardShortcut("f", modifiers: [.command, .shift])
                 Button("Back") { model.goBack() }.keyboardShortcut("[").disabled(model.gameDetail == nil)
+                Divider()
+                Button("Bigger Covers") { model.page = .library; model.resizeCovers(by: 30) }.keyboardShortcut("+")
+                    .disabled(model.settings.libraryLayout == .grid && model.settings.libraryCoverSize >= Settings.coverSizes.upperBound)
+                Button("Smaller Covers") { model.page = .library; model.resizeCovers(by: -30) }.keyboardShortcut("-")
+                    .disabled(model.settings.libraryLayout == .grid && model.settings.libraryCoverSize <= Settings.coverSizes.lowerBound)
+                Toggle("Group Library by Console", isOn: Binding(get: { model.settings.libraryGroupByConsole }, set: { model.settings.libraryGroupByConsole = $0 }))
             }
         }
         // Settings… (⌘,) in the app menu

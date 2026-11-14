@@ -140,7 +140,8 @@ struct BuildsPage: View {
 
 /// Moves a built app to the Trash after asking (the row's menu and ⌘⌫)
 @MainActor func trashBuild(_ model: AppModel, _ build: BuildRecord, _ name: String) {
-    guard model.confirm("Move \(name) to the Trash?", "The app goes to the Trash and leaves this list. Its game files, build cache and saves stay where they are.", action: "Move to Trash") else { return }
+    let size = Disk.size(build.app)
+    guard model.confirm("Move \(name) to the Trash?", "The app (\(Disk.gb(size))) goes to the Trash and leaves this list. Its game files, build cache and saves stay where they are.", action: size > 0 ? "Move \(Disk.gb(size)) to Trash" : "Move to Trash") else { return }
     try? FileManager.default.trashItem(at: build.app.url, resultingItemURL: nil)
     Engine.forget(build.app)
     model.revision += 1
@@ -255,7 +256,7 @@ struct BuildDetail: View {
                         Text("Frame times").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
                         Text(rec.summary.line).lineLimit(1).truncationMode(.tail)
                         Spacer()
-                        Button { reveal(rec.file.path) } label: { Image(systemName: "folder") }.buttonStyle(.glass)
+                        Button { reveal(rec.file.path) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.glass)
                     }
                     .padding(.vertical, 6)
                     .help("The newest recording, \(rec.file.lastPathComponent): frames per second, the median and 99th-percentile frame time, frames over \(Int(FrameTimes.Summary.hitchMs)) ms and frames never shown. Record frame times is in the game's Quick settings › Performance.")
@@ -265,7 +266,7 @@ struct BuildDetail: View {
                     Text("Location").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
                     Text(build.app.url.deletingLastPathComponent().path.tildePath).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button { reveal(build.app) } label: { Image(systemName: "folder") }.buttonStyle(.glass)
+                    Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.glass)
                 }
                 .padding(.vertical, 6)
             }
@@ -321,6 +322,7 @@ struct BuildDetail: View {
 struct PreviousBuilds: View {
     let model: AppModel
     let build: BuildRecord
+    var gameName: String { build.app.url.deletingPathExtension().lastPathComponent }
 
     var body: some View {
         let _ = model.revision
@@ -355,7 +357,7 @@ struct PreviousBuilds: View {
                                     try? FileManager.default.trashItem(at: b.path.url, resultingItemURL: nil)
                                     model.revision += 1
                                 }
-                            } label: { Image(systemName: "ellipsis") }
+                            } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }
                             .menuStyle(.button).buttonStyle(.glass).fixedSize()
                         }
                         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -386,9 +388,12 @@ struct PreviousBuilds: View {
             r.steps = nil; r.shaders = nil
             Engine.record(r)
         } catch {
-            _ = model.confirm("Could not restore", "\(error)", action: "OK")
+            model.showBanner("Could not restore \(gameName)", detail: "\(error.localizedDescription)", tone: .failure)
+            model.revision += 1
+            return
         }
         model.revision += 1
+        model.showBanner("Restored \(gameName) from \(b.engine)", detail: "The app it replaced is in app-backups.", tone: .success, symbol: "clock.arrow.circlepath")
     }
 }
 
@@ -421,7 +426,7 @@ struct SaveSnapshotsCard: View {
                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     if FileManager.default.fileExists(atPath: loc.save) {
-                        Button { reveal(loc.save) } label: { Image(systemName: "folder") }.buttonStyle(.glass).help("Show the save in Finder")
+                        Button { reveal(loc.save) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.glass).help("Show the save in Finder")
                     }
                     Button { make(loc) } label: { Label("Snapshot now", systemImage: "camera") }
                         .buttonStyle(.glass).disabled(busy || !SaveSnapshots.hasSave(loc))
@@ -476,7 +481,7 @@ struct SaveSnapshotsCard: View {
                                     Button("Show in Finder") { reveal(s.path) }
                                     Divider()
                                     Button("Move to Trash") { try? SaveSnapshots.trash(s); tick += 1 }
-                                } label: { Image(systemName: "ellipsis") }
+                                } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }
                                 .menuStyle(.button).buttonStyle(.glass).fixedSize()
                             }
                             .padding(.horizontal, 12).padding(.vertical, 6)
@@ -495,7 +500,7 @@ struct SaveSnapshotsCard: View {
     /// A zip, a folder holding save/ (and save_device/), a snapshot, or a save folder itself; then a preview of both sides.
     private func pickImport(_ loc: SaveLocation) {
         if SaveSnapshots.isRunning(app: build.app) {
-            _ = model.confirm("Quit the game first", "The game is running: it would write over the imported save. Quit it, then import.", action: "OK")
+            model.showBanner("Quit \(gameName) first", detail: "The game is running: it would write over the imported save. Quit it, then import.", tone: .warning)
             return
         }
         let p = NSOpenPanel()
@@ -568,7 +573,7 @@ struct SaveSnapshotsCard: View {
 
     private func restore(_ s: SaveSnapshot, _ loc: SaveLocation) {
         if SaveSnapshots.isRunning(app: build.app) {
-            _ = model.confirm("Quit the game first", "The game is running: it would write over the restored save. Quit it, then restore.", action: "OK")
+            model.showBanner("Quit \(gameName) first", detail: "The game is running: it would write over the restored save. Quit it, then restore.", tone: .warning)
             return
         }
         guard model.confirm("Restore this snapshot?", "The save from \(relativeDay(s.created)) replaces the current one. The current save is kept as a snapshot first.", action: "Restore") else { return }

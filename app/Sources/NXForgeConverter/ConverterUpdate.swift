@@ -167,7 +167,7 @@ extension AppModel {
     func updateConverter(ask: Bool = true) {
         guard let u = converterUpdate, let repo = env?.repo else { return }
         guard !run.running, !batchRunning else {
-            _ = confirm("A build is running", "Update the converter once the build has finished: the update quits the converter.", action: "OK")
+            showBanner("Update the converter after this build", detail: "The update quits the converter, so it waits for the build to finish.", tone: .warning)
             return
         }
         guard let folder = ConverterUpdate.installFolder else {
@@ -185,7 +185,7 @@ extension AppModel {
             } catch {
                 await MainActor.run {
                     self.converterUpdating = false
-                    _ = self.confirm("Could not update the converter", "\(error)", action: "OK")
+                    self.showBanner("Could not update the converter", detail: "\(error)", tone: .failure)
                 }
             }
         }

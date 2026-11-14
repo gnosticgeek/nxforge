@@ -762,3 +762,52 @@ import Testing
         #expect(Disk.free(dir).map { $0 > 0 } == true)
     }
 }
+
+// Converter 0.7.0's UI changes: the sidebar's short time left, recent games, Storage deletes that can be undone and the
+// settings that remember the window.
+@Suite struct UIChanges {
+    @Test(arguments: [(30.0, "<1 m"), (90.0, "2 m"), (3540.0, "59 m"), (4320.0, "1 h 12 m")])
+    func shortTime(_ s: Double, _ expected: String) {
+        #expect(shortTimeLeft(s) == expected)
+    }
+
+    @Test func recentSourcesPutTheNewestFirstWithoutRepeats() {
+        var l: [String] = []
+        for p in ["/a", "/b", "/c", "/b", "/d", "/e", "/f"] { l = RecentSources.adding(p, to: l) }
+        #expect(l == ["/f", "/e", "/d", "/b", "/c"])
+    }
+
+    @Test func heldDeleteHidesThenUndoPutsItBack() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: "nxc-held-\(UUID().uuidString)")
+        let cache = root.appending(path: "0100ABC_build")
+        try fm.createDirectory(at: cache, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: cache.appending(path: "f"))
+        defer { try? fm.removeItem(at: root) }
+
+        let p = try PendingDeletes.hide(cache.path, bytes: 1, label: "Build cache")
+        #expect(!fm.fileExists(atPath: cache.path))
+        #expect(fm.fileExists(atPath: p.hidden))
+        #expect(p.hidden.lastComponent.hasPrefix("."))
+        #expect(!p.hidden.hasSuffix("_build"))   // so Storage's scan no longer lists it
+        try PendingDeletes.restore(p)
+        #expect(fm.fileExists(atPath: cache.appending(path: "f").path))
+
+        let q = try PendingDeletes.hide(cache.path, bytes: 1, label: "Build cache")
+        try fm.createDirectory(at: cache, withIntermediateDirectories: true)   // a build made it again meanwhile
+        #expect(throws: (any Error).self) { try PendingDeletes.restore(q) }
+        PendingDeletes.purge(q)
+        #expect(!fm.fileExists(atPath: q.hidden))
+    }
+
+    @Test func newSettingsRoundTripAndOldFilesStillRead() throws {
+        var s = Settings()
+        s.libraryCoverSize = 210; s.libraryGroupByConsole = true; s.recentSources = ["/g"]
+        s.lastPage = "Storage"; s.lastBuild = "/a.app"; s.lastLibraryFocus = "id"
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back == s)
+        let old = try JSONDecoder().decode(Settings.self, from: Data(#"{"repo": "/r", "library_cover_size": 9999}"#.utf8))
+        #expect(old.libraryCoverSize == Settings.coverSizes.upperBound)
+        #expect(old.recentSources.isEmpty && old.lastPage == nil && !old.libraryGroupByConsole)
+    }
+}
