@@ -59,10 +59,10 @@ struct StageGamePage: View {
                         .padding(.top, 4)
                         Spacer(minLength: 26)
                         if let app = g.app {
-                            ScreenshotRow(app: app)
+                            ScreenshotRow(app: app, width: geo.size.width - gutter * 2)
                         }
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 28)
-                        infoRow(g, record).padding(.vertical, 18)
+                        infoRow(g, record).fixedSize(horizontal: false, vertical: true).padding(.vertical, 18)
                     }
                     .padding(.horizontal, gutter)
                     .padding(.bottom, 8)
@@ -122,7 +122,7 @@ struct StageGamePage: View {
                     Text(note).font(.system(size: 13)).foregroundStyle(StageLook.faint).lineLimit(1).truncationMode(.middle)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(StageLook.faint).frame(maxHeight: .infinity)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(StageLook.faint).padding(.top, 22)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)

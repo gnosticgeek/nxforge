@@ -191,6 +191,8 @@ struct CoverMarks: View {
 /// The game page's Screenshots: the three newest, large, with View all showing the rest in Finder. A game with none says where they come from.
 struct ScreenshotRow: View {
     let app: String
+    /// the row's width: three tiles across it
+    var width: CGFloat = 900
     @State private var shots: [URL]? = nil
 
     var body: some View {
@@ -209,7 +211,7 @@ struct ScreenshotRow: View {
             if let s = shots, !s.isEmpty {
                 HStack(spacing: 14) {
                     ForEach(0..<3, id: \.self) { i in
-                        if i < s.count { tile(s[i]) } else { Color.clear.aspectRatio(16 / 9, contentMode: .fit).frame(maxWidth: .infinity) }
+                        if i < s.count { tile(s[i]) } else { Color.clear.frame(width: max((width - 28) / 3, 120), height: 1) }
                     }
                 }
             } else if shots != nil {
@@ -230,9 +232,10 @@ struct ScreenshotRow: View {
 
     func tile(_ u: URL) -> some View {
         let img = ThumbStore.shared.image(u)
+        let w = max((width - 28) / 3, 120)
         return Button { NSWorkspace.shared.open(u) } label: {
             Color(white: 0.12)
-                .aspectRatio(16 / 9, contentMode: .fit)
+                .frame(width: w, height: w * 9 / 16)
                 .overlay { if let img { Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill) } }
                 .clipShape(.rect(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.18), lineWidth: 1))
@@ -240,7 +243,6 @@ struct ScreenshotRow: View {
                 .contentShape(.rect(cornerRadius: 14))
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
         .help(u.lastPathComponent)
         .accessibilityLabel("Screenshot \(u.deletingPathExtension().lastPathComponent)")
         .contextMenu {
