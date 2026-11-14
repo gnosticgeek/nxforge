@@ -10,9 +10,9 @@ holds 60 only while the game has headroom. nxforge/low_lag.h chooses per frame.
 The hooks: hle_nvn.c nvnQueuePresentTexture feeds it, nvn_mtl.m link_sync asks it.
 ---
  dm/gfx/nvn/hle_nvn.c  | 2 ++
- dm/gfx/nvn/nvn_mtl.m  | 2 ++
+ dm/gfx/nvn/nvn_mtl.m  | 6 +++++-
  dm/gfx/tests/Makefile | 2 ++
- 3 files changed, 6 insertions(+)
+ 3 files changed, 9 insertions(+), 1 deletion(-)
 
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
 index 624e12d42693fd9bfcc047a88631b5dbd38ba729..6367cda7a4c755a68966d329710059594b3b0a88 100644
@@ -35,10 +35,30 @@ index 624e12d42693fd9bfcc047a88631b5dbd38ba729..6367cda7a4c755a68966d32971005959
      dm_fps_lock_tick();   // after the frame step: at 120 fps the target follows the hold just decided
      static uint64_t prev_in, prev_out, prev_pass, prev_draw;
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 39cc3ce4cdcaff61f3049373323dba0827eef479..be235bdeb30efabb56e67808dcb15f82c6a25f5e 100644
+index 39cc3ce4cdcaff61f3049373323dba0827eef479..354dbbe2c3d83ad4380518d3e01460660dbcf482 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -18097,6 +18097,7 @@ static void *link_main(void *arg) {   // Display link thread: started when switc
+@@ -145,6 +145,7 @@ static void ext_retire(NSArray *textures);
+ int g_dm_present_link;   // Present pacing mode (runtime value of DM_PRESENT_LINK, modified directly during same-process alternating measurement): 0 = acquire the drawable itself; 1 = display link at 60 Hz; 2 = display link at 120 Hz, the game presents a frame every other display-link tick
+ static int g_present_latency;   // DM_PRESENT_LATENCY: the display link's frame latency in a window and in fullscreen alike (0 = not set: link_latency picks it)
+ static int g_present_link_env;   // DM_PRESENT_LINK was set: its mode holds everywhere, and link_vrr_120 does not move a 60 Hz link to 120 Hz in variable-refresh fullscreen
++static int nxf_ll_trim_drop(uint64_t wait_ns);   // NXForge: nxforge/low_lag.inc
+ static uint64_t g_pq_done;
+ static uint64_t g_pq_read;
+ static id<MTLResidencySet> g_res;
+@@ -17866,9 +17867,10 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+     present_pipeline(layer.pixelFormat);   // Same as the original path: the first frame compiles the pipeline before taking the drawable
+     if (g_grab_cb && g_fi_phase != FI_HELD) grab_present(src, crop, layer.drawableSize);   // Game picture needed by the whole-window screenshot (peek without the lock first; the real take locks inside the function)
+     if (atomic_load(&g_recorder_on) && g_fi_phase != FI_HELD) record_present(src, crop);   // the video recorder's frame (capture_mac.m)
++    static uint64_t nxf_dr_wait; if (!supplied && nxf_ll_trim_drop(nxf_dr_wait)) { nxf_dr_wait = 0; return 0; }   // NXForge: nxforge/low_lag.h (the trim)
+     uint64_t dt0 = now_ns();
+     id<CAMetalDrawable> dr = supplied ? supplied : [layer nextDrawable];
+-    if (!supplied) g_drawable_ns += now_ns() - dt0;
++    if (!supplied) g_drawable_ns += nxf_dr_wait = now_ns() - dt0;
+     if (!dr) return 0;
+     int alloc_i = (int)(ticket % 3);
+     if (g_present_alloc_fence[alloc_i]) {
+@@ -18097,6 +18099,7 @@ static void *link_main(void *arg) {   // Display link thread: started when switc
      g_link_started = 0;
      return NULL;
  }
@@ -46,7 +66,7 @@ index 39cc3ce4cdcaff61f3049373323dba0827eef479..be235bdeb30efabb56e67808dcb15f82
  static void link_sync(void) {   // Called every frame by the game's present thread: aligns the display link object's state to g_dm_present_link and the power-saving mode (can change at run time)
      static int applied;
      pthread_mutex_lock(&g_pq_mu);
-@@ -18114,6 +18115,7 @@ static void link_sync(void) {   // Called every frame by the game's present thre
+@@ -18114,6 +18117,7 @@ static void link_sync(void) {   // Called every frame by the game's present thre
      // 60 fps game ran at 30 (lead 49.7 -> 16.5 ms); DM_PRESENT_LINK=0 held 60 (Mario vs. Donkey Kong, M4 Pro; latency 2 settled at about 42 there). Back to the link in a window.
      // NXForge keeps this over upstream's frame latency 2 in fullscreen (link_latency); DM_PRESENT_LATENCY keeps the link in fullscreen at that latency, to compare
      if (want && front_fullscreen() && !g_present_latency && !nxf_fi_wants_link()) want = 0;   // NXForge: frame interpolation keeps the link in fullscreen
