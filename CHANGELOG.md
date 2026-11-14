@@ -5,6 +5,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 ## 0.30.1 (2026-11-14)
 
 - **Aspect ratio in the settings window: 16:9, 16:10 or Auto** (Graphics › Resolution › Aspect ratio), for the games whose build can render another shape: Ocarina of Time (`DM_SCREEN_WIDE`), Breath of the Wild and Animal Crossing: New Horizons (`DM_SCREEN_ASPECT`). **Auto**, the default, matches the main screen below a MacBook's notch, so a MacBook's 16:10 screen is filled in full screen instead of showing bars above and below; a 16:9 monitor keeps 16:9 and an ultrawide one still gets the wide picture. Ocarina at 16:10 renders 2304x1440 with a little less at the sides (upstream #2538 only took screens wider than 16:9); Breath of the Wild and Animal Crossing render 1920x1200 with more above and below. The game's window opens in the picture's shape. Other games keep 16:9: their builds have no screen-shape patches.
+- **A Switch 2 game built from a NUP with its base game and an update gets its icon** (Ocarina of Time). The NUP keeps the icon on the base game, and only the update is packed, so the app came out with a blank icon; an update-only NUP (Mario Kart World) and a base-only one (Switch Sports Resort) were not affected. The update now takes the base game's icon when it carries none. Takes a rebuild of the game app (no shader rebuild; the unpacked game files are reused).
 
 ## 0.30.0 (2026-11-13)
 
