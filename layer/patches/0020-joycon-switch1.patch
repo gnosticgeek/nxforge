@@ -12,8 +12,8 @@ Joy-Con's sensor is switched on (subcommand 0x40) and read from its report
 negated (measured). DM_JOY1=0 keeps the old Pro-style pad.
 ---
  dm/host/front_mac.m                   |  14 +-
- dm/host/nxforge/front_mac_joycon1.inc | 188 ++++++++++++++++++++++++++
- 2 files changed, 197 insertions(+), 5 deletions(-)
+ dm/host/nxforge/front_mac_joycon1.inc | 189 ++++++++++++++++++++++++++
+ 2 files changed, 198 insertions(+), 5 deletions(-)
  create mode 100644 dm/host/nxforge/front_mac_joycon1.inc
 
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
@@ -97,10 +97,10 @@ index f2e91d4139e4ea323ad13c7f5ab4a88598fc64d4..8a40d6432249ae22ae49cc77b466f3cf
      dm_switch2_start(&s2front);
 diff --git a/dm/host/nxforge/front_mac_joycon1.inc b/dm/host/nxforge/front_mac_joycon1.inc
 new file mode 100644
-index 0000000000000000000000000000000000000000..bc159399fa18d7cf15227ca3e5ecba7aa31fb602
+index 0000000000000000000000000000000000000000..95929aaf59c96bc8272ae9a39af4d1d6af32fdb8
 --- /dev/null
 +++ b/dm/host/nxforge/front_mac_joycon1.inc
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,189 @@
 +// NXForge: included by front_mac.m before pad_set (it shares that file's statics). Kept out of upstream's file so a merge of nxnative meets one #include line.
 +// Switch 1 Joy-Cons as Joy-Cons, each with its own motion sensor.
 +// macOS (checked on 27.2) joins a left and a right Joy-Con into one GameController controller, product category "Nintendo Switch Joy-Con (L/R)", with an extended gamepad and no
@@ -113,6 +113,7 @@ index 0000000000000000000000000000000000000000..bc159399fa18d7cf15227ca3e5ecba7a
 +// right Joy-Con's motion also as the controller's (dm_motion_set_hid) for a game that sees a Pro-style pad. A single Joy-Con (GameController's sideways layout) stays a
 +// Pro-style pad for now. With two pairs connected, GameController cannot say which HID device is whose, so neither pair gets motion (logged).
 +// DM_JOY1=0 turns all of this off (the pair plays as one Pro-style pad with no motion, as before); DM_MOTION=0 or DM_MOTION_HID=0 keep the sensors off.
++#include <stdatomic.h>
 +typedef struct joy1_dev { IOHIDDeviceRef hid; int side; uint8_t report[512]; pro_motion motion; uint64_t heard, data_at, enabled_at; int enables; uint8_t counter; struct joy1_dev *next; } joy1_dev;
 +static IOHIDManagerRef g_j1_mgr;
 +static CFRunLoopRef g_j1_loop;   // the Joy-Cons' own thread (nxf_joy1_start): their reports are not held up while the main thread is busy drawing
