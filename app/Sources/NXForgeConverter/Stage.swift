@@ -69,7 +69,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, downloadCovers, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, downloadCovers, downloadHeroes, startIn }
 
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
 
@@ -253,6 +253,7 @@ extension AppModel {
         case .batteryPreset: flip(&settings.batteryPreset)
         case .returnToLibrary: flip(&settings.returnToLibrary)
         case .downloadCovers: flip(&settings.downloadCovers)
+        case .downloadHeroes: flip(&settings.downloadHeroes)
         case .startIn:
             let all = StartIn.allCases
             if let i = all.firstIndex(of: settings.startIn) { settings.startIn = all[(i + d + all.count) % all.count] }
@@ -271,6 +272,8 @@ extension AppModel {
 
     /// The pictures the games still lack are fetched (a setting).
     func fetchCovers(_ games: [StageGame]) {
+        CoverStore.shared.showHeroes = settings.downloadHeroes
+        if settings.downloadHeroes { CoverStore.shared.fetchHeroes(games.map { ($0.coverKey, $0.titleID, $0.name) }) }
         guard settings.downloadCovers else { return }
         CoverStore.shared.fetchMissing(games.map { ($0.coverKey, $0.name) })
     }
@@ -449,7 +452,7 @@ struct StageView: View {
             if let g = detail ?? focus { model.toggleFavorite(g) }
             return .handled
         }
-        .task(id: games.map(\.coverKey).joined(separator: "|") + (model.settings.downloadCovers ? "1" : "0")) { model.fetchCovers(games) }
+        .task(id: games.map(\.coverKey).joined(separator: "|") + (model.settings.downloadCovers ? "1" : "0") + (model.settings.downloadHeroes ? "1" : "0")) { model.fetchCovers(games) }
         .task(id: games.map { "\($0.id)\($0.outdated)" }.joined(separator: "|") + "|\(model.playing.count)|\(model.revision)") { await model.refreshAttention(games) }
     }
 }
@@ -635,7 +638,7 @@ struct StageHome: View {
     let games: [StageGame]
     let focus: StageGame?
     let total: Int
-    /// whether the game in focus has a screenshot filling the room (GameKeyArt); without one its 3D case stands on the right
+    /// whether the game in focus has wide art or a screenshot filling the room (GameKeyArt); without one its 3D case stands on the right
     @State private var keyArt = false
     @Environment(\.accessibilityReduceMotion) private var still
     @Environment(\.accessibilityReduceTransparency) private var solid
@@ -704,7 +707,7 @@ struct StageHome: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: keyArt)
-        .task(id: focus?.app) { keyArt = await GameKeyArt.hasShot(app: focus?.app) }
+        .task(id: "\(focus?.id ?? "")|\(CoverStore.shared.revision)|\(CoverStore.shared.showHeroes)") { keyArt = await GameKeyArt.hasArt(focus) }
     }
 }
 
@@ -984,9 +987,10 @@ struct StageSettings: View {
                 toggle("Battery preset on battery", "Unplugged, a run takes the Battery preset. Your saved options are not changed.", $model.settings.batteryPreset, row: .batteryPreset)
                 toggle("Return here when a game quits", "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.", $model.settings.returnToLibrary, last: true, row: .returnToLibrary)
             }
-            group("COVERS") {
+            group("ARTWORK") {
                 toggle("Download box art", "Front and back covers from GameTDB, matched by the game's name. Only a cover's ID is sent.", $model.settings.downloadCovers, row: .downloadCovers)
-                row("Covers folder", "Your own covers and the downloaded ones.", last: true) {
+                toggle("Download wide art", "The banner from each game's page on Nintendo's European store, behind its page and Home. Found by title ID or name; only those are sent.", $model.settings.downloadHeroes, row: .downloadHeroes)
+                row("Artwork folder", "Your own covers and the downloaded art, kept on this Mac only.", last: true) {
                     HStack(spacing: 8) {
                         Button("Look Again") { CoverStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
                         Button("Show") { try? FileManager.default.createDirectory(at: CoverStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(CoverStore.dir) }.buttonStyle(StageButton(height: 32))
