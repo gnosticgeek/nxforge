@@ -393,7 +393,8 @@ struct StageView: View {
         ZStack {
             StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "")
             // the game's key art behind its page, and behind Home's headline for the game in focus
-            if let g = detail ?? (model.stageTab == .home && !games.isEmpty ? focus : nil) { GameKeyArt(game: g).id(g.id).transition(.opacity) }
+            if let g = detail { GameKeyArt(game: g).id(g.id).transition(.opacity) }
+            else if model.stageTab == .home, let g = focus { GameKeyArt(game: g, coverFallback: false).id(g.id).transition(.opacity) }
             VStack(spacing: 0) {
                 if detail == nil { StageTopBar(model: model) }
                 Group {
@@ -634,11 +635,15 @@ struct StageHome: View {
     let games: [StageGame]
     let focus: StageGame?
     let total: Int
+    /// whether the game in focus has a screenshot filling the room (GameKeyArt); without one its 3D case stands on the right
+    @State private var keyArt = false
     @Environment(\.accessibilityReduceMotion) private var still
+    @Environment(\.accessibilityReduceTransparency) private var solid
 
     var body: some View {
         GeometryReader { geo in
             let tile = min(max(min(geo.size.width * 0.112, geo.size.height * 0.20), 100), 190)
+            let caseH = min(max(geo.size.height - tile / CoverSource.aspect - 150, 220), 560)
             let tileH = tile / CoverSource.aspect
             let shelf = tileH + 78
             VStack(alignment: .leading, spacing: 0) {
@@ -650,6 +655,11 @@ struct StageHome: View {
                             .transition(.asymmetric(insertion: still ? .opacity : .opacity.combined(with: .offset(y: 14)), removal: .opacity))
                     }
                     Spacer(minLength: 0)
+                    if let g = focus, geo.size.width > 980, !keyArt || solid {
+                        GameCase(game: g).frame(width: caseH * 0.72, height: caseH).padding(.trailing, geo.size.width > 1250 ? 50 : 0)
+                            .padding(.bottom, -caseH * 0.2)
+                            .transition(.opacity)
+                    }
                 }
                 .padding(.horizontal, 64)
                 .frame(maxHeight: .infinity)
@@ -693,6 +703,8 @@ struct StageHome: View {
                 .padding(.bottom, 10)
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: keyArt)
+        .task(id: focus?.app) { keyArt = await GameKeyArt.hasShot(app: focus?.app) }
     }
 }
 
