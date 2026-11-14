@@ -1,7 +1,7 @@
 // Quick settings sidebar (front_mac.m opens and closes it; quick_settings_mac.h is the C side): SwiftUI with the system's controls, on a Liquid Glass panel on macOS 26 and later
 // (a material panel before). The settings are front_mac.m's: the same user defaults keys (per game), the same rule that a setting the environment names wins and is not saved.
 // Layout, top to bottom: a quick bar (Screenshot, Record, the FPS counter, volume and mute), a row of page tabs (General, Graphics, FPS, Capture, Mods, Cheats, Controls; L / R or Tab turn the page),
-// the page, and a footer with what needs a restart (Restart game), Resume and Quit, and a legend of the buttons that work on the selection, in the controller's own glyphs or as keys.
+// the page, and a footer with what needs a restart (Restart game), Resume, Library (a game NXForge's Play started: Quit to Library) and Quit, and a legend of the buttons that work on the selection, in the controller's own glyphs or as keys.
 // The filter (off or CRT; the engine's other filters stay for DM_PRESENT_FILTER), its strength and line size go to the graphics backend at once (front.h mtl_present_*); the frame-rate
 // counter is drawn by front_mac.m, told through the fps callback; mods are the folders of this game's mods folder, overlaid at the next launch (front_mac.m mods_start); cheats are the
 // host's (hle_cheats.c dm_cheat*): this build's Atmosphère cheat file, a switch each, which the host saves beside the file (<build ID>.enabled) and runs from the next frame. The Cheats
@@ -15,7 +15,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.4.1"
+let SIDEBAR_VERSION = "0.5.1"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -60,7 +60,7 @@ enum Nav: Hashable {
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
     case section(String), cheat(Int), cheatsAllOff, cheatsRestore, cheatsOpen, cheatsRefresh
     case key(Int), pad(Int), resetControls
-    case restart, resume, quit
+    case restart, resume, library, quit
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
@@ -331,9 +331,12 @@ final class QuickSettings: ObservableObject {
     @Published var thumbs: [String: NSImage] = [:]
     @Published var recDir = ""
     @Published var customDir = false
-    @Published var sel: Nav? { didSet { if sel != .quit { quitArmed = false }; if sel != .restart { restartArmed = false } } }
+    @Published var sel: Nav? { didSet { if sel != .quit { quitArmed = false }; if sel != .restart { restartArmed = false }; if sel != .library { libraryArmed = false } } }
     @Published var quitArmed = false      // Quit game asks twice, so a stray A press on the couch does not end the game
     @Published var restartArmed = false   // and so does Restart game
+    @Published var libraryArmed = false   // and Quit to Library
+    /// The NXForge app whose Play started this game (NXFORGE_FRONT_END): the footer then has Quit to Library
+    let frontEndApp: String? = ProcessInfo.processInfo.environment["NXFORGE_FRONT_END"].flatMap { $0.isEmpty ? nil : $0 }
     @Published var pad = false            // a controller drives the sidebar (the legend shows its buttons), else the keyboard
     @Published var glyphs: [String?] = [nil, nil, nil, nil]   // that controller's SF Symbols for choose, close, previous and next page
     @Published var assigning = -1
@@ -675,6 +678,18 @@ final class QuickSettings: ObservableObject {
     func restart() { if restartArmed { front_qs_restart() } else { restartArmed = true } }
     /// Quit game (after the NxNative Launcher's hold-Home exit): the first press arms it, the second ends the game as ⌘Q does
     func quit() { if quitArmed { NSApp.terminate(nil) } else { quitArmed = true } }
+    /// Quit to Library (a game NXForge's Play started): the first press arms it, the second tells NXForge which game to show (the distributed notification
+    /// org.nxforge.showGame, its object this game app's path), brings NXForge to the front on that game's page and ends the game as Quit does
+    func quitToLibrary() {
+        guard libraryArmed else { libraryArmed = true; return }
+        DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: nil, deliverImmediately: true)
+        guard let fe = frontEndApp else { NSApp.terminate(nil); return }
+        let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: fe), configuration: cfg) { _, err in
+            if let err { fputs("quick settings: Quit to Library could not open NXForge at \(fe): \(err.localizedDescription)\n", stderr) }
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
 
     // Controller and keyboard navigation (after RetroReplay's pause menu): a selection over rows of items. Up and down move between rows; left and right change a
     // setting's value, or move along a row of buttons (the quick bar, the tabs, the footer); L / R (Tab / Shift-Tab) turn the page
@@ -703,7 +718,7 @@ final class QuickSettings: ObservableObject {
     var rows: [[Nav]] {
         var r: [[Nav]] = [[.shot, .record, .fpsQuick], [.mute, .volume], pages.indices.map { .tab($0) }] + pageRows(page)
         if restartCount > 0 && canRestart { r.append([.restart]) }
-        return r + [[.resume, .quit]]
+        return r + [frontEndApp == nil ? [.resume, .quit] : [.resume, .library, .quit]]
     }
     var firstOnPage: Nav { pageRows(page).first?.first ?? .tab(page) }
     func setPage(_ p: Int) { page = p; UserDefaults.standard.set(p, forKey: optKey("page")); if p == pCapture { refreshCaptures() } }
@@ -811,6 +826,7 @@ final class QuickSettings: ObservableObject {
         case .resetControls: resetControls()
         case .restart: restart()
         case .resume: close()
+        case .library: quitToLibrary()
         case .quit: quit()
         case .strength: break
         }
@@ -1392,6 +1408,11 @@ struct QuickSettingsView: View {
             HStack(spacing: 10) {
                 Button(action: m.close) { Text("Resume game").font(.headline).frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction).nav(m, .resume)
+                if m.frontEndApp != nil {
+                    Button(action: m.quitToLibrary) { Label(m.libraryArmed ? "Press again" : "Library", systemImage: "square.grid.2x2").frame(minWidth: 96) }
+                        .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.libraryArmed ? Color.orange : nil)
+                        .help("Ends the game and goes back to it in NXForge's library. Asks twice.").nav(m, .library)
+                }
                 Button(action: m.quit) { Label(m.quitArmed ? "Press again" : "Quit", systemImage: "power").frame(minWidth: 96) }
                     .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.quitArmed ? Color.red : nil).help("Ends the game, as ⌘Q does. Asks twice.").nav(m, .quit)
             }
@@ -1530,7 +1551,7 @@ public func dm_qs_refresh() { shared?.refresh() }
 @_cdecl("dm_qs_opened")
 public func dm_qs_opened(_ pad: Int32) {
     guard let m = shared else { return }
-    m.quitArmed = false; m.restartArmed = false
+    m.quitArmed = false; m.restartArmed = false; m.libraryArmed = false
     if pad != 0 { m.pad = true; m.sel = m.firstOnPage } else { m.sel = nil }
 }
 @_cdecl("dm_qs_input")
