@@ -112,6 +112,9 @@ final class CoverStore {
     @ObservationIgnored private var asked = Set<String>()
     @ObservationIgnored private var reading = Set<String>()
     @ObservationIgnored private var bump = false
+    @ObservationIgnored private var tintsRead = false
+    @ObservationIgnored private var coverTints = Set<String>()   // the colours read from a cover: only those are kept between starts (an icon's changes with a rebuild)
+    @ObservationIgnored private var tintsWrite: Task<Void, Never>?
 
     nonisolated static var dir: URL { Settings.supportDir.appending(path: "covers") }
 
@@ -189,20 +192,46 @@ final class CoverStore {
         for k in memory.keys where k.hasPrefix(key + "-") || k.hasPrefix("drawn-" + key) { memory[k] = nil }
         absent = absent.filter { !$0.hasPrefix(key + "-") }
         reading = reading.filter { !$0.hasPrefix(key + "-") }
-        tints[key] = nil
+        readTints(); tints[key] = nil; coverTints.remove(key); writeTints()
         revision += 1
     }
 
     /// The colour a game lights the stage with: its cover's, else its icon's, made vivid enough to show on black
     func tint(_ key: String, icon: String?) -> Color {
+        readTints()
         if let c = tints[key] { return Color(nsColor: c) }
         var base: NSColor?
-        // from a copy a few dozen pixels high, which costs about a millisecond: the whole cover, decoded for one colour, cost every tile its first draw
-        if !absent.contains(key + "-front"), let f = Self.file(key + "-front"), let cg = Self.small(f, side: 64) { base = Self.average(cg) }
+        // from a copy a few dozen pixels high (about 3 ms), once: the colour is kept between starts
+        if !absent.contains(key + "-front"), let f = Self.file(key + "-front"), let cg = Self.small(f, side: 64) { base = Self.average(cg); if base != nil { coverTints.insert(key) } }
         if base == nil, let icon, let img = NSImage(contentsOfFile: icon) ?? (icon.hasSuffix(".app") ? NSWorkspace.shared.icon(forFile: icon) : nil) { base = Self.average(img) }
         let c = Self.vivid(base ?? NSColor(srgbRed: 0.25, green: 0.35, blue: 0.75, alpha: 1))
         tints[key] = c
+        if coverTints.contains(key) { writeTints() }
         return Color(nsColor: c)
+    }
+
+    /// The colours are kept between starts (tints.json beside the covers): reading one from a cover costs about 3 ms, the whole
+    /// file a fraction of that. `forget` drops a game's when its cover changes.
+    nonisolated static var tintsFile: URL { dir.appending(path: "tints.json") }
+
+    private func readTints() {
+        guard !tintsRead else { return }
+        tintsRead = true
+        guard let d = try? Data(contentsOf: Self.tintsFile), let kept = try? JSONDecoder().decode([String: [Double]].self, from: d) else { return }
+        for (k, v) in kept where v.count == 3 && tints[k] == nil { tints[k] = NSColor(srgbRed: v[0], green: v[1], blue: v[2], alpha: 1); coverTints.insert(k) }
+    }
+
+    private func writeTints() {
+        tintsWrite?.cancel()
+        tintsWrite = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            if Task.isCancelled { return }
+            var out: [String: [Double]] = [:]
+            for (k, c) in self.tints where self.coverTints.contains(k) { if let s = c.usingColorSpace(.sRGB) { out[k] = [Double(s.redComponent), Double(s.greenComponent), Double(s.blueComponent)] } }
+            guard let d = try? JSONEncoder().encode(out) else { return }
+            try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
+            try? d.write(to: Self.tintsFile, options: .atomic)
+        }
     }
 
     static func average(_ img: NSImage) -> NSColor? {
