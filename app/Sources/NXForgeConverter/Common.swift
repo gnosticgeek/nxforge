@@ -96,7 +96,7 @@ struct ConverterRoot: View {
                     Button { model.showStage(model.stageTab) } label: { Label("Games", systemImage: "gamecontroller") }.help("Back to your games (⌘G)")
                 }
                 ToolbarItem(placement: .automatic) {
-                    Button { NSWorkspace.shared.open(helpURL) } label: { Label("NXForge Converter Help", systemImage: "questionmark").labelStyle(.iconOnly) }.help("NXForge Converter Help")
+                    Button { NSWorkspace.shared.open(helpURL) } label: { Label("NXForge Help", systemImage: "questionmark").labelStyle(.iconOnly) }.help("NXForge Converter Help")
                 }
             }
         }
@@ -113,7 +113,7 @@ struct SidebarBrand: View {
                 Text("NXForge").font(.title3.weight(.bold))
                 Text("Game Conversion Toolkit").font(.caption).foregroundStyle(.secondary)
                 Text("Converter \(CONVERTER_VERSION)").font(.caption2).foregroundStyle(.tertiary)
-                    .help("NXForge Converter \(CONVERTER_VERSION). The engine's release is on the Toolchain page.")
+                    .help("NXForge app \(CONVERTER_VERSION). The engine's release is on the Toolchain page.")
             }
             Spacer(minLength: 0)
         }

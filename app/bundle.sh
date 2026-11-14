@@ -1,11 +1,12 @@
 #!/bin/bash
-# Builds "NXForge Converter.app" from this package: swift build -c release, then a minimal bundle, signed ad-hoc
+# Builds "NXForge.app" (named "NXForge Converter.app" before Converter 0.8.0) from this package: swift build -c release, then a minimal bundle, signed ad-hoc
 # (or with the identity in $SIGN). Usage: app/bundle.sh [output folder, default app/.build]
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 out="${1:-$here/.build}"
 swift build -c release --package-path "$here"
-app="$out/NXForge Converter.app"
+app="$out/NXForge.app"
+old="$out/NXForge Converter.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$here/.build/release/NXForgeConverter" "$app/Contents/MacOS/"
@@ -27,8 +28,8 @@ cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>NXForge Converter</string>
-  <key>CFBundleDisplayName</key><string>NXForge Converter</string>
+  <key>CFBundleName</key><string>NXForge</string>
+  <key>CFBundleDisplayName</key><string>NXForge</string>
   <key>CFBundleIdentifier</key><string>org.nxforge.converter</string>
   <key>CFBundleExecutable</key><string>NXForgeConverter</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -47,9 +48,15 @@ cat > "$app/Contents/Info.plist" <<EOF
     <key>CFBundleTypeExtensions</key><array><string>nup</string></array>
   </dict></array>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
-  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 EOF
 codesign --force --sign "${SIGN:--}" "$app"
+# the copy under the old name goes, so there is one app. An updater from before 0.8.0 opens the old name afterwards, which
+# is gone: open the new one for it here.
+if [ -d "$old" ]; then
+  rm -rf "$old"
+  open "$app" || true
+fi
 echo "$app"

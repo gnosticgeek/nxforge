@@ -602,6 +602,7 @@ struct StageGameMenu: View {
         if g.app != nil {
             Button("Play") { model.playFromStage(g.ref) }
             Button("Play Options…") { model.openPlayOptions(g.ref) }
+            Button("Play with the Game's Own Settings Window") { model.playWithOwnWindow(g.ref) }
         } else if g.game != nil {
             Button("Build") { model.playFromStage(g.ref) }.disabled(model.run.running || model.batchRunning)
         }

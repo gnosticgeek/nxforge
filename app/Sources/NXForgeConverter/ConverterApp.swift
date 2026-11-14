@@ -57,7 +57,7 @@ struct ConverterApp: App {
     @State private var model = AppModel()
 
     var body: some Scene {
-        Window("NXForge Converter", id: "main") {
+        Window("NXForge", id: "main") {
             RootView(model: model)
                 .frame(minWidth: 820, minHeight: 580)
                 .task { await snapshotIfAsked() }
@@ -67,9 +67,9 @@ struct ConverterApp: App {
         .commands {
             // About shows the Converter's own version (converter-vX.Y.Z); the engine's NXForge release is its build number
             CommandGroup(replacing: .appInfo) {
-                Button("About NXForge Converter") {
+                Button("About NXForge") {
                     NSApp.orderFrontStandardAboutPanel(options: [
-                        .applicationName: "NXForge Converter",
+                        .applicationName: "NXForge",
                         .applicationVersion: CONVERTER_VERSION,
                         .version: model.engine.map { "engine NXForge \($0.short)" } ?? "",
                     ])
@@ -93,11 +93,11 @@ struct ConverterApp: App {
                 Divider()
             }
             CommandGroup(replacing: .help) {
-                Button("NXForge Converter Help") { NSWorkspace.shared.open(helpURL) }
-                Button("What's New in NXForge Converter") { model.showWhatsNew() }
+                Button("NXForge Help") { NSWorkspace.shared.open(helpURL) }
+                Button("What's New in NXForge") { model.showWhatsNew() }
                 Button("Check for Updates…") { model.page = .updates; model.engineAction(update: false) }.disabled(model.engineBusy || model.engine == nil)
                 if model.converterUpdate != nil {
-                    Button("Update NXForge Converter…") { model.updateConverter() }
+                    Button("Update NXForge…") { model.updateConverter() }
                 }
             }
             CommandMenu("Build") {

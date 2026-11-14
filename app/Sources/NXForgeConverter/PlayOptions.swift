@@ -280,14 +280,22 @@ extension AppModel {
         launch(ref, app: app, name: g?.displayName ?? app.url.deletingPathExtension().lastPathComponent, settings: list, saved: saved, once: once, note: note)
     }
 
+    /// Play through the game's own settings window, as before the front end: the one place its cloud save check runs.
+    func playWithOwnWindow(_ r: GameRef) {
+        let (g, b) = resolve(r)
+        guard let app = r.app ?? b?.app, FileManager.default.fileExists(atPath: app) else { return }
+        launch(GameRef(libraryID: r.libraryID, app: app), app: app, name: g?.displayName ?? app.url.deletingPathExtension().lastPathComponent,
+               settings: [], saved: [:], once: [:], note: "Opening the game's own settings window", ownWindow: true)
+    }
+
     /// Start the game: straight in, with `once` in its environment for this run only.
-    func launch(_ ref: GameRef, app: String, name: String, settings list: [LaunchSetting], saved: [String: String], once: [String: String], note: String?) {
+    func launch(_ ref: GameRef, app: String, name: String, settings list: [LaunchSetting], saved: [String: String], once: [String: String], note: String?, ownWindow: Bool = false) {
         var shown = saved
         for (k, v) in once { shown[k] = v }
         let summary = ([PlayOptions.current(settings: list, values: shown).rawValue] + PlayOptions.summary(settings: list, values: shown).map(\.value)).joined(separator: " · ")
         if frontEnd { launching = Launching(ref: ref, app: app, name: name, note: note, summary: list.isEmpty ? "" : summary) }
         let cfg = NSWorkspace.OpenConfiguration()
-        if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
+        if settings.straightPlay && !ownWindow { cfg.arguments = ["--no-launcher"] }
         // added to the environment the game starts with; its launcher takes what is set there as fixed for the run
         if !once.isEmpty { cfg.environment = once }
         cfg.activates = true

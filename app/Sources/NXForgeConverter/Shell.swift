@@ -147,7 +147,7 @@ struct WhatsNewSheet: View {
             HStack(spacing: 14) {
                 Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("What's New in NXForge Converter").font(.title2.weight(.bold))
+                    Text("What's New in NXForge").font(.title2.weight(.bold))
                     Text("Version \(news.version)").foregroundStyle(.secondary)
                 }
             }
@@ -231,9 +231,9 @@ struct CommandPalette: View {
         out.append(PaletteItem(id: "act-couch", title: m.couchMode ? "Leave Couch Mode" : "Couch Mode", detail: "Action", symbol: "sofa") { m.toggleCouch() })
         out.append(PaletteItem(id: "act-check", title: "Check the Toolchain Again", detail: "Action", symbol: "checkmark.seal") { m.page = .toolchain; m.recheck() })
         out.append(PaletteItem(id: "act-updates", title: "Check for Updates", detail: "Action", symbol: "arrow.down.circle") { m.page = .updates; m.engineAction(update: false) })
-        out.append(PaletteItem(id: "act-new", title: "What's New in NXForge Converter", detail: "Action", symbol: "sparkles") { m.showWhatsNew() })
+        out.append(PaletteItem(id: "act-new", title: "What's New in NXForge", detail: "Action", symbol: "sparkles") { m.showWhatsNew() })
         if m.converterUpdate != nil {
-            out.append(PaletteItem(id: "act-update", title: "Update NXForge Converter…", detail: "Action", symbol: "arrow.down.circle") { m.updateConverter() })
+            out.append(PaletteItem(id: "act-update", title: "Update NXForge…", detail: "Action", symbol: "arrow.down.circle") { m.updateConverter() })
         }
         let open = openSettings
         out.append(PaletteItem(id: "act-settings", title: "Settings…", detail: "Action", symbol: "gearshape") { open() })
