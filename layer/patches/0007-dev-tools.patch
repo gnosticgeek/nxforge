@@ -4,11 +4,14 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
+ dm/gfx/nvn/nvn_mtl.m                 |  2 +-
  dm/gfx/tests/t_res_commit.m          |  2 +-
+ dm/gfx/tests/t_sparse_copy.m         |  5 ++++-
  dm/gfx/tests/t_upload_src.m          |  1 +
  dm/gfx/tests/t_vk_swapchain_life.m   |  6 ++++--
+ dm/gfx/tests/t_wline.m               |  6 ++++--
  dm/gfx/tests/t_zero_depth.m          |  7 ++++++-
- dm/tools/lint_c_baseline.tsv         |  5 ++---
+ dm/tools/lint_c_baseline.tsv         |  7 +++----
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
  dm/tools/tests/test_regress.py       | 14 +++++++-------
@@ -16,8 +19,21 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 25 +++++++++++++++----------
- 12 files changed, 69 insertions(+), 34 deletions(-)
+ 15 files changed, 79 insertions(+), 39 deletions(-)
 
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 180a28d5462d298d0178cb0519ec68d4f6ebeb88..24024b06bf1ac968a59c909fd6b9d8706317310f 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -3538,7 +3538,7 @@ static int sp_pages_gpu(const void *pool, uint64_t va, uint64_t n, uint64_t *pt,
+     for (uint64_t i = 0; ok && i < np;) {
+         if (!ph[i]) { pt[i++] = 0; continue; }
+         uint64_t j = i + 1; while (j < np && ph[j] == ph[j - 1] + 0x1000) j++;
+-        void *b; uint64_t o, g;
++        void *b; uint64_t o, g = 0;   // 0 for a page mtl_gpu_addr can't place (ok goes false)
+         if (wrote) { sbw_note((uint64_t)(uintptr_t)ph[i], (j - i) << 12, SBW_GPU); sps_note((uint64_t)(uintptr_t)ph[i], (j - i) << 12); }
+         if (mtl_gpu_addr((uint64_t)(uintptr_t)ph[i], (j - i) << 12, &b, &o, &g)) { for (uint64_t k = i; k < j; k++) pt[k] = g + ((k - i) << 12); i = j; continue; }
+         for (; ok && i < j; i++) { ok = mtl_gpu_addr((uint64_t)(uintptr_t)ph[i], 0x1000, &b, &o, &g); pt[i] = g; }   // a run over two pools
 diff --git a/dm/gfx/tests/t_res_commit.m b/dm/gfx/tests/t_res_commit.m
 index bee2fcc72ca7fd60b81c8a22e2394555bc547fe8..7f918c74c25cb41474c49027ba6dae512ddd4386 100644
 --- a/dm/gfx/tests/t_res_commit.m
@@ -31,6 +47,35 @@ index bee2fcc72ca7fd60b81c8a22e2394555bc547fe8..7f918c74c25cb41474c49027ba6dae51
  
  int main(void) { @autoreleasepool {
      mtl_init();
+diff --git a/dm/gfx/tests/t_sparse_copy.m b/dm/gfx/tests/t_sparse_copy.m
+index 40b09654e1a021ad2af4bee40c7492679ab6e1bd..91645aa003ed14861f54742cfbd9713be47e657a 100644
+--- a/dm/gfx/tests/t_sparse_copy.m
++++ b/dm/gfx/tests/t_sparse_copy.m
+@@ -22,6 +22,7 @@ static int map(pool_t *virt, pool_t *phys, uint64_t voff, uint64_t poff, uint64_
+     map_req req = {.phys = (NVNmemoryPool *)phys, .voff = (int64_t)voff, .poff = (int64_t)poff, .size = size};
+     return h_nvnMemoryPoolMapVirtual((NVNmemoryPool *)virt, 1, (const NVNmappingRequest *)&req);
+ }
++static uint8_t *g_lin[8]; static int g_nlin;   // linear copies of the copy records, freed once their work is done (the end of main)
+ // A buffer-to-texture copy of the whole of level `level` (w x w) from src, through a view of that level, replayed in the open submission
+ static void copy_in(pool_t *cpool, NVNtexture *tx, unsigned level, unsigned w, const void *src) {
+     NVNcommandBuffer cmd; h_nvnCommandBufferInitialize(&cmd, NULL);
+@@ -31,7 +32,8 @@ static void copy_in(pool_t *cpool, NVNtexture *tx, unsigned level, unsigned w, c
+     NVNcopyRegion r = {0, 0, 0, (int)w, (int)w, 1};
+     h_nvnCommandBufferCopyBufferToTexture(&cmd, (NVNbufferAddress)src, tx, &v, &r, 0);
+     NVNcommandHandle h = h_nvnCommandBufferEndRecording(&cmd);
+-    state_reset(); memset(&R, 0, sizeof R); mtl_exec(nvn_rec_linear(h, NULL));
++    state_reset(); memset(&R, 0, sizeof R); uint8_t *lin = nvn_rec_linear(h, NULL); mtl_exec(lin);
++    if (g_nlin < 8) g_lin[g_nlin++] = lin; else free(lin);
+ }
+ static int words_not(const uint8_t *p, uint64_t n, uint32_t want) { int bad = 0; for (uint64_t i = 0; i < n; i += 4) bad += *(const uint32_t *)(p + i) != want; return bad; }
+ // Texels of level `level` (w x w) of the host texture other than want: the texture is looked up (and uploaded if its pages changed) in this submission, and read after it
+@@ -115,5 +117,6 @@ int main(void) { @autoreleasepool {
+     g_nvn_deswz_gpu = gpu;
+     h_nvnMemoryPoolFinalize((NVNmemoryPool *)&virt); h_nvnMemoryPoolFinalize((NVNmemoryPool *)&cpool); h_nvnMemoryPoolFinalize((NVNmemoryPool *)&phys);
+     mtl_sub_commit(); mtl_drain(); free(pmem); free(cmem);
++    for (int i = 0; i < g_nlin; i++) free(g_lin[i]);
+     printf("sparse copies: %d checks, %d failed\n", checks, failed); return failed != 0;
+ } }
 diff --git a/dm/gfx/tests/t_upload_src.m b/dm/gfx/tests/t_upload_src.m
 index c4a36f721a25b9e0a119222cd7e42b3e57be29ef..60e98a3bdc24c639578ac96cabeae9ebbf785a10 100644
 --- a/dm/gfx/tests/t_upload_src.m
@@ -60,6 +105,25 @@ index b56c63946138cb8853a8f950d73917014e3d770a..9eeb06bbfa2a6319d338dac23f9f6587
          for (uint32_t i = 0; i < sc->n; i++) weak[i] = sc->img[i]->tex;
          for (int f = 0; f < FRAMES; f++) {
              uint32_t k; h_vkAcquireNextImageKHR(&g_device, sc, UINT64_MAX, NULL, NULL, &k);
+diff --git a/dm/gfx/tests/t_wline.m b/dm/gfx/tests/t_wline.m
+index 05101b70c5410fee37d8f811a3e7e3b9c2b81518..20acb76ee823e69d81a60fbaa95618f8187ac81d 100644
+--- a/dm/gfx/tests/t_wline.m
++++ b/dm/gfx/tests/t_wline.m
+@@ -48,10 +48,12 @@ static long covered(int x0, int y0, int x1, int y1) { long n = 0; for (int y = y
+ int main(void) { @autoreleasepool {
+     dev = MTLCreateSystemDefaultDevice(); q = [dev newCommandQueue]; NSError *e = nil;
+     char dir[] = "/tmp/t_wline.XXXXXX"; if (!mkdtemp(dir)) return 1;
+-    NSString *in = [@(dir) stringByAppendingPathComponent:@"v.metal"], *out = [@(dir) stringByAppendingPathComponent:@"vp.metal"];
++    NSString *base = @(dir); if (!base) return 1;
++    NSString *in = [base stringByAppendingPathComponent:@"v.metal"], *out = [base stringByAppendingPathComponent:@"vp.metal"];
+     [k_vs writeToFile:in atomically:NO encoding:NSUTF8StringEncoding error:nil];
+     char cmd[2048]; snprintf(cmd, sizeof cmd, "python3 -c \"import sys; sys.path.insert(0, '../tools'); import dmsh_pull; v, i = dmsh_pull.variant(open(sys.argv[1]).read()); assert i['entry_wl'] == 'main0_wl', i; open(sys.argv[2], 'w').write(v)\" '%s' '%s'", in.UTF8String, out.UTF8String);
+-    if (system(cmd)) { fprintf(stderr, "dmsh_pull.variant failed\n"); return 1; }
++    if (system(cmd)) {   // NOLINT(bugprone-command-processor): the test runs the dmsh_pull Python helper on files it wrote itself
++        fprintf(stderr, "dmsh_pull.variant failed\n"); return 1; }
+     NSString *pull = [NSString stringWithContentsOfFile:out encoding:NSUTF8StringEncoding error:nil];
+     [NSFileManager.defaultManager removeItemAtPath:@(dir) error:nil];
+     MTLCompileOptions *o = [MTLCompileOptions new]; o.preserveInvariance = YES;
 diff --git a/dm/gfx/tests/t_zero_depth.m b/dm/gfx/tests/t_zero_depth.m
 index 75cb681b8481af615b129151917723959e979774..528495a6dd9f610cec211d68822e228f1e9afe6b 100644
 --- a/dm/gfx/tests/t_zero_depth.m
@@ -86,7 +150,7 @@ index 75cb681b8481af615b129151917723959e979774..528495a6dd9f610cec211d68822e228f
          else for (size_t k = 0; k < poison_bytes / 4; k++) ((float *)poison.contents)[k] = .75f;
          id<MTLCommandBuffer> cb = [queue commandBuffer]; id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
-index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..f396b01e20cbe5d92e15fe9c444190d7090bc7d5 100644
+index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..244701b00a3251c2ee198df1deb36d63cbb9c0f0 100644
 --- a/dm/tools/lint_c_baseline.tsv
 +++ b/dm/tools/lint_c_baseline.tsv
 @@ -24,11 +24,10 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
@@ -94,7 +158,7 @@ index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..f396b01e20cbe5d92e15fe9c444190d7
  dm/gfx/nvn/nvn_mtl.m	bugprone-signed-char-misuse	1
  dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
 -dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	9
-+dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	8
++dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	5
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	5
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
@@ -102,6 +166,15 @@ index 834f82ac90f8728c6c01c0a0a83a293022cb03f0..f396b01e20cbe5d92e15fe9c444190d7
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	4
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
  dm/gfx/nvn/nvn_mtl.m	misc-redundant-expression	2
+@@ -83,7 +82,7 @@ dm/gfx/vk/hle_vk.m	bugprone-suspicious-realloc-usage	2
+ dm/gfx/vk/hle_vk.m	clang-analyzer-core.uninitialized.Assign	1
+ dm/gfx/vk/hle_vk.m	clang-analyzer-security.ArrayBound	1
+ dm/gfx/vk/hle_vk.m	clang-analyzer-unix.Malloc	1
+-dm/gfx/vk/hle_vk.m	misc-misplaced-const	5
++dm/gfx/vk/hle_vk.m	misc-misplaced-const	3
+ dm/host/haptics_apple.m	clang-analyzer-nullability.NullablePassedToNonnull	1
+ dm/host/hle_fs.c	bugprone-suspicious-realloc-usage	4
+ dm/host/hle_fs.c	clang-analyzer-unix.Errno	2
 @@ -104,7 +103,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
  dm/host/tests/t_fs.c	bugprone-command-processor	2
  dm/host/tests/t_fs.c	clang-analyzer-unix.Stream	1
