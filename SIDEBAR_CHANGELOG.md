@@ -4,6 +4,12 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.5.1 (2026-11-14)
+
+Quick-save slots. Ships in NXForge 0.34.1.
+
+- **General › Quick-save slots**: three slots, each with Save and Load and when the game made the save it holds. Also the **Save Slots** menu: ⌘1–⌘3 save, ⌥⌘1–⌥⌘3 load. Saving clones the committed save under the host's commit locks (`dm_fs_clone_committed`), so a slot is one whole save. Loading asks twice, checks the slot against its manifest, keeps the current save as a save snapshot ("Before a restore"), and restarts the game; the app's launcher swaps the slot in while the game is stopped (`dm/mac/nxforge/launcher_slots.inc`, patch `0026-save-slots`) and the next start shows "Loaded slot N". Slots live beside the save in `save-slots/<n>/`, in the snapshots' layout.
+
 ## 0.5.0 (2026-11-14)
 
 Hand-off to and from NXForge's library. Ships in NXForge 0.34.0.

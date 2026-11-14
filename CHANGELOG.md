@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.34.1 (2026-11-14)
+
+- **Quick-save slots** (Sidebar 0.5.1, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): three slots per game on the sidebar's General page and in a new **Save Slots** menu. **⌘1–⌘3** save the game's save into a slot in a moment, even while the game is writing; **⌥⌘1–⌥⌘3** (pressed twice) load one: the game restarts from that save, and the save it replaces is kept as a save snapshot ("Before a restore") that the Builds page can put back. A slot holds the game's own save as the game last saved it, not the exact moment on screen. Needs a game rebuild (new launcher and player).
+
 ## 0.34.0 (2026-11-14)
 
 - **Ten improvements to the Mac app** (Converter 0.11.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Favourites, marks on covers when a game needs a look, screenshots on a game's page, What's New from the app's own notes, controller repeat and Settings from a pad, Reduce Motion and Reduce Transparency, and a lighter stage on big displays.
