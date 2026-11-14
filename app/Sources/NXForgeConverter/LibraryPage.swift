@@ -13,6 +13,23 @@ extension AppModel {
 
     /// The games the Library shows now: filtered, searched and sorted as chosen.
     func libraryShown(_ builds: [String: LibraryBuild]) -> [LibraryGame] {
+        let sorted = librarySorted(builds)
+        // grouped: the Switch 2 section first, each in the chosen order, so the arrow keys walk the games as shown
+        guard libraryGrouped else { return sorted }
+        return sorted.filter { $0.console == .switch2 } + sorted.filter { $0.console != .switch2 }
+    }
+
+    /// The Library in a Switch 2 section and a Switch one: chosen, and both consoles on show.
+    var libraryGrouped: Bool { settings.libraryGroupByConsole && libraryConsole == .all }
+
+    /// Bigger Covers / Smaller Covers (⌘+ and ⌘−), in steps of 30 points.
+    func resizeCovers(by step: Double) {
+        let r = Settings.coverSizes
+        settings.libraryCoverSize = min(max(settings.libraryCoverSize + step, r.lowerBound), r.upperBound)
+        if settings.libraryLayout != .grid { settings.libraryLayout = .grid }
+    }
+
+    private func librarySorted(_ builds: [String: LibraryBuild]) -> [LibraryGame] {
         let all = library?.games ?? []
         let q = librarySearch.trimmingCharacters(in: .whitespaces).lowercased()
         let games = all.filter { g in
@@ -91,17 +108,31 @@ struct LibraryPage: View {
                                 } else { ContentUnavailableView.search(text: model.librarySearch) }
                             }
                             .padding(.top, 24)
-                        } else if grid {
-                            let min: CGFloat = model.couchMode ? 210 : 150
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: min, maximum: min * 1.4), spacing: 18)], alignment: .leading, spacing: 20) {
-                                ForEach(games) { g in GameTile(model: model, game: g, build: model.build(of: g, in: builds), big: model.couchMode).id(g.id) }
-                            }
-                            .onGeometryChange(for: Int.self) { Int(($0.size.width + 18) / (min + 18)) } action: { model.libraryColumns = max($0, 1) }
                         } else {
-                            InsetTable {
-                                ForEach(games) { g in
-                                    if g.id != games.first?.id { Divider() }
-                                    row(g, build: model.build(of: g, in: builds)).id(g.id)
+                            ForEach(sections(games)) { sec in
+                                if !sec.title.isEmpty {
+                                    HStack(spacing: 8) {
+                                        Text(sec.title).font(.title3.weight(.bold))
+                                        Text("\(sec.games.count)").font(.callout.weight(.semibold)).foregroundStyle(.secondary)
+                                            .padding(.horizontal, 7).padding(.vertical, 1).background(.quaternary, in: .capsule)
+                                    }
+                                    .padding(.top, 4)
+                                    .accessibilityElement(children: .combine)
+                                    .accessibilityAddTraits(.isHeader)
+                                }
+                                if grid {
+                                    let min: CGFloat = model.couchMode ? 210 : CGFloat(model.settings.libraryCoverSize)
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: min, maximum: min * 1.4), spacing: 18)], alignment: .leading, spacing: 20) {
+                                        ForEach(sec.games) { g in GameTile(model: model, game: g, build: model.build(of: g, in: builds), big: model.couchMode).id(g.id) }
+                                    }
+                                    .onGeometryChange(for: Int.self) { Int(($0.size.width + 18) / (min + 18)) } action: { model.libraryColumns = max($0, 1) }
+                                } else {
+                                    InsetTable {
+                                        ForEach(sec.games) { g in
+                                            if g.id != sec.games.first?.id { Divider() }
+                                            row(g, build: model.build(of: g, in: builds)).id(g.id)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -121,11 +152,22 @@ struct LibraryPage: View {
             .onChange(of: model.libraryFocus) { _, f in
                 if let f { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) } }
             }
+            // back where it was: the game the Library was on last time is scrolled into view (idea 10)
+            .task {
+                guard let f = model.libraryFocus else { return }
+                try? await Task.sleep(for: .milliseconds(150))
+                proxy.scrollTo(f, anchor: .center)
+            }
         }
         // the keyboard: arrows move between games, Return opens the game's page, Space a quick look
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
+        .onKeyPress(characters: CharacterSet(charactersIn: "=")) { press in
+            guard press.modifiers.contains(.command), !model.couchMode else { return .ignored }
+            model.resizeCovers(by: 30)
+            return .handled
+        }
         .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow, .space, .return]) { press in
             switch press.key {
             case .leftArrow: model.moveLibraryFocus(dx: -1)
@@ -222,7 +264,7 @@ struct LibraryPage: View {
                 Spacer()
                 Button("Undo") { model.undoMove() }.buttonStyle(.glass).disabled(model.run.running || model.batchRunning)
                     .help("Move the files back where they were")
-                Button { model.lastMove = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Hide")
+                Button { model.lastMove = nil } label: { Label("Hide", systemImage: "xmark").labelStyle(.iconOnly) }.buttonStyle(.borderless).help("Hide")
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             .glassEffect(.regular, in: .rect(cornerRadius: 14))
@@ -267,9 +309,9 @@ struct LibraryPage: View {
                                 Text("\(i + 1)").font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
                                 Text(g.displayName).lineLimit(1)
                                 Spacer()
-                                Button { model.moveInQueue(g, by: -1) } label: { Image(systemName: "chevron.up") }.buttonStyle(.borderless).disabled(i == 0).help("Build sooner")
-                                Button { model.moveInQueue(g, by: 1) } label: { Image(systemName: "chevron.down") }.buttonStyle(.borderless).disabled(i == model.batchQueue.count - 1).help("Build later")
-                                Button { model.removeFromQueue(g) } label: { Image(systemName: "minus.circle") }.buttonStyle(.borderless).help("Take out of the queue")
+                                Button { model.moveInQueue(g, by: -1) } label: { Label("Build Sooner", systemImage: "chevron.up").labelStyle(.iconOnly) }.buttonStyle(.borderless).disabled(i == 0).help("Build sooner")
+                                Button { model.moveInQueue(g, by: 1) } label: { Label("Build Later", systemImage: "chevron.down").labelStyle(.iconOnly) }.buttonStyle(.borderless).disabled(i == model.batchQueue.count - 1).help("Build later")
+                                Button { model.removeFromQueue(g) } label: { Label("Take Out of the Queue", systemImage: "minus.circle").labelStyle(.iconOnly) }.buttonStyle(.borderless).help("Take out of the queue")
                             }
                             .padding(.horizontal, 12).padding(.vertical, 5)
                         }
@@ -311,6 +353,7 @@ struct LibraryPage: View {
                             }
                             .buttonStyle(.plain)
                             .help("Play \(r.record.name)")
+                            .accessibilityLabel("Play \(r.record.name), played \(r.record.last.map { relativeDay($0).lowercasedFirst } ?? "before")")
                             .contextMenu {
                                 Button("Game Page") { model.openGame(GameRef(libraryID: nil, app: r.record.app)) }
                                 Button("Show App in Finder") { reveal(r.record.app) }
@@ -355,15 +398,27 @@ struct LibraryPage: View {
                     ForEach(LibrarySort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.inline)
+                Divider()
+                Toggle("Group by Console", isOn: $model.settings.libraryGroupByConsole)
+                    .disabled(model.libraryConsole != .all)
             } label: {
                 Label(model.settings.librarySort.rawValue, systemImage: "arrow.up.arrow.down")
             }
             .menuStyle(.button).buttonStyle(.glass).fixedSize()
             Spacer()
             Text(summary(l, shown: shown)).foregroundStyle(.secondary).lineLimit(1)
+            if model.settings.libraryLayout == .grid {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.grid.3x3").font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
+                    Slider(value: $model.settings.libraryCoverSize, in: Settings.coverSizes).frame(width: 100).controlSize(.small)
+                        .accessibilityLabel("Cover size")
+                    Image(systemName: "square.grid.2x2").foregroundStyle(.secondary).accessibilityHidden(true)
+                }
+                .help("Cover size (⌘+ and ⌘−)")
+            }
             Picker("Layout", selection: $model.settings.libraryLayout) {
-                Image(systemName: "list.bullet").tag(LibraryLayout.list).help("List")
-                Image(systemName: "square.grid.2x2").tag(LibraryLayout.grid).help("Covers")
+                Label("List", systemImage: "list.bullet").labelStyle(.iconOnly).tag(LibraryLayout.list).help("List")
+                Label("Covers", systemImage: "square.grid.2x2").labelStyle(.iconOnly).tag(LibraryLayout.grid).help("Covers")
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize()
         }
@@ -467,9 +522,9 @@ struct LibraryPage: View {
                 Text(g.path.tildePath).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
-            Button { reveal(revealPath(g)) } label: { Image(systemName: "folder") }.buttonStyle(.glass).help("Show in Finder")
+            Button { reveal(revealPath(g)) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.glass).help("Show in Finder")
             if let b {
-                Button { model.openApp(b.app) } label: { Image(systemName: "play.fill") }.buttonStyle(.glass).help("Open \(b.app.lastComponent)")
+                Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill").labelStyle(.iconOnly) }.buttonStyle(.glass).help("Open \(b.app.lastComponent)")
             }
             Button("Convert") { model.convertFromLibrary(g) }
                 .buttonStyle(.glass).disabled(model.run.running || model.batchRunning)
@@ -483,6 +538,14 @@ struct LibraryPage: View {
         .onTapGesture(count: 2) { model.openGame(GameRef(libraryID: g.id, app: b?.app)) }
         .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
         .contextMenu { LibraryGameMenu(model: model, game: g, build: b) }
+    }
+
+    /// The games under their console's heading when grouped, else one untitled section.
+    func sections(_ games: [LibraryGame]) -> [LibrarySection] {
+        guard model.libraryGrouped else { return [LibrarySection(title: "", games: games)] }
+        let two = games.filter { $0.console == .switch2 }
+        let one = games.filter { $0.console != .switch2 }
+        return [LibrarySection(title: Console.switch2.rawValue, games: two), LibrarySection(title: Console.switch1.rawValue, games: one)].filter { !$0.games.isEmpty }
     }
 
     func revealPath(_ g: LibraryGame) -> String { g.shared ? "\(g.path)/\(g.files.first ?? "")" : g.path }
@@ -612,9 +675,35 @@ struct GameTile: View {
         .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
         .contextMenu { LibraryGameMenu(model: model, game: g, build: build) }
         .help(g.path.tildePath)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tileLabel)
+        .accessibilityAddTraits(picked ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { model.libraryFocus = g.id }
+        .accessibilityAction(named: build == nil ? "Convert" : "Play") {
+            if let b = build { model.openApp(b.app) } else { model.convertFromLibrary(g) }
+        }
+        .accessibilityAction(named: picked ? "Deselect" : "Select") {
+            if picked { model.librarySelection.remove(g.id) } else { model.librarySelection.insert(g.id) }
+        }
         .accessibilityAction(named: "Open Game Page") { model.openGame(GameRef(libraryID: g.id, app: build?.app)) }
+    }
+}
+
+/// A heading's games in the Library (one untitled section when it is not grouped).
+struct LibrarySection: Identifiable {
+    var id: String { title }
+    let title: String
+    let games: [LibraryGame]
+}
+
+extension GameTile {
+    /// "Super Mario Odyssey, Switch, plays on NXForge, built on an older engine"
+    var tileLabel: String {
+        var parts = [game.displayName, game.console.rawValue]
+        if let v = game.titleID.flatMap({ model.verified[$0] }), v.result == "plays" { parts.append("plays on NXForge") }
+        if let b = build { parts.append(model.isPlaying(app: b.app) ? "playing now" : model.outdated(b) ? "built on an older engine" : "built") }
+        else { parts.append("not built") }
+        return parts.joined(separator: ", ")
     }
 }
 

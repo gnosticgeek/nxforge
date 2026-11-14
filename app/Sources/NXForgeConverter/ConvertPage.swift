@@ -554,7 +554,7 @@ struct DropZone: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Image(systemName: "folder.badge.plus").font(.system(size: 40, weight: .light)).foregroundStyle(Color.accentColor)
-                    .symbolRenderingMode(.hierarchical)
+                    .symbolRenderingMode(.hierarchical).accessibilityHidden(true)
                 Text("Drag and drop your game folder, or click to choose").font(.headline)
             }
             HStack(spacing: 12) {
@@ -564,6 +564,7 @@ struct DropZone: View {
                 }
             }
             .buttonStyle(.glass).controlSize(.large)
+            RecentSourcesRow(model: model)
         }
         .padding(18)
         .frame(maxWidth: .infinity)

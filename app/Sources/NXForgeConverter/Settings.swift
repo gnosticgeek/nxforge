@@ -53,6 +53,18 @@ struct Settings: Codable, Equatable {
     var autoUpdate = false
     /// the versions the launch sheet offered when Skip This Version was pressed ("engine 0.17.1 converter 0.2.2")
     var skippedUpdate: String?
+    /// the Library's covers: the smallest width of one, in points (Bigger Covers / Smaller Covers)
+    var libraryCoverSize: Double = 150
+    /// the Library in a Switch 2 section and a Switch one
+    var libraryGroupByConsole = false
+    /// the last games chosen on Convert, newest first (RecentSources)
+    var recentSources: [String] = []
+    /// where the window was at the last quit: the page, the build picked on Builds and the game the Library was on
+    var lastPage: String?
+    var lastBuild: String?
+    var lastLibraryFocus: String?
+
+    static let coverSizes: ClosedRange<Double> = 110...280
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
@@ -61,6 +73,8 @@ struct Settings: Codable, Equatable {
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
         case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
+        case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
+        case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
     }
 
     init() {}
@@ -91,6 +105,12 @@ struct Settings: Codable, Equatable {
         remounts = (try? c.decodeIfPresent([String: String].self, forKey: .remounts)) ?? [:]
         autoUpdate = (try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)) ?? false
         skippedUpdate = try? c.decodeIfPresent(String.self, forKey: .skippedUpdate)
+        libraryCoverSize = min(max((try? c.decodeIfPresent(Double.self, forKey: .libraryCoverSize)) ?? 150, Settings.coverSizes.lowerBound), Settings.coverSizes.upperBound)
+        libraryGroupByConsole = (try? c.decodeIfPresent(Bool.self, forKey: .libraryGroupByConsole)) ?? false
+        recentSources = (try? c.decodeIfPresent([String].self, forKey: .recentSources)) ?? []
+        lastPage = try? c.decodeIfPresent(String.self, forKey: .lastPage)
+        lastBuild = try? c.decodeIfPresent(String.self, forKey: .lastBuild)
+        lastLibraryFocus = try? c.decodeIfPresent(String.self, forKey: .lastLibraryFocus)
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

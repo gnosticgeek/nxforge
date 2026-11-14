@@ -13,7 +13,13 @@ struct RootView: View {
             List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
                 ForEach(Page.allCases) { p in
                     // the tag goes last: a tag under .badge is not the row's, so the list could not select any page
-                    Label(p.rawValue, systemImage: p.symbol).font(.system(size: 15)).padding(.vertical, 3)
+                    HStack(spacing: 6) {
+                        Label(p.rawValue, systemImage: p.symbol)
+                        Spacer(minLength: 4)
+                        // the build in sight from every page (idea 1)
+                        if p == .convert && model.run.running && !model.run.planning { SidebarBuildProgress(run: model.run) }
+                    }
+                    .font(.title3).padding(.vertical, 3)
                         .badge(p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : 0)
                         .tag(p)
                 }
@@ -63,11 +69,19 @@ struct RootView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .automatic) {
-                    Button { NSWorkspace.shared.open(helpURL) } label: { Image(systemName: "questionmark") }.help("NXForge Converter Help")
+                    Button { NSWorkspace.shared.open(helpURL) } label: { Label("NXForge Converter Help", systemImage: "questionmark").labelStyle(.iconOnly) }.help("NXForge Converter Help")
                 }
             }
         }
         .onChange(of: model.page) { model.gameDetail = nil }
+        // a note for work that ended in the background, over the foot of the window (idea 7)
+        .overlay(alignment: .bottom) {
+            if let b = model.banner {
+                BannerView(model: model, banner: b).id(b.id)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.35), value: model.banner?.id)
         .sheet(item: $model.whatsNew) { WhatsNewSheet(model: model, news: $0) }
         .sheet(item: $model.updateOffer) { UpdateOfferSheet(model: model, offer: $0) }
         .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }
@@ -134,6 +148,7 @@ struct StatusIcon: View {
             .symbolRenderingMode(.palette)
             .foregroundStyle(.white, ok == true ? Color.green : ok == false ? Color.red : Color.gray)
             .font(.system(size: size))
+            .accessibilityLabel(ok == true ? "Passed" : ok == false ? "Failed" : "Not run")
     }
 }
 
