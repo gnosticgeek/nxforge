@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.4 (2026-11-14)
+
+- **Wide game art from Nintendo's store in the Mac app** (Converter 0.11.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): each game's banner from its Nintendo UK store page fills the top of its page and of Home, found by title ID and kept on the Mac; Settings › Artwork turns it off. No game rebuild needed.
+
 ## 0.35.3 (2026-11-14)
 
 - **Choose your prod.keys once, in Settings** (Converter 0.11.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Mac app saves one keys file and every build, rebuild and `nxforge build` uses it, with its status shown in Settings and a prod.keys found in the usual places offered. A build asks only when none is saved or it is missing. No game rebuild needed.

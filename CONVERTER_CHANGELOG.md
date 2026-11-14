@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.11.4 (2026-11-14)
+
+Wide game art from Nintendo's store. Ships in NXForge 0.35.4.
+
+- **Each game's banner behind its page and Home**: the 2:1 banner a game's page on Nintendo's European store shares (the picture behind a link to it, 1600 px wide) now fills the top of the game's page and of Home, ahead of the newest screenshot. Games without one keep the screenshot, the blurred cover or the 3D case as before.
+- **Found by title ID**: one search of the store's own product search (searching.nintendo-europe.com, what nintendo.com/en-gb uses) for every game's title ID at once, then a search by exact name for games it did not find. A new Switch 2 game with no banner yet gets the picture its store page shares (Ocarina of Time). 57 of the 60 games in the test library were found.
+- **Polite and local**: each game is looked up once; the pictures are kept on this Mac beside the covers (`<title ID>-hero.jpg`) and never sent anywhere. A game with no art is looked for again after a week, or with Look Again. Only title IDs and names are sent, with no cookies.
+- **Settings › Artwork** (was Covers) has **Download wide art** beside Download box art; turning it off hides the banners too.
+
 ## 0.11.3 (2026-11-14)
 
 Your prod.keys, chosen once. Ships in NXForge 0.35.3.
