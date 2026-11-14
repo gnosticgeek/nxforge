@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.33.0 (2026-11-14)
+
+- **A design pass over the Mac app** (Converter 0.10.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the stage is lit by the art of the game in focus, covers look like cases and lean towards the pointer, Home's shelf and the 3D case reflect in the floor, covers drawn for games without box art use the icon as artwork, the top bar and the panels are real glass, and starting a game shows its case turning in its own light. The converter's pages take the same look. App only: no game rebuild.
+
 ## 0.32.1 (2026-11-14)
 
 - **One look for the whole Mac app** (Converter 0.9.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). The converter's pages now sit on the library's stage under the same top bar: no sidebar, no separate header or toolbar, the same titles, buttons and cards. The converter's Library page is named Game Files, and the app is always dark.

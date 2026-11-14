@@ -288,6 +288,9 @@ struct StageBackdrop: View {
     var artKey = ""
     /// how bright the light is: full on the front end, lower behind the converter's pages of text
     var strength: Double = 1
+    /// the two lights drift slowly, so the room is never quite still
+    @State private var drift = false
+    @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
         GeometryReader { geo in
@@ -302,8 +305,10 @@ struct StageBackdrop: View {
                 }
                 Circle().fill(RadialGradient(colors: [tint.opacity(0.42 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.48))
                     .frame(width: w * 0.96, height: w * 0.96).position(x: w * 0.22, y: h * 0.12)
+                    .offset(x: drift ? w * 0.05 : -w * 0.03, y: drift ? h * 0.04 : -h * 0.02)
                 Circle().fill(RadialGradient(colors: [tint.opacity(0.24 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.40))
                     .frame(width: w * 0.8, height: w * 0.8).hueRotation(.degrees(48)).position(x: w * 0.92, y: h * 0.08)
+                    .offset(x: drift ? -w * 0.06 : w * 0.02, y: drift ? h * 0.05 : 0)
                 RadialGradient(colors: [.clear, .black.opacity(0.50)], center: UnitPoint(x: 0.5, y: 0.35), startRadius: w * 0.30, endRadius: w * 0.95)
                 LinearGradient(stops: [.init(color: StageLook.background.opacity(0), location: 0), .init(color: StageLook.background.opacity(0.86), location: 0.72),
                                        .init(color: StageLook.background, location: 1)], startPoint: .top, endPoint: .bottom)
@@ -313,6 +318,8 @@ struct StageBackdrop: View {
             .frame(width: w, height: h).clipped()
         }
         .ignoresSafeArea()
+        .animation(.easeInOut(duration: 11).repeatForever(autoreverses: true), value: drift)
+        .onAppear { if !still { drift = true } }
         .animation(.easeInOut(duration: 0.55), value: artKey)
         .animation(.easeInOut(duration: 0.45), value: tint)
         .accessibilityHidden(true)
