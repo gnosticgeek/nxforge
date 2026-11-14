@@ -11,10 +11,10 @@ With the host stopped, the slot the sidebar named in DM_LAUNCHER_SLOT_LOAD is cl
  2 files changed, 7 insertions(+), 2 deletions(-)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index aca6d08755250cb67f388d5ee55b43522d71571f..569133c56aa903518c1862dc5dcad32b60bbf57c 100644
+index 6d66576af8ad524f33d75dba3f581ec4b3844147..3b1e1bda1afb927b0746bc4ec286c577d85377f6 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
-@@ -227,6 +227,8 @@ static void programs_table(const char *contents, const char *res, const char *su
+@@ -252,6 +252,8 @@ static void programs_table(const char *contents, const char *res, const char *su
      fclose(f); fclose(o); setenv("DM_PROGRAMS", out, 0);
  }
  
@@ -23,7 +23,7 @@ index aca6d08755250cb67f388d5ee55b43522d71571f..569133c56aa903518c1862dc5dcad32b
  int main(int argc, char **argv) {
      char self[PATH_MAX], exe[PATH_MAX]; uint32_t n = sizeof self;
      if (_NSGetExecutablePath(self, &n) || !realpath(self, exe)) return 1;
-@@ -305,6 +307,8 @@ int main(int argc, char **argv) {
+@@ -331,6 +333,8 @@ int main(int argc, char **argv) {
      // Restart game (Quick settings, front_mac.m front_qs_restart): the host makes this file and quits; the launcher then starts it again with the same environment
      char restart[PATH_MAX]; snprintf(restart, sizeof restart, "%s/restart-requested", sup);
      unlink(restart); setenv("DM_LAUNCHER_RESTART", restart, 1);
@@ -32,7 +32,7 @@ index aca6d08755250cb67f388d5ee55b43522d71571f..569133c56aa903518c1862dc5dcad32b
      int status;
      for (;;) {
          int err = posix_spawn(&g_child, host, NULL, NULL, host_argv, environ);
-@@ -313,7 +317,8 @@ int main(int argc, char **argv) {
+@@ -339,7 +343,8 @@ int main(int argc, char **argv) {
          // Cloud saves (DM_SAVE_SYNC, dm/host/save_sync.h): what the host committed and had not sent yet goes now, after a crash too (the committed save is whole whatever the host was doing)
          // DM_SAVE as the host had it: an env file or the launch environment may have set another folder than this app's own
          if (!save_sync_after_exit(getenv("DM_SAVE"), id)) fprintf(stderr, "launcher: the save did not reach the cloud; it goes at the next start\n");
@@ -40,8 +40,8 @@ index aca6d08755250cb67f388d5ee55b43522d71571f..569133c56aa903518c1862dc5dcad32b
 +        if (unlink(restart) || !WIFEXITED(status)) { unlink(slotreq); break; }
 +        slot_load(slotreq, getenv("DM_SAVE"));
          fprintf(stderr, "launcher: Restart game: starting the host again\n");
+         restart_choices();
      }
-     if (WIFSIGNALED(status)) { fprintf(stderr, "launcher: the host stopped on signal %d\n", WTERMSIG(status)); return 128 + WTERMSIG(status); }
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
 index ee3104c4a6ee4c05e8d4fce4ec539a53728dd603..8d7bebcc909cc5bc86bff6ff5e3600b2b0e3b9d0 100755
 --- a/dm/mac/pack_app.py
