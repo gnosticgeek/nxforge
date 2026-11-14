@@ -993,6 +993,17 @@ struct StageSettings: View {
                     }
                 }
             }
+            group("BUILDING") {
+                row("Keys file (prod.keys)", "Chosen once, used for every build and rebuild.", last: true) {
+                    HStack(spacing: 8) {
+                        if let k = model.settings.defaultKeys {
+                            Text(k.tildePath).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1).truncationMode(.middle).frame(maxWidth: 210, alignment: .trailing)
+                        }
+                        Button(model.settings.defaultKeys == nil ? "Choose…" : "Change…") { model.chooseSavedKeys() }.buttonStyle(StageButton(height: 32))
+                    }
+                }
+                KeysStatusRow(model: model, dark: true).padding(.bottom, 11)
+            }
             group("WHEN NXFORGE OPENS") {
                 row("Open on", "", last: true, focus: .startIn) {
                     Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.rawValue) } }

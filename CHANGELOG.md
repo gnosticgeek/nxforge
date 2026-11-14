@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.3 (2026-11-14)
+
+- **Choose your prod.keys once, in Settings** (Converter 0.11.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Mac app saves one keys file and every build, rebuild and `nxforge build` uses it, with its status shown in Settings and a prod.keys found in the usual places offered. A build asks only when none is saved or it is missing. No game rebuild needed.
+
 ## 0.35.2 (2026-11-14)
 
 - **A new look for Home in the Mac app** (Converter 0.11.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the focused game's key art fills the top of Home behind a cleaner headline, and the shelf is a "Your games" row with names under the covers. No game rebuild needed.

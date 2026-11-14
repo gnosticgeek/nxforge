@@ -3,7 +3,8 @@
 // 3. converts the folder to a signed Mac app, and rebuilds it when the engine changes. The same steps run headless:
 //   NXForgeConverter --check | --validate <folder> [<prod.keys>] | --convert <folder> [<prod.keys>] [--sign <identity>]
 //   | --rebuild <app> [<prod.keys>] [--sign <identity>] [--scratch] | --engine [<folder>] | --verify <app> | --library <games folder> [<prod.keys>]
-// <folder> may also be a Switch 2 game's .nup file or dump folder, which need no prod.keys.
+// <folder> may also be a Switch 2 game's .nup file or dump folder, which need no prod.keys. Without <prod.keys>, the keys file
+// saved in Settings is used, else the game folder's own prod.keys.
 import AppKit
 import SwiftUI
 
@@ -69,8 +70,11 @@ enum CLI {
 }
 
 func signArg(_ a: [String]) -> String? { a.firstIndex(of: "--sign").flatMap { $0 + 1 < a.count ? a[$0 + 1] : nil } }
-/// the keys file after the folder, when given (a NUP or a dump needs none)
-func keysArg(_ a: [String]) -> String? { a.count > 2 && !a[2].hasPrefix("--") ? a[2] : nil }
+/// the keys file after the folder, when given (a NUP or a dump needs none); else the one saved in Settings, else the game folder's
+func keysArg(_ a: [String], folder: String? = nil) -> String? {
+    if a.count > 2 && !a[2].hasPrefix("--") { return a[2] }
+    return KeysFile.resolve(saved: Settings.load().defaultKeys, gameFolder: folder ?? a.dropFirst().first.map(Source.folder))
+}
 
 let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
@@ -79,12 +83,12 @@ case "--validate" where args.count >= 2: exit(MainActor.assumeIsolated { CLI.val
 case "--engine": exit(MainActor.assumeIsolated { CLI.engine(args.count > 1 ? args[1] : nil) })
 case "--convert" where args.count >= 2: exit(MainActor.assumeIsolated { CLI.convert(args[1], keysArg(args), sign: signArg(args), rebuild: nil) })
 case "--rebuild" where args.count >= 2:
-    exit(MainActor.assumeIsolated { CLI.convert(args[1].url.deletingLastPathComponent().path, keysArg(args), sign: signArg(args), rebuild: args[1], scratch: args.contains("--scratch")) })
+    exit(MainActor.assumeIsolated { CLI.convert(args[1].url.deletingLastPathComponent().path, keysArg(args, folder: args[1].url.deletingLastPathComponent().path), sign: signArg(args), rebuild: args[1], scratch: args.contains("--scratch")) })
 case "--library" where args.count >= 2:
     // the Library page's scan, printed: one game per line (nothing is moved or written)
     var s = GameLibrary.scan(root: args[1])
     // with a keys file: each game's own name, publisher and version from its control data, as the Library reads them
-    if args.count > 2, let k = try? Keys(contentsOf: args[2].url) { s.games = s.games.map { GameLibrary.withDetails($0, keys: k) } }
+    if let kf = args.count > 2 ? args[2] : KeysFile.resolve(saved: Settings.load().defaultKeys, gameFolder: nil), let k = try? Keys(contentsOf: kf.url) { s.games = s.games.map { GameLibrary.withDetails($0, keys: k) } }
     for g in s.games {
         print("\(g.console == .switch2 ? "S2" : "S1") \(g.displayName)\(g.version.map { " v\($0)" } ?? "")\(g.publisher.map { " (\($0))" } ?? "")\(g.icon != nil ? " [icon]" : "") · \(g.contents)\(g.titleID.map { " · \($0)" } ?? "")\(g.shared ? " · shares its folder" : "")\(g.app != nil ? " · built" : "")")
         print("   \(g.path)")

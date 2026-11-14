@@ -97,10 +97,9 @@ extension AppModel {
 
     // MARK: names and icons
 
-    /// The keys file for a game folder: prod.keys beside the game, else the default keys file, else the one chosen last.
+    /// The keys file for a game folder: the one saved in Settings, else prod.keys beside the game, else the one chosen last.
     func keysFile(for folder: String) -> String? {
-        let fm = FileManager.default
-        return [folder + "/prod.keys", settings.defaultKeys, settings.keys].compactMap { $0 }.first { fm.fileExists(atPath: $0) }
+        KeysFile.resolve(saved: settings.defaultKeys, gameFolder: folder) ?? settings.keys.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
     }
 
     /// Reads the control data (name, publisher, version, icon) of the games that do not have it yet, a game at a time off the
@@ -208,6 +207,7 @@ extension AppModel {
             path = p
         }
         setGameDir(path)
+        ensureKeys()
         page = .convert
     }
 
