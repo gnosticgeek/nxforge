@@ -193,7 +193,7 @@ index f747eb00447dd5d6bcb260af0906f875edf39afa..3f4e6ad100df4aeeb6e7e58a046f6979
      int64_t patch_off;         // patch area relative to the base; negative = before the base (image too large, see patch_nso.py FAR), and size does not include it
      uint64_t image_size, file_image_len, patch_len;   // only with the patch area before the base: whole image (with bss and key page), length of the image part of the file, patch area length
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 377056b935de97dcb85a9b70f31e6d9db534754b..f2e91d4139e4ea323ad13c7f5ab4a88598fc64d4 100644
+index 45921135613377739603bfd32d586a646013e3b8..5460d78a01beedcef350a4a893e1e51c7a476acf 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -704,6 +704,17 @@ __attribute__((constructor)) static void prefs_from_old_id(void) {

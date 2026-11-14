@@ -32,7 +32,7 @@ index 71722e87f6e2db32653386e4f245c94bf3da8c29..74fbb73b851b5602786f8397a8b1d389
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index f2e91d4139e4ea323ad13c7f5ab4a88598fc64d4..73f6582ad0e2df398100b6788cd8519bde19f163 100644
+index 5460d78a01beedcef350a4a893e1e51c7a476acf..b65cb4237036f5fb83eccbb68005dd9e8817bb79 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -710,7 +710,9 @@ extern int (*dm_front_screen)(unsigned *w, unsigned *h);

@@ -10,7 +10,7 @@ Subject: front-end-save-check: NXForge's Play (--no-launcher) runs the cloud
  2 files changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index aca6d08755250cb67f388d5ee55b43522d71571f..7a1a024cc5b76d0e0f31be2530ddf08d9bdb73ce 100644
+index e8bb19863562717ce6099d621666f6d514615614..6d66576af8ad524f33d75dba3f581ec4b3844147 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
 @@ -37,6 +37,7 @@
@@ -21,7 +21,7 @@ index aca6d08755250cb67f388d5ee55b43522d71571f..7a1a024cc5b76d0e0f31be2530ddf08d
  static pid_t g_child;
  static char *g_file_keys, *g_launch_keys;   // the variables the env files set, and the settings the launch environment set (DM_ENV_FILE_KEYS, DM_ENV_LAUNCH_KEYS)
  
-@@ -280,9 +281,10 @@ int main(int argc, char **argv) {
+@@ -304,9 +305,10 @@ int main(int argc, char **argv) {
      fprintf(stderr, "launcher: save %s\n", getenv("DM_SAVE") ?: save);
      setenv("DM_SAVE", save, 0);   // before the window (and after the save moved into the game folder): its cloud-save check compares this save with the cloud's (Launcher.swift SaveCheck)
      int window = !(getenv("DM_LAUNCHER") && !strcmp(getenv("DM_LAUNCHER"), "0"));

@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.0 (2026-11-14)
+
+- **NXForge Sidebar 0.6.0: four improvements to the in-game sidebar** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): it glows in the game's own colour with the game's icon and name at the top, like the app's 0.33.0 design; hold P, a controller's top face button or the eye button to peek at the game at full size; the app's Battery, Balanced and Quality presets on the Graphics page; and "Put it all back" on the General page undoes this session's changes.
+- **Restart game takes the saved launch choices again** (`dm/mac/launcher.c`): a frame rate or render scale changed since the game started (a sidebar preset, or the app's Play options) now applies after Restart game, as after quitting and opening the game. What the launch environment or an env file set stays.
+- Games pick up the new sidebar when they are rebuilt (or their player swapped in).
 ## 0.34.1 (2026-11-14)
 
 - **Quick-save slots** (Sidebar 0.5.1, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): three slots per game on the sidebar's General page and in a new **Save Slots** menu. **⌘1–⌘3** save the game's save into a slot in a moment, even while the game is writing; **⌥⌘1–⌥⌘3** (pressed twice) load one: the game restarts from that save, and the save it replaces is kept as a save snapshot ("Before a restore") that the Builds page can put back. A slot holds the game's own save as the game last saved it, not the exact moment on screen. Needs a game rebuild (new launcher and player).
