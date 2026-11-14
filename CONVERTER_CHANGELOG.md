@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.8.0 (2026-11-14)
+
+A rebuild that says what it will redo, and a rebuild from scratch. Ships in NXForge 0.31.1.
+
+- **Rebuild from scratch.** A normal rebuild already reuses every step whose inputs have not changed (the unpacked game, the rewritten code, each shader, the pipeline archive) and redoes only the rest. **From scratch…** beside Preview build on Convert, **Rebuild from Scratch…** in the Game page's Rebuild menu, on a build's right-click menu and in the Build menu (⇧⌘R) reuses none of it: the game's build folder is emptied (its logs, a provisional profile and the run folder stay), so the game is unpacked and its shaders are translated again. It asks first, with how long a full build of that game takes. Your saves and the Metal cache all games share are kept. For a build that looks wrong after a normal rebuild. On the command line: `--rebuild <app> --scratch`.
+- **Preview build lists every step.** The preview was a block of text that stopped at the first step to redo. It is now a list of the build's steps: reused, redone (with why, and how long the step took last time) or "only if a step above changes what it reads", with the total underneath. The app's packing counts as redone whenever a step before it is, and a shader step that runs again says whether the engine's shader chain changed (every shader is translated again) or not (shaders whose own inputs are unchanged come back from the cache).
+- **The Older engine badge says what a rebuild costs**: "Older engine · quick rebuild" (only the player and the app are made again), "· shader rebuild" (the engine's shader chain changed, so every shader is translated again), "· partial rebuild" (the build's tools or the game's own profile changed) or "· full rebuild" (the build folder is gone), with the time from the last run of those steps where one is recorded. On the Library's covers, the Game page (also under Since this build) and Convert. It is read from the build folder and the engine's changed files without running anything; a changed layer patch counts for the engine files it really changes. Preview build stays the exact answer.
+
 ## 0.7.0 (2026-11-14)
 
 Ten changes to how the converter looks and behaves, and every drive on Storage. Ships in NXForge 0.31.0.

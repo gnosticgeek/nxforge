@@ -67,6 +67,27 @@ enum Layer {
         return out
     }
 
+    /// The engine files whose patched content differs, from a diff of layer/patches made with the patches' whole text as
+    /// context (git diff -U<large>): a changed line counts for the file whose "diff --git" header precedes it in the patch. A
+    /// patch's index lines and hunk positions move when an earlier patch changes the same file, with nothing of its own
+    /// changed, so they and the mail headers do not count.
+    static func patchedFiles(diff: String) -> [String] {
+        var out: [String] = [], file: String?
+        for l in diff.split(separator: "\n", omittingEmptySubsequences: false) {
+            guard let mark = l.first, mark == " " || mark == "+" || mark == "-" else { continue }
+            let body = l.dropFirst()
+            if l.hasPrefix("+++ ") || l.hasPrefix("--- ") { if l.hasSuffix(".patch") || l.hasSuffix("/dev/null") { file = nil }; continue }   // the next patch file
+            if body.hasPrefix("diff --git a/") {
+                file = body.dropFirst("diff --git a/".count).split(separator: " ").first.map(String.init)
+                if mark != " ", let f = file, !out.contains(f) { out.append(f) }   // a file the patch newly touches, or no longer does
+                continue
+            }
+            guard mark != " ", let f = file, !body.hasPrefix("index "), !body.hasPrefix("@@ ") else { continue }
+            if !out.contains(f) { out.append(f) }
+        }
+        return out
+    }
+
     // MARK: Upstream on this Mac (`layer.py local`; Converter 0.5.0)
 
     static let localName = "nxforge-local-engine"

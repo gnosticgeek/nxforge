@@ -118,7 +118,10 @@ struct GamePage: View {
                     if let tid, let v = model.verified[tid] { Pill(text: v.result == "plays" ? "Plays" : v.result.capitalized, color: v.result == "plays" ? .green : .orange).help(v.summary) }
                     if let b {
                         if b.kept == true { Pill(text: "Kept", color: .secondary) }
-                        else if model.engine != nil && !model.isCurrent(b) { Pill(text: "Older engine", color: .orange) }
+                        else if model.engine != nil && !model.isCurrent(b) {
+                            let c = model.rebuildCost(b)
+                            Pill(text: c.map { "Older engine · \($0.short)" } ?? "Older engine", color: .orange).help(c.map { "\($0.title): \($0.detail)" } ?? "")
+                        }
                         else { Pill(text: "Built", color: .green) }
                     } else { Pill(text: "Not built", color: .secondary) }
                     if let b, model.isPlaying(app: b.app) { Pill(text: "Playing now", color: .blue) }
@@ -127,8 +130,11 @@ struct GamePage: View {
                     if let b {
                         Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill").frame(minWidth: 90) }
                             .buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
-                        Button { model.rebuildAsked(b) } label: { Label("Rebuild", systemImage: "arrow.clockwise") }
-                            .buttonStyle(.glass).disabled(model.run.running || !model.allOK)
+                        Menu {
+                            Button("Rebuild from Scratch…") { model.rebuildAsked(b, scratch: true) }
+                        } label: { Label("Rebuild", systemImage: "arrow.clockwise") } primaryAction: { model.rebuildAsked(b) }
+                            .menuStyle(.button).buttonStyle(.glass).fixedSize().disabled(model.run.running || !model.allOK)
+                            .help("Rebuild reuses the steps whose inputs have not changed. The menu has Rebuild from Scratch, which reuses none.")
                     }
                     if let g {
                         Button { model.convertFromLibrary(g) } label: { Label(b == nil ? "Convert" : "Open in Convert", systemImage: "macwindow.badge.plus") }
@@ -286,6 +292,10 @@ struct ChangesCard: View {
             if let a = advice {
                 Label(a.verdict, systemImage: a.worth ? "arrow.clockwise.circle.fill" : "checkmark.circle").foregroundStyle(a.worth ? Color.blue : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if !a.changes.isEmpty, let c = model.rebuildCost(build) {
+                    Label("\(c.title): \(c.detail)", systemImage: c.kind == .quick ? "hare" : c.kind == .shaders ? "tortoise" : "clock")
+                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 ForEach(all ? a.changes : Array(a.changes.prefix(6))) { c in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(c.hash).font(.caption.monospaced()).foregroundStyle(.secondary)

@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.31.1 (2026-11-14)
+
+- **NXForge Converter 0.8.0: a rebuild from scratch, a preview of every step, and what a rebuild costs on the Older engine badge** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). A normal rebuild keeps reusing every step whose inputs are unchanged; Rebuild from Scratch empties the game's build folder first.
+- **`--plan` says more** (`scripts/build_ipa_from_nsp.py`, the converter's Preview build): the Mac app is listed as redone whenever a step before it is (it was among the maybes, so the time was a range), a shader step that runs again says whether the translation chain changed, and with `--progress json` the plan is also a `plan` event of rows.
+- No game rebuild needed.
+
 ## 0.31.0 (2026-11-14)
 
 - **NXForge Converter 0.7.0: ten changes to its look and feel** ([CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the build's progress and time left on the sidebar, Storage as a sortable table with a card for every drive plugged in, Storage deletes that can be undone for 20 seconds, delete buttons that name the size, VoiceOver names for icon buttons and covers, a cover size slider and console sections in the Library, banners instead of alerts for background work, recent games on Convert, a Dock menu with recently played games, and the window opening where it was. Converter only: no game rebuild.
