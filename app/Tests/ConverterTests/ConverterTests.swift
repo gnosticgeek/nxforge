@@ -930,3 +930,76 @@ import Testing
         #expect(Layer.patchedFiles(diff: diff) == ["scripts/build_ipa_from_nsp.py"])
     }
 }
+
+// The library front end (Converter 0.9.0): a game's option list, presets, cover matching and the new settings
+@Suite struct FrontEnd {
+    static let list: [LaunchSetting] = {
+        let json = #"""
+        [{"env":"DM_FPS_TARGET","kind":"choice","label":"Frame rate","note":"","default":"60","level":"basic","options":[["30","30 fps"],["60","60 fps"]]},
+         {"env":"DM_RENDER_SCALE","kind":"range","label":"Render scale","note":"","default":"1.0","level":"basic","min":0.5,"max":1.0,"step":0.05},
+         {"env":"DM_PRESENT_UPSCALE","kind":"choice","label":"Upscaling","default":"off","options":[["off","Standard"],["metalfx","MetalFX"]]},
+         {"env":"DM_PRESENT_EDR","kind":"toggle","label":"HDR highlights","note":"","default":"0"},
+         {"env":"DM_LANG","kind":"choice","label":"Game language","note":"","default":"en-US","level":"basic","options":[["en-US","English"],["ja","Japanese"]]},
+         {"env":"DM_METAL_HUD","kind":"toggle","label":"Performance HUD","note":"","default":"0"}]
+        """#
+        return try! JSONDecoder().decode([LaunchSetting].self, from: Data(json.utf8))
+    }()
+    static var defaults: [String: String] { Dictionary(uniqueKeysWithValues: list.map { ($0.env, $0.def) }) }
+
+    @Test func theListsDefaultKeyIsRead() {
+        #expect(Self.list.count == 6)
+        #expect(Self.list[0].def == "60" && Self.list[2].note == "")
+    }
+
+    @Test func presets() {
+        var v = Self.defaults
+        #expect(PlayOptions.current(settings: Self.list, values: v) == .balanced)
+        PlayOptions.apply(.battery, settings: Self.list, to: &v)
+        #expect(v["DM_FPS_TARGET"] == "30" && v["DM_RENDER_SCALE"] == "0.75" && v["DM_PRESENT_EDR"] == "0")
+        #expect(v["DM_LANG"] == "en-US")   // a preset leaves the rest alone
+        #expect(PlayOptions.current(settings: Self.list, values: v) == .battery)
+        PlayOptions.apply(.quality, settings: Self.list, to: &v)
+        #expect(v["DM_FPS_TARGET"] == "60" && v["DM_PRESENT_UPSCALE"] == "metalfx" && v["DM_PRESENT_EDR"] == "1")
+        #expect(PlayOptions.current(settings: Self.list, values: v) == .quality)
+        v["DM_RENDER_SCALE"] = "0.60"
+        #expect(PlayOptions.current(settings: Self.list, values: v) == .custom)
+    }
+
+    @Test func aRunsOwnChoices() {
+        var v = Self.defaults
+        v["DM_FPS_TARGET"] = "30"
+        v["DM_RENDER_SCALE"] = "1.00"   // the same number, written as a slider writes it
+        #expect(PlayOptions.difference(Self.list, from: Self.defaults, to: v) == ["DM_FPS_TARGET": "30"])
+    }
+
+    @Test func tabsAndSummary() {
+        #expect(PlayOptions.rows(.graphics, settings: Self.list, values: Self.defaults).map(\.env) == ["DM_FPS_TARGET", "DM_RENDER_SCALE", "DM_PRESENT_UPSCALE", "DM_PRESENT_EDR"])
+        #expect(PlayOptions.rows(.general, settings: Self.list, values: Self.defaults).map(\.env) == ["DM_LANG"])
+        #expect(PlayOptions.rows(.advanced, settings: Self.list, values: Self.defaults).map(\.env) == ["DM_METAL_HUD"])
+        let s = PlayOptions.summary(settings: Self.list, values: Self.defaults)
+        #expect(s.map(\.value) == ["60 fps", "100 %", "SDR"])
+    }
+
+    @Test func coverNames() {
+        #expect(CoverSource.normalize("The Legend of Zelda™: Skyward Sword HD") == "thelegendofzeldaskywardswordhd")
+        #expect(CoverSource.normalize("Pikmin 1+2") == CoverSource.normalize("Pikmin 1 + 2"))
+        #expect(CoverSource.plain("Super Mario Odyssey [Starter Pack]") == "Super Mario Odyssey")
+        let list = CoverSource.parse("TITLES = https://www.gametdb.com (type: Switch)\nAAAC3 = Super Mario Odyssey [Starter Pack]\nAAACA = Super Mario Odyssey\nAABPA = Mario Kart 8 Deluxe\n")
+        #expect(list.count == 3)
+        #expect(CoverSource.match("SUPER MARIO ODYSSEY™", in: list) == ["AAACA", "AAAC3"])
+        #expect(CoverSource.match("Mario Kart World", in: list).isEmpty)
+        #expect(CoverSource.urls(id: "AAACA", kind: "cover").first?.absoluteString == "https://art.gametdb.com/switch/cover/US/AAACA.jpg")
+    }
+
+    @Test func aWrapSplitsIntoBackSpineAndFront() {
+        let b = CoverSource.wrap(.back), s = CoverSource.wrap(.spine), f = CoverSource.wrap(.front)
+        #expect(b.minX == 0 && abs(f.maxX - 1) < 1e-9)
+        #expect(abs(b.maxX - s.minX) < 1e-9 && abs(s.maxX - f.minX) < 1e-9)
+        #expect(abs(b.width - f.width) < 1e-9 && s.width < 0.06)
+    }
+
+    @Test func frontEndSettingsDefault() throws {
+        let s = try JSONDecoder().decode(Settings.self, from: Data(#"{"start_in": "Converter", "battery_preset": false}"#.utf8))
+        #expect(s.startIn == .converter && !s.batteryPreset && s.straightPlay && s.returnToLibrary && s.downloadCovers)
+    }
+}

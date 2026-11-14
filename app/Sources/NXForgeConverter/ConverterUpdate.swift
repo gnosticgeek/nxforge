@@ -90,7 +90,7 @@ enum ConverterUpdate {
     /// The installed app's folder when it runs from a bundle named as bundle.sh names it, so a rebuild can replace it in place.
     static var installFolder: String? {
         let b = Bundle.main.bundleURL
-        guard b.pathExtension == "app", b.lastPathComponent == "NXForge Converter.app" else { return nil }
+        guard b.pathExtension == "app", ["NXForge.app", "NXForge Converter.app"].contains(b.lastPathComponent) else { return nil }
         return b.deletingLastPathComponent().path
     }
 
@@ -99,7 +99,7 @@ enum ConverterUpdate {
     /// The shell script that waits for this process to end, rebuilds the app into the same folder and opens it (or the log
     /// when the build failed: bundle.sh builds before it removes the old app, so a failed build leaves the old one).
     static func script(repo: String, folder: String, pid: Int32) -> String {
-        let app = "\(folder)/NXForge Converter.app"
+        let app = "\(folder)/NXForge.app"
         return """
         export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin
         while kill -0 \(pid) 2>/dev/null; do sleep 0.3; done
@@ -171,11 +171,11 @@ extension AppModel {
             return
         }
         guard let folder = ConverterUpdate.installFolder else {
-            _ = confirm("Run from a build folder", "This converter does not run from an installed “NXForge Converter.app”, so it cannot replace itself. Run app/install.sh in \(repo.tildePath) instead.", action: "OK")
+            _ = confirm("Run from a build folder", "This converter does not run from an installed “NXForge.app”, so it cannot replace itself. Run app/install.sh in \(repo.tildePath) instead.", action: "OK")
             return
         }
         let what = u.needsPull ? "The engine updates to \(u.ref) first (as Update engine does), then the converter" : "The converter"
-        guard !ask || confirm("Update to NXForge Converter \(u.version)?", "\(what) is rebuilt from \(repo.tildePath) and replaces the copy in \(folder.tildePath), which takes about a minute. The converter quits now and opens again when it is built; if the build fails, the current copy stays and its log opens.", action: "Update and Relaunch") else { return }
+        guard !ask || confirm("Update NXForge to \(u.version)?", "\(what) is rebuilt from \(repo.tildePath) and replaces the copy in \(folder.tildePath), which takes about a minute. The converter quits now and opens again when it is built; if the build fails, the current copy stays and its log opens.", action: "Update and Relaunch") else { return }
         converterUpdating = true
         Task.detached {
             do {

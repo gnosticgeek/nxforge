@@ -371,7 +371,7 @@ struct UpdatesPage: View {
 
     var converterRow: some View {
         let u = model.converterUpdate
-        return UpdateRow(symbol: "macwindow.badge.plus", colors: [.blue, .cyan], title: "NXForge Converter",
+        return UpdateRow(symbol: "macwindow.badge.plus", colors: [.blue, .cyan], title: "NXForge app",
                          detail: ConverterUpdate.installFolder.map { "This app, in \($0.tildePath). An update rebuilds it from the engine checkout and opens it again." }
                             ?? "This app (run from a build folder, so it cannot replace itself).",
                          installed: CONVERTER_VERSION, badge: u.map { ("\($0.version) available", .blue) } ?? ("Up to date", .green)) {
@@ -477,7 +477,7 @@ struct UpdateOfferSheet: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let c = offer.converter { notes("NXForge Converter \(c.to)", offer.converterNotes) }
+                    if let c = offer.converter { notes("NXForge app \(c.to)", offer.converterNotes) }
                     if let e = offer.engine { notes("NXForge \(e.to)", offer.engineNotes) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

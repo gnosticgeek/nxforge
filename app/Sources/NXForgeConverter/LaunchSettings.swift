@@ -13,6 +13,27 @@ struct LaunchSetting: Decodable, Identifiable, Hashable {
     let min, max, step: Double?
     let on, off: String?
     var id: String { env }
+
+    // the list names a setting's default "default" (dm/games/settings.py); "def" is read too
+    enum CodingKeys: String, CodingKey { case env, kind, label, note, def = "default", legacyDef = "def", section, needs, level, options, min, max, step, on, off }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        env = try c.decode(String.self, forKey: .env)
+        kind = try c.decode(String.self, forKey: .kind)
+        label = try c.decode(String.self, forKey: .label)
+        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+        def = try c.decodeIfPresent(String.self, forKey: .def) ?? c.decode(String.self, forKey: .legacyDef)
+        section = try c.decodeIfPresent(String.self, forKey: .section)
+        needs = try c.decodeIfPresent(String.self, forKey: .needs)
+        level = try c.decodeIfPresent(String.self, forKey: .level)
+        options = try c.decodeIfPresent([[String]].self, forKey: .options)
+        min = try c.decodeIfPresent(Double.self, forKey: .min)
+        max = try c.decodeIfPresent(Double.self, forKey: .max)
+        step = try c.decodeIfPresent(Double.self, forKey: .step)
+        on = try c.decodeIfPresent(String.self, forKey: .on)
+        off = try c.decodeIfPresent(String.self, forKey: .off)
+    }
     var basic: Bool { level == "basic" }
     var onValue: String { on ?? "1" }
     var offValue: String { off ?? "0" }

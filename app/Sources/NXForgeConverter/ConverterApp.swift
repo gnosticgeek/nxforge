@@ -57,7 +57,7 @@ struct ConverterApp: App {
     @State private var model = AppModel()
 
     var body: some Scene {
-        Window("NXForge Converter", id: "main") {
+        Window("NXForge", id: "main") {
             RootView(model: model)
                 .frame(minWidth: 820, minHeight: 580)
                 .task { await snapshotIfAsked() }
@@ -67,9 +67,9 @@ struct ConverterApp: App {
         .commands {
             // About shows the Converter's own version (converter-vX.Y.Z); the engine's NXForge release is its build number
             CommandGroup(replacing: .appInfo) {
-                Button("About NXForge Converter") {
+                Button("About NXForge") {
                     NSApp.orderFrontStandardAboutPanel(options: [
-                        .applicationName: "NXForge Converter",
+                        .applicationName: "NXForge",
                         .applicationVersion: CONVERTER_VERSION,
                         .version: model.engine.map { "engine NXForge \($0.short)" } ?? "",
                     ])
@@ -84,17 +84,20 @@ struct ConverterApp: App {
             }
             // View: the pages on ⌘1…⌘5, above the sidebar and toolbar items
             CommandGroup(before: .sidebar) {
+                Button("Games") { model.showStage(.home) }.keyboardShortcut("g")
+                Button("Converter") { model.showConverter() }.keyboardShortcut("g", modifiers: [.command, .shift])
+                Divider()
                 ForEach(Array(Page.allCases.enumerated()), id: \.element) { i, p in
-                    Button(p.rawValue) { model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                    Button(p.rawValue) { model.showConverter(); model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
                 }
                 Divider()
             }
             CommandGroup(replacing: .help) {
-                Button("NXForge Converter Help") { NSWorkspace.shared.open(helpURL) }
-                Button("What's New in NXForge Converter") { model.showWhatsNew() }
+                Button("NXForge Help") { NSWorkspace.shared.open(helpURL) }
+                Button("What's New in NXForge") { model.showWhatsNew() }
                 Button("Check for Updates…") { model.page = .updates; model.engineAction(update: false) }.disabled(model.engineBusy || model.engine == nil)
                 if model.converterUpdate != nil {
-                    Button("Update NXForge Converter…") { model.updateConverter() }
+                    Button("Update NXForge…") { model.updateConverter() }
                 }
             }
             CommandMenu("Build") {
@@ -130,6 +133,19 @@ struct ConverterApp: App {
         let env = ProcessInfo.processInfo.environment
         guard let out = env["NXC_SNAPSHOT"] else { return }
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.page = page }
+        // NXC_STAGE=home, library, game, back, options, settings or launch: the front end on that screen (game and the ones
+        // after it: the first built game's)
+        if let st = env["NXC_STAGE"] {
+            model.frontEnd = true
+            model.stageTab = st == "library" ? .library : .home
+            try? await Task.sleep(for: .seconds(2))
+            // NXC_GAME=<part of a name> picks the game instead
+            let g = env["NXC_GAME"].flatMap { n in model.stageGames().first { $0.name.localizedCaseInsensitiveContains(n) } } ?? model.stageGames().first { $0.app != nil }
+            if let g, ["game", "back", "options"].contains(st) { model.gameDetail = g.ref; model.caseFlipped = st == "back" }
+            if let g, st == "options" { model.openPlayOptions(g.ref) }
+            if st == "settings" { model.stageSettings = true }
+            if let g, st == "launch", let a = g.app { model.launching = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps") }
+        }
         try? await Task.sleep(for: .seconds(5))
         // NXC_CONFIRM=1 puts a delete confirmation over the window, to check how its buttons draw
         if env["NXC_CONFIRM"] != nil {

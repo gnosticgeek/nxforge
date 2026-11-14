@@ -9,6 +9,8 @@ enum LogDetail: String, Codable, CaseIterable { case standard = "Standard", deta
 enum LibraryLayout: String, Codable, CaseIterable { case list, grid }
 /// The Library's order
 enum LibrarySort: String, Codable, CaseIterable { case name = "Name", recent = "Recently played", size = "Size" }
+/// What the window opens on: the front end's Home shelf or Library, or the converter's pages
+enum StartIn: String, Codable, CaseIterable { case home = "Home", library = "Library", converter = "Converter" }
 /// --cleanup: what the script deletes from <id>_build after a successful build
 enum Cleanup: String, Codable, CaseIterable {
     case off, unused, all
@@ -63,6 +65,18 @@ struct Settings: Codable, Equatable {
     var lastPage: String?
     var lastBuild: String?
     var lastLibraryFocus: String?
+    /// the front end (Stage): what the window opens on, and how Play behaves there
+    var startIn: StartIn = .home
+    /// Play opens the game straight in, with its saved Play options (--no-launcher); off: its own settings window as it is set
+    var straightPlay = true
+    /// the first Play of a game shows its Play options once
+    var firstPlayOptions = true
+    /// on battery, a run takes the Battery preset without saving it
+    var batteryPreset = true
+    /// the front end comes back to the front when a game quits
+    var returnToLibrary = true
+    /// box art is downloaded from GameTDB for games that have none
+    var downloadCovers = true
 
     static let coverSizes: ClosedRange<Double> = 110...280
 
@@ -75,6 +89,8 @@ struct Settings: Codable, Equatable {
         case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
         case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
+        case startIn = "start_in", straightPlay = "straight_play", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
+        case returnToLibrary = "return_to_library", downloadCovers = "download_covers"
     }
 
     init() {}
@@ -111,6 +127,12 @@ struct Settings: Codable, Equatable {
         lastPage = try? c.decodeIfPresent(String.self, forKey: .lastPage)
         lastBuild = try? c.decodeIfPresent(String.self, forKey: .lastBuild)
         lastLibraryFocus = try? c.decodeIfPresent(String.self, forKey: .lastLibraryFocus)
+        startIn = (try? c.decodeIfPresent(StartIn.self, forKey: .startIn)) ?? .home
+        straightPlay = (try? c.decodeIfPresent(Bool.self, forKey: .straightPlay)) ?? true
+        firstPlayOptions = (try? c.decodeIfPresent(Bool.self, forKey: .firstPlayOptions)) ?? true
+        batteryPreset = (try? c.decodeIfPresent(Bool.self, forKey: .batteryPreset)) ?? true
+        returnToLibrary = (try? c.decodeIfPresent(Bool.self, forKey: .returnToLibrary)) ?? true
+        downloadCovers = (try? c.decodeIfPresent(Bool.self, forKey: .downloadCovers)) ?? true
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)
