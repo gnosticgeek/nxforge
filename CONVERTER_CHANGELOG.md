@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.13.0 (2026-11-14)
+
+The app's side of the engine's 0.37.0. Ships in NXForge 0.37.0.
+
+- **A game kept running behind the library**: a game built on NXForge 0.37.0 or later pauses and hides itself when you choose Library in its sidebar, instead of quitting. Its page and Home say "Paused · still running", Resume brings it back exactly where you left it, and Quit game ends it. Quit game is there for any running game.
+- **Resume** brings a running game's own window back to the front; it no longer opens the app a second time.
+- **Play options** shows the new settings where the game's own window has them: mouse camera, its speed and the microphone on General, and foliage, model detail and shadow detail on Graphics, for the games that have them.
+
 ## 0.12.0 (2026-11-14)
 
 Cheats and mods from the app, and five things around a play session. Ships in NXForge 0.36.0. Several come from other nxnative front ends (README, Acknowledgements).

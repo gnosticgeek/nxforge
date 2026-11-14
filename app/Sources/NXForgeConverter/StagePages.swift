@@ -177,6 +177,10 @@ struct GameHeroColumn: View {
                         .buttonStyle(StageButton(primary: true, height: 56, glow: tint))
                     Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: { Label("Play options", systemImage: "slider.horizontal.3").padding(.horizontal, 4) }
                         .buttonStyle(StageButton(height: 56, glass: true))
+                    if playing {
+                        Button { model.quitGame(app: g.app ?? "") } label: { Label("Quit game", systemImage: "xmark") }
+                            .buttonStyle(StageButton(height: 56, glass: true)).help("Quits the running game, as its own Quit does")
+                    }
                 } else {
                     Button { model.playFromStage(g.ref) } label: { Label("Build", systemImage: "hammer.fill").padding(.horizontal, 14) }
                         .buttonStyle(StageButton(primary: true, height: 56, glow: tint)).disabled(model.run.running || model.batchRunning)
@@ -210,6 +214,7 @@ struct GameHeroColumn: View {
 
     var eyebrow: String {
         if game.app == nil { return "NOT BUILT YET" }
+        if model.isSuspended(app: game.app ?? "") { return "PAUSED · STILL RUNNING" }
         if model.isPlaying(app: game.app ?? "") { return "PLAYING NOW" }
         if game.last == nil { return "IN YOUR LIBRARY" }
         return "RECENTLY PLAYED"
