@@ -146,6 +146,11 @@ struct ConverterApp: App {
             if st == "settings" { model.stageSettings = true }
             if let g, st == "launch", let a = g.app { model.launching = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps") }
         }
+        // NXC_DETAIL=1 with NXC_PAGE=library or builds: the converter's page of the first built game
+        if env["NXC_DETAIL"] != nil, env["NXC_STAGE"] == nil {
+            try? await Task.sleep(for: .seconds(2))
+            if let g = model.stageGames().first(where: { $0.app != nil }) { model.openGame(g.ref) }
+        }
         try? await Task.sleep(for: .seconds(5))
         // NXC_CONFIRM=1 puts a delete confirmation over the window, to check how its buttons draw
         if env["NXC_CONFIRM"] != nil {

@@ -240,7 +240,7 @@ struct PathField: View {
         HStack(spacing: 10) {
             Text(label).frame(width: labelWidth, alignment: .leading)
             HStack(spacing: 8) {
-                Image(systemName: symbol).foregroundStyle(.blue)
+                Image(systemName: symbol).foregroundStyle(StageLook.soft)
                 Text(value ?? "Not chosen").foregroundStyle(value == nil ? .secondary : .primary)
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 0)

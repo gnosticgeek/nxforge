@@ -49,9 +49,9 @@ struct ConvertPage: View {
         .dropDestination(for: URL.self) { urls, _ in model.drop(urls) } isTargeted: { dropTargeted = $0 && !model.run.running }
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
-                    .background(Color.accentColor.opacity(0.06), in: .rect(cornerRadius: 16))
-                    .overlay { Label("Drop a game folder, game files, a .nup or prod.keys", systemImage: "square.and.arrow.down").font(.title2.weight(.semibold)).foregroundStyle(Color.accentColor) }
+                RoundedRectangle(cornerRadius: 16).strokeBorder(.white, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
+                    .background(.black.opacity(0.55), in: .rect(cornerRadius: 16))
+                    .overlay { Label("Drop a game folder, game files, a .nup or prod.keys", systemImage: "square.and.arrow.down").font(.title2.weight(.semibold)).foregroundStyle(.white) }
                     .allowsHitTesting(false)
             }
         }
@@ -595,7 +595,7 @@ struct DropZone: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Image(systemName: "folder.badge.plus").font(.system(size: 40, weight: .light)).foregroundStyle(Color.accentColor)
+                Image(systemName: "folder.badge.plus").font(.system(size: 40, weight: .light)).foregroundStyle(.white)
                     .symbolRenderingMode(.hierarchical).accessibilityHidden(true)
                 Text("Drag and drop your game folder, or click to choose").font(.headline)
             }
@@ -610,8 +610,8 @@ struct DropZone: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity)
-        .background(Color.accentColor.opacity(hover ? 0.10 : 0.05), in: .rect(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+        .background(.white.opacity(hover ? 0.08 : 0.04), in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.38), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
         .contentShape(.rect)
         .onTapGesture { if game == nil { chooseGame() } }
         .onHover { hover = $0 }
@@ -620,7 +620,7 @@ struct DropZone: View {
 
     func line(_ symbol: String, _ label: String, _ value: String, dim: Bool = false) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).foregroundStyle(Color.accentColor).frame(width: 20)
+            Image(systemName: symbol).foregroundStyle(StageLook.soft).frame(width: 20)
             Text(label).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
             Text(value).foregroundStyle(dim ? .secondary : .primary).lineLimit(1).truncationMode(.middle).help(value)
         }

@@ -80,6 +80,7 @@ struct LibraryPage: View {
     @State private var laterSheet = false
     @State private var laterDate = BatchSchedule.tonight()
     @FocusState private var focused: Bool
+    @State private var restoreScroll: String?
 
     var grid: Bool { model.settings.libraryLayout == .grid || model.couchMode }
 
@@ -161,11 +162,14 @@ struct LibraryPage: View {
                 if let f { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) } }
             }
             // back where it was: the game the Library was on last time is scrolled into view (idea 10)
+            // The scroll itself happens in onChange: called from the task, the proxy can be reached while SwiftUI is still
+            // updating the views ("ScrollViewProxy may not be accessed during view updates"), which ends the app.
             .task {
                 guard let f = model.libraryFocus else { return }
                 try? await Task.sleep(for: .milliseconds(150))
-                proxy.scrollTo(f, anchor: .center)
+                restoreScroll = f
             }
+            .onChange(of: restoreScroll) { _, f in if let f { proxy.scrollTo(f, anchor: .center) } }
         }
         // the keyboard: arrows move between games, Return opens the game's page, Space a quick look
         .focusable()

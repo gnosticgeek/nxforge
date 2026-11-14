@@ -19,11 +19,11 @@ enum Theme {
 /// The blue numbered circle before a card's title and above a step tile.
 struct NumberBadge: View {
     let n: Int
-    var color: Color = .accentColor
+    var color: Color = .white
     var size: CGFloat = 22
 
     var body: some View {
-        Text("\(n)").font(.system(size: size * 0.55, weight: .bold).monospacedDigit()).foregroundStyle(.white)
+        Text("\(n)").font(.system(size: size * 0.55, weight: .heavy).monospacedDigit()).foregroundStyle(color == .white ? Color.black : Color.white)
             .frame(width: size, height: size).background(color, in: .circle)
     }
 }
@@ -34,10 +34,10 @@ struct IconTile: View {
     var size: CGFloat = 52
 
     var body: some View {
-        Image(systemName: symbol).font(.system(size: size * 0.46, weight: .medium)).foregroundStyle(Color.accentColor)
+        Image(systemName: symbol).font(.system(size: size * 0.46, weight: .medium)).foregroundStyle(.white)
             .frame(width: size, height: size)
-            .background(Color.accentColor.opacity(0.16), in: .rect(cornerRadius: size * 0.24))
-            .overlay(RoundedRectangle(cornerRadius: size * 0.24).strokeBorder(Color.accentColor.opacity(0.25)))
+            .background(.white.opacity(0.10), in: .rect(cornerRadius: size * 0.24))
+            .overlay(RoundedRectangle(cornerRadius: size * 0.24).strokeBorder(.white.opacity(0.16)))
     }
 }
 

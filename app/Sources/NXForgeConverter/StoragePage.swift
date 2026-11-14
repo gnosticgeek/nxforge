@@ -278,7 +278,7 @@ struct StoragePage: View {
             }
             Spacer(minLength: 8)
             Button { cleanUp() } label: { Label("Clean Up…", systemImage: "wand.and.sparkles") }
-                .buttonStyle(.stagePrimary).controlSize(.extraLarge)
+                .buttonStyle(.stagePrimary).controlSize(.extraLarge).fixedSize()
                 .disabled(deletableItems.isEmpty || !deleting.isEmpty)
                 .help(deletableItems.isEmpty ? "Nothing can be deleted now" : "Delete every build cache, older app copy and the shader cache that no build is using")
         }

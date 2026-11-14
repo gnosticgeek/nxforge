@@ -89,8 +89,8 @@ struct ToolchainPage: View {
     @ViewBuilder func groupIcon(_ g: CheckGroup) -> some View {
         switch g {
         case .system: Image(systemName: "apple.logo").foregroundStyle(.primary)
-        case .build: Image(systemName: "shippingbox.fill").foregroundStyle(Color.accentColor)
-        case .packaging: Image(systemName: "gearshape.fill").foregroundStyle(Color.accentColor)
+        case .build: Image(systemName: "shippingbox.fill").foregroundStyle(StageLook.soft)
+        case .packaging: Image(systemName: "gearshape.fill").foregroundStyle(StageLook.soft)
         case .optional: Image(systemName: "star.fill").foregroundStyle(.yellow)
         }
     }
@@ -200,7 +200,7 @@ struct ToolchainPage: View {
     var advancedBox: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Image(systemName: "gearshape.2.fill").font(.title2).foregroundStyle(Color.accentColor)
+                Image(systemName: "gearshape.2.fill").font(.title2).foregroundStyle(.white)
                     .frame(width: 40, height: 40).background(Theme.tile, in: .circle)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Advanced configuration").font(.headline)
