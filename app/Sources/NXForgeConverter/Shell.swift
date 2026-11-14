@@ -59,27 +59,35 @@ final class ControllerNav {
                 }
             }
         }
-        on(pad.dpad.left) { $0.moveLibraryFocus(dx: -1) }
-        on(pad.dpad.right) { $0.moveLibraryFocus(dx: 1) }
-        on(pad.dpad.up) { $0.moveLibraryFocus(dy: -1) }
-        on(pad.dpad.down) { $0.moveLibraryFocus(dy: 1) }
-        on(pad.leftThumbstick.left) { $0.moveLibraryFocus(dx: -1) }
-        on(pad.leftThumbstick.right) { $0.moveLibraryFocus(dx: 1) }
-        on(pad.leftThumbstick.up) { $0.moveLibraryFocus(dy: -1) }
-        on(pad.leftThumbstick.down) { $0.moveLibraryFocus(dy: 1) }
-        on(pad.buttonA) { m in
+        // the front end takes every button (stagePad); the converter's pages keep the couch's
+        func key(_ b: GCControllerButtonInput, _ k: PadKey, _ f: @escaping @MainActor (AppModel) -> Void) {
+            on(b) { m in if m.frontEnd { m.stagePad(k) } else { f(m) } }
+        }
+        key(pad.dpad.left, .left) { $0.moveLibraryFocus(dx: -1) }
+        key(pad.dpad.right, .right) { $0.moveLibraryFocus(dx: 1) }
+        key(pad.dpad.up, .up) { $0.moveLibraryFocus(dy: -1) }
+        key(pad.dpad.down, .down) { $0.moveLibraryFocus(dy: 1) }
+        key(pad.leftThumbstick.left, .left) { $0.moveLibraryFocus(dx: -1) }
+        key(pad.leftThumbstick.right, .right) { $0.moveLibraryFocus(dx: 1) }
+        key(pad.leftThumbstick.up, .up) { $0.moveLibraryFocus(dy: -1) }
+        key(pad.leftThumbstick.down, .down) { $0.moveLibraryFocus(dy: 1) }
+        key(pad.buttonA, .a) { m in
             if let p = m.preview { m.openGame(p) }
             else if let g = m.gameDetail { m.play(g) }
             else if let r = m.focusedGame() { m.page = .library; m.openGame(r) }
         }
-        on(pad.buttonB) { m in
+        key(pad.buttonB, .b) { m in
             if m.preview != nil { m.preview = nil }
             else if m.gameDetail != nil { m.goBack() }
             else if m.couchMode { m.toggleCouch() }
         }
-        on(pad.buttonX) { m in if let r = m.gameDetail ?? m.focusedGame() { m.play(r) } }
-        on(pad.buttonY) { m in m.preview = m.preview == nil ? m.focusedGame() : nil }
-        on(pad.buttonMenu) { $0.toggleCouch() }
+        key(pad.buttonX, .x) { m in if let r = m.gameDetail ?? m.focusedGame() { m.play(r) } }
+        key(pad.buttonY, .y) { m in m.preview = m.preview == nil ? m.focusedGame() : nil }
+        key(pad.leftShoulder, .l) { _ in }
+        key(pad.rightShoulder, .r) { _ in }
+        key(pad.buttonMenu, .menu) { $0.toggleCouch() }
+        // the right stick turns the box on screen (CaseModelView)
+        pad.rightThumbstick.valueChangedHandler = { _, x, _ in CaseStick.x = NSApp.isActive ? Double(x) : 0 }
     }
 }
 

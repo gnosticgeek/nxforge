@@ -84,8 +84,11 @@ struct ConverterApp: App {
             }
             // View: the pages on ⌘1…⌘5, above the sidebar and toolbar items
             CommandGroup(before: .sidebar) {
+                Button("Games") { model.showStage(.home) }.keyboardShortcut("g")
+                Button("Converter") { model.showConverter() }.keyboardShortcut("g", modifiers: [.command, .shift])
+                Divider()
                 ForEach(Array(Page.allCases.enumerated()), id: \.element) { i, p in
-                    Button(p.rawValue) { model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                    Button(p.rawValue) { model.showConverter(); model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
                 }
                 Divider()
             }
@@ -129,6 +132,18 @@ struct ConverterApp: App {
         let env = ProcessInfo.processInfo.environment
         guard let out = env["NXC_SNAPSHOT"] else { return }
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.page = page }
+        // NXC_STAGE=home, library, game, back, options, settings or launch: the front end on that screen (game and the ones
+        // after it: the first built game's)
+        if let st = env["NXC_STAGE"] {
+            model.frontEnd = true
+            model.stageTab = st == "library" ? .library : .home
+            try? await Task.sleep(for: .seconds(2))
+            let g = model.stageGames().first { $0.app != nil }
+            if let g, ["game", "back", "options"].contains(st) { model.gameDetail = g.ref; model.caseFlipped = st == "back" }
+            if let g, st == "options" { model.openPlayOptions(g.ref) }
+            if st == "settings" { model.stageSettings = true }
+            if let g, st == "launch", let a = g.app { model.launching = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps") }
+        }
         try? await Task.sleep(for: .seconds(5))
         // NXC_CONFIRM=1 puts a delete confirmation over the window, to check how its buttons draw
         if env["NXC_CONFIRM"] != nil {

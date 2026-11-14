@@ -4,7 +4,31 @@ import SwiftUI
 
 let helpURL = URL(string: "https://github.com/gnosticgeek/nxforge/blob/main/app/README.md")!
 
+/// The window: the front end (Stage.swift), or the converter's pages behind its Converter tab.
 struct RootView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        Group {
+            if model.frontEnd { StageView(model: model) } else { ConverterRoot(model: model) }
+        }
+        // a note for work that ended in the background, over the foot of the window (idea 7)
+        .overlay(alignment: .bottom) {
+            if let b = model.banner {
+                BannerView(model: model, banner: b).id(b.id)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.35), value: model.banner?.id)
+        .sheet(item: $model.whatsNew) { WhatsNewSheet(model: model, news: $0) }
+        .sheet(item: $model.updateOffer) { UpdateOfferSheet(model: model, offer: $0) }
+        .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }
+        .sheet(isPresented: $model.commandPalette) { CommandPalette(model: model) }
+        .task { ControllerNav.shared.start(model) }
+    }
+}
+
+struct ConverterRoot: View {
     @Bindable var model: AppModel
     @State private var width: CGFloat = 1200
 
@@ -69,24 +93,14 @@ struct RootView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .automatic) {
+                    Button { model.showStage(model.stageTab) } label: { Label("Games", systemImage: "gamecontroller") }.help("Back to your games (⌘G)")
+                }
+                ToolbarItem(placement: .automatic) {
                     Button { NSWorkspace.shared.open(helpURL) } label: { Label("NXForge Converter Help", systemImage: "questionmark").labelStyle(.iconOnly) }.help("NXForge Converter Help")
                 }
             }
         }
         .onChange(of: model.page) { model.gameDetail = nil }
-        // a note for work that ended in the background, over the foot of the window (idea 7)
-        .overlay(alignment: .bottom) {
-            if let b = model.banner {
-                BannerView(model: model, banner: b).id(b.id)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(duration: 0.35), value: model.banner?.id)
-        .sheet(item: $model.whatsNew) { WhatsNewSheet(model: model, news: $0) }
-        .sheet(item: $model.updateOffer) { UpdateOfferSheet(model: model, offer: $0) }
-        .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }
-        .sheet(isPresented: $model.commandPalette) { CommandPalette(model: model) }
-        .task { ControllerNav.shared.start(model) }
     }
 }
 

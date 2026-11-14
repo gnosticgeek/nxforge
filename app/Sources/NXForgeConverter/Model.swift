@@ -137,6 +137,18 @@ final class AppModel {
     var libraryColumns = 1
     /// the couch: the Library's covers full screen, driven by a controller (ControllerNav)
     var couchMode = false
+    /// the front end (Stage.swift): the games as covers on a dark stage, shown instead of the converter's pages
+    var frontEnd = true
+    var stageTab: StageTab = .home
+    var stageFilter: StageFilter = .all
+    var stageColumns = 6
+    var stageSettings = false
+    var stageSearch = ""
+    /// the box on a game's page shows its back
+    var caseFlipped = false
+    /// the Play options panel open over the front end, and the launch screen while a game starts
+    var playOptions: PlayOptionsState?
+    var launching: Launching?
     var commandPalette = false
     /// the last Library move, to undo (files moved into a folder of their own, or beside their game)
     var lastMove: LibraryMove?
@@ -177,6 +189,9 @@ final class AppModel {
         recheck()
         watchMounts()
         trackPlay()
+        watchLaunch()
+        frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
+        stageTab = settings.startIn == .library ? .library : .home
         restoreBatchQueue()
         if settings.gameDir != nil { validate() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
@@ -421,7 +436,10 @@ final class AppModel {
 
     /// Open a built app, noting that its first (slow) launch is done.
     func openApp(_ app: String) {
-        NSWorkspace.shared.open(app.url)
+        // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
+        let cfg = NSWorkspace.OpenConfiguration()
+        if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
+        NSWorkspace.shared.openApplication(at: app.url, configuration: cfg) { _, _ in }
         Engine.setLaunched(app)
         revision += 1
     }
