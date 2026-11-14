@@ -140,6 +140,13 @@ enum CoverArt {
         }
     }
 
+    /// The front for a tile on the shelf or in the grid: the cover's smaller copy (CoverStore.thumb), nil while it is being read
+    /// (the tile shows its plain case for that moment), the drawn stand-in for a game without a cover
+    static func tile(_ g: StageGame) -> NSImage? {
+        if let t = CoverStore.shared.thumb(g.coverKey, .front) { return t }
+        return front(g)
+    }
+
     static func back(_ g: StageGame) -> NSImage? {
         let store = CoverStore.shared
         if let i = store.image(g.coverKey, .back) { return i }
@@ -207,7 +214,7 @@ struct CoverTile: View {
     var body: some View {
         let _ = CoverStore.shared.revision
         let shape = UnevenRoundedRectangle(cornerRadii: .init(topLeading: 3, bottomLeading: 3, bottomTrailing: 7, topTrailing: 7))
-        let img = CoverArt.front(game)
+        let img = CoverArt.tile(game)
         let tint = CoverArt.tint(game)
         Color(white: 0.14)
             .aspectRatio(CoverSource.aspect, contentMode: .fit)

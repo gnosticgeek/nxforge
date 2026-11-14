@@ -110,6 +110,8 @@ final class CoverStore {
     @ObservationIgnored private var tints: [String: NSColor] = [:]
     @ObservationIgnored private var fetch: Task<Void, Never>?
     @ObservationIgnored private var asked = Set<String>()
+    @ObservationIgnored private var reading = Set<String>()
+    @ObservationIgnored private var bump = false
 
     nonisolated static var dir: URL { Settings.supportDir.appending(path: "covers") }
 
@@ -133,6 +135,47 @@ final class CoverStore {
         return nil
     }
 
+    /// The longest side, in pixels, of a tile's cover: the grid's largest cover (Settings.coverSizes, 280 points wide) on a Retina screen
+    nonisolated static let tileSide = 920
+
+    /// A side's cover for a tile on the shelf or in the grid: a smaller copy, read and decoded off the main thread so a scroll past
+    /// covers not seen yet never waits for a JPEG. `.none`: no cover on disk (a drawn stand-in takes its place);
+    /// `.some(nil)`: there is one and it is being read, and `revision` moves when it arrives
+    func thumb(_ key: String, _ side: CoverSide) -> NSImage?? {
+        let _ = revision
+        let k = key + "-" + side.rawValue, tk = k + "-thumb"
+        if let i = memory[tk] { return .some(i) }
+        if absent.contains(k) { return .none }
+        if reading.contains(tk) { return .some(nil) }
+        guard let file = Self.file(k) else { absent.insert(k); return .none }
+        reading.insert(tk)
+        Task.detached(priority: .userInitiated) {
+            let cg = Self.small(file, side: Self.tileSide)
+            await MainActor.run { CoverStore.shared.arrived(tk, k, cg) }
+        }
+        return .some(nil)
+    }
+
+    /// The cover on disk under a side's name: the player's own first, then the downloaded one
+    nonisolated static func file(_ k: String) -> URL? {
+        [k + "-own.png", k + ".jpg"].map { dir.appending(path: $0) }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// A picture file no longer than `side` pixels, decoded here and now (ImageIO reads a JPEG at a reduced size without decoding all of it)
+    nonisolated static func small(_ file: URL, side: Int) -> CGImage? {
+        guard let src = CGImageSourceCreateWithURL(file as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                                     kCGImageSourceThumbnailMaxPixelSize: side, kCGImageSourceShouldCacheImmediately: true]
+        return CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary)
+    }
+
+    private func arrived(_ tk: String, _ k: String, _ cg: CGImage?) {
+        guard reading.remove(tk) != nil else { return }   // forgotten meanwhile (a new cover came): the next draw reads it again
+        if let cg, cg.width > 0 { memory[tk] = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)) } else { absent.insert(k) }
+        // several covers arriving in one burst (a first scroll) redraw the tiles once
+        if !bump { bump = true; Task { @MainActor in try? await Task.sleep(for: .milliseconds(15)); self.bump = false; self.revision += 1 } }
+    }
+
     /// A drawn stand-in (a front made from the icon, a back with the game's details), kept so it is drawn once
     func drawn(_ key: String, _ make: () -> NSImage?) -> NSImage? {
         let k = "drawn-" + key
@@ -145,6 +188,7 @@ final class CoverStore {
     func forget(_ key: String) {
         for k in memory.keys where k.hasPrefix(key + "-") || k.hasPrefix("drawn-" + key) { memory[k] = nil }
         absent = absent.filter { !$0.hasPrefix(key + "-") }
+        reading = reading.filter { !$0.hasPrefix(key + "-") }
         tints[key] = nil
         revision += 1
     }
@@ -153,7 +197,8 @@ final class CoverStore {
     func tint(_ key: String, icon: String?) -> Color {
         if let c = tints[key] { return Color(nsColor: c) }
         var base: NSColor?
-        if let img = image(key, .front) { base = Self.average(img) }
+        // from a copy a few dozen pixels high, which costs about a millisecond: the whole cover, decoded for one colour, cost every tile its first draw
+        if !absent.contains(key + "-front"), let f = Self.file(key + "-front"), let cg = Self.small(f, side: 64) { base = Self.average(cg) }
         if base == nil, let icon, let img = NSImage(contentsOfFile: icon) ?? (icon.hasSuffix(".app") ? NSWorkspace.shared.icon(forFile: icon) : nil) { base = Self.average(img) }
         let c = Self.vivid(base ?? NSColor(srgbRed: 0.25, green: 0.35, blue: 0.75, alpha: 1))
         tints[key] = c
@@ -161,7 +206,10 @@ final class CoverStore {
     }
 
     static func average(_ img: NSImage) -> NSColor? {
-        guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        img.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap { average($0) }
+    }
+
+    nonisolated static func average(_ cg: CGImage) -> NSColor? {
         var px = [UInt8](repeating: 0, count: 4)
         guard let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
