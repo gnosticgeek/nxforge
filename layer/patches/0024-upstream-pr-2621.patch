@@ -20,11 +20,11 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  dm/games/0400C3F00006E000/README.md          |  2 +-
  dm/games/0400C3F00006E000/game.tsv           |  3 +-
  dm/games/README.md                           |  2 +-
- dm/tools/tests/test_nsp_registered_update.py | 61 ++++++++++++++++++++
+ dm/tools/tests/test_nsp_registered_update.py | 62 ++++++++++++++++++++
  docs/agents/symptoms.md                      |  1 +
  docs/reference/packing.md                    |  7 +++
  scripts/build_ipa_from_nsp.py                |  4 +-
- 7 files changed, 76 insertions(+), 4 deletions(-)
+ 7 files changed, 77 insertions(+), 4 deletions(-)
  create mode 100644 dm/tools/tests/test_nsp_registered_update.py
 
 diff --git a/dm/games/0400C3F00006E000/README.md b/dm/games/0400C3F00006E000/README.md
@@ -73,10 +73,10 @@ index 6b032b963dba36344cf65b10069ae42ca2c2a60e..b22f7bf4dc262eb8cbfd5372d141159e
  | [Mario + Rabbids Kingdom Battle](010067300059A000/README.md) | `010067300059A000` | 1.9.589692 | 4.4.0 | Ubisoft Snowdrop | NVN |
 diff --git a/dm/tools/tests/test_nsp_registered_update.py b/dm/tools/tests/test_nsp_registered_update.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..6bce1904bb9d8a9a3964ba3dc8f4635a00429134
+index 0000000000000000000000000000000000000000..a573f3f9536a58d21a43e1cac0d9e9dfcab3ce74
 --- /dev/null
 +++ b/dm/tools/tests/test_nsp_registered_update.py
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,62 @@
 +"""NSP script: an update whose build the profile registers, packed from a profile derived for its own shader tables (the profile's are the base game's), is reported as the registered
 +build, with no red line, although the derived profile keeps only that version's build row (Mario Kart World 1.8.0); an update whose modules the profile does not register still is red.
 +No game files, keys or Xcode needed (temporary files only)."""
@@ -93,8 +93,9 @@ index 0000000000000000000000000000000000000000..6bce1904bb9d8a9a3964ba3dc8f4635a
 +sys.path.insert(0, str(REPO / 'dm/games')); sys.path.insert(0, str(REPO / 'dm/tools'))
 +import game, nacp, profile_guess
 +spec = importlib.util.spec_from_file_location('build_ipa_from_nsp', REPO / 'scripts/build_ipa_from_nsp.py')
++if spec is None or spec.loader is None: raise ImportError('scripts/build_ipa_from_nsp.py')
 +nsp = importlib.util.module_from_spec(spec); spec.loader.exec_module(nsp)
-+nsp.pg, nsp.nacp = profile_guess, nacp   # main sets them
++vars(nsp).update(pg=profile_guess, nacp=nacp)   # main sets them
 +
 +PROFILE = 0x0100AAAA00000000
 +BASE, UPD, NEW = 'ab' * 16, 'cd' * 16, 'ef' * 16
