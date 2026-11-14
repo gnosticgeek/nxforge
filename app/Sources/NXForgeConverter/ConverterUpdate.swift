@@ -71,6 +71,17 @@ enum ConverterUpdate {
         git(repo, ["show", "\(ref):\(versionFile)"]).flatMap(parseVersion)
     }
 
+    /// The changelog this app was built with (bundle.sh copies it into Resources): What's New reads it, so the notes are this
+    /// version's own whatever branch the engine checkout is on. nil when run from `swift run` or a bundle made before 0.11.0.
+    static func bundledChangelog(_ bundle: Bundle = .main) -> String? {
+        bundle.url(forResource: "CONVERTER_CHANGELOG", withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+    }
+
+    /// What's New's text: the app's own copy, else the engine checkout's (which can be on another branch than this app's)
+    static func ownChangelog(repo: String?) -> String? {
+        bundledChangelog() ?? repo.flatMap { changelog(repo: $0) }
+    }
+
     static func changelog(repo: String, ref: String = "HEAD") -> String? {
         if ref == "HEAD", let s = try? String(contentsOfFile: "\(repo)/\(changelogFile)", encoding: .utf8) { return s }
         return git(repo, ["show", "\(ref):\(changelogFile)"])
@@ -123,11 +134,11 @@ enum ConverterUpdate {
 extension AppModel {
     /// At launch, once the engine checkout is known: What's New when this converter's version is newer than the last one shown.
     func showWhatsNewIfNeeded() {
-        guard whatsNew == nil, settings.lastSeenVersion != CONVERTER_VERSION, let repo = env?.repo,
+        guard whatsNew == nil, settings.lastSeenVersion != CONVERTER_VERSION,
               ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
-        let seen = settings.lastSeenVersion
+        let seen = settings.lastSeenVersion, repo = env?.repo
         Task.detached {
-            let w = ConverterUpdate.changelog(repo: repo).flatMap { ConverterUpdate.whatsNew(log: $0, version: CONVERTER_VERSION, seen: seen) }
+            let w = ConverterUpdate.ownChangelog(repo: repo).flatMap { ConverterUpdate.whatsNew(log: $0, version: CONVERTER_VERSION, seen: seen) }
             await MainActor.run {
                 if let w { self.whatsNew = w } else { self.settings.lastSeenVersion = CONVERTER_VERSION }
             }
@@ -146,9 +157,9 @@ extension AppModel {
 
     /// The What's New of the running version, on demand (Help menu).
     func showWhatsNew() {
-        guard let repo = env?.repo else { return }
+        let repo = env?.repo
         Task.detached {
-            let w = ConverterUpdate.changelog(repo: repo).flatMap { ConverterUpdate.whatsNew(log: $0, version: CONVERTER_VERSION, seen: nil) }
+            let w = ConverterUpdate.ownChangelog(repo: repo).flatMap { ConverterUpdate.whatsNew(log: $0, version: CONVERTER_VERSION, seen: nil) }
             await MainActor.run { self.whatsNew = w.map { WhatsNew(version: $0.version, entries: Array($0.entries.prefix(1))) } }
         }
     }

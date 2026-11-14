@@ -145,7 +145,11 @@ final class AppModel {
     var stageFilter: StageFilter = .all
     var stageColumns = 6
     var stageSettings = false
+    /// the Settings row a controller is on (StageSettingRow)
+    var settingsFocus = 0
     var stageSearch = ""
+    /// what each built game needs a look at (GameAttention), by StageGame id, read off the main thread
+    var attention: [String: [GameAttention]] = [:]
     /// the box on a game's page shows its back
     var caseFlipped = false
     /// the Play options panel open over the front end, and the launch screen while a game starts
@@ -450,6 +454,7 @@ final class AppModel {
         // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
         let cfg = NSWorkspace.OpenConfiguration()
         if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
+        cfg.environment = AppModel.frontEndEnvironment
         NSWorkspace.shared.openApplication(at: app.url, configuration: cfg) { _, _ in }
         Engine.setLaunched(app)
         revision += 1

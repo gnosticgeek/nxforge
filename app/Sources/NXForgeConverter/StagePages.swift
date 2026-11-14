@@ -51,7 +51,9 @@ struct StageGamePage: View {
                         VStack(alignment: .leading, spacing: 16) {
                             StageHero(model: model, game: g, first: false, titleSize: geo.size.width > 1100 ? 60 : 42, showDetails: false)
                             if let app = g.app { PlaysWith(model: model, game: g, app: app) }
+                            AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build card says Update ready
                             cards(g, record)
+                            if let app = g.app { ScreenshotStrip(app: app, tint: CoverArt.tint(g)) }
                         }
                         .frame(maxWidth: 760, alignment: .leading)
                         .padding(.vertical, 20)
@@ -149,6 +151,7 @@ struct PlaysWith: View {
 struct PlayOptionsPanel: View {
     let model: AppModel
     @Bindable var state: PlayOptionsState
+    @Environment(\.accessibilityReduceTransparency) private var solid
 
     var body: some View {
         let rows = state.rows
@@ -231,7 +234,7 @@ struct PlayOptionsPanel: View {
         .padding(24)
         .frame(width: 600)
         .frame(maxHeight: .infinity)
-        .background(StageLook.panel.opacity(0.78), in: .rect(cornerRadius: 28))
+        .background(StageLook.panel.opacity(solid ? 1 : 0.78), in: .rect(cornerRadius: 28))
         .glassEffect(.regular, in: .rect(cornerRadius: 28))
         .shadow(color: .black.opacity(0.55), radius: 50, y: 24)
     }

@@ -294,6 +294,8 @@ void front_qs_defaults_use(void) {
 }
 - (void)screenshot:(id)sender { (void)sender; front_qs_screenshot(); }
 - (void)record:(id)sender { (void)sender; front_qs_record(); if (g_menu_open) dm_qs_refresh(); }
+- (void)slotSave:(NSMenuItem *)it { dm_qs_slot_save((int)it.tag); }
+- (void)slotLoad:(NSMenuItem *)it { dm_qs_slot_load((int)it.tag); }
 - (void)menuIn:(NSMenu *)bar {
     NSMenu *gm = [[NSMenu alloc] initWithTitle:@"Graphics"]; self.items = [NSMutableArray array];
     [[bar addItemWithTitle:@"Graphics" action:nil keyEquivalent:@""] setSubmenu:gm];
@@ -309,6 +311,24 @@ void front_qs_defaults_use(void) {
     [[bar addItemWithTitle:@"Capture" action:nil keyEquivalent:@""] setSubmenu:cm];
     NSMenuItem *sh = [cm addItemWithTitle:@"Take Screenshot" action:@selector(screenshot:) keyEquivalent:@"s"], *rc = [cm addItemWithTitle:@"Start Recording" action:@selector(record:) keyEquivalent:@"r"];
     for (NSMenuItem *x in @[sh, rc]) { x.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; x.target = self; }
+    // Quick-save slots (quick_settings_mac.swift SaveSlots): ⌘1–⌘3 save the game's save into a slot, ⌥⌘1–⌥⌘3 load one (pressed twice; the game restarts)
+    NSMenu *sm = [[NSMenu alloc] initWithTitle:@"Save Slots"];
+    [[bar addItemWithTitle:@"Save Slots" action:nil keyEquivalent:@""] setSubmenu:sm];
+    for (int load = 0; load < 2; load++) {
+        if (load) [sm addItem:NSMenuItem.separatorItem];
+        for (int n = 1; n <= 3; n++) {
+            NSMenuItem *x = [sm addItemWithTitle:[NSString stringWithFormat:load ? @"Load Slot %d" : @"Save to Slot %d", n] action:load ? @selector(slotLoad:) : @selector(slotSave:)
+                                   keyEquivalent:[NSString stringWithFormat:@"%d", n]];
+            x.keyEquivalentModifierMask = NSEventModifierFlagCommand | (load ? NSEventModifierFlagOption : 0); x.target = self; x.tag = n;
+        }
+    }
+    // After a slot was loaded (the launcher swapped it in before this start: DM_SLOT_LOADED is the slot's folder, or "!" and why it could not), say so once the window is up
+    const char *sl = getenv("DM_SLOT_LOADED");
+    if (sl && *sl) {
+        NSString *msg = *sl == '!' ? [@"The slot was not loaded: " stringByAppendingString:@(sl + 1)]
+                                   : [NSString stringWithFormat:@"Loaded slot %@", @(sl).stringByDeletingLastPathComponent.lastPathComponent];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ toast(msg); });
+    }
     g_opts = self; g_menu_toggle = qs_toggle; [self fpsCounter];
 }
 @end

@@ -1003,3 +1003,37 @@ import Testing
         #expect(s.startIn == .converter && !s.batteryPreset && s.straightPlay && s.returnToLibrary && s.downloadCovers)
     }
 }
+
+@Suite struct FrontEndExtras {
+    @Test func crashIsTheLogsLastWord() {
+        #expect(GameAttention.crashSignal("launcher: save x\nlauncher: the host stopped on signal 11\n") == 11)
+        #expect(GameAttention.crashSignal("launcher: the host stopped on signal 6\nlauncher: Restart game\nlauncher: the host exited with 0\n") == nil)
+        #expect(GameAttention.crashSignal("launcher: the host exited with 0\n") == nil)
+    }
+
+    @Test func screenshotsNewestFirstAndNamedForTheGame() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: "nxf-shots-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let app = root.appending(path: "Game.app").path
+        try fm.createDirectory(atPath: app + "/Contents", withIntermediateDirectories: true)
+        let shots = root.appending(path: "Screenshots")
+        try fm.createDirectory(at: shots, withIntermediateDirectories: true)
+        for (i, n) in ["old.png", "new.png", "notes.txt"].enumerated() {
+            let f = shots.appending(path: n)
+            try Data([0]).write(to: f)
+            try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: Double(1_000 + i * 100))], ofItemAtPath: f.path)
+        }
+        let found = GameCaptures.screenshots(app: app).map(\.lastPathComponent)
+        #expect(found.first == "new.png")
+        #expect(found.contains("old.png"))
+        #expect(!found.contains("notes.txt"))
+    }
+
+    @Test func favouritesKeyIsTheTitleID() {
+        let g = StageGame(id: "x", ref: GameRef(libraryID: "x", app: "/A.app"), name: "A", console: .switch1, titleID: "0100", icon: nil, app: "/A.app", version: nil, last: nil)
+        #expect(g.favoriteKey == "0100")
+        let h = StageGame(id: "y", ref: GameRef(libraryID: nil, app: "/B.app"), name: "B", console: .switch1, titleID: nil, icon: nil, app: "/B.app", version: nil, last: nil)
+        #expect(h.favoriteKey == "/B.app")
+    }
+}

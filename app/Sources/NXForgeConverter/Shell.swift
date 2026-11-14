@@ -33,6 +33,8 @@ final class ControllerNav {
     static let shared = ControllerNav()
     private weak var model: AppModel?
     private var observers: [NSObjectProtocol] = []
+    /// a held direction repeats (after 0.42 s, every 0.13 s), as a list does under a held arrow key
+    private var repeats: [ObjectIdentifier: Timer] = [:]
 
     func start(_ model: AppModel) {
         guard self.model == nil else { return }
@@ -59,18 +61,40 @@ final class ControllerNav {
                 }
             }
         }
-        // the front end takes every button (stagePad); the converter's pages keep the couch's
-        func key(_ b: GCControllerButtonInput, _ k: PadKey, _ f: @escaping @MainActor (AppModel) -> Void) {
-            on(b) { m in if m.frontEnd { m.stagePad(k) } else { f(m) } }
+        func held(_ b: GCControllerButtonInput, _ f: @escaping @MainActor (AppModel) -> Void) {
+            b.pressedChangedHandler = { [weak self] btn, _, pressed in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let id = ObjectIdentifier(btn)
+                    self.repeats[id]?.invalidate()
+                    self.repeats[id] = nil
+                    guard pressed, NSApp.isActive, let m = self.model else { return }
+                    f(m)
+                    let t = Timer(timeInterval: 0.13, repeats: true) { [weak self] t in
+                        MainActor.assumeIsolated {
+                            guard NSApp.isActive, let m = self?.model else { t.invalidate(); return }
+                            f(m)
+                        }
+                    }
+                    t.fireDate = Date().addingTimeInterval(0.42)
+                    RunLoop.main.add(t, forMode: .common)
+                    self.repeats[id] = t
+                }
+            }
         }
-        key(pad.dpad.left, .left) { $0.moveLibraryFocus(dx: -1) }
-        key(pad.dpad.right, .right) { $0.moveLibraryFocus(dx: 1) }
-        key(pad.dpad.up, .up) { $0.moveLibraryFocus(dy: -1) }
-        key(pad.dpad.down, .down) { $0.moveLibraryFocus(dy: 1) }
-        key(pad.leftThumbstick.left, .left) { $0.moveLibraryFocus(dx: -1) }
-        key(pad.leftThumbstick.right, .right) { $0.moveLibraryFocus(dx: 1) }
-        key(pad.leftThumbstick.up, .up) { $0.moveLibraryFocus(dy: -1) }
-        key(pad.leftThumbstick.down, .down) { $0.moveLibraryFocus(dy: 1) }
+        // the front end takes every button (stagePad); the converter's pages keep the couch's
+        func key(_ b: GCControllerButtonInput, _ k: PadKey, repeating: Bool = false, _ f: @escaping @MainActor (AppModel) -> Void) {
+            let act: @MainActor (AppModel) -> Void = { m in if m.frontEnd { m.stagePad(k) } else { f(m) } }
+            if repeating { held(b, act) } else { on(b, act) }
+        }
+        key(pad.dpad.left, .left, repeating: true) { $0.moveLibraryFocus(dx: -1) }
+        key(pad.dpad.right, .right, repeating: true) { $0.moveLibraryFocus(dx: 1) }
+        key(pad.dpad.up, .up, repeating: true) { $0.moveLibraryFocus(dy: -1) }
+        key(pad.dpad.down, .down, repeating: true) { $0.moveLibraryFocus(dy: 1) }
+        key(pad.leftThumbstick.left, .left, repeating: true) { $0.moveLibraryFocus(dx: -1) }
+        key(pad.leftThumbstick.right, .right, repeating: true) { $0.moveLibraryFocus(dx: 1) }
+        key(pad.leftThumbstick.up, .up, repeating: true) { $0.moveLibraryFocus(dy: -1) }
+        key(pad.leftThumbstick.down, .down, repeating: true) { $0.moveLibraryFocus(dy: 1) }
         key(pad.buttonA, .a) { m in
             if let p = m.preview { m.openGame(p) }
             else if let g = m.gameDetail { m.play(g) }
@@ -86,6 +110,8 @@ final class ControllerNav {
         key(pad.leftShoulder, .l) { _ in }
         key(pad.rightShoulder, .r) { _ in }
         key(pad.buttonMenu, .menu) { $0.toggleCouch() }
+        // − (Options / View): Favourites on the front end
+        if let o = pad.buttonOptions { key(o, .options) { _ in } }
         // the right stick turns the box on screen (CaseModelView)
         pad.rightThumbstick.valueChangedHandler = { _, x, _ in CaseStick.x = NSApp.isActive ? Double(x) : 0 }
     }

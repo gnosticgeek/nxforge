@@ -4,14 +4,27 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
-## 0.5.0 (2026-11-14)
+## 0.6.0 (2026-11-14)
 
-Four improvements, two to the look and two to what it does. Ships in NXForge 0.34.0.
+Four improvements, two to the look and two to what it does. Ships in NXForge 0.35.0.
 
 - **The game's own look**: the glass panel is tinted and lit from the top left in a colour taken from the game's banner or icon (the way the NXForge app lights its stage), with a lit top edge. The header shows the game's icon in its glow and its name in the app's heavy title type under a wide-set "QUICK SETTINGS" label, with a Paused chip while the game is paused; a long name takes two lines. Switches, the selection outline, the changed dots and Resume game take the game's colour. A bare `dmhost` keeps the app's blue.
 - **Hold to peek**: hold P, a controller's top face button, or the eye button beside Close, and the sidebar fades away while the game shows at full size and runs; let go and the sidebar is back (paused again when Pause the game is on). The game's input stays released meanwhile. The legend shows it ("Hold to peek").
 - **Presets** at the top of the Graphics page: the app's Battery, Balanced and Quality presets (PlayOptions.swift) as cards, with the one the settings match lit, or a note that they are a custom mix. MetalFX upscaling, HDR highlights and frame interpolation change at once; frame rate and render scale apply at the next launch or Restart game, with a Next launch line in the footer. Only the settings the game offers (its `dm/launcher.json`) are set.
 - **Undo this session**: once anything has changed since the game started, the General page lists what (by the pages' names) with **Put it all back**, which restores every setting the sidebar and the settings window keep for the game, and the cheats, as they were at the start. The General tab gets a dot meanwhile.
+## 0.5.1 (2026-11-14)
+
+Quick-save slots. Ships in NXForge 0.34.1.
+
+- **General › Quick-save slots**: three slots, each with Save and Load and when the game made the save it holds. Also the **Save Slots** menu: ⌘1–⌘3 save, ⌥⌘1–⌥⌘3 load. Saving clones the committed save under the host's commit locks (`dm_fs_clone_committed`), so a slot is one whole save. Loading asks twice, checks the slot against its manifest, keeps the current save as a save snapshot ("Before a restore"), and restarts the game; the app's launcher swaps the slot in while the game is stopped (`dm/mac/nxforge/launcher_slots.inc`, patch `0026-save-slots`) and the next start shows "Loaded slot N". Slots live beside the save in `save-slots/<n>/`, in the snapshots' layout.
+
+## 0.5.0 (2026-11-14)
+
+Hand-off to and from NXForge's library. Ships in NXForge 0.34.0.
+
+- **Library** (a game NXForge's Play started: `NXFORGE_FRONT_END`): beside Quit in the footer, asks twice like Quit; ends the game and brings NXForge to the front on its page (the distributed notification `org.nxforge.showGame`).
+- **The window shows with the game's first frame** when NXForge started it (`dm/host/nxforge/front_mac_front_end.inc`): see-through until the first present (at most 15 s), then a short fade, and NXForge is told (`org.nxforge.gameShown`) so its launch screen goes at the same moment. `DM_FRONT_END_FADE=0` shows it at once.
+- **The cloud save check runs on a straight-in start** (`--no-launcher`, NXForge's Play): `launcher.c` calls `dm_mac_save_check` (`dm/mac/nxforge/launcher_window.swift`), which asks only when the two saves need the player's pick. `DM_LAUNCHER=0` still asks nothing.
 
 ## 0.4.0 (2026-11-12)
 

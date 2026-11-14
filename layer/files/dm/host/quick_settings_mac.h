@@ -80,6 +80,11 @@ void front_qs_toast_text(const char *msg);
 // GPU memory nearly full with the game slow (nvn_mtl.m guard_low_tick): a longer toast, and a note on the Performance page for the rest of the run. Main thread
 void dm_qs_toast_long(void *parent, const char *msg, double seconds);
 void dm_qs_gpu_memory_low(unsigned long long used_mb, unsigned long long low_mb);
+// Quick-save slots (quick_settings_mac.swift SaveSlots): a clone of the committed save taken under the host's commit locks (hle_fs.c; -1 with errno on failure), and the
+// Save Slots menu's save and load (load asks twice). Main thread
+int dm_fs_clone_committed(const char *dir, const char *to);
+void dm_qs_slot_save(int slot);
+void dm_qs_slot_load(int slot);
 // Hold to peek (Sidebar 0.5.0): while it is held (the header's eye button, the P key or a controller's top face button) the sidebar fades, the picture takes the whole window and the
 // game runs; let go and the sidebar is back (paused again when that is on). front_qs_peek starts or ends one; dm_qs_peeked tells the sidebar, dm_qs_peek_glyph gives it the
 // controller's symbol for that button (NULL: the keyboard's P). Main thread

@@ -3,6 +3,7 @@
 // stick, and it eases back to its resting angle). The art is CoverStore's; a game without any gets a cover drawn from its
 // icon, and every game's back falls back to a panel of its details.
 import AppKit
+import CoreImage
 import SceneKit
 import SwiftUI
 
@@ -154,7 +155,18 @@ enum CoverArt {
     static func ambient(_ g: StageGame) -> NSImage? {
         let store = CoverStore.shared
         let art = store.image(g.coverKey, .front)
-        return store.drawn(g.coverKey + "-ambient-" + (art == nil ? "icon" : "art")) { (art ?? icon(g)).flatMap { small($0, 56) } }
+        return store.drawn(g.coverKey + "-ambient2-" + (art == nil ? "icon" : "art")) { (art ?? icon(g)).flatMap { small($0, 56) }.flatMap { soften($0) } }
+    }
+
+    /// The small art blurred once, here, so the stage only scales it up: a live blur of the whole window cost a full-screen pass a frame
+    /// on a 4K or 5K display (StageBackdrop)
+    static func soften(_ img: NSImage) -> NSImage? {
+        guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return img }
+        let ci = CIImage(cgImage: cg)
+        guard let f = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputImageKey: ci.clampedToExtent(), kCIInputRadiusKey: 3.2]),
+              let out = f.outputImage?.cropped(to: ci.extent),
+              let done = CIContext(options: [.useSoftwareRenderer: false]).createCGImage(out, from: ci.extent) else { return img }
+        return NSImage(cgImage: done, size: img.size)
     }
 
     /// A picture scaled down so its longer side is `side` pixels
@@ -186,8 +198,11 @@ struct CoverTile: View {
     var dim = false
     /// its mirror image fading out under it, as on Home's shelf (drawn outside the tile's own frame)
     var reflect = false
+    /// the most pressing thing the game needs a look at (GameAttention), as a mark in the cover's corner
+    var attention: GameAttention? = nil
     @State private var hover: CGPoint?
     @State private var size: CGSize = .zero
+    @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
         let _ = CoverStore.shared.revision
@@ -215,6 +230,7 @@ struct CoverTile: View {
                 }
             }
             .overlay { if dim { Color.black.opacity(0.44) } }
+            .overlay(alignment: .top) { if game.favorite || attention != nil { CoverMarks(favorite: game.favorite, attention: attention) } }
             .clipShape(shape)
             .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
             .overlay {
@@ -223,8 +239,8 @@ struct CoverTile: View {
                     .opacity(focused ? 1 : 0)
             }
             .shadow(color: focused ? tint.opacity(0.55) : .black.opacity(0.5), radius: focused ? 26 : 9, y: focused ? 14 : 7)
-            .rotation3DEffect(.degrees(hover.map { Double(0.5 - $0.y) * 13 } ?? 0), axis: (x: 1, y: 0, z: 0), perspective: 0.55)
-            .rotation3DEffect(.degrees(hover.map { Double($0.x - 0.5) * 15 } ?? 0), axis: (x: 0, y: 1, z: 0), perspective: 0.55)
+            .rotation3DEffect(.degrees(still ? 0 : hover.map { Double(0.5 - $0.y) * 13 } ?? 0), axis: (x: 1, y: 0, z: 0), perspective: 0.55)
+            .rotation3DEffect(.degrees(still ? 0 : hover.map { Double($0.x - 0.5) * 15 } ?? 0), axis: (x: 0, y: 1, z: 0), perspective: 0.55)
             .scaleEffect(focused ? 1.07 : hover != nil ? 1.03 : 1)
             .offset(y: focused ? -8 : 0)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
@@ -266,9 +282,9 @@ struct CaseModelView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(rest: rest) }
 
     func makeNSView(context: Context) -> SCNView {
-        let v = SCNView(frame: .zero)
+        let v = CaseSCNView(frame: .zero)
         v.backgroundColor = .clear
-        v.antialiasingMode = .multisampling4X
+        v.antialiasingMode = .multisampling4X   // 2X on a screen over 4K wide (CaseSCNView.fitToScreen)
         v.allowsCameraControl = false
         v.scene = context.coordinator.scene
         v.delegate = context.coordinator
@@ -282,6 +298,7 @@ struct CaseModelView: NSViewRepresentable {
     func updateNSView(_ v: SCNView, context: Context) {
         context.coordinator.set(front: front, back: back, spine: spine, edge: edge)
         context.coordinator.rest = rest
+        context.coordinator.still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
@@ -293,6 +310,8 @@ struct CaseModelView: NSViewRepresentable {
         private let mirrorMaterials: [SCNMaterial]
         // read by the render loop, written by the main thread: plain numbers, a late read only costs a frame
         var rest: Double
+        /// Reduce Motion: no sway, and a turn to the other side is a cut, not a spin
+        var still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         private var angle: Double
         private var velocity = 0.0
         private var dragging = false
@@ -396,7 +415,10 @@ struct CaseModelView: NSViewRepresentable {
             } else if !dragging {
                 angle += velocity * dt
                 velocity *= exp(-4 * dt)
-                if time - touched > 2.5 {
+                if still && abs(velocity) < 0.01 {
+                    let turn = 2 * Double.pi
+                    angle = rest + turn * ((angle - rest) / turn).rounded()
+                } else if time - touched > 2.5 {
                     // ease to the nearest turn that shows the resting side, with a slow sway
                     let turn = 2 * Double.pi
                     let target = rest + turn * ((angle - rest) / turn).rounded() + 0.07 * sin(time * 0.6)
@@ -407,6 +429,38 @@ struct CaseModelView: NSViewRepresentable {
             mirror.eulerAngles = node.eulerAngles
         }
     }
+}
+
+/// The box's view: it draws only while its window is on screen (a game in front of NXForge, or NXForge hidden, stops it: the GPU is the
+/// game's), and on a screen more than 4K wide with 2X multisampling instead of 4X, which costs a quarter as much there.
+final class CaseSCNView: SCNView {
+    private var watch: [NSObjectProtocol] = []
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        watch.forEach { NotificationCenter.default.removeObserver($0) }
+        watch = []
+        guard let w = window else { return }
+        let nc = NotificationCenter.default
+        watch.append(nc.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: w, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitToScreen() }
+        })
+        watch.append(nc.addObserver(forName: NSWindow.didChangeScreenNotification, object: w, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitToScreen() }
+        })
+        fitToScreen()
+    }
+
+    func fitToScreen() {
+        guard let w = window else { return }
+        let visible = w.occlusionState.contains(.visible)
+        if rendersContinuously != visible { rendersContinuously = visible; isPlaying = visible }
+        let px = (w.screen?.frame.width ?? 0) * (w.screen?.backingScaleFactor ?? 1)
+        let aa: SCNAntialiasingMode = px > 4000 ? .multisampling2X : .multisampling4X
+        if antialiasingMode != aa { antialiasingMode = aa }
+    }
+
+    deinit { watch.forEach { NotificationCenter.default.removeObserver($0) } }
 }
 
 /// A game's box in 3D with its art, standing on a floor that reflects it, in a pool of its own colour.

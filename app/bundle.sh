@@ -18,6 +18,8 @@ for s in 16 32 128 256 512; do
   [ $s -lt 512 ] && sips -z $((s * 2)) $((s * 2)) "$icons/icon_512x512@2x.png" --out "$icons/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$icons" -o "$app/Contents/Resources/AppIcon.icns"
+# What's New reads the changelog the app was built with (ConverterUpdate.bundledChangelog), not the engine checkout's, which can be on another branch
+cp "$here/../CONVERTER_CHANGELOG.md" "$app/Contents/Resources/"
 # the app's version is the Converter's own (CONVERTER_VERSION in Version.swift, tags converter-vX.Y.Z); the build
 # number is the NXForge release it was built from (git describe on the v* tags only: v0.1.1 → 0.1.1, v0.1.1-3-g… → 0.1.1)
 version="$(sed -nE 's/^let CONVERTER_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' "$here/Sources/NXForgeConverter/Version.swift")"

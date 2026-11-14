@@ -1,7 +1,7 @@
 // Quick settings sidebar (front_mac.m opens and closes it; quick_settings_mac.h is the C side): SwiftUI with the system's controls, on a Liquid Glass panel on macOS 26 and later
 // (a material panel before). The settings are front_mac.m's: the same user defaults keys (per game), the same rule that a setting the environment names wins and is not saved.
 // Layout, top to bottom: a quick bar (Screenshot, Record, the FPS counter, volume and mute), a row of page tabs (General, Graphics, FPS, Capture, Mods, Cheats, Controls; L / R or Tab turn the page),
-// the page, and a footer with what needs a restart (Restart game), Resume and Quit, and a legend of the buttons that work on the selection, in the controller's own glyphs or as keys.
+// the page, and a footer with what needs a restart (Restart game), Resume, Library (a game NXForge's Play started: Quit to Library) and Quit, and a legend of the buttons that work on the selection, in the controller's own glyphs or as keys.
 // The filter (off or CRT; the engine's other filters stay for DM_PRESENT_FILTER), its strength and line size go to the graphics backend at once (front.h mtl_present_*); the frame-rate
 // counter is drawn by front_mac.m, told through the fps callback; mods are the folders of this game's mods folder, overlaid at the next launch (front_mac.m mods_start); cheats are the
 // host's (hle_cheats.c dm_cheat*): this build's Atmosphère cheat file, a switch each, which the host saves beside the file (<build ID>.enabled) and runs from the next frame. The Cheats
@@ -15,7 +15,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.5.0"
+let SIDEBAR_VERSION = "0.6.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -158,14 +158,14 @@ private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods =
 enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
     case undoSession, preset(Int)
-    case pauseOpen, duckOpen, backup, backupShow, settingsShow, settingsOpen, defaultsSave, defaultsUse
+    case pauseOpen, duckOpen, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
     case fullscreen, scale, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
     case section(String), cheat(Int), cheatsAllOff, cheatsRestore, cheatsOpen, cheatsRefresh
     case key(Int), pad(Int), resetControls
-    case restart, resume, quit
+    case restart, resume, library, quit
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
@@ -231,7 +231,7 @@ enum SaveBackup {
     static let encoder: JSONEncoder = { let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]; e.dateEncodingStrategy = .iso8601; return e }()
     static let decoder: JSONDecoder = { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }()
     /// A checked copy of the save in save-snapshots/<id> (the Converter lists and restores it); the time it was made
-    static func make() throws -> Date {
+    static func make(reason: String = "manual") throws -> Date {
         guard let save = save, let folder = folder else { throw Failure(text: "this launch has no save folder (DM_SAVE)") }
         let fm = FileManager.default, parts = [("save", save), ("save_device", save + "_device")]
         let has = parts.contains { ((try? fm.contentsOfDirectory(atPath: $0.1)) ?? []).contains { $0 != ".DS_Store" } }
@@ -251,7 +251,7 @@ enum SaveBackup {
         let copied = try inventory(inv.directories.filter { !$0.contains("/") }.map { ($0, "\(stage)/data/\($0)") })
         guard copied == inv else { throw Failure(text: "The copy did not match the save; try again") }
         guard try inventory(parts) == inv else { throw Failure(text: "The game saved while it was being copied; try again") }
-        let m = BackupManifest(id: id, titleID: String(cString: front_qs_title_id()).uppercased(), created: now, reason: "manual", inventory: inv)
+        let m = BackupManifest(id: id, titleID: String(cString: front_qs_title_id()).uppercased(), created: now, reason: reason, inventory: inv)
         try encoder.encode(m).write(to: URL(fileURLWithPath: stage + "/manifest.json"), options: .atomic)
         try fm.moveItem(atPath: stage, toPath: "\(folder)/\(id)")
         return now
@@ -266,6 +266,120 @@ enum SaveBackup {
         return nil
     }
 }
+
+// Quick-save slots (General page, the Save Slots menu: ⌘1–⌘3 save, ⌥⌘1–⌥⌘3 load): a slot holds a copy of the game's own save as the game last committed it, not the moment on
+// screen. Saving clones the committed save under the host's commit locks (hle_fs.c dm_fs_clone_committed), so a slot is always one whole save, taken in a moment even while the
+// game writes. Loading checks the slot against its manifest, keeps the save it replaces as a save snapshot ("Before a restore", which the Converter lists and restores), names the
+// slot in the launcher's DM_LAUNCHER_SLOT_LOAD file and restarts the game: the launcher swaps the slot in with the host stopped (dm/mac/nxforge/launcher_slots.inc).
+// <save's folder>/save-slots/<n>/{manifest.json, data/save, data/save_device}: the snapshots' layout, so a slot can be copied into save-snapshots/ by hand and restored there
+struct SlotManifest: Codable { var schema = 1; var slot: Int; var titleID: String; var created: Date; var gameSaved: Date?; var inventory: BackupInventory }
+struct SlotInfo: Equatable { var created: Date; var gameSaved: Date? }
+enum SaveSlots {
+    static let count = 3
+    static let changed = Notification.Name("NXForgeSaveSlotsChanged")
+    static var folder: String? { SaveBackup.save.map { ($0 as NSString).deletingLastPathComponent + "/save-slots" } }
+    static var canLoad: Bool { front_qs_can_restart() != 0 && env["DM_LAUNCHER_SLOT_LOAD"].map { !$0.isEmpty } == true }
+    private static func path(_ n: Int) -> String? { folder.map { "\($0)/\(n)" } }
+    static func manifest(_ n: Int) -> SlotManifest? {
+        guard let p = path(n), let d = FileManager.default.contents(atPath: p + "/manifest.json"), let m = try? SaveBackup.decoder.decode(SlotManifest.self, from: d),
+              m.schema == 1, m.slot == n, m.titleID == String(cString: front_qs_title_id()).uppercased() else { return nil }
+        return m
+    }
+    static func info(_ n: Int) -> SlotInfo? { manifest(n).map { SlotInfo(created: $0.created, gameSaved: $0.gameSaved) } }
+    /// The newest file's modification time under the save parts in dir: when the game last saved what is there
+    private static func newest(_ roots: [String]) -> Date? {
+        let fm = FileManager.default; var best: Date?
+        for r in roots { for case let rel as String in fm.enumerator(atPath: r) ?? NSEnumerator() {
+            if let a = try? fm.attributesOfItem(atPath: "\(r)/\(rel)"), a[.type] as? FileAttributeType == .typeRegular, let d = a[.modificationDate] as? Date, d > (best ?? .distantPast) { best = d }
+        } }
+        return best
+    }
+    /// Save the game's committed save into slot n (replacing what the slot held once the new copy is checked); the manifest written. Any thread
+    static func save(_ n: Int) throws -> SlotManifest {
+        guard let save = SaveBackup.save, let folder = folder, let dest = path(n) else { throw SaveBackup.Failure(text: "This launch has no save folder (DM_SAVE)") }
+        let fm = FileManager.default, parts = [("save", save), ("save_device", save + "_device")]
+        guard parts.contains(where: { ((try? fm.contentsOfDirectory(atPath: $0.1)) ?? []).contains { $0 != ".DS_Store" } }) else { throw SaveBackup.Failure(text: "The game has not saved anything yet") }
+        try fm.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        let stage = "\(folder)/.making-\(UUID().uuidString)", old = "\(folder)/.old-\(UUID().uuidString)"
+        defer { try? fm.removeItem(atPath: stage); try? fm.removeItem(atPath: old) }
+        try fm.createDirectory(atPath: stage + "/data", withIntermediateDirectories: true)
+        var copied: [(String, String)] = []
+        for (name, root) in parts where fm.fileExists(atPath: root) {
+            let to = "\(stage)/data/\(name)"
+            if dm_fs_clone_committed(root, to) != 0 {
+                // No folder cloning here (a DM_SAVE on a drive that is not APFS): a plain copy, kept only when the save did not change while it was copied
+                let e = errno; try? fm.removeItem(atPath: to)
+                guard e == ENOTSUP || e == EXDEV else { throw SaveBackup.Failure(text: "Could not copy the save (\(String(cString: strerror(e))))") }
+                let before = try SaveBackup.inventory([(name, root)])
+                try fm.copyItem(atPath: root, toPath: to)
+                guard try SaveBackup.inventory([(name, root)]) == before else { throw SaveBackup.Failure(text: "The game saved while it was being copied; try again") }
+            }
+            copied.append((name, to))
+        }
+        let inv = try SaveBackup.inventory(copied)
+        let m = SlotManifest(slot: n, titleID: String(cString: front_qs_title_id()).uppercased(), created: Date(), gameSaved: newest(copied.map { $0.1 }), inventory: inv)
+        try SaveBackup.encoder.encode(m).write(to: URL(fileURLWithPath: stage + "/manifest.json"), options: .atomic)
+        if fm.fileExists(atPath: dest) { try fm.moveItem(atPath: dest, toPath: old) }
+        try fm.moveItem(atPath: stage, toPath: dest)
+        return m
+    }
+    /// Load slot n: check it, keep the current save as a snapshot, then ask the launcher to swap it in and restart the game. Throws before anything changed. Any thread but the restart, which goes to the main thread
+    static func load(_ n: Int) throws {
+        guard canLoad, let req = env["DM_LAUNCHER_SLOT_LOAD"], let dir = path(n) else { throw SaveBackup.Failure(text: "Loading a slot needs the game opened from its app (it restarts the game)") }
+        guard let m = manifest(n) else { throw SaveBackup.Failure(text: "Slot \(n) is empty") }
+        let parts = m.inventory.directories.filter { !$0.contains("/") }
+        guard try SaveBackup.inventory(parts.map { ($0, "\(dir)/data/\($0)") }) == m.inventory else { throw SaveBackup.Failure(text: "Slot \(n) no longer matches what was saved in it (a file changed or is missing)") }
+        do { _ = try SaveBackup.make(reason: "beforeRestore") }
+        catch let e as SaveBackup.Failure where e.text == "The game has not saved anything yet" {}   // nothing to keep
+        try (dir + "/data\n").write(toFile: req, atomically: true, encoding: .utf8)
+        DispatchQueue.main.async { front_qs_restart() }
+    }
+}
+private func ago(_ d: Date) -> String { d.formatted(.relative(presentation: .named)) }
+private var slotBusy = false
+private var slotArmed: (slot: Int, at: Date)?
+/// The Save Slots menu and its shortcuts (front_mac_quick_settings.inc): save now, a toast when done. Main thread
+@_cdecl("dm_qs_slot_save")
+public func dm_qs_slot_save(_ n: Int32) {
+    let n = Int(n)
+    guard !slotBusy else { return }
+    slotBusy = true; NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+    DispatchQueue.global(qos: .userInitiated).async {
+        let r = Result<SlotManifest, Error>(catching: { try SaveSlots.save(n) })
+        DispatchQueue.main.async {
+            slotBusy = false
+            switch r {
+            case .success(let m): front_qs_toast_text("Slot \(n) saved: the game's save from \(m.gameSaved.map(ago) ?? "now")")
+            case .failure(let e): front_qs_toast_text("Slot \(n) not saved: \((e as? SaveBackup.Failure)?.text ?? e.localizedDescription)")
+            }
+            NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+        }
+    }
+}
+/// Load: the first press arms it for 4 seconds (a toast says what will happen), the second loads. Main thread
+@_cdecl("dm_qs_slot_load")
+public func dm_qs_slot_load(_ n: Int32) {
+    let n = Int(n)
+    guard !slotBusy else { return }
+    guard SaveSlots.canLoad else { front_qs_toast_text("Loading a slot needs the game opened from its app"); return }
+    guard let info = SaveSlots.info(n) else { front_qs_toast_text("Slot \(n) is empty"); return }
+    if let a = slotArmed, a.slot == n, Date().timeIntervalSince(a.at) < 4 {
+        slotArmed = nil; slotBusy = true; NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+        front_qs_toast_text("Loading slot \(n)…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = Result<Void, Error>(catching: { try SaveSlots.load(n) })
+            DispatchQueue.main.async {
+                slotBusy = false; NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+                if case .failure(let e) = r { front_qs_toast_text("Slot \(n) not loaded: \((e as? SaveBackup.Failure)?.text ?? e.localizedDescription)") }
+            }
+        }
+        return
+    }
+    slotArmed = (n, Date()); NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
+    dm_qs_toast_long_text("Press again to load slot \(n) (the game's save from \(ago(info.gameSaved ?? info.created))). The game restarts; unsaved progress is lost", 4)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4.1) { NotificationCenter.default.post(name: SaveSlots.changed, object: nil) }
+}
+private func dm_qs_toast_long_text(_ t: String, _ seconds: Double) { toastSeconds = seconds; front_qs_toast_text(t) }
 
 final class QuickSettings: ObservableObject {
     let game: String, modsDir: String, modsRun: Set<String>?, modsRunOrder: [String]?, close: () -> Void, fpsChanged: () -> Void
@@ -311,6 +425,9 @@ final class QuickSettings: ObservableObject {
     @Published var lastBackup: Date?
     @Published var backupBusy = false
     @Published var backupNote = ""
+    @Published var slots: [SlotInfo?] = Array(repeating: nil, count: SaveSlots.count)   // what each quick-save slot holds (index 0 is slot 1)
+    @Published var slotsBusy = false
+    @Published var slotArmedNow: Int?   // the slot whose Load waits for its second press
     var gpuMemoryLow: (used: UInt64, low: UInt64)? { didSet { objectWillChange.send() } }   // set once the host finds GPU memory nearly full with the game slow
     @Published var settingsPath = ""
     @Published var defaultsExist = false
@@ -319,9 +436,12 @@ final class QuickSettings: ObservableObject {
     @Published var thumbs: [String: NSImage] = [:]
     @Published var recDir = ""
     @Published var customDir = false
-    @Published var sel: Nav? { didSet { if sel != .quit { quitArmed = false }; if sel != .restart { restartArmed = false } } }
+    @Published var sel: Nav? { didSet { if sel != .quit { quitArmed = false }; if sel != .restart { restartArmed = false }; if sel != .library { libraryArmed = false } } }
     @Published var quitArmed = false      // Quit game asks twice, so a stray A press on the couch does not end the game
     @Published var restartArmed = false   // and so does Restart game
+    @Published var libraryArmed = false   // and Quit to Library
+    /// The NXForge app whose Play started this game (NXFORGE_FRONT_END): the footer then has Quit to Library
+    let frontEndApp: String? = ProcessInfo.processInfo.environment["NXFORGE_FRONT_END"].flatMap { $0.isEmpty ? nil : $0 }
     @Published var pad = false            // a controller drives the sidebar (the legend shows its buttons), else the keyboard
     @Published var glyphs: [String?] = [nil, nil, nil, nil]   // that controller's SF Symbols for choose, close, previous and next page
     @Published var assigning = -1
@@ -340,8 +460,13 @@ final class QuickSettings: ObservableObject {
         for n in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.fullscreen = front_qs_fullscreen() != 0 })
         }
+        observers.append(NotificationCenter.default.addObserver(forName: SaveSlots.changed, object: nil, queue: .main) { [weak self] _ in self?.refreshSlots() })
         refresh()
         baseline = sessionSnapshot(); cheatsBaseline = Dictionary(cheats.filter { $0.kind == 0 }.map { ($0.id, $0.on) }, uniquingKeysWith: { a, _ in a })
+    }
+    func refreshSlots() {
+        slots = (1...SaveSlots.count).map { SaveSlots.info($0) }; slotsBusy = slotBusy
+        slotArmedNow = slotArmed.flatMap { Date().timeIntervalSince($0.at) < 4 ? $0.slot : nil }
     }
     private func pfxKey(_ what: String) -> String { "DMPresentFilter.\(what).\(game)" }
     private func optKey(_ what: String) -> String { "DMQuickSettings.\(what).\(game)" }
@@ -376,6 +501,7 @@ final class QuickSettings: ObservableObject {
         mods = order + found.filter { !order.contains($0) }
         refreshModClash()
         lastBackup = SaveBackup.latest()
+        refreshSlots()
         refreshCheats()
         refreshCaptures()
     }
@@ -732,13 +858,25 @@ final class QuickSettings: ObservableObject {
     func restart() { if restartArmed { front_qs_restart() } else { restartArmed = true } }
     /// Quit game (after the NxNative Launcher's hold-Home exit): the first press arms it, the second ends the game as ⌘Q does
     func quit() { if quitArmed { NSApp.terminate(nil) } else { quitArmed = true } }
+    /// Quit to Library (a game NXForge's Play started): the first press arms it, the second tells NXForge which game to show (the distributed notification
+    /// org.nxforge.showGame, its object this game app's path), brings NXForge to the front on that game's page and ends the game as Quit does
+    func quitToLibrary() {
+        guard libraryArmed else { libraryArmed = true; return }
+        DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: nil, deliverImmediately: true)
+        guard let fe = frontEndApp else { NSApp.terminate(nil); return }
+        let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: fe), configuration: cfg) { _, err in
+            if let err { fputs("quick settings: Quit to Library could not open NXForge at \(fe): \(err.localizedDescription)\n", stderr) }
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
 
     // Controller and keyboard navigation (after RetroReplay's pause menu): a selection over rows of items. Up and down move between rows; left and right change a
     // setting's value, or move along a row of buttons (the quick bar, the tabs, the footer); L / R (Tab / Shift-Tab) turn the page
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
         case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
@@ -760,7 +898,7 @@ final class QuickSettings: ObservableObject {
     var rows: [[Nav]] {
         var r: [[Nav]] = [[.shot, .record, .fpsQuick], [.mute, .volume], pages.indices.map { .tab($0) }] + pageRows(page)
         if restartCount > 0 && canRestart { r.append([.restart]) }
-        return r + [[.resume, .quit]]
+        return r + [frontEndApp == nil ? [.resume, .quit] : [.resume, .library, .quit]]
     }
     var firstOnPage: Nav { pageRows(page).first?.first ?? .tab(page) }
     func setPage(_ p: Int) { page = p; UserDefaults.standard.set(p, forKey: optKey("page")); if p == pCapture { refreshCaptures() } }
@@ -824,6 +962,8 @@ final class QuickSettings: ObservableObject {
         case .preset(let i): if let p = Preset(rawValue: i) { choosePreset(p) }
         case .backup: backup()
         case .backupShow: showBackups()
+        case .slotSave(let n): dm_qs_slot_save(Int32(n))
+        case .slotLoad(let n): dm_qs_slot_load(Int32(n))
         case .settingsShow: showSettingsFile()
         case .settingsOpen: openSettingsFile()
         case .defaultsSave: saveDefaults()
@@ -868,6 +1008,7 @@ final class QuickSettings: ObservableObject {
         case .resetControls: resetControls()
         case .restart: restart()
         case .resume: close()
+        case .library: quitToLibrary()
         case .quit: quit()
         case .strength: break
         }
@@ -1094,6 +1235,19 @@ struct QuickSettingsView: View {
         Button { withAnimation(motion) { action() } } label: { Label(title, systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
             .modifier(GlassButton(prominent: false)).controlSize(.large).disabled(!enabled).padding(.top, 4).nav(m, n)
     }
+    private func slotRow(_ n: Int) -> some View {
+        let info = m.slots[n - 1], armed = m.slotArmedNow == n
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Slot \(n)").font(.body.weight(.medium))
+                Text(info.map { "Game saved \(($0.gameSaved ?? $0.created).formatted(.relative(presentation: .named)))" } ?? "Empty").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Button { dm_qs_slot_save(Int32(n)) } label: { Label("Save", systemImage: "square.and.arrow.down").frame(maxWidth: 80) }
+                .modifier(GlassButton(prominent: false)).disabled(m.slotsBusy || SaveBackup.save == nil).nav(m, .slotSave(n))
+            Button { dm_qs_slot_load(Int32(n)) } label: { Label(armed ? "Press again" : "Load", systemImage: "arrow.counterclockwise").frame(maxWidth: 110) }
+                .modifier(GlassButton(prominent: armed)).tint(armed ? Color.orange : nil).disabled(m.slotsBusy || info == nil || !SaveSlots.canLoad).nav(m, .slotLoad(n))
+        }.controlSize(.large)
+    }
     private var general: some View {
         VStack(alignment: .leading, spacing: 12) {
             let changes = m.sessionChanges
@@ -1124,6 +1278,11 @@ struct QuickSettingsView: View {
                 else if let d = m.lastBackup { Text("Last backup \(d.formatted(.relative(presentation: .named))). The NXForge Converter's Builds page restores it (Save snapshots).").foregroundStyle(.secondary) }
                 else { Text("A checked copy of this game's save, kept beside it; the NXForge Converter's Builds page restores it.").foregroundStyle(.secondary) }
             }.font(.caption).fixedSize(horizontal: false, vertical: true)
+            subhead("Quick-save slots").padding(.top, 6)
+            ForEach(1...SaveSlots.count, id: \.self) { n in slotRow(n) }
+            Text(SaveSlots.canLoad ? "A slot keeps the game's own save as it last saved it (not this exact moment). Loading restarts the game from that save; ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too."
+                 : "A slot keeps the game's own save as it last saved it. Loading one needs the game opened from its app, which restarts it.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if !m.settingsPath.isEmpty {
                 subhead("Settings file").padding(.top, 6)
                 Text(tilde(m.settingsPath)).font(.callout).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
@@ -1498,6 +1657,11 @@ struct QuickSettingsView: View {
             HStack(spacing: 10) {
                 Button(action: m.close) { Text("Resume game").font(.headline).frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction).shadow(color: GameLook.colour.opacity(0.45), radius: 14, y: 2).nav(m, .resume)
+                if m.frontEndApp != nil {
+                    Button(action: m.quitToLibrary) { Label(m.libraryArmed ? "Press again" : "Library", systemImage: "square.grid.2x2").frame(minWidth: 96) }
+                        .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.libraryArmed ? Color.orange : nil)
+                        .help("Ends the game and goes back to it in NXForge's library. Asks twice.").nav(m, .library)
+                }
                 Button(action: m.quit) { Label(m.quitArmed ? "Press again" : "Quit", systemImage: "power").frame(minWidth: 96) }
                     .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.quitArmed ? Color.red : nil).help("Ends the game, as ⌘Q does. Asks twice.").nav(m, .quit)
             }
@@ -1636,7 +1800,7 @@ public func dm_qs_refresh() { shared?.refresh() }
 @_cdecl("dm_qs_opened")
 public func dm_qs_opened(_ pad: Int32) {
     guard let m = shared else { return }
-    m.quitArmed = false; m.restartArmed = false
+    m.quitArmed = false; m.restartArmed = false; m.libraryArmed = false
     if pad != 0 { m.pad = true; m.sel = m.firstOnPage } else { m.sel = nil }
 }
 @_cdecl("dm_qs_peeked")
