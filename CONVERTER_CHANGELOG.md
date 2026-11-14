@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.11.2 (2026-11-14)
+
+A new look for Home, to match the game's page. Ships in NXForge 0.35.2.
+
+- **The game in focus fills the room**: when it has a screenshot, the newest one spreads across the top of Home behind the headline and changes as you move along the shelf. A game with no screenshots keeps its 3D case on the right.
+- **A cleaner headline**: the console and playtime on one line and when it was last played on the next, Play, Play options, **Details →** and the star, then what it starts with in one quiet line ("Balanced · 60 fps · Docked"), which opens Play options.
+- **Your games** as a large heading with how many are ready and **See all**, and each cover on the shelf has the game's name and console under it.
+- The controller legend has a divider above it on every screen.
+
 ## 0.11.1 (2026-11-14)
 
 A new look for a game's page. Ships in NXForge 0.35.1.

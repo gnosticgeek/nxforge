@@ -392,7 +392,9 @@ struct StageView: View {
         let tint = focus.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
         ZStack {
             StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "")
+            // the game's key art behind its page, and behind Home's headline for the game in focus
             if let g = detail { GameKeyArt(game: g).id(g.id).transition(.opacity) }
+            else if model.stageTab == .home, let g = focus { GameKeyArt(game: g, coverFallback: false).id(g.id).transition(.opacity) }
             VStack(spacing: 0) {
                 if detail == nil { StageTopBar(model: model) }
                 Group {
@@ -560,18 +562,15 @@ struct StageHero: View {
                 .foregroundStyle(LinearGradient(colors: [.white, Color(white: 0.80)], startPoint: .top, endPoint: .bottom))
                 .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 14) {
-                ForEach(Array(facts.enumerated()), id: \.offset) { _, f in
-                    Label(f.1, systemImage: f.0).labelStyle(.titleAndIcon).font(.system(size: 14.5, weight: .medium)).lineLimit(1)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 9) {
+                    Image(systemName: "gamecontroller.fill").font(.system(size: 14, weight: .semibold))
+                    Text(facts.joined(separator: "  ·  ")).lineLimit(1)
                 }
+                if let when { Text(when).lineLimit(1) }
             }
-            .foregroundStyle(StageLook.soft)
-            if !list.isEmpty {
-                HStack(spacing: 8) {
-                    chip(PlayOptions.current(settings: list, values: values).rawValue, lead: true, tint: tint)
-                    ForEach(Array(PlayOptions.summary(settings: list, values: values).enumerated()), id: \.offset) { _, s in chip(s.value) }
-                }
-            }
+            .font(.system(size: 15.5, weight: .medium)).foregroundStyle(StageLook.soft)
+            .shadow(color: .black.opacity(0.5), radius: 8)
             HStack(spacing: 10) {
                 if g.app != nil {
                     Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(playing ? "Resume" : "Play", systemImage: "play.fill").padding(.horizontal, 8) }
@@ -583,7 +582,11 @@ struct StageHero: View {
                         .buttonStyle(StageButton(primary: true, height: 54, glow: tint)).disabled(model.run.running || model.batchRunning)
                 }
                 if showDetails {
-                    Button("Details") { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref }.buttonStyle(StageButton(height: 54, glass: true))
+                    Button { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref } label: {
+                        HStack(spacing: 8) { Text("Details"); Image(systemName: "arrow.right").font(.system(size: 14, weight: .semibold)) }
+                            .font(.system(size: 16, weight: .semibold)).padding(.horizontal, 14).frame(height: 54).contentShape(.rect)
+                    }
+                    .buttonStyle(.plain).help("The game's page (Y)")
                 }
                 Button { model.toggleFavorite(g) } label: {
                     Image(systemName: g.favorite ? "star.fill" : "star").font(.system(size: 18, weight: .semibold))
@@ -594,6 +597,14 @@ struct StageHero: View {
                 .accessibilityLabel(g.favorite ? "Remove from Favourites" : "Add to Favourites")
             }
             .padding(.top, 8)
+            if !list.isEmpty {
+                let parts = [PlayOptions.current(settings: list, values: values).rawValue] + PlayOptions.summary(settings: list, values: values).map(\.value)
+                Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: {
+                    Text(parts.joined(separator: "  ·  ")).font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.faint).lineLimit(1)
+                        .padding(.vertical, 4).contentShape(.rect)
+                }
+                .buttonStyle(.plain).padding(.leading, 4).help("What the game starts with: opens Play options")
+            }
         }
     }
 
@@ -604,19 +615,18 @@ struct StageHero: View {
         return first ? "CONTINUE PLAYING" : "RECENTLY PLAYED"
     }
 
-    /// The line under the name, each part with its symbol
-    var facts: [(String, String)] {
-        var out = [("gamecontroller.fill", game.console.rawValue)]
-        if let v = game.version, !v.isEmpty { out.append(("number", "Version \(v)")) }
-        if game.total > 0 { out.append(("clock.fill", "\(Playtime.text(game.total)) played")) }
-        if game.app != nil { out.append(("calendar", game.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet")) }
+    /// The line under the name: the console, then the playtime
+    var facts: [String] {
+        var out = [game.console.rawValue]
+        if let v = game.version, !v.isEmpty, game.total == 0 { out.append("Version \(v)") }
+        if game.total > 0 { out.append("\(Playtime.text(game.total)) played") }
         return out
     }
 
-    func chip(_ t: String, lead: Bool = false, tint: Color = .white) -> some View {
-        Text(t).font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 11).padding(.vertical, 5)
-            .background(lead ? AnyShapeStyle(tint.opacity(0.30)) : AnyShapeStyle(StageLook.card), in: .capsule)
-            .overlay(Capsule().strokeBorder(lead ? AnyShapeStyle(tint.opacity(0.65)) : AnyShapeStyle(StageLook.edge), lineWidth: 1))
+    /// The second line: when it was last played
+    var when: String? {
+        guard game.app != nil else { return "Not built yet" }
+        return game.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet"
     }
 }
 
@@ -625,60 +635,76 @@ struct StageHome: View {
     let games: [StageGame]
     let focus: StageGame?
     let total: Int
+    /// whether the game in focus has a screenshot filling the room (GameKeyArt); without one its 3D case stands on the right
+    @State private var keyArt = false
     @Environment(\.accessibilityReduceMotion) private var still
+    @Environment(\.accessibilityReduceTransparency) private var solid
 
     var body: some View {
         GeometryReader { geo in
-            let tile = min(max(geo.size.height * 0.185, 92), 150)
+            let tile = min(max(min(geo.size.width * 0.112, geo.size.height * 0.20), 100), 190)
+            let caseH = min(max(geo.size.height - tile / CoverSource.aspect - 150, 220), 560)
             let tileH = tile / CoverSource.aspect
-            let shelf = tileH * 1.24 + 44
-            let caseH = min(max(geo.size.height - shelf - 30, 220), 600)
+            let shelf = tileH + 78
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 24) {
                     if let g = focus {
-                        StageHero(model: model, game: g, first: AppModel.lastPlayed(games)?.id == g.id, titleSize: geo.size.width > 1000 ? 56 : 40)
-                            .frame(maxWidth: 700, alignment: .leading)
+                        StageHero(model: model, game: g, first: AppModel.lastPlayed(games)?.id == g.id, titleSize: geo.size.width > 1100 ? 60 : 44)
+                            .frame(maxWidth: 640, alignment: .leading)
                             .id(g.id)
                             .transition(.asymmetric(insertion: still ? .opacity : .opacity.combined(with: .offset(y: 14)), removal: .opacity))
                     }
                     Spacer(minLength: 0)
-                    if let g = focus, geo.size.width > 880 {
-                        GameCase(game: g).frame(width: caseH * 0.72, height: caseH).padding(.trailing, geo.size.width > 1200 ? 70 : 10)
-                            .padding(.bottom, -caseH * 0.16)
+                    if let g = focus, geo.size.width > 980, !keyArt || solid {
+                        GameCase(game: g).frame(width: caseH * 0.72, height: caseH).padding(.trailing, geo.size.width > 1250 ? 50 : 0)
+                            .padding(.bottom, -caseH * 0.2)
+                            .transition(.opacity)
                     }
                 }
-                .padding(.horizontal, 56)
+                .padding(.horizontal, 64)
                 .frame(maxHeight: .infinity)
                 .animation(.easeOut(duration: 0.32), value: focus?.id)
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("YOUR GAMES").font(.system(size: 12, weight: .bold)).fontWidth(.expanded).kerning(1.8)
-                    Text("\(games.count) ready").font(.system(size: 12.5, weight: .medium)).foregroundStyle(StageLook.faint)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Your games").font(.system(size: 26, weight: .heavy)).tracking(-0.4)
+                    Text("\(games.filter { $0.app != nil }.count) ready").font(.system(size: 16, weight: .medium)).foregroundStyle(StageLook.soft)
                     Spacer()
                     Button { model.stageTab = .library } label: {
-                        HStack(spacing: 5) { Text("See all \(total)"); Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)) }
+                        HStack(spacing: 6) { Text("See all \(total)"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
                     }
-                    .buttonStyle(.plain).font(.callout.weight(.semibold)).foregroundStyle(StageLook.soft)
+                    .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft)
                 }
                 .padding(.horizontal, 56)
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(alignment: .top, spacing: 24) {
+                        LazyHStack(alignment: .top, spacing: 26) {
                             ForEach(games) { g in
-                                CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, reflect: true, attention: model.coverMark(g)).frame(width: tile)
-                                    .id(g.id)
-                                    .onTapGesture(count: 2) { model.libraryFocus = g.id; model.playFromStage(g.ref) }
-                                    .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
-                                    .contextMenu { StageGameMenu(model: model, game: g) }
-                                    .accessibilityLabel(g.name).accessibilityAddTraits(.isButton)
+                                VStack(alignment: .leading, spacing: 10) {
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g)).frame(width: tile)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(g.name).font(.system(size: 14.5, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                                        Text(g.console.rawValue).font(.system(size: 13)).foregroundStyle(StageLook.faint).lineLimit(1)
+                                    }
+                                    .frame(width: tile - 8, alignment: .leading).padding(.leading, 4)
+                                    .opacity(focus?.id == g.id ? 1 : 0.85)
+                                }
+                                .id(g.id)
+                                .contentShape(.rect)
+                                .onTapGesture(count: 2) { model.libraryFocus = g.id; model.playFromStage(g.ref) }
+                                .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
+                                .contextMenu { StageGameMenu(model: model, game: g) }
+                                .accessibilityElement(children: .combine).accessibilityLabel(g.name).accessibilityAddTraits(.isButton)
                             }
                         }
-                        .padding(.horizontal, 56).padding(.top, 28).frame(height: shelf, alignment: .top)
+                        .padding(.horizontal, 56).padding(.top, 20).frame(height: shelf + 20, alignment: .top)
                     }
-                    .frame(height: shelf)
+                    .frame(height: shelf + 20)
                     .onChange(of: model.libraryFocus) { _, f in if let f { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) } } }
                 }
+                .padding(.bottom, 10)
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: keyArt)
+        .task(id: focus?.app) { keyArt = await GameKeyArt.hasShot(app: focus?.app) }
     }
 }
 
@@ -847,7 +873,7 @@ struct StageHints: View {
             HStack(spacing: 7) { PadGlyph(text: "+"); Text("Settings").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
         }
         .padding(.horizontal, 40).frame(height: 48)
-        .overlay(alignment: .top) { if detail { Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.horizontal, 24) } }
+        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.horizontal, 24) }
         .accessibilityHidden(true)
     }
 

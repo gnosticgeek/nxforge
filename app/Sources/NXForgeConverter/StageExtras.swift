@@ -259,13 +259,22 @@ struct ScreenshotRow: View {
 /// enlarged and blurred.
 struct GameKeyArt: View {
     let game: StageGame
+    /// the blurred cover when the game has no screenshot (the game's page); Home shows the 3D case instead
+    var coverFallback = true
     @State private var shot: NSImage?
     @Environment(\.accessibilityReduceTransparency) private var solid
-    @MainActor private static var cache: [String: NSImage] = [:]
+    @MainActor static var cache: [String: NSImage] = [:]
+
+    /// Whether a built game has a screenshot to show as its key art (read off the main thread)
+    static func hasShot(app: String?) async -> Bool {
+        guard let app else { return false }
+        if await MainActor.run(body: { cache[app] != nil }) { return true }
+        return await Task.detached(priority: .userInitiated) { !GameCaptures.screenshots(app: app, limit: 1).isEmpty }.value
+    }
 
     var body: some View {
         let _ = CoverStore.shared.revision
-        let art = shot ?? CoverArt.wide(game)
+        let art = shot ?? (coverFallback ? CoverArt.wide(game) : nil)
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
             if let art, !solid {

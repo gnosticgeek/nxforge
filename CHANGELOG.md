@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.2 (2026-11-14)
+
+- **A new look for Home in the Mac app** (Converter 0.11.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the focused game's key art fills the top of Home behind a cleaner headline, and the shelf is a "Your games" row with names under the covers. No game rebuild needed.
+
 ## 0.35.1 (2026-11-14)
 
 - **A new look for a game's page in the Mac app** (Converter 0.11.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the game's newest screenshot (or its blurred cover) fills the top of the page behind the box and a larger title, the preset it starts with sits under Play, screenshots are a row of three large shots, and Save, Playtime and Build are three columns under a divider. No game rebuild needed.
