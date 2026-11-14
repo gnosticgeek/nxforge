@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.1 (2026-11-14)
+
+- **A new look for a game's page in the Mac app** (Converter 0.11.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the game's newest screenshot (or its blurred cover) fills the top of the page behind the box and a larger title, the preset it starts with sits under Play, screenshots are a row of three large shots, and Save, Playtime and Build are three columns under a divider. No game rebuild needed.
+
 ## 0.35.0 (2026-11-14)
 
 - **NXForge Sidebar 0.6.0: four improvements to the in-game sidebar** ([SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): it glows in the game's own colour with the game's icon and name at the top, like the app's 0.33.0 design; hold P, a controller's top face button or the eye button to peek at the game at full size; the app's Battery, Balanced and Quality presets on the Graphics page; and "Put it all back" on the General page undoes this session's changes.

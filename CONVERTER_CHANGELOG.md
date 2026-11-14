@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.11.1 (2026-11-14)
+
+A new look for a game's page. Ships in NXForge 0.35.1.
+
+- **The game's art fills the top of the page.** GameTDB has box art but no wide key art, so the page uses the game's newest screenshot, sharp, fading into the room below and darker on the left where the title stands. A game with no screenshots gets its front cover, enlarged and blurred. Reduce Transparency leaves it out.
+- **A bigger headline beside the box**: the eyebrow, a much larger title, the console and when it was last played on one line, then Play and Play options, and the preset it starts with ("Balanced · 60 fps · …"), which opens Play options. Turn over sits under the box.
+- **Screenshots as a row of three large shots** with **View all** (shows them in Finder). A game with none says where they come from.
+- **Save, Playtime and Build as three columns** under a divider, each with its icon, the value, a detail line and a chevron that opens the game in the converter. Up to date carries a green tick. The controller legend has a divider above it.
+
 ## 0.11.0 (2026-11-14)
 
 Ten improvements to the app. Ships in NXForge 0.34.0.
