@@ -4,6 +4,21 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.7.0 (2026-11-14)
+
+Ten changes to how the converter looks and behaves. Ships in NXForge 0.31.0.
+
+- **The build on the sidebar.** While a build runs, the Convert row shows a ring filling with it and the time left ("1 h 12 m"), so it stays in sight from Library, Storage and the rest.
+- **Storage is a real table.** Click a heading (Item, Size, Type) to sort by it and again to reverse, drag the edges to resize, click, ⌘-click or ⇧-click rows, ⌘A for all, ⌫ to delete. Right-click for Show in Finder, Copy Path and Delete; a double-click shows the item in Finder. Apps and game files can be picked too, and are left out of a delete.
+- **Storage deletes can be undone.** Delete moves the item aside under a hidden name at once, and for 20 seconds Undo on the banner (or Edit › Undo, ⌘Z) puts it back; then it is deleted and the space is free. It never goes through the Trash, which would keep the space taken. Anything a quit leaves held is deleted at the next launch.
+- **Delete buttons name the size**: "Delete 14 GB", "Move 3.2 GB to Trash" (Storage, a built app on Builds, Settings' Clear the build cache).
+- **VoiceOver**: icon-only buttons have names (Show in Finder, More, Play, Clear Search and the rest), a cover reads as the game, its console and whether it is built, with Play or Convert, Select and Open Game Page as actions, and pass/fail marks say so. The sidebar and Storage's big number use text styles instead of fixed sizes.
+- **Covers in any size, and by console.** A slider over the covers (and View › Bigger Covers ⌘+, Smaller Covers ⌘−; ⌘= works too) sets their size, kept between launches. Sort › Group by Console (or View › Group Library by Console) puts Switch 2 games and Switch games under their own headings; the arrow keys follow.
+- **Banners instead of alerts** for what ended in the background: a deleted or freed item, a restored app or a failed restore, a game to quit before its save is changed, an update that has to wait for a build. They go by themselves, have Undo or Copy where it helps, and VoiceOver reads them.
+- **Recent games on Convert**: the last five games chosen show under the drop area, one click to choose one again (an offline one says so; right-click to remove it).
+- **A Dock menu**: right-click the Dock icon for the recently played games, each with Play, Rebuild, Game Page and Show in Finder, the build running now with Stop Build…, and Build for the chosen game.
+- **The window opens where it was**: the same page, the build picked on Builds and the game the Library was on, scrolled into view.
+
 ## 0.6.1 (2026-11-11)
 
 Ships in NXForge 0.27.2.

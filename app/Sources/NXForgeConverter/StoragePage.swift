@@ -433,7 +433,8 @@ struct StoragePage: View {
             for r in rows {
                 do { held.append(try PendingDeletes.hide(r.path, bytes: r.bytes, label: r.label)) } catch { failed.append(r.label) }
             }
-            await MainActor.run { deleting.subtract(paths); model.holdDeletes(held, failed: failed) }
+            let h = held, f = failed
+            await MainActor.run { deleting.subtract(paths); model.holdDeletes(h, failed: f) }
         }
     }
 }

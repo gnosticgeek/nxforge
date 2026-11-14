@@ -143,16 +143,14 @@ extension AppModel {
         guard !gone.isEmpty else { return }
         pendingDeletes.removeAll { gone.contains($0) }
         let total = gone.reduce(0) { $0 + $1.bytes }
-        Task.detached { [weak self] in
-            for p in gone { PendingDeletes.purge(p) }
-            await MainActor.run {
-                guard let self else { return }
-                PendingDeletes.save(self.pendingDeletes)
-                self.revision += 1
-                self.measure()
-                // only when nothing newer is on show: Undo is no longer there, so the banner it was on has to go anyway
-                if self.banner == nil || self.banner?.action != nil { self.showBanner("Freed \(Disk.gb(total))", tone: .success, symbol: "leaf.fill") }
-            }
+        Task { [weak self] in
+            await Task.detached { for p in gone { PendingDeletes.purge(p) } }.value
+            guard let self else { return }
+            PendingDeletes.save(self.pendingDeletes)
+            self.revision += 1
+            self.measure()
+            // only when nothing newer is on show: Undo is no longer there, so the banner it was on has to go anyway
+            if self.banner == nil || self.banner?.action != nil { self.showBanner("Freed \(Disk.gb(total))", tone: .success, symbol: "leaf.fill") }
         }
     }
 
