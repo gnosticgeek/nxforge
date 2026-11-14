@@ -74,7 +74,7 @@ final class ControllerNav {
         key(pad.buttonA, .a) { m in
             if let p = m.preview { m.openGame(p) }
             else if let g = m.gameDetail { m.play(g) }
-            else if let r = m.focusedGame() { m.page = .library; m.openGame(r) }
+            else if let r = m.focusedGame() { m.showConverter(); m.page = .library; m.openGame(r) }
         }
         key(pad.buttonB, .b) { m in
             if m.preview != nil { m.preview = nil }
@@ -125,8 +125,8 @@ struct PreviewSheet: View {
             HStack {
                 Text("Space or Esc closes").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
-                if let b { Button { model.preview = nil; model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill") }.buttonStyle(.glass) }
-                Button("Game Page") { model.openGame(ref) }.buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
+                if let b { Button { model.preview = nil; model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill") }.buttonStyle(.stage) }
+                Button("Game Page") { model.openGame(ref) }.buttonStyle(.stagePrimary).keyboardShortcut(.defaultAction)
             }
         }
         .padding(22).frame(width: 520)
@@ -177,10 +177,10 @@ struct WhatsNewSheet: View {
             .frame(maxHeight: 380)
             HStack {
                 if model.converterUpdate != nil {
-                    Button("Update Now…") { model.dismissWhatsNew(); model.updateConverter() }.buttonStyle(.glass)
+                    Button("Update Now…") { model.dismissWhatsNew(); model.updateConverter() }.buttonStyle(.stage)
                 }
                 Spacer()
-                Button("Continue") { model.dismissWhatsNew() }.buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
+                Button("Continue") { model.dismissWhatsNew() }.buttonStyle(.stagePrimary).keyboardShortcut(.defaultAction)
             }
         }
         .padding(22).frame(width: 560)
@@ -209,7 +209,7 @@ struct CommandPalette: View {
         var out: [PaletteItem] = []
         let m = model
         for p in Page.allCases {
-            out.append(PaletteItem(id: "page-\(p.rawValue)", title: p.rawValue, detail: "Page", symbol: p.symbol) { m.gameDetail = nil; m.page = p })
+            out.append(PaletteItem(id: "page-\(p.rawValue)", title: p.title, detail: "Page", symbol: p.symbol) { m.showConverter(); m.page = p })
         }
         let builds = m.libraryBuilds()
         var seenApps = Set<String>()
@@ -217,20 +217,20 @@ struct CommandPalette: View {
             let b = m.build(of: g, in: builds)
             if let a = b?.app { seenApps.insert(a) }
             out.append(PaletteItem(id: "game-\(g.id)", title: g.displayName, detail: [g.console.rawValue, b != nil ? "Built" : "Not built", g.titleID].compactMap { $0 }.joined(separator: " · "),
-                                   symbol: "gamecontroller", icon: g.icon) { m.page = .library; m.openGame(GameRef(libraryID: g.id, app: b?.app)) })
+                                   symbol: "gamecontroller", icon: g.icon) { m.showConverter(); m.page = .library; m.openGame(GameRef(libraryID: g.id, app: b?.app)) })
         }
         for b in Engine.builds() where FileManager.default.fileExists(atPath: b.app) {
             let name = b.app.url.deletingPathExtension().lastPathComponent
             out.append(PaletteItem(id: "play-\(b.app)", title: "Play \(name)", detail: "Open the app", symbol: "play.fill", icon: b.app) { m.openApp(b.app) })
             if !seenApps.contains(b.app) {
-                out.append(PaletteItem(id: "build-\(b.app)", title: name, detail: "Built app", symbol: "macwindow", icon: b.app) { m.page = .builds; m.openGame(GameRef(libraryID: nil, app: b.app)) })
+                out.append(PaletteItem(id: "build-\(b.app)", title: name, detail: "Built app", symbol: "macwindow", icon: b.app) { m.showConverter(); m.page = .builds; m.openGame(GameRef(libraryID: nil, app: b.app)) })
             }
         }
-        out.append(PaletteItem(id: "act-scan", title: "Scan Library Again", detail: "Action", symbol: "arrow.clockwise") { m.page = .library; m.scanLibrary() })
+        out.append(PaletteItem(id: "act-scan", title: "Scan Library Again", detail: "Action", symbol: "arrow.clockwise") { m.showConverter(); m.page = .library; m.scanLibrary() })
         out.append(PaletteItem(id: "act-ipa", title: "Build iPhone and iPad IPA…", detail: "Action", symbol: "iphone") { m.buildIPA() })
         out.append(PaletteItem(id: "act-couch", title: m.couchMode ? "Leave Couch Mode" : "Couch Mode", detail: "Action", symbol: "sofa") { m.toggleCouch() })
-        out.append(PaletteItem(id: "act-check", title: "Check the Toolchain Again", detail: "Action", symbol: "checkmark.seal") { m.page = .toolchain; m.recheck() })
-        out.append(PaletteItem(id: "act-updates", title: "Check for Updates", detail: "Action", symbol: "arrow.down.circle") { m.page = .updates; m.engineAction(update: false) })
+        out.append(PaletteItem(id: "act-check", title: "Check the Toolchain Again", detail: "Action", symbol: "checkmark.seal") { m.showConverter(); m.page = .toolchain; m.recheck() })
+        out.append(PaletteItem(id: "act-updates", title: "Check for Updates", detail: "Action", symbol: "arrow.down.circle") { m.showConverter(); m.page = .updates; m.engineAction(update: false) })
         out.append(PaletteItem(id: "act-new", title: "What's New in NXForge", detail: "Action", symbol: "sparkles") { m.showWhatsNew() })
         if m.converterUpdate != nil {
             out.append(PaletteItem(id: "act-update", title: "Update NXForge…", detail: "Action", symbol: "arrow.down.circle") { m.updateConverter() })
@@ -311,29 +311,23 @@ struct CommandPalette: View {
     }
 }
 
-/// Over the sidebar: a newer converter or engine release; it opens the Updates page.
+/// Beside the pages: a newer app or engine release; it opens the Updates page.
 struct UpdateCapsule: View {
     let model: AppModel
 
     var text: String? {
         if model.converterUpdating { return "Updating…" }
-        if let u = model.converterUpdate { return "Converter \(u.version) available" }
+        if let u = model.converterUpdate { return "NXForge app \(u.version) available" }
         if let e = model.engineUpdate { return e.release.map { "NXForge \($0) available" } ?? "Engine updates available" }
         return nil
     }
 
     var body: some View {
         if let text {
-            Button { model.page = .updates } label: {
-                Label(text, systemImage: "arrow.down.circle.fill")
-                    .font(.caption.weight(.semibold)).padding(.horizontal, 10).padding(.vertical, 4)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .background(Color.accentColor, in: .capsule)
-            .disabled(model.converterUpdating)
-            .help("Show the Updates page")
-            .padding(.horizontal, 16).padding(.bottom, 8)
+            Button { model.page = .updates } label: { Label(text, systemImage: "arrow.down.circle.fill") }
+                .buttonStyle(.stagePrimary).controlSize(.small)
+                .disabled(model.converterUpdating)
+                .help("Show the Updates page")
         }
     }
 }

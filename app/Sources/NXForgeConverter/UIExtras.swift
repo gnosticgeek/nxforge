@@ -211,7 +211,7 @@ struct BannerView: View {
             }
             Spacer(minLength: 8)
             if let a = banner.action {
-                Button(a.title) { model.banner = nil; a.run() }.buttonStyle(.glassProminent)
+                Button(a.title) { model.banner = nil; a.run() }.buttonStyle(.stagePrimary)
             }
             if banner.tone == .failure {
                 Button { copyToClipboard([banner.text, banner.detail].compactMap { $0 }.joined(separator: "\n")) } label: {

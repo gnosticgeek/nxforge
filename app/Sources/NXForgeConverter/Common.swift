@@ -1,4 +1,4 @@
-// The window frame and the pieces every page uses: sidebar, toolbar, cards, status dots, path fields.
+// The window frame and the pieces every page uses: the page row, cards, status dots, path fields.
 import AppKit
 import SwiftUI
 
@@ -7,11 +7,22 @@ let helpURL = URL(string: "https://github.com/gnosticgeek/nxforge/blob/main/app/
 /// The window: the front end (Stage.swift), or the converter's pages behind its Converter tab.
 struct RootView: View {
     @Bindable var model: AppModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Group {
-            if model.frontEnd { StageView(model: model) } else { ConverterRoot(model: model) }
+        ZStack {
+            // the games and the converter are one window on one stage: the same top bar, the same light
+            if model.frontEnd { StageView(model: model).transition(.opacity) } else { ConverterRoot(model: model).transition(.opacity) }
+            if model.stageSettings {
+                Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { model.stageSettings = false }
+                StageSettings(model: model, openConverterSettings: { openSettings() }).transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .foregroundStyle(.white)
+                    .onExitCommand { model.stageSettings = false }
+            }
         }
+        .environment(\.colorScheme, .dark)
+        .animation(.easeInOut(duration: 0.2), value: model.frontEnd)
+        .animation(.spring(duration: 0.3), value: model.stageSettings)
         // a note for work that ended in the background, over the foot of the window (idea 7)
         .overlay(alignment: .bottom) {
             if let b = model.banner {
@@ -28,114 +39,122 @@ struct RootView: View {
     }
 }
 
+/// The converter's pages, on the front end's stage: its top bar, a row of the pages under it, then the page.
 struct ConverterRoot: View {
     @Bindable var model: AppModel
     @State private var width: CGFloat = 1200
 
+    /// The light is the game's whose page is open, else the one the front end was on, so changing tabs keeps the room as it was.
+    var tint: Color {
+        let games = model.stageGames()
+        let g = model.gameDetail.flatMap { r in games.first { $0.isRef(r) } } ?? model.stageFocus(model.stageShown(games))
+        return g.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
+    }
+
     var body: some View {
-        NavigationSplitView(columnVisibility: Binding(get: { model.couchMode ? .detailOnly : .all }, set: { v in if model.couchMode && v != .detailOnly { model.toggleCouch() } })) {
-            List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
-                ForEach(Page.allCases) { p in
-                    // the tag goes last: a tag under .badge is not the row's, so the list could not select any page
-                    HStack(spacing: 6) {
-                        Label(p.rawValue, systemImage: p.symbol)
-                        Spacer(minLength: 4)
-                        // the build in sight from every page (idea 1)
-                        if p == .convert && model.run.running && !model.run.planning { SidebarBuildProgress(run: model.run) }
+        ZStack {
+            StageBackdrop(tint: tint, strength: 0.55)
+            VStack(spacing: 0) {
+                if !model.couchMode {
+                    StageTopBar(model: model)
+                    ConverterNav(model: model)
+                }
+                Group {
+                    if let r = model.gameDetail, model.page == .library || model.page == .builds {
+                        GamePage(model: model, ref: r, wide: width > 860)
+                    } else {
+                        switch model.page {
+                        case .convert: ScrollView { ConvertPage(model: model, wide: width > 860).pagePadding() }
+                        case .library: LibraryPage(model: model)
+                        case .builds: BuildsPage(model: model)
+                        case .storage: StoragePage(model: model)
+                        case .toolchain: ScrollView { ToolchainPage(model: model).pagePadding() }
+                        case .updates: ScrollView { UpdatesPage(model: model).pagePadding() }
+                        }
                     }
-                    .font(.title3).padding(.vertical, 3)
-                        .badge(p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : 0)
-                        .tag(p)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .safeAreaInset(edge: .top) { VStack(alignment: .leading, spacing: 0) { SidebarBrand(); UpdateCapsule(model: model) } }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
-            .safeAreaInset(edge: .bottom) { ToolchainFooter(model: model) }
-        } detail: {
-            Group {
-                if let r = model.gameDetail, model.page == .library || model.page == .builds {
-                    GamePage(model: model, ref: r, wide: width > 860)
-                } else {
-                switch model.page {
-                case .convert: ScrollView { ConvertPage(model: model, wide: width > 860).padding(20) }
-                case .library: LibraryPage(model: model)
-                case .builds: BuildsPage(model: model)
-                case .storage: StoragePage(model: model)
-                case .toolchain: ScrollView { ToolchainPage(model: model).padding(20) }
-                case .updates: ScrollView { UpdatesPage(model: model).padding(20) }
-                }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // the page sits on the navy; Convert's banner sits behind its heading, up under the toolbar
-            .background(alignment: .top) {
-                ZStack(alignment: .top) {
-                    Theme.background
-                    if model.gameDetail == nil && model.page == .library { HeroBanner(scene: .aurora).frame(height: model.couchMode ? 320 : 230) }
-                    if model.gameDetail == nil && model.page == .builds { HeroBanner(scene: .moon).frame(height: 230) }
-                    if model.page == .convert || model.page == .storage { HeroBanner(scene: .dish).frame(height: 230) }
-                    if model.page == .toolchain || model.page == .updates { HeroBanner(scene: .peaks).frame(height: 230) }
-                }
-                .ignoresSafeArea()
-            }
-            // pages with their own banner heading drop the window title over it
-            .toolbar(removing: model.page.hasHero ? .title : nil)
-            .toolbarBackgroundVisibility(model.page.hasHero ? .hidden : .automatic, for: .windowToolbar)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-            // the window title names the page, as Mac apps do; the subtitle names the game being converted
-            .navigationTitle(model.page.rawValue)
-            .navigationSubtitle(model.page == .convert ? model.game?.name ?? "" : "")
-            // a game folder (or a file in it) dropped anywhere on the window becomes the game to convert
-            .dropDestination(for: URL.self) { urls, _ in
-                guard !model.run.running, !urls.isEmpty else { return false }
-                model.openDropped(urls)
-                return true
-            }
-            .toolbar {
-                ToolbarItem(placement: .automatic) {
-                    Button { model.showStage(model.stageTab) } label: { Label("Games", systemImage: "gamecontroller") }.help("Back to your games (⌘G)")
-                }
-                ToolbarItem(placement: .automatic) {
-                    Button { NSWorkspace.shared.open(helpURL) } label: { Label("NXForge Help", systemImage: "questionmark").labelStyle(.iconOnly) }.help("NXForge Converter Help")
-                }
-            }
+        }
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .navigationTitle("NXForge")
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        // a game folder (or a file in it) dropped anywhere on the window becomes the game to convert
+        .dropDestination(for: URL.self) { urls, _ in
+            guard !model.run.running, !urls.isEmpty else { return false }
+            model.openDropped(urls)
+            return true
         }
         .onChange(of: model.page) { model.gameDetail = nil }
     }
 }
 
-/// The app's mark and name over the sidebar.
-struct SidebarBrand: View {
+extension View {
+    /// A page's margins: the top bar's at the sides.
+    func pagePadding() -> some View { padding(.horizontal, Theme.gutter).padding(.top, 4).padding(.bottom, 28) }
+}
+
+/// The converter's pages as a row of capsules (the front end's filter chips), with the toolchain's state and a waiting
+/// update at the right.
+struct ConverterNav: View {
+    @Bindable var model: AppModel
+
     var body: some View {
-        HStack(spacing: 10) {
-            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 38, height: 38)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("NXForge").font(.title3.weight(.bold))
-                Text("Game Conversion Toolkit").font(.caption).foregroundStyle(.secondary)
-                Text("Converter \(CONVERTER_VERSION)").font(.caption2).foregroundStyle(.tertiary)
-                    .help("NXForge app \(CONVERTER_VERSION). The engine's release is on the Toolchain page.")
+        HStack(spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                pages
+                ScrollView(.horizontal, showsIndicators: false) { pages }
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            UpdateCapsule(model: model)
+            toolchain
         }
-        .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, Theme.gutter).padding(.top, 2).padding(.bottom, 12)
     }
-}
 
-/// The page's one-line description; its trailing controls (the page's actions) go in the window toolbar.
-struct PageHeader<Trailing: View>: View {
-    let title: String
-    let subtitle: String
-    @ViewBuilder var trailing: Trailing
-
-    var body: some View {
-        Text(subtitle).foregroundStyle(.secondary).opacity(subtitle.isEmpty ? 0 : 1).frame(height: subtitle.isEmpty ? 0 : nil)
-            .toolbar { ToolbarItemGroup(placement: .primaryAction) { trailing } }
+    var pages: some View {
+        HStack(spacing: 8) {
+            ForEach(Page.allCases) { p in
+                let on = model.page == p
+                let updates = p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : 0
+                Button { if on { model.gameDetail = nil } else { model.page = p } } label: {
+                    HStack(spacing: 6) {
+                        Text(p.title)
+                        if updates > 0 {
+                            Text("\(updates)").font(.system(size: 11, weight: .bold)).frame(minWidth: 17, minHeight: 17)
+                                .foregroundStyle(on ? Color.white : Color.black)
+                                .background(on ? Color.black.opacity(0.8) : Color.white.opacity(0.9), in: .circle)
+                        }
+                    }
+                    .font(.system(size: 13, weight: .semibold)).padding(.horizontal, 14).frame(height: 32)
+                    .foregroundStyle(on ? Color.black : Color(white: 0.9))
+                    .background(on ? Color.white.opacity(0.92) : Color.white.opacity(0.07), in: .capsule)
+                    .overlay(Capsule().strokeBorder(.white.opacity(on ? 0 : 0.16)))
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(updates > 0 ? "\(p.title), \(updates) waiting" : p.title)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .fixedSize()
     }
-}
 
-extension PageHeader where Trailing == EmptyView {
-    init(title: String, subtitle: String) { self.init(title: title, subtitle: subtitle) { EmptyView() } }
+    /// Ready or not: it opens the Toolchain page
+    var toolchain: some View {
+        Button { model.page = .toolchain } label: {
+            HStack(spacing: 7) {
+                if model.checking { ProgressView().controlSize(.mini) }
+                else { Circle().fill(model.allOK ? Color(red: 0.29, green: 0.87, blue: 0.50) : Color(red: 0.98, green: 0.75, blue: 0.14)).frame(width: 7, height: 7) }
+                Text(model.checking ? "Checking the toolchain…" : model.allOK ? "Toolchain ready" : "Toolchain incomplete · \(model.passed) of \(model.checks?.count ?? 0)")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(StageLook.soft).lineLimit(1)
+            }
+            .padding(.horizontal, 4).frame(height: 32).contentShape(.rect)
+        }
+        .buttonStyle(.plain).fixedSize()
+        .help("\(model.passed) of \(model.checks?.count ?? 0) checks passed. Converter \(CONVERTER_VERSION).")
+    }
 }
 
 /// A green, red, grey or blue dot with its word: the status column of every table.
@@ -230,31 +249,8 @@ struct PathField: View {
             .background(.background.opacity(0.5), in: .rect(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
             .help(value ?? "")
-            Button(button, action: action).buttonStyle(.glass)
+            Button(button, action: action).buttonStyle(.stage)
         }
-    }
-}
-
-struct ToolchainFooter: View {
-    let model: AppModel
-
-    var body: some View {
-        Button { model.page = .toolchain } label: {
-            HStack(spacing: 10) {
-                if model.checking { ProgressView().controlSize(.small).frame(width: 22) } else { StatusIcon(ok: model.allOK, size: 22) }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.checking ? "Checking toolchain…" : model.allOK ? "Toolchain ready" : "Toolchain incomplete").font(.headline).lineLimit(1)
-                    Text("\(model.passed) of \(model.checks?.count ?? 0) checks passed").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.secondary)
-            }
-            .padding(12)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .glassEffect(.regular, in: .rect(cornerRadius: 14))
-        .padding(12)
     }
 }
 

@@ -8,7 +8,7 @@ struct ToolchainPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HeroHeader(symbol: "square.3.layers.3d", title: "Toolchain", subtitle: "Everything needed to build native Mac apps.")
+            PageHeading(title: "Toolchain", subtitle: "Everything needed to build native Mac apps.")
             statusBar
             toolsTable
             if let p = model.pythonSetup {
@@ -35,7 +35,7 @@ struct ToolchainPage: View {
             let fixable = model.fixable
             if !fixable.isEmpty {
                 Button { model.fixAll() } label: { Label("Fix all (\(fixable.count))", systemImage: "wrench.adjustable") }
-                    .buttonStyle(.glassProminent).controlSize(.large).disabled(model.checking || model.pythonSetup?.running == true)
+                    .buttonStyle(.stagePrimary).controlSize(.large).disabled(model.checking || model.pythonSetup?.running == true)
                     .help("Sets up the converter's own Python if it needs one, and runs every other fix in one Terminal window. The checks run again when you come back.")
             }
             if let t = model.lastChecked {
@@ -76,7 +76,7 @@ struct ToolchainPage: View {
             }
             HStack {
                 Button { model.recheck() } label: { Label("Run checks again", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.glass).disabled(model.checking)
+                    .buttonStyle(.stage).disabled(model.checking)
                 Spacer()
             }
             .padding(12)
@@ -120,7 +120,7 @@ struct ToolchainPage: View {
                                 .disabled(model.engineBusy || model.engine == nil)
                         }
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.stage)
                 }
             }
             if let m = model.engineMessage { Text(m.text).font(.callout).foregroundStyle(m.ok ? Color.secondary : Color.red) }
@@ -128,7 +128,7 @@ struct ToolchainPage: View {
             if let repoCheck = model.checks?.first(where: { $0.name == Toolchain.engineCheckName }), !repoCheck.ok, let fix = repoCheck.fix {
                 HStack {
                     StatusDot(color: .red, text: "No NXForge engine checkout found")
-                    Button("Clone it in Terminal") { model.runFix(fix) }.buttonStyle(.glass)
+                    Button("Clone it in Terminal") { model.runFix(fix) }.buttonStyle(.stage)
                 }
             }
             HStack(alignment: .top, spacing: 16) {
@@ -139,7 +139,7 @@ struct ToolchainPage: View {
                 VStack(alignment: .trailing, spacing: 12) {
                     advancedBox
                     Button { copyToClipboard(model.diagnostics) } label: { Label("Copy diagnostics", systemImage: "doc.on.clipboard") }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.stage)
                         .help("The toolchain checks, versions and paths, for a bug report")
                 }
                 .frame(width: 330)
@@ -215,12 +215,12 @@ struct ToolchainPage: View {
                 Spacer(minLength: 0)
                 Button("Choose Python…") { if let f = model.choose(folder: false) { model.settings.python = f; model.recheck() } }
             }
-            .buttonStyle(.glass).controlSize(.small)
+            .buttonStyle(.stage).controlSize(.small)
             Divider()
             HStack {
                 Spacer()
                 Button { copyToClipboard(model.environmentLine) } label: { Label("Copy environment", systemImage: "terminal") }
-                    .buttonStyle(.glass).help(model.environmentLine)
+                    .buttonStyle(.stage).help(model.environmentLine)
             }
         }
         .padding(14)
@@ -249,22 +249,22 @@ struct ToolchainPage: View {
                     Image(systemName: "checkmark").foregroundStyle(c.optional ? Color.cyan : .green).fontWeight(.bold)
                     Text(c.optional ? "Available" : "Ready").fontWeight(.medium).foregroundStyle(c.optional ? Color.cyan : .green)
                     if c.name == "Python modules" && !model.ownPython {
-                        Button("Set up own") { model.setUpPython() }.buttonStyle(.glass).controlSize(.small)
+                        Button("Set up own") { model.setUpPython() }.buttonStyle(.stage).controlSize(.small)
                             .disabled(model.pythonSetup?.running == true)
                             .help("Make the converter's own Python in Application Support, so it no longer uses \(model.env?.python ?? "another copy")")
                     }
                 } else if c.optional, let why = model.needs[c.name] {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     Text("Needed for this game").foregroundStyle(.orange).help(why)
-                    if let fix = c.fix { Button("Install") { model.runFix(fix) }.buttonStyle(.glass).controlSize(.small).help(fix) }
+                    if let fix = c.fix { Button("Install") { model.runFix(fix) }.buttonStyle(.stage).controlSize(.small).help(fix) }
                 } else {
                     Image(systemName: c.optional ? "minus" : "xmark").foregroundStyle(c.optional ? Color.secondary : .red).fontWeight(.semibold)
                     Text(c.optional ? "Not installed" : "Missing").foregroundStyle(c.optional ? Color.secondary : .red)
                     if python {
-                        Button("Set up") { model.setUpPython() }.buttonStyle(.glass).controlSize(.small)
+                        Button("Set up") { model.setUpPython() }.buttonStyle(.stage).controlSize(.small)
                             .disabled(model.pythonSetup?.running == true).help("Make the converter's own Python with the modules the script needs")
                     } else if let fix = c.fix {
-                        Button("Fix") { model.runFix(fix) }.buttonStyle(.glass).controlSize(.small).help(fix)
+                        Button("Fix") { model.runFix(fix) }.buttonStyle(.stage).controlSize(.small).help(fix)
                     }
                 }
             }

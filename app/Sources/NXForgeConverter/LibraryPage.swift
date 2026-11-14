@@ -91,7 +91,15 @@ struct LibraryPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if !model.couchMode {
-                        HeroHeader(symbol: "books.vertical", title: "Library", subtitle: "Every game in your games folder, ready to build and play.")
+                        PageHeading(title: "Game Files", subtitle: "Every game in your games folder, to build one or many.") {
+                            if model.libraryScanning {
+                                Button { model.stopLibraryScan() } label: { Label("Stop Scan", systemImage: "stop.fill") }.help("Stop the scan")
+                            } else {
+                                Button { model.scanLibrary() } label: { Label("Scan Again", systemImage: "arrow.clockwise") }
+                                    .help("Scan the games folder again").disabled(model.settings.gamesRoot == nil)
+                            }
+                        }
+                        .buttonStyle(.stage)
                         offlineCard
                         rootCard
                         undoCard
@@ -147,7 +155,7 @@ struct LibraryPage: View {
                         .padding(.top, 24)
                     }
                 }
-                .padding(model.couchMode ? 40 : 20)
+                .padding(.horizontal, Theme.gutter).padding(.top, model.couchMode ? 40 : 4).padding(.bottom, 28)
             }
             .onChange(of: model.libraryFocus) { _, f in
                 if let f { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) } }
@@ -180,20 +188,6 @@ struct LibraryPage: View {
             }
             return .handled
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                if model.libraryScanning {
-                    Button { model.stopLibraryScan() } label: { Label("Stop Scan", systemImage: "stop.fill") }
-                        .help("Stop the scan")
-                } else {
-                    Button { model.scanLibrary() } label: { Label("Scan Again", systemImage: "arrow.clockwise") }
-                        .help("Scan the games folder again").disabled(model.settings.gamesRoot == nil)
-                }
-                Button { model.toggleCouch() } label: { Label(model.couchMode ? "Leave Couch Mode" : "Couch Mode", systemImage: model.couchMode ? "arrow.down.right.and.arrow.up.left" : "sofa") }
-                    .help("The covers full screen, for a controller (⇧⌘F)")
-            }
-        }
-        .searchable(text: $model.librarySearch, placement: .toolbar, prompt: "Search games")
         // first visit with a folder chosen, or a list over a day old: scan; names and icons not read yet: read them
         .task {
             model.scanIfStale()
@@ -216,7 +210,7 @@ struct LibraryPage: View {
                 }
                 Spacer()
                 if model.settings.remounts[vol] != nil {
-                    Button("Mount \(vol)") { _ = model.mount(vol) }.buttonStyle(.glassProminent)
+                    Button("Mount \(vol)") { _ = model.mount(vol) }.buttonStyle(.stagePrimary)
                 }
             }
             .padding(14)
@@ -262,7 +256,7 @@ struct LibraryPage: View {
                 Text(m.label).lineLimit(1)
                 Text("· \(m.files.count) file\(m.files.count == 1 ? "" : "s") · \(relativeDay(m.when).lowercasedFirst)").foregroundStyle(.secondary)
                 Spacer()
-                Button("Undo") { model.undoMove() }.buttonStyle(.glass).disabled(model.run.running || model.batchRunning)
+                Button("Undo") { model.undoMove() }.buttonStyle(.stage).disabled(model.run.running || model.batchRunning)
                     .help("Move the files back where they were")
                 Button { model.lastMove = nil } label: { Label("Hide", systemImage: "xmark").labelStyle(.iconOnly) }.buttonStyle(.borderless).help("Hide")
             }
@@ -286,19 +280,19 @@ struct LibraryPage: View {
                                 .font(.callout).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button("Start Now") { model.startWaitingBatch() }.buttonStyle(.glassProminent).disabled(model.run.running)
-                        Button("Clear") { model.cancelWaitingBatch() }.buttonStyle(.glass)
+                        Button("Start Now") { model.startWaitingBatch() }.buttonStyle(.stagePrimary).disabled(model.run.running)
+                        Button("Clear") { model.cancelWaitingBatch() }.buttonStyle(.stage)
                     } else if let g = model.batchCurrent {
                         ProgressView().controlSize(.small)
                         Text("Building \(g.displayName)").font(.headline)
                         Text(model.batchQueue.isEmpty ? "· last one" : "· \(model.batchQueue.count) to go").foregroundStyle(.secondary)
                         Spacer()
-                        Button("Show build") { model.page = .convert }.buttonStyle(.glass)
-                        Button("Stop…") { model.stopBatch() }.buttonStyle(.glass)
+                        Button("Show build") { model.page = .convert }.buttonStyle(.stage)
+                        Button("Stop…") { model.stopBatch() }.buttonStyle(.stage)
                     } else {
                         Text(model.batchMessage ?? "Build selected finished").font(.headline)
                         Spacer()
-                        Button("Dismiss") { model.batchResults = []; model.batchMessage = nil }.buttonStyle(.glass)
+                        Button("Dismiss") { model.batchResults = []; model.batchMessage = nil }.buttonStyle(.stage)
                     }
                 }
                 if !model.batchQueue.isEmpty {
@@ -376,12 +370,15 @@ struct LibraryPage: View {
                         Text(c.rawValue).padding(.horizontal, 10).padding(.vertical, 4).contentShape(.capsule)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(model.libraryConsole == c ? Color.white : Color.primary)
-                    .background(model.libraryConsole == c ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.clear), in: .capsule)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(model.libraryConsole == c ? Color.black : Color(white: 0.9))
+                    .background(model.libraryConsole == c ? AnyShapeStyle(Color.white.opacity(0.92)) : AnyShapeStyle(.clear), in: .capsule)
+                    .accessibilityAddTraits(model.libraryConsole == c ? .isSelected : [])
                 }
             }
             .padding(3)
-            .glassEffect(.regular, in: .capsule)
+            .background(.white.opacity(0.08), in: .capsule)
+            .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
             Menu {
                 Picker("Show", selection: $model.libraryFilter) {
                     ForEach(LibraryFilter.allCases, id: \.self) { f in
@@ -437,7 +434,7 @@ struct LibraryPage: View {
                     .font(.callout).foregroundStyle(short ? .orange : .secondary)
             }
             Spacer()
-            Button("Clear") { model.librarySelection = [] }.buttonStyle(.glass)
+            Button("Clear") { model.librarySelection = [] }.buttonStyle(.stage)
             Menu {
                 Button("Tonight at 2:00") { model.buildSelected(start: .at(BatchSchedule.tonight())) }
                 Button("At a Time…") { laterDate = BatchSchedule.tonight(); laterSheet = true }
@@ -522,12 +519,12 @@ struct LibraryPage: View {
                 Text(g.path.tildePath).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
-            Button { reveal(revealPath(g)) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.glass).help("Show in Finder")
+            Button { reveal(revealPath(g)) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage).help("Show in Finder")
             if let b {
-                Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill").labelStyle(.iconOnly) }.buttonStyle(.glass).help("Open \(b.app.lastComponent)")
+                Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill").labelStyle(.iconOnly) }.buttonStyle(.stage).help("Open \(b.app.lastComponent)")
             }
             Button("Convert") { model.convertFromLibrary(g) }
-                .buttonStyle(.glass).disabled(model.run.running || model.batchRunning)
+                .buttonStyle(.stage).disabled(model.run.running || model.batchRunning)
                 .help(model.run.running ? "Not while a build runs" : "Make this the game on the Convert page")
                 .frame(minWidth: 86)
         }
@@ -636,9 +633,9 @@ struct GameTile: View {
                     Color.black.opacity(0.35)
                     HStack(spacing: 8) {
                         if let b = build {
-                            Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill") }.buttonStyle(.glassProminent)
+                            Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill") }.buttonStyle(.stagePrimary)
                         } else {
-                            Button("Convert") { model.convertFromLibrary(g) }.buttonStyle(.glassProminent).disabled(model.run.running || model.batchRunning)
+                            Button("Convert") { model.convertFromLibrary(g) }.buttonStyle(.stagePrimary).disabled(model.run.running || model.batchRunning)
                         }
                     }
                 }

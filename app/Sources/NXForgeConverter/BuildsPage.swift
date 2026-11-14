@@ -29,16 +29,14 @@ struct BuildsPage: View {
         let list = builds
         let selected = list.first { $0.app == model.selectedBuild } ?? list.first
         VStack(alignment: .leading, spacing: 0) {
-            HeroHeader(symbol: "macwindow.stack", title: "Builds", subtitle: "Your native Mac apps, ready to play.")
-                .padding(.horizontal, 20).padding(.top, 14)
-            PageHeader(title: "Builds", subtitle: "") {
+            PageHeading(title: "Builds", subtitle: "Your native Mac apps, ready to play.") {
                 let outdated = model.outdatedBuilds
                 if !outdated.isEmpty || !model.rebuildQueue.isEmpty {
                     Button { model.rebuildAll() } label: {
                         Label(model.queueMessage == "" ? "Rebuilding All… \(model.rebuildQueue.count) to Go" : "Rebuild All on \(model.engine?.short ?? "Current Engine") (\(outdated.count))",
                               systemImage: "arrow.clockwise")
                     }
-                    .labelStyle(.titleAndIcon)
+                    .labelStyle(.titleAndIcon).buttonStyle(.stage)
                     .disabled(model.run.running || !model.allOK)
                     .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
                 }
@@ -53,16 +51,16 @@ struct BuildsPage: View {
                 .pickerStyle(.menu).fixedSize()
                 .help("Sort the builds")
             }
-            .padding(.horizontal, 20).padding(.vertical, 10)
+            .padding(.horizontal, Theme.gutter).padding(.top, 4).padding(.bottom, 12)
             if let m = model.queueMessage, !m.isEmpty {
                 HStack {
                     StatusDot(color: .red, text: m)
                     Spacer()
-                    Button("Dismiss") { model.queueMessage = nil }.buttonStyle(.glass)
+                    Button("Dismiss") { model.queueMessage = nil }.buttonStyle(.stage)
                 }
-                .padding(.horizontal, 20).padding(.bottom, 10)
+                .padding(.horizontal, Theme.gutter).padding(.bottom, 10)
             }
-            Divider()
+            Rectangle().fill(.white.opacity(0.10)).frame(height: 1)
             if list.isEmpty {
                 Group {
                     if !model.buildSearch.isEmpty { ContentUnavailableView.search(text: model.buildSearch) }
@@ -90,6 +88,7 @@ struct BuildsPage: View {
                         }
                     }
                     .listStyle(.inset)
+                    .scrollContentBackground(.hidden)
                     .alternatingRowBackgrounds(.disabled)
                     .onDeleteCommand { if let s = selected { trashBuild(model, s, name(s)) } }
                     .contextMenu(forSelectionType: String.self) { apps in
@@ -113,7 +112,8 @@ struct BuildsPage: View {
                         guard let s = selected else { return .ignored }
                         model.openGame(GameRef(libraryID: nil, app: s.app)); return .handled
                     }
-                    .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
+                    .padding(.leading, Theme.gutter - 16)
+                    .frame(minWidth: 264, idealWidth: 344, maxWidth: 444)
                     if let s = selected {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 16) {
@@ -121,20 +121,19 @@ struct BuildsPage: View {
                                 HStack {
                                     Spacer()
                                     Button { model.openGame(GameRef(libraryID: nil, app: s.app)) } label: { Label("Game Page", systemImage: "rectangle.portrait.and.arrow.right") }
-                                        .buttonStyle(.glass).help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
+                                        .buttonStyle(.stage).help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
                                 }
                                 BuildDetail(model: model, build: s, name: name(s))
                                 PreviousBuilds(model: model, build: s)
                                 SaveSnapshotsCard(model: model, build: s)
                             }
-                            .padding(20)
+                            .padding(.leading, 20).padding(.trailing, Theme.gutter).padding(.vertical, 20)
                         }
                         .frame(minWidth: 380, maxWidth: .infinity)
                     }
                 }
             }
         }
-        .searchable(text: $model.buildSearch, placement: .toolbar, prompt: "Search builds")
     }
 }
 
@@ -213,7 +212,7 @@ struct BuildDetail: View {
                     .modifier(GlassButton(prominent: !nudge))   // on an older engine Rebuild is the blue one, unless the build is kept
                     .keyboardShortcut(nudge ? nil : .defaultAction)   // Return acts on the blue button
                 Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.stage)
             }
             .controlSize(.large)
             if build.launched != true { FirstLaunchNote() }
@@ -258,7 +257,7 @@ struct BuildDetail: View {
                         Text("Frame times").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
                         Text(rec.summary.line).lineLimit(1).truncationMode(.tail)
                         Spacer()
-                        Button { reveal(rec.file.path) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.glass)
+                        Button { reveal(rec.file.path) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage)
                     }
                     .padding(.vertical, 6)
                     .help("The newest recording, \(rec.file.lastPathComponent): frames per second, the median and 99th-percentile frame time, frames over \(Int(FrameTimes.Summary.hitchMs)) ms and frames never shown. Record frame times is in the game's Quick settings › Performance.")
@@ -268,7 +267,7 @@ struct BuildDetail: View {
                     Text("Location").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
                     Text(build.app.url.deletingLastPathComponent().path.tildePath).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.glass)
+                    Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage)
                 }
                 .padding(.vertical, 6)
             }
@@ -301,8 +300,8 @@ struct BuildDetail: View {
                     Text(build.engine.subject).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     if let log = build.log, FileManager.default.fileExists(atPath: log) {
                         HStack {
-                            Button { NSWorkspace.shared.open(log.url) } label: { Label("Open build log", systemImage: "doc.text") }.buttonStyle(.glass)
-                            Button { reveal(log) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.glass)
+                            Button { NSWorkspace.shared.open(log.url) } label: { Label("Open build log", systemImage: "doc.text") }.buttonStyle(.stage)
+                            Button { reveal(log) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.stage)
                         }
                     }
                 }
@@ -350,7 +349,7 @@ struct PreviousBuilds: View {
                             Text(build.gameFiles ?? Engine.describeFiles(build.gameDir)).frame(width: 170, alignment: .leading)
                             Text(b.path.url.deletingLastPathComponent().path.tildePath).lineLimit(1).truncationMode(.middle)
                             Spacer()
-                            Button { reveal(b.path) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.glass)
+                            Button { reveal(b.path) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.stage)
                             Menu {
                                 Button("Open") { NSWorkspace.shared.open(b.path.url) }
                                 Button("Restore this version") { restore(b) }
@@ -399,11 +398,11 @@ struct PreviousBuilds: View {
     }
 }
 
-/// .glassProminent (the blue one) or .glass: the card's main action is blue, the open app when it is current, the rebuild when it is not
+/// The white capsule or the translucent one: the card's main action is white, the open app when it is current, the rebuild when it is not
 struct GlassButton: ViewModifier {
     let prominent: Bool
     func body(content: Content) -> some View {
-        if prominent { content.buttonStyle(.glassProminent) } else { content.buttonStyle(.glass) }
+        if prominent { content.buttonStyle(.stagePrimary) } else { content.buttonStyle(.stage) }
     }
 }
 
@@ -428,10 +427,10 @@ struct SaveSnapshotsCard: View {
                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     if FileManager.default.fileExists(atPath: loc.save) {
-                        Button { reveal(loc.save) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.glass).help("Show the save in Finder")
+                        Button { reveal(loc.save) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage).help("Show the save in Finder")
                     }
                     Button { make(loc) } label: { Label("Snapshot now", systemImage: "camera") }
-                        .buttonStyle(.glass).disabled(busy || !SaveSnapshots.hasSave(loc))
+                        .buttonStyle(.stage).disabled(busy || !SaveSnapshots.hasSave(loc))
                         .help("Copies the save beside it, in save-snapshots, and checks every file of the copy")
                     Menu {
                         Button("Import Save…") { pickImport(loc) }
@@ -478,7 +477,7 @@ struct SaveSnapshotsCard: View {
                                 Text(s.reason.label).frame(width: 200, alignment: .leading)
                                 Text("\(s.files) files · \(ByteCountFormatter.string(fromByteCount: s.bytes, countStyle: .file))").frame(width: 120, alignment: .leading)
                                 Spacer()
-                                Button("Restore") { restore(s, loc) }.buttonStyle(.glass).disabled(busy)
+                                Button("Restore") { restore(s, loc) }.buttonStyle(.stage).disabled(busy)
                                 Menu {
                                     Button("Show in Finder") { reveal(s.path) }
                                     Divider()

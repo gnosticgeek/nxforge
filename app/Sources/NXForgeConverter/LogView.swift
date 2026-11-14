@@ -55,9 +55,9 @@ struct LogView: View {
                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.cardStroke))
                 Spacer()
                 Toggle("Follow", isOn: $follow).toggleStyle(.checkbox).help("Keep the newest line in view while the build runs")
-                Button { copy() } label: { Label("Copy log", systemImage: "doc.on.clipboard") }.buttonStyle(.glass)
+                Button { copy() } label: { Label("Copy log", systemImage: "doc.on.clipboard") }.buttonStyle(.stage)
                 if let file {
-                    Button { NSWorkspace.shared.open(file.url) } label: { Label("Open log file", systemImage: "doc.text") }.buttonStyle(.glass)
+                    Button { NSWorkspace.shared.open(file.url) } label: { Label("Open log file", systemImage: "doc.text") }.buttonStyle(.stage)
                         .help(file.tildePath)
                 }
             }

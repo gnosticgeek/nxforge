@@ -281,7 +281,7 @@ struct UpdatesPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HeroHeader(symbol: "arrow.down.circle", title: "Updates", subtitle: "NXForge, the converter and the in-game sidebar, each with its own version.")
+            PageHeading(title: "Updates", subtitle: "NXForge, the converter and the in-game sidebar, each with its own version.")
             header
             engineRow
             converterRow
@@ -301,7 +301,7 @@ struct UpdatesPage: View {
             Toggle("Update automatically", isOn: $model.settings.autoUpdate).toggleStyle(.switch)
                 .help("At launch and when the converter comes back to the front: update the engine and the converter without asking (never during a build). Games' sidebars are never rebuilt without asking.")
             Button { model.engineAction(update: false, reason: .manual) } label: { Label("Check Now", systemImage: "arrow.clockwise") }
-                .buttonStyle(.glass).disabled(model.engineBusy || model.engine == nil)
+                .buttonStyle(.stage).disabled(model.engineBusy || model.engine == nil)
         }
         .padding(18)
         .background(Theme.card, in: .rect(cornerRadius: 16))
@@ -317,7 +317,7 @@ struct UpdatesPage: View {
                          badge: failed ? ("Check failed", .red) : u.map { ("\($0.release ?? "\($0.count) new commits") available", .blue) } ?? ("Up to date", .green)) {
             if u != nil {
                 Button { model.engineAction(update: true) } label: { Label("Update", systemImage: "arrow.down.circle") }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.stagePrimary)
                     .disabled(model.engineBusy || model.run.running || model.engine?.dirty == true)
                     .help(model.engine?.dirty == true ? "The checkout has local changes: commit or stash them first." : "Fast-forward the checkout to \(u?.ref ?? "")")
             }
@@ -351,13 +351,13 @@ struct UpdatesPage: View {
                 Spacer(minLength: 8)
                 if let s = model.upstream, s.count > 0 {
                     Button { model.takeUpstream() } label: { Label("Get Upstream Now", systemImage: "arrow.down.to.line") }
-                        .buttonStyle(.glass).disabled(busy || model.engine?.dirty == true)
+                        .buttonStyle(.stage).disabled(busy || model.engine?.dirty == true)
                         .help(model.engine?.dirty == true ? "The checkout has local changes: commit or stash them first."
                               : "Take upstream nxnative's newest commits on this Mac, if every NXForge patch still applies, and run the host unit tests. Games use it once rebuilt; Back to \(release) undoes it.")
                 }
                 if local != nil {
                     Button { model.backToRelease() } label: { Label("Back to \(release)", systemImage: "arrow.uturn.backward") }
-                        .buttonStyle(.glass).disabled(busy)
+                        .buttonStyle(.stage).disabled(busy)
                 }
             }
         }
@@ -375,10 +375,10 @@ struct UpdatesPage: View {
                          detail: ConverterUpdate.installFolder.map { "This app, in \($0.tildePath). An update rebuilds it from the engine checkout and opens it again." }
                             ?? "This app (run from a build folder, so it cannot replace itself).",
                          installed: CONVERTER_VERSION, badge: u.map { ("\($0.version) available", .blue) } ?? ("Up to date", .green)) {
-            Button("What's New") { model.showWhatsNew() }.buttonStyle(.glass)
+            Button("What's New") { model.showWhatsNew() }.buttonStyle(.stage)
             if u != nil {
                 Button { model.updateConverter() } label: { Label(model.converterUpdating ? "Updating…" : "Update and Relaunch", systemImage: "arrow.down.circle") }
-                    .buttonStyle(.glassProminent).disabled(model.converterUpdating)
+                    .buttonStyle(.stagePrimary).disabled(model.converterUpdating)
             }
         } extra: { EmptyView() }
     }
@@ -394,7 +394,7 @@ struct UpdatesPage: View {
                 Button { model.updateSidebars() } label: {
                     Label(model.queueMessage == "" && !model.rebuildQueue.isEmpty ? "Rebuilding… \(model.rebuildQueue.count) to Go" : "Update Sidebar in \(old.count) Game\(old.count == 1 ? "" : "s")", systemImage: "hammer")
                 }
-                .buttonStyle(.glassProminent).disabled(busy || !model.allOK)
+                .buttonStyle(.stagePrimary).disabled(busy || !model.allOK)
                 .help(model.allOK ? "Rebuild each one in turn; a failure stops the rest. Each needs its game files (and keys) where it was built from." : "The Toolchain page lists what is missing to build.")
             }
         } extra: {
@@ -489,7 +489,7 @@ struct UpdateOfferSheet: View {
                 Spacer()
                 Button("Later") { model.updateOffer = nil }.keyboardShortcut(.cancelAction)
                 Button(offer.converter != nil ? "Update and Relaunch" : "Update") { model.acceptOffer() }
-                    .buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
+                    .buttonStyle(.stagePrimary).keyboardShortcut(.defaultAction)
                     .disabled(model.run.running)
                     .help(model.run.running ? "A build is running: update once it has finished." : "")
             }

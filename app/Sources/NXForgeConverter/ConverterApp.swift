@@ -88,7 +88,7 @@ struct ConverterApp: App {
                 Button("Converter") { model.showConverter() }.keyboardShortcut("g", modifiers: [.command, .shift])
                 Divider()
                 ForEach(Array(Page.allCases.enumerated()), id: \.element) { i, p in
-                    Button(p.rawValue) { model.showConverter(); model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                    Button(p.title) { model.showConverter(); model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
                 }
                 Divider()
             }

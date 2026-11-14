@@ -29,7 +29,7 @@ struct ConvertPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HeroHeader(symbol: "gamecontroller", title: "Convert", subtitle: "Create a native Mac app from your game files, or drop them here.")
+            PageHeading(title: "Convert", subtitle: "Create a native Mac app from your game files, or drop them here.")
             let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(spacing: 16))
             layout {
                 SourceFilesCard(model: model)
@@ -77,7 +77,7 @@ struct SourceFilesCard: View {
                     Label(l.text, systemImage: l.warn ? "exclamationmark.triangle.fill" : "xmark.octagon.fill").font(.callout).foregroundStyle(l.warn ? .orange : .red)
                 }
             } else if model.settings.gameDir != nil && (keyless || model.settings.keys != nil) {
-                Button("Validate") { model.validate() }.buttonStyle(.glass)
+                Button("Validate") { model.validate() }.buttonStyle(.stage)
             }
 
             if let v = model.validation, !v.files.isEmpty {
@@ -111,9 +111,9 @@ struct SourceFilesCard: View {
                     }
                     Spacer()
                     if c.name == "nsz" && model.env?.python == nil {
-                        Button("Set up Python") { model.setUpPython() }.buttonStyle(.glassProminent).disabled(model.pythonSetup?.running == true)
+                        Button("Set up Python") { model.setUpPython() }.buttonStyle(.stagePrimary).disabled(model.pythonSetup?.running == true)
                     } else if let fix = c.fix {
-                        Button("Install") { model.runFix(fix) }.buttonStyle(.glassProminent).help(fix)
+                        Button("Install") { model.runFix(fix) }.buttonStyle(.stagePrimary).help(fix)
                     }
                 }
             }
@@ -125,10 +125,10 @@ struct SourceFilesCard: View {
                     .help(model.updateNote.map { "New: \($0)" } ?? "")
                 Spacer(minLength: 12)
                 if model.updatesAvailable {
-                    Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.glass)
+                    Button("Update engine") { model.engineAction(update: true) }.buttonStyle(.stage)
                         .disabled(model.run.running || model.engine?.dirty == true || model.engineBusy).fixedSize()
                 } else {
-                    Button { model.engineAction(update: false) } label: { Label("Check for updates…", systemImage: "arrow.clockwise") }.buttonStyle(.glass).disabled(model.run.running || model.engineBusy || model.engine == nil).fixedSize()
+                    Button { model.engineAction(update: false) } label: { Label("Check for updates…", systemImage: "arrow.clockwise") }.buttonStyle(.stage).disabled(model.run.running || model.engineBusy || model.engine == nil).fixedSize()
                 }
             }
         }
@@ -215,14 +215,14 @@ struct MacAppCard: View {
                     Button { } label: {
                         Label(model.run.planning ? "Checking…" : "Building…", systemImage: model.run.planning ? "list.bullet.clipboard" : "hammer.fill").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent).controlSize(.large).disabled(true)
-                    Button("Stop") { model.stopBuild() }.buttonStyle(.glass).controlSize(.large)
+                    .buttonStyle(.stagePrimary).controlSize(.large).disabled(true)
+                    Button("Stop") { model.stopBuild() }.buttonStyle(.stage).controlSize(.large)
                 }
             } else {
                 Button { model.build() } label: {
                     Label("Build Mac app", systemImage: "hammer.fill").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glassProminent).controlSize(.large)
+                .buttonStyle(.stagePrimary).controlSize(.large)
                 .keyboardShortcut(.defaultAction)   // Return builds: the page's one default button
                 .disabled(!model.ready)
                 .help(model.ready ? "" : !model.missingForGame.isEmpty ? "This game needs \(model.missingForGame.map(\.name).joined(separator: ", ")): install it above" : !model.allOK ? "Some toolchain checks failed: see Toolchain" : model.needsKeys ? "Choose a game folder and keys that validate" : "Choose a .nup or a dump folder that reads")
@@ -238,7 +238,7 @@ struct MacAppCard: View {
                         }
                         .help("Empties this game's build folder and runs every step again. A normal build reuses the steps whose inputs have not changed, so this is for a build that looks wrong.")
                     }
-                    .buttonStyle(.glass).controlSize(.large).disabled(!model.ready)
+                    .buttonStyle(.stage).controlSize(.large).disabled(!model.ready)
                 }
             }
             if model.run.planning, !model.run.running, let r = model.run.result {
@@ -260,7 +260,7 @@ struct MacAppCard: View {
                 .help(model.source == nil ? "A first build extracts the game and compiles its shaders: allow about twice the game files' size plus 10 GB. A rebuild needs room for a second copy of the app while it builds, and the shared Metal cache can grow to 12 GB. While a build runs, the converter stops it if free space drops below \(Disk.gb(Disk.stopBelow))."
                       : "A Switch 2 game's first build unpacks its files into one image, compiles its shaders and makes a pipeline archive: allow about twice the game files' size plus 20 GB (Ocarina of Time, a 26 GB .nup, peaked near 76 GB). The build folder goes beside the .nup, so choose a .nup on a drive with room. While a build runs, the converter stops it if free space drops below \(Disk.gb(Disk.stopBelow)).")
                 if d.short {
-                    Button { model.page = .storage } label: { Label("Free up space…", systemImage: "internaldrive") }.buttonStyle(.glass)
+                    Button { model.page = .storage } label: { Label("Free up space…", systemImage: "internaldrive") }.buttonStyle(.stage)
                 }
             }
 
@@ -284,12 +284,12 @@ struct MacAppCard: View {
                     Button { model.openApp(app) } label: { Label("Open app", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     Button { reveal(app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
                 }
-                .buttonStyle(.glass).controlSize(.large)
+                .buttonStyle(.stage).controlSize(.large)
                 if !current {
                     Button { model.build(rebuild: app) } label: {
                         Label("Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glass).controlSize(.large).disabled(!model.ready)   // Build Mac app above stays the one blue button
+                    .buttonStyle(.stage).controlSize(.large).disabled(!model.ready)   // Build Mac app above stays the one blue button
                     .help(model.settings.keepBackups ? "Moves this app to app-backups/ and builds it again on the current engine" : "Builds this app again on the current engine; the old one goes to the Trash")
                 }
             } else if !model.run.running {
@@ -401,7 +401,7 @@ struct ActivityCard: View {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     Text(w).foregroundStyle(.orange).font(.callout)
                     Spacer()
-                    Button("Storage…") { model.page = .storage }.buttonStyle(.glass)
+                    Button("Storage…") { model.page = .storage }.buttonStyle(.stage)
                 }
             }
         } else if !run.done.isEmpty {
@@ -544,16 +544,16 @@ struct BuildFailure: View {
                 }
                 HStack {
                     if let p = d.page, p != .convert {
-                        Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.glass)
+                        Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.stage)
                     }
                     if d.code == .signing {
-                        SettingsLink { Label("Open Settings", systemImage: "gearshape") }.buttonStyle(.glass)
+                        SettingsLink { Label("Open Settings", systemImage: "gearshape") }.buttonStyle(.stage)
                     }
                     if d.code != .stopped {
                         Button {
                             copyToClipboard(summary(d)); copied = true
                         } label: { Label(copied ? "Copied" : "Copy error summary", systemImage: copied ? "checkmark" : "doc.on.clipboard") }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.stage)
                         .help("The diagnosis, the failed step, your Mac, Xcode and engine versions, and the log's red lines, with key values, your keys file and your home folder taken out")
                     }
                 }
@@ -605,7 +605,7 @@ struct DropZone: View {
                     Button { chooseKeys() } label: { Label(model.settings.keys == nil ? "Choose Keys…" : "Change Keys…", systemImage: "key") }
                 }
             }
-            .buttonStyle(.glass).controlSize(.large)
+            .buttonStyle(.stage).controlSize(.large)
             RecentSourcesRow(model: model)
         }
         .padding(18)
