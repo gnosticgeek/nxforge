@@ -53,6 +53,8 @@ struct SessionRecap: Identifiable, Equatable {
     var peakMB: Double?
     var fps: Double?
     var hitches: Int?
+    /// for the snapshot hook (NXC_SHEET=recap)
+    static let sample = SessionRecap(name: "Super Mario Odyssey", app: "", seconds: 2940, total: 51300, sessions: 12, peakMB: 6350, fps: 59.6, hitches: 3)
 }
 
 func memoryText(_ mb: Double) -> String { mb >= 1024 ? String(format: "%.1f GB", mb / 1024) : String(format: "%.0f MB", mb) }

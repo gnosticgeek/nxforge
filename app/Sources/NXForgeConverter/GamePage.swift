@@ -100,6 +100,7 @@ struct GamePage: View {
             }
             .pagePadding()
         }
+        .defaultScrollAnchor(ProcessInfo.processInfo.environment["NXC_SCROLL"] == nil ? .top : .bottom)   // snapshot hook, as on the stage's pages
     }
 
     func hero(_ g: LibraryGame?, _ b: BuildRecord?, name: String, icon: String?, tid: String?) -> some View {
