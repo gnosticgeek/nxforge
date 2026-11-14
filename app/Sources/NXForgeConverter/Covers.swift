@@ -3,6 +3,9 @@
 // asked for; a setting turns the downloads off), and else a cover drawn from the game's own icon. Kept in
 // ~/Library/Application Support/NXForge Converter/covers as <title ID>-front.jpg, -back.jpg and -spine.jpg
 // (an own image: -front-own.png, -back-own.png).
+// Wide key art ("hero" art) for the game page and Home: the 2:1 share image of the game's page on Nintendo's European store
+// (nintendo.com/en-gb), found through the search service that store's own pages use (searching.nintendo-europe.com), by the game's
+// title ID, else by its exact name. Only title IDs and names go out. Kept beside the covers as <key>-hero.jpg; a setting turns it off.
 import AppKit
 import ImageIO
 import SwiftUI
@@ -100,6 +103,73 @@ enum CoverSource {
     }
 }
 
+/// The lookup of a game's wide art on Nintendo's European store, apart from the network (tested)
+enum HeroSource {
+    static let search = "https://searching.nintendo-europe.com/en/select"
+    /// title IDs asked for in one search
+    static let batch = 40
+
+    /// One search for many games by title ID ("0100C2700C252000" is kept as "0100c2700c252000" there)
+    static func byIDs(_ ids: [String]) -> URL? {
+        let q = ids.map { $0.lowercased() }.filter { $0.count == 16 && $0.allSatisfy(\.isHexDigit) }
+        guard !q.isEmpty else { return nil }
+        return url(["q": "*", "fq": "application_id_s:(\(q.joined(separator: " OR ")))", "rows": "\(q.count * 6)"])
+    }
+
+    /// A search for one game by name
+    static func byName(_ name: String) -> URL? {
+        // words only, so nothing in a name reads as search syntax
+        let n = String(CoverSource.plain(name).map { $0.isLetter || $0.isNumber ? $0 : " " }).split(separator: " ").joined(separator: " ")
+        guard CoverSource.normalize(n).count >= 3 else { return nil }
+        return url(["q": n, "fq": "type:GAME", "rows": "8"])
+    }
+
+    static func url(_ params: [String: String]) -> URL? {
+        var c = URLComponents(string: search)
+        c?.queryItems = params.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+            + [URLQueryItem(name: "fl", value: "application_id_s,title,type,image_url_h2x1_s"), URLQueryItem(name: "wt", value: "json")]
+        return c?.url
+    }
+
+    struct Doc: Equatable { var id: String?; var title: String; var game: Bool; var image: String }
+
+    /// The search's answer: the entries that have wide art
+    static func parse(_ data: Data) -> [Doc] {
+        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let r = o["response"] as? [String: Any],
+              let docs = r["docs"] as? [[String: Any]] else { return [] }
+        return docs.compactMap { d in
+            guard let img = d["image_url_h2x1_s"] as? String, img.hasPrefix("https://"), let t = d["title"] as? String else { return nil }
+            return Doc(id: (d["application_id_s"] as? String)?.uppercased(), title: t, game: (d["type"] as? String) == "GAME", image: img)
+        }
+    }
+
+    /// The art for a title ID: a game's entry before an add-on's (they share the ID), the shortest title first
+    /// ("Mina the Hollower" before "Mina the Hollower - Nintendo Switch 2 Edition")
+    static func pick(_ docs: [Doc], id: String) -> Doc? {
+        docs.filter { $0.id == id.uppercased() }.min { ($0.game ? 0 : 1, $0.title.count) < ($1.game ? 0 : 1, $1.title.count) }
+    }
+
+    /// The art for a name: only a Switch game whose title is the same name
+    static func pick(_ docs: [Doc], name: String) -> Doc? {
+        let want = CoverSource.normalize(CoverSource.plain(name))
+        return docs.first { $0.game && $0.id != nil && (CoverSource.normalize($0.title) == want || CoverSource.normalize(CoverSource.plain($0.title)) == want) }
+    }
+
+    /// The search names a 500 px wide copy; the same picture is there 1600 px wide
+    static func sizes(_ image: String) -> [URL] {
+        let big = image.replacingOccurrences(of: "_image500w.", with: "_image1600w.")
+        return (big == image ? [image] : [big, image]).compactMap(URL.init(string:))
+    }
+
+    /// Whether a picture is wide art (about 2:1), not a square or a box
+    static func wide(_ data: Data) -> Bool {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = p[kCGImagePropertyPixelWidth] as? Double, let h = p[kCGImagePropertyPixelHeight] as? Double, h > 0 else { return false }
+        return (1.6...2.4).contains(w / h)
+    }
+}
+
 @MainActor @Observable
 final class CoverStore {
     static let shared = CoverStore()
@@ -110,6 +180,10 @@ final class CoverStore {
     @ObservationIgnored private var tints: [String: NSColor] = [:]
     @ObservationIgnored private var fetch: Task<Void, Never>?
     @ObservationIgnored private var asked = Set<String>()
+    @ObservationIgnored private var heroFetch: Task<Void, Never>?
+    @ObservationIgnored private var heroAsked = Set<String>()
+    /// the wide art is shown (Settings › Artwork)
+    var showHeroes = true
 
     nonisolated static var dir: URL { Settings.supportDir.appending(path: "covers") }
 
@@ -128,6 +202,21 @@ final class CoverStore {
                 memory[k] = i
                 return i
             }
+        }
+        absent.insert(k)
+        return nil
+    }
+
+    /// The game's wide art, when it was downloaded and the setting is on
+    func hero(_ key: String) -> NSImage? {
+        guard showHeroes else { return nil }
+        let _ = revision
+        let k = key + "-hero"
+        if let i = memory[k] { return i }
+        if absent.contains(k) { return nil }
+        if let i = NSImage(contentsOf: Self.dir.appending(path: k + ".jpg")), i.isValid, i.size.width > 0 {
+            memory[k] = i
+            return i
         }
         absent.insert(k)
         return nil
@@ -246,10 +335,66 @@ final class CoverStore {
     /// Look again for every game's art (Settings › Covers)
     func lookAgain() {
         if let files = try? FileManager.default.contentsOfDirectory(at: Self.dir, includingPropertiesForKeys: nil) {
-            for f in files where f.pathExtension == "none" { try? FileManager.default.removeItem(at: f) }
+            for f in files where f.pathExtension == "none" || f.pathExtension == "heronone" { try? FileManager.default.removeItem(at: f) }
         }
         asked = []
+        heroAsked = []
         revision += 1
+    }
+
+    /// Fetch the wide art of the games that have none yet: one search for all their title IDs, then one by name for each game
+    /// the IDs did not find, then the pictures one after another. A game with no art is looked for again after a week
+    /// (<key>.heronone). Offline, nothing is marked, so the next start tries again.
+    func fetchHeroes(_ games: [(key: String, titleID: String?, name: String)]) {
+        let todo = games.filter { !heroAsked.contains($0.key) }
+        guard !todo.isEmpty else { return }
+        for g in todo { heroAsked.insert(g.key) }
+        let previous = heroFetch
+        heroFetch = Task.detached(priority: .utility) {
+            await previous?.value
+            let fm = FileManager.default
+            try? fm.createDirectory(at: Self.dir, withIntermediateDirectories: true)
+            let want = todo.filter { g in
+                if fm.fileExists(atPath: Self.dir.appending(path: "\(g.key)-hero.jpg").path) { return false }
+                let none = Self.dir.appending(path: "\(g.key).heronone")
+                if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 7 * 86400 { return false }
+                return true
+            }
+            guard !want.isEmpty else { return }
+            var found: [String: HeroSource.Doc] = [:]
+            let ids = want.compactMap(\.titleID)
+            for start in stride(from: 0, to: ids.count, by: HeroSource.batch) {
+                let part = Array(ids[start..<min(start + HeroSource.batch, ids.count)])
+                guard let u = HeroSource.byIDs(part) else { continue }
+                guard let data = await Self.get(u) else { return }   // offline or refused: try again at the next start
+                let docs = HeroSource.parse(data)
+                for id in part { if let d = HeroSource.pick(docs, id: id) { found[id.uppercased()] = d } }
+            }
+            for g in want {
+                if Task.isCancelled { return }
+                var doc = g.titleID.flatMap { found[$0.uppercased()] }
+                if doc == nil, let u = HeroSource.byName(g.name) {
+                    guard let data = await Self.get(u) else { return }
+                    doc = HeroSource.pick(HeroSource.parse(data), name: g.name)
+                }
+                let file = Self.dir.appending(path: "\(g.key)-hero.jpg"), none = Self.dir.appending(path: "\(g.key).heronone")
+                var got = false
+                if let doc {
+                    for u in HeroSource.sizes(doc.image) {
+                        guard let d = await Self.get(u), HeroSource.wide(d), let jpg = CoverSource.jpeg(d, maxHeight: 900) else { continue }
+                        got = (try? jpg.write(to: file)) != nil
+                        if got { break }
+                    }
+                }
+                if got {
+                    try? fm.removeItem(at: none)
+                    let key = g.key
+                    await MainActor.run { CoverStore.shared.forget(key) }
+                } else {
+                    try? Data().write(to: none)
+                }
+            }
+        }
     }
 
     /// GameTDB's list of Switch titles, kept for a week
@@ -272,6 +417,7 @@ final class CoverStore {
     nonisolated private static func get(_ url: URL) async -> Data? {
         var req = URLRequest(url: url, timeoutInterval: 30)
         req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        req.httpShouldHandleCookies = false
         guard let (data, resp) = try? await URLSession.shared.data(for: req), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return data
     }
