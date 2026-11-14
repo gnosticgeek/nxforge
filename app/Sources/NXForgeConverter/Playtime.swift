@@ -8,6 +8,11 @@ import Foundation
 struct PlaySession: Codable, Hashable {
     var start: Date
     var seconds: Double
+    /// measured while the session ran (PlayExtras: the game's memory, sampled; its frame rate, when frame times were recorded)
+    var peakMB: Double? = nil
+    var avgMB: Double? = nil
+    var fps: Double? = nil
+    var hitches: Int? = nil
 }
 
 struct PlayRecord: Codable, Hashable {
@@ -46,13 +51,13 @@ enum Playtime {
     }
 
     @discardableResult
-    static func add(key: String, name: String, app: String, start: Date, end: Date) -> PlayRecord? {
+    static func add(key: String, name: String, app: String, start: Date, end: Date, session: PlaySession? = nil) -> PlayRecord? {
         let s = end.timeIntervalSince(start)
         guard s >= minSeconds else { return nil }
         var all = load()
         var r = all[key] ?? PlayRecord(name: name, app: app)
         r.name = name; r.app = app
-        r.sessions.append(PlaySession(start: start, seconds: s))
+        r.sessions.append(session ?? PlaySession(start: start, seconds: s))
         if r.sessions.count > keep { r.sessions.removeFirst(r.sessions.count - keep) }
         all[key] = r
         save(all)
@@ -124,11 +129,15 @@ extension AppModel {
     private func started(_ a: NSRunningApplication) {
         guard playing[a.processIdentifier] == nil, let g = builtGame(a) else { return }
         playing[a.processIdentifier] = PlayingNow(key: g.key, name: g.name, app: g.app, start: a.launchDate ?? Date())
+        samplePlay()
+        stepAside()
     }
 
     private func quit(_ a: NSRunningApplication) {
         guard let p = playing.removeValue(forKey: a.processIdentifier) else { return }
-        Playtime.add(key: p.key, name: p.name, app: p.app, start: p.start, end: Date())
+        let end = Date()
+        let session = sessionEnded(p, pid: a.processIdentifier, end: end)
+        if let r = Playtime.add(key: p.key, name: p.name, app: p.app, start: p.start, end: end, session: session), let session { showRecap(p, session: session, record: r) }
         revision += 1
         backUpSaveAfterPlay(app: p.app, name: p.name)
         gameQuit(app: p.app)

@@ -207,6 +207,9 @@ final class CoverStore {
     @ObservationIgnored private var coverTints = Set<String>()   // the colours read from a cover: only those are kept between starts (an icon's changes with a rebuild)
     @ObservationIgnored private var tintsWrite: Task<Void, Never>?
 
+    /// Drop the pictures held in memory (they are read from disk again when next drawn); what is known about them stays
+    func letGo() { memory = [:] }
+
     nonisolated static var dir: URL { Settings.supportDir.appending(path: "covers") }
 
     nonisolated static func key(titleID: String?, name: String) -> String {

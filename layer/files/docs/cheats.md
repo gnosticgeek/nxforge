@@ -8,6 +8,10 @@ The Mac app reads `~/Library/Application Support/nxnative/<title ID>/cheats/`, b
 
 The engine keeps the switches beside the file (`<build ID>.enabled`), so the Quick settings sidebar, the Cheats menu and the Cheats panel always agree.
 
+## In the Mac app
+
+Since 0.36.0 a game's page in the NXForge app (Manage) has a Cheats card: the same switches as the sidebar, kept in the same `<build ID>.enabled` file, for while the game is not running. **Get Cheats** looks up the game's title ID and build ID in two public collections on GitHub, [switch-cheats-db](https://github.com/HamletDuFromage/switch-cheats-db) and [NX-60FPS-RES-GFX-Cheats](https://github.com/ChanseyIsTheBest/NX-60FPS-RES-GFX-Cheats), lists the cheats you do not have yet and adds the ones you tick to `<build ID>.txt`, switched off. The file as it was is kept beside it as `<build ID>.txt.before-download`. A cheat that writes into the game's code is marked "Changes game code". Codes only work on the build they were made for, so when the collections only have another build's, nothing is added. NXForge ships no cheats.
+
 ## In the game
 
 - **Quick settings sidebar** (Esc): the Cheats page has a switch per cheat, a Refresh button that reads the file again, and a button that opens the folder. When the last run ended without a clean exit while cheats were on, every cheat starts off, and the section offers to restore the saved switches.

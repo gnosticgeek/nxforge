@@ -29,7 +29,7 @@ enum PlayOptions {
     static let graphics = ["DM_FPS_TARGET", "DM_PRESENT_INTERP", "DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER",
                            "DM_SCREEN_ASPECT", "DM_SCREEN_WIDE", "DM_PRESENT_AA", "DM_PIXEL_ART", "DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH"]
     /// On General though not level=basic: everyday controls (NXFLauncherLayout.general)
-    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
+    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_STICK_DEADZONE_L", "DM_STICK_DEADZONE_R", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
     /// What a preset sets; every other setting is left as it is
     static let presetKeys = ["DM_FPS_TARGET", "DM_RENDER_SCALE", "DM_PRESENT_UPSCALE", "DM_PRESENT_EDR", "DM_PRESENT_INTERP"]
 

@@ -107,6 +107,12 @@ struct SettingsPage: View {
                 setting("All games", "Every game's build cache, older app copies and the shared shader cache, with their sizes.") {
                     Button { show(.storage) } label: { Label("Manage storage…", systemImage: "internaldrive") }
                 }
+                setting("Everything else", "What NXForge and its games keep outside the games' folders: settings, artwork, logs, game data and the command line tool.") {
+                    Button { model.showLeftovers = true; openWindow(id: "main") } label: { Label("What NXForge Keeps…", systemImage: "list.bullet.rectangle") }
+                }
+                setting("Controllers", "See every button, stick and trigger as a game reads it.") {
+                    Button { model.showControllerTest = true; openWindow(id: "main") } label: { Label("Test Controllers…", systemImage: "gamecontroller") }
+                }
             }
             Section {
                 HStack {

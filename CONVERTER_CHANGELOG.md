@@ -4,6 +4,18 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.12.0 (2026-11-14)
+
+Cheats and mods from the app, and five things around a play session. Ships in NXForge 0.36.0. Several come from other nxnative front ends (README, Acknowledgements).
+
+- **Get Cheats**: a game's page (Manage) has a Cheats card with this build's cheats and a switch each. Get Cheats looks the game and its build up in two public collections on GitHub (switch-cheats-db and NX-60FPS-RES-GFX-Cheats), lists what they have that you do not, and adds the ones you tick to the game's cheat file, switched off. A cheat that rewrites the game's instructions is marked "Changes game code" and is not ticked for you. When the collections only have codes for another version of the game, the card says so instead of adding codes that would not work. Nothing ships with NXForge: the files are fetched when you ask.
+- **Mods**: a Mods card on the same page. Drop a folder or a zip, 7z or rar archive on it (or Add Mod…) and NXForge finds the game files inside, whichever layout the download uses, and installs it switched on. Each mod has a switch, arrows for its load order, and a warning that names the files two mods both replace and which one wins. A mod made for another game is refused by its title ID, and one that also patches the game's program is marked, since that part is not loaded. Changes apply at the next launch with no rebuild, and the game's sidebar shows the same mods.
+- **Browse GameBanana**: the game's mods on GameBanana, a page at a time with search. Install downloads the mod's file, checks it against GameBanana's checksum and installs it like a dropped archive, with a link back to its page.
+- **Rest while a game runs**: behind a running game, the window shows a plain "Playing" card and lets go of the covers and art it held, so the game has the memory. It comes back when you click it. Settings turns it off.
+- **Recap when a game quits**: a card with how long you played this time and in total, the number of sessions and the game's peak memory, plus the frame rate when frame times were recorded. Each session's memory is kept with its playtime, and a game's page lists the last five sessions. Settings turns the card off.
+- **Controller test** (Settings › Controllers): every connected controller with its buttons named as a Switch game reads them, both sticks, the triggers' travel, the battery, the gyro and a rumble test.
+- **What NXForge Keeps** (Settings › Storage): the settings, artwork, logs, game data, preferences and command line tool NXForge and its games leave outside the games' folders, with sizes, to move to the Trash. Game data, which holds your saves, is not ticked for you.
+
 ## 0.11.7 (2026-11-14)
 
 A game's compiled shaders, kept on this Mac. Ships in NXForge 0.35.7.

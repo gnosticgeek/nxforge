@@ -86,6 +86,12 @@ struct GamePage: View {
                         if let b { PerformanceCard(app: b.app, titleID: tid, name: name) }
                     }
                 }
+                if let b, let tid {
+                    layout {
+                        ModsCard(model: model, app: b.app, titleID: tid, name: name)
+                        CheatsCard(model: model, app: b.app, titleID: tid, name: name)
+                    }
+                }
                 if let b {
                     SaveSnapshotsCard(model: model, build: b)
                     BuildDetail(model: model, build: b, name: name)
@@ -94,6 +100,7 @@ struct GamePage: View {
             }
             .pagePadding()
         }
+        .defaultScrollAnchor(ProcessInfo.processInfo.environment["NXC_SCROLL"] == nil ? .top : .bottom)   // snapshot hook, as on the stage's pages
     }
 
     func hero(_ g: LibraryGame?, _ b: BuildRecord?, name: String, icon: String?, tid: String?) -> some View {
@@ -333,6 +340,7 @@ struct PlaytimeCard: View {
                 }
                 .chartYAxisLabel("minutes")
                 .frame(height: 110)
+                SessionsList(record: r)
             } else {
                 Text(app == nil ? "Build it to start counting." : "Not played yet while the converter was open.").foregroundStyle(.secondary)
             }
