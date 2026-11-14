@@ -246,15 +246,17 @@ struct PadGlyph: View {
 /// The stage's light: the focused game's colour top left, a cooler turn of it top right, fading to black below.
 struct StageBackdrop: View {
     let tint: Color
+    /// how bright the light is: full on the front end, lower behind the converter's pages of text
+    var strength: Double = 1
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
             ZStack {
                 StageLook.background
-                Circle().fill(RadialGradient(colors: [tint.opacity(0.62), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.48))
+                Circle().fill(RadialGradient(colors: [tint.opacity(0.62 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.48))
                     .frame(width: w * 0.96, height: w * 0.96).position(x: w * 0.22, y: h * 0.12)
-                Circle().fill(RadialGradient(colors: [tint.opacity(0.30), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.40))
+                Circle().fill(RadialGradient(colors: [tint.opacity(0.30 * strength), tint.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.40))
                     .frame(width: w * 0.8, height: w * 0.8).hueRotation(.degrees(48)).position(x: w * 0.92, y: h * 0.08)
                 LinearGradient(colors: [StageLook.background.opacity(0), StageLook.background], startPoint: .top, endPoint: .bottom)
                     .frame(height: h * 0.55).frame(maxHeight: .infinity, alignment: .bottom)
@@ -268,7 +270,6 @@ struct StageBackdrop: View {
 
 struct StageView: View {
     @Bindable var model: AppModel
-    @Environment(\.openSettings) private var openSettings
     @FocusState private var keys: Bool
 
     var body: some View {
@@ -304,10 +305,6 @@ struct StageView: View {
                 .padding(16)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-            if model.stageSettings {
-                Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { model.stageSettings = false }
-                StageSettings(model: model, openConverterSettings: { openSettings() }).transition(.scale(scale: 0.96).combined(with: .opacity))
-            }
             if let l = model.launching {
                 LaunchScreen(model: model, launch: l, game: games.first { $0.isRef(l.ref) }).transition(.opacity)
             }
@@ -315,7 +312,6 @@ struct StageView: View {
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
         .animation(.spring(duration: 0.35), value: model.playOptions?.id)
-        .animation(.spring(duration: 0.3), value: model.stageSettings)
         .animation(.easeInOut(duration: 0.3), value: model.launching?.id)
         .animation(.easeInOut(duration: 0.25), value: model.gameDetail)
         .toolbar(removing: .title)
@@ -346,10 +342,10 @@ struct StageTopBar: View {
             Text("NXForge").font(.system(size: 19, weight: .heavy))
             HStack(spacing: 4) {
                 ForEach(StageTab.allCases, id: \.self) { t in
-                    tab(t.rawValue, on: model.stageTab == t) { model.stageTab = t }
+                    tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
                 }
-                tab("Converter", on: false) { model.showConverter() }
-                    .help("Convert, Builds, Storage, Toolchain and Updates")
+                tab("Converter", on: !model.frontEnd) { if model.frontEnd { model.showConverter() } }
+                    .help("Convert, Game Files, Builds, Storage, Toolchain and Updates")
             }
             .padding(4)
             .background(.white.opacity(0.08), in: .capsule)
@@ -368,10 +364,14 @@ struct StageTopBar: View {
                     .padding(.horizontal, 12).frame(height: 36).background(.white.opacity(0.08), in: .capsule)
                     .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
             }
-            if model.stageTab == .library {
+            if let s = search {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(StageLook.soft)
-                    TextField("Search games", text: $model.stageSearch).textFieldStyle(.plain).frame(width: 170)
+                    TextField(s.prompt, text: s.text).textFieldStyle(.plain).frame(width: 170)
+                    if !s.text.wrappedValue.isEmpty {
+                        Button { s.text.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
+                            .buttonStyle(.plain).accessibilityLabel("Clear Search")
+                    }
                 }
                 .padding(.horizontal, 14).frame(height: 36).background(.white.opacity(0.08), in: .capsule)
                 .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
@@ -380,6 +380,17 @@ struct StageTopBar: View {
             round("slider.horizontal.3", "Settings") { model.stageSettings = true }
         }
         .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
+    }
+
+    /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
+    var search: (prompt: String, text: Binding<String>)? {
+        if model.frontEnd { return model.stageTab == .library ? ("Search games", $model.stageSearch) : nil }
+        guard model.gameDetail == nil else { return nil }
+        switch model.page {
+        case .library: return ("Search games", $model.librarySearch)
+        case .builds: return ("Search builds", $model.buildSearch)
+        default: return nil
+        }
     }
 
     func tab(_ title: String, on: Bool, _ act: @escaping () -> Void) -> some View {

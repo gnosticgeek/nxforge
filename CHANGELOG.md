@@ -2,6 +2,12 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.32.1 (2026-11-14)
+
+- **One look for the whole Mac app** (Converter 0.9.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). The converter's pages now sit on the library's stage under the same top bar: no sidebar, no separate header or toolbar, the same titles, buttons and cards. The converter's Library page is named Game Files, and the app is always dark.
+- Fixed: the app could quit when Game Files opened on the game it showed last time.
+- No game rebuild needed.
+
 ## 0.32.0 (2026-11-14)
 
 - **The Mac app is now NXForge, with a library front end** (Converter 0.9.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). It opens on your games as box covers (front and back art from GameTDB, a 3D case you can turn on each game's page) and **Play goes straight into the game**: the game's own settings window stays closed, and its options are now per-game **Play options** in NXForge, with Battery, Balanced and Quality presets and "Play once". Works from a controller; a button takes it full screen. The converter is the Converter tab, unchanged. `NXForge Converter.app` is replaced by `NXForge.app` on update. App only: no game rebuild.

@@ -79,7 +79,7 @@ struct MenuBarProgress: View {
                     Spacer()
                     Button("Stop Build…") { NSApp.activate(); model.stopBuild() }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.stage)
             }
             .padding(14)
             .frame(width: 320)

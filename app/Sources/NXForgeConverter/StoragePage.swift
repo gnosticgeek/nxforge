@@ -192,7 +192,10 @@ struct StoragePage: View {
         let list = shown
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HeroHeader(symbol: "internaldrive", title: "Storage", subtitle: "What NXForge keeps on disk, and what can go.")
+                PageHeading(title: "Storage", subtitle: "What NXForge keeps on disk, and what can go.") {
+                    Button { scan() } label: { Label("Measure Again", systemImage: "arrow.clockwise") }
+                        .buttonStyle(.stage).help("Measure the caches and apps again").disabled(scanning)
+                }
                 // every drive plugged in, up to three to a row of equal heights, the space to reclaim last
                 let cards = volumes.map(Optional.some) + [nil]
                 let perRow = min(cards.count, 3)
@@ -215,13 +218,7 @@ struct StoragePage: View {
                 Label("Deleting here frees the space without the Trash. For \(Int(PendingDeletes.undoSeconds)) seconds, Undo (⌘Z) puts it back.", systemImage: "info.circle")
                     .font(.callout).foregroundStyle(.secondary)
             }
-            .padding(20)
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { scan() } label: { Label("Measure Again", systemImage: "arrow.clockwise") }
-                    .help("Measure the caches and apps again").disabled(scanning)
-            }
+            .pagePadding()
         }
         .task(id: model.revision) { scan() }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in scan() }
@@ -281,7 +278,7 @@ struct StoragePage: View {
             }
             Spacer(minLength: 8)
             Button { cleanUp() } label: { Label("Clean Up…", systemImage: "wand.and.sparkles") }
-                .buttonStyle(.glassProminent).controlSize(.extraLarge)
+                .buttonStyle(.stagePrimary).controlSize(.extraLarge).fixedSize()
                 .disabled(deletableItems.isEmpty || !deleting.isEmpty)
                 .help(deletableItems.isEmpty ? "Nothing can be deleted now" : "Delete every build cache, older app copy and the shader cache that no build is using")
         }
@@ -401,7 +398,7 @@ struct StoragePage: View {
                 Button { deleteMany(deletable) } label: {
                     Label(deletable.isEmpty ? "Delete Selected…" : "Delete \(Disk.gb(deletable.reduce(0) { $0 + $1.bytes }))…", systemImage: "trash")
                 }
-                .buttonStyle(.glass).controlSize(.large).disabled(deletable.isEmpty || !deleting.isEmpty)
+                .buttonStyle(.stage).controlSize(.large).disabled(deletable.isEmpty || !deleting.isEmpty)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
         }

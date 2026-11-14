@@ -88,7 +88,7 @@ struct ConverterApp: App {
                 Button("Converter") { model.showConverter() }.keyboardShortcut("g", modifiers: [.command, .shift])
                 Divider()
                 ForEach(Array(Page.allCases.enumerated()), id: \.element) { i, p in
-                    Button(p.rawValue) { model.showConverter(); model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                    Button(p.title) { model.showConverter(); model.page = p }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
                 }
                 Divider()
             }
@@ -132,7 +132,7 @@ struct ConverterApp: App {
     private func snapshotIfAsked() async {
         let env = ProcessInfo.processInfo.environment
         guard let out = env["NXC_SNAPSHOT"] else { return }
-        if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.page = page }
+        if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.frontEnd = false; model.page = page }
         // NXC_STAGE=home, library, game, back, options, settings or launch: the front end on that screen (game and the ones
         // after it: the first built game's)
         if let st = env["NXC_STAGE"] {
@@ -145,6 +145,11 @@ struct ConverterApp: App {
             if let g, st == "options" { model.openPlayOptions(g.ref) }
             if st == "settings" { model.stageSettings = true }
             if let g, st == "launch", let a = g.app { model.launching = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps") }
+        }
+        // NXC_DETAIL=1 with NXC_PAGE=library or builds: the converter's page of the first built game
+        if env["NXC_DETAIL"] != nil, env["NXC_STAGE"] == nil {
+            try? await Task.sleep(for: .seconds(2))
+            if let g = model.stageGames().first(where: { $0.app != nil }) { model.openGame(g.ref) }
         }
         try? await Task.sleep(for: .seconds(5))
         // NXC_CONFIRM=1 puts a delete confirmation over the window, to check how its buttons draw

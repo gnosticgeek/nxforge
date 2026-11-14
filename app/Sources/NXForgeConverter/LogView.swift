@@ -43,21 +43,21 @@ struct LogView: View {
                     ForEach(LogFilter.allCases, id: \.self) { f in tab(f) }
                 }
                 .padding(3)
-                .background(Theme.card, in: .rect(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.cardStroke))
+                .background(.white.opacity(0.08), in: .capsule)
+                .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField("Search the log…", text: $search).textFieldStyle(.plain)
                     if !search.isEmpty { Button { search = "" } label: { Label("Clear Search", systemImage: "xmark.circle.fill").labelStyle(.iconOnly).foregroundStyle(.secondary) }.buttonStyle(.plain) }
                 }
                 .padding(.horizontal, 10).frame(height: 32).frame(maxWidth: 520)
-                .background(Theme.card, in: .rect(cornerRadius: 9))
-                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.cardStroke))
+                .background(.white.opacity(0.08), in: .capsule)
+                .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
                 Spacer()
                 Toggle("Follow", isOn: $follow).toggleStyle(.checkbox).help("Keep the newest line in view while the build runs")
-                Button { copy() } label: { Label("Copy log", systemImage: "doc.on.clipboard") }.buttonStyle(.glass)
+                Button { copy() } label: { Label("Copy log", systemImage: "doc.on.clipboard") }.buttonStyle(.stage)
                 if let file {
-                    Button { NSWorkspace.shared.open(file.url) } label: { Label("Open log file", systemImage: "doc.text") }.buttonStyle(.glass)
+                    Button { NSWorkspace.shared.open(file.url) } label: { Label("Open log file", systemImage: "doc.text") }.buttonStyle(.stage)
                         .help(file.tildePath)
                 }
             }
@@ -118,16 +118,16 @@ struct LogView: View {
     func tab(_ f: LogFilter) -> some View {
         let on = filter == f
         let (symbol, tint): (String, Color) = switch f {
-        case .all: ("list.bullet.circle.fill", .accentColor)
+        case .all: ("list.bullet.circle.fill", StageLook.soft)
         case .warnings: ("exclamationmark.triangle.fill", .yellow)
         case .errors: ("xmark.circle.fill", .red)
         }
         return Button { filter = f } label: {
-            Label { Text("\(f.rawValue) (\(count(f)))") } icon: { Image(systemName: symbol).foregroundStyle(on ? .white : tint) }
+            Label { Text("\(f.rawValue) (\(count(f)))") } icon: { Image(systemName: symbol).foregroundStyle(on ? Color.black : tint) }
                 .fontWeight(.medium)
                 .padding(.horizontal, 12).padding(.vertical, 6)
-                .foregroundStyle(on ? .white : .primary)
-                .background(on ? Color.accentColor : .clear, in: .rect(cornerRadius: 7))
+                .foregroundStyle(on ? Color.black : Color.primary)
+                .background(on ? Color.white.opacity(0.92) : .clear, in: .capsule)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)

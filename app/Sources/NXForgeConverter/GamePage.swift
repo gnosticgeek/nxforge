@@ -68,9 +68,10 @@ struct GamePage: View {
         let tid = g?.titleID ?? b.flatMap { VerifiedGames.titleID(ofApp: $0.app) }
         let name = g?.displayName ?? b.map { $0.app.url.deletingPathExtension().lastPathComponent } ?? "Game"
         let icon = g?.icon ?? b?.app
-        let tint = IconColor.of(icon)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                Button { model.goBack() } label: { Label(model.page.title, systemImage: "chevron.backward") }
+                    .buttonStyle(StageButton(height: 36)).help("Back (⌘[)")
                 hero(g, b, name: name, icon: icon, tid: tid)
                 if let b, model.offlineVolume(b.gameDir) != nil || !FileManager.default.fileExists(atPath: b.gameDir) { OfflineBanner(model: model, build: b) }
                 let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(spacing: 16))
@@ -91,17 +92,7 @@ struct GamePage: View {
                     PreviousBuilds(model: model, build: b)
                 }
             }
-            .padding(20)
-        }
-        .background(alignment: .top) {
-            LinearGradient(colors: [tint.opacity(0.55), tint.opacity(0.18), .clear], startPoint: .top, endPoint: .bottom)
-                .frame(height: 340).ignoresSafeArea().allowsHitTesting(false)
-        }
-        .navigationTitle(name)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button { model.goBack() } label: { Label("Back", systemImage: "chevron.backward") }.help("Back (⌘[)")
-            }
+            .pagePadding()
         }
     }
 
@@ -111,7 +102,7 @@ struct GamePage: View {
             else if let a = b?.app { AppIcon(path: a, size: 150) }
             else { GameIcon(url: nil, size: 150) }
             VStack(alignment: .leading, spacing: 8) {
-                Text(name).font(.largeTitle.weight(.bold)).lineLimit(2)
+                Text(name).font(.system(size: 34, weight: .heavy)).tracking(-0.6).lineLimit(2)
                 Text([g?.publisher, g?.version.map { "v\($0)" }, g?.console.rawValue ?? b.map { Console.of($0).rawValue }, tid].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.title3).foregroundStyle(.secondary)
                 HStack(spacing: 6) {
@@ -129,7 +120,7 @@ struct GamePage: View {
                 HStack(spacing: 10) {
                     if let b {
                         Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill").frame(minWidth: 90) }
-                            .buttonStyle(.glassProminent).keyboardShortcut(.defaultAction)
+                            .buttonStyle(.stagePrimary).keyboardShortcut(.defaultAction)
                         Menu {
                             Button("Rebuild from Scratch…") { model.rebuildAsked(b, scratch: true) }
                         } label: { Label("Rebuild", systemImage: "arrow.clockwise") } primaryAction: { model.rebuildAsked(b) }
@@ -141,7 +132,7 @@ struct GamePage: View {
                             .modifier(GlassButton(prominent: b == nil)).disabled(model.run.running || model.batchRunning)
                     }
                     Button { reveal(b?.app ?? g.map { $0.shared ? "\($0.path)/\($0.files.first ?? "")" : $0.path } ?? "") } label: { Label("Show in Finder", systemImage: "folder") }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.stage)
                 }
                 .controlSize(.large)
                 .padding(.top, 4)
@@ -178,9 +169,9 @@ struct OfflineBanner: View {
             }
             Spacer()
             if let vol, model.settings.remounts[vol] != nil {
-                Button("Mount \(vol)") { _ = model.mount(vol) }.buttonStyle(.glassProminent)
+                Button("Mount \(vol)") { _ = model.mount(vol) }.buttonStyle(.stagePrimary)
             }
-            Button("Locate Game Files…") { model.locateGameFiles(build) }.buttonStyle(.glass)
+            Button("Locate Game Files…") { model.locateGameFiles(build) }.buttonStyle(.stage)
         }
         .padding(14)
         .background(Color.orange.opacity(0.10), in: .rect(cornerRadius: 14))
@@ -210,7 +201,7 @@ struct LaunchSettingsCard: View {
                     Button("Reset to Tested Defaults") {
                         LaunchSettings.reset(app: app, settings: settings); load()
                     }
-                    .buttonStyle(.glass).disabled(settings.allSatisfy { $0.isDefault(values[$0.env] ?? $0.def) })
+                    .buttonStyle(.stage).disabled(settings.allSatisfy { $0.isDefault(values[$0.env] ?? $0.def) })
                 }
             }
         }
@@ -274,7 +265,7 @@ struct NotesCard: View {
                 }
                 if notes.open.count > 3 { Button(all ? "Show fewer" : "Show all \(notes.open.count)") { all.toggle() }.buttonStyle(.link) }
             }
-            Button { NSWorkspace.shared.open(notes.readme.url) } label: { Label("Open the profile's README", systemImage: "doc.text") }.buttonStyle(.glass)
+            Button { NSWorkspace.shared.open(notes.readme.url) } label: { Label("Open the profile's README", systemImage: "doc.text") }.buttonStyle(.stage)
         }
     }
 }
@@ -386,8 +377,8 @@ struct PerformanceCard: View {
                 }
                 HStack {
                     Button { copyToClipboard(FrameTimes.report(name: name, runs)); copied = true } label: { Label(copied ? "Copied" : "Copy Report", systemImage: copied ? "checkmark" : "doc.on.clipboard") }
-                        .buttonStyle(.glass)
-                    if let f = runs.last?.file { Button { reveal(f.path) } label: { Label("Show Recordings", systemImage: "folder") }.buttonStyle(.glass) }
+                        .buttonStyle(.stage)
+                    if let f = runs.last?.file { Button { reveal(f.path) } label: { Label("Show Recordings", systemImage: "folder") }.buttonStyle(.stage) }
                 }
             }
         }

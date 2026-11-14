@@ -1,4 +1,4 @@
-// Settings (⌘,): appearance, notifications, where apps and keys come from, build behaviour and the build cache.
+// Settings (⌘,): notifications, where apps and keys come from, build behaviour and the build cache.
 // Its own window from the app menu, as Mac apps keep their preferences, laid out as a grouped form.
 import AppKit
 import SwiftUI
@@ -23,12 +23,6 @@ struct SettingsPage: View {
     @ViewBuilder var form: some View {
         Group {
             Section("General") {
-                setting("Appearance", "Choose how the converter looks.") {
-                    Picker("", selection: $model.settings.appearance) {
-                        ForEach(Appearance.allCases, id: \.self) { Text($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 260)
-                }
                 setting("Notify when a build finishes", "Show a notification when the build is complete.") {
                     Toggle("", isOn: $model.settings.notify).toggleStyle(.switch).labelsHidden()
                         .onChange(of: model.settings.notify) { _, on in if on { model.requestNotifications() } }
@@ -120,7 +114,7 @@ struct SettingsPage: View {
                 HStack {
                     Text("Settings are saved automatically.").foregroundStyle(.secondary)
                     Spacer()
-                    Button("Restore Defaults…") { if model.confirm("Restore default settings?", "Appearance, notifications, output, keys, build and signing preferences go back to their defaults. Your game folder and engine stay.", action: "Restore") { model.settings.restoreDefaults(); model.recheck() } }
+                    Button("Restore Defaults…") { if model.confirm("Restore default settings?", "Notifications, output, keys, build and signing preferences go back to their defaults. Your game folder and engine stay.", action: "Restore") { model.settings.restoreDefaults(); model.recheck() } }
                 }
             }
         }

@@ -8,8 +8,8 @@ import UserNotifications
 enum Page: String, CaseIterable, Identifiable {
     case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain", updates = "Updates"
     var id: String { rawValue }
-    /// drawn with its own banner and big heading (HeroHeader) instead of the window title
-    var hasHero: Bool { true }
+    /// as the window names it: the converter's own Library is the game files, the front end's Library the covers
+    var title: String { self == .library ? "Game Files" : rawValue }
     var symbol: String {
         switch self {
         case .convert: "macwindow.badge.plus"
@@ -222,12 +222,9 @@ final class AppModel {
     var gameFolder: String? { settings.gameDir.map(Source.folder) }
     var ready: Bool { allOK && valid && !run.running }
 
+    /// One look: the stage is dark, so the app is, its sheets and its Settings window with it.
     func applyAppearance() {
-        switch settings.appearance {
-        case .system: NSApp?.appearance = nil
-        case .light: NSApp?.appearance = NSAppearance(named: .aqua)
-        case .dark: NSApp?.appearance = NSAppearance(named: .darkAqua)
-        }
+        NSApp?.appearance = NSAppearance(named: .darkAqua)
     }
 
     func recheck() {
