@@ -31,7 +31,7 @@ void mtl_low_lag_tick(uint64_t start_ns, int k) {
 // The trim (low_lag.h): on the present thread, before a direct present takes its drawable. wait_ns: what the present before it waited for its drawable
 static int nxf_ll_trim_drop(uint64_t wait_ns) {
     static nxf_ll_trim t;
-    if (!nxf_ll_on() || !atomic_load(&g_ll_direct) || front_fullscreen()) { t.run = 0; return 0; }
+    if (!nxf_ll_on() || !atomic_load(&g_ll_direct)) { t.run = 0; return 0; }   // fullscreen too: its presents are direct whatever the policy says, and the policy still says whether the game has headroom
     if (!nxf_ll_trim_next(&t, wait_ns / 1e6)) return 0;
     MLOG("low lag: one present dropped to empty the layer's queue (the last %d waited %.1f ms or more for their drawable; %llu so far)", NXF_LL_TRIM_RUN, NXF_LL_TRIM_MS, (unsigned long long)t.total);
     return 1;
