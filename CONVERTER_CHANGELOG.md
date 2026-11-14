@@ -4,13 +4,22 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
-## 0.11.6 (2026-11-14)
+## 0.11.7 (2026-11-14)
 
-A game's compiled shaders, kept on this Mac. Ships in NXForge 0.35.6.
+A game's compiled shaders, kept on this Mac. Ships in NXForge 0.35.7.
 
 - **Keep shaders on this Mac** (Settings › Launching, on): Play copies a game's pipeline archive (`Contents/Resources/pso`) from another drive to `~/Library/Caches/NXForge/pso/<game>` and starts the game with `DM_PSO_BUNDLE` on the copy. Metal maps an archive on the internal disk (16 MB of footprint for Mario Kart World's 496 MB file) and reads one on any other volume into the game's memory (512 MB for the same file; 4.4 GB and 7 to 11 s a start for Ocarina of Time). The launch screen says "Copying its shaders to this Mac", once per build of the game: a rebuild changes the folder and the copy is made again.
 - **Not at the disk's expense**: no copy when it would leave the internal disk under 10 GB free (a banner says so and the game starts as before), and a copy whose game is gone from a connected drive is removed at the app's next start. A game on a drive that is not connected keeps its copy. Deleting the shader cache on the Storage page (`~/Library/Caches/NXForge`) removes the copies with it; the next Play makes them again.
 - A game on the internal disk has nothing copied. A game opened from the Finder or the Dock, not through NXForge, starts as before.
+
+## 0.11.6 (2026-11-14)
+
+Store details and screenshots on a game's page. Ships in NXForge 0.35.6.
+
+- **From the store**: under your own screenshots, a row of the game's official screenshots from the gallery of its page on Nintendo's European store (up to 12 kept, 1280 x 720 or larger; Mario Kart World has 37, Super Mario Odyssey 26, Blazing Chrome 4). Click one to open it.
+- **About**: the store's one-line pitch and the publisher's description (More shows all of it), beside a card of the facts the store lists: publisher, release date, genres, players, age rating, size, play modes and languages, with a link to the store page.
+- **Fetched when you open the game's page**, by title ID (else by exact name) through the same store search as the wide art, then the store page once; kept on this Mac in the covers folder's `store` folder and looked at again after 30 days (a game not found: after a week, or Look Again). Only the title ID or name is sent, with no cookies.
+- **Settings › Artwork › Download store details** turns it off and hides the section.
 
 ## 0.11.5 (2026-11-14)
 

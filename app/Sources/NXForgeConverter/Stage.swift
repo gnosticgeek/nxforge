@@ -69,7 +69,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, downloadCovers, downloadHeroes, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, downloadCovers, downloadHeroes, downloadStoreInfo, startIn }
 
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
 
@@ -255,6 +255,7 @@ extension AppModel {
         case .localShaders: flip(&settings.localShaders)
         case .downloadCovers: flip(&settings.downloadCovers)
         case .downloadHeroes: flip(&settings.downloadHeroes)
+        case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
         case .startIn:
             let all = StartIn.allCases
             if let i = all.firstIndex(of: settings.startIn) { settings.startIn = all[(i + d + all.count) % all.count] }
@@ -992,9 +993,10 @@ struct StageSettings: View {
             group("ARTWORK") {
                 toggle("Download box art", "Front and back covers from GameTDB, matched by the game's name. Only a cover's ID is sent.", $model.settings.downloadCovers, row: .downloadCovers)
                 toggle("Download wide art", "The banner from each game's page on Nintendo's European store, behind its page and Home. Found by title ID or name; only those are sent.", $model.settings.downloadHeroes, row: .downloadHeroes)
+                toggle("Download store details", "A game's description, details and official screenshots from its store page, fetched when you open the game's page.", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
                 row("Artwork folder", "Your own covers and the downloaded art, kept on this Mac only.", last: true) {
                     HStack(spacing: 8) {
-                        Button("Look Again") { CoverStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
+                        Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
                         Button("Show") { try? FileManager.default.createDirectory(at: CoverStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(CoverStore.dir) }.buttonStyle(StageButton(height: 32))
                     }
                 }
