@@ -10,6 +10,11 @@
 // lasted less than NXF_LL_CALM frames (up to NXF_LL_WAIT_MAX), so a game that goes back and forth between a light and a heavy scene does not switch every few seconds.
 // GPU time is not judged while direct: a game that waits for its drawable there has the wait in its GPU time. A stall (a pause, a covered window, a load) is not a late
 // frame, and the NXF_LL_GRACE frames after it or after a switch are not judged.
+// The trim: mode 0 shows a frame after 35 ms only while the layer's queue of drawables is empty. The game is paced by its own 60 Hz clock, not the screen's, so once it has
+// run a frame ahead (the frames queued for the link at the switch, a hitch on the screen's side) the queue stays full: every nextDrawable then waits for the screen to
+// let one go, and the lag is 60 ms (one queued) or 80 ms (two), as with the link (Switch Sports Resort after a switch: 80 ms, nextDrawable waiting 16.6 ms a frame).
+// A queue that is full for NXF_LL_TRIM_RUN presents in a row is emptied by one frame: that present is dropped, so the picture before it stays one refresh longer, once.
+// At most NXF_LL_TRIM_MAX drops within NXF_LL_TRIM_WIN presents; a game that fills the queue faster than that is left alone for as long.
 #pragma once
 #include <stdint.h>
 
@@ -23,6 +28,23 @@
 #define NXF_LL_WAIT0 600
 #define NXF_LL_WAIT_MAX 4800
 #define NXF_LL_CALM 3600
+
+#define NXF_LL_TRIM_MS 4.0
+#define NXF_LL_TRIM_RUN 30
+#define NXF_LL_TRIM_MAX 6
+#define NXF_LL_TRIM_WIN 3600
+
+typedef struct { int run, drops, win, rest; uint64_t total; } nxf_ll_trim;
+// Before each direct present, with the time the present before it waited for its drawable (ms). Returns 1 when this present is to be dropped
+static inline int nxf_ll_trim_next(nxf_ll_trim *t, double wait_ms) {
+    if (t->rest > 0) { if (!--t->rest) t->drops = t->win = t->run = 0; return 0; }
+    if (t->drops && ++t->win >= NXF_LL_TRIM_WIN) t->drops = t->win = 0;
+    t->run = wait_ms >= NXF_LL_TRIM_MS ? t->run + 1 : 0;
+    if (t->run < NXF_LL_TRIM_RUN) return 0;
+    t->run = 0; t->total++;
+    if (++t->drops >= NXF_LL_TRIM_MAX) t->rest = NXF_LL_TRIM_WIN;
+    return 1;
+}
 
 typedef struct {
     int direct;             // 1 = the present thread takes its own drawables
