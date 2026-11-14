@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.7 (2026-11-14)
+
+- **A game on an external drive starts sooner and uses less memory** (Converter 0.11.7, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Metal maps a pipeline archive that is on the Mac's internal disk, and reads one on any other volume into the game's memory, whole, for the whole run. Measured on an M4 Pro (macOS 27.2): Mario Kart World's 496 MB archive adds 512 MB to the footprint from the Games drive and 16 MB from the internal disk; Ocarina of Time's 4.4 GB archive adds 4.4 GB and took 7.6 and 10.8 s to open at its last two starts. A disk image in APFS on the external drive is read whole too, so the drive's format is not the cause. Play in the Mac app now copies the game's archive folder to `~/Library/Caches/NXForge/pso` once per build of the game and starts the game with `DM_PSO_BUNDLE` on the copy. A setting, on (Settings › Launching › Keep shaders on this Mac); not done when it would leave under 10 GB free. A game opened from the Finder starts as before. No game rebuild needed.
+
 ## 0.35.6 (2026-11-14)
 
 - **Store details and screenshots on a game's page in the Mac app** (Converter 0.11.6, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): an About section with the publisher's description and the store's facts, and a "From the store" row of the official screenshots, from the game's Nintendo UK store page, kept on the Mac; Settings › Artwork turns it off. No game rebuild needed.

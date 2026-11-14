@@ -295,10 +295,36 @@ extension AppModel {
         for (k, v) in once { shown[k] = v }
         let summary = ([PlayOptions.current(settings: list, values: shown).rawValue] + PlayOptions.summary(settings: list, values: shown).map(\.value)).joined(separator: " · ")
         if frontEnd { launching = Launching(ref: ref, app: app, name: name, note: note, summary: list.isEmpty ? "" : summary) }
+        // the game's pipeline archive from this Mac's own disk (LocalShaders): there already, or copied first, once
+        let source = settings.localShaders ? LocalShaders.source(app: app) : nil
+        if let source, LocalShaders.ready(app: app, source: source) == nil {
+            if frontEnd { launching?.note = "Copying its shaders to this Mac (\(Disk.gb(source.bytes))), once" }
+            let straight = settings.straightPlay && !ownWindow, held = launching?.id
+            Task { @MainActor [weak self] in
+                let outcome = await Task.detached(priority: .userInitiated) { LocalShaders.copy(app: app, source: source) }.value
+                guard let self else { return }
+                if held != nil, self.launching?.id != held { return }   // the launch was called off meanwhile
+                if self.launching?.id == held { self.launching?.note = note }
+                var env = once
+                switch outcome {
+                case .ready(let dir): env["DM_PSO_BUNDLE"] = dir.path
+                case .noRoom(let needed, let free): self.showBanner("Shaders left on the game's drive", detail: "Copying them here needs \(Disk.gb(needed)) and would leave under 10 GB free (\(Disk.gb(free)) free now). The game starts as before.", tone: .info)
+                case .failed(let why): self.showBanner("Shaders left on the game's drive", detail: why, tone: .info)
+                }
+                self.open(app: app, name: name, straight: straight, environment: env)
+            }
+            return
+        }
+        var env = once
+        if let source, let dir = LocalShaders.ready(app: app, source: source) { env["DM_PSO_BUNDLE"] = dir.path }
+        open(app: app, name: name, straight: settings.straightPlay && !ownWindow, environment: env)
+    }
+
+    private func open(app: String, name: String, straight: Bool, environment: [String: String]) {
         let cfg = NSWorkspace.OpenConfiguration()
-        if settings.straightPlay && !ownWindow { cfg.arguments = ["--no-launcher"] }
+        if straight { cfg.arguments = ["--no-launcher"] }
         // added to the environment the game starts with; its launcher takes what is set there as fixed for the run
-        cfg.environment = once.merging(Self.frontEndEnvironment) { a, _ in a }
+        cfg.environment = environment.merging(Self.frontEndEnvironment) { a, _ in a }
         cfg.activates = true
         let id = launching?.id
         NSWorkspace.shared.openApplication(at: app.url, configuration: cfg) { [weak self] _, error in
