@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.11.6 (2026-11-14)
+
+Store details and screenshots on a game's page. Ships in NXForge 0.35.6.
+
+- **From the store**: under your own screenshots, a row of the game's official screenshots from the gallery of its page on Nintendo's European store (up to 12 kept, 1280 x 720 or larger; Mario Kart World has 37, Super Mario Odyssey 26, Blazing Chrome 4). Click one to open it.
+- **About**: the store's one-line pitch and the publisher's description (More shows all of it), beside a card of the facts the store lists: publisher, release date, genres, players, age rating, size, play modes and languages, with a link to the store page.
+- **Fetched when you open the game's page**, by title ID (else by exact name) through the same store search as the wide art, then the store page once; kept on this Mac in the covers folder's `store` folder and looked at again after 30 days (a game not found: after a week, or Look Again). Only the title ID or name is sent, with no cookies.
+- **Settings › Artwork › Download store details** turns it off and hides the section.
+
 ## 0.11.5 (2026-11-14)
 
 Wide game art from Nintendo's store. Ships in NXForge 0.35.5.

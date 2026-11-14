@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.35.6 (2026-11-14)
+
+- **Store details and screenshots on a game's page in the Mac app** (Converter 0.11.6, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): an About section with the publisher's description and the store's facts, and a "From the store" row of the official screenshots, from the game's Nintendo UK store page, kept on the Mac; Settings › Artwork turns it off. No game rebuild needed.
+
 ## 0.35.5 (2026-11-14)
 
 - **Wide game art from Nintendo's store in the Mac app** (Converter 0.11.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): each game's banner from its Nintendo UK store page fills the top of its page and of Home, found by title ID and kept on the Mac; Settings › Artwork turns it off. No game rebuild needed.

@@ -125,10 +125,10 @@ enum HeroSource {
         return url(["q": n, "fq": "type:GAME", "rows": "8"])
     }
 
-    static func url(_ params: [String: String]) -> URL? {
+    static func url(_ params: [String: String], fields: String = "application_id_s,title,type,image_url_h2x1_s,url") -> URL? {
         var c = URLComponents(string: search)
         c?.queryItems = params.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
-            + [URLQueryItem(name: "fl", value: "application_id_s,title,type,image_url_h2x1_s,url"), URLQueryItem(name: "wt", value: "json")]
+            + [URLQueryItem(name: "fl", value: fields), URLQueryItem(name: "wt", value: "json")]
         return c?.url
     }
 
@@ -512,7 +512,7 @@ final class CoverStore {
         return nil
     }
 
-    nonisolated private static func get(_ url: URL) async -> Data? {
+    nonisolated static func get(_ url: URL) async -> Data? {
         var req = URLRequest(url: url, timeoutInterval: 30)
         req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
         req.httpShouldHandleCookies = false
