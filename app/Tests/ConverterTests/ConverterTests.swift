@@ -998,11 +998,15 @@ import Testing
           {"application_id_s":"0100dcd01f306000","title":"Mina the Hollower - Nintendo Switch™ 2 Edition","type":"GAME","image_url_h2x1_s":"https://x/b_image500w.jpg"},
           {"application_id_s":"0100dcd01f306000","title":"Mina the Hollower","type":"GAME","image_url_h2x1_s":"https://x/a_image500w.jpg"},
           {"application_id_s":"01008d100de46000","title":"Cyber Shadow","type":"GAME","image_url_h2x1_s":"https://x/c_image500w.jpg"},
-          {"title":"Cyber Shadow","type":"GAME","image_url_h2x1_s":"https://x/old.jpg"}
+          {"title":"Cyber Shadow","type":"GAME","image_url_h2x1_s":"https://x/old.jpg"},
+          {"application_id_s":"0400486024dec000","title":"Ocarina","type":"GAME","url":"/en-gb/Games/oot-1.html"}
         ]}}
         """
         let docs = HeroSource.parse(Data(json.utf8))
-        #expect(docs.count == 4)
+        #expect(docs.count == 5)
+        #expect(HeroSource.pick(docs, id: "0400486024DEC000")?.page?.absoluteString == "https://www.nintendo.com/en-gb/Games/oot-1.html")
+        #expect(HeroSource.shared(#"<meta property="og:image" content=" https://www.nintendo.com/eu/a/16x9_x_image1280w.jpg">"#) == "https://www.nintendo.com/eu/a/16x9_x_image1280w.jpg")
+        #expect(HeroSource.shared(#"<meta property="og:image" content="https://evil.example/x.jpg">"#) == nil)
         #expect(HeroSource.pick(docs, id: "0100DCD01F306000")?.title == "Mina the Hollower")
         #expect(HeroSource.pick(docs, id: "01000B900D8B0000") == nil)
         #expect(HeroSource.pick(docs, name: "Cyber Shadow [NSP]")?.id == "01008D100DE46000")

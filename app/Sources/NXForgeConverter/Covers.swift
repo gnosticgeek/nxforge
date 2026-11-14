@@ -5,7 +5,8 @@
 // (an own image: -front-own.png, -back-own.png).
 // Wide key art ("hero" art) for the game page and Home: the 2:1 share image of the game's page on Nintendo's European store
 // (nintendo.com/en-gb), found through the search service that store's own pages use (searching.nintendo-europe.com), by the game's
-// title ID, else by its exact name. Only title IDs and names go out. Kept beside the covers as <key>-hero.jpg; a setting turns it off.
+// title ID, else by its exact name; a game the search has no banner for (new Switch 2 games) gets the picture its store page
+// shares (og:image). Only title IDs and names go out. Kept beside the covers as <key>-hero.jpg; a setting turns it off.
 import AppKit
 import ImageIO
 import SwiftUI
@@ -127,26 +128,42 @@ enum HeroSource {
     static func url(_ params: [String: String]) -> URL? {
         var c = URLComponents(string: search)
         c?.queryItems = params.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
-            + [URLQueryItem(name: "fl", value: "application_id_s,title,type,image_url_h2x1_s"), URLQueryItem(name: "wt", value: "json")]
+            + [URLQueryItem(name: "fl", value: "application_id_s,title,type,image_url_h2x1_s,url"), URLQueryItem(name: "wt", value: "json")]
         return c?.url
     }
 
-    struct Doc: Equatable { var id: String?; var title: String; var game: Bool; var image: String }
+    /// An entry of the search: its banner, else its store page (whose shared picture is read instead)
+    struct Doc: Equatable { var id: String?; var title: String; var game: Bool; var image: String?; var page: URL? }
 
-    /// The search's answer: the entries that have wide art
+    static let site = "https://www.nintendo.com"
+
+    /// The search's answer: the entries that have wide art or a store page
     static func parse(_ data: Data) -> [Doc] {
         guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let r = o["response"] as? [String: Any],
               let docs = r["docs"] as? [[String: Any]] else { return [] }
         return docs.compactMap { d in
-            guard let img = d["image_url_h2x1_s"] as? String, img.hasPrefix("https://"), let t = d["title"] as? String else { return nil }
-            return Doc(id: (d["application_id_s"] as? String)?.uppercased(), title: t, game: (d["type"] as? String) == "GAME", image: img)
+            guard let t = d["title"] as? String else { return nil }
+            let img = (d["image_url_h2x1_s"] as? String).flatMap { $0.hasPrefix("https://") ? $0 : nil }
+            let page = (d["url"] as? String).flatMap { $0.hasPrefix("/") && !$0.hasPrefix("//") ? URL(string: site + $0) : nil }
+            guard img != nil || page != nil else { return nil }
+            return Doc(id: (d["application_id_s"] as? String)?.uppercased(), title: t, game: (d["type"] as? String) == "GAME", image: img, page: page)
         }
     }
 
-    /// The art for a title ID: a game's entry before an add-on's (they share the ID), the shortest title first
-    /// ("Mina the Hollower" before "Mina the Hollower - Nintendo Switch 2 Edition")
+    /// The art for a title ID: an entry with a banner first, a game's before an add-on's (they share the ID), the shortest title
+    /// first ("Mina the Hollower" before "Mina the Hollower - Nintendo Switch 2 Edition"); an add-on's page is never read
     static func pick(_ docs: [Doc], id: String) -> Doc? {
-        docs.filter { $0.id == id.uppercased() }.min { ($0.game ? 0 : 1, $0.title.count) < ($1.game ? 0 : 1, $1.title.count) }
+        docs.filter { $0.id == id.uppercased() && ($0.image != nil || $0.game) }
+            .min { ($0.image == nil ? 1 : 0, $0.game ? 0 : 1, $0.title.count) < ($1.image == nil ? 1 : 0, $1.game ? 0 : 1, $1.title.count) }
+    }
+
+    /// The picture a store page shares: <meta property="og:image" content="...">, on nintendo.com only
+    static func shared(_ html: String) -> String? {
+        guard let r = html.range(of: #"<meta[^>]*property="og:image"[^>]*>"#, options: .regularExpression) else { return nil }
+        let tag = html[r]
+        guard let c = tag.range(of: #"content="[^"]*""#, options: .regularExpression) else { return nil }
+        let v = tag[c].dropFirst(9).dropLast().trimmingCharacters(in: .whitespacesAndNewlines)
+        return v.hasPrefix(site + "/") ? v : nil
     }
 
     /// The art for a name: only a Switch game whose title is the same name
@@ -155,9 +172,9 @@ enum HeroSource {
         return docs.first { $0.game && $0.id != nil && (CoverSource.normalize($0.title) == want || CoverSource.normalize(CoverSource.plain($0.title)) == want) }
     }
 
-    /// The search names a 500 px wide copy; the same picture is there 1600 px wide
+    /// The search names a 500 px wide copy and a page a 1280 px one; the same picture is there 1600 px wide
     static func sizes(_ image: String) -> [URL] {
-        let big = image.replacingOccurrences(of: "_image500w.", with: "_image1600w.")
+        let big = image.replacingOccurrences(of: "_image500w.", with: "_image1600w.").replacingOccurrences(of: "_image1280w.", with: "_image1600w.")
         return (big == image ? [image] : [big, image]).compactMap(URL.init(string:))
     }
 
@@ -379,8 +396,12 @@ final class CoverStore {
                 }
                 let file = Self.dir.appending(path: "\(g.key)-hero.jpg"), none = Self.dir.appending(path: "\(g.key).heronone")
                 var got = false
-                if let doc {
-                    for u in HeroSource.sizes(doc.image) {
+                var image = doc?.image
+                if image == nil, let page = doc?.page, let d = await Self.get(page) {
+                    image = HeroSource.shared(String(decoding: d, as: UTF8.self))
+                }
+                if let image {
+                    for u in HeroSource.sizes(image) {
                         guard let d = await Self.get(u), HeroSource.wide(d), let jpg = CoverSource.jpeg(d, maxHeight: 900) else { continue }
                         got = (try? jpg.write(to: file)) != nil
                         if got { break }
