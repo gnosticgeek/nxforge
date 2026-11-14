@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.33.1 (2026-11-14)
+
+- **Quick-save slots** (Sidebar 0.4.1, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): three slots per game on the sidebar's General page and in a new **Save Slots** menu. **⌘1–⌘3** save the game's save into a slot in a moment, even while the game is writing; **⌥⌘1–⌥⌘3** (pressed twice) load one: the game restarts from that save, and the save it replaces is kept as a save snapshot ("Before a restore") that the Builds page can put back. A slot holds the game's own save as the game last saved it, not the exact moment on screen. Needs a game rebuild (new launcher and player).
+
 ## 0.33.0 (2026-11-14)
 
 - **A design pass over the Mac app** (Converter 0.10.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the stage is lit by the art of the game in focus, covers look like cases and lean towards the pointer, Home's shelf and the 3D case reflect in the floor, covers drawn for games without box art use the icon as artwork, the top bar and the panels are real glass, and starting a game shows its case turning in its own light. The converter's pages take the same look. App only: no game rebuild.
