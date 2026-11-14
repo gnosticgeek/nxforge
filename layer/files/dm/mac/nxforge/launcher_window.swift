@@ -397,3 +397,12 @@ struct NXFCloudSavesBox: View {
         if panel.runModal() == .OK, let url = panel.url { folder = url.path }
     }
 }
+
+/// NXForge's Play goes straight in (--no-launcher, launcher.c), which used to skip the cloud save check the settings window runs with its Play: a save changed on
+/// both the Mac and the iPhone then went to the newer file without a word. The check now runs on its own, as it does with "Show this window at launch" off
+/// (SaveCheck.withoutWindow): nothing is shown unless the cloud's file is slow to come or the two saves need the player's pick. 2: start the game, 0: the player quit.
+@_cdecl("dm_mac_save_check")
+public func dmMacSaveCheck() -> Int32 {
+    fputs("launcher: cloud save check without the window (--no-launcher)\n", stderr)
+    return SaveCheck.withoutWindow() ? 2 : 0
+}
