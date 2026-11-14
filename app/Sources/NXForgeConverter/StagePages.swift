@@ -72,6 +72,8 @@ struct StageGamePage: View {
                     .frame(minHeight: geo.size.height - 44)   // the box and title take the room the rest leaves
                 }
                 .scrollIndicators(.never)
+                // snapshot hook: NXC_SCROLL=1 opens the page scrolled to its end
+                .defaultScrollAnchor(ProcessInfo.processInfo.environment["NXC_SCROLL"] == nil ? .top : .bottom)
             }
         }
         .task(id: g.coverKey + (model.settings.downloadStoreInfo ? "1" : "0")) {
