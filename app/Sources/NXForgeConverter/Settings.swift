@@ -79,6 +79,8 @@ struct Settings: Codable, Equatable {
     var downloadCovers = true
     /// wide art for the game page and Home is downloaded from Nintendo's European store for games that have none
     var downloadHeroes = true
+    /// a game's description, details and official screenshots are downloaded from its Nintendo store page when its page is opened
+    var downloadStoreInfo = true
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -94,7 +96,7 @@ struct Settings: Codable, Equatable {
         case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
         case startIn = "start_in", straightPlay = "straight_play", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
-        case returnToLibrary = "return_to_library", downloadCovers = "download_covers", downloadHeroes = "download_heroes", favorites
+        case returnToLibrary = "return_to_library", downloadCovers = "download_covers", downloadHeroes = "download_heroes", downloadStoreInfo = "download_store_info", favorites
     }
 
     init() {}
@@ -138,6 +140,7 @@ struct Settings: Codable, Equatable {
         returnToLibrary = (try? c.decodeIfPresent(Bool.self, forKey: .returnToLibrary)) ?? true
         downloadCovers = (try? c.decodeIfPresent(Bool.self, forKey: .downloadCovers)) ?? true
         downloadHeroes = (try? c.decodeIfPresent(Bool.self, forKey: .downloadHeroes)) ?? true
+        downloadStoreInfo = (try? c.decodeIfPresent(Bool.self, forKey: .downloadStoreInfo)) ?? true
         favorites = (try? c.decodeIfPresent([String].self, forKey: .favorites)) ?? []
     }
 

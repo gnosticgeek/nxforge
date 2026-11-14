@@ -61,6 +61,9 @@ struct StageGamePage: View {
                         if let app = g.app {
                             ScreenshotRow(app: app, width: geo.size.width - gutter * 2)
                         }
+                        if model.settings.downloadStoreInfo {
+                            StoreAbout(game: g, width: geo.size.width - gutter * 2)
+                        }
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 28)
                         infoRow(g, record).fixedSize(horizontal: false, vertical: true).padding(.vertical, 18)
                     }
@@ -70,6 +73,9 @@ struct StageGamePage: View {
                 }
                 .scrollIndicators(.never)
             }
+        }
+        .task(id: g.coverKey + (model.settings.downloadStoreInfo ? "1" : "0")) {
+            if model.settings.downloadStoreInfo { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) }
         }
     }
 

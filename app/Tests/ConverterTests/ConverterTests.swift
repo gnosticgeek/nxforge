@@ -1017,6 +1017,35 @@ import Testing
         #expect(HeroSource.byName("Cruis'n Blast™")?.absoluteString.contains("q=Cruis%20n%20Blast") == true)
     }
 
+    @Test func storeDetails() {
+        let json = """
+        {"response":{"docs":[
+          {"application_id_s":"0100c2700c252000","title":"Blazing Chrome","type":"GAME","url":"/en-gb/Games/x/Blazing-Chrome-1589237.html","publisher":"The Arcade Crew",
+           "pretty_date_s":"11/07/2019","pretty_game_categories_txt":["Action","Arcade"],"players_from":1,"players_to":2,"pretty_agerating_s":"PEGI 12",
+           "datasize_readable_txt":["139.0 MB"],"language_availability":["japanese, english, spanish"],"excerpt":"Bring your best pal","play_mode_tv_mode_b":true,
+           "play_mode_tabletop_mode_b":false,"play_mode_handheld_mode_b":true},
+          {"application_id_s":"0100c2700c252000","title":"Blazing Chrome Deluxe Edition","type":"GAME"}
+        ]}}
+        """
+        let i = StoreSource.parse(Data(json.utf8), id: "0100C2700C252000")
+        #expect(i?.title == "Blazing Chrome")
+        #expect(i?.players == "1–2 players")
+        #expect(i?.languages == "Japanese, English, Spanish")
+        #expect(i?.modes == ["TV", "Handheld"])
+        #expect(i?.size == "139.0 MB")
+        #expect(i?.page == "https://www.nintendo.com/en-gb/Games/x/Blazing-Chrome-1589237.html")
+        #expect(StoreSource.parse(Data(json.utf8), name: "Blazing Chrome [NSP]")?.publisher == "The Arcade Crew")
+        #expect(StoreSource.parse(Data(json.utf8), id: "0100000000010000") == nil)
+        let html = """
+        <div class="row row-content"> <div class="col-xs-12 content"> <p>In Blazing Chrome, machines rule&nbsp;the world.</p>\n<p><strong>Co-op</strong> play &amp; more</p><p>This description was provided by the publisher.</p></div></div>
+        <div class="col-xs-12 mediagallery" data-tr-lp="15"><ul><li><img alt="a" src="grey.gif" data-xs="https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_01_TM_Standard.jpg" />
+        <img data-xs="https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_02_TM_Standard.jpg"/><img data-xs="https://evil.example/x.jpg"/></ul>
+        <img data-xs="https://www.nintendo.com/eu/media/images/other.jpg"/>
+        """
+        #expect(StoreSource.about(html) == ["In Blazing Chrome, machines rule the world.", "Co-op play & more"])
+        #expect(StoreSource.gallery(html) == ["https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_01.jpg", "https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_02.jpg"])
+    }
+
     @Test func aWrapSplitsIntoBackSpineAndFront() {
         let b = CoverSource.wrap(.back), s = CoverSource.wrap(.spine), f = CoverSource.wrap(.front)
         #expect(b.minX == 0 && abs(f.maxX - 1) < 1e-9)
