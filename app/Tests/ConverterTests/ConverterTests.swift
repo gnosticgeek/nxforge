@@ -762,3 +762,11 @@ import Testing
         #expect(Disk.free(dir).map { $0 > 0 } == true)
     }
 }
+
+@Suite struct Confirmations {
+    @Test(arguments: [("Delete", true), ("Move to Trash", true), ("Stop and Quit", true), ("Stop Build", true),
+                      ("Restore", false), ("Build Anyway", false), ("OK", false), ("Move and Convert", false)])
+    func destructiveAnswers(_ action: String, _ expected: Bool) {
+        #expect(AppModel.isDestructive(action) == expected)
+    }
+}

@@ -1,6 +1,6 @@
 // The app and its one window. NXC_SNAPSHOT=<file.png> saves a picture of the window a few seconds after it
 // opens and quits (NXC_PAGE=library, builds, storage or toolchain for another page; NXC_AUTOBUILD=1 builds the chosen
-// folder first), for checking the layout without a screen capture.
+// folder first, NXC_CONFIRM=1 puts a delete confirmation over it), for checking the layout without a screen capture.
 import AppKit
 import SwiftUI
 import UserNotifications
