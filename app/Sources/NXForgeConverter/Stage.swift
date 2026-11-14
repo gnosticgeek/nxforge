@@ -392,6 +392,7 @@ struct StageView: View {
         let tint = focus.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
         ZStack {
             StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "")
+            if let g = detail { GameKeyArt(game: g).id(g.id).transition(.opacity) }
             VStack(spacing: 0) {
                 if detail == nil { StageTopBar(model: model) }
                 Group {
@@ -846,6 +847,7 @@ struct StageHints: View {
             HStack(spacing: 7) { PadGlyph(text: "+"); Text("Settings").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
         }
         .padding(.horizontal, 40).frame(height: 48)
+        .overlay(alignment: .top) { if detail { Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.horizontal, 24) } }
         .accessibilityHidden(true)
     }
 

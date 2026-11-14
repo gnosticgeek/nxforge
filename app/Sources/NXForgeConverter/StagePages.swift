@@ -1,4 +1,5 @@
-// The front end's game page (its box in 3D, Play, what it plays with, its save, last session and build) and the Play options
+// The front end's game page (its box in 3D over the game's key art, Play, the preset it starts with, its screenshots, then its save,
+// playtime and build) and the Play options
 // panel that slides over it: presets, then the game's settings in the General, Graphics and Advanced groups of its own
 // settings window.
 import AppKit
@@ -13,8 +14,9 @@ struct StageGamePage: View {
         let g = game
         let (_, record) = model.resolve(g.ref)
         GeometryReader { geo in
-            let wide = geo.size.width > 900
-            let caseH = min(max(geo.size.height - 110, 240), 680)
+            let showCase = geo.size.width > 820
+            let caseH = min(max(geo.size.height * 0.50, 260), 470)
+            let gutter: CGFloat = geo.size.width > 1250 ? 64 : 40
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Button { model.gameDetail = nil } label: { Label(model.stageTab.rawValue, systemImage: "chevron.backward") }
@@ -32,119 +34,182 @@ struct StageGamePage: View {
                     }
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).accessibilityLabel("More")
                 }
-                .padding(.horizontal, 40).padding(.top, 6)
-                HStack(alignment: .center, spacing: wide ? 50 : 20) {
-                    if wide {
-                        GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.74, height: caseH)
-                            .overlay(alignment: .bottom) {
-                                Button { model.caseFlipped.toggle() } label: {
-                                    Label(model.caseFlipped ? "Show the front" : "Turn over", systemImage: "arrow.triangle.2.circlepath")
-                                        .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 14).frame(height: 30)
-                                        .glassEffect(.regular.interactive(), in: .capsule).contentShape(.capsule)
-                                }
-                                .buttonStyle(.plain).padding(.bottom, caseH * 0.045)
-                                .help("Drag the box to turn it, or use a controller's right stick")
+                .padding(.horizontal, gutter - 18).padding(.top, 6)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(alignment: .center, spacing: showCase ? 44 : 0) {
+                            if showCase {
+                                GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.74, height: caseH)
+                                    .overlay(alignment: .bottom) {
+                                        Button { model.caseFlipped.toggle() } label: {
+                                            Label(model.caseFlipped ? "Show the front" : "Turn over", systemImage: "arrow.triangle.2.circlepath")
+                                                .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 14).frame(height: 30)
+                                                .glassEffect(.regular.interactive(), in: .capsule).contentShape(.capsule)
+                                        }
+                                        .buttonStyle(.plain).padding(.bottom, caseH * 0.13)
+                                        .help("Drag the box to turn it, or use a controller's right stick")
+                                    }
+                                    .padding(.bottom, -caseH * 0.12)   // the floor's reflection may run under what follows
                             }
-                        .padding(.leading, geo.size.width > 1250 ? 60 : 10)
-                    }
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            StageHero(model: model, game: g, first: false, titleSize: geo.size.width > 1100 ? 60 : 42, showDetails: false)
-                            if let app = g.app { PlaysWith(model: model, game: g, app: app) }
-                            AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build card says Update ready
-                            cards(g, record)
-                            if let app = g.app { ScreenshotStrip(app: app, tint: CoverArt.tint(g)) }
+                            GameHeroColumn(model: model, game: g, titleSize: geo.size.width > 1100 ? 66 : 48)
+                                .frame(maxWidth: 680, alignment: .leading)
+                            Spacer(minLength: 0)
                         }
-                        .frame(maxWidth: 760, alignment: .leading)
-                        .padding(.vertical, 20)
+                        .padding(.top, 4)
+                        if let app = g.app {
+                            ScreenshotRow(app: app).padding(.top, 26)
+                        }
+                        Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 28)
+                        infoRow(g, record).padding(.vertical, 18)
                     }
-                    .scrollIndicators(.never)
-                    Spacer(minLength: 0)
+                    .padding(.horizontal, gutter)
+                    .padding(.bottom, 8)
                 }
-                .padding(.horizontal, 40)
-                .frame(maxHeight: .infinity)
+                .scrollIndicators(.never)
             }
         }
     }
 
-    @ViewBuilder func cards(_ g: StageGame, _ record: BuildRecord?) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+    @ViewBuilder func infoRow(_ g: StageGame, _ record: BuildRecord?) -> some View {
+        let manage = { model.showConverter(); model.page = .library; model.openGame(g.ref) }
+        HStack(alignment: .center, spacing: 0) {
             if let app = g.app, let t = g.titleID {
                 let loc = SaveSnapshots.location(app: app, titleID: t)
                 let n = SaveSnapshots.list(loc).count
-                card("externaldrive.fill", "SAVE", SaveSnapshots.hasSave(loc) ? "Save on this Mac" : "No save yet",
-                     model.backupStatus[t]?.text ?? (n > 0 ? "\(n) snapshot\(n == 1 ? "" : "s") kept" : "No snapshots yet"))
+                info("cylinder.split.1x2.fill", "Save", SaveSnapshots.hasSave(loc) ? "Save on this Mac" : "No save yet",
+                     model.backupStatus[t]?.text ?? (n > 0 ? "\(n) snapshot\(n == 1 ? "" : "s") kept" : "No snapshots yet"), action: manage)
+                separator
             }
             if let app = g.app {
-                if let r = FrameTimes.all(app: app, titleID: g.titleID).last {
-                    card("waveform.path.ecg", "LAST RECORDING", String(format: "%.1f fps average", r.summary.fps), r.summary.hitches == 0 ? "No hitches" : "\(r.summary.hitches) hitch\(r.summary.hitches == 1 ? "" : "es")")
+                if let r = FrameTimes.all(app: app, titleID: g.titleID).last, g.total == 0 {
+                    info("waveform.path.ecg", "Last recording", String(format: "%.1f fps average", r.summary.fps),
+                         r.summary.hitches == 0 ? "No hitches" : "\(r.summary.hitches) hitch\(r.summary.hitches == 1 ? "" : "es")", action: manage)
                 } else {
-                    card("clock.fill", "PLAYTIME", g.total > 0 ? Playtime.text(g.total) : "Not played yet", g.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Counted while NXForge is open")
+                    info("clock", "Playtime", g.total > 0 ? Playtime.text(g.total) : "Not played yet",
+                         g.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Counted while NXForge is open", action: manage)
                 }
+                separator
             }
             if let record {
-                card("hammer.fill", "BUILD", g.outdated ? "Update ready" : record.kept == true ? "Kept as it is" : "Up to date",
-                     "NXForge \(record.engine.short) · built \(record.date.map { $0.formatted(.dateTime.day().month(.abbreviated)) } ?? record.builtAt)")
+                let ok = !g.outdated
+                info("hammer.fill", "Build", g.outdated ? "Update ready" : record.kept == true ? "Kept as it is" : "Up to date",
+                     "NXForge \(record.engine.short) · built \(record.date.map { $0.formatted(.dateTime.day().month(.abbreviated)) } ?? record.builtAt)",
+                     seal: ok, action: manage)
             } else if g.app == nil {
-                card("hammer.fill", "BUILD", "Not built yet", "Build turns the game's files into a Mac app.")
+                info("hammer.fill", "Build", "Not built yet", "Build turns the game's files into a Mac app.", action: manage)
             }
         }
     }
 
-    func card(_ symbol: String, _ title: String, _ value: String, _ note: String) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
-                Image(systemName: symbol).font(.system(size: 11, weight: .bold)).foregroundStyle(CoverArt.tint(game)).brightness(0.25)
-                Text(title).font(.system(size: 10.5, weight: .bold)).fontWidth(.expanded).kerning(1.4).foregroundStyle(StageLook.soft)
+    var separator: some View {
+        Rectangle().fill(.white.opacity(0.13)).frame(width: 1, height: 58).padding(.horizontal, 22)
+    }
+
+    func info(_ symbol: String, _ title: String, _ value: String, _ note: String, seal: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: symbol).font(.system(size: 21, weight: .semibold)).foregroundStyle(CoverArt.tint(game)).brightness(0.3)
+                    .frame(width: 28).padding(.top, 2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 13.5, weight: .medium)).foregroundStyle(StageLook.soft)
+                    HStack(spacing: 7) {
+                        Text(value).font(.system(size: 19, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
+                        if seal { Image(systemName: "checkmark.circle.fill").font(.system(size: 16)).foregroundStyle(Color(red: 0.30, green: 0.82, blue: 0.45)) }
+                    }
+                    Text(note).font(.system(size: 13)).foregroundStyle(StageLook.faint).lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(StageLook.faint).frame(maxHeight: .infinity)
             }
-            Text(value).font(.system(size: 17, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
-            Text(note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
         }
-        .padding(16).frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
-        .background(StageLook.card, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(StageLook.edge, lineWidth: 1))
+        .buttonStyle(.plain)
+        .help("Manage in Converter")
+        .accessibilityLabel("\(title): \(value). \(note)")
     }
 }
 
-/// What the game starts with, at a glance; a click opens Play options.
-struct PlaysWith: View {
+/// The game page's headline beside the box: what it is, Play and Play options, and the preset it starts with
+struct GameHeroColumn: View {
     let model: AppModel
     let game: StageGame
-    let app: String
+    var titleSize: CGFloat = 66
 
     var body: some View {
-        let list = LaunchSettings.load(app: app)
-        let values = Dictionary(list.map { ($0.env, LaunchSettings.value($0, app: app)) }, uniquingKeysWith: { a, _ in a })
-        let summary = PlayOptions.summary(settings: list, values: values)
-        if !summary.isEmpty {
-            Button { model.openPlayOptions(game.ref) } label: {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 7) {
-                        Image(systemName: "slider.horizontal.3").font(.system(size: 11, weight: .bold)).foregroundStyle(CoverArt.tint(game)).brightness(0.25)
-                        Text("PLAYS WITH").font(.system(size: 10.5, weight: .bold)).fontWidth(.expanded).kerning(1.4).foregroundStyle(StageLook.soft)
-                        Spacer()
-                        Text("\(PlayOptions.current(settings: list, values: values).rawValue) preset").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(StageLook.soft)
-                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(StageLook.faint)
-                    }
-                    HStack(alignment: .top, spacing: 0) {
-                        ForEach(Array(summary.enumerated()), id: \.offset) { i, s in
-                            if i > 0 { Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 44).padding(.trailing, 16) }
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(s.value).font(.system(size: 24, weight: .heavy)).tracking(-0.4).lineLimit(1).minimumScaleFactor(0.6)
-                                Text(s.label).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-                .padding(18)
-                .background(StageLook.card, in: .rect(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(StageLook.edge, lineWidth: 1))
-                .contentShape(.rect(cornerRadius: 18))
+        let g = game
+        let list = g.app.map { LaunchSettings.load(app: $0) } ?? []
+        let values = Dictionary(list.map { ($0.env, LaunchSettings.value($0, app: g.app ?? "")) }, uniquingKeysWith: { a, _ in a })
+        let tint = CoverArt.tint(g)
+        let playing = model.isPlaying(app: g.app ?? "")
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Circle().fill(g.app == nil ? Color(white: 0.6) : playing ? Color(red: 0.38, green: 0.65, blue: 0.98) : tint)
+                    .brightness(g.app == nil ? 0 : 0.3).frame(width: 8, height: 8).shadow(color: tint.opacity(g.app == nil ? 0 : 0.9), radius: 6)
+                Text(eyebrow).font(.system(size: 12, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Play options")
+            Text(g.name).font(.system(size: titleSize, weight: .heavy)).tracking(-1.6).lineLimit(2).minimumScaleFactor(0.55)
+                .foregroundStyle(LinearGradient(colors: [.white, Color(white: 0.84)], startPoint: .top, endPoint: .bottom))
+                .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 10)
+            HStack(spacing: 10) {
+                Image(systemName: "gamecontroller.fill").font(.system(size: 15, weight: .semibold))
+                Text(facts.joined(separator: "  ·  ")).lineLimit(1)
+            }
+            .font(.system(size: 16, weight: .medium)).foregroundStyle(StageLook.soft)
+            .shadow(color: .black.opacity(0.5), radius: 8)
+            .padding(.top, 10)
+            HStack(spacing: 12) {
+                if g.app != nil {
+                    Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(playing ? "Resume" : "Play", systemImage: "play.fill").padding(.horizontal, 14) }
+                        .buttonStyle(StageButton(primary: true, height: 56, glow: tint))
+                    Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: { Label("Play options", systemImage: "slider.horizontal.3").padding(.horizontal, 4) }
+                        .buttonStyle(StageButton(height: 56, glass: true))
+                } else {
+                    Button { model.playFromStage(g.ref) } label: { Label("Build", systemImage: "hammer.fill").padding(.horizontal, 14) }
+                        .buttonStyle(StageButton(primary: true, height: 56, glow: tint)).disabled(model.run.running || model.batchRunning)
+                }
+                Button { model.toggleFavorite(g) } label: {
+                    Image(systemName: g.favorite ? "star.fill" : "star").font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(g.favorite ? Color(red: 1, green: 0.82, blue: 0.30) : Color.white).frame(width: 56, height: 56)
+                        .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
+                }
+                .buttonStyle(.plain).help(g.favorite ? "Remove from Favourites (F)" : "Add to Favourites (F)")
+                .accessibilityLabel(g.favorite ? "Remove from Favourites" : "Add to Favourites")
+            }
+            .padding(.top, 26)
+            if !list.isEmpty {
+                let parts = [PlayOptions.current(settings: list, values: values).rawValue] + PlayOptions.summary(settings: list, values: values).prefix(2).map(\.value)
+                Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "slider.horizontal.3").font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft)
+                        Text(parts.joined(separator: "  ·  ")).font(.system(size: 15.5, weight: .semibold)).lineLimit(1)
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(StageLook.faint)
+                    }
+                    .padding(.vertical, 6).padding(.horizontal, 8).contentShape(.rect)
+                }
+                .buttonStyle(.plain).padding(.leading, -8).padding(.top, 18)
+                .help("What the game starts with: opens Play options")
+            }
+            AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build line says Update ready
+                .padding(.top, 18)
         }
+    }
+
+    var eyebrow: String {
+        if game.app == nil { return "NOT BUILT YET" }
+        if model.isPlaying(app: game.app ?? "") { return "PLAYING NOW" }
+        if game.last == nil { return "IN YOUR LIBRARY" }
+        return "RECENTLY PLAYED"
+    }
+
+    var facts: [String] {
+        var out = [game.console.rawValue]
+        if let v = game.version, !v.isEmpty { out.append("Version \(v)") }
+        if game.app != nil { out.append(game.last.map { "Played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet") }
+        else { out.append("Not built yet") }
+        return out
     }
 }
 
