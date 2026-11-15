@@ -169,6 +169,8 @@ final class AppModel {
     var lastMove: LibraryMove?
     /// play sessions running now, by process ID (PlayTracker)
     var playing: [pid_t: PlayingNow] = [:]
+    /// games kept running behind the library (the sidebar's Library, org.nxforge.gameSuspended), by standardized app path
+    var suspended: Set<String> = []
     /// the last save backup of each game, by title ID (SaveBackup)
     var backupStatus: [String: (ok: Bool, text: String)] = [:]
     /// Build selected waiting to start: at a time, or once the Mac is on power (and the activity keeping it awake meanwhile)

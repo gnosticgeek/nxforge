@@ -192,6 +192,23 @@ static BOOL qs_peek_key(NSEvent *e) {
     if (!e.isARepeat) qs_peek(1);
     return YES;
 }
+// Library keeps the game (the sidebar's Library button, quick_settings_mac.swift quitToLibrary): the game pauses at once whatever Pause the game says and the app hides, so the
+// NXForge library comes to the front with the game where it was; the library's Resume brings the app back (NSRunningApplication activate), and then the sidebar is as it was left:
+// still paused when Pause the game is on, running behind it when off, and org.nxforge.gameResumed (object: the app's path) tells the library. The game keeps its memory meanwhile
+static int g_suspended;
+void front_qs_suspend(void) {
+    if (!g_menu_open) return;
+    static int observed;
+    if (!observed) { observed = 1;
+        [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidBecomeActiveNotification object:nil queue:nil usingBlock:^(NSNotification *n) { (void)n;
+            if (!g_suspended) return;
+            g_suspended = 0; if (g_menu_open && g_paused && !qs_pause_wanted()) qs_pause(0);
+            [NSDistributedNotificationCenter.defaultCenter postNotificationName:@"org.nxforge.gameResumed" object:NSBundle.mainBundle.bundlePath userInfo:nil deliverImmediately:YES];   // the library drops its Resume
+            LOG("front end: back from the library"); dm_qs_refresh(); }];
+    }
+    g_suspended = 1; if (!g_paused) qs_pause(1);
+    LOG("front end: kept for the library (paused, the sidebar up)"); dm_qs_refresh();
+}
 void front_qs_pause_set(int on) {   // the General page's switch, while the sidebar is up: applies at once
     [NSUserDefaults.standardUserDefaults setBool:on != 0 forKey:opt_key(@"pauseOpen")];
     if (g_menu_open) { if (on) qs_pause_when_aside(0); else qs_pause(0); }

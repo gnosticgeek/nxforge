@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Claude <noreply@anthropic.com>
-Date: Sat, 14 Nov 2026 22:42:50 +0000
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
 Subject: low-lag: direct presents in a window while the game has headroom
 
 In a window the display link calls back about 50 ms before its target display time,
@@ -22,10 +22,10 @@ The hooks: hle_nvn.c nvnQueuePresentTexture feeds it, nvn_mtl.m link_sync asks i
  10 files changed, 35 insertions(+), 2 deletions(-)
 
 diff --git a/dm/games/04008E001F098000/README.md b/dm/games/04008E001F098000/README.md
-index 9c208c85368a0a1581bded2c6cd32e6a3b3d5c72..7858d3f7b546a192e6583eee5f8bf943f47cff79 100644
+index 17be67dd4a3b0a8ab7f047bb100d3f3ea88d0c6f..b4061b6148b9c9225400f410e0c3697b9b7c4f4e 100644
 --- a/dm/games/04008E001F098000/README.md
 +++ b/dm/games/04008E001F098000/README.md
-@@ -60,6 +60,7 @@ The work folder `04008E001F098000-work` beside the dump has `run/boot.sh <log> <
+@@ -66,6 +66,7 @@ The work folder `04008E001F098000-work` beside the dump has `run/boot.sh <log> <
  
  ## Found on this game
  
@@ -34,20 +34,21 @@ index 9c208c85368a0a1581bded2c6cd32e6a3b3d5c72..7858d3f7b546a192e6583eee5f8bf943
  - [File calls on a mount in the SDK's own table](../../../docs/reference/services.md#file-calls-on-a-mount-in-the-sdks-own-table)
  - [A read-only mount of the game's own save data](../../../docs/reference/services.md#a-read-only-mount-of-the-games-own-save-data)
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 693f7ae618bc9ec3b53b1838d3010dbef5fe8b1e..13ef6ba22ee7ef54f643a5264f8c994121bd9be4 100644
+index dc0d81aed35bb4b4d4bbdc4ce8ac5341bbb28bd6..0cb1fb1874ccfd38475b208e2be6d434c53c14e3 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -44,4 +44,5 @@ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines
+@@ -50,5 +50,6 @@ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
  DM_NVN_ENC_THREAD	toggle	-	1|DM_GAME_ENC_THREAD	gfxapi:nvn	Performance	Encode thread
  DM_FPS_HOLD	toggle	on/off	DM_GAME_FPS_HOLD	DM_GAME_FPS_TARGET!=0	Performance	Hold frames when late
 +DM_LOW_LAG	toggle	-	1	gfxapi:nvn&platform:mac	Performance	Lower input lag	Shows each frame sooner while the game has frame time to spare.
+ DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
  DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 624e12d42693fd9bfcc047a88631b5dbd38ba729..6367cda7a4c755a68966d329710059594b3b0a88 100644
+index c22ceff7d19fc2f25a781270a3885582e87a9453..2a9789afb262128e008c2b271c77f49ae069e52e 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -1854,6 +1854,7 @@ static int link_wait(const win_t *o, uint64_t timeout_ns);
+@@ -1876,6 +1876,7 @@ static int link_wait(const win_t *o, uint64_t timeout_ns);
  __attribute__((weak)) void dm_main_yield_stats(uint64_t *n, uint64_t *ns) { *n = 0; *ns = 0; }   // The host's hle_thread.c provides the ground truth; 0 in graphics unit tests
  __attribute__((weak)) uint32_t dm_guest_work_qos(unsigned *count) { if (count) *count = 0; return QOS_CLASS_UNSPECIFIED; }
  int mtl_probe_ramp_on(void);   // nvn_mtl.m: DM_FSTEP_PROBE_RAMP (default on; ab with DM_AB)
@@ -55,19 +56,19 @@ index 624e12d42693fd9bfcc047a88631b5dbd38ba729..6367cda7a4c755a68966d32971005959
  int mtl_fstep_settle(void);    // nvn_mtl.m: the game came back into focus or its window changed size since the last call (nvn_fstep.h settle)
  __attribute__((weak)) void dm_yield_top(char *out, size_t n) { if (n) snprintf(out, n, "-"); }   // hle_thread.c: the threads that yielded most since the last call; none in graphics unit tests
  __attribute__((weak)) void dm_thread_cpu(char *out, size_t n, double secs) { (void)secs; if (n) snprintf(out, n, "-"); }   // hle_thread.c: guest-thread CPU by Switch priority band since the last call
-@@ -2468,6 +2469,7 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
-     if (dm_fps_state) __atomic_store_n((uint32_t *)(dm_fps_state + 4), (uint32_t)dm_movie_playing(), __ATOMIC_RELAXED);   // the stubs' copy of the movie state (hle.h)
+@@ -2603,6 +2604,7 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
      int c = fps_step_cap();
-     if (dm_fps_state) { static int was; if (c != was) { LOG("[nvn] frame step cap %d → %d fps at present %llu%s", was, c, (unsigned long long)o->presents, c == 30 && was == 60 ? (dm_movie_playing() ? " (movie playing)" : thermal_capped() ? " (thermal state serious)" : "") : ""); was = c; } }
+     if (dm_fps_state) { static int was; if (c != was) { char why[48] = ""; if (movie) snprintf(why, sizeof why, " (a movie of %d pictures a second)", movie); else if (c == 30 && was == 60 && thermal_capped()) snprintf(why, sizeof why, " (thermal state serious)");
+         LOG("[nvn] frame step cap %d → %d fps at present %llu%s", was, c, (unsigned long long)o->presents, why); was = c; } }
 +    mtl_low_lag_tick(g_fs_start, present_itv(o)); if (!c) g_fs_start = g_fs_wait = 0;   // NXForge: nxforge/low_lag.h (without a frame step nothing else takes the frame's start)
      if (c) fstep_tick(o, c);
      dm_fps_lock_tick();   // after the frame step: at 120 fps the target follows the hold just decided
      static uint64_t prev_in, prev_out, prev_pass, prev_draw;
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 39cc3ce4cdcaff61f3049373323dba0827eef479..7b2c09a4855479fe79868a019a07515faaebece0 100644
+index 44f883df8fa27a7a96c489f71913d143087991d3..b8121acf2b2d2beb3f550d421cb061cd597c2ba5 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -145,6 +145,7 @@ static void ext_retire(NSArray *textures);
+@@ -154,6 +154,7 @@ static void ext_retire(NSArray *textures);
  int g_dm_present_link;   // Present pacing mode (runtime value of DM_PRESENT_LINK, modified directly during same-process alternating measurement): 0 = acquire the drawable itself; 1 = display link at 60 Hz; 2 = display link at 120 Hz, the game presents a frame every other display-link tick
  static int g_present_latency;   // DM_PRESENT_LATENCY: the display link's frame latency in a window and in fullscreen alike (0 = not set: link_latency picks it)
  static int g_present_link_env;   // DM_PRESENT_LINK was set: its mode holds everywhere, and link_vrr_120 does not move a 60 Hz link to 120 Hz in variable-refresh fullscreen
@@ -75,7 +76,7 @@ index 39cc3ce4cdcaff61f3049373323dba0827eef479..7b2c09a4855479fe79868a019a07515f
  static uint64_t g_pq_done;
  static uint64_t g_pq_read;
  static id<MTLResidencySet> g_res;
-@@ -17866,9 +17867,10 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -18757,9 +18758,10 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      present_pipeline(layer.pixelFormat);   // Same as the original path: the first frame compiles the pipeline before taking the drawable
      if (g_grab_cb && g_fi_phase != FI_HELD) grab_present(src, crop, layer.drawableSize);   // Game picture needed by the whole-window screenshot (peek without the lock first; the real take locks inside the function)
      if (atomic_load(&g_recorder_on) && g_fi_phase != FI_HELD) record_present(src, crop);   // the video recorder's frame (capture_mac.m)
@@ -87,7 +88,7 @@ index 39cc3ce4cdcaff61f3049373323dba0827eef479..7b2c09a4855479fe79868a019a07515f
      if (!dr) return 0;
      int alloc_i = (int)(ticket % 3);
      if (g_present_alloc_fence[alloc_i]) {
-@@ -18097,6 +18099,7 @@ static void *link_main(void *arg) {   // Display link thread: started when switc
+@@ -19013,6 +19015,7 @@ static void *link_main(void *arg) {   // Display link thread: started when switc
      g_link_started = 0;
      return NULL;
  }
@@ -95,7 +96,7 @@ index 39cc3ce4cdcaff61f3049373323dba0827eef479..7b2c09a4855479fe79868a019a07515f
  static void link_sync(void) {   // Called every frame by the game's present thread: aligns the display link object's state to g_dm_present_link and the power-saving mode (can change at run time)
      static int applied;
      pthread_mutex_lock(&g_pq_mu);
-@@ -18120,6 +18123,7 @@ static void link_sync(void) {   // Called every frame by the game's present thre
+@@ -19036,6 +19039,7 @@ static void link_sync(void) {   // Called every frame by the game's present thre
      static int vrr_was; int vrr = want == 1 && link_vrr_120();   // variable-refresh fullscreen that kept its mode: the 120 Hz link paces the 60 (link_vrr_120)
      if (vrr != vrr_was) { vrr_was = vrr; MLOG("display link: %s (frame %llu)", vrr ? "120 Hz in fullscreen on a variable-refresh screen, a frame every other tick (DM_PRESENT_LINK=1 keeps 60 Hz)" : "60 Hz again (window, fixed-rate screen or another frame rate)", (unsigned long long)atomic_load(&g_cur_frame)); }
      if (vrr) want = 2;
@@ -104,61 +105,61 @@ index 39cc3ce4cdcaff61f3049373323dba0827eef479..7b2c09a4855479fe79868a019a07515f
      // while its thread starts (after link_main read the rate) is not lost
      static int hz_was; int hz = front_screen_max_fps(); CAMetalDisplayLink *lk = g_link;
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 7c9ed4bd1a42770799e64246c50646f30b27ebbc..22a20d8d1fa51c1b668213953cce0a07eb70da58 100644
+index decc27b099e4a192e12d44df5284b02c722b42ff..fa8c288d3f2c24dc7732ee82dfaaa92166df8dee 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
-@@ -88,6 +88,8 @@ t_counter_clock: t_counter_clock.m ../../host/hle_os.c ../../host/dm.h $(MTL_T_D
+@@ -104,6 +104,8 @@ t_counter_clock: t_counter_clock.m ../../host/hle_os.c ../../host/dm.h $(MTL_T_D
  	clang $(CFLAGS) -fobjc-arc -o $@ t_counter_clock.m ../../host/hle_os.c $(MTL_T_SRC) $(FW)
  t_fstep: t_fstep.c ../nvn/nvn_fstep.h
  	clang -O1 -Wall -o $@ t_fstep.c
 +t_low_lag: t_low_lag.c ../nvn/nxforge/low_lag.h
 +	clang -O1 -Wall -o $@ t_low_lag.c
- t_thermal: t_thermal.c $(MTL_T_DEP)
- 	clang $(CFLAGS) -fobjc-arc -o $@ t_thermal.c $(MTL_T_SRC) ../nvn/nvn_mtl.m $(FW)
- t_thermal_tsan: t_thermal.c $(MTL_T_DEP)
+ t_thread_rt: t_thread_rt.c ../nvn/nvn_rt.h
+ 	clang -O1 -Wall -o $@ t_thread_rt.c
+ t_link_drain: t_link_drain.c ../nvn/nvn_link_drain.h
 diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
-index 0069eca826718305095ffe09f426e13bb157f017..df25363683e8d53be27173540c85a2f6612f3940 100644
+index 03150dd1b21c732e9adc72c23fd11318027d0fc1..6febc5aa1c8acefc038e20c6ab9f18c859526e35 100644
 --- a/dm/tools/tests/test_launcher_settings.py
 +++ b/dm/tools/tests/test_launcher_settings.py
 @@ -78,7 +78,7 @@ class LauncherSettingsTests(unittest.TestCase):
          self.assertEqual(build(BOTW, 'nvn', 'ios').keys(), ios.keys())   # ios when unset
          self.assertEqual(set(ios) - set(mac), {'DM_SHOW_FPS', 'DM_TOUCH_HAPTICS', 'DM_PICTURE_FIT'})
          self.assertIn('DM_RUMBLE', mac); self.assertIn('DM_METAL_HUD', mac)
--        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART'})   # NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
-+        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART', 'DM_LOW_LAG'})   # NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
+-        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART', 'DM_MIC', 'DM_MOUSE_CAMERA', 'DM_MOUSE_CAMERA_SPEED'})   # the Mac's microphone (hle_audio.c, PR #1662) and mouse camera (front_mac.m); NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
++        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART', 'DM_MIC', 'DM_MOUSE_CAMERA', 'DM_MOUSE_CAMERA_SPEED', 'DM_LOW_LAG'})   # the Mac's microphone (hle_audio.c, PR #1662) and mouse camera (front_mac.m); NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
          s = mac['DM_FULLSCREEN']
          self.assertEqual((s['kind'], s['default'], s['options'], s['level']), ('choice', '0', [['0', 'Window'], ['1', 'Fullscreen']], 'basic'))
  
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index 50d3419504794fa74ef33ecd704ff6311bd95188..2d6644c1c7b58fc451ea5eac135455e9facedd02 100644
+index 98418c043086e56e66924202f3ebf7df58112347..2fc164ee841a5353a291a9349a9dd7a4ea2111df 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -567,6 +567,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -599,6 +599,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - the mouse pointer stayed on the picture of a Mac game, in a window and in fullscreen, until it was moved to a screen corner. → [The pointer stays on a Mac game](../reference/frame-rate.md#the-pointer-stays-on-a-mac-game)
  - a Mac game in fullscreen holds 60 fps for 45 s to 3 minutes, then the same work takes about twice the GPU time (Tears of the Kingdom 10.5 → 19.7 ms) and the frame step falls to 30 fps. `powermetrics` shows the GPU at its lowest clock (338 MHz on an M4 Pro) while it is 72–98% busy, with thermal pressure nominal. Probes back to 60 fail, because the clock does not rise within a probe. `gamepolicyd` logs `Game mode enabled` and `Set DPS to 2`. → [macOS Game Mode holds the GPU at its lowest clock](../reference/frame-rate.md#macos-game-mode-holds-the-gpu-at-its-lowest-clock)
  - a Mac game started with `DM_FULLSCREEN=1` from an app that is itself in fullscreen (the launcher's console mode) came up as a window. → [A game opened from a fullscreen app stays a window](../reference/frame-rate.md#a-game-opened-from-a-fullscreen-app-stays-a-window)
 +- input feels a few frames late on the Mac though the game holds 60. The log's `game enqueue to target display p50` is 66 to 82 ms in a window, and the per-frame rows (`DM_NVN_TSV`: `@pres_at_ms` − `@call_ms`) show the same in a window and 57 to 61 ms in fullscreen, with `@drawable_ms` at 16.6 there. → [A frame is on screen 60 to 80 ms after the game presents it (Mac)](../reference/frame-rate.md#a-frame-is-on-screen-60-to-80-ms-after-the-game-presents-it-mac)
  - on a ProMotion built-in screen, only in fullscreen, the frame step went 1 → 2 → 3 vsyncs on frames costing 0.1–0.6 vsyncs (`3 late frames; cost 0.32 vsyncs`) and the game presented 15 frames a second; a window, or the screen set to a fixed 60 Hz, did not do it. The `DM_NVN_TSV` rows show presents shown one 120 Hz refresh late (`@pres_at_ms` − `@link_target_ms` = 8.3 ms) with a skipped tick after each (`@link_gap_ms` 33 ms), and `@link_lead_ms` about 16 ms against about 50 ms in a window. → [Frame latency 2 for the display link in fullscreen](../reference/frame-rate.md#frame-latency-2-for-the-display-link-in-fullscreen)
  - in fullscreen on a MacBook Pro's ProMotion screen, a 60 fps game held 40 fps with its GPU at 10 ms a frame: frame times alternated 16.7 and 33.3 ms, and each `on-screen` line counted half its frames as held too long (`dropped 150` of 300, `discarded 0`). The same route in a window held 60.0 fps, and the title screen showed the same 40 fps in fullscreen. → [The 60 Hz link at 40 fps in fullscreen on a ProMotion screen](../reference/frame-rate.md#the-60-hz-link-at-40-fps-in-fullscreen-on-a-promotion-screen)
- - on a MacBook Air M2's fixed 60 Hz built-in display, the reporter measured about 50 ms from the game's present call to on-screen presentation with the display link, at both requested frame latencies 1 and 2, versus 29 ms with `DM_PRESENT_LINK=0`. After loading, all three runs held 60 fps with 0.3% of on-screen intervals outside 16.7 ± 2 ms and no frame-step changes. → [Fixed-rate display-link delay remains at latency 1](../reference/frame-rate.md#fixed-rate-display-link-delay-remains-at-latency-1)
+ - the game freezes for 0.5 s to half a minute, then carries on, at a moment the display link goes silent (a long frame, a screenshot, the window covered); `DM_NVN_TSV` shows `@wait_ms` growing frame by frame to seconds before it. → [The fallback pacer slept a lead the display link built up](../reference/frame-rate.md#the-fallback-pacer-slept-a-lead-the-display-link-built-up)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 02309eb10b140eaec3c5e2a36a5ddcd61a7c931a..81b810466f1740ffb8be0ec4adfe825b4e8c3e3e 100644
+index 711253fd84f5603e475d3b4377a3c104b6b278c2..a8cc9de94944bdea70e896766585812ebc148abd 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -113,6 +113,8 @@ DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once;
+@@ -120,6 +120,8 @@ DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once;
  DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz Mac screens; by default the link counts only the refreshes nearest a steady 1/60 s clock
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
  DM_LONGFRAME	diagnostic	`0` turns off the long-frame log (on by default), a line for a frame over 20 ms or with GPU time over 16.7 ms that is clearly above recent frames
 +DM_LOW_LAG	player	`0` turns off NXForge's lower input lag on the Mac (on by default; the settings window's Lower input lag): while a game has frame time to spare its presents skip the display link, and a full queue of drawables is emptied by one frame, so a frame is on screen about 30 to 36 ms (fullscreen) or 42 to 52 ms (window) after the game presents it instead of 60 and 80 ms; a game without headroom keeps the display link. `DM_PRESENT_LINK` and `DM_PRESENT_LATENCY` turn it off too (`nxforge/low_lag.h`)
 +DM_LOW_LAG_TEST	diagnostic	`=<frames>` ends each run of direct presents after that many frames, to test the way back to the display link (`nxforge/low_lag.inc`)
  DM_MEASURE_LOCK	path	`=<file>`: `scripts/regress.py`'s default `--lock`, the measuring lock `scripts/bench.py --lock` shares: held only while a game runs, and the harness's shader builds pause while another process holds it
+ DM_MEMORY_GB	player	`auto` (default) or a number of GB: the device memory the host's rules plan for (the launcher's Memory): where the memory guard begins to let go, how many textures are made ahead
  DM_MEMSTAT	diagnostic	`=<tsv>` writes one line per second of memory accounting: footprint, Metal allocation and resident and charged memory by region class (guest, code, malloc, gpu, …)
- DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second writes every VM region of 1 MiB or more to `<tsv>.regions`
 diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
-index 676d7f073ce17f8850f4e3b7f18df770aa1f4288..841df011666172a900b02f9096a1ccff7c6ad3e4 100644
+index c5b139b9b58d0c95d0fdd92700fe9c9e5213a009..3e0c5ffee681f4a3468773cb921a30d455cc66ae 100644
 --- a/docs/reference/frame-rate.md
 +++ b/docs/reference/frame-rate.md
-@@ -437,6 +437,25 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
+@@ -457,6 +457,25 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
  - **Check:** the reporter confirmed that the deferred request entered fullscreen on its first attempt and stayed there, without a refusal. A harness of the startup callbacks checks both readiness orders, bounded refusal recovery, and cancellation before startup or a queued retry, plus later manual failures after successful startup.
  - **Not checked:** the revised lifecycle handling in a real game through the launcher's console mode; native refusal recovery (the reporter's deferred request succeeded without it).
  
@@ -185,14 +186,14 @@ index 676d7f073ce17f8850f4e3b7f18df770aa1f4288..841df011666172a900b02f9096a1ccff
  
  - **Symptom:** on a ProMotion built-in screen, only in fullscreen, the frame step went 1 → 2 → 3 vsyncs on frames costing 0.1–0.6 vsyncs (`3 late frames; cost 0.32 vsyncs`) and the game presented 15 frames a second; a window, or the screen set to a fixed 60 Hz, did not do it. The `DM_NVN_TSV` rows show presents shown one 120 Hz refresh late (`@pres_at_ms` − `@link_target_ms` = 8.3 ms) with a skipped tick after each (`@link_gap_ms` 33 ms), and `@link_lead_ms` about 16 ms against about 50 ms in a window.
 diff --git a/docs/settings.md b/docs/settings.md
-index 8ee683ec6a02b2ece364c4f554a71555d77824ca..55762afeadb4ccc2e94be5ce0590ecaf57228c1e 100644
+index 06308fdc76f90367fb5ba117b8e48f3ef0f4edf5..aeca39356d8be17db6c17b3e4ccfc4e50b8a5e00 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -334,6 +334,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+@@ -363,6 +363,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
  | Pipeline prebuild | `DM_PSO_PREBUILD` | `1`, `0` |
  | Encode thread | `DM_NVN_ENC_THREAD` | `1`, `0` |
  | Hold frames when late | `DM_FPS_HOLD` | `on`, `off` |
 +| Lower input lag (Mac) | `DM_LOW_LAG` | `1`, `0` |
+ | Memory | `DM_MEMORY_GB` | `auto`, `8`, `12`, `16`, `18`, `24`, `32` |
  | Performance HUD | `DM_METAL_HUD` | `1`, `0` |
  
- `DM_LAUNCHER=0` skips the settings screen; the choices you saved there still apply. `DM_SAVED_CHOICES=0` starts with the tested defaults and keeps your saved choices for later. How the settings are listed for each game: [dm/games/settings.tsv](../dm/games/settings.tsv).

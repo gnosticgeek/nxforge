@@ -135,6 +135,7 @@ extension AppModel {
 
     private func quit(_ a: NSRunningApplication) {
         guard let p = playing.removeValue(forKey: a.processIdentifier) else { return }
+        suspended.remove(p.app.url.standardizedFileURL.path)
         let end = Date()
         let session = sessionEnded(p, pid: a.processIdentifier, end: end)
         if let r = Playtime.add(key: p.key, name: p.name, app: p.app, start: p.start, end: end, session: session), let session { showRecap(p, session: session, record: r) }
@@ -142,6 +143,24 @@ extension AppModel {
         backUpSaveAfterPlay(app: p.app, name: p.name)
         gameQuit(app: p.app)
     }
+
+    /// Whether a running game is kept paused behind the library.
+    func isSuspended(app: String) -> Bool { !app.isEmpty && suspended.contains(app.url.standardizedFileURL.path) && isPlaying(app: app) }
+
+    private func running(app: String) -> NSRunningApplication? {
+        playing.first { $0.value.app == app }.flatMap { NSRunningApplication(processIdentifier: $0.key) }
+    }
+
+    /// Bring a running game back to the front as it is (a game kept behind the library hides itself); false when it is not running
+    @discardableResult func resumeGame(app: String) -> Bool {
+        guard let a = running(app: app), !a.isTerminated else { return false }
+        a.unhide()
+        a.activate(options: [.activateAllWindows])
+        return true
+    }
+
+    /// Ask a running game to quit, as its own Quit does
+    func quitGame(app: String) { running(app: app)?.terminate() }
 
     /// Whether a game is being played now.
     func isPlaying(app: String) -> Bool { playing.values.contains { $0.app == app } }

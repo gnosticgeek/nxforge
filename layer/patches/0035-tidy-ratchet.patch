@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
+ findings in upstream's code silenced on their lines, three counts lowered
+
+---
+ dm/gfx/nvn/nvn_geometry.inc  | 2 +-
+ dm/gfx/nvn/nvn_mtl.m         | 2 +-
+ dm/gfx/tests/t_pfv.m         | 2 +-
+ dm/gfx/tests/t_pso_archive.m | 2 +-
+ dm/gfx/tests/t_sparse_copy.m | 2 +-
+ dm/gfx/tests/t_wline.m       | 4 ++--
+ dm/tools/lint_c_baseline.tsv | 5 ++---
+ 7 files changed, 9 insertions(+), 10 deletions(-)
+
+diff --git a/dm/gfx/nvn/nvn_geometry.inc b/dm/gfx/nvn/nvn_geometry.inc
+index 65d11bee3847ca916722b56f042d07a60b08833e..3bd711734f97fa5371c854e6fdf5cb50d8310ae2 100644
+--- a/dm/gfx/nvn/nvn_geometry.inc
++++ b/dm/gfx/nvn/nvn_geometry.inc
+@@ -371,7 +371,7 @@ static NvShader *geo_lean_pick(NvProg *pr, NvShader *gs, int topology, int insta
+         NSError *error = nil;
+         id<MTLLibrary> lib = host_lib("geo_pack", &error);
+         const char *names[] = {"geo_lean_cull", "geo_lean_index", "geo_lean_tri"};
+-        for (int i = 0; i < 3 && lib; i++) g_geo_lean_k[i] = [g_dev newComputePipelineStateWithFunction:[lib newFunctionWithName:@(names[i])] error:&error];
++        for (int i = 0; i < 3 && lib; i++) g_geo_lean_k[i] = [g_dev newComputePipelineStateWithFunction:[lib newFunctionWithName:@(names[i])] error:&error];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream bee218d9's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+         if (!g_geo_lean_k[0] || !g_geo_lean_k[1] || !g_geo_lean_k[2]) {
+             failed = 1; g_geo_lean_k[0] = g_geo_lean_k[1] = g_geo_lean_k[2] = nil;
+             MLOG("[RED] lean geometry index kernels: %s", error.localizedDescription.UTF8String); return NULL;
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 0dd2b88c26c1e00bc171aaf7e9bb012846fd58a8..44f883df8fa27a7a96c489f71913d143087991d3 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -7030,7 +7030,7 @@ static int progpf_first(NSString *pc) {
+ }
+ static NvShader *shader_get(NSString *pc, int stage) {
+     if (!g_shcache) g_shcache = [NSMutableDictionary dictionary];
+-    NvShader *o = g_shcache[pc];
++    NvShader *o = g_shcache[pc];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream bee218d9's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+     if (o) return o;
+     uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
+     if (!o) return nil;
+diff --git a/dm/gfx/tests/t_pfv.m b/dm/gfx/tests/t_pfv.m
+index df84a66f8931ff365a737f89dc1fc0dd3dff595b..2271210549056c53eeb7ecaea0c0a6b3d67394d9 100644
+--- a/dm/gfx/tests/t_pfv.m
++++ b/dm/gfx/tests/t_pfv.m
+@@ -62,7 +62,7 @@ static int rt_view_into(int nvn_format, MTLPixelFormat want_base, uint64_t seria
+         [en setRenderPipelineState:ps]; [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3]; [en endEncoding];
+         id<MTLBuffer> out = [g_dev newBufferWithLength:16 options:MTLResourceStorageModeShared];
+         id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+-        [b copyFromTexture:base sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(4, 1, 1) toBuffer:out destinationOffset:0 destinationBytesPerRow:16 destinationBytesPerImage:16];
++        [b copyFromTexture:base sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(4, 1, 1) toBuffer:out destinationOffset:0 destinationBytesPerRow:16 destinationBytesPerImage:16];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream PR #2375's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+         [b endEncoding]; [cb commit]; [cb waitUntilCompleted];
+         const uint32_t *w = out.contents; for (int i = 0; i < 4; i++) failed += w[i] != 0x3c003800u;
+         // A later pass samples the texture through the ID registered before the upgrade: the ID cache follows the upgrade (g_ser_gen), so it reads the new texture and the bits drawn
+diff --git a/dm/gfx/tests/t_pso_archive.m b/dm/gfx/tests/t_pso_archive.m
+index c088e6447d94be5bad5221ecbfbb4904eeb16b98..b886e5c1c23604d58fc88830cc33c043b59c463f 100644
+--- a/dm/gfx/tests/t_pso_archive.m
++++ b/dm/gfx/tests/t_pso_archive.m
+@@ -36,7 +36,7 @@ static int checks, failed;
+ // The next program of a test hand-over (--exec-seed): it starts only after the archive's write, so the folder holds the file; it says so in exec.txt (the test reads it)
+ static void exec_then(void *dir) {
+     int files = 0; for (NSString *f in [NSFileManager.defaultManager contentsOfDirectoryAtPath:@((const char *)dir) error:nil]) files += [f hasSuffix:@".mtl4a"];
+-    [[NSString stringWithFormat:@"%d\n", files] writeToFile:[@((const char *)dir) stringByAppendingPathComponent:@"exec.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
++    [[NSString stringWithFormat:@"%d\n", files] writeToFile:[@((const char *)dir) stringByAppendingPathComponent:@"exec.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream PR #2625's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+ }
+ #define EXPECT(name, want, got) do { uint64_t w = (want), g = (got); checks++; if (w != g) { fprintf(stderr, "%s: expected %llu, got %llu\n", name, (unsigned long long)w, (unsigned long long)g); failed++; } } while (0)
+ 
+diff --git a/dm/gfx/tests/t_sparse_copy.m b/dm/gfx/tests/t_sparse_copy.m
+index 8ac10e8fdddbc83c7c4f02e51127a8da320482f6..2d9bb9d9f9e69c5045b97cb232e2d5f5ce9fe899 100644
+--- a/dm/gfx/tests/t_sparse_copy.m
++++ b/dm/gfx/tests/t_sparse_copy.m
+@@ -32,7 +32,7 @@ static void copy_in(pool_t *cpool, NVNtexture *tx, unsigned level, unsigned w, c
+     h_nvnCommandBufferCopyBufferToTexture(&cmd, (NVNbufferAddress)src, tx, &v, &r, 0);
+     NVNcommandHandle h = h_nvnCommandBufferEndRecording(&cmd);
+     state_reset(); memset(&R, 0, sizeof R); mtl_exec(nvn_rec_linear(h, NULL));
+-}
++}  // NOLINT(clang-analyzer-unix.Malloc): NXForge: upstream issue #2350's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+ static int words_not(const uint8_t *p, uint64_t n, uint32_t want) { int bad = 0; for (uint64_t i = 0; i < n; i += 4) bad += *(const uint32_t *)(p + i) != want; return bad; }
+ // Texels of level `level` (w x w) of the host texture other than want: the texture is looked up (and uploaded if its pages changed) in this submission, and read after it
+ static int host_not(const tex_t *t, unsigned level, unsigned w, uint32_t want) {
+diff --git a/dm/gfx/tests/t_wline.m b/dm/gfx/tests/t_wline.m
+index 05101b70c5410fee37d8f811a3e7e3b9c2b81518..b72b2bd8d832126c9a9262532acea54f77a7f1da 100644
+--- a/dm/gfx/tests/t_wline.m
++++ b/dm/gfx/tests/t_wline.m
+@@ -49,9 +49,9 @@ int main(void) { @autoreleasepool {
+     dev = MTLCreateSystemDefaultDevice(); q = [dev newCommandQueue]; NSError *e = nil;
+     char dir[] = "/tmp/t_wline.XXXXXX"; if (!mkdtemp(dir)) return 1;
+     NSString *in = [@(dir) stringByAppendingPathComponent:@"v.metal"], *out = [@(dir) stringByAppendingPathComponent:@"vp.metal"];
+-    [k_vs writeToFile:in atomically:NO encoding:NSUTF8StringEncoding error:nil];
++    [k_vs writeToFile:in atomically:NO encoding:NSUTF8StringEncoding error:nil];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream PR #2510's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+     char cmd[2048]; snprintf(cmd, sizeof cmd, "python3 -c \"import sys; sys.path.insert(0, '../tools'); import dmsh_pull; v, i = dmsh_pull.variant(open(sys.argv[1]).read()); assert i['entry_wl'] == 'main0_wl', i; open(sys.argv[2], 'w').write(v)\" '%s' '%s'", in.UTF8String, out.UTF8String);
+-    if (system(cmd)) { fprintf(stderr, "dmsh_pull.variant failed\n"); return 1; }
++    if (system(cmd)) { fprintf(stderr, "dmsh_pull.variant failed\n"); return 1; }  // NOLINT(bugprone-command-processor): NXForge: upstream PR #2510's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+     NSString *pull = [NSString stringWithContentsOfFile:out encoding:NSUTF8StringEncoding error:nil];
+     [NSFileManager.defaultManager removeItemAtPath:@(dir) error:nil];
+     MTLCompileOptions *o = [MTLCompileOptions new]; o.preserveInvariance = YES;
+diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
+index f396b01e20cbe5d92e15fe9c444190d7090bc7d5..88b03b441ee3cca7a1eb386b2a1a62dee8b21c35 100644
+--- a/dm/tools/lint_c_baseline.tsv
++++ b/dm/tools/lint_c_baseline.tsv
+@@ -19,12 +19,11 @@ dm/gfx/nvn/nvn_capture.inc	bugprone-command-processor	1
+ dm/gfx/nvn/nvn_capture.inc	bugprone-suspicious-memory-comparison	2
+ dm/gfx/nvn/nvn_capture.inc	bugprone-suspicious-realloc-usage	7
+ dm/gfx/nvn/nvn_geometry.inc	clang-analyzer-unix.Malloc	1
+-dm/gfx/nvn/nvn_hmap.h	clang-analyzer-core.NullPointerArithm	1
+ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
+ dm/gfx/nvn/nvn_mtl.m	bugprone-misplaced-widening-cast	1
+ dm/gfx/nvn/nvn_mtl.m	bugprone-signed-char-misuse	1
+ dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
+-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	8
++dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	5
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	5
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	15
+@@ -82,7 +81,7 @@ dm/gfx/vk/hle_vk.m	bugprone-suspicious-realloc-usage	2
+ dm/gfx/vk/hle_vk.m	clang-analyzer-core.uninitialized.Assign	1
+ dm/gfx/vk/hle_vk.m	clang-analyzer-security.ArrayBound	1
+ dm/gfx/vk/hle_vk.m	clang-analyzer-unix.Malloc	1
+-dm/gfx/vk/hle_vk.m	misc-misplaced-const	5
++dm/gfx/vk/hle_vk.m	misc-misplaced-const	3
+ dm/host/haptics_apple.m	clang-analyzer-nullability.NullablePassedToNonnull	1
+ dm/host/hle_fs.c	bugprone-suspicious-realloc-usage	4
+ dm/host/hle_fs.c	clang-analyzer-unix.Errno	2

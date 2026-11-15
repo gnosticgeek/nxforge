@@ -27,9 +27,11 @@ enum PlayTab: String, CaseIterable, Identifiable {
 enum PlayOptions {
     /// The Graphics tab's rows in order, as the game's own settings window groups them (NXFLauncherLayout.graphicsBoxes)
     static let graphics = ["DM_FPS_TARGET", "DM_PRESENT_INTERP", "DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER",
-                           "DM_SCREEN_ASPECT", "DM_SCREEN_WIDE", "DM_PRESENT_AA", "DM_PIXEL_ART", "DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH"]
+                           "DM_SCREEN_ASPECT", "DM_SCREEN_WIDE", "DM_PRESENT_AA", "DM_PIXEL_ART", "DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH",
+                           "DM_FOLIAGE", "DM_MODEL_LOD", "DM_SHADOW_CASCADES"]
     /// On General though not level=basic: everyday controls (NXFLauncherLayout.general)
-    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_STICK_DEADZONE_L", "DM_STICK_DEADZONE_R", "DM_PAD_PRESS_TO_JOIN", "DM_SW2"]
+    static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_STICK_DEADZONE_L", "DM_STICK_DEADZONE_R", "DM_PAD_PRESS_TO_JOIN", "DM_SW2",
+                                       "DM_MOUSE_CAMERA", "DM_MOUSE_CAMERA_SPEED", "DM_MIC"]
     /// What a preset sets; every other setting is left as it is
     static let presetKeys = ["DM_FPS_TARGET", "DM_RENDER_SCALE", "DM_PRESENT_UPSCALE", "DM_PRESENT_EDR", "DM_PRESENT_INTERP"]
 
@@ -259,6 +261,7 @@ extension AppModel {
             if let g { frontEnd = false; convertFromLibrary(g) }
             return
         }
+        if resumeGame(app: app) { return }   // running, perhaps kept behind the library: back to the front as it is
         let ref = GameRef(libraryID: r.libraryID, app: app)
         let list = LaunchSettings.load(app: app)
         let shownKey = "stage.optionsShown." + Self.playKey(app: app)
@@ -369,6 +372,15 @@ extension AppModel {
                 guard let self, let l = self.launching, path == nil || l.app.url.standardizedFileURL.path == path else { return }
                 self.launching = nil
             }
+        })
+        // Library in the game's sidebar (NXForge 0.37.0 on) keeps the game running, paused and hidden: it says so, and says when it is back in front
+        playObservers.append(dc.addObserver(forName: Notification.Name("org.nxforge.gameSuspended"), object: nil, queue: .main) { [weak self] n in
+            let path = (n.object as? String).map { $0.url.standardizedFileURL.path }
+            MainActor.assumeIsolated { if let self, let path { self.suspended.insert(path); self.revision += 1 } }
+        })
+        playObservers.append(dc.addObserver(forName: Notification.Name("org.nxforge.gameResumed"), object: nil, queue: .main) { [weak self] n in
+            let path = (n.object as? String).map { $0.url.standardizedFileURL.path }
+            MainActor.assumeIsolated { if let self, let path, self.suspended.remove(path) != nil { self.revision += 1 } }
         })
         // Quit to Library in the game's sidebar: NXForge comes to the front on that game's page
         playObservers.append(dc.addObserver(forName: Notification.Name("org.nxforge.showGame"), object: nil, queue: .main) { [weak self] n in

@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: EmmanueleC <ai.emmanuelecrifasi@gmail.com>
+Date: Tue, 10 Nov 2026 00:36:04 +0100
+Subject: game-mode: an opt-in Game Mode form of the Mac app
+ (DM_APP_GAME_MODE=1 when packing, DM_LAUNCH_EXEC)
+
+Ported from Fasen24-AI/swordboiMacNative 045309a7 (EmmanueleC, MIT). An app packed with DM_APP_GAME_MODE=1
+asks for Game Mode (LSSupportsGameMode, GCSupportsGameMode) and its launcher hands its process to the host, so
+macOS's Game Mode and the foreground app's scheduling apply to the host. Off by default: nxnative found Game
+Mode holds the GPU clock low (frame-rate.md), so it needs an A/B first. In that form the cloud save's last send
+waits for the next start and Restart game / quick-save loads end the game; an app off the startup volume keeps
+the child host (macOS privacy checks refuse an exec'ed process's opens there).
+---
+ dm/mac/launcher.c     | 17 +++++++++++++++++
+ dm/mac/pack_app.py    |  3 +++
+ docs/env_switches.tsv |  6 +++++-
+ 3 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
+index 55e4e7b16178aa8eeffd49d2b3491c922ed9854a..5aeb91e527828c99e1dc38915b7ae1a61e889849 100644
+--- a/dm/mac/launcher.c
++++ b/dm/mac/launcher.c
+@@ -335,6 +335,23 @@ int main(int argc, char **argv) {
+     unlink(restart); setenv("DM_LAUNCHER_RESTART", restart, 1);
+     char slotreq[PATH_MAX]; snprintf(slotreq, sizeof slotreq, "%s/slot-load-requested", sup);   // quick-save slots (nxforge/launcher_slots.inc)
+     unlink(slotreq); setenv("DM_LAUNCHER_SLOT_LOAD", slotreq, 1);
++    // Game Mode build (Info.plist DMLaunchExec 1, pack_app.py with DM_APP_GAME_MODE=1; DM_LAUNCH_EXEC=0 / 1 in the environment or an env file overrides it): the host takes this
++    // process's place instead of running as its child. macOS gives Game Mode and the foreground application's scheduling to the process LaunchServices started, the bundle's own,
++    // and a child gets neither (the window, the GPU work and the frame deadline are all the host's). What the child form does after the host exits is lost: the cloud save's last
++    // send waits for the next start, the log has no exit line, and NXForge's Restart game and quick-save slot loads (the loop below) end the game instead of starting it again. Not for an app off the startup volume: macOS privacy checks refuse every open on a removable volume to a
++    // process that was exec'ed (the reason the host is otherwise a child, top of this file), so the host runs as a child there
++    char exec_s[8] = ""; const char *ex = getenv("DM_LAUNCH_EXEC");
++    if (!ex && info_string("DMLaunchExec", exec_s, sizeof exec_s)) ex = exec_s;
++    if (ex && !strcmp(ex, "1")) {
++        struct stat root_st, host_st;
++        if (!stat("/System/Volumes/Data", &root_st) && !stat(host, &host_st) && root_st.st_dev != host_st.st_dev)
++            fprintf(stderr, "launcher: DM_LAUNCH_EXEC asked, but the app is not on the startup volume: the host runs as a child\n");
++        else {
++            fprintf(stderr, "launcher: the host takes this process's place (DM_LAUNCH_EXEC: Game Mode and the app's scheduling are the host's)\n");
++            execve(host, host_argv, environ);
++            fprintf(stderr, "[RED] launcher: exec of %s failed (%s): the host runs as a child\n", host, strerror(errno));
++        }
++    }
+     int status;
+     for (;;) {
+         int err = posix_spawn(&g_child, host, NULL, NULL, host_argv, environ);
+diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
+index 725834459e31bbf8b928b9e4f3217beca552265a..92435fd0a1604f39ae2551edfdd2f0792fc69de3 100755
+--- a/dm/mac/pack_app.py
++++ b/dm/mac/pack_app.py
+@@ -127,6 +127,9 @@ def info_plist(a, minos, icon):
+          'NSBluetoothAlwaysUsageDescription': 'Connect Switch 2 Joy-Con and Pro Controllers over Bluetooth.',
+          'LSApplicationCategoryType': a.category or 'public.app-category.games', 'LSSupportsGameMode': False, 'DMTitleID': a.title_id.upper(), 'DMRomfsMarker': a.marker or '', 'DMLanguage': a.lang or 'en-US', 'DMSaveSyncChoice': 1}
+     if icon: p['CFBundleIconFile'] = 'AppIcon'
++    # DM_APP_GAME_MODE=1 when packing: an app that asks for Game Mode and whose launcher hands its process to the host (launcher.c DM_LAUNCH_EXEC), for a Mac where Game Mode
++    # helps more than its GPU clock rule costs. The default stays off, for the reason above
++    if os.environ.get('DM_APP_GAME_MODE') == '1': p['LSSupportsGameMode'] = True; p['GCSupportsGameMode'] = True; p['DMLaunchExec'] = '1'
+     if a.settings:
+         listed = json.loads(Path(a.settings).read_text(encoding='utf-8'))['settings']
+         p['DMSettings'] = settings_rules(listed)
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index c9791e7f8e6f3712692f6befa3ef2192b8bc34fa..63e660c420eec72984f1e2070e138a44e254141f 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -7,6 +7,7 @@ DM_ANISO	diagnostic	`0`, `2`, `4`, `8` or `16`: anisotropic filtering of at leas
+ DM_AOC_DIR	path	Folder of add-on content: one numbered subfolder per DLC index holding that DLC's RomFS, reported by `aoc` and mounted read-only; the app, the Mac launcher and the NSP script set it when the build has DLC
+ DM_AOC_OWNED	switch	`0` reports no add-on content even when `DM_AOC_DIR` has some, for runs without the DLC
+ DM_APP_DM	path	Set by the iOS app of a game of several programs: the running program's `dm/p<N>` folder, where the settings screen finds its `launcher.json`
++DM_APP_GAME_MODE	switch	`1` when packing (`pack_app.py`): the app asks for Game Mode (`LSSupportsGameMode`, `GCSupportsGameMode`) and its launcher hands its process to the host (`DMLaunchExec` 1, see `DM_LAUNCH_EXEC`)
+ DM_APP_VERSION	switch	Overrides the IPA's version in `build_ipa.sh`; by default it is the packed game's display version from its control data (the update's when one is packed)
+ DM_AUDIO	switch	`1` plays audio through Core Audio, `0` uses the silent sink; real output is the default on iOS, the silent sink on the Mac (the Mac launcher sets `1`)
+ DM_AUDIO_DUMP	diagnostic	`=<file>` writes every PCM block the game appends as is (16-bit, 48 kHz, channel count as in the OpenAudioOut log), to judge whether a sound played
+@@ -112,6 +113,8 @@ DM_KEYS	switch	Scripted input: `<seconds or f<frame>>:<key>[+key][~hold or ~f<fr
+ DM_LANG	player	Game language as a language code (default `en-US`; the iOS app sets the one the IPA was packed with)
+ DM_LAUNCHER	switch	`0` skips the iOS settings screen or the Mac settings window and starts the game at once, with the saved choices (on the Mac also `--no-launcher`)
+ DM_LAUNCHER_RESTART	diagnostic	Set by the Mac launcher (dm/mac/launcher.c): the file Quick settings › Restart game writes before quitting, so the launcher starts the game again
++DM_LAUNCHER_SLOT_LOAD	path	File the in-game sidebar writes a quick-save slot's folder into before a restart; the launcher swaps that slot in with the host stopped (`dm/mac/nxforge/launcher_slots.inc`)
++DM_LAUNCH_EXEC	switch	`1` makes the Mac app's launcher hand its process to the host instead of running it as a child, so macOS's Game Mode and the foreground app's scheduling apply to the host (default: the bundle's `DMLaunchExec`, which `DM_APP_GAME_MODE=1` sets when packing); `0` keeps the child. An app off the startup volume keeps the child
+ DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once; `oe::ExecuteProgram` sets it for the program it starts; a relaunch removes it
+ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz Mac screens; by default the link counts only the refreshes nearest a steady 1/60 s clock
+ DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
+@@ -233,9 +236,9 @@ DM_NVN_ROP_ROUND	switch	`0` leaves float colours going into 8-bit, 16-bit and RG
+ DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover the whole target, as before; by default a draw pass that loads what it keeps stops at the far corner of its scissor when that is at most half the target
+ DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render targets, as before; by default SetRenderTargets naming the open pass's targets continues the pass
+ DM_NVN_RT_DEAD	switch	`0` keeps every shared render target of a GPU-only pool while a texture object names it, as before; by default one another target drew over and that has not been used for 3 s is released once a second, and made again at its next use (`ab` alternates it with the `DM_AB` phases)
++DM_NVN_RT_LOSSY	switch	`1` enables lossy compression for standalone private render targets of an explicit Apple8+ format whitelist, without shader writes, atomics or pixel-format-view usage; family/pool heaps keep their existing layout (off by default)
+ DM_NVN_RT_RANGE	switch	`=1` (experimental, off by default; with `DM_NVN_TBDR=1`) keeps the pass open when the game sets the same colour and depth target again with a view that differs only in its level count
+ DM_NVN_RT_RANGE_CHECK	diagnostic	With `DM_NVN_RT_RANGE=1` and `DM_NVN_PASSDUMP`, renders a candidate pass both ways in the same frame and logs and writes the comparison (`CHECK_RESULTS.tsv`, `[RED]` on a difference)
+-DM_NVN_RT_LOSSY	switch	`1` enables lossy compression for standalone private render targets of an explicit Apple8+ format whitelist, without shader writes, atomics or pixel-format-view usage; family/pool heaps keep their existing layout (off by default)
+ DM_NVN_RT_RECYCLE	switch	`0` makes each render target in a GPU-only pool, each feedback snapshot and each resolution family heap its own exact Metal allocation, freed with its texture, as before; by default they are placed in heaps from one free list, and a freed one's heap waits, resident, for the next texture it fits (`ab` alternates it with the `DM_AB` phases)
+ DM_NVN_SEEN_KEEP	switch	`=<frames>` (600 by default): while the marked textures come to more than a quarter of Metal's working set, a texture ID's read mark goes with its next texture when no shader has read the ID for that many frames, so the walk makes that texture under its budget and holds the stand-in until it is read; `0` keeps every mark until its ID is emptied, as before
+ DM_NVN_SHDUMP	diagnostic	`=<dir>` saves programs missing from the shader map as `<key>.ctl` (control section) and `<key>.code`, to find the files that hold them
+@@ -412,6 +415,7 @@ DM_SHARED_FONT	path	Font file served for every shared-font type except the Ninte
+ DM_SHARED_FONT_EXT	path	Font file served for shared-font type 5, the Nintendo extension with the button icons (default `$DM_FONT_DIR/nintendo_ext.ttf`, made by `make_ext_font.py`)
+ DM_SHOW_FPS	player	`1` shows the frame-rate counter on the iPhone (frames put on screen per second, top left); at IPA build it sets `DMShowFPS` in `Info.plist`, which `Documents/env.txt` overrides
+ DM_SIX_DELAY	switch	`=0` (the default), `=auto` or `=<ms>` (up to 40): `DM_IMU_DELAY`'s playout delay for the six-axis states (`GetSixAxisSensorStates`) instead of the IMU samples. None by default: a Switch 1 game reads the newest state each frame (aiming, steering), so a delay only adds latency. Also through `DM_CTL`'s `env`
++DM_SLOT_LOADED	player	Set by the launcher for the host after a slot load: the slot's folder, or `!` and why it was not loaded; the sidebar's toast says which
+ DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log only for dropped frames (kept in a ring of the last 16 frames, judged 8 frames late)
+ DM_SPIN	switch	`0` makes the rewriter's spin gate return at once, so guest poll loops spin with no sleep; the gate stays (on by default)
+ DM_SPIN_LIST	diagnostic	`=1` makes `patch_nso.py` print every guest poll loop it found and sends through a spin gate

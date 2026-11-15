@@ -15,7 +15,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.6.0"
+let SIDEBAR_VERSION = "0.7.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -133,7 +133,7 @@ private func presetValue(_ p: Preset, _ s: LaunchRow) -> String {
 // Every setting the sidebar or the settings window keeps for this game is in the user defaults under these prefixes (the page shown is not a setting)
 private let sessionPrefixes = ["DMQuickSettings.", "DMPresentFilter.", "launcher.", "nxforge.mirror."]
 private let sessionNames = ["fps": "FPS counter", "fpsPos": "Counter corner", "fpsMs": "Milliseconds", "frameTimes": "Record frame times", "mods": "Mods", "modOrder": "Mod load order",
-                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
+                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
                             "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size",
                             "keys": "Keyboard controls", "keyNames": "Keyboard controls", "pad": "Controller buttons", "padNames": "Controller buttons", "captureDir": "Capture folder",
                             "mode": "CRT filter", "strength": "CRT strength", "scanline": "Line size", "DM_PRESENT_UPSCALE": "MetalFX upscaling"]
@@ -158,7 +158,7 @@ private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods =
 enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
     case undoSession, preset(Int)
-    case pauseOpen, duckOpen, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
+    case pauseOpen, duckOpen, keepLibrary, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
     case fullscreen, scale, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
@@ -169,7 +169,7 @@ enum Nav: Hashable {
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .fullscreen, .scale, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .fullscreen, .scale, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
@@ -421,6 +421,7 @@ final class QuickSettings: ObservableObject {
     @Published var fullscreen = false
     @Published var pauseOpen = true   // pause the game while the sidebar is up
     @Published var duckOpen = false   // quieter sound while it is up
+    @Published var keepLibrary = true // Library pauses and keeps the game (front_qs_suspend) instead of ending it
     @Published var paused = false
     @Published var lastBackup: Date?
     @Published var backupBusy = false
@@ -481,6 +482,7 @@ final class QuickSettings: ObservableObject {
         volume = d.object(forKey: optKey("volume")) == nil ? 1 : d.double(forKey: optKey("volume")); muted = d.bool(forKey: optKey("muted"))
         recording = front_qs_recording() != 0
         pauseOpen = d.object(forKey: optKey("pauseOpen")) == nil ? true : d.bool(forKey: optKey("pauseOpen")); duckOpen = d.bool(forKey: optKey("duckOpen"))
+        keepLibrary = d.object(forKey: optKey("keepLibrary")) == nil ? true : d.bool(forKey: optKey("keepLibrary"))
         paused = front_qs_paused() != 0; fullscreen = front_qs_fullscreen() != 0
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
@@ -683,6 +685,7 @@ final class QuickSettings: ObservableObject {
     // Sound: the volume and mute are saved, and front_mac.m sets the game's gain from them (quieter while the sidebar is up when that is on)
     func setVolume(_ v: Double) { volume = v; muted = false; UserDefaults.standard.set(v, forKey: optKey("volume")); UserDefaults.standard.set(false, forKey: optKey("muted")); front_qs_volume_apply() }
     func setMuted(_ on: Bool) { muted = on; UserDefaults.standard.set(on, forKey: optKey("muted")); front_qs_volume_apply() }
+    func setKeepLibrary(_ on: Bool) { keepLibrary = on; UserDefaults.standard.set(on, forKey: optKey("keepLibrary")) }
     func setDuck(_ on: Bool) { duckOpen = on; UserDefaults.standard.set(on, forKey: optKey("duckOpen")); front_qs_volume_apply() }
     func setPauseOpen(_ on: Bool) { pauseOpen = on; front_qs_pause_set(on ? 1 : 0); paused = front_qs_paused() != 0 }
     // Save backup: off the main thread (it reads and checks every file twice), a toast when it is done
@@ -860,8 +863,21 @@ final class QuickSettings: ObservableObject {
     func quit() { if quitArmed { NSApp.terminate(nil) } else { quitArmed = true } }
     /// Quit to Library (a game NXForge's Play started): the first press arms it, the second tells NXForge which game to show (the distributed notification
     /// org.nxforge.showGame, its object this game app's path), brings NXForge to the front on that game's page and ends the game as Quit does
+    /// With Library keeps the game on (NXForge, the default), the game is not ended: it pauses with the sidebar up (front_qs_suspend), the app hides and NXForge comes to the
+    /// front on its page, told by org.nxforge.gameSuspended (object this game app's path) that it can Resume it; the library's Resume brings this app back where it was
     func quitToLibrary() {
         guard libraryArmed else { libraryArmed = true; return }
+        if keepLibrary, let fe = frontEndApp {
+            libraryArmed = false; front_qs_suspend()
+            DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.gameSuspended"), object: Bundle.main.bundlePath, userInfo: ["pid": "\(getpid())"], deliverImmediately: true)
+            DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: nil, deliverImmediately: true)
+            let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
+            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: fe), configuration: cfg) { _, err in
+                if let err { fputs("quick settings: Library could not open NXForge at \(fe): \(err.localizedDescription)\n", stderr) }
+                DispatchQueue.main.async { if err == nil { NSApp.hide(nil) } }
+            }
+            return
+        }
         DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: nil, deliverImmediately: true)
         guard let fe = frontEndApp else { NSApp.terminate(nil); return }
         let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
@@ -876,7 +892,7 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[.pauseOpen], [.duckOpen], [.backup, .backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + [[Nav.backup, Nav.backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
         case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
@@ -927,6 +943,7 @@ final class QuickSettings: ObservableObject {
         switch n {
         case .pauseOpen: setPauseOpen(d > 0)
         case .duckOpen: setDuck(d > 0)
+        case .keepLibrary: setKeepLibrary(d > 0)
         case .fullscreen: if (d > 0) != fullscreen { toggleFullscreen() }
         case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[min(max(i + d, 0), pixelOrder.count - 1)]) }
@@ -958,6 +975,7 @@ final class QuickSettings: ObservableObject {
         case .tab(let i): setPage(i); sel = firstOnPage
         case .pauseOpen: setPauseOpen(!pauseOpen)
         case .duckOpen: setDuck(!duckOpen)
+        case .keepLibrary: setKeepLibrary(!keepLibrary)
         case .undoSession: undoSession()
         case .preset(let i): if let p = Preset(rawValue: i) { choosePreset(p) }
         case .backup: backup()
@@ -1267,6 +1285,12 @@ struct QuickSettingsView: View {
                 Toggle("Quieter sound", isOn: Binding(get: { m.duckOpen }, set: { m.setDuck($0) })).toggleStyle(.switch).labelsHidden()
             }.nav(m, .duckOpen)
             note(m.pauseOpen ? "Used when the game is not paused: a quarter of the volume" : "A quarter of the volume while this menu is open")
+            if m.frontEndApp != nil {
+                Row(title: "Library keeps the game", changed: !m.keepLibrary) {
+                    Toggle("Library keeps the game", isOn: Binding(get: { m.keepLibrary }, set: { m.setKeepLibrary($0) })).toggleStyle(.switch).labelsHidden()
+                }.nav(m, .keepLibrary)
+                note(m.keepLibrary ? "Library pauses the game and keeps it, so Resume in NXForge picks up where you left off. It still uses its memory" : "Library ends the game, as Quit does")
+            }
             subhead("Save").padding(.top, 6)
             HStack(spacing: 10) {
                 Button { m.backup() } label: { Label(m.backupBusy ? "Backing up…" : "Back up save now", systemImage: "externaldrive.badge.timemachine").frame(maxWidth: .infinity) }

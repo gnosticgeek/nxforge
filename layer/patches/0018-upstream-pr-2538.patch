@@ -37,7 +37,7 @@ Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
  10 files changed, 141 insertions(+), 5 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index adfe810ad19c79e504efa46ca6bc5898522f86ac..a27406b27a20883dae8baaf881fbff998414aff8 100644
+index 8c304f07ad5e9f8967b25e100217ac23ceaef855..9dd9beb22e1c455a2762bf6247c6802b53d14812 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -11,6 +11,7 @@ A Switch 2 game: update v131072, SDK 22.2.8 (`Ounce`). Nintendo EPD's engine (se
@@ -48,7 +48,7 @@ index adfe810ad19c79e504efa46ca6bc5898522f86ac..a27406b27a20883dae8baaf881fbff99
  | `draw_barriers game` | `game.tsv` | about 180 full barriers a frame NVN does not ask for: GPU 25 → 18 ms at full resolution. From 7f50222 until the fix in [Draw passes that wait for each other again while images share memory](../../../docs/reference/frame-rate.md#draw-passes-that-wait-for-each-other-again-while-images-share-memory) it had no effect, since the dynamic resolution's family heaps turned it off; with the fix, M1 Max gameplay GPU 22.2 → 20.3 ms; no change on an M2 Air or an M4 Pro |
  | `tex_flush_upload on`, `tex_dirty_upload on` | `game.tsv` | as Tears of the Kingdom: the CPU writes the terrain tiles' height (R32F), blend and hole (RGBA8) maps into textures after creating them. Without the keys those textures stay zero: flat blue holes in the ground around the path with grass floating in them, and grey stone where the console shows dirt |
  | `shader_groups`, `shader_note` | `game.tsv` | shaders grouped as `/Shader/`, `/Effect/`, `/Lib/`, `/UI/` |
-@@ -82,6 +83,14 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+@@ -83,6 +84,14 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
  - Where the full-resolution GPU frame goes (M4 Pro, Metal System Trace, 2026-11-08): vertex/mesh 4.9, fragment 5.2, compute 4.3 ms per 1/60 s, and they do not overlap (their union is 14.4 ms, their sum 14.4). The heaviest passes: the main mesh pass (task `a5288d0a6c4971fd`, mesh `3439aaa071d868ae`, fragment `a1a56cf6d62ae798`), two foliage passes (task `47f9b38490dcf9a2`), and the upscaler's compute (`fa3033d05c0a41d6`, 177 HMMA calls, already on `simdgroup` matrices). Ruled out: the stage serialization is mostly the game's own barriers (about 70 a frame, 39 of them `ORDER_PRIMITIVES | INVALIDATE_TEXTURE`). The relaxed draw-pass barriers of `draw_barriers game` were then off whenever an image family heap existed (this game's dynamic-resolution depth buffer makes one). Keeping them on with the alias flush moved to a start barrier skipped 22% of the full barriers, but the real GPU span on this M4 Pro did not change (14.7 ms p50 either way, two runs each). That change is on main now, with fragment-only barriers no longer forcing the full one, for its gain on the M1 Max ([Draw passes that wait for each other again while images share memory](../../../docs/reference/frame-rate.md#draw-passes-that-wait-for-each-other-again-while-images-share-memory)). Also ruled out: mesh shaders writing only the vertices their primitives use (the highest index + 1, instead of all `max_v`), as an overlay of the 31 play mesh shaders against the same shaders recompiled: span 14.7 / 15.5 ms against 16.0 / 15.6, so the game's meshlets are full. A shader timeline needs the trace attached before the pipelines are made, and a recording from 3 s to the play window (9 GB, or 45 s with the shader profiler) never finished saving.
  - Measured on the M4 Pro (20-core GPU, 2026-11-08, `kokiri-deck`, one run each): at full resolution (the main passes 1536x864 in pass dumps at 75, 100 and 125 s) 48.1 fps, frame p50 16.74 / p95 33.41 ms, GPU p50 15.0 / p95 16.9 ms: the GPU needs about one vsync a frame, so the frame step holds 2 vsyncs much of the time. With the game's own dynamic resolution and the host fixes above: 60 fps, GPU p50 12.6 ms, at a lower resolution. A second dynamic-resolution run wandered off the route into Saria's dialogue and is not counted.
  
@@ -181,7 +181,7 @@ index 9df6d5816afbd9848a9616748fe55e331c900d02..71722e87f6e2db32653386e4f245c94b
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/host/dm.h b/dm/host/dm.h
-index f747eb00447dd5d6bcb260af0906f875edf39afa..3f4e6ad100df4aeeb6e7e58a046f6979d2988159 100644
+index 36bf38251fcf36b6d000b95c20a7caed5c8daa73..38c9323a73a9b501fc4caf5a4429239e0f47e90d 100644
 --- a/dm/host/dm.h
 +++ b/dm/host/dm.h
 @@ -75,6 +75,7 @@ typedef struct {
@@ -317,7 +317,7 @@ index d164f274b6dd12ddd72d466fedae1556fd7e8413..78918e8d059e10f75f5a1d02c8dfb05f
  
  
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index f80fcbdc41a734093950920beb71c46cca04046d..24736ab4f39c3ab13b28f85437f2562f4fb927ff 100644
+index 5f303cba44004673a76119e98d6d1d5ac9e8c18b..3495d436112bebebfa2c11d09319e1d151bd81e1 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
 @@ -595,6 +595,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
@@ -329,10 +329,10 @@ index f80fcbdc41a734093950920beb71c46cca04046d..24736ab4f39c3ab13b28f85437f2562f
  - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
  - **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; launcher capabilities: DYNAMIC_RESOLUTION
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 401dd6bc2394092c92d7046333594bbea31a3c85..8ee1bc3003b42457574884f2e76663006dd1a23d 100644
+index e2650130d7a48e01d0aed623b03f49df7ba9dc8f..7de7fe0977c320aad78e6a8b703b2388daeb85af 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -384,6 +384,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+@@ -400,6 +400,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
  DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
  DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
  DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz), and a variable-refresh screen to a fixed-rate mode at a multiple (ProMotion 120 → 60 Hz at 60 and 30 fps)

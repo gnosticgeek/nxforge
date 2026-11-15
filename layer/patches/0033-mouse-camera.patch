@@ -1,0 +1,156 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: mouse-camera: hold the right mouse button to turn the camera with the
+ mouse (DM_MOUSE_CAMERA=1, DM_MOUSE_CAMERA_SPEED; Mouse camera rows, off by
+ default)
+
+Idea from the fork survey (PranavDupati/ninboy-hat-for-macos, widmonstertony's desktop controls); written for NXForge's Mac front end, no code taken.
+---
+ dm/games/settings.tsv                    |  2 ++
+ dm/host/front_mac.m                      | 40 ++++++++++++++++++++++--
+ dm/tools/tests/test_launcher_settings.py |  2 +-
+ docs/env_switches.tsv                    |  2 ++
+ docs/settings.md                         |  8 +++++
+ 5 files changed, 50 insertions(+), 4 deletions(-)
+
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index 620e785a4b2985b1d215a23ccdc87493144b79b4..dc0d81aed35bb4b4d4bbdc4ce8ac5341bbb28bd6 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -35,6 +35,8 @@ DM_RUMBLE_MIN	range	0:0.9:0.05	0	always	Controls	Rumble cutoff
+ DM_STICK_DEADZONE_L	choice	0=Off,5=5%,8=8%,10=10%,12=12%,15=15%,20=20%,25=25%,30=30%	0	always	Controls	Left stick deadzone	For a stick that drifts: the middle of its travel reads as centred.
+ DM_STICK_DEADZONE_R	choice	0=Off,5=5%,8=8%,10=10%,12=12%,15=15%,20=20%,25=25%,30=30%	0	always	Controls	Right stick deadzone
+ DM_PAD_PRESS_TO_JOIN	toggle	-	0	always	Controls	Press a button to join
++DM_MOUSE_CAMERA	toggle	-	0	platform:mac	Controls	Mouse camera	Hold the right mouse button and move the mouse to turn the camera (the right stick).
++DM_MOUSE_CAMERA_SPEED	range	0.25:4:0.25	1.0	platform:mac	Controls	Mouse camera speed		needs=DM_MOUSE_CAMERA=1
+ DM_MIC	toggle	-	0	platform:mac	Controls	Microphone	Lets a game hear this Mac's microphone (Ocarina of Time: play the ocarina into it). macOS asks for permission the first time.
+ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
+ DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
+diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
+index b65cb4237036f5fb83eccbb68005dd9e8817bb79..c93b4eaca771323a53aa2dce39f4c9df09ec943c 100644
+--- a/dm/host/front_mac.m
++++ b/dm/host/front_mac.m
+@@ -6,7 +6,7 @@
+ // Cheats (hle_cheats.c): the Cheats menu's rows toggle, reload (⌘R) and open the cheats folder; its first item "Show Cheats
+ // Window" (⌘⇧C, or DM_CHEATS_WINDOW=1 at launch) opens a Cheats panel beside the game: sections, search, the master switch,
+ // safe mode, values, details and the import of cheat files (see the code below).
+-// Key map (Nintendo layout): WASD left stick, arrow keys D-pad (with Shift held: the right stick, for the camera), J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller; the sidebar's Controls section remaps it and the controllers' buttons per game (controls_load).
++// Key map (Nintendo layout): WASD left stick, arrow keys D-pad (with Shift held: the right stick, for the camera), J=A K=B U=X I=Y, Q=L E=R, Z=ZL C=ZR, F=press left stick G=press right stick, Return=+ Tab=−, Space=shake the controller; the sidebar's Controls section remaps it and the controllers' buttons per game (controls_load). NXForge: with DM_MOUSE_CAMERA=1 the right mouse button held is a mouse camera (the right stick; mcam_hold).
+ // Controllers: face buttons as on the iPhone, by position (right A, bottom B, top X, left Y) or on a Nintendo pad by its labels (pad_apple.h) while the face buttons are not remapped, shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
+ // Each controller is a player of its own (local co-op): the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (pad_slots.h);
+ // DM_PAD_MERGE=1 merges every controller into player 1 instead, DM_KBD_PLAYER=own makes the keyboard player 1 on its own, with the controllers from player 2 on.
+@@ -153,9 +153,14 @@ static void cursor_hide_for_input(void) {
+     NSView *v = g_win.contentView;
+     if (NSPointInRect([v convertPoint:g_win.mouseLocationOutsideOfEventStream fromView:nil], v.bounds)) [NSCursor setHiddenUntilMouseMoves:YES];
+ }
++// NXForge mouse camera (DM_MOUSE_CAMERA=1, the Mouse camera row; DM_MOUSE_CAMERA_SPEED 0.25 to 4, 1 by default): while the right mouse button is held over the game, the pointer
++// stays where it is, hidden, and its movement is the right stick, added to the keyboard's. Each 8 ms the movement since the last tick becomes a deflection (about 2,500 points a
++// second is a full one at speed 1), smoothed over two ticks, so a still mouse lets the stick go back to the middle within about 30 ms. The left button stays the touch screen
++static int g_mcam = -1, g_mcam_held; static double g_mcam_k = 1, g_mcam_dx, g_mcam_dy, g_mrx, g_mry; static dispatch_source_t g_mcam_timer;
++static int32_t stick_clamp(double v) { return v > 32767 ? 32767 : v < -32767 ? -32767 : (int32_t)v; }
+ static void push(void) {
+     int32_t lx = (g_d - g_a) * 32767, ly = (g_w - g_s) * 32767;
+-    int32_t rx = (g_rr - g_rl) * 32767, ry = (g_ru - g_rd) * 32767;
++    int32_t rx = stick_clamp((g_rr - g_rl) * 32767 + g_mrx), ry = stick_clamp((g_ru - g_rd) * 32767 + g_mry);
+     dm_input_set(g_btn, lx, ly, rx, ry);
+ }
+ // Key and controller map (the sidebar's Controls section, quick_settings_mac.swift; saved per game). Actions 0–15 are the NpadButton bits (dm_input.h: A B X Y, the stick presses,
+@@ -358,7 +363,33 @@ static void pads_reread(void) {
+     for (s2_pad *d = dm_switch2_pads(); d; d = d->next) s2pad_read(d);
+ }
+ static void hq_close(void);
++static int mcam_on(void) {
++    if (g_mcam < 0) { const char *e = getenv("DM_MOUSE_CAMERA"); g_mcam = e && atoi(e) > 0;
++        const char *k = getenv("DM_MOUSE_CAMERA_SPEED"); double v = k && *k ? strtod(k, NULL) : 1; g_mcam_k = v >= 0.25 && v <= 4 ? v : 1;
++        if (g_mcam) LOG("front end: mouse camera on (hold the right mouse button; speed %.2f)", g_mcam_k); }
++    return g_mcam;
++}
++static void mcam_release(void) {   // the button up, focus lost, or the sidebar open: the pointer free again, the stick back in the middle
++    if (!g_mcam_held) return;
++    g_mcam_held = 0; CGAssociateMouseAndMouseCursorPosition(true); [NSCursor unhide];
++    if (g_mcam_timer) { dispatch_source_cancel(g_mcam_timer); g_mcam_timer = nil; }
++    g_mcam_dx = g_mcam_dy = g_mrx = g_mry = 0; push();
++}
++static void mcam_hold(void) {
++    if (g_mcam_held || !mcam_on() || !g_input_on) return;
++    g_mcam_held = 1; g_mcam_dx = g_mcam_dy = 0; CGAssociateMouseAndMouseCursorPosition(false); [NSCursor hide];
++    g_mcam_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
++    dispatch_source_set_timer(g_mcam_timer, dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_MSEC), 8 * NSEC_PER_MSEC, NSEC_PER_MSEC);
++    dispatch_source_set_event_handler(g_mcam_timer, ^{
++        double full = 20.0 / g_mcam_k;   // points in 8 ms for a full deflection
++        g_mrx = 0.5 * g_mrx + 0.5 * stick_clamp(g_mcam_dx / full * 32767); g_mry = 0.5 * g_mry + 0.5 * stick_clamp(-g_mcam_dy / full * 32767);   // AppKit's deltaY grows downwards
++        if (fabs(g_mrx) < 300) { g_mrx = 0; }
++        if (fabs(g_mry) < 300) { g_mry = 0; }
++        g_mcam_dx = g_mcam_dy = 0; push(); });
++    dispatch_resume(g_mcam_timer);
++}
+ static void input_release(void) {
++    mcam_release();
+     hq_close();   // the prompt or the hold indicator, if one is up: the Games app the system opens for Home takes the focus too
+     [NSCursor setHiddenUntilMouseMoves:NO];
+     display_awake(0);
+@@ -661,6 +692,9 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
+     dm_touch_set(&t, 1); g_mouse_down = 1;
+ }
+ - (void)mouseUp:(NSEvent *)e { (void)e; if (g_mouse_down) { g_mouse_down = 0; dm_touch_set(NULL, 0); } }
++- (void)rightMouseDown:(NSEvent *)e { if (mcam_on()) mcam_hold(); else [super rightMouseDown:e]; }   // NXForge mouse camera (above)
++- (void)rightMouseDragged:(NSEvent *)e { if (g_mcam_held) { g_mcam_dx += e.deltaX; g_mcam_dy += e.deltaY; } else [super rightMouseDragged:e]; }
++- (void)rightMouseUp:(NSEvent *)e { if (g_mcam_held) mcam_release(); else [super rightMouseUp:e]; }
+ // The drawable follows the view in pixels: a layer assigned to a layer-backed view kept the drawable at the first window's 1280x720 in fullscreen too, so the game picture was
+ // scaled down to it and up again by the compositor
+ - (void)fitDrawable {
+@@ -1684,7 +1718,7 @@ void front_run(void (*guest)(void)) {
+             if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
+             if (assign_key(e)) return nil;   // a key being assigned in the Controls section
+             if (e.type == NSEventTypeKeyDown && fn_shortcut(e)) return e;   // fn (Globe) + a letter is the system's (fn+F full screen, GitHub issue #873), not the game's F
+-            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
++            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) { mcam_release(); [opts toggle:nil]; } return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
+             if (g_menu_open) {   // the arrow keys, Return and Space move through the sidebar as a controller does; other keys go to its controls
+                 if (qs_peek_key(e)) return nil;   // NXForge: P held peeks at the game (front_mac_quick_settings.inc)
+                 int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK
+diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
+index f5265f5e257bb8196e96b641f015b219e5347f98..03150dd1b21c732e9adc72c23fd11318027d0fc1 100644
+--- a/dm/tools/tests/test_launcher_settings.py
++++ b/dm/tools/tests/test_launcher_settings.py
+@@ -78,7 +78,7 @@ class LauncherSettingsTests(unittest.TestCase):
+         self.assertEqual(build(BOTW, 'nvn', 'ios').keys(), ios.keys())   # ios when unset
+         self.assertEqual(set(ios) - set(mac), {'DM_SHOW_FPS', 'DM_TOUCH_HAPTICS', 'DM_PICTURE_FIT'})
+         self.assertIn('DM_RUMBLE', mac); self.assertIn('DM_METAL_HUD', mac)
+-        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART', 'DM_MIC'})   # the Mac's microphone (hle_audio.c, PR #1662); NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
++        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART', 'DM_MIC', 'DM_MOUSE_CAMERA', 'DM_MOUSE_CAMERA_SPEED'})   # the Mac's microphone (hle_audio.c, PR #1662) and mouse camera (front_mac.m); NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
+         s = mac['DM_FULLSCREEN']
+         self.assertEqual((s['kind'], s['default'], s['options'], s['level']), ('choice', '0', [['0', 'Window'], ['1', 'Fullscreen']], 'basic'))
+ 
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 6058ce7f7fb2cb169d3c86b78af86fec4b58b1f6..711253fd84f5603e475d3b4377a3c104b6b278c2 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -137,6 +137,8 @@ DM_MOTION_AXES	switch	`=<map>` such as `x,-z,y`: maps Apple's controller axes to
+ DM_MOTION_GAIN	switch	`=<gain>`: how fast the orientation is pulled toward the measured gravity, in rad/s per unit error (default 0.5; `0` integrates the gyro alone)
+ DM_MOTION_HID	switch	On the Mac, `0` disables the passive Switch Pro Controller HID motion fallback (`motion_pro_mac.h`); enabled by default when exactly one physical Pro and one GameController Pro can use the same player slot; usable GameController motion takes priority
+ DM_MOTION_LOG	diagnostic	`=1` logs player 1's mapped motion sample once a second per source (phone / GameController / controller HID; acceleration in G, gyro in revolutions/s), for checking the axes: flat and still reads acc 0 0 -1
++DM_MOUSE_CAMERA	player	`1`: on the Mac, holding the right mouse button over the game locks and hides the pointer and its movement is the right stick (front_mac.m mcam_*); 0 or unset: the right button does nothing
++DM_MOUSE_CAMERA_SPEED	player	`=<x>` (0.25 to 4, 1 by default): the mouse camera's gain; at 1 about 2,500 points a second is a full deflection
+ DM_MOVIE_TRACE	diagnostic	When set, the movie decoder logs every call with its thread and decoder (by default the first 12 calls, then every 2^k-th)
+ DM_MSL_DIR	path	Parent folder of the shader libraries: NVN loads from `b-<chain version>/` or the one file `b-<chain version>.img` beneath it, Vulkan from `vk/`, GL from `gl/`; the app and the Mac launcher set it
+ DM_NDVE_ENGINE	switch	`0` runs nn::ndve's movie network (Ocarina of Time's title and opening movies) as the game's 12 translated dispatches after its colour conversion instead of the host's kernels (dm/gfx/msl/ndve_engine.metal, on by default: the same output, about half the frame's GPU time on an M4 Pro); `ab` alternates with DM_AB; `check` runs the game's dispatches and the host's network beside them and logs every 300 frames how many texels of the two differ. The host's kernels take only the model they were written for, bound by its shaders' keys and its weights' layout (docs/reference/shaders.md, The NDVE movie network by the host)
+diff --git a/docs/settings.md b/docs/settings.md
+index 4ff49d6094ea5f01c3fc57437d4413bce13085bc..e02f334c9e5b1c27b2857837a9ade35e66b49cc8 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -132,6 +132,14 @@ A controller's vibration weaker than this stays off, and the rest is spread over
+ 
+ Off by default: each controller is a player as soon as it connects, in the order the system lists them. On: a controller becomes a player only when you press one of its buttons, as the lowest player free, so the players choose their order and how many play. That press also reaches the game. When a game asks for more players than have joined, a prompt over the game waits for the others to press a button; B closes it.
+ 
++### Mouse camera
++
++Mac only, off by default (`DM_MOUSE_CAMERA`). On: hold the right mouse button over the game and move the mouse to turn the camera; it is the right stick, added to the keyboard's Shift and arrow keys. The pointer stays where it is and hides while the button is held, and comes back when you let go, open the sidebar or switch apps. The left button stays the touch screen.
++
++### Mouse camera speed
++
++How far the stick turns for a given mouse movement, 100 % by default, 25 % to 400 % (`DM_MOUSE_CAMERA_SPEED`). At 100 % about 2,500 points of movement a second turn it fully.
++
+ ### Microphone
+ 
+ Mac only, off by default (`DM_MIC`). On: the game hears the Mac's default audio input as the console's microphone. The Legend of Zelda: Ocarina of Time uses it to play the ocarina by voice or whistle. macOS asks for permission the first time a game starts listening; refused, the game hears silence. The level follows the loudest of the last few seconds, and `DM_MIC_GAIN=<x>` in an env file fixes it instead (from upstream PR #1662).

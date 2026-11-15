@@ -206,6 +206,10 @@ struct GameHeroColumn: View {
                         .buttonStyle(StageButton(primary: true, height: 56, glow: tint))
                     Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: { Label("Play options", systemImage: "slider.horizontal.3").padding(.horizontal, 4) }
                         .buttonStyle(StageButton(height: 56, glass: true))
+                    if playing {
+                        Button { model.quitGame(app: g.app ?? "") } label: { Label("Quit game", systemImage: "xmark") }
+                            .buttonStyle(StageButton(height: 56, glass: true)).help("Quits the running game, as its own Quit does")
+                    }
                 } else {
                     Button { model.playFromStage(g.ref) } label: { Label("Build", systemImage: "hammer.fill").padding(.horizontal, 14) }
                         .buttonStyle(StageButton(primary: true, height: 56, glow: tint)).disabled(model.run.running || model.batchRunning)
@@ -240,6 +244,7 @@ struct GameHeroColumn: View {
     var facts: [String] {
         var out = [game.console == .switch2 ? "Nintendo Switch 2" : "Nintendo Switch"]
         if game.app == nil { out.append("Not built yet") }
+        else if model.isSuspended(app: game.app ?? "") { out.append("Paused · still running") }
         else if model.isPlaying(app: game.app ?? "") { out.append("Playing now") }
         else { out.append(game.last.map { "Played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet") }
         return out

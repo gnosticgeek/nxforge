@@ -1,0 +1,312 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: oot-detail: Ocarina of Time's model detail and shadow range for
+ slower GPUs (DM_MODEL_LOD, DM_SHADOW_CASCADES; Model detail and Shadow range
+ rows, full by default)
+
+From brad-n/TVPort ba9cf51e by Brad Norman (MIT): the stubs at state page +0x304 / +0x308 (TVPort's +0xb4 / +0xb8), and docs_patches.py's dry run placing a rule's
+other functions 4 MB apart (Ocarina's rule now has 16). TVPort's DM_AB_STATE measurement switch is not taken.
+---
+ dm/games/0400486024DEC000/README.md  |   2 +
+ dm/games/0400486024DEC000/patches.py | 107 ++++++++++++++++++++++++++-
+ dm/games/settings.tsv                |   2 +
+ dm/host/loader.c                     |  13 ++++
+ dm/tools/docs_patches.py             |   4 +-
+ dm/tools/tests/test_patches.py       |  12 +++
+ docs/agents/game-patches.md          |   6 +-
+ docs/env_switches.tsv                |   2 +
+ docs/settings.md                     |   8 ++
+ 9 files changed, 151 insertions(+), 5 deletions(-)
+
+diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
+index 9556ab86342d959697946dda8d11fb0277f05cb6..0692b4a20e9b98147cba8baa8709551998883fde 100644
+--- a/dm/games/0400486024DEC000/README.md
++++ b/dm/games/0400486024DEC000/README.md
+@@ -105,6 +105,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+ 
+ `DM_FOLIAGE=off` (the Mac settings' Grass and ground cover row, on by default) turns the game's foliage module off at its source: grass, ferns, clover, the ivy on walls and the moss fuzz on logs. The stub in [`patches.py`](patches.py) (`foliage`, placed by the fingerprint of the module's per-frame calc, `main+0x2c00a40` on v131072) sets the module's own grass and forest disables (+0x141 / +0x142, which its timelines use) and the four per-type hide bits of its debug word (+0x2b1) every frame while state page +0x300 is 1, so the game's own checks skip the foliage draws, the per-type calc and the FoliageShader compute. Cuttable grass and bushes are actors drawn as models and stay. Brad Norman measured it on TVPort (brad-n/TVPort 8609a1cb, MIT) on a Mac mini M2 Pro: the foliage encoders came to about 3.5 ms of GPU a frame (balcony, Link's house) and 0.02 ms with the option, and graphics memory fell about 85 MB (Link's house 1346 → 1256 MB). The state offset differs from TVPort's (+0xb0 there), because upstream's wide-screen stubs use +0xa0 / +0xa4.
+ 
++Two more of the game's own detail knobs come from the same TVPort work (brad-n/TVPort ba9cf51e, MIT), as stubs of the frame step rule placed by function fingerprints: `DM_MODEL_LOD=<factor>` (the Model detail row; state page +0x304, a float) divides the model scene's size on screen and start distance coefficient by the factor in the three inlined level choices of the model scene calc (`main+0x7bb80`) and the module's level function (`main+0x31d48b0`, `main+0x31d4d80`), and `DM_SHADOW_CASCADES=1|2` (the Shadow range row; +0x308) lowers DepthShadowCascadeNum0 as gsys ModelSceneConfigParam loads (`main+0x35667c0`). On a Mac mini at TV-like settings a factor of 4 took 3.3 ms of 11.8 off the Great Deku Tree's dialogue and 1.2 to 1.5 ms off the balcony; one cascade took the shadow passes from 0.3 to 0.1 ms. TVPort's `DM_AB_STATE` measurement switch was not taken.
++
+ ## Memory
+ 
+ - Current, Mac: from about half of Metal's working set the GPU driver frees at every command buffer and the game runs at about 10 fps (Hyrule Field after 15 minutes on a 24 GB M4 Pro, 9.0-9.5 GB required): [the driver's low-water mark](../../../docs/reference/memory.md#the-gpu-driver-frees-at-every-command-buffer-from-about-half-the-working-set). The guard lets go of what has idled from 7.3 GB there and tells the player when the game is slow past 8.4 GB; saving and starting again empties it.
+diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
+index 75c0436e3afa81d671cd5bf3304681da05283fd3..579564788f5a90ee7d76338e1b7b44cd845364ee 100644
+--- a/dm/games/0400486024DEC000/patches.py
++++ b/dm/games/0400486024DEC000/patches.py
+@@ -42,6 +42,8 @@ def frame_step(ctx):
+     heap_retry(ctx)
+     screen_wide(ctx)
+     foliage(ctx)
++    model_lod(ctx)
++    shadow_cascades(ctx)
+ 
+ # Foliage off (state +0x300, u32 written by the loader: DM_FOLIAGE=off, 1; 0 = the game's): a quality trade for slower GPUs. Grass, ferns, clover, the moss fur on logs and the
+ # other ground cover are game::foliage, one module (its singleton at main+0x4e22540 on v131072; Pack/Foliage.pack, a 248 MB "Foliage Scene Heap") with a class per model type
+@@ -81,6 +83,99 @@ def foliage(ctx):
+     ctx.put(base, [B(base, start)], 'foliage off: the module\'s grass / forest disables and type hide bits set each frame (state +0x300, DM_FOLIAGE=off; 0 = the game\'s)')
+     ctx.capabilities.add('FOLIAGE')
+ 
++# Model level of detail (state +0x304, float written by the loader: DM_MODEL_LOD, above 1 up to 8; 0 = the game's): a quality trade for slower GPUs. Each model picks its mesh level once a
++# frame from its level data (model +0x78 → +0x18) and the graphics module's settings (the object of the frame update main+0x31d3200), in one of two ways:
++#  - by size on screen: the model's projected size (a fraction of the screen height) x 1080 (the module's +0x1510, a constant: the game's own render size never enters) is divided
++#    by the level scale of its kind (+0x1518[kind]) x the module's pixel scale (+0x1514, which the timeline command OneshotSetPixelScaleForModelLod sets), and the level is the
++#    first whose threshold (level data +0x48[i]) that size still reaches. The stubs multiply that divisor by the host's factor, so a model takes each lower level at 1/factor
++#    of the size on screen it took it at, as if it were that many times farther away;
++#  - by distance: the module's start distance coefficient (+0xd90: ModelLodParam's LodStartDistCoefForHandheld, 0.8, or ForConsole, 1.0, which the frame update copies by the
++#    operation mode) scales the level data's start distance (+0x40); the stubs divide the coefficient by the factor, so the lower levels start that many times nearer, as
++#    handheld mode already does at 0.8.
++# The choice is written out five times: three inlined copies in the model scene's per-model calc (main+0x7bb80 on v131072, its callers main+0x795a0 and main+0x798a0; the
++# copies the game ran on Link's balcony, about 55 choices by size and 24 by distance a frame, counted by diagnostic stubs), and the module's own level function (its vtable's
++# main+0x31d48b0) with main+0x31d4d80, the caller that inlines it when the slot holds it (neither ran there). Sites and the registers each stub may use:
++#  - the calc's size copies: ldr s3,[x20,#0x1514] (the pixel scale) x the factor; s4 and x11 are written by the next two instructions before anything reads them;
++#  - the calc's distance copies: ldr s4,[x20,#0xd90] / the factor; s5 and x8 are written by the next instructions before anything reads them, and the flags of the fcmp before the
++#    site, which an fcsel after it reads, are left alone (cbz, fmov and fdiv set none);
++#  - the level function and its caller: fmul s3,s4,s3 (scale x pixel scale) x the factor and ldr s5,[xN,#0xd90] / the factor; s4 is dead after the fmul, and s7, x16 and x17
++#    appear nowhere before their next write in either function; no flags are live there.
++# The levels are chosen for 1080 lines whatever size the game renders (864 at its full size, 432 at DM_RENDER_SCALE=0.5), so at 0.5 a factor of 2.5 gives about the
++# triangles a pixel the game has at its full size. Apple GPUs shade a 2x2 quad for every pixel a triangle touches, so thin and small triangles cost fragment work too: the
++# Great Deku Tree's beard of hanging roots is most of its pass
++model_calc_size, model_calc_distance = (0x26c4, 0x8a80, 0xabe4), (0x34a0, 0x91bc, 0xb9c4)   # in the model scene calc: its three copies of the choice
++def model_lod(ctx):
++    calc, func, inline = ctx.others.get('model calc'), ctx.others.get('model lod'), ctx.others.get('model lod inline')
++    if calc is None or func is None or inline is None: return   # not all found in this build: the game's own level of detail
++    here, emit = ctx.here, ctx.emit
++    def stub(site, original, words, reason):   # the original instruction, then the words (which end at the point the factor is 0 jumps to), then back
++        ctx.site(site, original.to_bytes(4, 'little').hex())
++        start = here()
++        emit(original)
++        for w in words(here()): emit(w)
++        emit(B(here(), site + 4))
++        ctx.put(site, [B(site, start)], reason)
++    for off in model_calc_size:
++        stub(calc + off, 0xbd551683,   # ldr s3,[x20,#0x1514]   the module's pixel scale
++             lambda at: [ADRP(11, at, ctx.state),
++                         0xb943056b,   # ldr w11,[x11,#0x304]  the factor (float bits)
++                         cbz_w(at + 8, at + 20, 11),   # 0: the game's own
++                         0x1e270164,   # fmov s4,w11
++                         0x1e240863],   # fmul s3,s3,s4        the pixel scale x the factor
++             'model level by size on screen (model scene calc): the pixel scale x the host factor (state +0x304, DM_MODEL_LOD; 0 = the game\'s)')
++    for off in model_calc_distance:
++        stub(calc + off, 0xbd4d9284,   # ldr s4,[x20,#0xd90]   the start distance coefficient
++             lambda at: [ADRP(8, at, ctx.state),
++                         0xb9430508,   # ldr w8,[x8,#0x304]
++                         cbz_w(at + 8, at + 20, 8),
++                         0x1e270105,   # fmov s5,w8
++                         0x1e251884],   # fdiv s4,s4,s5        the coefficient / the factor
++             'model level by distance (model scene calc): the start distance coefficient / the host factor (state +0x304, DM_MODEL_LOD; 0 = the game\'s)')
++    for base, size_site, dist_site, module in ((func, 0x14c, 0x1e4, 21), (inline, 0x228, 0x2a4, 19)):
++        stub(base + size_site, 0x1e230883,   # fmul s3,s4,s3   the level's scale x the pixel scale
++             lambda at: [ADRP(16, at, ctx.state),
++                         0xb9430611,   # ldr w17,[x16,#0x304]
++                         cbz_w(at + 8, at + 20, 17),
++                         0x1e270224,   # fmov s4,w17
++                         0x1e240863],   # fmul s3,s3,s4
++             'model level by size on screen (level function): the divisor x the host factor (state +0x304, DM_MODEL_LOD; 0 = the game\'s)')
++        stub(base + dist_site, 0xbd4d9005 | (module << 5),   # ldr s5,[x21 or x19,#0xd90]
++             lambda at: [ADRP(16, at, ctx.state),
++                         0xb9430611,   # ldr w17,[x16,#0x304]
++                         cbz_w(at + 8, at + 20, 17),
++                         0x1e270227,   # fmov s7,w17
++                         0x1e2718a5],   # fdiv s5,s5,s7
++             'model level by distance (level function): the start distance coefficient / the host factor (state +0x304, DM_MODEL_LOD; 0 = the game\'s)')
++    ctx.capabilities.add('MODEL_LOD')
++
++# Shadow cascades (state +0x308, u32 written by the loader: DM_SHADOW_CASCADES, 1 or 2; 0 = the game's): a quality trade for slower GPUs. The dynamic depth shadow of the sun is
++# a cascade of depth maps (1000x1000 Depth16 each on the Apple TV's run 18, one pass a cascade); their number is gsys ModelSceneConfigParam's DepthShadowCascadeNum0 (3 in
++# /gsys/ModelSceneConfigParam/Main; its splits DepthShadowNear00..03 2, 32, 64, 200 m). The parameter binder (main+0x35667c0 on v131072) reads each key from the file into its
++# field as it visits it; the stub, right after the visit of DepthShadowCascadeNum0 (field +0x394), lowers the value to the host's, so the shadow setup made from the parameters
++# has fewer cascades: the nearest ones are kept, and shadows end at the last kept split. Read once, when the parameters load (at boot), so it cannot change in a running game.
++# x8 and x9 are written again by the binder before they are read, and the stub ends on the original cmp, so the flags are the binder's
++def shadow_cascades(ctx):
++    base = ctx.others.get('scene config binder')
++    if base is None: return   # not found in this build: the game's cascades
++    here, emit = ctx.here, ctx.emit
++    site = base + 0x2408
++    ctx.site(site, '1f040071')   # cmp w0,#1   after the visit of DepthShadowCascadeNum0
++    start = here()
++    emit(0xb9439689)   # ldr w9,[x20,#0x394]   the cascades the file gave
++    emit(ADRP(8, here(), ctx.state))
++    emit(0xb9430908)   # ldr w8,[x8,#0x308]    the host's number
++    done = here() + 4 * 4
++    emit(cbz_w(here(), done, 8))   # 0: the game's own
++    emit(0x6b08013f)   # cmp w9,w8
++    emit(0x1a898109)   # csel w9,w8,w9,hi      the file's above the host's: the host's
++    emit(0xb9039689)   # str w9,[x20,#0x394]
++    assert here() == done
++    emit(0x7100041f)   # cmp w0,#1             the original
++    emit(B(here(), site + 4))
++    ctx.put(site, [B(site, start)], 'shadow cascades: DepthShadowCascadeNum0 lowered to the host\'s number as the parameters load (state +0x308, DM_SHADOW_CASCADES; 0 = the game\'s)')
++    ctx.capabilities.add('SHADOW_CASCADES')
++
++
+ 
+ # The game's dynamic resolution (game__gfx__DynamicResolutionParam: LoadThreshold, ReduceCounterMax, IncreaseCounterMax and a list of levels, each a ResolutionReduceScale and a
+ # Priority; on v131072 levels 0..9 at 0.75..0.333 of 2048x1152, 1536x864 to 683x384). Its update (main+0x805aa0) reads the frame's GPU load (about 0.2 ms a unit) into +0x8, subtracts
+@@ -245,7 +340,11 @@ MATCH_FRAME_STEP = {'main': [
+                 'output size': {'size': 0x554, 'fingerprints': ['c0cab0dbf6f0644635315a356f8fd23a4701515c4ab4775d52191835b1a12e3c']},   # main+0x6502e0
+                 'window size': {'size': 0x6f0, 'fingerprints': ['db697988f57115f6aa10a89a8b6b765629fc12a5be32a02c196dc2c1329ab095']},   # main+0x346be50
+                 'graphics init': {'size': 0x858, 'fingerprints': ['83be7b818af92490839ec68669d6ee56d396e6bf4028c4c5a022e403e50d53ac']},   # main+0x36ae9d0
+-                'foliage calc': {'size': 0x6f8, 'fingerprints': ['34cac4f1d8c1a00d12efcb767c1213da3d6c5d692cb61254da2cb1b926d49891']}}},   # main+0x2c00a40
++                'foliage calc': {'size': 0x6f8, 'fingerprints': ['34cac4f1d8c1a00d12efcb767c1213da3d6c5d692cb61254da2cb1b926d49891']},   # main+0x2c00a40
++                'model calc': {'size': 0xc374, 'fingerprints': ['53bcd5b0e1917420e07d170b994836b48554e140292c6b4cbe1640f7e8cfa791']},   # main+0x7bb80
++                'model lod': {'size': 0x4a8, 'fingerprints': ['739352a7c0fe91d8a0ab0ab62096f5735eafd8577e8b907136f0904367e65440']},   # main+0x31d48b0
++                'model lod inline': {'size': 0x860, 'fingerprints': ['9689ff1833cbbb9e47ffd604d9e1bca6ef31a73c2f7520492e9681ca59397461']},   # main+0x31d4d80
++                'scene config binder': {'size': 0xbe1c, 'fingerprints': ['9a6c3c997131c75bd152e7de43e419351d80f8dd07169234009d6fee266f707f']}}},   # main+0x35667c0
+ ]}
+ 
+ # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
+@@ -280,6 +379,12 @@ BINDING = [
+     {'what': 'foliage off: the foliage module\'s grass / forest disables and type hide bits set each frame (DM_FOLIAGE)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
+      'why': "the foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default",
+      'checked': 'v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags\' readers (turf draw lists, per-draw callbacks, the type classes\' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10)'},
++    {'what': 'model level of detail: the size on screen and the start distance seen through a factor (DM_MODEL_LOD)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
++     'why': "the graphics module's pixel scale and start distance coefficient where the game's model scene calc and its level function read them, found by the three functions' fingerprints on any build that keeps them; switchable, off by default",
++     'checked': 'v131072 main: one function with each fingerprint; the level choice read by disassembly (its three copies in the model scene calc and the module\'s level function), the free registers at each site; counters in the stubs in play on the balcony: about 55 size and 24 distance choices a frame in the calc, none in the level function (2026-11-12)'},
++    {'what': 'shadow cascades: DepthShadowCascadeNum0 lowered as the parameters load (DM_SHADOW_CASCADES)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
++     'why': "the visit of DepthShadowCascadeNum0 in gsys ModelSceneConfigParam's binder, found by its function's fingerprint on any build that keeps it; switchable, off by default",
++     'checked': 'v131072 main: one function with this fingerprint, the key, field offset and default read by disassembly; one cascade pass a frame instead of three in play on the balcony (2026-11-12)'},
+ ]
+ 
+ # A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index decdffcc2b9410322db9e7365604d909c988de2f..620e785a4b2985b1d215a23ccdc87493144b79b4 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -41,6 +41,8 @@ DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo s
+ DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
+ DM_SCREEN_WIDE	choice	0=16:9 (Switch),16x10=16:10?platform:mac,auto=Auto (match the screen)?platform:mac	0|auto	fixups:SCREEN_WIDE	Game	Aspect ratio	Fills a 16:10 or ultrawide screen instead of showing bars: Auto matches the screen the game opens on. 16:10 shows a little less at the sides, wider screens more.
+ DM_FOLIAGE	toggle	on/off	1	fixups:FOLIAGE	Game	Grass and ground cover	Turn off on a slower GPU: grass, ferns, clover and moss are not drawn (about 3.5 ms of GPU a frame in Ocarina of Time). Cut grass and bushes stay.
++DM_MODEL_LOD	choice	0=Full,2=Lower,4=Lowest	0	fixups:MODEL_LOD	Game	Model detail	Lower picks the game's simpler models nearer the camera, for a slower GPU (about 1 to 3 ms a frame in Ocarina of Time's busiest scenes).
++DM_SHADOW_CASCADES	choice	0=Full,2=2 cascades,1=1 cascade	0	fixups:SHADOW_CASCADES	Game	Shadow range	Fewer cascades end the sun's shadows nearer the camera and make near shadows softer. Takes effect at the next game start.
+ DM_PRESENT_SNAP	toggle	-	DM_GAME_PRESENT_SNAP	gfxapi:nvn	Performance	Frame buffering	Up to one frame more display latency.
+ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
+ DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
+diff --git a/dm/host/loader.c b/dm/host/loader.c
+index 4c71c943b085ebf6e21f4a352b270ad2f0593571..e4585f6e7b029573f0dd82ca4c051a5e78ee38d6 100644
+--- a/dm/host/loader.c
++++ b/dm/host/loader.c
+@@ -350,6 +350,19 @@ void dm_fps_state_apply(void) {
+       if (fo && *fo && strcmp(fo, "on") && strcmp(fo, "off")) LOG("[RED] DM_FOLIAGE=%s: on or off; keeping the foliage", fo);
+       if (foff) LOG("%s: foliage off (DM_FOLIAGE; builds with the stub)", g_fps_mod);
+       memcpy(dm_fps_state + 0x300, &foff, sizeof foff); }
++    // From TVPort ba9cf51e (MIT), at state page +0x304 / +0x308 beside the foliage field (TVPort's +0xb4 / +0xb8)
++    {
++    // Model level of detail, float at +0x304: DM_MODEL_LOD=<factor> (1.25 to 8) makes the game pick its models' lower-detail meshes as if they were that many times farther away
++    // (Ocarina of Time's model_lod stubs in its level function: the size on screen divided, the distance coefficient divided); 1 or unset keeps the game's. Read every frame
++    const char *ml = getenv("DM_MODEL_LOD"); float mlf = 0;
++    if (ml && *ml) { char *end; float v = strtof(ml, &end); if (end == ml || *end || !(v >= 1.0f && v <= 8.0f)) LOG("[RED] DM_MODEL_LOD=%s: 1 to 8; keeping the game's level of detail", ml); else if (v > 1.0f) { mlf = v; LOG("%s: models at %.2fx the game's level-of-detail distance (DM_MODEL_LOD; builds with the stub)", g_fps_mod, 1.0f / v); } }
++    memcpy(dm_fps_state + 0x304, &mlf, sizeof mlf);
++    // Shadow cascades, u32 at +0x308: DM_SHADOW_CASCADES=1 or 2 lowers the number of the sun's depth shadow cascades the game sets up (Ocarina of Time: 3) when its parameters load;
++    // 0 or unset keeps the game's
++    const char *cn = getenv("DM_SHADOW_CASCADES"); uint32_t scn = 0;
++    if (cn && *cn) { char *end; unsigned long v = strtoul(cn, &end, 10); if (end == cn || *end || v > 3) LOG("[RED] DM_SHADOW_CASCADES=%s: 1, 2 or 3; keeping the game's shadow cascades", cn); else if (v) { scn = (uint32_t)v; LOG("%s: at most %u shadow cascades (DM_SHADOW_CASCADES; builds with the stub)", g_fps_mod, scn); } }
++    memcpy(dm_fps_state + 0x308, &scn, sizeof scn);
++    }
+     // Screen shape: DM_SCREEN_ASPECT, the screen's width / height between 1.3 and 1.77, makes the builds with screen-shape stubs
+     // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
+     // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
+diff --git a/dm/tools/docs_patches.py b/dm/tools/docs_patches.py
+index 78918e8d059e10f75f5a1d02c8dfb05f2db72be9..aeb9a5c59c3f6ddd224412a84b7d7e7ba33fa0d4 100644
+--- a/dm/tools/docs_patches.py
++++ b/dm/tools/docs_patches.py
+@@ -173,8 +173,8 @@ def build_rows(gs):   # {build ID: [(game, display version, module)]}
+     return out
+ 
+ 
+-OTHER_BASE, OTHER_STEP = 0x8000000, 0x800000   # where the dry run puts a MATCH_FRAME_STEP rule's other functions, 8 MB apart, so their sites read as offsets in them; its patch area
+-                                               # starts at 0x6000000, within a b's reach (128 MB) of a main's sites below it and of up to twelve other functions above (Ocarina of Time has seven)
++OTHER_BASE, OTHER_STEP = 0x8000000, 0x400000   # where the dry run puts a MATCH_FRAME_STEP rule's other functions, 4 MB apart (the largest is 49 KB), so their sites read as offsets in them;
++                                               # its patch area starts at 0x6000000, within a b's reach (128 MB) of a main's sites below it and of up to 24 other functions above (Ocarina of Time has 16)
+ 
+ 
+ def frame_step_sites(fn, base=0, others=(), found=None):   # (offset, reason) of each site a FRAME_STEP function (or a MATCH_FRAME_STEP stub, its function at base) writes, whether it marks a
+diff --git a/dm/tools/tests/test_patches.py b/dm/tools/tests/test_patches.py
+index 366374accc8f173b51193834c10c6893417b9c14..982d1eeb4fc4e77005717543311633c54e3d4e46 100644
+--- a/dm/tools/tests/test_patches.py
++++ b/dm/tools/tests/test_patches.py
+@@ -310,5 +310,17 @@ class RewriteKey(unittest.TestCase):
+             self.assertEqual(nsp.patch_files(REPO, tmp / 'exe', ['main']), sdk_wide + [mine])
+ 
+ 
++class FrameStepSites(unittest.TestCase):
++    def test_a_rule_with_many_other_functions_reaches_them_all(self):   # 8 MB apart (16 before), a thirteenth other function lay beyond a b's reach of the dry run's patch area (Ocarina of Time's rule has nine)
++        import nso_asm
++        labels = ['f%d' % i for i in range(24)]
++        def stub(ctx):
++            for label in labels:
++                site = ctx.others[label] + 0x10
++                ctx.put(site, [nso_asm.B(site, ctx.here())], label)
++        _, _, in_others, _ = docs_patches.frame_step_sites(stub, others={label: {} for label in labels})
++        self.assertEqual({label: [off for off, _ in got] for label, got in in_others.items()}, {label: [0x10] for label in labels})
++
++
+ if __name__ == '__main__':
+     unittest.main()
+diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
+index 5a0062e0f4ce15563be2d6c78dddeb764e163d6f..7662166d683eae1c2398171a87f17a94f31beeb0 100644
+--- a/docs/agents/game-patches.md
++++ b/docs/agents/game-patches.md
+@@ -83,7 +83,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ | [Taiko Risshiden V DX](#taiko-risshiden-v-dx) | 1 | 0 | 0 | 2 | 0 | `game` |
+ | [The Legend of Zelda: Breath of the Wild](#the-legend-of-zelda-breath-of-the-wild) | 7 | 0 | 43 | 0 | 0 | `build` → `game` ×2 |
+ | [The Legend of Zelda: Link's Awakening](#the-legend-of-zelda-links-awakening) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
+-| [The Legend of Zelda: Ocarina of Time](#the-legend-of-zelda-ocarina-of-time) | 0 | 0 | 13 | 1 | 0 | `game` ×5 |
++| [The Legend of Zelda: Ocarina of Time](#the-legend-of-zelda-ocarina-of-time) | 0 | 0 | 24 | 1 | 0 | `game` ×7 |
+ | [The Legend of Zelda: Tears of the Kingdom](#the-legend-of-zelda-tears-of-the-kingdom) | 0 | 0 | 9 | 0 | 0 | `game` |
+ | [Xenoblade Chronicles 3](#xenoblade-chronicles-3) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
+ 
+@@ -597,9 +597,11 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen's edges and the scene at 16:9's proportions with more at the sides (2026-11-12): wide screen: the swap chain and frame buffer sizes and the scene cameras' aspect (DM_SCREEN_WIDE). The game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags' readers (turf draw lists, per-draw callbacks, the type classes' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10): foliage off: the foliage module's grass / forest disables and type hide bits set each frame (DM_FOLIAGE). The foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default
++- **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint; the level choice read by disassembly (its three copies in the model scene calc and the module's level function), the free registers at each site; counters in the stubs in play on the balcony: about 55 size and 24 distance choices a frame in the calc, none in the level function (2026-11-12): model level of detail: the size on screen and the start distance seen through a factor (DM_MODEL_LOD). The graphics module's pixel scale and start distance coefficient where the game's model scene calc and its level function read them, found by the three functions' fingerprints on any build that keeps them; switchable, off by default
++- **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint, the key, field offset and default read by disassembly; one cascade pass a frame instead of three in play on the balcony (2026-11-12): shadow cascades: DepthShadowCascadeNum0 lowered as the parameters load (DM_SHADOW_CASCADES). The visit of DepthShadowCascadeNum0 in gsys ModelSceneConfigParam's binder, found by its function's fingerprint on any build that keeps it; switchable, off by default
+ 
+ - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
+-- **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; wide: nnMain create arg, a function of 0x570 bytes, `+0x200` in it; wide: framework constructor, a function of 0x273c bytes, `+0x164`, `+0x170` in it; wide: camera update A, a function of 0x1700 bytes, `+0xa74` in it; wide: camera update B, a function of 0xa40 bytes, `+0x204` in it; wide: camera update C, a function of 0x638 bytes, `+0x428` in it; output size init, a function of 0x2fc bytes, `+0xf4` in it; output size, a function of 0x554 bytes, `+0x300` in it; window size, a function of 0x6f0 bytes, `+0x3fc` in it; graphics init, a function of 0x858 bytes, `+0x88` in it; foliage calc, a function of 0x6f8 bytes, `+0x0` in it; launcher capabilities: DYNAMIC_RESOLUTION, FOLIAGE, SCREEN_WIDE
++- **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; wide: nnMain create arg, a function of 0x570 bytes, `+0x200` in it; wide: framework constructor, a function of 0x273c bytes, `+0x164`, `+0x170` in it; wide: camera update A, a function of 0x1700 bytes, `+0xa74` in it; wide: camera update B, a function of 0xa40 bytes, `+0x204` in it; wide: camera update C, a function of 0x638 bytes, `+0x428` in it; output size init, a function of 0x2fc bytes, `+0xf4` in it; output size, a function of 0x554 bytes, `+0x300` in it; window size, a function of 0x6f0 bytes, `+0x3fc` in it; graphics init, a function of 0x858 bytes, `+0x88` in it; foliage calc, a function of 0x6f8 bytes, `+0x0` in it; model calc, a function of 0xc374 bytes, `+0x26c4`, `+0x34a0`, `+0x8a80`, `+0x91bc`, `+0xabe4`, `+0xb9c4` in it; model lod, a function of 0x4a8 bytes, `+0x14c`, `+0x1e4` in it; model lod inline, a function of 0x860 bytes, `+0x228`, `+0x2a4` in it; scene config binder, a function of 0xbe1c bytes, `+0x2408` in it; launcher capabilities: DYNAMIC_RESOLUTION, FOLIAGE, MODEL_LOD, SCREEN_WIDE, SHADOW_CASCADES
+ 
+ ### The Legend of Zelda: Tears of the Kingdom
+ 
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index da74c0541483a1c818843ea0bfc958a8aac5f825..6058ce7f7fb2cb169d3c86b78af86fec4b58b1f6 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -130,6 +130,7 @@ DM_METAL_HUD	player	`1` shows Apple's Metal performance HUD over the game (frame
+ DM_MIC	player	`1` lists the Mac's default audio input as the game's microphone (input streams, `hle_audio.c`; macOS asks for permission at the first capture): Ocarina of Time plays the ocarina from it. Off by default; no microphone on iOS
+ DM_MIC_DUMP	diagnostic	`=<file>` writes the microphone's frames as the game's stream takes them (after the gain), 16-bit mono 48 kHz raw PCM, to hear what the game hears
+ DM_MIC_GAIN	player	`=<x>` multiplies the microphone's frames by x before the game reads them (with `DM_MIC=1`); unset or `0`, the gain follows the loudest of the last seconds (falling 6 dB a second), up to 64 (a Mac's input is quieter than what a Switch's system hands the game)
++DM_MODEL_LOD	player	`2` to `8` (a factor; `1` or unset keeps the game's): the game's models take their lower-detail meshes as if they were that many times farther away (Ocarina of Time: its patches.py model_lod stubs, state page +0x304, multiply the pixel scale the model scene's level choice divides a model's size on screen by, and divide the start distance coefficient of the choice by distance). A quality trade for slower GPUs: on a Mac mini M2 Pro at the Apple TV's settings, `4` takes 3.3 ms of 11.8 off the Great Deku Tree's opening dialogue (the tree a level down: its beard of hanging roots becomes one textured sheet), 1.2-1.5 ms off Link's balcony (no change a 960x540 picture shows), 0.1-0.3 ms off the house, the forest walk and Navi's flight, nothing at Navi and the tree; `2` changes about nothing; `3` already switches the tree, `8` saves what `4` does in the dialogue. Read every frame. Only on builds whose rewrite declares the MODEL_LOD capability
+ DM_MOTION	switch	`0` ignores live motion: every six-axis sensor lies flat as before (a shake still plays), and neither controllers' motion sensors nor the phone's device motion are switched on (`hle_hid.c`, `motion_apple.h`, `DmGamepad.m`); the NSP script's `--no-motion` (`MOTION = False`) builds it in
+ DM_MOTION_ACC_SIGN	switch	`-1` flips only GameController's acceleration, for a source that reports the specific force (+1 G up at rest) instead of the gravity direction (`motion_fusion.h`); phone and raw HID samples are already in the Switch frame
+ DM_MOTION_AXES	switch	`=<map>` such as `x,-z,y`: maps Apple's controller axes to the Switch's, a signed permutation applied to acceleration and rotation alike, for a controller whose axes differ (default `x,y,z`; phone and raw HID samples are already in the Switch frame)
+@@ -414,6 +415,7 @@ DM_SCREEN_WIDE	player	`=<width>x<height>` of a screen from 1.3:1 to 32:9 other t
+ DM_SETTINGS_FILE	path	`0` turns off the Mac player's per-game settings file (`NXForge settings.txt` in DM_GAME_FOLDER, else `nxforge-settings.txt` in DM_ROOT), which mirrors the Quick settings sidebar's choices and wins at launch
+ DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
+ DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
++DM_SHADOW_CASCADES	player	`1` or `2`: at most that many cascades of the sun's dynamic depth shadow (Ocarina of Time: 3; its patches.py shadow_cascades stub lowers DepthShadowCascadeNum0 as gsys ModelSceneConfigParam loads, state page +0x308); `3`, `0` or unset keeps the game's. The remaining cascade covers the whole shadow distance, so the shadows near the player are softer and fainter. A small quality trade for slower GPUs: on a Mac mini M2 Pro at the Apple TV's settings `1` takes the shadow passes from 0.30 to 0.11 ms (balcony) and 0.29 to 0.08 ms (forest walk); `2` not measured. Read once, when the game starts. Only on builds whose rewrite declares the SHADOW_CASCADES capability
+ DM_SHAKE_G	switch	`=<G>`: on iOS, the acceleration beyond gravity above which a flick of the phone shakes the controller's six-axis sensor (default 1.5)
+ DM_SHARED_FONT	path	Font file served for every shared-font type except the Nintendo extension (default `$DM_FONT_DIR/standard.ttf`, then macOS's Arial Unicode)
+ DM_SHARED_FONT_EXT	path	Font file served for shared-font type 5, the Nintendo extension with the button icons (default `$DM_FONT_DIR/nintendo_ext.ttf`, made by `make_ext_font.py`)
+diff --git a/docs/settings.md b/docs/settings.md
+index 482300559aff3b403cd3a7358cd5074cebee09c7..4ff49d6094ea5f01c3fc57437d4413bce13085bc 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -98,6 +98,14 @@ Mac, games whose build supports it (Ocarina of Time); the Mac settings window ca
+ 
+ On by default, shown for games whose build has the stub (The Legend of Zelda: Ocarina of Time). Off: the game's grass, ferns, clover, the ivy on walls and the moss on logs are not drawn, calculated or computed, which saves about 3.5 ms of GPU a frame and about 85 MB of graphics memory on a Mac mini M2 Pro. Grass you can cut and bushes stay. Takes effect at the next game start (`DM_FOLIAGE`).
+ 
++### Model detail
++
++Full by default, shown for games whose build has the stubs (Ocarina of Time). Lower (2) and Lowest (4) make the game pick its simpler models as if each were that many times farther away, which takes about 1 to 3 ms of GPU a frame off the busiest scenes on a Mac mini M2 Pro (the Great Deku Tree's dialogue, Link's balcony) and little elsewhere (`DM_MODEL_LOD`).
++
++### Shadow range
++
++Full by default (Ocarina of Time: 3 cascades). 2 or 1 cascades end the sun's shadows nearer the camera and soften near shadows; the shadow passes fall from about 0.3 to 0.1 ms a frame. The game reads it when it loads its settings, so it takes effect at the next start (`DM_SHADOW_CASCADES`).
++
+ ### Frame-rate counter
+ 
+ Shows the frames per second at the top left.

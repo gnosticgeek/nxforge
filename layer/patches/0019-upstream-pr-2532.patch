@@ -35,7 +35,7 @@ Checked on an M5 Max (docked, a window, kokiri-deck from the deck save, two runs
  3 files changed, 71 insertions(+), 5 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index a27406b27a20883dae8baaf881fbff998414aff8..41ebffdc432550bbd1c2a4dfa48e74928377b1c9 100644
+index 9dd9beb22e1c455a2762bf6247c6802b53d14812..ad72fce0c3b9f8c4214da00ffe3928136ad2e20d 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -12,6 +12,7 @@ A Switch 2 game: update v131072, SDK 22.2.8 (`Ounce`). Nintendo EPD's engine (se
@@ -46,7 +46,7 @@ index a27406b27a20883dae8baaf881fbff998414aff8..41ebffdc432550bbd1c2a4dfa48e7492
  | `draw_barriers game` | `game.tsv` | about 180 full barriers a frame NVN does not ask for: GPU 25 → 18 ms at full resolution. From 7f50222 until the fix in [Draw passes that wait for each other again while images share memory](../../../docs/reference/frame-rate.md#draw-passes-that-wait-for-each-other-again-while-images-share-memory) it had no effect, since the dynamic resolution's family heaps turned it off; with the fix, M1 Max gameplay GPU 22.2 → 20.3 ms; no change on an M2 Air or an M4 Pro |
  | `tex_flush_upload on`, `tex_dirty_upload on` | `game.tsv` | as Tears of the Kingdom: the CPU writes the terrain tiles' height (R32F), blend and hole (RGBA8) maps into textures after creating them. Without the keys those textures stay zero: flat blue holes in the ground around the path with grass floating in them, and grey stone where the console shows dirt |
  | `shader_groups`, `shader_note` | `game.tsv` | shaders grouped as `/Shader/`, `/Effect/`, `/Lib/`, `/UI/` |
-@@ -90,6 +91,14 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+@@ -91,6 +92,14 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
  - Open: the UI's 2D pictures are stretched over the wider picture, 1.34 times at 3440x1440: the pause menu's art and slots, the load menu's panels and save pictures, the minimap. Text, glyphs and the items a menu renders in 3D keep their shape. The UI is drawn straight to the swap chain with an orthographic projection of 2/1280 by 2/720 (its uniform block at heap+0x226BD178 on this build, heap offsets being the same from run to run; written through a pool alias, so `DM_PROBE_POLL` sees the writes and `DM_PROBE_WATCH` does not), so its 1280 units span the whole width. The game has no nn::ui2d layouts (no `lyt1` or `pan1` tags), so it is another UI system and Breath of the Wild's layout rules do not apply. Ruled out as the source of the 1280, each set to 1720 with no visible change: the framework's +0xb78 (`main+0x108b698`), the 13-slot create arg (`main+0xf26e48`), the display defaults (`main+0x369a444`), the TV display's virtual size (`main+0x6549d0`, which does change the layers' virtual canvas and five other orthographic matrices to 2/1720), six 1280x720 constants in `main+0x1537d48..0x1539ae0`, and the size-getter classes at `main+0x20ec4a0`.
  - Against [PR 1460](https://github.com/seedds/nxnative/pull/1460), which widens the same three sizes at build time (an environment switch of the NSP script's run) together with the output width as a float (`main+0xecbc80`) and the output resolution table (`main+0x3f58540`, its 2560x1440 entry), and no camera: with those two also at 3440 on top of the stubs the pause menu's stretch and the play HUD did not change, so they are not among the stubs; with them and the three camera sites back at the original load, play in Goron City showed the 16:9 view stretched over the wide picture (Link, his shield and the Goron visibly wider), so the cameras are needed there (2026-11-12, words replaced in the rewritten main, one run each).
  - Stays 16:9 inside the wide picture: three targets made over and over in play, 2560x1440 (format 0x38), 1920x1080 (0x1) and 960x540 (0xd), created from `main+0x3b6345c`; not identified (the picture shows no 16:9 part). Open: handheld mode (`DM_OPMODE=0`) does not follow: the game crops its picture to 1920x1080 in the wide swap chain while the cameras take the wide ratio (a squeezed 16:9 picture in a corner), since its handheld size comes from somewhere the stubs do not reach (not the framework constructor's 1920x1080 at +0xb70, which the stub widens to no effect), so the loader keeps 16:9 in handheld mode. Not checked: cutscenes and movies (a movie is a 16:9 picture), the Deku Tree, a 32:9 screen, the frame rate against 16:9 on a bench route.
@@ -157,7 +157,7 @@ index 3a4f000a1edf02e2449ca79dfb7bcb9163d1ccfd..47e6aa4f434645ee760b0a9e02ad2941
  
  # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index 24736ab4f39c3ab13b28f85437f2562f4fb927ff..96db3b8275c2238d48d3deaa097df3014a9603aa 100644
+index 3495d436112bebebfa2c11d09319e1d151bd81e1..c9328aa3053f41ca1840f188656c67f8f41dd16f 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
 @@ -83,7 +83,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
