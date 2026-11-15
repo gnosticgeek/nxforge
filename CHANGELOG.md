@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.37.2 (2026-11-15)
+
+- **Cleared builds no longer show as ready** (Converter 0.13.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Home said "3 ready" with every build deleted, from app paths the saved library list still held. No game rebuild needed for this.
+
 ## 0.37.1 (2026-11-15)
 
 - **The engine checkout follows main again after a release branch is done** (Converter 0.13.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a checkout left on `release-0.31.0` said "Up to date" at 0.30.2+2 with 0.37.0 released, and games were built with that engine. No game rebuild needed for this.
