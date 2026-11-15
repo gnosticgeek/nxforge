@@ -54,11 +54,7 @@ struct BuildRecord: Codable, Hashable, Identifiable {
         case gameBytes = "game_bytes"
     }
 
-    var date: Date? {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm"
-        return f.date(from: builtAt)
-    }
+    var date: Date? { Engine.builtAtFormat.date(from: builtAt) }
 }
 
 /// One stage of a recorded build.
@@ -173,9 +169,24 @@ enum Engine {
 
     private static var buildsFile: URL { Settings.supportDir.appending(path: "builds.json") }
 
+    /// builds.json decoded, kept while the file is unchanged (DecodedFile)
+    private static let decoded = DecodedFile<[BuildRecord]>()
+
+    private static func decodedRecords() -> [BuildRecord] {
+        decoded.value(buildsFile) { try? JSONDecoder().decode([BuildRecord].self, from: $0) } ?? []
+    }
+
+    /// Writes the records (whole file at once: a cut-off write would lose every record) and drops the decoded copy.
+    private static func writeBuilds(_ all: [BuildRecord]) {
+        try? FileManager.default.createDirectory(at: Settings.supportDir, withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let d = try? enc.encode(all) { try? d.write(to: buildsFile, options: .atomic) }
+        decoded.drop()
+    }
+
     static func builds() -> [BuildRecord] {
-        guard let d = try? Data(contentsOf: buildsFile) else { return [] }
-        let all = (try? JSONDecoder().decode([BuildRecord].self, from: d)) ?? []
+        let all = decodedRecords()
         // records made before releases were tagged: their release looked up in the engine's history, in the checkout
         // they were built from, else in today's engine (the checkout may have moved since: nxnative-src → NXForge)
         lazy var engine = Toolchain.findRepo(Settings.load())
@@ -280,10 +291,7 @@ enum Engine {
 
     /// Drop an app from the build records (the app itself is left where it is).
     static func forget(_ app: String) {
-        let all = builds().filter { $0.app != app }
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let d = try? enc.encode(all) { try? d.write(to: buildsFile) }
+        writeBuilds(builds().filter { $0.app != app })
     }
 
     /// Note that an app has been opened (its first, slow launch is behind it).
@@ -303,17 +311,20 @@ enum Engine {
     static func record(_ b: BuildRecord) {
         var all = builds().filter { $0.app != b.app }
         all.append(b)
-        try? FileManager.default.createDirectory(at: Settings.supportDir, withIntermediateDirectories: true)
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let d = try? enc.encode(all) { try? d.write(to: buildsFile) }
+        writeBuilds(all)
     }
 
-    static func now() -> String {
+    /// The form builds.json keeps build times in, "2026-11-15 22:46" (local time). One formatter for every record: making a
+    /// DateFormatter is slow, and the Builds page reads a date per row per redraw. POSIX, so the digits and the 24-hour clock never
+    /// follow the Mac's region settings.
+    static let builtAtFormat: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd HH:mm"
-        return f.string(from: Date())
-    }
+        return f
+    }()
+
+    static func now() -> String { builtAtFormat.string(from: Date()) }
 
     /// The game apps in a folder (top level), each with the build recorded for it.
     static func apps(in dir: String) -> [(app: String, build: BuildRecord?)] {
