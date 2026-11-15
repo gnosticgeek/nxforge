@@ -145,6 +145,16 @@ struct ConverterApp: App {
             if let g, st == "options" { model.openPlayOptions(g.ref) }
             if st == "settings" { model.stageSettings = true }
             if let g, st == "launch", let a = g.app { model.launching = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps") }
+            // launchslow, launchfail: the launch screen taking longer, and after the game closed while starting
+            if let g, st == "launchslow" || st == "launchfail", let a = g.app {
+                var l = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps")
+                l.slow = true
+                if st == "launchfail" {
+                    l.failure = LaunchDiagnosis.diagnose("[dm] [nvn-mtl] [RED] GPU memory guard: 17300 MB, against Metal's working set of 18186 MB: stopping the game before the driver cannot wire more\nlauncher: the host exited with 1\n",
+                                                         log: g.titleID.map { LaunchDiagnosis.logPath(titleID: $0) })
+                }
+                model.launching = l
+            }
             // box, gallery (NXC_INDEX=<n>: which picture or trailer; the store's, else the game's screenshots) and manual: the viewers
             if let g, ["box", "gallery", "manual"].contains(st) {
                 model.gameDetail = g.ref
