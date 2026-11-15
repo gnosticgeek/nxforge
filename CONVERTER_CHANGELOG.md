@@ -4,6 +4,17 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.12.2 (2026-11-15)
+
+A game's page closer to Tom's mock-up. Ships in NXForge 0.36.4.
+
+- **Headline**: the box is smaller and sits beside the title, with **View box** (the box viewer) and Manual under it; the title has the console's mark and "Nintendo Switch · Not played yet" under it, and the preset line names the preset and one setting. The "In your library" line above the title is gone; the game's version shows when the pointer rests on the console line.
+- **Key art as a banner**: the wide art fills the top right of the window only, as tall as the headline, fading to the left and into the line under it. The room's coloured light is dimmer on a game's page.
+- **Media**: one section for pictures, with **From the store (n)** and **Your captures (n)** as a switch, a line that counts them (1 trailer · 4 screenshots), three large tiles (the trailer first, with a play button and a Trailer label) and **View all n** for the gallery. A game without the store's pictures shows your own screenshots alone.
+- **About** beside Media on a wide window (under it on a narrow one): the store's pitch with **Read more** for the publisher's whole description, a table of Publisher, Released (11 Jul 2019), Players (1–2), Rating, Size and Genres, **More details** for play modes and languages, and a **Nintendo UK store** link.
+- **Save, Playtime and Build** sit at the foot of the window, larger, the detail line moved into the pointer's tooltip.
+- **Controller hints**: on a game's page Y now opens the box viewer (as R did), so the footer reads A Play, X Play options, Y View box, B Back. − still adds the game to Favourites.
+
 ## 0.12.1 (2026-11-15)
 
 A game's box, pictures, trailers and manual, full screen. Ships in NXForge 0.36.2.

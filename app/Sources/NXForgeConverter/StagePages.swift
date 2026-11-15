@@ -263,9 +263,6 @@ struct ConsoleGlyph: View {
                     .overlay(Circle().fill(.white.opacity(0.92)).frame(width: half * 0.38).offset(y: h * 0.12))
                     .frame(width: half, height: h)
             }
-            .overlay(alignment: .bottomTrailing) {
-                if console == .switch2 { Text("2").font(.system(size: h * 0.55, weight: .heavy)).offset(x: h * 0.55) }
-            }
         }
         .accessibilityHidden(true)
     }
