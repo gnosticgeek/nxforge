@@ -165,6 +165,8 @@ final class AppModel {
     /// the Play options panel open over the front end, and the launch screen while a game starts
     var playOptions: PlayOptionsState?
     var launching: Launching?
+    /// the last launch, for Try Again on the launch screen: the game, and whether it opened with its own settings window
+    var lastLaunch: (GameRef, Bool)?
     /// the last checked copy of NXForge's own data (DataBackup), whether one is being made, and whether the last one failed
     var lastDataBackup: Date? = DataBackup.latest()?.manifest.made
     var backupRunning = false

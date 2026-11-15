@@ -180,8 +180,16 @@ extension AppModel {
     /// A controller's button, or its key on the keyboard, on the front end.
     func stagePad(_ k: PadKey) {
         if viewerOpen { viewerPad(k); return }
-        if launching != nil {
-            if k == .b { launching = nil }
+        if let l = launching {
+            if let f = l.failure {
+                switch k {
+                case .a: retryLaunch()
+                case .x: if f.fix != nil && f.fix != .showLog { launchFix(f) } else if let p = f.log { reveal(p) }
+                case .y: if let p = f.log { reveal(p) }
+                case .b: launching = nil
+                default: break
+                }
+            } else if k == .b { launching = nil }
             return
         }
         if stageSettings {
@@ -1070,15 +1078,24 @@ struct LaunchScreen: View {
                     if let g = game { GameCase(game: g).frame(width: caseH * 0.78, height: caseH).padding(.bottom, -caseH * 0.14).allowsHitTesting(false) }
                     Text(launch.name).font(.system(size: 40, weight: .heavy)).tracking(-0.9).lineLimit(2).multilineTextAlignment(.center)
                         .shadow(color: .black.opacity(0.4), radius: 12, y: 5)
-                    RunningBar()
-                    VStack(spacing: 6) {
-                        Text("STARTING THE GAME").font(.system(size: 11.5, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
-                        if !launch.summary.isEmpty { Text(launch.summary).font(.system(size: 13.5, weight: .medium)).foregroundStyle(StageLook.soft) }
-                        if let n = launch.note { Text(n).font(.system(size: 13, weight: .medium)).foregroundStyle(Color(red: 0.98, green: 0.75, blue: 0.14)) }
+                    if let f = launch.failure {
+                        failure(f)
+                    } else {
+                        RunningBar()
+                        VStack(spacing: 6) {
+                            Text(launch.phase == .preparing ? "GETTING IT READY" : "STARTING THE GAME").font(.system(size: 11.5, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
+                            if !launch.summary.isEmpty { Text(launch.summary).font(.system(size: 13.5, weight: .medium)).foregroundStyle(StageLook.soft) }
+                            if let n = launch.note { Text(n).font(.system(size: 13, weight: .medium)).foregroundStyle(Color(red: 0.98, green: 0.75, blue: 0.14)) }
+                            if launch.slow {
+                                Text("Taking longer than usual. A game's first start after a build prepares its shaders, which can take a minute.")
+                                    .font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.faint).multilineTextAlignment(.center).frame(maxWidth: 460)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                     Spacer(minLength: 0)
                     Button { model.launching = nil } label: {
-                        HStack(spacing: 7) { PadGlyph(text: "B"); Text("Hide").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
+                        HStack(spacing: 7) { PadGlyph(text: "B"); Text(launch.failure == nil ? "Hide" : "Close").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
                     }
                     .buttonStyle(.plain).padding(.bottom, 26)
                 }
@@ -1088,6 +1105,30 @@ struct LaunchScreen: View {
         }
         .ignoresSafeArea()
         .contentShape(.rect)
+    }
+
+    /// The game closed before its first picture: what happened, and the steps that help
+    func failure(_ f: LaunchFailure) -> some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 9) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(red: 1, green: 0.55, blue: 0.45))
+                Text(f.title).font(.system(size: 18, weight: .bold))
+            }
+            Text(f.detail).font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.soft).multilineTextAlignment(.center)
+                .frame(maxWidth: 520).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 12) {
+                Button { model.retryLaunch() } label: { Label("Try Again", systemImage: "arrow.clockwise") }
+                    .buttonStyle(StageButton(primary: true))
+                if let label = f.fixLabel {
+                    Button { model.launchFix(f) } label: { HStack(spacing: 8) { PadGlyph(text: "X"); Text(label) } }.buttonStyle(StageButton())
+                }
+                if let p = f.log, FileManager.default.fileExists(atPath: p) {
+                    Button { reveal(p) } label: { HStack(spacing: 8) { PadGlyph(text: f.fixLabel == nil ? "X" : "Y"); Text("Show Log") } }.buttonStyle(StageButton())
+                }
+            }
+            .padding(.top, 4)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

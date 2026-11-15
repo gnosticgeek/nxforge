@@ -224,14 +224,22 @@ final class PlayOptionsState: Identifiable {
     }
 }
 
-/// The launch screen over the front end while a game starts
+/// The launch screen over the front end while a game starts. It follows the launch from preparing (shaders copied to this Mac
+/// first) to opening, says when it is taking longer than usual, and when the game closes before its first picture it stays up and
+/// says why (LaunchDiagnosis) instead of going away (from RetroReplay's launch presentation states).
 struct Launching: Identifiable, Equatable {
+    enum Phase: Equatable { case preparing, opening }
     let id = UUID()
     var ref: GameRef
     var app: String
     var name: String
     var note: String?
     var summary: String
+    var phase: Phase = .opening
+    let started = Date()
+    /// past the time a start usually takes (its first start after a build compiles shaders)
+    var slow = false
+    var failure: LaunchFailure? = nil
 }
 
 extension AppModel {
@@ -302,16 +310,17 @@ extension AppModel {
         for (k, v) in once { shown[k] = v }
         let summary = ([PlayOptions.current(settings: list, values: shown).rawValue] + PlayOptions.summary(settings: list, values: shown).map(\.value)).joined(separator: " · ")
         if frontEnd { launching = Launching(ref: ref, app: app, name: name, note: note, summary: list.isEmpty ? "" : summary) }
+        lastLaunch = (ref, ownWindow)
         // the game's pipeline archive from this Mac's own disk (LocalShaders): there already, or copied first, once
         let source = settings.localShaders ? LocalShaders.source(app: app) : nil
         if let source, LocalShaders.ready(app: app, source: source) == nil {
-            if frontEnd { launching?.note = "Copying its shaders to this Mac (\(Disk.gb(source.bytes))), once" }
+            if frontEnd { launching?.note = "Copying its shaders to this Mac (\(Disk.gb(source.bytes))), once"; launching?.phase = .preparing }
             let straight = settings.straightPlay && !ownWindow, held = launching?.id
             Task { @MainActor [weak self] in
                 let outcome = await Task.detached(priority: .userInitiated) { LocalShaders.copy(app: app, source: source) }.value
                 guard let self else { return }
                 if held != nil, self.launching?.id != held { return }   // the launch was called off meanwhile
-                if self.launching?.id == held { self.launching?.note = note }
+                if self.launching?.id == held { self.launching?.note = note; self.launching?.phase = .opening }
                 var env = once
                 switch outcome {
                 case .ready(let dir): env["DM_PSO_BUNDLE"] = dir.path
@@ -339,17 +348,23 @@ extension AppModel {
             Task { @MainActor in
                 guard let self else { return }
                 if let text {
-                    if self.launching?.id == id { self.launching = nil }
-                    self.showBanner("\(name) did not open", detail: text, tone: .warning)
+                    if self.launching?.id == id {
+                        self.launching?.failure = LaunchFailure(code: .didNotOpen, title: "\(name) did not open", detail: "macOS said: \(text)", fix: .rebuild)
+                    } else {
+                        self.showBanner("\(name) did not open", detail: text, tone: .warning)
+                    }
                 }
             }
         }
         Engine.setLaunched(app)
         revision += 1
-        // the launch screen goes when the game's window shows (watchLaunch), or after a while if that is never seen
+        // the launch screen goes when the game's window shows (watchLaunch); past 12 s it says it is taking longer, and after a
+        // minute with no window seen it goes anyway (an old build that never says), unless it is showing why the game closed
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(30))
-            if self?.launching?.id == id { self?.launching = nil }
+            try? await Task.sleep(for: .seconds(12))
+            if self?.launching?.id == id, self?.launching?.failure == nil { self?.launching?.slow = true }
+            try? await Task.sleep(for: .seconds(48))
+            if self?.launching?.id == id, self?.launching?.failure == nil { self?.launching = nil }
         }
     }
 
@@ -433,8 +448,37 @@ extension AppModel {
         NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }?.makeKeyAndOrderFront(nil)
     }
 
+    /// The launch screen's buttons after a game closed while starting
+    func retryLaunch() {
+        guard let (ref, own) = lastLaunch else { launching = nil; return }
+        launching = nil
+        if own { playWithOwnWindow(ref) } else { playFromStage(ref) }
+    }
+
+    func launchFix(_ f: LaunchFailure) {
+        guard let l = launching else { return }
+        switch f.fix {
+        case .playOptions: launching = nil; openPlayOptions(l.ref)
+        case .rebuild:
+            launching = nil
+            let (g, _) = resolve(l.ref)
+            if let g { frontEnd = false; convertFromLibrary(g) } else { showConverter(); page = .builds; openGame(l.ref) }
+        case .showLog, nil: if let p = f.log { reveal(p) }
+        }
+    }
+
     /// A game quit: the front end comes back to the front (a setting), ready for the next one.
     func gameQuit(app: String) {
+        // closed before its first picture: the launch screen stays and says why
+        if let l = launching, l.app.url.standardizedFileURL.path == app.url.standardizedFileURL.path, l.failure == nil {
+            let t = VerifiedGames.titleID(ofApp: app)
+            let path = t.map { LaunchDiagnosis.logPath(titleID: $0) }
+            let tail = path.flatMap { LaunchDiagnosis.freshTail($0, since: l.started) }
+            launching?.failure = LaunchDiagnosis.diagnose(tail, log: path)
+            NSApp.activate()
+            NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }?.makeKeyAndOrderFront(nil)
+            return
+        }
         if launching?.app == app { launching = nil }
         guard frontEnd, settings.returnToLibrary, playing.isEmpty else { return }
         NSApp.activate()
