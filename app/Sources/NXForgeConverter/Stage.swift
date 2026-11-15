@@ -730,6 +730,7 @@ struct StageHero: View {
         if game.app == nil { return model.status(game).eyebrow }
         if model.isSuspended(app: game.app ?? "") { return "PAUSED · STILL RUNNING" }
         if model.isPlaying(app: game.app ?? "") { return "PLAYING NOW" }
+        if model.randomPick == game.id { return "RANDOM PICK" }
         if game.last == nil { return "IN YOUR LIBRARY" }
         return first ? "CONTINUE PLAYING" : "RECENTLY PLAYED"
     }
@@ -756,6 +757,8 @@ struct StageHome: View {
     let total: Int
     /// whether the game in focus has wide art or a screenshot filling the room (GameKeyArt); without one its 3D case stands on the right
     @State private var keyArt = false
+    /// Your Week (HomeWeek.swift), read when the play records may have changed
+    @State private var week: PlayWeek?
     @Environment(\.accessibilityReduceMotion) private var still
     @Environment(\.accessibilityReduceTransparency) private var solid
 
@@ -787,6 +790,14 @@ struct StageHome: View {
                     Text("Your games").font(.system(size: 26, weight: .heavy)).tracking(-0.4)
                     Text("\(games.filter { $0.app != nil }.count) ready").font(.system(size: 16, weight: .medium)).foregroundStyle(StageLook.soft)
                     Spacer()
+                    if let w = week, w.seconds > 0, geo.size.width > 900 { WeekStrip(week: w).padding(.trailing, 14) }
+                    if games.filter({ $0.app != nil }).count > 1 {
+                        Button { model.pickRandom(games) } label: {
+                            HStack(spacing: 6) { Image(systemName: "shuffle").font(.system(size: 12, weight: .bold)); Text("Random Pick") }
+                        }
+                        .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft).padding(.trailing, 14)
+                        .help("Puts a built game you have not played this week in front of you")
+                    }
                     Button { model.stageTab = .library } label: {
                         HStack(spacing: 6) { Text("See all \(total)"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
                     }
@@ -824,6 +835,7 @@ struct StageHome: View {
         }
         .animation(.easeInOut(duration: 0.3), value: keyArt)
         .task(id: "\(focus?.id ?? "")|\(CoverStore.shared.revision)|\(CoverStore.shared.showHeroes)") { keyArt = await GameKeyArt.hasArt(focus) }
+        .task(id: "\(model.revision)|\(model.playing.count)") { week = await Task.detached(priority: .utility) { PlayWeek(Playtime.load()) }.value }
     }
 }
 
