@@ -5,6 +5,12 @@
       Runs scripts/bench.py on each game build (its first bench.tsv route, or --idle for a game without routes), takes the median of the runs,
       and writes one row per game into docs/perf/<release>.tsv (a game measured again on the same Mac replaces its row). Close other apps,
       keep the Mac on power, and use the same display as the release it is compared with.
+  perf_release.py run --app <Game>.app ... [--host tree/dm/host/dmhost] [--route NAME] [--save FOLDER] [--release X.Y.Z] [--seconds 90] [--runs 2]
+      The same for games as they are installed, for a Mac that keeps no build folders. Each app is started as Play starts it, with the route's
+      input (the route NAME of the game's bench.tsv; no route: the game is left alone and the frames from 20 s on count) and a copy of --save
+      (without --save an empty save: the player's own is never touched). --host runs this checkout's host on the app's game files, so the
+      release is what is measured and not the engine the app was built with; an app built with another shader chain is skipped, since
+      the host loads only its own chain's shaders. Rebuild or repack that game first.
   perf_release.py compare <old release> <new release>
       A Markdown table of the games both measured on the same Mac and route, with the changes; exit status 1 when a game got slower
       past the thresholds (frame rate down more than 3 %, p99 frame time up more than 15 %).
@@ -14,12 +20,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
 import platform
+import plistlib
 import re
+import shutil
 import statistics
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import date
 from pathlib import Path
 
@@ -103,6 +114,130 @@ def run(a: argparse.Namespace) -> int:
     return failed
 
 
+BUDGET_MS = 1000 / 60
+IDLE_FROM = 20.0   # an app without a route: its first 20 s (loading, the first pipelines) do not count
+
+
+def pct(xs: list[float], p: float) -> float:
+    s = sorted(xs)
+    return s[min(len(s) - 1, max(0, math.ceil(p / 100 * len(s)) - 1))]
+
+
+def tsv_stats(text: str, t0: float, t1: float) -> dict[str, float]:
+    """The metrics of one run from the host's per-frame rows (DM_NVN_TSV: frame, @name, value), over the frames whose @t_s lies in [t0, t1). As scripts/bench.py counts them."""
+    rows: dict[int, dict[str, float]] = {}
+    for ln in text.splitlines():
+        c = ln.split('\t')
+        if len(c) != 3 or not c[1].startswith('@'): continue
+        try: rows.setdefault(int(c[0]), {})[c[1]] = float(c[2])
+        except ValueError: continue
+    sel = [r for _, r in sorted(rows.items()) if '@t_s' in r and t0 <= r['@t_s'] < t1]
+    ft = [r['@frame_ms'] for r in sel if r.get('@frame_ms', 0) > 0]
+    gpu = [r['@gpu_ms'] for r in sel if r.get('@gpu_ms', -1) >= 0]
+    if not sel or not ft: return {}
+    d = {'fps': round(len(sel) / (t1 - t0), 1), 'frame_p50': round(pct(ft, 50), 2), 'frame_p99': round(pct(ft, 99), 2), 'frame_max': round(max(ft), 2),
+         'over_budget': sum(1 for x in ft if x > BUDGET_MS * 1.5)}
+    if gpu: d['gpu_p50'] = round(pct(gpu, 50), 2)
+    return d
+
+
+def app_title_id(app: Path) -> str:
+    """The title ID of a game app NXForge built: the end of its bundle identifier (org.nxforge.<id>)."""
+    with open(app / 'Contents/Info.plist', 'rb') as fh: ident = plistlib.load(fh).get('CFBundleIdentifier', '')
+    last = ident.rsplit('.', 1)[-1].upper()
+    return last if re.fullmatch(r'[0-9A-F]{16}', last) else ''
+
+
+def route_of(gid: str, name: str | None) -> dict | None:
+    """A route of the game's bench.tsv (name, DM_KEYS, the window's start and length in seconds): the named one, or none without a name."""
+    if not name: return None
+    f = ENGINE / 'dm/games' / gid / 'bench.tsv'
+    for ln in f.read_text().splitlines() if f.is_file() else []:
+        c = ln.split('\t')
+        if len(c) >= 4 and c[0] == name: return {'name': c[0], 'keys': c[1], 'from': float(c[2]), 'secs': float(c[3])}
+    return None
+
+
+def host_chain() -> str:
+    m = re.search(r'DMSH_CHAIN\s+"([0-9a-f]+)"', (ENGINE / 'dm/gfx/nvn/dmsh_chain.h').read_text())
+    return m[1] if m else ''
+
+
+def with_host(app: Path, host: Path, tmp: Path) -> Path:
+    """The app with another host: its bundle by symlink, its launcher and that host copied."""
+    t = tmp / 'PerfRun.app'
+    (t / 'Contents/MacOS').mkdir(parents=True)
+    for f in (app / 'Contents').iterdir():
+        if f.name not in ('MacOS', '_CodeSignature'): (t / 'Contents' / f.name).symlink_to(f)
+    shutil.copy2(app / 'Contents/MacOS/nxnative', t / 'Contents/MacOS/nxnative')
+    shutil.copy2(host, t / 'Contents/MacOS/dmhost')
+    return t
+
+
+def run_app_once(app: Path, gid: str, route: dict | None, seconds: float, save: Path | None, tmp: Path) -> dict[str, float]:
+    t0, t1 = (route['from'], route['from'] + route['secs']) if route else (IDLE_FROM, IDLE_FROM + seconds)
+    run_save = tmp / 'save'
+    shutil.rmtree(run_save, ignore_errors=True)
+    if save: shutil.copytree(save, run_save)
+    else: run_save.mkdir()
+    tsv = tmp / 'frames.tsv'
+    tsv.unlink(missing_ok=True)
+    env = dict(os.environ, DM_LAUNCHER='0', DM_NVN_TSV=str(tsv), DM_NVN_TSV_CALLS='0', DM_SAVE=str(run_save), DM_SAVE_SYNC='0', DM_METAL_HUD='0')
+    if route and route['keys']: env['DM_KEYS'] = route['keys']
+    p = subprocess.Popen([str(app / 'Contents/MacOS/nxnative')], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        end = time.monotonic() + t1 + 2
+        while time.monotonic() < end and p.poll() is None: time.sleep(0.5)
+    finally:
+        subprocess.run(['pkill', '-TERM', '-P', str(p.pid)], capture_output=True)
+        if p.poll() is None: p.terminate()
+        try: p.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            subprocess.run(['pkill', '-KILL', '-P', str(p.pid)], capture_output=True); p.kill()
+    d = tsv_stats(tsv.read_text(errors='replace'), t0, t1) if tsv.is_file() else {}
+    log = Path.home() / 'Library/Logs/nxnative' / f'{gid}.log'
+    if d and log.is_file(): d['red_lines'] = sum(1 for ln in log.read_text(errors='replace').splitlines() if '[RED]' in ln)
+    return d
+
+
+def run_apps(a: argparse.Namespace) -> int:
+    release = a.release or release_name()
+    out = PERF / f'{release}.tsv'
+    rows = read(out)
+    mac, macos = mac_name(), sh('sw_vers', '-productVersion')
+    host = Path(a.host).expanduser().resolve() if a.host else None
+    chain = host_chain() if host else ''
+    failed = 0
+    for x in a.app:
+        app = Path(x).expanduser().resolve()
+        gid = app_title_id(app) if (app / 'Contents/Info.plist').is_file() else ''
+        if not gid:
+            print(f'✗ {app.name}: not a game app NXForge built (no org.nxforge.<title ID> identifier)'); failed = 1; continue
+        if host and chain and chain.encode() not in (app / 'Contents/MacOS/dmhost').read_bytes():
+            print(f'– {gid} {app.name}: built with another shader chain than this host ({chain}); skipped. Rebuild or repack it to measure this release'); continue
+        route = route_of(gid, a.route)
+        if a.route and not route:
+            print(f'✗ {gid}: no route {a.route} in dm/games/{gid}/bench.tsv'); failed = 1; continue
+        runs = []
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            target = with_host(app, host, tmp) if host else app
+            for i in range(a.runs):
+                d = run_app_once(target, gid, route, a.seconds, Path(a.save).expanduser() if a.save else None, tmp)
+                print(f'  {gid} run {i + 1}: ' + (f'{d["fps"]} fps, p99 {d["frame_p99"]} ms' if d else 'no frames'), flush=True)
+                if d: runs.append(d)
+                time.sleep(3)
+        if not runs:
+            print(f'✗ {gid}: no frames in the measuring window'); failed = 1; continue
+        new = {'title_id': gid, 'route': route['name'] if route else 'idle', 'mac': mac, 'macos': macos, 'date': date.today().isoformat(), 'runs': str(len(runs))}
+        for k in METRICS: new[k] = median([r.get(k) for r in runs])
+        rows = [r for r in rows if (r['title_id'], r['route'], r['mac']) != (new['title_id'], new['route'], new['mac'])] + [new]
+        print(f'✓ {gid} {new["route"]}: {new["fps"]} fps, p99 {new["frame_p99"]} ms')
+    write(out, rows, release)
+    print(f'{out.relative_to(REPO)}: {len(rows)} row(s)')
+    return failed
+
+
 def num(s: str | None) -> float | None:
     try: return float(s) if s else None
     except ValueError: return None
@@ -135,10 +270,13 @@ def compare(old: list[dict[str, str]], new: list[dict[str, str]]) -> tuple[str, 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='command', required=True)
-    r = sub.add_parser('run'); r.add_argument('builds', nargs='+'); r.add_argument('--release'); r.add_argument('--seconds', type=float, default=90); r.add_argument('--runs', type=int, default=2)
+    r = sub.add_parser('run'); r.add_argument('builds', nargs='*'); r.add_argument('--release'); r.add_argument('--seconds', type=float, default=90); r.add_argument('--runs', type=int, default=2)
+    r.add_argument('--app', action='append', default=[]); r.add_argument('--host'); r.add_argument('--route'); r.add_argument('--save')
     c = sub.add_parser('compare'); c.add_argument('old'); c.add_argument('new')
     a = ap.parse_args(argv)
-    if a.command == 'run': return run(a)
+    if a.command == 'run':
+        if not a.builds and not a.app: ap.error('run: a build folder or --app <Game>.app')
+        return (run(a) if a.builds else 0) | (run_apps(a) if a.app else 0)
     old, new = read(PERF / f'{a.old}.tsv'), read(PERF / f'{a.new}.tsv')
     if not old or not new:
         print(f'no measurements for {a.old if not old else a.new} in docs/perf/', file=sys.stderr); return 2
