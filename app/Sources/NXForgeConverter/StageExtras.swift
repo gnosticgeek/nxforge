@@ -124,7 +124,7 @@ enum GameCaptures {
 final class ThumbStore {
     static let shared = ThumbStore()
     private(set) var images: [URL: NSImage] = [:]
-    @ObservationIgnored private var asked = Set<URL>()
+    @ObservationIgnored fileprivate var asked = Set<URL>()
 
     func image(_ u: URL) -> NSImage? {
         if let i = images[u] { return i }
@@ -132,7 +132,11 @@ final class ThumbStore {
         asked.insert(u)
         Task.detached(priority: .utility) {
             let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1000, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary
-            guard let src = CGImageSourceCreateWithURL(u as CFURL, nil), let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts) else { return }
+            // a picture still being downloaded is asked for again the next time it is drawn
+            guard let src = CGImageSourceCreateWithURL(u as CFURL, nil), let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts) else {
+                await MainActor.run { _ = ThumbStore.shared.asked.remove(u) }
+                return
+            }
             let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
             await MainActor.run { ThumbStore.shared.images[u] = img }
         }

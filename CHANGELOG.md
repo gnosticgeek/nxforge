@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.36.2 (2026-11-15)
+
+- **A game's box, pictures, trailers and manual, full screen, in the Mac app** (Converter 0.12.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a box viewer to turn the 3D case any way and zoom in; the case now has a real Switch case's measurements (105 × 170 × 10.5 mm) with the cover inside see-through plastic, clear for Switch and red for Switch 2; screenshots open in an in-app gallery (arrows, swipe, zoom) instead of Preview; the game's trailer comes first in the gallery and plays in the app (YouTube's embedded player with its ad requests blocked); and a PDF manual beside the game, or added to it, opens in a full-screen reader. No game rebuild needed.
+
 ## 0.36.0 (2026-11-14)
 
 - **Cheats and mods from the Mac app, and five things around a play session** (Converter 0.12.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's page gains a Cheats card (a switch per cheat, and Get Cheats, which fetches the codes for this game and build from two public collections when you ask) and a Mods card (drop a folder or an archive, a switch and a load order per mod, a warning when two mods replace the same file, and a GameBanana browser that downloads, checks and installs). The app rests behind a running game so the game has the memory, shows a recap with playtime and peak memory when the game quits, and Settings has a controller test and a list of what NXForge keeps on the Mac. The ideas come from a survey of nxnative forks and front ends on 2026-11-14 (README, Acknowledgements). No game rebuild needed for these.
