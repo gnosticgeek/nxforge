@@ -20,7 +20,7 @@ enum NXFLauncherLayout {
     /// The Advanced tab's boxes: Performance split in two so the columns match
     static let advancedBoxes: [(title: String, envs: [String])] = [
         ("Pipelines", ["DM_PSO_MTL4", "DM_PSO_PREBUILD", "DM_NVN_ENC_THREAD"]),
-        ("Display", ["DM_PRESENT_SNAP", "DM_FPS_HOLD", "DM_METAL_HUD"]),
+        ("Display", ["DM_PRESENT_SNAP", "DM_FPS_HOLD", "DM_LOW_LAG", "DM_METAL_HUD"]),
     ]
     static let boxes = graphicsBoxes + advancedBoxes
     /// On the General tab though not level=basic: everyday controls

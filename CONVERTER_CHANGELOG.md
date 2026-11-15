@@ -4,13 +4,23 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
-## 0.13.0 (2026-11-14)
+## 0.13.0 (2026-11-15)
 
 The app's side of the engine's 0.37.0. Ships in NXForge 0.37.0.
 
 - **A game kept running behind the library**: a game built on NXForge 0.37.0 or later pauses and hides itself when you choose Library in its sidebar, instead of quitting. Its page and Home say "Paused · still running", Resume brings it back exactly where you left it, and Quit game ends it. Quit game is there for any running game.
 - **Resume** brings a running game's own window back to the front; it no longer opens the app a second time.
 - **Play options** shows the new settings where the game's own window has them: mouse camera, its speed and the microphone on General, and foliage, model detail and shadow detail on Graphics, for the games that have them.
+
+## 0.12.1 (2026-11-15)
+
+A game's box, pictures, trailers and manual, full screen. Ships in NXForge 0.36.2.
+
+- **Box viewer**: the expand button under the box on a game's page (or R on a controller, Tab on the keyboard, View Box in a cover's menu) opens the game's box alone, full screen. Drag to turn it any way, pinch or scroll to zoom, double-click to stand it back up; Front, Spine, Back, zoom and Reset buttons; the arrow keys, + and −, and a controller's D-pad, right stick and shoulders work too.
+- **The box, measured**: 105 × 170 × 10.5 mm like a real Switch case (it was 10 mm deep, with sharp corners). The printed cover now sits inside the case's plastic, which is see-through: clear on a Switch game, red on a Switch 2 game, with rounded corners, a gloss on its faces and a clear lip along the side that opens, where the edges of the cover and the inside of the case show through.
+- **Gallery**: screenshots (the game's own and the store's) open in NXForge instead of Preview, full screen: arrows, a two-finger swipe or a drag go to the next one, pinch, the scroll wheel, a double-click or + and − zoom, a drag pans, and a strip along the bottom shows them all. View all opens every screenshot of the game. Esc or B closes it.
+- **Trailers**: the game's trailer comes first in the store row and the gallery, with a play button, and plays full screen in the app. It is the one on the game's Nintendo UK store page: a video of Nintendo's on YouTube, played in YouTube's own embedded player (youtube-nocookie.com) with the requests that fetch and count ads blocked, or one of Nintendo's own video files, played by AVPlayer. Nintendo's older files were on a video network that has since shut down; those are skipped, and a game whose page has no trailer that plays gets the trailer from YouTube's search, only from Nintendo's channels or the game's publisher's.
+- **Manuals**: a PDF beside the game's files (one with "manual" in its name, or the only PDF in a game's own folder) shows as a Manual button on the game's page and in the box viewer, and opens full screen, two pages side by side on a wide window, with arrows, a swipe or a controller to turn the pages and pinch to zoom. Add Manual… in a game's menu keeps a copy of any PDF as its manual.
 
 ## 0.12.0 (2026-11-14)
 

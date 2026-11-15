@@ -4,9 +4,9 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
-## Unreleased
+## 0.7.0 (2026-11-15)
 
-Sidebar 0.7.0, to ship in NXForge 0.37.0.
+Ships in NXForge 0.37.0.
 
 - **Library keeps the game**: in a game NXForge's Play started, the footer's Library button no longer ends the game. It pauses it with the sidebar up, hides the game and brings NXForge to the front on its page; NXForge's Resume brings the game back where it was. The General page's "Library keeps the game" switch (on by default) turns it back into a quit. A kept game still holds its memory.
 

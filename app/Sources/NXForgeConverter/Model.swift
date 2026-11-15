@@ -155,6 +155,12 @@ final class AppModel {
     var attention: [String: [GameAttention]] = [:]
     /// the box on a game's page shows its back
     var caseFlipped = false
+    /// the full-screen viewers over the front end (MediaViewer.swift): a game's pictures and trailers, its box, its manual
+    var gallery: GalleryState?
+    var caseViewer: CaseViewerState?
+    var manual: ManualState?
+    /// a viewer put the window in full screen, so closing it takes it out again
+    var viewerMadeFullScreen = false
     /// the Play options panel open over the front end, and the launch screen while a game starts
     var playOptions: PlayOptionsState?
     var launching: Launching?
