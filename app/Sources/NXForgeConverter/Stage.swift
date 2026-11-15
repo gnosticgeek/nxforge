@@ -179,6 +179,7 @@ extension AppModel {
 
     /// A controller's button, or its key on the keyboard, on the front end.
     func stagePad(_ k: PadKey) {
+        if viewerOpen { viewerPad(k); return }
         if launching != nil {
             if k == .b { launching = nil }
             return
@@ -218,6 +219,7 @@ extension AppModel {
             case .x: openPlayOptions(r)
             case .b: gameDetail = nil
             case .y: caseFlipped.toggle()
+            case .r: if let g = stageGames().first(where: { $0.isRef(r) }) { openCaseViewer(g) }
             case .menu: settingsFocus = 0; stageSettings = true
             case .options: if let g = stageGames().first(where: { $0.isRef(r) }) { toggleFavorite(g) }
             default: break
@@ -425,14 +427,27 @@ struct StageView: View {
                 .padding(16)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
+            if let s = model.caseViewer {
+                CaseViewer(model: model, state: s).id(s.game.id).transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
+            if let g = model.gallery {
+                GalleryViewer(model: model, state: g).id(g.id).transition(.opacity)
+            }
+            if let m = model.manual {
+                ManualViewer(model: model, state: m).id(m.id).transition(.opacity)
+            }
             if let l = model.launching {
                 LaunchScreen(model: model, launch: l, game: games.first { $0.isRef(l.ref) }).transition(.opacity)
             }
+            if model.viewerOpen { ViewerKeys(model: model) }
         }
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
         .animation(.spring(duration: 0.35), value: model.playOptions?.id)
         .animation(.easeInOut(duration: 0.3), value: model.launching?.id)
+        .animation(.easeInOut(duration: 0.25), value: model.gallery?.id)
+        .animation(.easeInOut(duration: 0.25), value: model.caseViewer?.game.id)
+        .animation(.easeInOut(duration: 0.25), value: model.manual?.id)
         .animation(.easeInOut(duration: 0.25), value: model.gameDetail)
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -830,6 +845,15 @@ struct StageGameMenu: View {
         } else if g.game != nil {
             Button("Build") { model.playFromStage(g.ref) }.disabled(model.run.running || model.batchRunning)
         }
+        Divider()
+        Button("View Box") { model.openCaseViewer(g) }
+        if let m = GameManual.find(g) {
+            Button("Read Manual") { model.openManual(m, title: g.name) }
+            if m == GameManual.added(g.coverKey) { Button("Remove Manual") { GameManual.remove(for: g) } }
+            else { Button("Use Another Manual…") { GameManual.pick(for: g) } }
+        } else {
+            Button("Add Manual…") { GameManual.pick(for: g) }
+        }
         Button("Details") { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref }
         Button(g.favorite ? "Remove from Favourites" : "Add to Favourites") { model.toggleFavorite(g) }
         Divider()
@@ -886,7 +910,7 @@ struct StageHints: View {
         let built = focus?.app != nil
         if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
-        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]) + [(["Y"], "Turn over"), (["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"), (["B"], "Back")] }
+        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]) + [(["Y"], "Turn over"), (["R"], "View box"), (["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"), (["B"], "Back")] }
         var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))

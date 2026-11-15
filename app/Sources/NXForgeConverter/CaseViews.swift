@@ -1,6 +1,7 @@
 // A game's box, for the front end: flat covers for the shelf and the grid (CoverTile), and a real box that turns
-// (CaseModelView, SceneKit: front, back and spine as textures on a 105 × 170 × 10 box; drag it, or use a controller's right
-// stick, and it eases back to its resting angle). The art is CoverStore's; a game without any gets a cover drawn from its
+// (CaseModelView, SceneKit: front, back and spine printed on an insert inside a clear case of a real one's measurements, CaseSize;
+// drag it, or use a controller's right stick, and it eases back to its resting angle; the box viewer, CaseViewer, turns it any way
+// and zooms). The art is CoverStore's; a game without any gets a cover drawn from its
 // icon, and every game's back falls back to a panel of its details.
 import AppKit
 import CoreImage
@@ -272,9 +273,21 @@ struct CoverTile: View {
     }
 }
 
-/// The right stick turns the box on screen (ControllerNav writes it, the box's render loop reads it)
+/// The right stick turns the box on screen (ControllerNav writes it, the box's render loop reads it); in the box viewer its
+/// up and down tilts it too
 enum CaseStick {
     nonisolated(unsafe) static var x: Double = 0
+    nonisolated(unsafe) static var y: Double = 0
+}
+
+/// A real case's measurements, in metres over 100 (1.0 = 100 mm): a Switch case is 105 × 170 mm and 10.5 mm deep (Switch 2's the
+/// same, in red plastic), its corners rounded. The printed insert sits inside the clear sleeve, a little short of the edges on
+/// the three sides that open, where the plastic shows.
+enum CaseSize {
+    static let width = 1.05, height = 1.70, depth = 0.105, corner = 0.032
+    static let insertWidth = 1.025, insertHeight = 1.676, insertDepth = 0.094
+    /// the insert lies against the spine: the clear lip is on the side that opens
+    static let insertShift = -0.010
 }
 
 /// The box in 3D.
@@ -283,10 +296,16 @@ struct CaseModelView: NSViewRepresentable {
     var back: NSImage?
     var spine: NSImage?
     var edge: NSColor = NSColor(white: 0.12, alpha: 1)
+    /// the plastic's colour: clear for Switch, see-through red for Switch 2
+    var console: Console = .switch1
     /// the angle it rests at, in radians: a little turned, its spine in view; add π to show its back
     var rest: Double = 0.48
+    /// the full-window box viewer: turns any way, zooms, no floor, and stays where it is left
+    var viewer = false
+    /// the viewer's controls (Front, Back, Spine, Reset, zoom): a request the render loop picks up
+    var command: CaseCommand? = nil
 
-    func makeCoordinator() -> Coordinator { Coordinator(rest: rest) }
+    func makeCoordinator() -> Coordinator { Coordinator(rest: rest, viewer: viewer) }
 
     func makeNSView(context: Context) -> SCNView {
         let v = CaseSCNView(frame: .zero)
@@ -296,74 +315,117 @@ struct CaseModelView: NSViewRepresentable {
         v.scene = context.coordinator.scene
         v.delegate = context.coordinator
         v.rendersContinuously = true
-        v.preferredFramesPerSecond = 60
+        v.preferredFramesPerSecond = viewer ? 120 : 60
+        v.coordinator = context.coordinator
         v.addGestureRecognizer(NSPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:))))
-        context.coordinator.set(front: front, back: back, spine: spine, edge: edge)
+        if viewer {
+            v.addGestureRecognizer(NSMagnificationGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.magnify(_:))))
+            let two = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.reset(_:)))
+            two.numberOfClicksRequired = 2
+            v.addGestureRecognizer(two)
+        }
+        context.coordinator.set(front: front, back: back, spine: spine, edge: edge, console: console)
         return v
     }
 
     func updateNSView(_ v: SCNView, context: Context) {
-        context.coordinator.set(front: front, back: back, spine: spine, edge: edge)
+        context.coordinator.set(front: front, back: back, spine: spine, edge: edge, console: console)
         context.coordinator.rest = rest
         context.coordinator.still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if let c = command, c.id != context.coordinator.lastCommand { context.coordinator.lastCommand = c.id; context.coordinator.apply(c) }
     }
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
         let scene = SCNScene()
-        let node: SCNNode
+        /// the case: the printed insert inside the clear plastic
+        let node = SCNNode()
         /// the box again upside down under the floor: its reflection (GameCase fades it out)
-        private let mirror: SCNNode
+        private var mirror: SCNNode?
         private let materials: [SCNMaterial]
-        private let mirrorMaterials: [SCNMaterial]
+        private let shellFaces = SCNMaterial()
+        private let shellEdges = SCNMaterial()
+        private let camera = SCNNode()
+        let viewer: Bool
         // read by the render loop, written by the main thread: plain numbers, a late read only costs a frame
         var rest: Double
         /// Reduce Motion: no sway, and a turn to the other side is a cut, not a spin
         var still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        var lastCommand: UUID?
         private var angle: Double
+        private var tilt = 0.05
         private var velocity = 0.0
+        private var tiltVelocity = 0.0
         private var dragging = false
         private var touch = false
         private var touched = 0.0
         private var last = 0.0
+        /// the viewer's camera distance, and where a Front/Back/Spine/Reset eases it to
+        private var distance: Double
+        private var goal: (angle: Double, tilt: Double, distance: Double)?
         private var shown: [ObjectIdentifier?] = [nil, nil, nil]
+        private var shownConsole: Console?
 
-        init(rest: Double) {
+        static let restDistance = 5.9
+        /// the viewer's: the box about two thirds of the window's height
+        static let viewerDistance = 6.6
+
+        init(rest: Double, viewer: Bool) {
             self.rest = rest
+            self.viewer = viewer
             angle = rest
-            let box = SCNBox(width: 1.05, height: 1.70, length: 0.10, chamferRadius: 0.006)
+            distance = viewer ? Self.viewerDistance : Self.restDistance
+            let insert = SCNBox(width: CaseSize.insertWidth, height: CaseSize.insertHeight, length: CaseSize.insertDepth, chamferRadius: 0.002)
             materials = (0..<6).map { _ in
                 let m = SCNMaterial()
                 m.lightingModel = .blinn
                 m.diffuse.contents = NSColor(white: 0.12, alpha: 1)
-                m.specular.contents = NSColor(white: 0.35, alpha: 1)
-                m.shininess = 0.35
+                m.specular.contents = NSColor(white: 0.18, alpha: 1)
+                m.shininess = 0.25
                 return m
             }
-            box.materials = materials   // front, right, back, left, top, bottom
-            node = SCNNode(geometry: box)
-            let under = SCNBox(width: 1.05, height: 1.70, length: 0.10, chamferRadius: 0.006)
-            mirrorMaterials = (0..<6).map { _ in
-                let m = SCNMaterial()
+            insert.materials = materials   // front, right, back, left (the spine), top, bottom
+            let paper = SCNNode(geometry: insert)
+            paper.position = SCNVector3(x: CGFloat(CaseSize.insertShift), y: 0, z: 0)
+            node.addChildNode(paper)
+            // the clear plastic: a rounded slab, glossy on its faces and seen edge-on, thicker, along its sides
+            let outline = NSBezierPath(roundedRect: NSRect(x: -CaseSize.width / 2, y: -CaseSize.height / 2, width: CaseSize.width, height: CaseSize.height),
+                                       xRadius: CaseSize.corner, yRadius: CaseSize.corner)
+            outline.flatness = 0.002
+            let shell = SCNShape(path: outline, extrusionDepth: CaseSize.depth)
+            shell.chamferRadius = 0.004
+            for m in [shellFaces, shellEdges] {
                 m.lightingModel = .blinn
-                m.diffuse.contents = NSColor(white: 0.12, alpha: 1)
-                m.specular.contents = NSColor.black
-                return m
+                m.blendMode = .alpha
+                m.writesToDepthBuffer = false
+                m.isDoubleSided = false
+                m.shininess = 0.9
             }
-            under.materials = mirrorMaterials
-            mirror = SCNNode(geometry: under)
+            shellFaces.specular.contents = NSColor(white: 0.85, alpha: 1)
+            shellEdges.specular.contents = NSColor(white: 0.6, alpha: 1)
+            // SCNShape's elements: front, back, sides, then the chamfers on each face
+            shell.materials = [shellFaces, shellFaces, shellEdges, shellEdges, shellEdges]
+            let plastic = SCNNode(geometry: shell)
+            plastic.renderingOrder = 10   // over the insert, which shows through it
+            plastic.castsShadow = false
+            node.addChildNode(plastic)
             super.init()
             scene.rootNode.addChildNode(node)
-            let holder = SCNNode()
-            holder.scale = SCNVector3(x: 1, y: -1, z: 1)
-            holder.position = SCNVector3(x: 0, y: -1.725, z: 0)
-            holder.addChildNode(mirror)
-            scene.rootNode.addChildNode(holder)
-            let cam = SCNNode()
-            cam.camera = SCNCamera()
-            cam.camera?.fieldOfView = 24
-            // looks a little below the box's middle, so the floor and the reflection under it are in view (GameCase.floor)
-            cam.position = SCNVector3(x: 0, y: -0.30, z: 5.9)
-            scene.rootNode.addChildNode(cam)
+            if !viewer {
+                let under = node.clone()   // shares the geometry and the materials: new art reaches both
+                let holder = SCNNode()
+                holder.scale = SCNVector3(x: 1, y: -1, z: 1)
+                holder.position = SCNVector3(x: 0, y: -1.725, z: 0)
+                holder.addChildNode(under)
+                scene.rootNode.addChildNode(holder)
+                mirror = under
+            }
+            camera.camera = SCNCamera()
+            camera.camera?.fieldOfView = 24
+            camera.camera?.zNear = 0.05
+            // the shelf's camera looks a little below the box's middle, so the floor and the reflection under it are in view
+            // (GameCase.floor); the viewer's looks straight at it
+            camera.position = SCNVector3(x: 0, y: viewer ? 0 : -0.30, z: CGFloat(distance))
+            scene.rootNode.addChildNode(camera)
             let ambient = SCNNode()
             ambient.light = SCNLight()
             ambient.light?.type = .ambient
@@ -381,32 +443,105 @@ struct CaseModelView: NSViewRepresentable {
             rim.light?.intensity = 420
             rim.eulerAngles = SCNVector3(x: -0.2, y: -2.3, z: 0)
             scene.rootNode.addChildNode(rim)
-            node.eulerAngles = SCNVector3(x: 0.05, y: CGFloat(rest), z: 0)
-            mirror.eulerAngles = node.eulerAngles
+            if viewer {
+                // light from below and behind as well: the viewer shows every side
+                let fill = SCNNode()
+                fill.light = SCNLight()
+                fill.light?.type = .directional
+                fill.light?.intensity = 300
+                fill.eulerAngles = SCNVector3(x: 1.1, y: 2.6, z: 0)
+                scene.rootNode.addChildNode(fill)
+            }
+            node.eulerAngles = SCNVector3(x: CGFloat(tilt), y: CGFloat(rest), z: 0)
+            mirror?.eulerAngles = node.eulerAngles
         }
 
-        func set(front: NSImage?, back: NSImage?, spine: NSImage?, edge: NSColor) {
+        func set(front: NSImage?, back: NSImage?, spine: NSImage?, edge: NSColor, console: Console) {
             let ids = [front, back, spine].map { $0.map { ObjectIdentifier($0) } }
-            guard ids != shown else { return }
-            shown = ids
-            materials[0].diffuse.contents = front ?? edge
-            materials[2].diffuse.contents = back ?? edge
-            materials[3].diffuse.contents = spine ?? edge
-            for i in [1, 4, 5] { materials[i].diffuse.contents = edge }
-            for i in 0..<6 { mirrorMaterials[i].diffuse.contents = materials[i].diffuse.contents }
+            if ids != shown {
+                shown = ids
+                materials[0].diffuse.contents = front ?? edge
+                materials[2].diffuse.contents = back ?? edge
+                materials[3].diffuse.contents = spine ?? edge
+            }
+            guard console != shownConsole else { return }
+            shownConsole = console
+            let red = console == .switch2
+            // what shows through the plastic on the three sides that open: the insert's white edges, front and back, and the
+            // inside of the case between them
+            materials[1].diffuse.contents = CaseEdgeArt.image(red: red, across: true)
+            for i in [4, 5] { materials[i].diffuse.contents = CaseEdgeArt.image(red: red, across: false) }
+            for i in [1, 4, 5] {
+                // see-through between the cover's two edges: the case is hollow there, its tray clear
+                let m = materials[i]
+                m.specular.contents = NSColor(white: 0.05, alpha: 1)
+                m.blendMode = .alpha
+                m.transparencyMode = .aOne
+                m.writesToDepthBuffer = false
+            }
+            // Switch: colourless and nearly clear; Switch 2: see-through red
+            shellFaces.diffuse.contents = red ? NSColor(red: 0.85, green: 0.10, blue: 0.12, alpha: 0.10) : NSColor(white: 1, alpha: 0.05)
+            shellEdges.diffuse.contents = red ? NSColor(red: 0.80, green: 0.06, blue: 0.10, alpha: 0.42) : NSColor(white: 0.95, alpha: 0.16)
+            shellEdges.specular.contents = NSColor(white: red ? 0.7 : 0.95, alpha: 1)
         }
+
+        /// The viewer's buttons
+        func apply(_ c: CaseCommand) {
+            let turn = 2 * Double.pi
+            func near(_ a: Double) -> Double { a + turn * ((angle - a) / turn).rounded() }
+            switch c.kind {
+            case .front: goal = (near(0), 0, distance)
+            case .back: goal = (near(.pi), 0, distance)
+            case .spine: goal = (near(.pi / 2), 0, distance)
+            case .reset: goal = (near(rest), 0.05, Self.viewerDistance)
+            case .zoom(let k): goal = (angle, tilt, Self.clampDistance((goal?.distance ?? distance) / k))
+            case .turn(let dx, let dy): goal = ((goal?.angle ?? angle) + dx, Self.clampTilt((goal?.tilt ?? tilt) + dy), goal?.distance ?? distance)
+            }
+            velocity = 0
+            tiltVelocity = 0
+            touch = true
+        }
+
+        static func clampDistance(_ d: Double) -> Double { min(max(d, 1.25), 12) }
+        static func clampTilt(_ t: Double) -> Double { min(max(t, -1.45), 1.45) }
 
         @MainActor @objc func pan(_ g: NSPanGestureRecognizer) {
             let dx = Double(g.translation(in: g.view).x)
+            let dy = Double(g.translation(in: g.view).y)
             g.setTranslation(.zero, in: g.view)
+            goal = nil
+            // nearer in, a drag turns it less: the part under the pointer keeps up with it
+            let k = viewer ? 0.010 * min(1, distance / Self.viewerDistance) + 0.002 : 0.012
             switch g.state {
             case .began, .changed:
                 dragging = true
-                angle += dx * 0.012
-                velocity = Double(g.velocity(in: g.view).x) * 0.012
+                angle += dx * k
+                velocity = Double(g.velocity(in: g.view).x) * k
+                if viewer {
+                    tilt = Self.clampTilt(tilt - dy * k)
+                    tiltVelocity = -Double(g.velocity(in: g.view).y) * k
+                }
             default:
                 dragging = false
             }
+            touch = true
+        }
+
+        @MainActor @objc func magnify(_ g: NSMagnificationGestureRecognizer) {
+            goal = nil
+            distance = Self.clampDistance(distance / (1 + Double(g.magnification)))
+            g.magnification = 0
+            touch = true
+        }
+
+        @MainActor @objc func reset(_ g: NSClickGestureRecognizer) { apply(CaseCommand(.reset)) }
+
+        /// A scroll wheel or two fingers on a trackpad: up zooms in
+        @MainActor func scroll(_ e: NSEvent) {
+            guard viewer else { return }
+            goal = nil
+            let dy = Double(e.scrollingDeltaY) * (e.hasPreciseScrollingDeltas ? 1 : 12)
+            distance = Self.clampDistance(distance * exp(-dy * 0.004))
             touch = true
         }
 
@@ -414,15 +549,27 @@ struct CaseModelView: NSViewRepresentable {
             let dt = last == 0 ? 0 : min(time - last, 0.1)
             last = time
             if touch { touch = false; touched = time }
-            let stick = CaseStick.x
-            if abs(stick) > 0.15 {
-                velocity = stick * 3.2
+            let stick = CaseStick.x, stickY = viewer ? CaseStick.y : 0
+            if abs(stick) > 0.15 || abs(stickY) > 0.15 {
+                goal = nil
+                velocity = abs(stick) > 0.15 ? stick * 3.2 : 0
                 angle += velocity * dt
+                if abs(stickY) > 0.15 { tilt = Self.clampTilt(tilt - stickY * 2.0 * dt) }
+                tiltVelocity = 0
                 touched = time
+            } else if let g = goal {
+                let k = still ? 1 : min(1, 7 * dt)
+                angle += (g.angle - angle) * k
+                tilt += (g.tilt - tilt) * k
+                distance += (g.distance - distance) * k
+                if abs(g.angle - angle) < 0.001, abs(g.tilt - tilt) < 0.001, abs(g.distance - distance) < 0.001 { goal = nil }
             } else if !dragging {
                 angle += velocity * dt
                 velocity *= exp(-4 * dt)
-                if still && abs(velocity) < 0.01 {
+                if viewer {
+                    tilt = Self.clampTilt(tilt + tiltVelocity * dt)
+                    tiltVelocity *= exp(-4 * dt)
+                } else if still && abs(velocity) < 0.01 {
                     let turn = 2 * Double.pi
                     angle = rest + turn * ((angle - rest) / turn).rounded()
                 } else if time - touched > 2.5 {
@@ -432,9 +579,53 @@ struct CaseModelView: NSViewRepresentable {
                     angle += (target - angle) * min(1, 2.4 * dt)
                 }
             }
-            node.eulerAngles = SCNVector3(x: 0.05, y: CGFloat(angle), z: 0)
-            mirror.eulerAngles = node.eulerAngles
+            node.eulerAngles = SCNVector3(x: CGFloat(tilt), y: CGFloat(angle), z: 0)
+            mirror?.eulerAngles = node.eulerAngles
+            if viewer { camera.position = SCNVector3(x: 0, y: 0, z: CGFloat(distance)) }
         }
+    }
+}
+
+/// A button of the box viewer, picked up by the box's render loop once
+struct CaseCommand: Equatable {
+    enum Kind: Equatable { case front, back, spine, reset, zoom(Double), turn(Double, Double) }
+    let id = UUID()
+    let kind: Kind
+    init(_ kind: Kind) { self.kind = kind }
+}
+
+/// What shows through the clear plastic along a side that opens: the insert's front and back edges, white, with the inside of the
+/// case between them (grey through clear plastic, dark red through Switch 2's)
+enum CaseEdgeArt {
+    @MainActor static var cache: [String: NSImage] = [:]
+
+    /// `across`: the lines run down the picture (the side that opens), else along it (top and bottom)
+    nonisolated static func image(red: Bool, across: Bool) -> NSImage {
+        let key = "\(red)\(across)"
+        if let i = MainActor.assumeIsolated({ cache[key] }) { return i }
+        let n = 48, len = 8
+        let size = across ? NSSize(width: n, height: len) : NSSize(width: len, height: n)
+        let img = NSImage(size: size, flipped: false) { r in
+            let inside = red ? NSColor(red: 0.55, green: 0.04, blue: 0.08, alpha: 0.30) : NSColor(white: 0.85, alpha: 0.10)
+            inside.setFill()
+            r.fill(using: .copy)
+            NSColor(white: 0.93, alpha: 1).setFill()
+            let line = 4.0
+            if across {
+                NSRect(x: 0, y: 0, width: line, height: r.height).fill()
+                NSRect(x: r.width - line, y: 0, width: line, height: r.height).fill()
+            } else {
+                NSRect(x: 0, y: 0, width: r.width, height: line).fill()
+                NSRect(x: 0, y: r.height - line, width: r.width, height: line).fill()
+            }
+            // the clear tray's ridge, in the middle
+            (red ? NSColor(red: 0.45, green: 0.02, blue: 0.05, alpha: 0.45) : NSColor(white: 0.9, alpha: 0.28)).setFill()
+            if across { NSRect(x: r.width * 0.45, y: 0, width: r.width * 0.10, height: r.height).fill() }
+            else { NSRect(x: 0, y: r.height * 0.45, width: r.width, height: r.height * 0.10).fill() }
+            return true
+        }
+        MainActor.assumeIsolated { cache[key] = img }
+        return img
     }
 }
 
@@ -442,6 +633,11 @@ struct CaseModelView: NSViewRepresentable {
 /// game's), and on a screen more than 4K wide with 2X multisampling instead of 4X, which costs a quarter as much there.
 final class CaseSCNView: SCNView {
     private var watch: [NSObjectProtocol] = []
+    weak var coordinator: CaseModelView.Coordinator?
+
+    override func scrollWheel(with e: NSEvent) {
+        if let c = coordinator, c.viewer { c.scroll(e) } else { super.scrollWheel(with: e) }
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -460,7 +656,8 @@ final class CaseSCNView: SCNView {
 
     func fitToScreen() {
         guard let w = window else { return }
-        let visible = w.occlusionState.contains(.visible)
+        // a snapshot's window may be behind others: it keeps drawing, so the picture shows the box where it was turned to
+        let visible = w.occlusionState.contains(.visible) || ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil
         if rendersContinuously != visible { rendersContinuously = visible; isPlaying = visible }
         let px = (w.screen?.frame.width ?? 0) * (w.screen?.backingScaleFactor ?? 1)
         let aa: SCNAntialiasingMode = px > 4000 ? .multisampling2X : .multisampling4X
@@ -480,7 +677,7 @@ struct GameCase: View {
     var body: some View {
         let _ = CoverStore.shared.revision
         let tint = CoverArt.tint(game)
-        CaseModelView(front: CoverArt.front(game), back: CoverArt.back(game), spine: CoverArt.spine(game), rest: flipped ? 0.48 + .pi : 0.48)
+        CaseModelView(front: CoverArt.front(game), back: CoverArt.back(game), spine: CoverArt.spine(game), console: game.console, rest: flipped ? 0.48 + .pi : 0.48)
             .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: Self.floor + 0.004),
                                          .init(color: .black.opacity(0.24), location: Self.floor + 0.03), .init(color: .clear, location: 0.93)],
                                  startPoint: .top, endPoint: .bottom))

@@ -42,13 +42,30 @@ struct StageGamePage: View {
                             if showCase {
                                 GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.74, height: caseH)
                                     .overlay(alignment: .bottom) {
-                                        Button { model.caseFlipped.toggle() } label: {
-                                            Label(model.caseFlipped ? "Show the front" : "Turn over", systemImage: "arrow.triangle.2.circlepath")
-                                                .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 14).frame(height: 30)
-                                                .glassEffect(.regular.interactive(), in: .capsule).contentShape(.capsule)
+                                        HStack(spacing: 8) {
+                                            Button { model.caseFlipped.toggle() } label: {
+                                                Label(model.caseFlipped ? "Show the front" : "Turn over", systemImage: "arrow.triangle.2.circlepath")
+                                                    .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 14).frame(height: 30)
+                                                    .glassEffect(.regular.interactive(), in: .capsule).contentShape(.capsule)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .help("Drag the box to turn it, or use a controller's right stick")
+                                            Button { model.openCaseViewer(g) } label: {
+                                                Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 12, weight: .bold))
+                                                    .frame(width: 30, height: 30)
+                                                    .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
+                                            }
+                                            .buttonStyle(.plain).help("View the box full screen (R on a controller)").accessibilityLabel("View the box full screen")
+                                            if let m = GameManual.find(g) {
+                                                Button { model.openManual(m, title: g.name) } label: {
+                                                    Image(systemName: "book.pages").font(.system(size: 12, weight: .bold))
+                                                        .frame(width: 30, height: 30)
+                                                        .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
+                                                }
+                                                .buttonStyle(.plain).help("Read the manual").accessibilityLabel("Manual")
+                                            }
                                         }
-                                        .buttonStyle(.plain).padding(.bottom, caseH * 0.13)
-                                        .help("Drag the box to turn it, or use a controller's right stick")
+                                        .padding(.bottom, caseH * 0.13)
                                     }
                                     .padding(.bottom, -caseH * 0.12)   // the floor's reflection may run under what follows
                             }
@@ -59,10 +76,10 @@ struct StageGamePage: View {
                         .padding(.top, 4)
                         Spacer(minLength: 26)
                         if let app = g.app {
-                            ScreenshotRow(app: app, width: geo.size.width - gutter * 2)
+                            ScreenshotRow(model: model, game: g, app: app, width: geo.size.width - gutter * 2)
                         }
                         if model.settings.downloadStoreInfo {
-                            StoreAbout(game: g, width: geo.size.width - gutter * 2)
+                            StoreAbout(model: model, game: g, width: geo.size.width - gutter * 2)
                         }
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 28)
                         infoRow(g, record).fixedSize(horizontal: false, vertical: true).padding(.vertical, 18)
