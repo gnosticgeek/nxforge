@@ -129,8 +129,8 @@ extension AppModel {
         case .switch1: out = out.filter { $0.console == .switch1 }
         case .notBuilt: out = out.filter { $0.app == nil }
         }
-        let q = stageSearch.trimmingCharacters(in: .whitespaces).lowercased()
-        if !q.isEmpty { out = out.filter { $0.name.lowercased().contains(q) } }
+        let q = stageSearch.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty { out = TitleMatch.sorted(out.filter { TitleMatch.matches(q, [$0.name, $0.titleID]) }, query: q, title: \.name, last: \.last) }
         return out
     }
 
@@ -354,11 +354,61 @@ struct StageButton: ButtonStyle {
 }
 
 /// A controller button in the hint bar
+/// The symbol on each of the connected controller's buttons, as the system names it (a.circle, xmark.circle, l1.rectangle.roundedbottom…):
+/// the hints show the button that does the thing on this pad, so Confirm is ✕ on a PlayStation pad and never assumed to be "A"
+/// (from RetroReplay's ControllerPrompts). Empty without a controller: the hints keep their letters.
+@MainActor @Observable
+final class PadLabels {
+    static let shared = PadLabels()
+    private(set) var symbols: [PadKey: String] = [:]
+
+    func refresh() {
+        guard let p = GCController.controllers().lazy.compactMap(\.extendedGamepad).first else { symbols = [:]; return }
+        var s: [PadKey: String] = [:]
+        func put(_ k: PadKey, _ b: GCControllerButtonInput?) { if let n = b?.sfSymbolsName, NSImage(systemSymbolName: n, accessibilityDescription: nil) != nil { s[k] = n } }
+        put(.a, p.buttonA); put(.b, p.buttonB); put(.x, p.buttonX); put(.y, p.buttonY)
+        put(.l, p.leftShoulder); put(.r, p.rightShoulder); put(.menu, p.buttonMenu); put(.options, p.buttonOptions)
+        if s != symbols { symbols = s }
+    }
+
+    static func key(_ text: String) -> PadKey? {
+        switch text {
+        case "A": .a
+        case "B": .b
+        case "X": .x
+        case "Y": .y
+        case "L": .l
+        case "R": .r
+        case "+": .menu
+        case "−": .options
+        default: nil
+        }
+    }
+
+    /// The symbol to draw for a hint's letter, filled for the main action when the symbol has a filled form
+    func symbol(_ text: String, filled: Bool) -> String? {
+        guard let k = Self.key(text), let n = symbols[k] else { return nil }
+        if filled, NSImage(systemSymbolName: n + ".fill", accessibilityDescription: nil) != nil { return n + ".fill" }
+        return n
+    }
+}
+
 struct PadGlyph: View {
     let text: String
     var filled = false
 
     var body: some View {
+        if let sym = PadLabels.shared.symbol(text, filled: filled) {
+            Image(systemName: sym).font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(filled ? Color.white : StageLook.soft)
+                .frame(minWidth: 22, minHeight: 22)
+                .accessibilityLabel(text)
+        } else {
+            letter
+        }
+    }
+
+    var letter: some View {
         Text(text).font(.system(size: 11, weight: .heavy))
             .padding(.horizontal, text.count > 1 ? 7 : 0).frame(minWidth: 22, minHeight: 22)
             .foregroundStyle(filled ? Color.black : StageLook.soft)

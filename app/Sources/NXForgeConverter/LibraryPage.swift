@@ -31,11 +31,10 @@ extension AppModel {
 
     private func librarySorted(_ builds: [String: LibraryBuild]) -> [LibraryGame] {
         let all = library?.games ?? []
-        let q = librarySearch.trimmingCharacters(in: .whitespaces).lowercased()
+        let q = librarySearch.trimmingCharacters(in: .whitespaces)
         let games = all.filter { g in
             consoleOK(g) && matches(g, libraryFilter, builds)
-                && (q.isEmpty || g.displayName.lowercased().contains(q) || g.name.lowercased().contains(q) || g.titleID?.lowercased().contains(q) == true
-                    || g.publisher?.lowercased().contains(q) == true || g.path.lowercased().contains(q))
+                && (q.isEmpty || TitleMatch.matches(q, [g.displayName, g.name, g.titleID, g.publisher, g.path]))
         }
         switch settings.librarySort {
         case .name:
@@ -81,6 +80,8 @@ struct LibraryPage: View {
     @State private var laterDate = BatchSchedule.tonight()
     @FocusState private var focused: Bool
     @State private var restoreScroll: String?
+    /// Finder's type-to-select over the games shown (TitleMatch.swift)
+    @State private var typed = TypeSelectBuffer()
 
     var grid: Bool { model.settings.libraryLayout == .grid || model.couchMode }
 
@@ -186,11 +187,18 @@ struct LibraryPage: View {
             case .rightArrow: model.moveLibraryFocus(dx: 1)
             case .upArrow: model.moveLibraryFocus(dy: -1)
             case .downArrow: model.moveLibraryFocus(dy: 1)
-            case .space: if let r = model.focusedGame() { model.preview = model.preview == nil ? r : nil } else { return .ignored }
+            case .space:
+                if typed.active() { return typeSelect(" ") }
+                if let r = model.focusedGame() { model.preview = model.preview == nil ? r : nil } else { return .ignored }
             case .return: if let r = model.focusedGame() { model.openGame(r) } else { return .ignored }
             default: return .ignored
             }
             return .handled
+        }
+        // letters typed quickly jump to the first game whose name starts with them, as in Finder
+        .onKeyPress(characters: .alphanumerics) { press in
+            guard press.modifiers.isEmpty || press.modifiers == .shift, let c = press.characters.first else { return .ignored }
+            return typeSelect(c)
         }
         // first visit with a folder chosen, or a list over a day old: scan; names and icons not read yet: read them
         .task {
@@ -199,6 +207,14 @@ struct LibraryPage: View {
             focused = true
         }
         .sheet(isPresented: $laterSheet) { laterPicker }
+    }
+
+    func typeSelect(_ c: Character) -> KeyPress.Result {
+        let prefix = typed.type(c)
+        let shown = model.libraryShown(model.libraryBuilds())
+        guard let g = TypeSelectBuffer.first(shown, prefix: prefix, title: { $0.displayName }) else { return .handled }
+        model.libraryFocus = g.id
+        return .handled
     }
 
     // MARK: cards over the list
