@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.37.3 (2026-11-15)
+
+- **"Remove build cache" removes the build folders** (Converter 0.13.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): after a build, the game folder kept `<id>_build` (its logs and a provisional profile), `<id>_survey` and the app's `.app.key`. Now only the game files and the app stay; the build logs move to `~/Library/Logs/NXForge/<title ID>`. No game rebuild needed for this.
+
 ## 0.37.2 (2026-11-15)
 
 - **Cleared builds no longer show as ready** (Converter 0.13.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Home said "3 ready" with every build deleted, from app paths the saved library list still held. No game rebuild needed for this.

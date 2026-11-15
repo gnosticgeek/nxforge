@@ -907,6 +907,25 @@ import Testing
         #expect(RebuildCost(kind: .shaders, seconds: nil).title == "Shader rebuild")
     }
 
+    @Test func removeBuildCacheLeavesOnlyTheGameAndTheApp() throws {
+        let fm = FileManager.default
+        let root = NSTemporaryDirectory() + "nxc-cleanall-\(UUID().uuidString)", game = root + "/Blazing Chrome [NSP]", home = root + "/home"
+        defer { try? fm.removeItem(atPath: root) }
+        let build = game + "/0100C2700C252000_build", survey = game + "/0100C2700C252000_survey", app = game + "/Blazing Chrome.app"
+        for d in ["\(build)/logs", "\(build)/profile/0100C2700C252000", "\(survey)/extract", app + "/Contents", home] { try fm.createDirectory(atPath: d, withIntermediateDirectories: true) }
+        for f in ["\(build)/logs/converter-2026-11-15-1209.log", "\(build)/logs/stage_times.json", "\(build)/profile/0100C2700C252000/game.tsv",
+                  "\(survey)/survey.md", app + ".key", game + "/Blazing Chrome [0100C2700C252000][v0].nsp", game + "/notes_build"] {
+            try "x\n".write(toFile: f, atomically: true, encoding: .utf8)
+        }
+        let r = BuildRun.removeBuildFolders(game, app: app, log: "\(build)/logs/converter-2026-11-15-1209.log", home: home)
+        let logs = home + "/Library/Logs/NXForge/0100C2700C252000"
+        #expect(r.log == logs + "/converter-2026-11-15-1209.log" && r.logDir == logs)
+        #expect(r.removed == ["0100C2700C252000_build", "0100C2700C252000_survey", "Blazing Chrome.app.key"])
+        #expect(try fm.contentsOfDirectory(atPath: game).sorted() == ["Blazing Chrome [0100C2700C252000][v0].nsp", "Blazing Chrome.app", "notes_build"])
+        #expect(try fm.contentsOfDirectory(atPath: logs).sorted() == ["converter-2026-11-15-1209.log", "stage_times.json"])
+        #expect(BuildRun.removeBuildFolders(game, app: app, log: nil, home: home).removed.isEmpty)   // nothing left to remove
+    }
+
     @Test func builtChainsAndTheScratchRebuild() throws {
         let fm = FileManager.default
         let game = NSTemporaryDirectory() + "nxc-scratch-\(UUID().uuidString)", build = game + "/0400486024DEC000_build"
