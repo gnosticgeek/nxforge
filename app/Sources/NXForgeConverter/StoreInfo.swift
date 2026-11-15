@@ -27,7 +27,7 @@ struct StoreInfo: Codable, Equatable {
     /// full-size screenshots of the page's gallery
     var shots: [String] = []
     /// the page's trailers, in its order (nil: kept before trailers were looked for, so the page is read again)
-    var videos: [StoreVideo]?
+    var trailers: [StoreVideo]?
     var fetched = Date()
 
     var players: String? {
@@ -144,6 +144,45 @@ enum StoreSource {
         return Array(out.prefix(4))
     }
 
+    /// YouTube's search for a game's trailer (asked only when its store page has none that plays)
+    static func youtubeSearch(_ name: String) -> URL? {
+        var c = URLComponents(string: "https://www.youtube.com/results")!
+        c.queryItems = [URLQueryItem(name: "search_query", value: "\(CoverSource.plain(name)) Nintendo Switch trailer")]
+        return c.url
+    }
+
+    /// The trailer in YouTube's search results: a video whose title names the game and whose channel is Nintendo's or the
+    /// publisher's, a trailer for Switch rather than for an older console first. Nil when no result is an official one.
+    static func pickTrailer(_ html: String, name: String, publisher: String?) -> StoreVideo? {
+        let want = CoverSource.normalize(CoverSource.plain(name))
+        let pub = publisher.map { CoverSource.normalize($0) } ?? ""
+        guard want.count >= 3 else { return nil }
+        func first(_ pattern: String, in s: Substring) -> String? {
+            guard let r = s.range(of: pattern, options: .regularExpression) else { return nil }
+            let m = String(s[r])
+            guard let q = m.dropLast().lastIndex(of: "\"") else { return nil }
+            return String(m[m.index(after: q)..<m.index(before: m.endIndex)])
+        }
+        var best: (score: Int, video: StoreVideo)?
+        let parts = html.components(separatedBy: "\"videoRenderer\":{").dropFirst().prefix(12)
+        for part in parts {
+            let s = Substring(part)
+            guard let id = first(#""videoId":"[A-Za-z0-9_-]{11}""#, in: s),
+                  let title = first(#""title":\{"runs":\[\{"text":"[^"]*""#, in: s),
+                  let owner = first(#""ownerText":\{"runs":\[\{"text":"[^"]*""#, in: s) else { continue }
+            let t = title.replacingOccurrences(of: "\\u0026", with: "&")
+            let nt = CoverSource.normalize(t), no = CoverSource.normalize(owner)
+            guard nt.contains(want) else { continue }
+            guard no.contains("nintendo") || (!pub.isEmpty && (no.contains(pub) || pub.contains(no))) else { continue }
+            var score = 0
+            if nt.contains("trailer") { score += 2 }
+            if nt.contains("switch") { score += 1 }
+            if nt.contains("wiiu") || nt.contains("3ds") { score -= 3 }
+            if best == nil || score > best!.score { best = (score, StoreVideo(youtube: id, thumb: "https://i.ytimg.com/vi/\(id)/maxresdefault.jpg", title: t)) }
+        }
+        return best?.video
+    }
+
     /// A YouTube video's title, from its oEmbed answer
     static func oembedTitle(_ data: Data) -> String? {
         ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["title"] as? String
@@ -202,7 +241,7 @@ final class StoreInfoStore {
     nonisolated static var dir: URL { CoverStore.dir.appending(path: "store") }
     nonisolated static func file(_ key: String) -> URL { dir.appending(path: "\(key).json") }
     nonisolated static func shot(_ key: String, _ i: Int) -> URL { dir.appending(path: String(format: "%@-%02d.jpg", key, i + 1)) }
-    nonisolated static func videoThumb(_ key: String, _ i: Int) -> URL { dir.appending(path: String(format: "%@-v%02d.jpg", key, i + 1)) }
+    nonisolated static func videoThumb(_ key: String, _ i: Int) -> URL { dir.appending(path: String(format: "%@-t%02d.jpg", key, i + 1)) }
     /// how many of a game's store screenshots are kept
     static let maxShots = 12
 
@@ -225,7 +264,7 @@ final class StoreInfoStore {
     /// The trailers, each with its picture once it is on disk
     func videos(_ key: String) -> [(video: StoreVideo, thumb: URL?)] {
         let _ = revision
-        guard let v = info(key)?.videos else { return [] }
+        guard let v = info(key)?.trailers else { return [] }
         return v.enumerated().map { i, x in
             let t = Self.videoThumb(key, i)
             return (x, FileManager.default.fileExists(atPath: t.path) ? t : nil)
@@ -243,7 +282,7 @@ final class StoreInfoStore {
             let file = Self.file(key), none = Self.dir.appending(path: "\(key).none")
             if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 7 * 86400 { return }
             var info = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(StoreInfo.self, from: $0) }
-            if info == nil || info!.videos == nil || Date().timeIntervalSince(info!.fetched) > 30 * 86400 {
+            if info == nil || info!.trailers == nil || Date().timeIntervalSince(info!.fetched) > 30 * 86400 {
                 var found: StoreInfo?
                 if let id = titleID, let u = StoreSource.byID(id) {
                     guard let d = await CoverStore.get(u) else { return }   // offline: try again next time
@@ -258,17 +297,25 @@ final class StoreInfoStore {
                     let html = String(decoding: d, as: UTF8.self)
                     f.about = StoreSource.about(html)
                     f.shots = StoreSource.gallery(html)
-                    var vids = StoreSource.videos(html)
-                    for i in vids.indices {
+                    var vids: [StoreVideo] = []
+                    for v in StoreSource.videos(html) {
+                        // Nintendo's older trailer files were on Limelight's network, which is gone: keep a file only if it answers
+                        if let f = v.file.flatMap(URL.init(string:)) { if await CoverStore.reachable(f) { vids.append(v) } } else { vids.append(v) }
+                    }
+                    if vids.isEmpty, let u = StoreSource.youtubeSearch(f.title), let d = await CoverStore.get(u, browser: true),
+                       let v = StoreSource.pickTrailer(String(decoding: d, as: UTF8.self), name: f.title, publisher: f.publisher) {
+                        vids.append(v)
+                    }
+                    for i in vids.indices where vids[i].title == nil {
                         guard let id = vids[i].youtube, let u = URL(string: "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v=\(id)"),
                               let d = await CoverStore.get(u) else { continue }
                         vids[i].title = StoreSource.oembedTitle(d)
                     }
-                    f.videos = vids
+                    f.trailers = vids
                 } else if f.page != nil {
                     return   // offline: the page is read next time
                 } else {
-                    f.videos = []
+                    f.trailers = []
                 }
                 if let d = try? JSONEncoder().encode(f) { try? d.write(to: file) }
                 try? fm.removeItem(at: none)
@@ -278,7 +325,7 @@ final class StoreInfoStore {
             }
             guard let info else { return }
             // the trailers' pictures (YouTube's large one, else its smaller one)
-            for (i, v) in (info.videos ?? []).enumerated() {
+            for (i, v) in (info.trailers ?? []).enumerated() {
                 let out = Self.videoThumb(key, i)
                 if fm.fileExists(atPath: out.path) { continue }
                 guard let t = v.thumb, let u = URL(string: t) else { continue }

@@ -648,7 +648,8 @@ final class CaseSCNView: SCNView {
 
     func fitToScreen() {
         guard let w = window else { return }
-        let visible = w.occlusionState.contains(.visible)
+        // a snapshot's window may be behind others: it keeps drawing, so the picture shows the box where it was turned to
+        let visible = w.occlusionState.contains(.visible) || ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil
         if rendersContinuously != visible { rendersContinuously = visible; isPlaying = visible }
         let px = (w.screen?.frame.width ?? 0) * (w.screen?.backingScaleFactor ?? 1)
         let aa: SCNAntialiasingMode = px > 4000 ? .multisampling2X : .multisampling4X

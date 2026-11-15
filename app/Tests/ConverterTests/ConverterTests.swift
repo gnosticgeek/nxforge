@@ -1071,7 +1071,18 @@ import Testing
         #expect(StoreSource.oembedTitle(Data(#"{"title":"Super Mario Odyssey - Trailer"}"#.utf8)) == "Super Mario Odyssey - Trailer")
         // details kept before trailers were looked for read back with none, so the page is read again
         let old = try? JSONDecoder().decode(StoreInfo.self, from: Data(#"{"title":"X","genres":[],"about":[],"modes":[],"shots":[],"fetched":0}"#.utf8))
-        #expect(old != nil && old?.videos == nil)
+        #expect(old != nil && old?.trailers == nil)
+        // YouTube's search: the official channel's Switch trailer, not a fan's upload or the Wii U one
+        func r(_ id: String, _ title: String, _ owner: String) -> String {
+            #""videoRenderer":{"videoId":"\#(id)","thumbnail":{},"title":{"runs":[{"text":"\#(title)"}]},"ownerText":{"runs":[{"text":"\#(owner)"}]}"#
+        }
+        let yt = "x" + r("AAAAAAAAAAA", "Gunman Clive HD Collection - Nintendo eShop Trailer (Wii U)", "Nintendo UK")
+            + r("BBBBBBBBBBB", "Gunman Clive HD Collection Trailer || Nintendo Switch", "Active Hive Gaming")
+            + r("CCCCCCCCCCC", "Gunman Clive HD Collection Switch Trailer", "Bertil Hörberg")
+        let pick = StoreSource.pickTrailer(yt, name: "Gunman Clive HD Collection", publisher: "Bertil Hörberg")
+        #expect(pick?.youtube == "CCCCCCCCCCC" && pick?.title == "Gunman Clive HD Collection Switch Trailer")
+        #expect(StoreSource.pickTrailer(yt, name: "Gunman Clive HD Collection", publisher: nil)?.youtube == "AAAAAAAAAAA")
+        #expect(StoreSource.pickTrailer(yt, name: "Golf Story", publisher: nil) == nil)
     }
 
     @Test func caseMeasurementsMatchARealSwitchCase() {

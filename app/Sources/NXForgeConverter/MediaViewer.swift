@@ -445,6 +445,7 @@ final class GalleryScrollView: NSScrollView {
         target = min(max(max(target, magnification) * k, minMagnification), maxMagnification)
         let at = p ?? NSPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
         let to = target
+        if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil { setMagnification(to, centeredAt: at); return }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.18
             animator().setMagnification(to, centeredAt: at)

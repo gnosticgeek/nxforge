@@ -159,7 +159,7 @@ struct ConverterApp: App {
                 if st == "gallery" {
                     let store = StoreInfoStore.shared
                     store.load(key: g.coverKey, titleID: g.titleID, name: g.name)
-                    for _ in 0..<60 where store.shots(g.coverKey).count < 2 || store.info(g.coverKey)?.videos == nil { try? await Task.sleep(for: .milliseconds(500)) }
+                    for _ in 0..<60 where store.shots(g.coverKey).count < 2 || store.info(g.coverKey)?.trailers == nil { try? await Task.sleep(for: .milliseconds(500)) }
                     var items: [GalleryItem] = store.videos(g.coverKey).map { .video($0.video, thumb: $0.thumb) } + store.shots(g.coverKey).map { .image($0) }
                     if items.isEmpty, let a = g.app { items = GameCaptures.screenshots(app: a).map { .image($0) } }
                     model.openGallery(items, at: Int(env["NXC_INDEX"] ?? "") ?? 0, title: "\(g.name) · From the store")
