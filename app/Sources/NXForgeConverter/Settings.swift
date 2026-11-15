@@ -83,6 +83,8 @@ struct Settings: Codable, Equatable {
     var downloadHeroes = true
     /// a game's description, details and official screenshots are downloaded from its Nintendo store page when its page is opened
     var downloadStoreInfo = true
+    /// a built game's media (covers, wide art, screenshots, manual) and its details (media/game.md) are kept in its own folder (GameFolderMedia)
+    var mediaInGameFolder = true
     /// a card with the session's time, memory and frame rate when a game quits
     var sessionRecap = true
     /// while a game runs and NXForge is behind it, the window shows a plain card and holds no artwork
@@ -103,6 +105,7 @@ struct Settings: Codable, Equatable {
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
         case startIn = "start_in", straightPlay = "straight_play", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
         case returnToLibrary = "return_to_library", downloadCovers = "download_covers", downloadHeroes = "download_heroes", downloadStoreInfo = "download_store_info", favorites
+        case mediaInGameFolder = "media_in_game_folder"
         case localShaders = "local_shaders"
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
     }
@@ -149,6 +152,7 @@ struct Settings: Codable, Equatable {
         downloadCovers = (try? c.decodeIfPresent(Bool.self, forKey: .downloadCovers)) ?? true
         downloadHeroes = (try? c.decodeIfPresent(Bool.self, forKey: .downloadHeroes)) ?? true
         downloadStoreInfo = (try? c.decodeIfPresent(Bool.self, forKey: .downloadStoreInfo)) ?? true
+        mediaInGameFolder = (try? c.decodeIfPresent(Bool.self, forKey: .mediaInGameFolder)) ?? true
         favorites = (try? c.decodeIfPresent([String].self, forKey: .favorites)) ?? []
         localShaders = (try? c.decodeIfPresent(Bool.self, forKey: .localShaders)) ?? true
         sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true

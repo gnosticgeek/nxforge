@@ -69,7 +69,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, downloadCovers, downloadHeroes, downloadStoreInfo, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, startIn }
 
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
 
@@ -257,6 +257,7 @@ extension AppModel {
         case .downloadCovers: flip(&settings.downloadCovers)
         case .downloadHeroes: flip(&settings.downloadHeroes)
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
+        case .mediaInGameFolder: flip(&settings.mediaInGameFolder)
         case .startIn:
             let all = StartIn.allCases
             if let i = all.firstIndex(of: settings.startIn) { settings.startIn = all[(i + d + all.count) % all.count] }
@@ -500,6 +501,9 @@ struct StageView: View {
             return .handled
         }
         .task(id: games.map(\.coverKey).joined(separator: "|") + (model.settings.downloadCovers ? "1" : "0") + (model.settings.downloadHeroes ? "1" : "0")) { model.fetchCovers(games) }
+        .task(id: "\(model.settings.mediaInGameFolder)|\(CoverStore.shared.revision)|\(StoreInfoStore.shared.revision)|\(model.revision)|" + games.map { "\($0.id)\($0.app ?? "")" }.joined(separator: "|")) {
+            GameFolderMediaSync.shared.schedule(model)
+        }
         .task(id: games.map { "\($0.id)\($0.outdated)" }.joined(separator: "|") + "|\(model.playing.count)|\(model.revision)") { await model.refreshAttention(games) }
     }
 }
@@ -900,11 +904,12 @@ struct StageGameMenu: View {
             Button("Back Cover from a Link…") { model.coverFromLink(g, .back) }
             if CoverStore.shared.hasOwn(g.coverKey) {
                 Divider()
-                Button("Go Back to the Downloaded Covers") { CoverStore.shared.removeOwn(g.coverKey) }
+                Button("Go Back to the Downloaded Covers") { CoverStore.shared.removeOwn(g.coverKey); GameFolderMediaSync.shared.ownCoversRemoved(g, model: model) }
             }
         }
         Divider()
         if let p = g.app ?? g.game?.path { Button("Show in Finder") { reveal(p) } }
+        if g.app != nil, model.settings.mediaInGameFolder { Button("Show Media Folder") { GameFolderMediaSync.shared.show(g, model: model) } }
         Button("Manage in Converter") { model.showConverter(); model.page = .library; model.openGame(g.ref) }
     }
 }
@@ -1066,6 +1071,7 @@ struct StageSettings: View {
                 toggle("Download box art", "Front and back covers from GameTDB, matched by the game's name. Only a cover's ID is sent.", $model.settings.downloadCovers, row: .downloadCovers)
                 toggle("Download wide art", "The banner from each game's page on Nintendo's European store, behind its page and Home. Found by title ID or name; only those are sent.", $model.settings.downloadHeroes, row: .downloadHeroes)
                 toggle("Download store details", "A game's description, details and official screenshots from its store page, fetched when you open the game's page.", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
+                toggle("Keep media in each game's folder", "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
                 row("Artwork folder", "Your own covers and the downloaded art, kept on this Mac only.", last: true) {
                     HStack(spacing: 8) {
                         Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
