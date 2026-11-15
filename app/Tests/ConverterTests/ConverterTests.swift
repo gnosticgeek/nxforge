@@ -1049,6 +1049,39 @@ import Testing
         #expect(StoreSource.gallery(html) == ["https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_01.jpg", "https://www.nintendo.com/eu/media/images/06_screenshots/x/BC_02.jpg"])
     }
 
+    @Test func storePageTrailers() {
+        let html = """
+        'isVideo': true,
+        'video_id': 'wgrj1meikypq63u30rji',
+        'video_thumbnail_url': 'https://assets.nintendo.eu/video/private/f_auto,q_auto/wgrj1meikypq63u30rji.jpg',
+        'video_content_url': 'https://production.smedia.lvp.llnw.net/81d5/By/x9/gc-trailer-all.mp4?x=0&amp;h=fa5a',
+        'isVideo': false, 'video_id': '', 'video_thumbnail_url': '', 'video_content_url': '',
+        <iframe src="https://www.youtube-nocookie.com/embed/VcXvnb7dHZk?rel=0&amp;modestbranding=1"></iframe>
+        window.videos.push({sectionID: "1587725", id:"VcXvnb7dHZk", isPlaylist: false});
+        window.videos.push({sectionID: "1587726", id:"PLxxxxxxxxx", isPlaylist: true});
+        window.videos.push({sectionID: "1587727", id:"Ns1xBFGRm0c", isPlaylist: false});
+        """
+        let v = StoreSource.videos(html)
+        #expect(v.count == 3)
+        #expect(v[0].file == "https://production.smedia.lvp.llnw.net/81d5/By/x9/gc-trailer-all.mp4?x=0&h=fa5a")
+        #expect(v[0].thumb == "https://assets.nintendo.eu/video/private/f_auto,q_auto/wgrj1meikypq63u30rji.jpg")
+        #expect(v[1].youtube == "VcXvnb7dHZk" && v[2].youtube == "Ns1xBFGRm0c")
+        #expect(v[1].thumb == "https://i.ytimg.com/vi/VcXvnb7dHZk/maxresdefault.jpg")
+        #expect(StoreSource.videos("<p>no video</p>").isEmpty)
+        #expect(StoreSource.oembedTitle(Data(#"{"title":"Super Mario Odyssey - Trailer"}"#.utf8)) == "Super Mario Odyssey - Trailer")
+        // details kept before trailers were looked for read back with none, so the page is read again
+        let old = try? JSONDecoder().decode(StoreInfo.self, from: Data(#"{"title":"X","genres":[],"about":[],"modes":[],"shots":[],"fetched":0}"#.utf8))
+        #expect(old != nil && old?.videos == nil)
+    }
+
+    @Test func caseMeasurementsMatchARealSwitchCase() {
+        // 105 × 170 × 10.5 mm, the insert inside the plastic on every side
+        #expect(abs(CaseSize.width / CaseSize.height - 105.0 / 170.0) < 1e-6)
+        #expect(abs(CaseSize.depth / CaseSize.height - 10.5 / 170.0) < 1e-6)
+        #expect(CaseSize.insertWidth / 2 + abs(CaseSize.insertShift) < CaseSize.width / 2)
+        #expect(CaseSize.insertHeight < CaseSize.height && CaseSize.insertDepth < CaseSize.depth)
+    }
+
     @Test func aWrapSplitsIntoBackSpineAndFront() {
         let b = CoverSource.wrap(.back), s = CoverSource.wrap(.spine), f = CoverSource.wrap(.front)
         #expect(b.minX == 0 && abs(f.maxX - 1) < 1e-9)

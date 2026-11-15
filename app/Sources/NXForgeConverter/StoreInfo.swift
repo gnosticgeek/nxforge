@@ -26,6 +26,8 @@ struct StoreInfo: Codable, Equatable {
     var page: String?
     /// full-size screenshots of the page's gallery
     var shots: [String] = []
+    /// the page's trailers, in its order (nil: kept before trailers were looked for, so the page is read again)
+    var videos: [StoreVideo]?
     var fetched = Date()
 
     var players: String? {
@@ -39,6 +41,19 @@ struct StoreInfo: Codable, Equatable {
         guard let raw, !raw.isEmpty else { return nil }
         return raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).capitalized }.filter { !$0.isEmpty }.joined(separator: ", ")
     }
+}
+
+/// A trailer on a game's store page: Nintendo's own video file, played here by AVPlayer, or a video of Nintendo's on YouTube, played by
+/// YouTube's embedded player with its ad servers blocked (MediaViewer.swift)
+struct StoreVideo: Codable, Hashable {
+    /// the YouTube video's ID
+    var youtube: String?
+    /// Nintendo's .mp4
+    var file: String?
+    var thumb: String?
+    var title: String?
+
+    var watchURL: URL? { youtube.flatMap { URL(string: "https://www.youtube.com/watch?v=\($0)") } ?? file.flatMap(URL.init(string:)) }
 }
 
 /// The lookup and the page reading, apart from the network (tested)
@@ -104,6 +119,36 @@ enum StoreSource {
         return out
     }
 
+    /// The page's trailers, at most four, in the page's order: Nintendo's own files (the gallery's video entries) first, then the
+    /// YouTube videos its sections embed (window.videos, else their iframes); playlists are left out
+    static func videos(_ html: String) -> [StoreVideo] {
+        func amp(_ s: String) -> String { s.replacingOccurrences(of: "&amp;", with: "&") }
+        func groups(_ pattern: String) -> [[String]] {
+            guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
+            let ns = html as NSString
+            return re.matches(in: html, range: NSRange(location: 0, length: ns.length)).map { m in
+                (1..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? "" : ns.substring(with: m.range(at: $0)) }
+            }
+        }
+        var out: [StoreVideo] = []
+        for g in groups(#"'video_thumbnail_url':\s*'([^']*)',\s*'video_content_url':\s*'(https://[^']+\.mp4[^']*)'"#) {
+            let file = amp(g[1])
+            guard !out.contains(where: { $0.file == file }) else { continue }
+            out.append(StoreVideo(file: file, thumb: g[0].hasPrefix("https://") ? amp(g[0]) : nil))
+        }
+        var ids = groups(#"window\.videos\.push\(\{[^}]*?\bid:\s*"([A-Za-z0-9_-]{11})"[^}]*?isPlaylist:\s*false"#).map { $0[0] }
+        if ids.isEmpty { ids = groups(#"youtube(?:-nocookie)?\.com/embed/([A-Za-z0-9_-]{11})"#).map { $0[0] } }
+        for id in ids where !out.contains(where: { $0.youtube == id }) {
+            out.append(StoreVideo(youtube: id, thumb: "https://i.ytimg.com/vi/\(id)/maxresdefault.jpg"))
+        }
+        return Array(out.prefix(4))
+    }
+
+    /// A YouTube video's title, from its oEmbed answer
+    static func oembedTitle(_ data: Data) -> String? {
+        ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["title"] as? String
+    }
+
     /// The description: the paragraphs of the page's first content blocks (a game with its own designed page splits its text over
     /// several), without headings, short captions or the publisher note; about 900 characters at most
     static func about(_ html: String) -> [String] {
@@ -157,6 +202,7 @@ final class StoreInfoStore {
     nonisolated static var dir: URL { CoverStore.dir.appending(path: "store") }
     nonisolated static func file(_ key: String) -> URL { dir.appending(path: "\(key).json") }
     nonisolated static func shot(_ key: String, _ i: Int) -> URL { dir.appending(path: String(format: "%@-%02d.jpg", key, i + 1)) }
+    nonisolated static func videoThumb(_ key: String, _ i: Int) -> URL { dir.appending(path: String(format: "%@-v%02d.jpg", key, i + 1)) }
     /// how many of a game's store screenshots are kept
     static let maxShots = 12
 
@@ -176,6 +222,16 @@ final class StoreInfoStore {
         return (0..<min(i.shots.count, Self.maxShots)).map { Self.shot(key, $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 
+    /// The trailers, each with its picture once it is on disk
+    func videos(_ key: String) -> [(video: StoreVideo, thumb: URL?)] {
+        let _ = revision
+        guard let v = info(key)?.videos else { return [] }
+        return v.enumerated().map { i, x in
+            let t = Self.videoThumb(key, i)
+            return (x, FileManager.default.fileExists(atPath: t.path) ? t : nil)
+        }
+    }
+
     /// Look a game up once (again after 30 days, or a week when it was not found), then fetch its screenshots
     func load(key: String, titleID: String?, name: String) {
         guard !loading.contains(key) else { return }
@@ -187,7 +243,7 @@ final class StoreInfoStore {
             let file = Self.file(key), none = Self.dir.appending(path: "\(key).none")
             if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 7 * 86400 { return }
             var info = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(StoreInfo.self, from: $0) }
-            if info == nil || Date().timeIntervalSince(info!.fetched) > 30 * 86400 {
+            if info == nil || info!.videos == nil || Date().timeIntervalSince(info!.fetched) > 30 * 86400 {
                 var found: StoreInfo?
                 if let id = titleID, let u = StoreSource.byID(id) {
                     guard let d = await CoverStore.get(u) else { return }   // offline: try again next time
@@ -202,6 +258,17 @@ final class StoreInfoStore {
                     let html = String(decoding: d, as: UTF8.self)
                     f.about = StoreSource.about(html)
                     f.shots = StoreSource.gallery(html)
+                    var vids = StoreSource.videos(html)
+                    for i in vids.indices {
+                        guard let id = vids[i].youtube, let u = URL(string: "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v=\(id)"),
+                              let d = await CoverStore.get(u) else { continue }
+                        vids[i].title = StoreSource.oembedTitle(d)
+                    }
+                    f.videos = vids
+                } else if f.page != nil {
+                    return   // offline: the page is read next time
+                } else {
+                    f.videos = []
                 }
                 if let d = try? JSONEncoder().encode(f) { try? d.write(to: file) }
                 try? fm.removeItem(at: none)
@@ -210,6 +277,17 @@ final class StoreInfoStore {
                 await MainActor.run { StoreInfoStore.shared.memory[key] = done; StoreInfoStore.shared.revision += 1 }
             }
             guard let info else { return }
+            // the trailers' pictures (YouTube's large one, else its smaller one)
+            for (i, v) in (info.videos ?? []).enumerated() {
+                let out = Self.videoThumb(key, i)
+                if fm.fileExists(atPath: out.path) { continue }
+                guard let t = v.thumb, let u = URL(string: t) else { continue }
+                var data = await CoverStore.get(u)
+                if data == nil, t.contains("/maxresdefault."), let hq = URL(string: t.replacingOccurrences(of: "/maxresdefault.", with: "/hqdefault.")) { data = await CoverStore.get(hq) }
+                guard let data, let jpg = CoverSource.jpeg(data, maxHeight: 720) else { continue }
+                try? jpg.write(to: out)
+                await MainActor.run { StoreInfoStore.shared.revision += 1 }
+            }
             // the screenshots, one after another
             for (i, s) in info.shots.prefix(Self.maxShots).enumerated() {
                 let out = Self.shot(key, i)
@@ -235,6 +313,7 @@ final class StoreInfoStore {
 
 /// The game page's "From the store" section: the official screenshots in a row, the description and the store's facts
 struct StoreAbout: View {
+    let model: AppModel
     let game: StageGame
     var width: CGFloat = 900
     @State private var more = false
@@ -243,15 +322,21 @@ struct StoreAbout: View {
         let store = StoreInfoStore.shared
         if let info = store.info(game.coverKey) {
             let shots = store.shots(game.coverKey)
+            let videos = store.videos(game.coverKey)
+            let items: [GalleryItem] = videos.map { .video($0.video, thumb: $0.thumb) } + shots.map { .image($0) }
             VStack(alignment: .leading, spacing: 14) {
-                if !shots.isEmpty {
+                if !items.isEmpty {
                     HStack(alignment: .firstTextBaseline) {
                         Text("From the store").font(.system(size: 24, weight: .heavy)).tracking(-0.4)
-                        Text("\(info.shots.count) screenshot\(info.shots.count == 1 ? "" : "s")").font(.system(size: 15, weight: .medium)).foregroundStyle(StageLook.faint)
+                        Text(count(videos.count, "trailer") + (videos.isEmpty || info.shots.isEmpty ? "" : " · ") + count(info.shots.count, "screenshot"))
+                            .font(.system(size: 15, weight: .medium)).foregroundStyle(StageLook.faint)
                         Spacer()
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 14) { ForEach(shots, id: \.self) { tile($0) } }.padding(.vertical, 14)
+                        LazyHStack(spacing: 14) {
+                            ForEach(Array(items.enumerated()), id: \.element.id) { i, item in tile(item) { model.openGallery(items, at: i, title: "\(game.name) · From the store") } }
+                        }
+                        .padding(.vertical, 14)
                     }
                     .padding(.vertical, -14)
                 }
@@ -302,19 +387,32 @@ struct StoreAbout: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(StageLook.edge, lineWidth: 1))
     }
 
-    func tile(_ u: URL) -> some View {
-        let img = ThumbStore.shared.image(u)
+    func count(_ n: Int, _ what: String) -> String { n == 0 ? "" : "\(n) \(what)\(n == 1 ? "" : "s")" }
+
+    /// A picture, or a trailer: its picture with a play mark and its title
+    func tile(_ item: GalleryItem, open: @escaping () -> Void) -> some View {
+        let img = item.thumb.flatMap { ThumbStore.shared.image($0) }
         let w = max((width - 28) / 3, 120)
-        return Button { NSWorkspace.shared.open(u) } label: {
+        var video: StoreVideo? { if case .video(let v, _) = item { v } else { nil } }
+        return Button(action: open) {
             Color(white: 0.12)
                 .frame(width: w, height: w * 9 / 16)
                 .overlay { if let img { Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill) } }
+                .overlay {
+                    if let v = video {
+                        ZStack(alignment: .bottomLeading) {
+                            LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
+                            PlayGlyph(size: 58).frame(maxWidth: .infinity, maxHeight: .infinity)
+                            Text(v.title ?? "Trailer").font(.system(size: 13.5, weight: .semibold)).lineLimit(1).padding(12)
+                        }
+                    }
+                }
                 .clipShape(.rect(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.18), lineWidth: 1))
                 .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
                 .contentShape(.rect(cornerRadius: 14))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Store screenshot")
+        .accessibilityLabel(video.map { "Play \($0.title ?? "the trailer")" } ?? "Store screenshot")
     }
 }

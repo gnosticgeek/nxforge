@@ -113,7 +113,10 @@ final class ControllerNav {
         // − (Options / View): Favourites on the front end
         if let o = pad.buttonOptions { key(o, .options) { _ in } }
         // the right stick turns the box on screen (CaseModelView)
-        pad.rightThumbstick.valueChangedHandler = { _, x, _ in CaseStick.x = NSApp.isActive ? Double(x) : 0 }
+        pad.rightThumbstick.valueChangedHandler = { _, x, y in
+            CaseStick.x = NSApp.isActive ? Double(x) : 0
+            CaseStick.y = NSApp.isActive ? Double(y) : 0
+        }
     }
 }
 
