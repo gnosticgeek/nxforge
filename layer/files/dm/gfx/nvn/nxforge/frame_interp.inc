@@ -39,11 +39,15 @@ int mtl_present_interp_active(void) { return nxf_fi_wants_link(); }
 // The link must call back about 120 times a second for every refresh to get a picture. In full screen on a variable-refresh screen at frame latency 2 macOS shows each present
 // one refresh late and the link then skips the next tick: with a present on every tick it called back about 80 times a second, the game was paced at 40 fps and ran in slow
 // motion (Donkey Kong Country Returns HD on a ProMotion MacBook Pro, 0.29.1). A second of in-between pictures at 30 to 100 callbacks a second (a covered window calls back about
-// once a second and is left alone) turns them off at that drawable size: the game's frames go up every other tick, which holds 60 there (link_vrr_120), until the size changes
+// once a second and is left alone) turns them off at that drawable size: the game's frames go up every other tick, which holds 60 there (link_vrr_120), until the size changes.
+// Any gap of FI_GAP_NS between callbacks starts the second again: going full screen, the window is covered while macOS animates and the link stalls (497 ms on DKC Returns HD,
+// 0.32.0), and a second counted across that read 50 callbacks a second, so interpolation went off for good though the link ran a steady 120 after it
+#define FI_GAP_NS 50000000ull
 static int g_fi_slow;
 static int nxf_fi_link_rate(uint64_t now, NSUInteger w, NSUInteger h) {
-    static uint64_t t0, n, mid0;
-    if (!t0 || now - t0 > 3 * FI_SETTLE_NS) { t0 = now; n = 0; mid0 = g_fi_mid_n; return 1; }   // a gap (a pause, interpolation off) starts the count again
+    static uint64_t t0, last, n, mid0;
+    uint64_t gap = last ? now - last : 0; last = now;
+    if (!t0 || gap > FI_GAP_NS || now - t0 > 3 * FI_SETTLE_NS) { t0 = now; n = 0; mid0 = g_fi_mid_n; return 1; }   // a gap (a stall, a covered window, a pause, interpolation off) starts the count again
     n++;
     if (now - t0 < FI_SETTLE_NS) return 1;
     double rate = n / ((now - t0) / 1e9); uint64_t mids = g_fi_mid_n - mid0;
