@@ -1440,3 +1440,70 @@ import Testing
         #expect(LocalShaders.folder(app: "/a/Zelda: OoT.app", root: root).lastPathComponent.hasPrefix("Zelda OoT "))
     }
 }
+
+@Suite struct GameFolderMediaFormat {
+    func item(_ store: StoreInfo?) -> GameFolderMedia.Item {
+        GameFolderMedia.Item(key: "0100C8B0129B4000", title: "Blazing Chrome", titleID: "0100C8B0129B4000", console: "Switch",
+                             app: "/Volumes/Games/Switch 1/Blazing Chrome/Blazing Chrome.app", gameFolder: "/Volumes/Games/Switch 1/Blazing Chrome",
+                             version: "1.0.2", publisher: "The Arcade Crew", gameFiles: "Base game + update", newestUpdate: 131072, record: nil,
+                             store: store, manual: nil, icon: nil, preset: "Balanced", changed: [("Frame rate", "60 fps"), ("Say \"hi\": now", "On")],
+                             played: 7260, dest: URL(fileURLWithPath: "/tmp/media"))
+    }
+
+    @Test func gameMdReadsBackAsTheStoresDetails() throws {
+        var s = StoreInfo(title: "Blazing Chrome")
+        s.publisher = "The Arcade Crew"; s.released = "11/07/2019"; s.genres = ["Action", "Platformer"]; s.playersFrom = 1; s.playersTo = 2
+        s.about = ["Run and gun: \"Contra\"-style.\nTwo lines", "• Co-op"]; s.modes = ["TV", "Handheld"]; s.page = "https://www.nintendo.com/en-gb/x.html"
+        s.shots = ["https://www.nintendo.com/a_01.jpg", "https://www.nintendo.com/a_02.jpg"]
+        s.trailers = [StoreVideo(youtube: "abcdefghijk", thumb: "https://i.ytimg.com/vi/abcdefghijk/maxresdefault.jpg", title: "Launch Trailer")]
+        let files = ["cover-front": "cover-front.png", "screenshots/01": "screenshots/01.jpg", "screenshots/02": "screenshots/02.jpg", "trailers/01": "trailers/01.jpg"]
+        let text = GameFolderMedia.document(item(s), files: files)
+        #expect(text.hasPrefix("---\n"))
+        #expect(text.contains("# Blazing Chrome"))
+        #expect(text.contains("\n- Co-op\n"))
+        #expect(text.contains("- [Launch Trailer](https://www.youtube.com/watch?v=abcdefghijk)"))
+        let doc = try #require(MiniYAML.frontMatter(text))
+        #expect(doc["title"] as? String == "Blazing Chrome")
+        #expect(doc["update_version"] as? Int == 131072)
+        let play = try #require(doc["play"] as? [String: Any])
+        #expect(play["preset"] as? String == "Balanced")
+        #expect((play["settings"] as? [String: Any])?["Say \"hi\": now"] as? String == "On")
+        #expect(play["played_minutes"] as? Int == 121)
+        #expect((doc["media"] as? [String: Any])?["cover_front"] as? String == "cover-front.png")
+        let back = try #require(GameFolderMedia.storeInfo(doc))
+        #expect(back.title == s.title && back.publisher == s.publisher && back.genres == s.genres && back.about == s.about)
+        #expect(back.playersFrom == 1 && back.playersTo == 2 && back.modes == s.modes && back.page == s.page)
+        #expect(back.shots == s.shots)
+        #expect(back.trailers == s.trailers)
+    }
+
+    @Test func noStoreDetailsStillWrites() throws {
+        let text = GameFolderMedia.document(item(nil), files: [:])
+        let doc = try #require(MiniYAML.frontMatter(text))
+        #expect(doc["store"] == nil)
+        #expect(GameFolderMedia.storeInfo(doc) == nil)
+        #expect(doc["game_files"] as? String == "Base game + update")
+    }
+
+    @Test func whereTheMediaGoes() {
+        let app = "/Volumes/Games/Switch 1/Odyssey/SUPER MARIO ODYSSEY.app"
+        #expect(GameFolderMedia.folder(app: app, gameFolder: "/Volumes/Games/Switch 1/Odyssey", appsBeside: 1).path == "/Volumes/Games/Switch 1/Odyssey/media")
+        #expect(GameFolderMedia.folder(app: "/Users/t/Games/Odyssey.app", gameFolder: "/Volumes/G/Odyssey", appsBeside: 3).path == "/Volumes/G/Odyssey/media")
+        #expect(GameFolderMedia.folder(app: "/Users/t/Games/Odyssey.app", gameFolder: nil, appsBeside: 3).path == "/Users/t/Games/Odyssey media")
+    }
+
+    @Test func onlyItsOwnFilesAreTidied() {
+        #expect(GameFolderMedia.ours("cover-front.png"))
+        #expect(GameFolderMedia.ours("screenshots/03.jpg"))
+        #expect(GameFolderMedia.ours("manual.pdf"))
+        #expect(!GameFolderMedia.ours("game.md"))
+        #expect(!GameFolderMedia.ours("my notes.png"))
+        #expect(!GameFolderMedia.ours("screenshots/holiday.jpg"))
+    }
+
+    @Test func quotedStringsSurviveTheRoundTrip() {
+        for s in ["plain", "a \"quote\" and \\ back", "line\nbreak", "tab\there", "café ™ – ‘x’", "# not a comment", "- not a list", "key: value"] {
+            #expect(MiniYAML.scalar(MiniYAML.quote(s)) as? String == s)
+        }
+    }
+}

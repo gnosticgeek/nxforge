@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.37.4 (2026-11-15)
+
+- **Each built game's media and details in its folder** (Converter 0.13.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a `media` folder beside the app holds the covers, wide art, icon, store screenshots, trailer pictures and an added manual, with `media/game.md` (YAML front matter plus a readable page) listing the game's title ID, versions, build, play settings, store details and trailer links. Kept in step with the artwork, and read back on a Mac that has none. Settings › Artwork turns it off. No game rebuild needed for this.
+
 ## 0.37.3 (2026-11-15)
 
 - **"Remove build cache" removes the build folders** (Converter 0.13.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): after a build, the game folder kept `<id>_build` (its logs and a provisional profile), `<id>_survey` and the app's `.app.key`. Now only the game files and the app stay; the build logs move to `~/Library/Logs/NXForge/<title ID>`. No game rebuild needed for this.

@@ -671,6 +671,7 @@ final class AppModel {
             }
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
+        if case .success = r { GameFolderMediaSync.shared.schedule(self, delay: 1) }
         if settings.openAfterBuild, batchCurrent == nil, case .success = r, let app = run.app { openApp(app) }
         if batchCurrent != nil {
             if case .success = r { finishConvert() }

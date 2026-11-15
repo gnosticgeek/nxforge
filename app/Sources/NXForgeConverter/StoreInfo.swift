@@ -253,7 +253,7 @@ final class StoreInfoStore {
     nonisolated static func shot(_ key: String, _ i: Int) -> URL { dir.appending(path: String(format: "%@-%02d.jpg", key, i + 1)) }
     nonisolated static func videoThumb(_ key: String, _ i: Int) -> URL { dir.appending(path: String(format: "%@-t%02d.jpg", key, i + 1)) }
     /// how many of a game's store screenshots are kept
-    static let maxShots = 12
+    nonisolated static let maxShots = 12
 
     /// The details on disk (or nil: not looked for yet, not found, or the setting is off)
     func info(_ key: String) -> StoreInfo? {
@@ -357,6 +357,12 @@ final class StoreInfoStore {
                 await MainActor.run { StoreInfoStore.shared.revision += 1 }
             }
         }
+    }
+
+    /// Read these games' details from disk again (they came back from the games' folders, GameFolderMedia)
+    func reread(_ keys: [String]) {
+        for k in keys { memory[k] = nil }
+        revision += 1
     }
 
     /// Look again for every game (Settings › Artwork › Look Again)
