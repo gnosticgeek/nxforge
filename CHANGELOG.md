@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.37.1 (2026-11-15)
+
+- **The engine checkout follows main again after a release branch is done** (Converter 0.13.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a checkout left on `release-0.31.0` said "Up to date" at 0.30.2+2 with 0.37.0 released, and games were built with that engine. No game rebuild needed for this.
+
 ## 0.37.0 (2026-11-15)
 
 - **The engine moves to the newest nxnative** (upstream `bee218d9`, 110 commits past the last pin `ce38664`): upstream's own fixes since 11 Nov come in, among them data bundles for game files, a faster per-object host build, render targets that other passes have drawn over released after 3 s, Switch 2 stick deadzones and MetalFX writing the screen directly. NXForge's layer patches are rebased onto it; #2622 and #2625, which NXForge carried early, are upstream now and their patches are gone. **The shader chain changes (`6aafe4305c7e`), so every game needs one full rebuild.** Measured on Super Mario Odyssey 1.4.1 (M4 Pro, 120 s with the same save, against the 0.27-era app installed before): memory footprint 3,251 MB against 3,837 MB, GPU memory 2,162 MB against 2,652 MB, and 60 fps held to the end of the run, where the old app fell to 26 to 34 ms frames in its last 40 s. Lower input lag (0.36.1) and the Mac's heat and Low Power Mode (0.36.3) are carried onto the new pin (layer patch 0036 and layer files).
