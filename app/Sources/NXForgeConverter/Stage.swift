@@ -910,7 +910,7 @@ struct StageHints: View {
         let built = focus?.app != nil
         if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
-        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]) + [(["Y"], "Turn over"), (["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"), (["B"], "Back")] }
+        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]) + [(["Y"], "Turn over"), (["R"], "View box"), (["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"), (["B"], "Back")] }
         var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))

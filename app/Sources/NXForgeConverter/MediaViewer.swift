@@ -292,7 +292,7 @@ struct GalleryViewer: View {
     var caption: String {
         let n = "\(state.index + 1) of \(state.items.count)"
         switch state.current {
-        case .video(let v, _): return n + " · " + (v.title ?? "Trailer") + (v.youtube != nil ? " · YouTube" : " · Nintendo")
+        case .video(let v, _): return n + " · " + (v.title ?? "Trailer") + (v.youtube != nil ? " · Nintendo on YouTube" : " · Nintendo")
         case .image(let u): return n + " · " + u.deletingPathExtension().lastPathComponent
         case nil: return ""
         }
@@ -394,6 +394,8 @@ final class GalleryScrollView: NSScrollView {
     var onPage: ((Int) -> Void)?
     private var swipe = 0.0
     private var swiped = false
+    /// where a zoom is heading (the animator's magnification is the old one until it ends)
+    private var target: CGFloat = 1
 
     init() {
         super.init(frame: .zero)
@@ -433,23 +435,35 @@ final class GalleryScrollView: NSScrollView {
 
     func fit() {
         layoutPicture()
+        target = 1
         animator().magnification = 1
     }
 
     var fitted: Bool { magnification < 1.01 }
 
     func zoom(by k: CGFloat, at p: NSPoint? = nil) {
-        let target = min(max(magnification * k, minMagnification), maxMagnification)
+        target = min(max(max(target, magnification) * k, minMagnification), maxMagnification)
         let at = p ?? NSPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
+        let to = target
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.18
-            animator().setMagnification(target, centeredAt: at)
+            animator().setMagnification(to, centeredAt: at)
         }
     }
 
     override func setFrameSize(_ s: NSSize) {
         super.setFrameSize(s)
         if fitted { layoutPicture() }
+    }
+
+    override func magnify(with e: NSEvent) {
+        super.magnify(with: e)
+        target = magnification
+    }
+
+    override func endGesture(with e: NSEvent) {
+        super.endGesture(with: e)
+        target = magnification
     }
 
     override func scrollWheel(with e: NSEvent) {
@@ -791,7 +805,7 @@ struct ManualPDFView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> PDFView {
         let v = PDFView()
-        v.backgroundColor = .clear
+        v.backgroundColor = NSColor(white: 0.06, alpha: 1)
         v.autoScales = true
         v.displayMode = .singlePage
         v.displaysAsBook = true

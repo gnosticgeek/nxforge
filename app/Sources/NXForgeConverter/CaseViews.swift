@@ -285,9 +285,9 @@ enum CaseStick {
 /// the three sides that open, where the plastic shows.
 enum CaseSize {
     static let width = 1.05, height = 1.70, depth = 0.105, corner = 0.032
-    static let insertWidth = 1.032, insertHeight = 1.676, insertDepth = 0.094
+    static let insertWidth = 1.025, insertHeight = 1.676, insertDepth = 0.094
     /// the insert lies against the spine: the clear lip is on the side that opens
-    static let insertShift = -0.006
+    static let insertShift = -0.010
 }
 
 /// The box in 3D.
@@ -366,12 +366,14 @@ struct CaseModelView: NSViewRepresentable {
         private var shownConsole: Console?
 
         static let restDistance = 5.9
+        /// the viewer's: the box about two thirds of the window's height
+        static let viewerDistance = 6.6
 
         init(rest: Double, viewer: Bool) {
             self.rest = rest
             self.viewer = viewer
             angle = rest
-            distance = viewer ? 4.4 : Self.restDistance
+            distance = viewer ? Self.viewerDistance : Self.restDistance
             let insert = SCNBox(width: CaseSize.insertWidth, height: CaseSize.insertHeight, length: CaseSize.insertDepth, chamferRadius: 0.002)
             materials = (0..<6).map { _ in
                 let m = SCNMaterial()
@@ -483,8 +485,8 @@ struct CaseModelView: NSViewRepresentable {
             case .front: goal = (near(0), 0, distance)
             case .back: goal = (near(.pi), 0, distance)
             case .spine: goal = (near(.pi / 2), 0, distance)
-            case .reset: goal = (near(rest), 0.05, 4.4)
-            case .zoom(let k): distance = Self.clampDistance(distance / k); goal = nil
+            case .reset: goal = (near(rest), 0.05, Self.viewerDistance)
+            case .zoom(let k): goal = (angle, tilt, Self.clampDistance((goal?.distance ?? distance) / k))
             case .turn(let dx, let dy): goal = (angle + dx, Self.clampTilt(tilt + dy), distance)
             }
             velocity = 0
@@ -492,7 +494,7 @@ struct CaseModelView: NSViewRepresentable {
             touch = true
         }
 
-        static func clampDistance(_ d: Double) -> Double { min(max(d, 1.25), 9) }
+        static func clampDistance(_ d: Double) -> Double { min(max(d, 1.25), 12) }
         static func clampTilt(_ t: Double) -> Double { min(max(t, -1.45), 1.45) }
 
         @MainActor @objc func pan(_ g: NSPanGestureRecognizer) {
@@ -501,7 +503,7 @@ struct CaseModelView: NSViewRepresentable {
             g.setTranslation(.zero, in: g.view)
             goal = nil
             // nearer in, a drag turns it less: the part under the pointer keeps up with it
-            let k = viewer ? 0.010 * min(1, distance / 4.4) + 0.002 : 0.012
+            let k = viewer ? 0.010 * min(1, distance / Self.viewerDistance) + 0.002 : 0.012
             switch g.state {
             case .began, .changed:
                 dragging = true

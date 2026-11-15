@@ -148,12 +148,18 @@ struct ConverterApp: App {
             // box, gallery (NXC_INDEX=<n>: which picture or trailer; the store's, else the game's screenshots) and manual: the viewers
             if let g, ["box", "gallery", "manual"].contains(st) {
                 model.gameDetail = g.ref
-                if st == "box" { model.openCaseViewer(g); if env["NXC_BACK"] != nil { model.caseCommand(.back) } }
+                if st == "box" {
+                    model.openCaseViewer(g)
+                    if env["NXC_BACK"] != nil { model.caseCommand(.back) }
+                    // NXC_TURN=<radians>: turned and tipped back a little, to see the edges
+                    if let t = env["NXC_TURN"].flatMap(Double.init) { try? await Task.sleep(for: .seconds(1)); model.caseCommand(.turn(t, -0.3)) }
+                    if let z = env["NXC_ZOOM"].flatMap(Double.init) { try? await Task.sleep(for: .seconds(1)); model.caseCommand(.zoom(z)) }
+                }
                 if st == "manual", let m = GameManual.find(g) { model.openManual(m, title: g.name) }
                 if st == "gallery" {
                     let store = StoreInfoStore.shared
                     store.load(key: g.coverKey, titleID: g.titleID, name: g.name)
-                    for _ in 0..<40 where store.shots(g.coverKey).count < 2 { try? await Task.sleep(for: .milliseconds(500)) }
+                    for _ in 0..<60 where store.shots(g.coverKey).count < 2 || store.info(g.coverKey)?.videos == nil { try? await Task.sleep(for: .milliseconds(500)) }
                     var items: [GalleryItem] = store.videos(g.coverKey).map { .video($0.video, thumb: $0.thumb) } + store.shots(g.coverKey).map { .image($0) }
                     if items.isEmpty, let a = g.app { items = GameCaptures.screenshots(app: a).map { .image($0) } }
                     model.openGallery(items, at: Int(env["NXC_INDEX"] ?? "") ?? 0, title: "\(g.name) · From the store")
