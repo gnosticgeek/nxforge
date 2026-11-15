@@ -47,5 +47,48 @@ class Compare(unittest.TestCase):
             for r in rows: self.assertEqual(set(r), set(pr.COLUMNS), f.name)
 
 
+
+class AppRuns(unittest.TestCase):
+    def tsv(self, frames):
+        return ''.join(f'{i}\t@t_s\t{t}\n{i}\t@frame_ms\t{ms}\n{i}\t@gpu_ms\t{g}\n' for i, (t, ms, g) in enumerate(frames))
+
+    def test_stats_count_the_window_only(self):
+        frames = [(19.9, 300.0, 9.0)] + [(20 + i / 60, 16.67, 4.0) for i in range(600)] + [(30.5, 200.0, 9.0)]
+        d = pr.tsv_stats(self.tsv(frames), 20, 30)
+        self.assertEqual(d['fps'], 60.0)
+        self.assertEqual((d['frame_p50'], d['frame_max'], d['over_budget'], d['gpu_p50']), (16.67, 16.67, 0, 4.0))
+
+    def test_stats_count_spikes(self):
+        frames = [(20 + i / 60, 40.0 if i % 100 == 0 else 16.67, -1) for i in range(600)]
+        d = pr.tsv_stats(self.tsv(frames), 20, 30)
+        self.assertEqual(d['over_budget'], 6)
+        self.assertEqual(d['frame_max'], 40.0)
+        self.assertNotIn('gpu_p50', d)
+
+    def test_no_frames_no_stats(self):
+        self.assertEqual(pr.tsv_stats('junk\nline\n', 20, 30), {})
+        self.assertEqual(pr.tsv_stats(self.tsv([(5, 16.67, 1.0)]), 20, 30), {})
+
+    def test_title_id_from_the_bundle_identifier(self):
+        import plistlib
+        with tempfile.TemporaryDirectory() as t:
+            app = Path(t) / 'Game.app'
+            (app / 'Contents').mkdir(parents=True)
+            for ident, want in (('org.nxforge.04008e001f098000', '04008E001F098000'), ('com.apple.Safari', '')):
+                (app / 'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': ident}))
+                self.assertEqual(pr.app_title_id(app), want)
+
+    def test_other_host_keeps_the_bundle_by_link(self):
+        with tempfile.TemporaryDirectory() as t:
+            app, host = Path(t) / 'Game.app', Path(t) / 'dmhost'
+            (app / 'Contents/MacOS').mkdir(parents=True); (app / 'Contents/Resources').mkdir()
+            (app / 'Contents/MacOS/nxnative').write_text('launcher'); (app / 'Contents/MacOS/dmhost').write_text('old'); host.write_text('new')
+            (app / 'Contents/Info.plist').write_text('x')
+            out = Path(t) / 'run'; out.mkdir()
+            run = pr.with_host(app, host, out)
+            self.assertEqual((run / 'Contents/MacOS/dmhost').read_text(), 'new')
+            self.assertTrue((run / 'Contents/Resources').is_symlink())
+            self.assertEqual((app / 'Contents/MacOS/dmhost').read_text(), 'old')
+
 if __name__ == '__main__':
     unittest.main()

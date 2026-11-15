@@ -15,6 +15,19 @@ has a `bench.tsv`, otherwise left running without input for `--seconds` (`bench.
 It takes the median over the runs and writes a row per game into `docs/perf/<release>.tsv`, the release being the checkout's
 (`0.8.0` at its tag). A game measured again on the same Mac and route replaces its row. Commit the file with the release PR.
 
+### Installed games, without a build folder
+
+```
+python3 scripts/perf_release.py run --app "<folder>/<Game>.app" ... --host tree/dm/host/dmhost [--route NAME] [--save FOLDER]
+```
+
+measures games as they are installed, for a Mac whose build folders were cleaned up. Each app starts as Play starts it. With
+`--host` the release's own host (`make -C tree/dm/host GAME=<id> dmhost`) runs on the app's game files, so the row is the
+release's and not that of the engine the app was built with; an app built with another shader chain is skipped with a line
+that says so. Without a route the game is left alone and the frames from 20 s on count for `--seconds`; `--route` names one of
+the game's `bench.tsv`, and `--save` the save it starts from. A run gets a copy of that save, or an empty one: the player's
+own save is never touched. Close the game first if it is open.
+
 For numbers that compare:
 
 - the same Mac, on power, with other apps closed, and the same display at the same refresh rate as the release it is compared with;
