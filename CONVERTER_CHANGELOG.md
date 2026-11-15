@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.12.3 (2026-11-15)
+
+Box art from a link, and a shop's case picture cut down to its cover. Ships in NXForge 0.36.5.
+
+- **Change Box Art** in a game's menu (right-click a box on Home or in the Library, or the ••• button on a game's page) gathers what was there: Choose Front Cover… and Choose Back Cover… (a picture file), and new **Front Cover from a Link…** and **Back Cover from a Link…**, which take a picture's web address (filled in when one is on the clipboard), download it once and keep it on the Mac like a chosen file. **Go Back to the Downloaded Covers** (was Remove My Covers) drops your own. Your covers are used on the shelf, in the grid, on the game's page and in the box viewer. Nothing is bundled or fetched beyond the link you give.
+- **A shop's picture of the whole case** (a product render on a see-through background, the cover inside the case's plastic) is cut down to the printed cover: the see-through margin and the grey plastic rim go, so the cover no longer shows a case inside the case. A picture without see-through corners is kept as it is.
+
 ## 0.12.2 (2026-11-15)
 
 A game's page closer to Tom's mock-up. Ships in NXForge 0.36.4.

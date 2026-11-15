@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.36.5 (2026-11-15)
+
+- **Box art from a link** (Converter 0.12.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's menu has **Change Box Art**, with the front or back cover from a picture file or from a picture's web address, and a shop's picture of a whole case is cut down to its printed cover (the see-through margin and the plastic rim go). No game rebuild needed.
+
 ## 0.36.4 (2026-11-15)
 
 - **A game's page laid out like Tom's mock-up** (Converter 0.12.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a smaller box with View box under it, the key art as a banner to the right of the title, Media (the store's trailer and screenshots or your own captures) and About (the store's pitch and facts) side by side, and Save, Playtime and Build at the foot. No game rebuild needed.

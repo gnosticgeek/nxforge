@@ -2,7 +2,7 @@
 // downloaded from GameTDB (its public list of Switch titles is matched by name on this Mac, so only a GameTDB ID is ever
 // asked for; a setting turns the downloads off), and else a cover drawn from the game's own icon. Kept in
 // ~/Library/Application Support/NXForge Converter/covers as <title ID>-front.jpg, -back.jpg and -spine.jpg
-// (an own image: -front-own.png, -back-own.png).
+// (an own image: -front-own.png, -back-own.png, chosen from a file or a link, a shop's render of a whole case cut down to its cover).
 // Wide key art ("hero" art) for the game page and Home: the 2:1 share image of the game's page on Nintendo's European store
 // (nintendo.com/en-gb), found through the search service that store's own pages use (searching.nintendo-europe.com), by the game's
 // title ID, else by its exact name; a game the search has no banner for (new Switch 2 games) gets the picture its store page
@@ -83,6 +83,52 @@ enum CoverSource {
               let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
               let w = p[kCGImagePropertyPixelWidth] as? Double, let h = p[kCGImagePropertyPixelHeight] as? Double, h > 0 else { return false }
         return (0.5...0.75).contains(w / h)
+    }
+
+    /// A shop's picture of a whole case (a product render: the cover inside the case's plastic, on a see-through background)
+    /// cut down to the printed cover: the see-through margin and the plastic's rim go, so the cover is not shown inside a
+    /// second case. Only a picture whose corners are see-through is taken for a render; any other comes back as it was.
+    /// A rim is a band of light grey along an edge, as wide on most lines sampled and no wider than 6% of the picture.
+    static func trimCase(_ image: CGImage) -> CGImage {
+        let w = image.width, h = image.height
+        guard w > 20, h > 20, let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let raw = ctx.data else { return image }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let px = raw.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        // a bitmap context's memory holds the top row first
+        func at(_ x: Int, _ y: Int) -> (r: Int, g: Int, b: Int, a: Int) {
+            let i = (y * w + x) * 4
+            return (Int(px[i]), Int(px[i + 1]), Int(px[i + 2]), Int(px[i + 3]))
+        }
+        guard at(0, 0).a < 128, at(w - 1, 0).a < 128, at(0, h - 1).a < 128, at(w - 1, h - 1).a < 128 else { return image }
+        // the opaque part
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h { for x in 0..<w where at(x, y).a >= 200 { minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y) } }
+        guard maxX > minX + 10, maxY > minY + 10 else { return image }
+        func rim(_ p: (r: Int, g: Int, b: Int, a: Int)) -> Bool {
+            p.a < 250 || (min(p.r, p.g, p.b) > 160 && max(p.r, p.g, p.b) - min(p.r, p.g, p.b) < 16)
+        }
+        // how far in the rim runs from one edge, measured on seven lines across the middle of that edge; 0 when they disagree
+        func band(_ length: Int, _ limit: Int, _ pixel: (Int, Int) -> (r: Int, g: Int, b: Int, a: Int)) -> Int {
+            let widths = (1...7).map { k -> Int in
+                let along = length * (k + 1) / 9
+                var d = 0
+                while d < limit, rim(pixel(along, d)) { d += 1 }
+                return d
+            }
+            // the middle width, when five of the seven lines agree with it (a white logo at the edge can run one line further)
+            let mid = widths.sorted()[3], near = max(3, mid / 8)
+            guard mid < limit, widths.filter({ abs($0 - mid) <= near }).count >= 5 else { return 0 }
+            return widths.filter { abs($0 - mid) <= near }.max() ?? mid
+        }
+        let cw = maxX - minX + 1, ch = maxY - minY + 1
+        let left = band(ch, cw * 6 / 100) { a, d in at(minX + d, minY + a) }
+        let right = band(ch, cw * 6 / 100) { a, d in at(maxX - d, minY + a) }
+        let top = band(cw, ch * 6 / 100) { a, d in at(minX + a, minY + d) }
+        let bottom = band(cw, ch * 6 / 100) { a, d in at(minX + a, maxY - d) }
+        let crop = CGRect(x: minX + left, y: minY + top, width: cw - left - right, height: ch - top - bottom)
+        return image.cropping(to: crop) ?? image
     }
 
     static func jpeg(_ data: Data, unit: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1), maxHeight: Int = 1400) -> Data? {
@@ -366,10 +412,18 @@ final class CoverStore {
 
     // MARK: the player's own image
 
-    /// Keep a chosen picture as a game's front or back cover (a PNG copy, so the original can move)
+    /// Keep a chosen picture as a game's front or back cover (a PNG copy, so the original can move). A shop's render of
+    /// a whole case is cut down to its printed cover (CoverSource.trimCase).
     func setOwn(_ key: String, _ side: CoverSide, from file: URL) -> Bool {
-        guard let img = NSImage(contentsOf: file), let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return false }
+        guard let data = try? Data(contentsOf: file) else { return false }
+        return setOwn(key, side, data: data)
+    }
+
+    func setOwn(_ key: String, _ side: CoverSide, data: Data) -> Bool {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let full = CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldAllowFloat: false] as CFDictionary) else { return false }
+        let rep = NSBitmapImageRep(cgImage: CoverSource.trimCase(full))
+        guard let png = rep.representation(using: .png, properties: [:]) else { return false }
         try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
         do { try png.write(to: Self.dir.appending(path: "\(key)-\(side.rawValue)-own.png")) } catch { return false }
         forget(key)

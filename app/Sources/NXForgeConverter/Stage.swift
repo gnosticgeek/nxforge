@@ -289,6 +289,37 @@ extension AppModel {
         guard p.runModal() == .OK, let u = p.url else { return }
         if !CoverStore.shared.setOwn(g.coverKey, side, from: u) { showBanner("That picture could not be read", tone: .warning) }
     }
+
+    /// A cover from a picture's address on the web (a link copied from a shop or a fan site, already filled in when one is on
+    /// the clipboard). Only what the player gives is downloaded, once, and kept on this Mac like a chosen file.
+    func coverFromLink(_ g: StageGame, _ side: CoverSide) {
+        let a = NSAlert()
+        a.messageText = "\(side == .front ? "Front" : "Back") Cover from a Link"
+        a.informativeText = "Paste the address of a picture of \(g.name)'s \(side.rawValue) cover. A shop's picture of the whole case is cut down to the printed cover."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+        field.placeholderString = "https://…"
+        if let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), clip.hasPrefix("http") { field.stringValue = clip }
+        a.accessoryView = field
+        a.addButton(withTitle: "Use as Cover")
+        a.addButton(withTitle: "Cancel")
+        a.window.initialFirstResponder = field
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            showBanner("That is not a web address", detail: "A link to a picture starts with https://", tone: .warning)
+            return
+        }
+        let key = g.coverKey, name = g.name
+        showBanner("Downloading the cover for \(name)…", symbol: "arrow.down.circle")
+        Task {
+            let data = await CoverStore.get(url, browser: true)
+            if let data, CoverStore.shared.setOwn(key, side, data: data) {
+                self.showBanner("New \(side.rawValue) cover for \(name)", tone: .success)
+            } else {
+                self.showBanner(data == nil ? "That link could not be downloaded" : "That link is not a picture", detail: text, tone: .warning)
+            }
+        }
+    }
 }
 
 struct StageButton: ButtonStyle {
@@ -856,9 +887,17 @@ struct StageGameMenu: View {
         Button("Details") { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref }
         Button(g.favorite ? "Remove from Favourites" : "Add to Favourites") { model.toggleFavorite(g) }
         Divider()
-        Button("Choose Front Cover…") { model.chooseCover(g, .front) }
-        Button("Choose Back Cover…") { model.chooseCover(g, .back) }
-        if CoverStore.shared.hasOwn(g.coverKey) { Button("Remove My Covers") { CoverStore.shared.removeOwn(g.coverKey) } }
+        Menu("Change Box Art") {
+            Button("Choose Front Cover…") { model.chooseCover(g, .front) }
+            Button("Front Cover from a Link…") { model.coverFromLink(g, .front) }
+            Divider()
+            Button("Choose Back Cover…") { model.chooseCover(g, .back) }
+            Button("Back Cover from a Link…") { model.coverFromLink(g, .back) }
+            if CoverStore.shared.hasOwn(g.coverKey) {
+                Divider()
+                Button("Go Back to the Downloaded Covers") { CoverStore.shared.removeOwn(g.coverKey) }
+            }
+        }
         Divider()
         if let p = g.app ?? g.game?.path { Button("Show in Finder") { reveal(p) } }
         Button("Manage in Converter") { model.showConverter(); model.page = .library; model.openGame(g.ref) }
