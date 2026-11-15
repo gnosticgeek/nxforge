@@ -15,7 +15,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.7.0"
+let SIDEBAR_VERSION = "0.7.1"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -585,7 +585,7 @@ final class QuickSettings: ObservableObject {
     func toggleSection(_ s: String) { if folded.contains(s) { folded.remove(s) } else { folded.insert(s) } }
     var crtOn: Bool { filter == pfxCRT }
     func setFilter(_ m: Int, _ k: Double) {
-        mtl_present_filter_set(Int32(m), Float(k)); filter = m; strength = k
+        mtl_present_filter_set(Int32(m), Float(k)); filter = m; strength = k; front_qs_live_changed()
         if !filterFixed { UserDefaults.standard.set(m, forKey: pfxKey("mode")); UserDefaults.standard.set(Float(k), forKey: pfxKey("strength")) }
     }
     func setCRT(_ on: Bool) { if !filterFixed { setFilter(on ? pfxCRT : 0, strength) } }
@@ -594,22 +594,22 @@ final class QuickSettings: ObservableObject {
     }
     func setUpscale(_ on: Bool) {   // at once, from the next frame, and saved where the settings window keeps it, by its rule: the Mac default
         guard !upscaleFixed else { return }   // (MetalFX) is not stored, so a later build's default still reaches this game (docs/settings.md, Tested defaults)
-        upscale = on; mtl_present_upscale_set(on ? 1 : 0)
+        upscale = on; mtl_present_upscale_set(on ? 1 : 0); front_qs_live_changed()
         if on { UserDefaults.standard.removeObject(forKey: "launcher.DM_PRESENT_UPSCALE") } else { UserDefaults.standard.set("off", forKey: "launcher.DM_PRESENT_UPSCALE") }
     }
     func setAA(_ n: Int) {
-        aa = n; mtl_present_aa_set(Int32(n)); if !envFixed("DM_PRESENT_AA") { UserDefaults.standard.set(n, forKey: optKey("aa")) }
+        aa = n; mtl_present_aa_set(Int32(n)); front_qs_live_changed(); if !envFixed("DM_PRESENT_AA") { UserDefaults.standard.set(n, forKey: optKey("aa")) }
     }
     func setEDR(_ on: Bool) {   // at once, from the next frame
         guard !envFixed("DM_PRESENT_EDR") else { return }
-        edr = on; mtl_present_edr_set(on ? 1 : 0); UserDefaults.standard.set(on, forKey: optKey("edr"))
+        edr = on; mtl_present_edr_set(on ? 1 : 0); front_qs_live_changed(); UserDefaults.standard.set(on, forKey: optKey("edr"))
     }
     func setEDRStrength(_ k: Double) {
         guard !envFixed("DM_PRESENT_EDR_STRENGTH") else { return }
-        edrStrength = k; mtl_present_edr_strength_set(Int32((k * 100).rounded())); UserDefaults.standard.set(k, forKey: optKey("edrStrength"))
+        edrStrength = k; mtl_present_edr_strength_set(Int32((k * 100).rounded())); front_qs_live_changed(); UserDefaults.standard.set(k, forKey: optKey("edrStrength"))
     }
     func setScanline(_ r: Int) {
-        mtl_present_scanline_set(Int32(r)); scanline = r
+        mtl_present_scanline_set(Int32(r)); scanline = r; front_qs_live_changed()
         if env["DM_PRESENT_SCANLINE"] == nil { UserDefaults.standard.set(r, forKey: pfxKey("scanline")) }
     }
     /// Pixel art's state now (auto turns on by itself, and the art's grid follows the scene): the Graphics page asks every second while it shows
@@ -621,7 +621,7 @@ final class QuickSettings: ObservableObject {
     }
     func setPixel(_ n: Int) {   // at once, from the next frame
         guard !envFixed("DM_PIXEL_ART") else { return }
-        pixel = n; mtl_present_pixel_set(Int32(n)); UserDefaults.standard.set(n, forKey: optKey("pixel")); refreshPixel()
+        pixel = n; mtl_present_pixel_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("pixel")); refreshPixel()
     }
     /// The line under Pixel art: what it does now
     var pixelNote: String {
@@ -632,7 +632,7 @@ final class QuickSettings: ObservableObject {
         return "On: the art is \(Int(g.w.rounded()))×\(Int(g.h.rounded())), every pixel the same size" + (pixelActive == Int(DM_PIXEL_SMOOTH) ? ", diagonals smoothed. " : ". ") + paused
     }
     var pixelPaused: Bool { pixelActive != 0 }
-    func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); UserDefaults.standard.set(n, forKey: optKey("scale")) }
+    func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("scale")) }
     func toggleFullscreen() { front_qs_fullscreen_toggle() }
     var graphicsChanged: Bool { pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
@@ -662,7 +662,7 @@ final class QuickSettings: ObservableObject {
     }
     func setInterp(_ n: Int) {   // at once: the display link moves to 120 Hz (or back) on the next frame
         guard !envFixed("DM_PRESENT_INTERP") else { return }
-        interp = n; mtl_present_interp_set(Int32(n)); interpActive = mtl_present_interp_active() != 0; UserDefaults.standard.set(n, forKey: optKey("interp"))
+        interp = n; mtl_present_interp_set(Int32(n)); front_qs_live_changed(); interpActive = mtl_present_interp_active() != 0; UserDefaults.standard.set(n, forKey: optKey("interp"))
     }
     var performanceChanged: Bool { fps || corner != 0 || frameTimes || fpsMs || interp != 0 }
     func resetPerformance() {
@@ -836,7 +836,7 @@ final class QuickSettings: ObservableObject {
         for k in sessionDiff() where !k.hasPrefix("nxforge.mirror.") && !k.hasPrefix("launcher.") { if let v = baseline[k] { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } }
         for k in sessionDiff() { if let v = baseline[k] { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } }   // then the window's store, as it was beside them
         for c in cheats where c.kind == 0 && (cheatsBaseline[c.id] ?? false) != c.on { dm_cheat_toggle(Int32(c.id)) }
-        front_qs_settings_reapply(); front_qs_controls_reload()
+        front_qs_settings_reapply(); front_qs_controls_reload(); front_qs_live_changed()
         refresh(); front_qs_pause_set(pauseOpen ? 1 : 0); paused = front_qs_paused() != 0; fpsChanged()
         front_qs_toast_text("Settings put back as the game started")
     }
@@ -1279,7 +1279,7 @@ struct QuickSettingsView: View {
             Row(title: "Pause the game", changed: !m.pauseOpen) {
                 Toggle("Pause the game", isOn: Binding(get: { m.pauseOpen }, set: { m.setPauseOpen($0) })).toggleStyle(.switch).labelsHidden()
             }.nav(m, .pauseOpen)
-            note(m.paused ? "Paused now: the game, its sound and its clock stop until you resume" : m.pauseOpen ? "The game stops a moment after this menu opens"
+            note(m.paused ? "Paused now: the game, its sound and its clock stop until you resume. A graphics change still shows at once" : m.pauseOpen ? "The game stops a moment after this menu opens"
                  : "The game keeps running behind this menu, so graphics changes show at once")
             Row(title: "Quieter sound", changed: m.duckOpen) {
                 Toggle("Quieter sound", isOn: Binding(get: { m.duckOpen }, set: { m.setDuck($0) })).toggleStyle(.switch).labelsHidden()
@@ -1356,7 +1356,7 @@ struct QuickSettingsView: View {
     }
     private var graphics: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if m.paused { Label("The game is paused: changes here show when it resumes. Turn off General › Pause the game to see them at once.", systemImage: "pause.circle")
+            if m.paused { Label("The game is paused: it draws its picture again after each change, so changes here show at once. Settings tagged Next launch wait for Restart game.", systemImage: "pause.circle")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             if m.hasPresets { presets }
             subhead("Display").padding(.top, m.hasPresets ? 6 : 0)
