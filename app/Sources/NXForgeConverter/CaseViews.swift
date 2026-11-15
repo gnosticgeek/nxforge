@@ -487,7 +487,7 @@ struct CaseModelView: NSViewRepresentable {
             case .spine: goal = (near(.pi / 2), 0, distance)
             case .reset: goal = (near(rest), 0.05, Self.viewerDistance)
             case .zoom(let k): goal = (angle, tilt, Self.clampDistance((goal?.distance ?? distance) / k))
-            case .turn(let dx, let dy): goal = (angle + dx, Self.clampTilt(tilt + dy), distance)
+            case .turn(let dx, let dy): goal = ((goal?.angle ?? angle) + dx, Self.clampTilt((goal?.tilt ?? tilt) + dy), goal?.distance ?? distance)
             }
             velocity = 0
             tiltVelocity = 0
