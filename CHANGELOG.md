@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.38.3 (2026-11-16)
+
+- **Efficiency sweep** (Converter 0.14.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the app no longer reads and decodes its build records, play times and every built app's Info.plist again on each redraw of Home, the Library and Builds; build records are written in one piece. CI leaves out the engine's six macOS jobs for a change that cannot reach them (the converter, NXForge's own scripts, docs, changelogs; `scripts/ci_changes.py`), and NXForge's script tests run on Linux every time. `nxforge clean` and `nxforge disk` list worktrees once and size each build folder once; `layer.py` loses two duplicated checks. No game rebuild needed for this.
+
 ## 0.38.2 (2026-11-15)
 
 - **Cheats easy to find** (Converter 0.14.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's page in the front end has a Cheats tile, and its ⋯ menu and the Library's game menu have Cheats…, opening Get Cheats and the cheat switches. A game not built yet finds its build from the version its files hold, so cheats can be fetched before the first build. No game rebuild needed for this.
