@@ -20,7 +20,8 @@ if [ ! -s "$icon" ]; then
     sips -z $s $s "$icons/icon_512x512@2x.png" --out "$icons/icon_${s}x${s}.png" >/dev/null
     [ $s -lt 512 ] && sips -z $((s * 2)) $((s * 2)) "$icons/icon_512x512@2x.png" --out "$icons/icon_${s}x${s}@2x.png" >/dev/null
   done
-  iconutil -c icns "$icons" -o "$icon.tmp" && mv "$icon.tmp" "$icon"
+  iconutil -c icns "$icons" -o "$tmp/AppIcon.icns"   # iconutil wants the .icns extension on its output
+  mv "$tmp/AppIcon.icns" "$icon"
   rm -rf "$tmp"
 fi
 cp "$icon" "$app/Contents/Resources/AppIcon.icns"
