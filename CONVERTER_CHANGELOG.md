@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.14.1 (2026-11-15)
+
+Cheats are easy to find, and work before a game is built. Ships in NXForge 0.38.2.
+
+- **Cheats on the front end's game page**: the row along the foot of a game's page has a **Cheats** tile (how many are on, or Get cheats) that opens the game's cheats with Get Cheats, their switches and Show Folder. Before, the Cheats card was only on the converter's own game page, and only for a built game, so it could not be found from Home or the Library's covers.
+- **Also in the menus**: **Cheats…** in a game's ⋯ menu and in the Library's game menu.
+- **Before the first build**: a game not built yet looks its build up by the version its files hold (switch-cheats-db's version table), so its cheats can be fetched and switched on now; the build reads the same folder. The converter's game page shows the Cheats card for such a game too, and the card comes before Mods.
+- Snapshot hook: `NXC_SHEET=cheats` (with `NXC_GAME`) opens the Cheats sheet, and a snapshot with a sheet pictures the sheet.
+
 ## 0.14.0 (2026-11-15)
 
 Ten ideas from RetroReplay, an emulation front end by the same author: games say why they cannot play, a Health page, button symbols that match your controller, a launch screen that says why a game closed, Your Week and Random Pick on Home, a daily checked backup of NXForge's own data, and smarter searching. Ships in NXForge 0.38.0.

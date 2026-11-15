@@ -45,6 +45,7 @@ struct RootView: View {
         .sheet(item: $model.whatsNew) { WhatsNewSheet(model: model, news: $0) }
         .sheet(item: $model.updateOffer) { UpdateOfferSheet(model: model, offer: $0) }
         .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }
+        .sheet(item: $model.cheatsFor) { CheatsSheet(model: model, ref: $0) }
         .sheet(isPresented: $model.commandPalette) { CommandPalette(model: model) }
         .task { ControllerNav.shared.start(model) }
     }

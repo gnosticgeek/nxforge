@@ -88,9 +88,12 @@ struct GamePage: View {
                 }
                 if let b, let tid {
                     layout {
-                        ModsCard(model: model, app: b.app, titleID: tid, name: name)
                         CheatsCard(model: model, app: b.app, titleID: tid, name: name)
+                        ModsCard(model: model, app: b.app, titleID: tid, name: name)
                     }
+                } else if let tid {
+                    // not built yet: its cheats can be fetched and switched on now, for the version its files hold
+                    CheatsCard(model: model, app: nil, titleID: tid, name: name, version: g?.versionNumber)
                 }
                 if let b {
                     SaveSnapshotsCard(model: model, build: b)

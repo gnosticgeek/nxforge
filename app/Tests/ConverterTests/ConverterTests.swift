@@ -1285,6 +1285,24 @@ import Testing
         #expect(miss.cheats.isEmpty && miss.otherBuilds == ["3CA12DFAAF9C82DA", "B424BE150A8E7D78"])
     }
 
+    @Test func findsAnUnbuiltGamesBuildByVersion() throws {
+        let json = #"{"0": "B98E9D18B061B2F0", "131072": "82deca0a867052bf", "latest": 131072, "title": "Curse of the Moon"}"#
+        #expect(CheatSources.parseVersions(Data(json.utf8), version: 0) == "B98E9D18B061B2F0")
+        #expect(CheatSources.parseVersions(Data(json.utf8), version: 131072) == "82DECA0A867052BF")
+        #expect(CheatSources.parseVersions(Data(json.utf8), version: 65536) == nil)
+        let d = NSTemporaryDirectory() + "cheats-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
+        try "[A]\n1\n".write(toFile: d + "/0123456789ABCDEF.txt", atomically: true, encoding: .utf8)
+        try "A\n".write(toFile: d + "/0123456789ABCDEF.enabled", atomically: true, encoding: .utf8)
+        #expect(CheatSources.localBuilds(dir: d) == ["0123456789ABCDEF"])
+        var g = LibraryGame(kind: .packages, path: "/x", name: "X", fileCount: 1, bytes: 1, base: true, updates: 0, dlc: 0)
+        #expect(g.versionNumber == 0)
+        g.updates = 1; g.newestUpdate = 131072
+        #expect(g.versionNumber == 131072)
+        g.newestUpdate = nil
+        #expect(g.versionNumber == nil)
+    }
+
     @Test func savesSwitchesAndAddsToTheFile() throws {
         let d = NSTemporaryDirectory() + "cheats-\(UUID().uuidString)"
         let n = try CheatFile.add(CheatFile.parse("[A]\n1\n[B]\n2\n"), dir: d, build: "0123456789ABCDEF")
