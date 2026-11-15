@@ -1,5 +1,6 @@
 // Unit tests for the converter's pure logic: the release names it shows and how it reads title IDs.
 // Run with `swift test --package-path app` on a Mac (CI runs them in tests.yml's converter job).
+import CoreGraphics
 import Foundation
 import Testing
 @testable import NXForgeConverter
@@ -1101,6 +1102,26 @@ import Testing
         #expect(b.minX == 0 && abs(f.maxX - 1) < 1e-9)
         #expect(abs(b.maxX - s.minX) < 1e-9 && abs(s.maxX - f.minX) < 1e-9)
         #expect(abs(b.width - f.width) < 1e-9 && s.width < 0.06)
+    }
+
+    /// A picture `w`×`h`: see-through margin `m`, then a light grey rim `r` on the right, top and bottom, then red art
+    static func caseRender(w: Int, h: Int, m: Int, r: Int, clearCorners: Bool = true) -> CGImage {
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        if !clearCorners { ctx.setFillColor(CGColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h)) }
+        ctx.setFillColor(CGColor(red: 0.85, green: 0.85, blue: 0.85, alpha: 1))
+        ctx.fill(CGRect(x: m, y: m, width: w - 2 * m, height: h - 2 * m))
+        ctx.setFillColor(CGColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1))
+        ctx.fill(CGRect(x: m, y: m + r, width: w - 2 * m - r, height: h - 2 * m - 2 * r))
+        return ctx.makeImage()!
+    }
+
+    @Test func aCaseRenderIsCutDownToItsCover() {
+        let out = CoverSource.trimCase(Self.caseRender(w: 400, h: 640, m: 6, r: 14))
+        #expect(out.width == 400 - 12 - 14 && out.height == 640 - 12 - 28)
+        // a cover with no see-through corners is left as it was
+        let plain = Self.caseRender(w: 400, h: 640, m: 6, r: 14, clearCorners: false)
+        #expect(CoverSource.trimCase(plain).width == 400 && CoverSource.trimCase(plain).height == 640)
     }
 
     @Test func frontEndSettingsDefault() throws {
