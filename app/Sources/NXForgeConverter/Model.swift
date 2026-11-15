@@ -772,8 +772,7 @@ final class AppModel {
     /// Copy log's text: the stages, the script's messages and, with detailed logs, the tools' own logs.
     var logText: String {
         var t = (run.done.map(\.line) + run.log).joined(separator: "\n")
-        if settings.logDetail == .detailed, let cache = buildCache {
-            let logs = cache + "/logs"
+        if settings.logDetail == .detailed, let logs = buildCache.map({ $0 + "/logs" }) ?? gameFolder.flatMap(BuildRun.archivedLogs(of:)) {
             for f in ((try? FileManager.default.contentsOfDirectory(atPath: logs)) ?? []).sorted() {
                 if let s = try? String(contentsOfFile: "\(logs)/\(f)", encoding: .utf8) { t += "\n\n==== \(f) ====\n" + s }
             }

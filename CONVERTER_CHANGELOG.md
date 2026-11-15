@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.13.3 (2026-11-15)
+
+"Remove build cache" leaves nothing of the build beside the game. Ships in NXForge 0.37.3.
+
+- **The build folders go after a build**: with Settings › Builds › After a build set to Remove build cache, the build script deletes the unpacked game and shaders but keeps `<id>_build/logs` and `profile/`, a provisional profile's `<id>_survey`, and the app's pack key (`<name>.app.key`) beside the app, so a Blazing Chrome build looked as if nothing had been cleaned. Once the build succeeds the converter now moves the logs to `~/Library/Logs/NXForge/<title ID>` (the Builds page, Copy log and the time estimates read them there) and removes the `_build` and `_survey` folders, the `.app.key`, and an emptied `NXForge Builds/<game>` folder. The game files, the keys and the app are never touched. The next build starts over, as before.
+
 ## 0.13.2 (2026-11-15)
 
 Cleared builds no longer show as ready. Ships in NXForge 0.37.2.

@@ -54,11 +54,13 @@ enum Estimates {
         return out
     }
 
-    /// <game folder>/<id>_build/logs/stage_times.json
+    /// <game folder>/<id>_build/logs/stage_times.json, or ~/Library/Logs/NXForge/<title ID>/stage_times.json once "Remove build
+    /// cache" took the build folder
     static func ownTimes(_ gameFolder: String) -> [String: Double] {
         let fm = FileManager.default, gameDir = Disk.buildHome(gameFolder)
-        guard let b = ((try? fm.contentsOfDirectory(atPath: gameDir)) ?? []).first(where: { $0.hasSuffix("_build") }),
-              let d = try? Data(contentsOf: URL(fileURLWithPath: "\(gameDir)/\(b)/logs/stage_times.json")),
+        let logs = ((try? fm.contentsOfDirectory(atPath: gameDir)) ?? []).first(where: { $0.hasSuffix("_build") }).map { "\(gameDir)/\($0)/logs" }
+        guard let dir = logs.flatMap({ fm.fileExists(atPath: $0 + "/stage_times.json") ? $0 : nil }) ?? BuildRun.archivedLogs(of: gameFolder),
+              let d = try? Data(contentsOf: URL(fileURLWithPath: "\(dir)/stage_times.json")),
               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
         return j.compactMapValues { ($0 as? NSNumber)?.doubleValue }
     }

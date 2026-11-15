@@ -183,7 +183,8 @@ final class BuildRun {
             }
             if job.ios {   // an IPA beside the game files: no app is replaced or recorded
                 let ipa = try build(job, repo: repo, run: r)
-                _ = writeLog(job.folder, run: r)
+                let log = writeLog(job.folder, run: r)
+                if job.cleanup == .all { let left = removeBuildFolders(job.folder, app: nil, log: log); DispatchQueue.main.async { r.logFile = left.log } }
                 DispatchQueue.main.async { r.ipa = ipa }
                 let gb = ((try? FileManager.default.attributesOfItem(atPath: ipa)[.size] as? NSNumber)?.doubleValue ?? 0) / 1_073_741_824
                 return .success(String(format: "%@ (%.1f GB): install it with AltStore, Sideloadly or Xcode", ipa.lastComponent, gb))
@@ -212,7 +213,13 @@ final class BuildRun {
                      r.done.map { StageRecord(name: $0.name, seconds: $0.seconds, reused: $0.reused, ok: $0.ok) },
                      r.startedAt.map { Int(Date().timeIntervalSince($0)) })
                 }
-                let logFile = writeLog(job.folder, run: r)
+                var logFile = writeLog(job.folder, run: r)
+                if job.cleanup == .all {   // "Remove build cache": nothing of the build is left beside the game, its logs go to ~/Library/Logs/NXForge
+                    let left = removeBuildFolders(job.folder, app: app, log: logFile)
+                    logFile = left.log
+                    if !left.removed.isEmpty { say("build folders removed: \(left.removed.joined(separator: ", ")); the logs are in \(left.logDir ?? "~/Library/Logs/NXForge")") }
+                    DispatchQueue.main.async { r.logFile = left.log }
+                }
                 Engine.record(BuildRecord(app: app, gameDir: job.gameDir, engine: engine, repo: repo, builtAt: Engine.now(), steps: steps, shaders: shaders,
                                           gameFiles: job.gameFiles ?? Engine.describeFiles(job.gameDir), stages: stages, seconds: seconds, log: logFile,
                                           gameBytes: job.gameBytes > 0 ? job.gameBytes : nil))
@@ -251,6 +258,56 @@ final class BuildRun {
         guard (try? text.write(toFile: path, atomically: true, encoding: .utf8)) != nil else { return nil }
         DispatchQueue.main.async { r.logFile = path }
         return path
+    }
+
+    /// Where a game's build logs go once "Remove build cache" took its build folder: ~/Library/Logs/NXForge/<title ID>.
+    nonisolated static func archivedLogs(_ titleID: String, home: String = NSHomeDirectory()) -> String { "\(home)/Library/Logs/NXForge/\(titleID)" }
+
+    /// A game's archived build logs folder (archivedLogs), when it has one.
+    nonisolated static func archivedLogs(of gameFolder: String) -> String? {
+        guard let id = GameNeeds.titleID(gameFolder) else { return nil }
+        let d = archivedLogs(id)
+        return FileManager.default.fileExists(atPath: d) ? d : nil
+    }
+
+    /// After a successful build with "Remove build cache" (--cleanup all): the script's cleanup keeps <id>_build/logs and profile/
+    /// (and run/), a provisional profile's <id>_survey, and the app's pack key (<name>.app.key) beside the app, which left the
+    /// game folder looking as if nothing had been cleaned. The built app needs none of them, and the next build starts over anyway:
+    /// the logs move to ~/Library/Logs/NXForge/<title ID> (the Builds page, Copy log and the time estimates read them there),
+    /// then every <16 hex digits>_build and _survey folder in the game folder and in its build home (NXForge Builds on the output
+    /// drive) goes, with the app's .key and an emptied NXForge Builds/<game> folder. Never the game files, the keys or the app.
+    /// Returns the converter log's new path, the archive folder and what went.
+    nonisolated static func removeBuildFolders(_ gameFolder: String, app: String?, log: String?, home: String = NSHomeDirectory()) -> (log: String?, logDir: String?, removed: [String]) {
+        let fm = FileManager.default, buildHome = Disk.buildHome(gameFolder)
+        func isWork(_ n: String) -> Bool { n.range(of: #"^[0-9A-Fa-f]{16}_(build|survey)$"#, options: .regularExpression) != nil }
+        var newLog = log, logDir: String?, removed: [String] = []
+        for dir in Set([gameFolder, buildHome]).sorted() {
+            for n in ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).sorted() where isWork(n) {
+                let p = "\(dir)/\(n)"
+                if n.hasSuffix("_build"), let files = try? fm.contentsOfDirectory(atPath: p + "/logs"), !files.isEmpty {
+                    let dest = archivedLogs(String(n.prefix(16)).uppercased(), home: home)
+                    try? fm.createDirectory(atPath: dest, withIntermediateDirectories: true)
+                    var moved = true
+                    for f in files where !f.hasPrefix("._") {
+                        try? fm.removeItem(atPath: "\(dest)/\(f)")
+                        if (try? fm.moveItem(atPath: "\(p)/logs/\(f)", toPath: "\(dest)/\(f)")) == nil,
+                           (try? fm.copyItem(atPath: "\(p)/logs/\(f)", toPath: "\(dest)/\(f)")) == nil { moved = false }
+                        if log == "\(p)/logs/\(f)" { newLog = "\(dest)/\(f)" }
+                    }
+                    logDir = dest
+                    if !moved { continue }   // a log that could not be kept: leave the build folder rather than lose it
+                }
+                if (try? fm.removeItem(atPath: p)) != nil { removed.append(n) }
+            }
+        }
+        if let app {
+            let key = app + ".key"
+            if fm.fileExists(atPath: key), (try? fm.removeItem(atPath: key)) != nil { removed.append(key.lastComponent) }
+        }
+        if buildHome != gameFolder, let left = try? fm.contentsOfDirectory(atPath: buildHome), left.allSatisfy({ $0 == ".DS_Store" || $0.hasPrefix("._") }) {
+            try? fm.removeItem(atPath: buildHome)
+        }
+        return (newLog, logDir, removed)
     }
 
     /// The stage keys (sha256 of each stage's inputs, <id>_build/**/*.key) that let the script reuse a stage.
