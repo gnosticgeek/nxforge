@@ -182,7 +182,10 @@ enum GameFolderMedia {
         m += ["| | |", "|---|---|"] + facts.map { "| \($0.0) | \($0.1.replacingOccurrences(of: "|", with: "\\|")) |" } + [""]
         if let s = it.store, !s.about.isEmpty || s.excerpt != nil {
             m += ["## About", ""]
-            for p in (s.about.isEmpty ? [s.excerpt ?? ""] : s.about) { m += [p, ""] }
+            // the store's "•" lines as a Markdown list
+            for p in (s.about.isEmpty ? [s.excerpt ?? ""] : s.about) {
+                m += [p.split(separator: "\n").map { $0.hasPrefix("• ") ? "- " + $0.dropFirst(2) : String($0) }.joined(separator: "\n"), ""]
+            }
             if let p = s.page { m += ["[Store page](\(p))", ""] }
         }
         let shots = files.keys.filter { $0.hasPrefix("screenshots/") }.sorted()
@@ -478,7 +481,7 @@ final class GameFolderMediaSync {
             items.append(GameFolderMedia.Item(key: g.coverKey, title: g.name, titleID: g.titleID, console: g.console.rawValue, app: app,
                                               gameFolder: g.game?.folder, version: g.version, publisher: g.game?.publisher,
                                               gameFiles: g.game?.contents, newestUpdate: g.game?.newestUpdate, record: record,
-                                              store: model.settings.downloadStoreInfo ? store.info(g.coverKey) : nil, manual: manual,
+                                              store: store.info(g.coverKey), manual: manual,
                                               manualAdded: manual == GameManual.added(g.coverKey), icon: g.icon,
                                               played: g.total, lastPlayed: g.last, dest: dest))
         }

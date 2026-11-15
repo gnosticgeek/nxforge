@@ -1460,6 +1460,7 @@ import Testing
         let text = GameFolderMedia.document(item(s), files: files)
         #expect(text.hasPrefix("---\n"))
         #expect(text.contains("# Blazing Chrome"))
+        #expect(text.contains("\n- Co-op\n"))
         #expect(text.contains("- [Launch Trailer](https://www.youtube.com/watch?v=abcdefghijk)"))
         let doc = try #require(MiniYAML.frontMatter(text))
         #expect(doc["title"] as? String == "Blazing Chrome")
