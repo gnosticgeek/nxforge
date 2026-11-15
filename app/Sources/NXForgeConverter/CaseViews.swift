@@ -241,7 +241,8 @@ struct CoverTile: View {
             }
             .overlay { if dim { Color.black.opacity(0.44) } }
             .overlay(alignment: .top) { if game.favorite || attention != nil { CoverMarks(favorite: game.favorite, attention: attention) } }
-            .overlay(alignment: .bottomLeading) { if let status, !status.playable { CoverStatus(status: status) } }
+            // Not built yet stays in the line under the cover (most of a library is): the label is for what blocks a build
+            .overlay(alignment: .bottomLeading) { if let status, !status.playable, status != .notBuilt { CoverStatus(status: status) } }
             .clipShape(shape)
             .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
             .overlay {
