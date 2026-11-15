@@ -351,10 +351,11 @@ struct GalleryPage: View {
     var body: some View {
         switch item {
         case .image(let u):
-            ZoomableImage(url: u, state: state)
+            // read here, so a press of + or − reaches the picture
+            ZoomableImage(url: u, state: state, zoom: state.zoomStep, zoomIn: state.zoomIn, reset: state.zoomReset)
         case .video(let v, _):
             if let id = v.youtube { YouTubePlayer(id: id) .aspectRatio(16 / 9, contentMode: .fit).clipShape(.rect(cornerRadius: 10)) }
-            else if let f = v.file.flatMap(URL.init(string:)) { VideoFilePlayer(url: f, state: state).aspectRatio(16 / 9, contentMode: .fit) }
+            else if let f = v.file.flatMap(URL.init(string:)) { VideoFilePlayer(url: f, toggle: state.playToggle).aspectRatio(16 / 9, contentMode: .fit) }
         }
     }
 }
@@ -364,6 +365,9 @@ struct GalleryPage: View {
 struct ZoomableImage: NSViewRepresentable {
     let url: URL
     let state: GalleryState
+    let zoom: Int
+    let zoomIn: Bool
+    let reset: Int
 
     func makeNSView(context: Context) -> GalleryScrollView {
         let v = GalleryScrollView()
@@ -374,15 +378,15 @@ struct ZoomableImage: NSViewRepresentable {
             guard let img = NSImage(contentsOf: u) else { return }
             await MainActor.run { v.show(img) }
         }
-        context.coordinator.zoom = (state.zoomStep, state.zoomReset)
+        context.coordinator.zoom = (zoom, reset)
         return v
     }
 
     func updateNSView(_ v: GalleryScrollView, context: Context) {
-        let now = (state.zoomStep, state.zoomReset)
+        let now = (zoom, reset)
         let was = context.coordinator.zoom
         context.coordinator.zoom = now
-        if now.1 != was.1 { v.fit() } else if now.0 != was.0 { v.zoom(by: state.zoomIn ? 1.5 : 1 / 1.5) }
+        if now.1 != was.1 { v.fit() } else if now.0 != was.0 { v.zoom(by: zoomIn ? 1.5 : 1 / 1.5) }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -542,7 +546,7 @@ final class CenteringClipView: NSClipView {
 /// Nintendo's own trailer file, in AVKit's player; it starts on its own and stops when it leaves the screen
 struct VideoFilePlayer: NSViewRepresentable {
     let url: URL
-    let state: GalleryState
+    let toggle: Int
 
     func makeNSView(context: Context) -> AVPlayerView {
         let v = AVPlayerView()
@@ -552,14 +556,14 @@ struct VideoFilePlayer: NSViewRepresentable {
         v.videoGravity = .resizeAspect
         let p = AVPlayer(url: url)
         v.player = p
-        context.coordinator.toggle = state.playToggle
+        context.coordinator.toggle = toggle
         if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { p.play() }
         return v
     }
 
     func updateNSView(_ v: AVPlayerView, context: Context) {
-        guard state.playToggle != context.coordinator.toggle, let p = v.player else { return }
-        context.coordinator.toggle = state.playToggle
+        guard toggle != context.coordinator.toggle, let p = v.player else { return }
+        context.coordinator.toggle = toggle
         if p.timeControlStatus == .paused { p.play() } else { p.pause() }
     }
 
@@ -768,7 +772,7 @@ struct ManualViewer: View {
     var body: some View {
         ZStack {
             Color(white: 0.06).ignoresSafeArea()
-            ManualPDFView(state: state, page: $page, pages: $pages)
+            ManualPDFView(state: state, action: state.action?.0, page: $page, pages: $pages)
                 .padding(.top, 64).padding(.bottom, 70).padding(.horizontal, 84)
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -801,6 +805,8 @@ struct ManualViewer: View {
 /// at a time otherwise
 struct ManualPDFView: NSViewRepresentable {
     let state: ManualState
+    /// read in the viewer's body, so each key press reaches the PDF view
+    let action: UUID?
     @Binding var page: Int
     @Binding var pages: Int
 
