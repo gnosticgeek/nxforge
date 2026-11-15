@@ -95,3 +95,5 @@ void dm_qs_peeked(int on);
 void dm_qs_peek_glyph(const char *symbol);
 // The saved settings put to work again after the sidebar put several back at once (Undo this session), as after the settings file is read while the game runs. Main thread
 void front_qs_settings_reapply(void);
+// A setting the present pass shows changed (filter, HDR, MetalFX, …): while the game is paused under the sidebar, it draws its picture again for a moment so the change shows. Main thread
+void front_qs_live_changed(void);

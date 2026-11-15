@@ -144,7 +144,9 @@ static void inset_to(float share) {
 // its clock (guest_clock_freeze_for, reason 3: the sidebar) and its graphics (dm_gfx_suspend: a submit or present waits). Closing the sidebar, quitting or a screenshot taken from
 // it starts it again first. Un-minimizing the window resumes sound and graphics (front_mac.m), so while the sidebar is up they are stopped again after it
 static BOOL qs_pause_wanted(void) { id v = [NSUserDefaults.standardUserDefaults objectForKey:opt_key(@"pauseOpen")]; return v ? [v boolValue] : YES; }
+static int g_redraw, g_redraw_clock;   // front_qs_live_changed: graphics let through for a moment while paused (and the guest clock with them)
 static void qs_pause(int on) {
+    if (g_redraw && !on) { g_redraw = 0; g_redraw_clock = 0; }   // resuming lets everything through anyway
     if (on == g_paused) return;
     static int observed;
     if (!observed) { observed = 1;   // after front_mac.m's own observers: those resume, this stops again
@@ -212,6 +214,29 @@ void front_qs_suspend(void) {
 void front_qs_pause_set(int on) {   // the General page's switch, while the sidebar is up: applies at once
     [NSUserDefaults.standardUserDefaults setBool:on != 0 forKey:opt_key(@"pauseOpen")];
     if (g_menu_open) { if (on) qs_pause_when_aside(0); else qs_pause(0); }
+}
+// A graphics setting changed while the game is paused (quick_settings_mac.swift, any change the present pass shows: filter, strength, scanlines, pixel art, picture size, MetalFX,
+// anti-aliasing, HDR highlights, frame interpolation, presets, Put it all back). A paused game presents nothing (dm_gfx_suspend), so the change only showed after Resume or a peek (Sidebar 0.7.1).
+// The graphics gate opens for a moment, the game's sound stays off and its clock stays frozen, so the game draws the same moment again through the new setting and is stopped once two
+// frames have reached the screen. A game that draws nothing with its clock stopped (none seen in 250 ms) gets its clock for the rest of the moment too, so it moves a few frames on.
+// Every change in the moment (a slider dragged) starts the count again; after 1.5 s it stops anyway
+static uint64_t g_redraw_from; static double g_redraw_t;
+static void qs_redraw_tick(void) {
+    if (!g_redraw) return;
+    if (!g_paused || !g_menu_open) { g_redraw = 0; return; }
+    double el = CACurrentMediaTime() - g_redraw_t; uint64_t n = mtl_present_count() - g_redraw_from;
+    if (!n && el > 0.25 && !g_redraw_clock) { g_redraw_clock = 1; guest_clock_freeze_for(3, 0); LOG("front end: paused game drew nothing with its clock stopped; letting its clock run for the redraw"); }
+    if ((n >= 2 && el >= 0.1) || el > 1.5) {
+        g_redraw = 0; dm_gfx_suspend(1); if (g_redraw_clock) { g_redraw_clock = 0; guest_clock_freeze_for(3, 1); }
+        LOG("front end: paused game redrawn with the new setting (%llu frames, %.0f ms)", (unsigned long long)n, el * 1000); return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ qs_redraw_tick(); });
+}
+void front_qs_live_changed(void) {
+    if (!g_paused || !g_menu_open || g_peek || g_suspended || g_win.miniaturized) return;   // running: the next frame shows it; hidden: nobody sees it
+    g_redraw_from = mtl_present_count(); g_redraw_t = CACurrentMediaTime();
+    if (g_redraw) return;
+    g_redraw = 1; dm_gfx_suspend(0); qs_redraw_tick();
 }
 // Quieter while open: the game's sound at a quarter of its volume while the sidebar is up and the game is not paused
 static void qs_volume_apply(void) {

@@ -4,6 +4,12 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.7.1 (2026-11-15)
+
+Ships in NXForge 0.38.1.
+
+- **Graphics changes show while the game is paused**: with Pause the game on (the default), the sidebar stopped the game's drawing, so CRT, its strength and scanlines, HDR highlights, MetalFX, anti-aliasing, pixel art, picture size, frame interpolation, the presets and Put it all back only showed after Resume or a peek. Now each change lets the paused game draw its picture again for a moment (`front_qs_live_changed`, `dm/host/nxforge/front_mac_quick_settings.inc`): its sound stays off and its clock stays stopped, so it draws the same moment through the new setting and stops again after two frames. A game that draws nothing with its clock stopped gets its clock for that moment and moves a few frames on. The Graphics page's paused note and General › Pause the game say so; settings that need a restart keep their Next launch tag.
+
 ## 0.7.0 (2026-11-15)
 
 Ships in NXForge 0.37.0.

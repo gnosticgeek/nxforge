@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.38.1 (2026-11-15)
+
+- **Sidebar graphics changes show while the game is paused** (Sidebar 0.7.1, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): CRT, HDR highlights, MetalFX, anti-aliasing, pixel art, picture size, frame interpolation and the presets changed in the paused sidebar now show at once: the game draws its paused picture again with each change, its sound and clock still stopped. A game gets the new sidebar when it is built again.
+
 ## 0.38.0 (2026-11-15)
 
 - **Ideas from RetroReplay** (Converter 0.14.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): games that cannot play say why (Not built yet, Keys needed, Drive offline, Files missing) and Play becomes the fix; a Health page lists what needs a look with one repair each; NXForge's own data (time played, favourites, settings, build records, own covers) is backed up and checked once a day with Restore; button hints show the connected controller's own symbols, and a button held over from a game does nothing; the launch screen says when a start is taking longer and, when a game closes before its first picture, why (from its log) with Try Again; Home shows Your Week and a Random Pick; searches fold accents and rank better. `docs/ux.md` records the app's UX rules. No game rebuild needed for this.
