@@ -515,9 +515,21 @@ final class CoverStore {
         return nil
     }
 
-    nonisolated static func get(_ url: URL) async -> Data? {
-        var req = URLRequest(url: url, timeoutInterval: 30)
+    /// Whether a file answers (a HEAD request, 8 seconds at most)
+    nonisolated static func reachable(_ url: URL) async -> Bool {
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        req.httpMethod = "HEAD"
         req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        guard let (_, resp) = try? await URLSession.shared.data(for: req), let code = (resp as? HTTPURLResponse)?.statusCode else { return false }
+        return (200..<400).contains(code)
+    }
+
+    nonisolated static func get(_ url: URL, browser: Bool = false) async -> Data? {
+        var req = URLRequest(url: url, timeoutInterval: 30)
+        // a page that answers a bare client with less (YouTube's search) is asked as Safari asks
+        req.setValue(browser ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15" : "Mozilla/5.0",
+                     forHTTPHeaderField: "User-Agent")
+        if browser { req.setValue("en-GB,en;q=0.8", forHTTPHeaderField: "Accept-Language") }
         req.httpShouldHandleCookies = false
         guard let (data, resp) = try? await URLSession.shared.data(for: req), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return data

@@ -124,7 +124,7 @@ enum GameCaptures {
 final class ThumbStore {
     static let shared = ThumbStore()
     private(set) var images: [URL: NSImage] = [:]
-    @ObservationIgnored private var asked = Set<URL>()
+    @ObservationIgnored fileprivate var asked = Set<URL>()
 
     func image(_ u: URL) -> NSImage? {
         if let i = images[u] { return i }
@@ -132,7 +132,11 @@ final class ThumbStore {
         asked.insert(u)
         Task.detached(priority: .utility) {
             let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1000, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary
-            guard let src = CGImageSourceCreateWithURL(u as CFURL, nil), let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts) else { return }
+            // a picture still being downloaded is asked for again the next time it is drawn
+            guard let src = CGImageSourceCreateWithURL(u as CFURL, nil), let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts) else {
+                await MainActor.run { _ = ThumbStore.shared.asked.remove(u) }
+                return
+            }
             let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
             await MainActor.run { ThumbStore.shared.images[u] = img }
         }
@@ -188,8 +192,10 @@ struct CoverMarks: View {
     }
 }
 
-/// The game page's Screenshots: the three newest, large, with View all showing the rest in Finder. A game with none says where they come from.
+/// The game page's Screenshots: the three newest, large, with View all opening every one in the gallery (MediaViewer.swift). A game with none says where they come from.
 struct ScreenshotRow: View {
+    let model: AppModel
+    let game: StageGame
     let app: String
     /// the row's width: three tiles across it
     var width: CGFloat = 900
@@ -201,11 +207,11 @@ struct ScreenshotRow: View {
                 Text("Screenshots").font(.system(size: 24, weight: .heavy)).tracking(-0.4)
                 Spacer()
                 if let s = shots, !s.isEmpty {
-                    Button { NSWorkspace.shared.activateFileViewerSelecting(Array(s.prefix(1))) } label: {
+                    Button { open(at: 0) } label: {
                         HStack(spacing: 6) { Text("View all"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
                     }
                     .buttonStyle(.plain).font(.system(size: 14.5, weight: .semibold)).foregroundStyle(StageLook.soft)
-                    .help("Shows the screenshots in Finder")
+                    .help("Shows every screenshot full screen")
                 }
             }
             if let s = shots, !s.isEmpty {
@@ -226,14 +232,19 @@ struct ScreenshotRow: View {
         }
         .task(id: app) {
             let a = app
-            shots = await Task.detached(priority: .utility) { GameCaptures.screenshots(app: a) }.value
+            shots = await Task.detached(priority: .utility) { GameCaptures.screenshots(app: a, limit: 200) }.value
         }
+    }
+
+    func open(at i: Int) {
+        guard let s = shots else { return }
+        model.openGallery(s.map { .image($0) }, at: i, title: "\(game.name) · Screenshots")
     }
 
     func tile(_ u: URL) -> some View {
         let img = ThumbStore.shared.image(u)
         let w = max((width - 28) / 3, 120)
-        return Button { NSWorkspace.shared.open(u) } label: {
+        return Button { open(at: shots?.firstIndex(of: u) ?? 0) } label: {
             Color(white: 0.12)
                 .frame(width: w, height: w * 9 / 16)
                 .overlay { if let img { Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill) } }
@@ -246,7 +257,8 @@ struct ScreenshotRow: View {
         .help(u.lastPathComponent)
         .accessibilityLabel("Screenshot \(u.deletingPathExtension().lastPathComponent)")
         .contextMenu {
-            Button("Open") { NSWorkspace.shared.open(u) }
+            Button("View") { open(at: shots?.firstIndex(of: u) ?? 0) }
+            Button("Open in Preview") { NSWorkspace.shared.open(u) }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([u]) }
             Button("Copy") { if let i = NSImage(contentsOf: u) { NSPasteboard.general.clearContents(); NSPasteboard.general.writeObjects([i]) } }
             ShareLink(item: u) { Text("Share…") }
