@@ -636,8 +636,10 @@ struct StageHero: View {
                             .buttonStyle(StageButton(height: 54, glass: true)).help("Quits the running game, as its own Quit does")
                     }
                 } else {
-                    Button { model.playFromStage(g.ref) } label: { Label("Build", systemImage: "hammer.fill").padding(.horizontal, 8) }
-                        .buttonStyle(StageButton(primary: true, height: 54, glow: tint)).disabled(model.run.running || model.batchRunning)
+                    let st = model.status(g)
+                    Button { model.fix(g) } label: { Label(st.action, systemImage: st.actionSymbol).padding(.horizontal, 8) }
+                        .buttonStyle(StageButton(primary: true, height: 54, glow: tint)).disabled(st == .notBuilt && (model.run.running || model.batchRunning))
+                        .help(st.detail)
                 }
                 if showDetails {
                     Button { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref } label: {
@@ -667,7 +669,7 @@ struct StageHero: View {
     }
 
     var eyebrow: String {
-        if game.app == nil { return "NOT BUILT YET" }
+        if game.app == nil { return model.status(game).eyebrow }
         if model.isSuspended(app: game.app ?? "") { return "PAUSED · STILL RUNNING" }
         if model.isPlaying(app: game.app ?? "") { return "PLAYING NOW" }
         if game.last == nil { return "IN YOUR LIBRARY" }
@@ -684,7 +686,7 @@ struct StageHero: View {
 
     /// The second line: when it was last played
     var when: String? {
-        guard game.app != nil else { return "Not built yet" }
+        guard game.app != nil else { return model.status(game).detail }
         return game.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet"
     }
 }
@@ -738,7 +740,7 @@ struct StageHome: View {
                         LazyHStack(alignment: .top, spacing: 26) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 10) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g)).frame(width: tile)
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil).frame(width: tile)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(g.name).font(.system(size: 14.5, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                                         Text(g.console.rawValue).font(.system(size: 13)).foregroundStyle(StageLook.faint).lineLimit(1)
@@ -751,7 +753,7 @@ struct StageHome: View {
                                 .onTapGesture(count: 2) { model.libraryFocus = g.id; model.playFromStage(g.ref) }
                                 .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
                                 .contextMenu { StageGameMenu(model: model, game: g) }
-                                .accessibilityElement(children: .combine).accessibilityLabel(g.name).accessibilityAddTraits(.isButton)
+                                .accessibilityElement(children: .combine).accessibilityLabel(g.app == nil ? "\(g.name), \(model.status(g).text)" : g.name).accessibilityAddTraits(.isButton)
                             }
                         }
                         .padding(.horizontal, 56).padding(.top, 20).frame(height: shelf + 20, alignment: .top)
@@ -809,7 +811,7 @@ struct StageLibrary: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cell, maximum: Self.cell + 44), spacing: Self.gap, alignment: .top)], alignment: .leading, spacing: 28) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 9) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g))
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(g.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                                         status(g)
@@ -851,7 +853,7 @@ struct StageLibrary: View {
     func statusLine(_ g: StageGame, building: Bool, need: GameAttention?) -> (String, Color) {
         let blue = Color(red: 0.38, green: 0.65, blue: 0.98), amber = Color(red: 0.98, green: 0.75, blue: 0.14), green = Color(red: 0.29, green: 0.87, blue: 0.50)
         if building { return ("Building · \(Int((model.run.overall(now: Date()).fraction * 100).rounded())) %", blue) }
-        if g.app == nil { return ("Not built yet", Color(white: 0.55)) }
+        if g.app == nil { let st = model.status(g); return (st.text, st == .notBuilt ? Color(white: 0.55) : st.color) }
         if model.isPlaying(app: g.app ?? "") { return ("Playing now", blue) }
         if let a = need { return (a.kind == .update && g.last != nil ? StageLook.played(g.last) : a.text, a.color) }
         if g.outdated && g.last == nil { return ("Update ready", amber) }
@@ -882,7 +884,7 @@ struct StageGameMenu: View {
             Button("Play Options…") { model.openPlayOptions(g.ref) }
             Button("Play with the Game's Own Settings Window") { model.playWithOwnWindow(g.ref) }
         } else if g.game != nil {
-            Button("Build") { model.playFromStage(g.ref) }.disabled(model.run.running || model.batchRunning)
+            if game.app == nil { let st = model.status(game); Button(st.action) { model.fix(game) }.disabled(st == .notBuilt && (model.run.running || model.batchRunning)) }
         }
         Divider()
         Button("View Box") { model.openCaseViewer(g) }
@@ -956,10 +958,11 @@ struct StageHints: View {
 
     var hints: [([String], String)] {
         let built = focus?.app != nil
+        let fix = focus.map { model.status($0).action } ?? "Build"
         if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
-        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]) + [(["Y"], "View box"), (["B"], "Back")] }
-        var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]
+        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]) + [(["Y"], "View box"), (["B"], "Back")] }
+        var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))
         h.append((["L", "R"], model.stageTab == .home ? "Library" : "Change filter"))

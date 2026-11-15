@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
-    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", toolchain = "Toolchain", updates = "Updates"
+    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", health = "Health", toolchain = "Toolchain", updates = "Updates"
     var id: String { rawValue }
     /// as the window names it: the converter's own Library is the game files, the front end's Library the covers
     var title: String { self == .library ? "Game Files" : rawValue }
@@ -16,6 +16,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .library: "books.vertical"
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
         case .storage: "internaldrive"
+        case .health: "stethoscope"
         case .toolchain: "wrench.and.screwdriver"
         case .updates: "arrow.down.circle"
         }
@@ -164,6 +165,14 @@ final class AppModel {
     /// the Play options panel open over the front end, and the launch screen while a game starts
     var playOptions: PlayOptionsState?
     var launching: Launching?
+    /// the last checked copy of NXForge's own data (DataBackup), whether one is being made, and whether the last one failed
+    var lastDataBackup: Date? = DataBackup.latest()?.manifest.made
+    var backupRunning = false
+    var dataBackupFailed = false
+    /// problems and warnings on the Health page, for its tab's badge
+    var healthBadge = 0
+    /// Home's Random Pick: the game it turned up, until it is played or picked again
+    var randomPick: String?
     var commandPalette = false
     /// the last Library move, to undo (files moved into a folder of their own, or beside their game)
     var lastMove: LibraryMove?
@@ -222,12 +231,14 @@ final class AppModel {
         frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
         stageTab = settings.startIn == .library ? .library : .home
         restoreBatchQueue()
+        if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { backUpDataIfDue() }
         if settings.gameDir != nil { validate() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
                 self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
+                if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { self?.backUpDataIfDue() }
                 guard let self, self.fixPending, !self.checking else { return }
                 self.fixPending = false
                 self.recheck()

@@ -208,6 +208,8 @@ struct CoverTile: View {
     var reflect = false
     /// the most pressing thing the game needs a look at (GameAttention), as a mark in the cover's corner
     var attention: GameAttention? = nil
+    /// why it cannot play, when it cannot (GameStatus), as a label along the cover's foot instead of only dimming it
+    var status: GameStatus? = nil
     @State private var hover: CGPoint?
     @State private var size: CGSize = .zero
     @Environment(\.accessibilityReduceMotion) private var still
@@ -239,6 +241,7 @@ struct CoverTile: View {
             }
             .overlay { if dim { Color.black.opacity(0.44) } }
             .overlay(alignment: .top) { if game.favorite || attention != nil { CoverMarks(favorite: game.favorite, attention: attention) } }
+            .overlay(alignment: .bottomLeading) { if let status, !status.playable { CoverStatus(status: status) } }
             .clipShape(shape)
             .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
             .overlay {

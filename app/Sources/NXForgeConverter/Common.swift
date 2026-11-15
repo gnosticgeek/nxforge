@@ -79,6 +79,7 @@ struct ConverterRoot: View {
                         case .library: LibraryPage(model: model)
                         case .builds: BuildsPage(model: model)
                         case .storage: StoragePage(model: model)
+                        case .health: ScrollView { HealthPage(model: model).pagePadding() }
                         case .toolchain: ScrollView { ToolchainPage(model: model).pagePadding() }
                         case .updates: ScrollView { UpdatesPage(model: model).pagePadding() }
                         }
@@ -98,6 +99,10 @@ struct ConverterRoot: View {
             return true
         }
         .onChange(of: model.page) { model.gameDetail = nil }
+        // Health's badge: its problems and warnings, read again whenever something on disk may have changed
+        .task(id: "\(model.revision)|\(model.lastDataBackup?.timeIntervalSince1970 ?? 0)|\(model.dataBackupFailed)") {
+            model.healthBadge = model.healthFindings().filter { $0.level != .note }.count
+        }
     }
 }
 
@@ -128,7 +133,7 @@ struct ConverterNav: View {
         HStack(spacing: 8) {
             ForEach(Page.allCases) { p in
                 let on = model.page == p
-                let updates = p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : 0
+                let updates = p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : p == .health ? model.healthBadge : 0
                 Button { if on { model.gameDetail = nil } else { model.page = p } } label: {
                     HStack(spacing: 6) {
                         Text(p.title)

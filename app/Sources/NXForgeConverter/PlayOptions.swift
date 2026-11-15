@@ -258,9 +258,13 @@ extension AppModel {
     func playFromStage(_ r: GameRef) {
         let (g, b) = resolve(r)
         guard let app = r.app ?? b?.app, FileManager.default.fileExists(atPath: app) else {
+            // a game that cannot play yet: the step that fixes it (GameStatus), and a build only when that is what it needs
+            if let sg = stageGames().first(where: { $0.isRef(r) }), sg.app == nil, status(sg) != .notBuilt { fix(sg); return }
             if let g { frontEnd = false; convertFromLibrary(g) }
             return
         }
+        // a second press while this game is starting does not start it twice
+        if launching?.app == app { return }
         if resumeGame(app: app) { return }   // running, perhaps kept behind the library: back to the front as it is
         let ref = GameRef(libraryID: r.libraryID, app: app)
         let list = LaunchSettings.load(app: app)
