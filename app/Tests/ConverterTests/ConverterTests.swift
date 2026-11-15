@@ -1083,6 +1083,9 @@ import Testing
         #expect(pick?.youtube == "CCCCCCCCCCC" && pick?.title == "Gunman Clive HD Collection Switch Trailer")
         #expect(StoreSource.pickTrailer(yt, name: "Gunman Clive HD Collection", publisher: nil)?.youtube == "AAAAAAAAAAA")
         #expect(StoreSource.pickTrailer(yt, name: "Golf Story", publisher: nil) == nil)
+        let fan = "x" + r("DDDDDDDDDDD", "Gunman Clive HD Collection Switch Trailer", "Nintendo Life") + r("EEEEEEEEEEE", "Gunman Clive HD Collection Gameplay", "Nintendo UK")
+        #expect(StoreSource.pickTrailer(fan, name: "Gunman Clive HD Collection", publisher: nil) == nil)
+        #expect(StoreSource.officialNintendo("nintendobelgie") && !StoreSource.officialNintendo("nintendolife"))
     }
 
     @Test func caseMeasurementsMatchARealSwitchCase() {

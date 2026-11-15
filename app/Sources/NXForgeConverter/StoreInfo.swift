@@ -173,14 +173,24 @@ enum StoreSource {
             let t = title.replacingOccurrences(of: "\\u0026", with: "&")
             let nt = CoverSource.normalize(t), no = CoverSource.normalize(owner)
             guard nt.contains(want) else { continue }
-            guard no.contains("nintendo") || (!pub.isEmpty && (no.contains(pub) || pub.contains(no))) else { continue }
+            guard Self.officialNintendo(no) || (!pub.isEmpty && (no.contains(pub) || pub.contains(no))) else { continue }
+            // a trailer, not a let's play or a review
+            guard nt.contains("trailer") else { continue }
             var score = 0
-            if nt.contains("trailer") { score += 2 }
             if nt.contains("switch") { score += 1 }
             if nt.contains("wiiu") || nt.contains("3ds") { score -= 3 }
             if best == nil || score > best!.score { best = (score, StoreVideo(youtube: id, thumb: "https://i.ytimg.com/vi/\(id)/maxresdefault.jpg", title: t)) }
         }
         return best?.video
+    }
+
+    /// Nintendo's own channels by their names (normalised): "Nintendo", "Nintendo UK", "Nintendo of America", "Nintendo België" …,
+    /// not fan channels with Nintendo in their name
+    static func officialNintendo(_ owner: String) -> Bool {
+        let regions = ["", "uk", "ofamerica", "ofeurope", "europe", "australia", "anz", "australianewzealand", "belgie", "deutschland", "france",
+                       "italia", "espana", "nederland", "canada", "japan", "jp", "asia", "hk", "hongkong", "korea", "latam", "latinoamerica",
+                       "portugal", "schweiz", "osterreich", "oesterreich", "nordic", "ireland"]
+        return regions.contains { owner == "nintendo" + $0 }
     }
 
     /// A YouTube video's title, from its oEmbed answer

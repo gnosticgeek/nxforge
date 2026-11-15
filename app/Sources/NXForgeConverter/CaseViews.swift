@@ -471,10 +471,18 @@ struct CaseModelView: NSViewRepresentable {
             // inside of the case between them
             materials[1].diffuse.contents = CaseEdgeArt.image(red: red, across: true)
             for i in [4, 5] { materials[i].diffuse.contents = CaseEdgeArt.image(red: red, across: false) }
-            for i in [1, 4, 5] { materials[i].specular.contents = NSColor(white: 0.05, alpha: 1) }
+            for i in [1, 4, 5] {
+                // see-through between the cover's two edges: the case is hollow there, its tray clear
+                let m = materials[i]
+                m.specular.contents = NSColor(white: 0.05, alpha: 1)
+                m.blendMode = .alpha
+                m.transparencyMode = .aOne
+                m.writesToDepthBuffer = false
+            }
             // Switch: colourless and nearly clear; Switch 2: see-through red
             shellFaces.diffuse.contents = red ? NSColor(red: 0.85, green: 0.10, blue: 0.12, alpha: 0.10) : NSColor(white: 1, alpha: 0.05)
-            shellEdges.diffuse.contents = red ? NSColor(red: 0.78, green: 0.06, blue: 0.10, alpha: 0.55) : NSColor(white: 0.92, alpha: 0.30)
+            shellEdges.diffuse.contents = red ? NSColor(red: 0.80, green: 0.06, blue: 0.10, alpha: 0.42) : NSColor(white: 0.95, alpha: 0.16)
+            shellEdges.specular.contents = NSColor(white: red ? 0.7 : 0.95, alpha: 1)
         }
 
         /// The viewer's buttons
@@ -598,9 +606,9 @@ enum CaseEdgeArt {
         let n = 48, len = 8
         let size = across ? NSSize(width: n, height: len) : NSSize(width: len, height: n)
         let img = NSImage(size: size, flipped: false) { r in
-            let inside = red ? NSColor(red: 0.30, green: 0.03, blue: 0.05, alpha: 1) : NSColor(white: 0.30, alpha: 1)
+            let inside = red ? NSColor(red: 0.55, green: 0.04, blue: 0.08, alpha: 0.30) : NSColor(white: 0.85, alpha: 0.10)
             inside.setFill()
-            r.fill()
+            r.fill(using: .copy)
             NSColor(white: 0.93, alpha: 1).setFill()
             let line = 4.0
             if across {
@@ -610,10 +618,10 @@ enum CaseEdgeArt {
                 NSRect(x: 0, y: 0, width: r.width, height: line).fill()
                 NSRect(x: 0, y: r.height - line, width: r.width, height: line).fill()
             }
-            // the cartridge tray's shadow, a little darker in the middle
-            (red ? NSColor(red: 0.18, green: 0.0, blue: 0.02, alpha: 0.6) : NSColor(white: 0.12, alpha: 0.5)).setFill()
-            if across { NSRect(x: r.width * 0.38, y: 0, width: r.width * 0.24, height: r.height).fill() }
-            else { NSRect(x: 0, y: r.height * 0.38, width: r.width, height: r.height * 0.24).fill() }
+            // the clear tray's ridge, in the middle
+            (red ? NSColor(red: 0.45, green: 0.02, blue: 0.05, alpha: 0.45) : NSColor(white: 0.9, alpha: 0.28)).setFill()
+            if across { NSRect(x: r.width * 0.45, y: 0, width: r.width * 0.10, height: r.height).fill() }
+            else { NSRect(x: 0, y: r.height * 0.45, width: r.width, height: r.height * 0.10).fill() }
             return true
         }
         MainActor.assumeIsolated { cache[key] = img }
