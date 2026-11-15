@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.13.2 (2026-11-15)
+
+Cleared builds no longer show as ready. Ships in NXForge 0.37.2.
+
+- **A game is ready only while its app is there**: Home and the Library said "3 ready" after every build was cleared, because the saved library list remembered the app found beside each game's files at the last scan and the cover trusted it without looking. A game now counts as built only while its app exists, the saved list drops apps that have gone when it is read, and the library looks again whenever NXForge comes to the front, so a build deleted in Finder or by `nxforge clean` stops showing at once.
+
 ## 0.13.1 (2026-11-15)
 
 The engine checkout no longer stays on an old release branch. Ships in NXForge 0.37.1.

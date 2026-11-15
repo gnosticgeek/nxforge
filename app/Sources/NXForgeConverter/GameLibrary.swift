@@ -93,7 +93,10 @@ enum GameLibrary {
     static func loadCache() -> LibraryScan? {
         guard let d = try? Data(contentsOf: cacheFile) else { return nil }
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        return try? dec.decode(LibraryScan.self, from: d)
+        guard var s = try? dec.decode(LibraryScan.self, from: d) else { return nil }
+        // an app deleted since the list was saved is not built any more
+        for i in s.games.indices where s.games[i].app.map({ !FileManager.default.fileExists(atPath: $0) }) == true { s.games[i].app = nil }
+        return s
     }
 
     static func saveCache(_ s: LibraryScan) {

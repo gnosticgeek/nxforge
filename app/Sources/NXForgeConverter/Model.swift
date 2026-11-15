@@ -227,6 +227,7 @@ final class AppModel {
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
+                self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
                 guard let self, self.fixPending, !self.checking else { return }
                 self.fixPending = false
                 self.recheck()

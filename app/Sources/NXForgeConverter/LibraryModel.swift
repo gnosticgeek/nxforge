@@ -165,7 +165,9 @@ extension AppModel {
 
     func build(of g: LibraryGame, in builds: [String: LibraryBuild]) -> LibraryBuild? {
         if let t = g.titleID, let b = builds[t] { return b }
-        return g.app.map { LibraryBuild(app: $0) }
+        // the app found beside the game's files when the folder was last read: only while it is still there (a cleared build
+        // stayed "ready" from the saved library list until the next scan)
+        return g.app.flatMap { FileManager.default.fileExists(atPath: $0) ? LibraryBuild(app: $0) : nil }
     }
 
     func hasProfile(_ g: LibraryGame) -> Bool {
