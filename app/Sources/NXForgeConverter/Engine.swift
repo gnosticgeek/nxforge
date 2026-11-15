@@ -106,6 +106,10 @@ enum Engine {
         }
         let main = git(repo, ["rev-parse", "--abbrev-ref", "origin/HEAD"]) ?? "origin/main"
         guard git(repo, ["rev-parse", "--verify", "--quiet", main]) != nil else { return up }
+        if let u = up, u != main, let name = u.split(separator: "/").last, name.hasPrefix("release-"),
+           let mine = Releases.version(tag: String(name), prefix: "release-"),
+           let tag = Releases.newest(repo: repo, prefix: "v", in: main), let newest = Releases.version(tag: tag, prefix: "v"),
+           !ConverterUpdate.newer(mine, than: newest) { return main }   // a release branch main has caught up with: its release went out (perhaps from other commits), so main and its tags are what to follow, not a branch that never moves again
         if let u = up, u == main || git(repo, ["merge-base", "--is-ancestor", u, main]) == nil { return u }
         return git(repo, ["merge-base", "--is-ancestor", "HEAD", main]) != nil ? main : up
     }

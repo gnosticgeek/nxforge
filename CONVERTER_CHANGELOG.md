@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.13.1 (2026-11-15)
+
+The engine checkout no longer stays on an old release branch. Ships in NXForge 0.37.1.
+
+- **Updates follows main once a release branch is done**: an engine checkout left on a release branch (`release-X.Y.Z`) with commits main never got followed only that branch, which never moves again, so the Updates page said "Up to date" at 0.30.2+2 with 0.37.0 out, and new games were built with the old engine. Once main has that release or a newer one, Check Now and Update follow main's newest release tag; the branch and its commits are left as they are. A release branch ahead of main's newest release is still followed.
+
 ## 0.13.0 (2026-11-15)
 
 The app's side of the engine's 0.37.0. Ships in NXForge 0.37.0.

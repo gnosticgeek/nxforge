@@ -750,6 +750,37 @@ import Testing
         #expect(Engine.current(repo)?.branch == "main")
         #expect(try Engine.checkUpdates(repo).count == 0)
     }
+
+    /// A checkout left on a release branch with commits main never got (the release went out from other commits): once
+    /// main has that release or a newer one, the engine follows main's newest tag instead of the branch, which never moves
+    /// again and said "Up to date" forever. A release branch ahead of main's newest release is still followed.
+    @Test func staleReleaseBranchFollowsMain() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "nxc-stale-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        func sh(_ cmd: String) throws {
+            let r = run("/bin/bash", ["-c", "set -e; export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t; \(cmd)"],
+                        env: ["PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", "HOME": root])
+            if r?.ok != true { throw ConverterError("\(cmd): \(r?.out ?? "no shell")") }
+        }
+        try sh("""
+        mkdir -p \(root) && cd \(root) && git init -q -b main src && cd src
+        echo 1 > f && git commit -q --allow-empty -m one && git add f && git commit -qm base && git tag -a v0.1.0 -m 0.1.0
+        git switch -q -c release-0.2.0 && echo b > g && git add g && git commit -qm "branch only"
+        git switch -q -c release-0.4.0 main && echo c > h && git add h && git commit -qm "next release work"
+        git switch -q main && echo 2 > f && git commit -qam two && git tag -a v0.2.0 -m 0.2.0
+        echo 3 > f && git commit -qam three && git tag -a v0.3.0 -m 0.3.0
+        cd .. && git clone -q src engine && cd engine && git switch -q --track origin/release-0.2.0
+        cd .. && git clone -q src next && cd next && git switch -q --track origin/release-0.4.0
+        """)
+        let repo = "\(root)/engine"
+        #expect(Engine.updateTarget(repo) == "origin/main")
+        let u = try Engine.checkUpdates(repo)
+        #expect(u.release == "0.3.0")
+        try Engine.update(repo)
+        #expect(Engine.current(repo)?.subject == "three")
+        #expect(Engine.current(repo)?.branch == "main")
+        #expect(Engine.updateTarget("\(root)/next") == "origin/release-0.4.0")
+    }
 }
 
 @Suite struct BuildHome {
