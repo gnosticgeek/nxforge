@@ -35,6 +35,44 @@ final class ControllerNav {
     private var observers: [NSObjectProtocol] = []
     /// a held direction repeats (after 0.42 s, every 0.13 s), as a list does under a held arrow key
     private var repeats: [ObjectIdentifier: Timer] = [:]
+    /// buttons already down when NXForge could not take them (held as a game quit and NXForge came to the front, or while a
+    /// sheet or a text field had the keyboard): they do nothing until they are let go (from RetroReplay's ControllerNavigation)
+    private var awaitingRelease: Set<ObjectIdentifier> = []
+
+    /// Whether the pad may act now: NXForge in front, no modal window or sheet over it, and no text being typed
+    static func mayAct() -> Bool {
+        guard NSApp.isActive, NSApp.modalWindow == nil else { return false }
+        if let w = NSApp.keyWindow {
+            if w.attachedSheet != nil { return false }
+            if w.firstResponder is NSTextView { return false }
+        }
+        return true
+    }
+
+    /// Every button down now waits for its release (NXForge just came to the front)
+    func holdPressed() {
+        for c in GCController.controllers() {
+            guard let p = c.extendedGamepad else { continue }
+            for b in Self.buttons(p) where b.isPressed { awaitingRelease.insert(ObjectIdentifier(b)) }
+        }
+        for t in repeats.values { t.invalidate() }
+        repeats.removeAll()
+    }
+
+    static func buttons(_ p: GCExtendedGamepad) -> [GCControllerButtonInput] {
+        [p.buttonA, p.buttonB, p.buttonX, p.buttonY, p.leftShoulder, p.rightShoulder, p.leftTrigger, p.rightTrigger, p.buttonMenu,
+         p.dpad.left, p.dpad.right, p.dpad.up, p.dpad.down, p.leftThumbstick.left, p.leftThumbstick.right, p.leftThumbstick.up, p.leftThumbstick.down]
+            + [p.buttonOptions].compactMap { $0 }
+    }
+
+    /// A press that may act: false (and the button waits for its release) when it was held over from before or NXForge cannot take it now
+    private func accept(_ b: GCControllerButtonInput, pressed: Bool) -> Bool {
+        let id = ObjectIdentifier(b)
+        guard pressed else { awaitingRelease.remove(id); return false }
+        if awaitingRelease.contains(id) { return false }
+        guard Self.mayAct() else { awaitingRelease.insert(id); return false }
+        return true
+    }
 
     func start(_ model: AppModel) {
         guard self.model == nil else { return }
@@ -45,6 +83,12 @@ final class ControllerNav {
             let c = n.object as? GCController
             MainActor.assumeIsolated { if let c { self?.attach(c) } }
         })
+        observers.append(nc.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { PadLabels.shared.refresh() }
+        })
+        observers.append(nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.holdPressed() }
+        })
         for c in GCController.controllers() { attach(c) }
         GCController.startWirelessControllerDiscovery {}
     }
@@ -52,11 +96,12 @@ final class ControllerNav {
     private func attach(_ c: GCController) {
         guard let pad = c.extendedGamepad else { return }
         c.handlerQueue = .main
+        PadLabels.shared.refresh()
+        for b in Self.buttons(pad) where b.isPressed { awaitingRelease.insert(ObjectIdentifier(b)) }
         func on(_ b: GCControllerButtonInput, _ f: @escaping @MainActor (AppModel) -> Void) {
-            b.pressedChangedHandler = { [weak self] _, _, pressed in
-                guard pressed else { return }
+            b.pressedChangedHandler = { [weak self] btn, _, pressed in
                 MainActor.assumeIsolated {
-                    guard NSApp.isActive, let m = self?.model else { return }
+                    guard let self, self.accept(btn, pressed: pressed), let m = self.model else { return }
                     f(m)
                 }
             }
@@ -68,11 +113,11 @@ final class ControllerNav {
                     let id = ObjectIdentifier(btn)
                     self.repeats[id]?.invalidate()
                     self.repeats[id] = nil
-                    guard pressed, NSApp.isActive, let m = self.model else { return }
+                    guard self.accept(btn, pressed: pressed), let m = self.model else { return }
                     f(m)
                     let t = Timer(timeInterval: 0.13, repeats: true) { [weak self] t in
                         MainActor.assumeIsolated {
-                            guard NSApp.isActive, let m = self?.model else { t.invalidate(); return }
+                            guard ControllerNav.mayAct(), let m = self?.model else { t.invalidate(); return }
                             f(m)
                         }
                     }
@@ -224,6 +269,8 @@ struct PaletteItem: Identifiable {
     let detail: String
     let symbol: String
     var icon: String? = nil
+    /// when the game was last played, for the order among equal matches
+    var last: Date? = nil
     let run: @MainActor () -> Void
 }
 
@@ -241,16 +288,18 @@ struct CommandPalette: View {
             out.append(PaletteItem(id: "page-\(p.rawValue)", title: p.title, detail: "Page", symbol: p.symbol) { m.showConverter(); m.page = p })
         }
         let builds = m.libraryBuilds()
+        let plays = Playtime.load()
         var seenApps = Set<String>()
         for g in m.library?.games ?? [] {
             let b = m.build(of: g, in: builds)
             if let a = b?.app { seenApps.insert(a) }
             out.append(PaletteItem(id: "game-\(g.id)", title: g.displayName, detail: [g.console.rawValue, b != nil ? "Built" : "Not built", g.titleID].compactMap { $0 }.joined(separator: " · "),
-                                   symbol: "gamecontroller", icon: g.icon) { m.showConverter(); m.page = .library; m.openGame(GameRef(libraryID: g.id, app: b?.app)) })
+                                   symbol: "gamecontroller", icon: g.icon, last: (g.titleID.flatMap { plays[$0] } ?? b.flatMap { plays[$0.app] })?.last) { m.showConverter(); m.page = .library; m.openGame(GameRef(libraryID: g.id, app: b?.app)) })
         }
         for b in Engine.builds() where FileManager.default.fileExists(atPath: b.app) {
             let name = b.app.url.deletingPathExtension().lastPathComponent
-            out.append(PaletteItem(id: "play-\(b.app)", title: "Play \(name)", detail: "Open the app", symbol: "play.fill", icon: b.app) { m.openApp(b.app) })
+            let lastPlayed = (VerifiedGames.titleID(ofApp: b.app).flatMap { plays[$0] } ?? plays[b.app])?.last
+            out.append(PaletteItem(id: "play-\(b.app)", title: "Play \(name)", detail: "Open the app", symbol: "play.fill", icon: b.app, last: lastPlayed) { m.openApp(b.app) })
             if !seenApps.contains(b.app) {
                 out.append(PaletteItem(id: "build-\(b.app)", title: name, detail: "Built app", symbol: "macwindow", icon: b.app) { m.showConverter(); m.page = .builds; m.openGame(GameRef(libraryID: nil, app: b.app)) })
             }
@@ -269,17 +318,19 @@ struct CommandPalette: View {
         return out
     }
 
-    /// Words in any order, each found in the title or its detail; titles that start with the query first.
+    /// Words in any order, each found in the title or its detail, with case and accents folded ("pokemon" finds Pokémon); a title
+    /// that starts with them first (a leading "The" passed over), then one with a later word that does, then the game played last.
+    /// With nothing typed: the pages and actions, after the games played most recently.
     func results() -> [PaletteItem] {
         let all = items()
-        let words = query.lowercased().split(separator: " ").map(String.init)
-        guard !words.isEmpty else { return Array(all.filter { $0.id.hasPrefix("page-") || $0.id.hasPrefix("act-") }) }
-        let q = query.lowercased()
-        return all.filter { i in let t = (i.title + " " + i.detail).lowercased(); return words.allSatisfy { t.contains($0) } }
-            .sorted { a, b in
-                let sa = a.title.lowercased().hasPrefix(q), sb = b.title.lowercased().hasPrefix(q)
-                return sa != sb ? sa : a.title.count < b.title.count
-            }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !TitleMatch.fold(q).isEmpty else {
+            let recent = all.filter { $0.id.hasPrefix("game-") && $0.last != nil }.sorted { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }.prefix(5)
+            return Array(recent) + all.filter { $0.id.hasPrefix("page-") || $0.id.hasPrefix("act-") }
+        }
+        let hits = all.filter { TitleMatch.matches(q, [$0.title, $0.detail]) }
+        // "Play X" ranks by X
+        return TitleMatch.sorted(hits, query: q, title: { $0.title.hasPrefix("Play ") ? String($0.title.dropFirst(5)) : $0.title }, last: \.last)
             .prefix(40).map { $0 }
     }
 

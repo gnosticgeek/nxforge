@@ -1507,3 +1507,95 @@ import Testing
         }
     }
 }
+
+// Converter 0.14.0: ideas from RetroReplay (TitleMatch, GameStatus, LaunchDiagnosis, PlayWeek, DataBackup)
+@Suite struct RetroReplayIdeas {
+    @Test func titlesFoldCaseAccentsAndThe() {
+        #expect(TitleMatch.fold("Pokémon™ Legends: Z-A") == "pokemon legends z a")
+        #expect(TitleMatch.matches("pokemon", ["Pokémon Scarlet"]))
+        #expect(TitleMatch.matches("zelda ocarina", ["The Legend of Zelda: Ocarina of Time"]))
+        #expect(!TitleMatch.matches("mario kart", ["Super Mario Odyssey"]))
+        #expect(TitleMatch.rank("legend", title: "The Legend of Zelda") == 0)
+        #expect(TitleMatch.rank("odyssey", title: "Super Mario Odyssey") == 1)
+        #expect(TitleMatch.rank("dyss", title: "Super Mario Odyssey") == 2)
+        #expect(TitleMatch.rank("kart", title: "Super Mario Odyssey") == nil)
+    }
+
+    @Test func betterMatchesThenRecentPlay() {
+        let now = Date()
+        let games: [(String, Date?)] = [("Super Mario Odyssey", now), ("Mario Kart World", now.addingTimeInterval(-99)), ("Mario Kart 8 Deluxe", nil)]
+        let out = TitleMatch.sorted(games, query: "mario", title: { $0.0 }, last: { $0.1 }).map(\.0)
+        #expect(out == ["Mario Kart World", "Mario Kart 8 Deluxe", "Super Mario Odyssey"])
+    }
+
+    @Test func typeSelectBuildsAPrefixThenStartsOver() {
+        var b = TypeSelectBuffer()
+        let t0 = Date()
+        #expect(b.type("z", at: t0) == "z")
+        #expect(b.type("e", at: t0.addingTimeInterval(0.3)) == "ze")
+        #expect(b.active(at: t0.addingTimeInterval(0.5)))
+        #expect(b.type("m", at: t0.addingTimeInterval(3)) == "m")
+        #expect(TypeSelectBuffer.first(["Mario", "The Legend of Zelda", "Zelda II"], prefix: "zel", title: { $0 }) == "Zelda II")
+        #expect(TypeSelectBuffer.first(["Mario", "The Legend of Zelda", "Zelda II"], prefix: "leg", title: { $0 }) == "The Legend of Zelda")
+    }
+
+    @Test func offlineDriveIsNamed() {
+        #expect(GameStatus.offlineVolume("/Volumes/NoSuchDrive-\(UUID().uuidString)/roms/Game") != nil)
+        #expect(GameStatus.offlineVolume("/Users/tom/Games/Game") == nil)
+        #expect(GameStatus.offlineVolume("/Volumes") == nil)
+    }
+
+    @Test func launchFailuresAreTold() {
+        #expect(LaunchDiagnosis.diagnose(nil).code == .closed)
+        let guardStop = "[dm] [nvn-mtl] [RED] GPU memory guard: 17300 MB, against Metal's working set of 18186 MB (this guard stops at 17276 MB): stopping the game before the driver cannot wire more\nlauncher: the host exited with 1\n"
+        #expect(LaunchDiagnosis.diagnose(guardStop).code == .gpuMemory)
+        #expect(LaunchDiagnosis.diagnose(guardStop).fix == .playOptions)
+        let crash = "[dm] [RED] shader cache: bad header\nlauncher: the host stopped on signal 11\n"
+        let c = LaunchDiagnosis.diagnose(crash)
+        #expect(c.code == .crashed)
+        #expect(c.line == "shader cache: bad header")
+        #expect(LaunchDiagnosis.diagnose("launcher: the host stopped on signal 9\n").code == .memory)
+        #expect(LaunchDiagnosis.diagnose("[RED] launcher: cannot start dmhost: No such file\n").code == .cannotStart)
+        #expect(LaunchDiagnosis.diagnose("launcher: the host exited with 3\n").code == .error)
+        #expect(LaunchDiagnosis.diagnose("launcher: the host exited with 0\n").code == .closed)
+    }
+
+    @Test func weekSplitsSessionsOverMidnight() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = cal.date(from: DateComponents(year: 2026, month: 11, day: 15, hour: 12))!
+        let lateStart = cal.date(from: DateComponents(year: 2026, month: 11, day: 14, hour: 23))!
+        var r = PlayRecord(name: "Odyssey", app: "/A.app")
+        r.sessions = [PlaySession(start: lateStart, seconds: 7200),   // 23:00 to 01:00
+                      PlaySession(start: cal.date(from: DateComponents(year: 2026, month: 11, day: 1))!, seconds: 3600)]   // older than a week
+        let w = PlayWeek(["0100000000010000": r], now: now, calendar: cal)
+        #expect(w.days.count == 7)
+        #expect(w.days[5].seconds == 3600)
+        #expect(w.days[6].seconds == 3600)
+        #expect(w.seconds == 7200)
+        #expect(w.games == 1)
+    }
+
+    @Test func backupIsCheckedAndRestoresWhatWasThere() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: "nxf-backup-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root.appending(path: "covers"), withIntermediateDirectories: true)
+        try Data("{\"a\":1}".utf8).write(to: root.appending(path: "playtime.json"))
+        try Data("own".utf8).write(to: root.appending(path: "covers/0100-front-own.png"))
+        try Data("downloaded".utf8).write(to: root.appending(path: "covers/0100-front.jpg"))
+        #expect(DataBackup.sources(root: root) == ["playtime.json", "covers/0100-front-own.png"])
+        let m = try #require(DataBackup.make(name: "2026-11-15", root: root))
+        #expect(m.verified)
+        #expect(m.files.count == 2)
+        // the time played is lost, then put back
+        try Data("{}".utf8).write(to: root.appending(path: "playtime.json"))
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        let entry = DataBackupEntry(folder: root.appending(path: "backups/2026-11-15"), manifest: m)
+        #expect(DataBackup.restore(entry, root: root) == 2)
+        #expect(try String(contentsOf: root.appending(path: "playtime.json"), encoding: .utf8) == "{\"a\":1}")
+        // what was there before the restore was kept
+        let kept = try fm.contentsOfDirectory(atPath: root.appending(path: "backups").path)
+        #expect(kept.contains { $0.hasSuffix("before-restore") })
+        _ = dec
+    }
+}

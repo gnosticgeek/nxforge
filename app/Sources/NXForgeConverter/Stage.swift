@@ -129,8 +129,8 @@ extension AppModel {
         case .switch1: out = out.filter { $0.console == .switch1 }
         case .notBuilt: out = out.filter { $0.app == nil }
         }
-        let q = stageSearch.trimmingCharacters(in: .whitespaces).lowercased()
-        if !q.isEmpty { out = out.filter { $0.name.lowercased().contains(q) } }
+        let q = stageSearch.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty { out = TitleMatch.sorted(out.filter { TitleMatch.matches(q, [$0.name, $0.titleID]) }, query: q, title: \.name, last: \.last) }
         return out
     }
 
@@ -180,8 +180,16 @@ extension AppModel {
     /// A controller's button, or its key on the keyboard, on the front end.
     func stagePad(_ k: PadKey) {
         if viewerOpen { viewerPad(k); return }
-        if launching != nil {
-            if k == .b { launching = nil }
+        if let l = launching {
+            if let f = l.failure {
+                switch k {
+                case .a: retryLaunch()
+                case .x: if f.fix != nil && f.fix != .showLog { launchFix(f) } else if let p = f.log { reveal(p) }
+                case .y: if let p = f.log { reveal(p) }
+                case .b: launching = nil
+                default: break
+                }
+            } else if k == .b { launching = nil }
             return
         }
         if stageSettings {
@@ -354,11 +362,61 @@ struct StageButton: ButtonStyle {
 }
 
 /// A controller button in the hint bar
+/// The symbol on each of the connected controller's buttons, as the system names it (a.circle, xmark.circle, l1.rectangle.roundedbottom…):
+/// the hints show the button that does the thing on this pad, so Confirm is ✕ on a PlayStation pad and never assumed to be "A"
+/// (from RetroReplay's ControllerPrompts). Empty without a controller: the hints keep their letters.
+@MainActor @Observable
+final class PadLabels {
+    static let shared = PadLabels()
+    private(set) var symbols: [PadKey: String] = [:]
+
+    func refresh() {
+        guard let p = GCController.controllers().lazy.compactMap(\.extendedGamepad).first else { symbols = [:]; return }
+        var s: [PadKey: String] = [:]
+        func put(_ k: PadKey, _ b: GCControllerButtonInput?) { if let n = b?.sfSymbolsName, NSImage(systemSymbolName: n, accessibilityDescription: nil) != nil { s[k] = n } }
+        put(.a, p.buttonA); put(.b, p.buttonB); put(.x, p.buttonX); put(.y, p.buttonY)
+        put(.l, p.leftShoulder); put(.r, p.rightShoulder); put(.menu, p.buttonMenu); put(.options, p.buttonOptions)
+        if s != symbols { symbols = s }
+    }
+
+    static func key(_ text: String) -> PadKey? {
+        switch text {
+        case "A": .a
+        case "B": .b
+        case "X": .x
+        case "Y": .y
+        case "L": .l
+        case "R": .r
+        case "+": .menu
+        case "−": .options
+        default: nil
+        }
+    }
+
+    /// The symbol to draw for a hint's letter, filled for the main action when the symbol has a filled form
+    func symbol(_ text: String, filled: Bool) -> String? {
+        guard let k = Self.key(text), let n = symbols[k] else { return nil }
+        if filled, NSImage(systemSymbolName: n + ".fill", accessibilityDescription: nil) != nil { return n + ".fill" }
+        return n
+    }
+}
+
 struct PadGlyph: View {
     let text: String
     var filled = false
 
     var body: some View {
+        if let sym = PadLabels.shared.symbol(text, filled: filled) {
+            Image(systemName: sym).font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(filled ? Color.white : StageLook.soft)
+                .frame(minWidth: 22, minHeight: 22)
+                .accessibilityLabel(text)
+        } else {
+            letter
+        }
+    }
+
+    var letter: some View {
         Text(text).font(.system(size: 11, weight: .heavy))
             .padding(.horizontal, text.count > 1 ? 7 : 0).frame(minWidth: 22, minHeight: 22)
             .foregroundStyle(filled ? Color.black : StageLook.soft)
@@ -636,8 +694,10 @@ struct StageHero: View {
                             .buttonStyle(StageButton(height: 54, glass: true)).help("Quits the running game, as its own Quit does")
                     }
                 } else {
-                    Button { model.playFromStage(g.ref) } label: { Label("Build", systemImage: "hammer.fill").padding(.horizontal, 8) }
-                        .buttonStyle(StageButton(primary: true, height: 54, glow: tint)).disabled(model.run.running || model.batchRunning)
+                    let st = model.status(g)
+                    Button { model.fix(g) } label: { Label(st.action, systemImage: st.actionSymbol).padding(.horizontal, 8) }
+                        .buttonStyle(StageButton(primary: true, height: 54, glow: tint)).disabled(st == .notBuilt && (model.run.running || model.batchRunning))
+                        .help(st.detail)
                 }
                 if showDetails {
                     Button { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref } label: {
@@ -667,9 +727,10 @@ struct StageHero: View {
     }
 
     var eyebrow: String {
-        if game.app == nil { return "NOT BUILT YET" }
+        if game.app == nil { return model.status(game).eyebrow }
         if model.isSuspended(app: game.app ?? "") { return "PAUSED · STILL RUNNING" }
         if model.isPlaying(app: game.app ?? "") { return "PLAYING NOW" }
+        if model.randomPick == game.id { return "RANDOM PICK" }
         if game.last == nil { return "IN YOUR LIBRARY" }
         return first ? "CONTINUE PLAYING" : "RECENTLY PLAYED"
     }
@@ -684,7 +745,7 @@ struct StageHero: View {
 
     /// The second line: when it was last played
     var when: String? {
-        guard game.app != nil else { return "Not built yet" }
+        guard game.app != nil else { return model.status(game).detail }
         return game.last.map { "Last played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet"
     }
 }
@@ -696,6 +757,8 @@ struct StageHome: View {
     let total: Int
     /// whether the game in focus has wide art or a screenshot filling the room (GameKeyArt); without one its 3D case stands on the right
     @State private var keyArt = false
+    /// Your Week (HomeWeek.swift), read when the play records may have changed
+    @State private var week: PlayWeek?
     @Environment(\.accessibilityReduceMotion) private var still
     @Environment(\.accessibilityReduceTransparency) private var solid
 
@@ -727,6 +790,14 @@ struct StageHome: View {
                     Text("Your games").font(.system(size: 26, weight: .heavy)).tracking(-0.4)
                     Text("\(games.filter { $0.app != nil }.count) ready").font(.system(size: 16, weight: .medium)).foregroundStyle(StageLook.soft)
                     Spacer()
+                    if let w = week, w.seconds > 0, geo.size.width > 900 { WeekStrip(week: w).padding(.trailing, 14) }
+                    if games.filter({ $0.app != nil }).count > 1 {
+                        Button { model.pickRandom(games) } label: {
+                            HStack(spacing: 6) { Image(systemName: "shuffle").font(.system(size: 12, weight: .bold)); Text("Random Pick") }
+                        }
+                        .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft).padding(.trailing, 14)
+                        .help("Puts a built game you have not played this week in front of you")
+                    }
                     Button { model.stageTab = .library } label: {
                         HStack(spacing: 6) { Text("See all \(total)"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
                     }
@@ -738,7 +809,7 @@ struct StageHome: View {
                         LazyHStack(alignment: .top, spacing: 26) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 10) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g)).frame(width: tile)
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil).frame(width: tile)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(g.name).font(.system(size: 14.5, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                                         Text(g.console.rawValue).font(.system(size: 13)).foregroundStyle(StageLook.faint).lineLimit(1)
@@ -751,7 +822,7 @@ struct StageHome: View {
                                 .onTapGesture(count: 2) { model.libraryFocus = g.id; model.playFromStage(g.ref) }
                                 .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
                                 .contextMenu { StageGameMenu(model: model, game: g) }
-                                .accessibilityElement(children: .combine).accessibilityLabel(g.name).accessibilityAddTraits(.isButton)
+                                .accessibilityElement(children: .combine).accessibilityLabel(g.app == nil ? "\(g.name), \(model.status(g).text)" : g.name).accessibilityAddTraits(.isButton)
                             }
                         }
                         .padding(.horizontal, 56).padding(.top, 20).frame(height: shelf + 20, alignment: .top)
@@ -764,6 +835,7 @@ struct StageHome: View {
         }
         .animation(.easeInOut(duration: 0.3), value: keyArt)
         .task(id: "\(focus?.id ?? "")|\(CoverStore.shared.revision)|\(CoverStore.shared.showHeroes)") { keyArt = await GameKeyArt.hasArt(focus) }
+        .task(id: "\(model.revision)|\(model.playing.count)") { week = await Task.detached(priority: .utility) { PlayWeek(Playtime.load()) }.value }
     }
 }
 
@@ -809,7 +881,7 @@ struct StageLibrary: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cell, maximum: Self.cell + 44), spacing: Self.gap, alignment: .top)], alignment: .leading, spacing: 28) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 9) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g))
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(g.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                                         status(g)
@@ -851,7 +923,7 @@ struct StageLibrary: View {
     func statusLine(_ g: StageGame, building: Bool, need: GameAttention?) -> (String, Color) {
         let blue = Color(red: 0.38, green: 0.65, blue: 0.98), amber = Color(red: 0.98, green: 0.75, blue: 0.14), green = Color(red: 0.29, green: 0.87, blue: 0.50)
         if building { return ("Building · \(Int((model.run.overall(now: Date()).fraction * 100).rounded())) %", blue) }
-        if g.app == nil { return ("Not built yet", Color(white: 0.55)) }
+        if g.app == nil { let st = model.status(g); return (st.text, st == .notBuilt ? Color(white: 0.55) : st.color) }
         if model.isPlaying(app: g.app ?? "") { return ("Playing now", blue) }
         if let a = need { return (a.kind == .update && g.last != nil ? StageLook.played(g.last) : a.text, a.color) }
         if g.outdated && g.last == nil { return ("Update ready", amber) }
@@ -882,7 +954,7 @@ struct StageGameMenu: View {
             Button("Play Options…") { model.openPlayOptions(g.ref) }
             Button("Play with the Game's Own Settings Window") { model.playWithOwnWindow(g.ref) }
         } else if g.game != nil {
-            Button("Build") { model.playFromStage(g.ref) }.disabled(model.run.running || model.batchRunning)
+            if game.app == nil { let st = model.status(game); Button(st.action) { model.fix(game) }.disabled(st == .notBuilt && (model.run.running || model.batchRunning)) }
         }
         Divider()
         Button("View Box") { model.openCaseViewer(g) }
@@ -956,10 +1028,11 @@ struct StageHints: View {
 
     var hints: [([String], String)] {
         let built = focus?.app != nil
+        let fix = focus.map { model.status($0).action } ?? "Build"
         if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
-        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]) + [(["Y"], "View box"), (["B"], "Back")] }
-        var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]
+        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]) + [(["Y"], "View box"), (["B"], "Back")] }
+        var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))
         h.append((["L", "R"], model.stageTab == .home ? "Library" : "Change filter"))
@@ -1017,15 +1090,24 @@ struct LaunchScreen: View {
                     if let g = game { GameCase(game: g).frame(width: caseH * 0.78, height: caseH).padding(.bottom, -caseH * 0.14).allowsHitTesting(false) }
                     Text(launch.name).font(.system(size: 40, weight: .heavy)).tracking(-0.9).lineLimit(2).multilineTextAlignment(.center)
                         .shadow(color: .black.opacity(0.4), radius: 12, y: 5)
-                    RunningBar()
-                    VStack(spacing: 6) {
-                        Text("STARTING THE GAME").font(.system(size: 11.5, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
-                        if !launch.summary.isEmpty { Text(launch.summary).font(.system(size: 13.5, weight: .medium)).foregroundStyle(StageLook.soft) }
-                        if let n = launch.note { Text(n).font(.system(size: 13, weight: .medium)).foregroundStyle(Color(red: 0.98, green: 0.75, blue: 0.14)) }
+                    if let f = launch.failure {
+                        failure(f)
+                    } else {
+                        RunningBar()
+                        VStack(spacing: 6) {
+                            Text(launch.phase == .preparing ? "GETTING IT READY" : "STARTING THE GAME").font(.system(size: 11.5, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
+                            if !launch.summary.isEmpty { Text(launch.summary).font(.system(size: 13.5, weight: .medium)).foregroundStyle(StageLook.soft) }
+                            if let n = launch.note { Text(n).font(.system(size: 13, weight: .medium)).foregroundStyle(Color(red: 0.98, green: 0.75, blue: 0.14)) }
+                            if launch.slow {
+                                Text("Taking longer than usual. A game's first start after a build prepares its shaders, which can take a minute.")
+                                    .font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.faint).multilineTextAlignment(.center).frame(maxWidth: 460)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                     Spacer(minLength: 0)
                     Button { model.launching = nil } label: {
-                        HStack(spacing: 7) { PadGlyph(text: "B"); Text("Hide").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
+                        HStack(spacing: 7) { PadGlyph(text: "B"); Text(launch.failure == nil ? "Hide" : "Close").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
                     }
                     .buttonStyle(.plain).padding(.bottom, 26)
                 }
@@ -1035,6 +1117,30 @@ struct LaunchScreen: View {
         }
         .ignoresSafeArea()
         .contentShape(.rect)
+    }
+
+    /// The game closed before its first picture: what happened, and the steps that help
+    func failure(_ f: LaunchFailure) -> some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 9) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(red: 1, green: 0.55, blue: 0.45))
+                Text(f.title).font(.system(size: 18, weight: .bold))
+            }
+            Text(f.detail).font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.soft).multilineTextAlignment(.center)
+                .frame(maxWidth: 520).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 12) {
+                Button { model.retryLaunch() } label: { Label("Try Again", systemImage: "arrow.clockwise") }
+                    .buttonStyle(StageButton(primary: true))
+                if let label = f.fixLabel {
+                    Button { model.launchFix(f) } label: { HStack(spacing: 8) { PadGlyph(text: "X"); Text(label) } }.buttonStyle(StageButton())
+                }
+                if let p = f.log, FileManager.default.fileExists(atPath: p) {
+                    Button { reveal(p) } label: { HStack(spacing: 8) { PadGlyph(text: f.fixLabel == nil ? "X" : "Y"); Text("Show Log") } }.buttonStyle(StageButton())
+                }
+            }
+            .padding(.top, 4)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

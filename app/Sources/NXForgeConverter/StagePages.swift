@@ -138,7 +138,8 @@ struct StageGamePage: View {
                      "NXForge \(record.engine.short) · built \(record.date.map { $0.formatted(.dateTime.day().month(.abbreviated)) } ?? record.builtAt)",
                      seal: ok, action: manage)
             } else if g.app == nil {
-                info("hammer.fill", "Build", "Not built yet", "Build turns the game's files into a Mac app.", action: manage)
+                let st = model.status(g)
+                info(st.symbol, "Build", st.text, st.detail, action: manage)
             }
         }
     }
@@ -211,8 +212,10 @@ struct GameHeroColumn: View {
                             .buttonStyle(StageButton(height: 56, glass: true)).help("Quits the running game, as its own Quit does")
                     }
                 } else {
-                    Button { model.playFromStage(g.ref) } label: { Label("Build", systemImage: "hammer.fill").padding(.horizontal, 14) }
-                        .buttonStyle(StageButton(primary: true, height: 56, glow: tint)).disabled(model.run.running || model.batchRunning)
+                    let st = model.status(g)
+                    Button { model.fix(g) } label: { Label(st.action, systemImage: st.actionSymbol).padding(.horizontal, 14) }
+                        .buttonStyle(StageButton(primary: true, height: 56, glow: tint)).disabled(st == .notBuilt && (model.run.running || model.batchRunning))
+                        .help(st.detail)
                 }
                 Button { model.toggleFavorite(g) } label: {
                     Image(systemName: g.favorite ? "star.fill" : "star").font(.system(size: 18, weight: .semibold))
@@ -243,7 +246,7 @@ struct GameHeroColumn: View {
 
     var facts: [String] {
         var out = [game.console == .switch2 ? "Nintendo Switch 2" : "Nintendo Switch"]
-        if game.app == nil { out.append("Not built yet") }
+        if game.app == nil { out.append(model.status(game).text) }
         else if model.isSuspended(app: game.app ?? "") { out.append("Paused · still running") }
         else if model.isPlaying(app: game.app ?? "") { out.append("Playing now") }
         else { out.append(game.last.map { "Played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet") }

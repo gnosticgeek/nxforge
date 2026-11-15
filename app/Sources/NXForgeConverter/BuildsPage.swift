@@ -8,8 +8,8 @@ struct BuildsPage: View {
     var builds: [BuildRecord] {
         let _ = model.revision
         var b = Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) }
-        let q = model.buildSearch.trimmingCharacters(in: .whitespaces).lowercased()
-        if !q.isEmpty { b = b.filter { name($0).lowercased().contains(q) || $0.engine.short.contains(q) } }
+        let q = model.buildSearch.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty { b = b.filter { TitleMatch.matches(q, [name($0), $0.engine.short]) } }
         switch model.buildConsole {
         case .all: break
         case .switch2: b = b.filter { Console.of($0) == .switch2 }
