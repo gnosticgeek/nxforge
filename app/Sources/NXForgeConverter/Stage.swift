@@ -397,7 +397,7 @@ struct StageView: View {
         let focus = detail ?? model.stageFocus(shown)
         let tint = focus.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
         ZStack {
-            StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "")
+            StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "", strength: detail == nil ? 1 : 0.45)
             // the game's key art behind its page, and behind Home's headline for the game in focus
             if let g = detail { GameKeyArt(game: g, banner: true).id(g.id).transition(.opacity) }
             else if model.stageTab == .home, let g = focus { GameKeyArt(game: g, coverFallback: false).id(g.id).transition(.opacity) }

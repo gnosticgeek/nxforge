@@ -223,13 +223,13 @@ struct GameKeyArt: View {
             if let art, !solid, banner {
                 // as tall as the page's headline (StageGamePage: the top bar, then the box at 30% of the page)
                 let bh = 72 + min(max((h - 48) * 0.30, 230), 330) * 0.92
-                let bw = min(w * 0.66, max(w - 420, w * 0.5))
+                let bw = min(w * 0.58, max(w - 480, w * 0.45))
                 Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                     .frame(width: bw, height: bh).clipped()
                     .saturation(sharp == nil ? 1.2 : 1.05)
                     .opacity(sharp == nil ? 0.6 : 0.95)
-                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.55), location: 0.22),
-                                                 .init(color: .black, location: 0.42)], startPoint: .leading, endPoint: .trailing))
+                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.5), location: 0.2),
+                                                 .init(color: .black, location: 0.38)], startPoint: .leading, endPoint: .trailing))
                     .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.72), .init(color: .clear, location: 1)],
                                          startPoint: .top, endPoint: .bottom))
                     .frame(width: w, height: h, alignment: .topTrailing)

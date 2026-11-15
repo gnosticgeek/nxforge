@@ -50,6 +50,7 @@ struct StageGamePage: View {
                                 .padding(.top, showCase ? caseH * 0.07 : 10)
                             Spacer(minLength: 0)
                         }
+                        .padding(.top, 10)
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 16)
                         if side, let info {
                             HStack(alignment: .top, spacing: 0) {
@@ -63,11 +64,13 @@ struct StageGamePage: View {
                             GameMedia(model: model, game: g, width: mediaW).padding(.top, 26)
                             if let info { GameAbout(game: g, info: info).padding(.top, 32) }
                         }
+                        Spacer(minLength: 0)
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 28)
                         infoRow(g, record).fixedSize(horizontal: false, vertical: true).padding(.vertical, 16)
                     }
                     .padding(.horizontal, gutter)
                     .padding(.bottom, 4)
+                    .frame(minHeight: geo.size.height - 48)   // Save, Playtime and Build sit at the foot of the window
                 }
                 .scrollIndicators(.never)
                 // snapshot hook: NXC_SCROLL=1 opens the page scrolled to its end

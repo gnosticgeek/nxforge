@@ -215,7 +215,7 @@ struct GameAbout: View {
     /// The facts the store gives, in the mock-up's order; with extra, the ones More details adds
     func rows(extra: Bool) -> [(String, String)] {
         var r: [(String, String?)] = [("Publisher", info.publisher), ("Released", Self.date(info.released)), ("Players", players),
-                                      ("Rating", info.rating), ("Size", info.size), ("Genres", info.genres.isEmpty ? nil : info.genres.joined(separator: " · "))]
+                                      ("Rating", info.rating), ("Size", info.size), ("Genres", info.genres.isEmpty ? nil : info.genres.prefix(3).joined(separator: " · "))]
         if extra { r += [("Play modes", info.modes.isEmpty ? nil : info.modes.joined(separator: " · ")), ("Languages", StoreInfo.languageList(info.languages))] }
         return r.compactMap { k, v in v.map { (k, $0) } }
     }
@@ -241,7 +241,7 @@ struct GameAbout: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(r.0).font(.system(size: 14.5, weight: .medium)).foregroundStyle(StageLook.soft).frame(width: 130, alignment: .leading)
-                    Text(r.1).font(.system(size: 15, weight: .semibold)).lineLimit(r.0 == "Languages" ? 4 : 1).fixedSize(horizontal: false, vertical: true)
+                    Text(r.1).font(.system(size: 15, weight: .semibold)).lineLimit(r.0 == "Languages" ? 4 : 2).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 6).padding(.horizontal, 4)
