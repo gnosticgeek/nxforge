@@ -10,14 +10,20 @@ old="$out/NXForge Converter.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$here/.build/release/NXForgeConverter" "$app/Contents/MacOS/"
-# the icon, drawn by make_icon.swift at every size macOS asks for
-icons="$(mktemp -d)/AppIcon.iconset"; mkdir -p "$icons"
-swift "$here/make_icon.swift" "$icons/icon_512x512@2x.png"
-for s in 16 32 128 256 512; do
-  sips -z $s $s "$icons/icon_512x512@2x.png" --out "$icons/icon_${s}x${s}.png" >/dev/null
-  [ $s -lt 512 ] && sips -z $((s * 2)) $((s * 2)) "$icons/icon_512x512@2x.png" --out "$icons/icon_${s}x${s}@2x.png" >/dev/null
-done
-iconutil -c icns "$icons" -o "$app/Contents/Resources/AppIcon.icns"
+# the icon, drawn by make_icon.swift at every size macOS asks for. Drawing it compiles and runs a Swift script and resizes it nine
+# times, so the result is kept in .build under the script's hash and reused while the drawing is unchanged
+icon="$here/.build/AppIcon-$(shasum -a 256 "$here/make_icon.swift" | cut -c1-16).icns"
+if [ ! -s "$icon" ]; then
+  tmp="$(mktemp -d)"; icons="$tmp/AppIcon.iconset"; mkdir -p "$icons" "$here/.build"
+  swift "$here/make_icon.swift" "$icons/icon_512x512@2x.png"
+  for s in 16 32 128 256 512; do
+    sips -z $s $s "$icons/icon_512x512@2x.png" --out "$icons/icon_${s}x${s}.png" >/dev/null
+    [ $s -lt 512 ] && sips -z $((s * 2)) $((s * 2)) "$icons/icon_512x512@2x.png" --out "$icons/icon_${s}x${s}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$icons" -o "$icon.tmp" && mv "$icon.tmp" "$icon"
+  rm -rf "$tmp"
+fi
+cp "$icon" "$app/Contents/Resources/AppIcon.icns"
 # What's New reads the changelog the app was built with (ConverterUpdate.bundledChangelog), not the engine checkout's, which can be on another branch
 cp "$here/../CONVERTER_CHANGELOG.md" "$app/Contents/Resources/"
 # the app's version is the Converter's own (CONVERTER_VERSION in Version.swift, tags converter-vX.Y.Z); the build
