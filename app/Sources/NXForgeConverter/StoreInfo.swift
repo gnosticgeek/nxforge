@@ -246,7 +246,6 @@ final class StoreInfoStore {
     var revision = 0
     @ObservationIgnored private var memory: [String: StoreInfo] = [:]
     @ObservationIgnored private var loading = Set<String>()
-    @ObservationIgnored private var shotsAsked = Set<String>()
 
     nonisolated static var dir: URL { CoverStore.dir.appending(path: "store") }
     nonisolated static func file(_ key: String) -> URL { dir.appending(path: "\(key).json") }
