@@ -1535,7 +1535,8 @@ import Testing
         #expect(b.type("e", at: t0.addingTimeInterval(0.3)) == "ze")
         #expect(b.active(at: t0.addingTimeInterval(0.5)))
         #expect(b.type("m", at: t0.addingTimeInterval(3)) == "m")
-        #expect(TypeSelectBuffer.first(["Mario", "The Legend of Zelda", "Zelda II"], prefix: "zel", title: { $0 }) == "The Legend of Zelda")
+        #expect(TypeSelectBuffer.first(["Mario", "The Legend of Zelda", "Zelda II"], prefix: "zel", title: { $0 }) == "Zelda II")
+        #expect(TypeSelectBuffer.first(["Mario", "The Legend of Zelda", "Zelda II"], prefix: "leg", title: { $0 }) == "The Legend of Zelda")
     }
 
     @Test func offlineDriveIsNamed() {
