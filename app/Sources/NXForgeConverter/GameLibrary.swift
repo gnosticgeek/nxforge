@@ -51,6 +51,8 @@ struct LibraryGame: Codable, Hashable, Identifiable {
 
     /// the name to show: the game's own, else the one from its file names
     var displayName: String { title ?? name }
+    /// the version number the build reads (the newest update's, else 0 for a base game alone); nil when the files do not say
+    var versionNumber: UInt64? { newestUpdate ?? (base && updates == 0 ? 0 : nil) }
     var fileURLs: [URL] { files.map { "\(path)/\($0)".url } }
     var signature: String { files.sorted().joined(separator: "|") }
 

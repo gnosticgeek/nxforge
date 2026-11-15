@@ -10,9 +10,12 @@ import UniformTypeIdentifiers
 
 struct CheatsCard: View {
     let model: AppModel
-    let app: String
+    /// the built app; nil for a game not built yet (its cheats are matched by the version its files hold)
+    let app: String?
     let titleID: String
     let name: String
+    /// the version number the game's files hold (0 base, 65536 the first update…), for a game not built yet
+    var version: UInt64? = nil
     @State private var entries: [CheatEntry] = []
     @State private var on: Set<String> = []
     @State private var found: CheatSources.Found?
@@ -20,21 +23,33 @@ struct CheatsCard: View {
     @State private var busy = false
     @State private var note: String?
     @State private var showAll = false
+    @State private var lookedUp: String?
+    @State private var looking = false
 
-    var build: String? { GameExtras.buildID(app: app) }
+    /// the app's own build ID; for a game not built yet, the one looked up for its version, else the newest cheat file it has
+    var build: String? { app.flatMap { GameExtras.buildID(app: $0) } ?? (app == nil ? lookedUp : nil) }
     var dir: String { GameExtras.cheatsDir(titleID: titleID) }
 
+    var subtitle: String {
+        if let build {
+            return app != nil ? "For this build (\(build)). Switches apply at the next launch; the game's sidebar changes them while it runs."
+                              : "For the version in the game's files (build \(build)). They apply once the game is built and launched."
+        }
+        if app != nil { return "This app does not say which build it is, so cheats cannot be matched to it. Rebuild it to use cheats." }
+        return looking ? "Looking up which build the game's files hold…"
+                       : "The game's build is not known yet, so cheats cannot be matched to it. Build the game, or check your connection and try again."
+    }
+
     var body: some View {
-        let playing = model.isPlaying(app: app)
-        Card(title: "Cheats", subtitle: build.map { "For this build (\($0)). Switches apply at the next launch; the game's sidebar changes them while it runs." }
-             ?? "This app does not say which build it is, so cheats cannot be matched to it. Rebuild it to use cheats.") {
+        let playing = app.map { model.isPlaying(app: $0) } ?? false
+        Card(title: "Cheats", subtitle: subtitle) {
             if let build {
                 let keys = CheatFile.keys(entries)
                 let rows = Array(zip(entries, keys)).filter { !$0.0.master && !$0.0.name.isEmpty }
                 if rows.isEmpty {
-                    Text("No cheats yet for this build.").foregroundStyle(.secondary)
+                    Text("No cheats yet for this build. Get Cheats looks them up.").foregroundStyle(.secondary)
                 } else {
-                    let textEnd = GameExtras.textEnd(app: app)
+                    let textEnd = app.flatMap { GameExtras.textEnd(app: $0) }
                     ForEach(showAll ? rows : Array(rows.prefix(8)), id: \.1) { e, key in
                         HStack(spacing: 8) {
                             Toggle(isOn: Binding(get: { on.contains(key) }, set: { set(key, $0, build: build, order: keys) })) {
@@ -58,16 +73,32 @@ struct CheatsCard: View {
                     Spacer()
                     if let note { Text(note).font(.callout).foregroundStyle(.secondary).lineLimit(2) }
                 }
+            } else if app == nil && !looking {
+                HStack(spacing: 8) {
+                    Button { Task { await lookUp() } } label: { Label("Try Again", systemImage: "arrow.clockwise") }.buttonStyle(.stage)
+                    Button { openFolder() } label: { Label("Show Folder", systemImage: "folder") }.buttonStyle(.stage)
+                }
             }
         }
-        .onAppear(perform: load)
+        .task(id: "\(app ?? "")|\(titleID)|\(version.map(String.init) ?? "")") { await lookUp(); load() }
         .onChange(of: app) { found = nil; note = nil; load() }
         .onChange(of: model.revision) { load() }
     }
 
+    /// A game not built yet: its build from switch-cheats-db's version table, else the newest cheat file already in its folder.
+    func lookUp() async {
+        guard app == nil else { return }
+        looking = true
+        var b: String?
+        if let version { b = await CheatSources.buildID(titleID: titleID, version: version) }
+        lookedUp = b ?? CheatSources.localBuilds(dir: dir).first
+        looking = false
+        load()
+    }
+
     @ViewBuilder func results(_ f: CheatSources.Found, build: String) -> some View {
         let fresh = CheatFile.additions(to: entries, from: f.cheats)
-        let textEnd = GameExtras.textEnd(app: app)
+        let textEnd = app.flatMap { GameExtras.textEnd(app: $0) }
         Divider()
         if fresh.isEmpty {
             Text(f.cheats.isEmpty
@@ -125,7 +156,7 @@ struct CheatsCard: View {
             let f = await CheatSources.fetch(titleID: t, build: build)
             found = f
             // instruction patches are left for the player to tick
-            let textEnd = GameExtras.textEnd(app: app)
+            let textEnd = app.flatMap { GameExtras.textEnd(app: $0) }
             picked = Set(CheatFile.additions(to: entries, from: f.cheats).filter { !$0.patchesCode(textEnd: textEnd) }.map(\.id))
             busy = false
         }
@@ -142,6 +173,28 @@ struct CheatsCard: View {
     func openFolder() {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(dir.url)
+    }
+}
+
+/// The Cheats card on its own, over the window: from the front end's game page (its Cheats tile and ⋯ menu) and the Library's game menu.
+struct CheatsSheet: View {
+    let model: AppModel
+    let ref: GameRef
+
+    var body: some View {
+        let (g, b) = model.resolve(ref)
+        let tid = g?.titleID ?? b.flatMap { VerifiedGames.titleID(ofApp: $0.app) }
+        let name = g?.displayName ?? b.map { $0.app.url.deletingPathExtension().lastPathComponent } ?? "Game"
+        VStack(alignment: .leading, spacing: 14) {
+            Text(name).font(.title2.weight(.bold)).lineLimit(1)
+            ScrollView {
+                if let tid { CheatsCard(model: model, app: b?.app, titleID: tid, name: name, version: g?.versionNumber) }
+                else { Text("This game's title ID is not known, so its cheats cannot be looked up.").foregroundStyle(.secondary) }
+            }
+            HStack { Spacer(); Button("Done") { model.cheatsFor = nil }.keyboardShortcut(.defaultAction) }
+        }
+        .padding(22)
+        .frame(width: 640, height: 560)
     }
 }
 
@@ -451,5 +504,19 @@ struct GameBananaSheet: View {
             } catch { message = "“\(m.name)”: \(error.localizedDescription)" }
             working = nil
         }
+    }
+}
+
+/// What the front end's game page says about a game's cheats, in its row of tiles.
+enum CheatsSummary {
+    static func of(app: String?, titleID: String) -> (value: String, note: String) {
+        let dir = GameExtras.cheatsDir(titleID: titleID)
+        guard let build = app.flatMap({ GameExtras.buildID(app: $0) }) ?? CheatSources.localBuilds(dir: dir).first else {
+            return ("Get cheats", "From the public collections")
+        }
+        let n = CheatFile.load(dir: dir, build: build).filter { !$0.master && !$0.name.isEmpty }.count
+        guard n > 0 else { return ("Get cheats", "None for this build yet") }
+        let on = CheatFile.enabled(dir: dir, build: build).count
+        return (on > 0 ? "\(on) on" : "All off", "\(n) cheat\(n == 1 ? "" : "s") for this build")
     }
 }

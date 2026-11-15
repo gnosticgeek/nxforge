@@ -182,11 +182,16 @@ struct ConverterApp: App {
             try? await Task.sleep(for: .seconds(2))
             if let g = model.stageGames().first(where: { $0.app != nil }) { model.openGame(g.ref) }
         }
-        // NXC_SHEET=controllers, keeps or recap: that sheet (or the recap card) over the window
+        // NXC_SHEET=controllers, keeps, recap or cheats: that sheet (or the recap card) over the window
         switch env["NXC_SHEET"] {
         case "controllers": model.showControllerTest = true
         case "keeps": model.showLeftovers = true
         case "recap": model.recap = SessionRecap.sample
+        // cheats: the Cheats sheet of NXC_GAME's game (else the first one with a title ID)
+        case "cheats":
+            try? await Task.sleep(for: .seconds(2))
+            let games = model.stageGames()
+            if let g = env["NXC_GAME"].flatMap({ n in games.first { $0.name.localizedCaseInsensitiveContains(n) } }) ?? games.first(where: { $0.titleID != nil }) { model.cheatsFor = g.ref }
         default: break
         }
         try? await Task.sleep(for: .seconds(5))
@@ -208,9 +213,11 @@ struct ConverterApp: App {
         // the window can be ordered out for a moment when the app starts behind another one: bring it back rather than give up
         guard let w = NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first(where: { $0.contentView != nil }) else { exit(1) }
         if !w.isVisible { NSApp.unhide(nil); w.orderFrontRegardless(); try? await Task.sleep(for: .seconds(1)) }
-        guard let view = w.contentView?.superview ?? w.contentView else { exit(1) }
+        // a sheet over the window (NXC_SHEET) is a window of its own: picture that
+        let shown = env["NXC_SHEET"] != nil ? (w.attachedSheet ?? w) : w
+        guard let view = shown.contentView?.superview ?? shown.contentView else { exit(1) }
         // the window's number for `screencapture -l`, which shows the glass the way the screen does; the picture below is the fallback
-        try? String(w.windowNumber).write(toFile: out + ".wid", atomically: true, encoding: .utf8)
+        try? String(shown.windowNumber).write(toFile: out + ".wid", atomically: true, encoding: .utf8)
         try? await Task.sleep(for: .seconds(4))
         let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
         view.cacheDisplay(in: view.bounds, to: rep)

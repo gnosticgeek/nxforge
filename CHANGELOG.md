@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.38.2 (2026-11-15)
+
+- **Cheats easy to find** (Converter 0.14.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's page in the front end has a Cheats tile, and its ⋯ menu and the Library's game menu have Cheats…, opening Get Cheats and the cheat switches. A game not built yet finds its build from the version its files hold, so cheats can be fetched before the first build. No game rebuild needed for this.
+
 ## 0.38.1 (2026-11-15)
 
 - **Sidebar graphics changes show while the game is paused** (Sidebar 0.7.1, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)): CRT, HDR highlights, MetalFX, anti-aliasing, pixel art, picture size, frame interpolation and the presets changed in the paused sidebar now show at once: the game draws its paused picture again with each change, its sound and clock still stopped. A game gets the new sidebar when it is built again.

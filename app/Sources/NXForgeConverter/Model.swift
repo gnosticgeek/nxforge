@@ -135,6 +135,8 @@ final class AppModel {
     /// the game page open over the Library or Builds (GamePage), and the quick preview (Space)
     var gameDetail: GameRef?
     var preview: GameRef?
+    /// the game whose Cheats sheet is open (the front end's game page, its ⋯ menu and the Library's game menu)
+    var cheatsFor: GameRef?
     /// the game the keyboard or a controller is on, in the Library (and the grid's columns, for up and down)
     var libraryFocus: String? { didSet { if libraryFocus != oldValue { rememberWindowState() } } }
     var libraryColumns = 1

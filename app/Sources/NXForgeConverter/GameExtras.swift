@@ -176,6 +176,38 @@ enum CheatSources {
         return (cheats, others.sorted())
     }
 
+    /// switch-cheats-db's table of a title's versions: {"0": "<build ID>", "65536": "<build ID>", …, "latest": 65536, "title": "…"}
+    static func versionsURL(titleID: String) -> URL { URL(string: "https://raw.githubusercontent.com/HamletDuFromage/switch-cheats-db/master/versions/\(titleID.uppercased()).json")! }
+
+    /// The build ID of one version (its number: 0 for the base game, 65536 for the first update…) from that table; nil when
+    /// the table does not list it.
+    static func parseVersions(_ data: Data, version: UInt64) -> String? {
+        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let v = o[String(version)] as? String,
+              v.count >= 16, v.allSatisfy(\.isHexDigit) else { return nil }
+        return String(v.prefix(16)).uppercased()
+    }
+
+    @MainActor private static var buildCache: [String: String] = [:]
+
+    /// A game not built yet: the build ID of the version its files hold, looked up by version number, so its cheats can be
+    /// fetched and switched on before the first build (the build reads the same folder).
+    @MainActor static func buildID(titleID: String, version: UInt64) async -> String? {
+        let key = "\(titleID.uppercased())|\(version)"
+        if let b = buildCache[key] { return b }
+        guard let d = await get(versionsURL(titleID: titleID)).data, let b = parseVersions(d, version: version) else { return nil }
+        buildCache[key] = b
+        return b
+    }
+
+    /// The build IDs a game's cheats folder already has files for, newest first.
+    static func localBuilds(dir: String) -> [String] {
+        let fm = FileManager.default
+        let names = (try? fm.contentsOfDirectory(atPath: dir)) ?? []
+        let ids = names.filter { $0.hasSuffix(".txt") && $0.count == 20 && $0.dropLast(4).allSatisfy(\.isHexDigit) }
+        func date(_ n: String) -> Date { ((try? fm.attributesOfItem(atPath: "\(dir)/\(n)"))?[.modificationDate] as? Date) ?? .distantPast }
+        return ids.sorted { date($0) > date($1) }.map { String($0.dropLast(4)).uppercased() }
+    }
+
     struct Found {
         var cheats: [CheatEntry] = []
         /// builds of this game the general collection has codes for, when it has none for this one

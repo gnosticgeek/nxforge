@@ -132,6 +132,11 @@ struct StageGamePage: View {
                 }
                 separator
             }
+            if let t = g.titleID {
+                let c = CheatsSummary.of(app: g.app, titleID: t)
+                info("wand.and.stars", "Cheats", c.value, c.note) { model.cheatsFor = g.ref }
+                separator
+            }
             if let record {
                 let ok = !g.outdated
                 info("hammer.fill", "Build", g.outdated ? "Update ready" : record.kept == true ? "Kept as it is" : "Up to date",
