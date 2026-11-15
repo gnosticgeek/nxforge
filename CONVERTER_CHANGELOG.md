@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.13.4 (2026-11-15)
+
+Each built game keeps its media and details in its own folder. Ships in NXForge 0.37.4.
+
+- **`media/` beside the app**: a built game's folder (the one holding its `.app`) gets a `media` folder with the covers NXForge shows (`cover-front`, `cover-back`, `cover-spine`; your own cover as `.png`, a downloaded one as `.jpg`), the wide art (`wide-art.jpg`), the game's icon, the store's screenshots (`screenshots/01.jpg` …), the trailers' pictures (`trailers/01.jpg` …) and a manual added in NXForge (`manual.pdf`). Trailers stay links; nothing extra is downloaded. When several apps share one output folder, the media goes in the game files' folder instead.
+- **`media/game.md`**: Markdown with YAML front matter that lists what NXForge knows about the game: title, title ID, console, version and update, publisher, game files, app and game folder, the build (date, NXForge version, engine commit, shaders, time), the play preset and changed settings, time played, the store's details (page, release date, genres, players, rating, size, languages, play modes, description), the screenshots with their sources and the trailers' links. Below the front matter the same reads as a page, with the cover and screenshots shown.
+- **Kept in step**: written after every build and a moment after covers, wide art, store details or playtime change, so a new own cover, Go Back to the Downloaded Covers or a removed manual shows in the folder too. Only the files NXForge writes there are replaced or removed; anything else you put in `media/` is left alone. A drive that cannot be written is skipped until NXForge starts again.
+- **Read back**: on a Mac that has no artwork or store details for a game yet (a new Mac, the artwork folder emptied), the library takes the covers, wide art, store details, screenshots, trailers and manual back from the game's `media` folder instead of downloading them.
+- **Settings › Artwork › Keep media in each game's folder** turns it off (on by default); the game menu has **Show Media Folder**.
+
 ## 0.13.3 (2026-11-15)
 
 "Remove build cache" leaves nothing of the build beside the game. Ships in NXForge 0.37.3.
