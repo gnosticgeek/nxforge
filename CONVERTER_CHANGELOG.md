@@ -4,6 +4,21 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.14.0 (2026-11-15)
+
+Ten ideas from RetroReplay, an emulation front end by the same author: games say why they cannot play, a Health page, button symbols that match your controller, a launch screen that says why a game closed, Your Week and Random Pick on Home, a daily checked backup of NXForge's own data, and smarter searching. Ships in NXForge 0.38.0.
+
+- **Status words instead of dimming**: a game without an app says why on its cover, in the Library's status line and on its page: **Not built yet**, **Keys needed** (no prod.keys saved or beside its files), **Drive offline** (its files are on a drive or share that is not connected) or **Files missing** (the folder the scan found it in has gone). The main button becomes the fix: Build, Choose Keys…, Check Again or Scan Again; a controller's A does the same.
+- **Health page**: a new converter page lists what needs a look, most pressing first, each with what it means and one repair: the games folder or the keys file away, games that need keys, games whose drive is offline or whose files have gone, build records whose app has gone (Forget Them…, after asking), a last run that crashed (Show Log), saves only on this Mac, games built with an older NXForge, toolchain gaps, a drive under 12 GB free, and a backup that did not complete. Reading it changes nothing. Its tab shows how many problems and warnings there are.
+- **Daily backup of NXForge's own data**: once a day the time played, settings with favourites, build records, the library list and your own covers are copied to `~/Library/Application Support/NXForge Converter/backups/<date>`, each copy read back and compared (SHA-256); the last 7 are kept. Health has Back Up Now, Show in Finder and Restore… for each copy; a restore copies what is there first.
+- **Button symbols that match the controller**: the hints along the foot of the front end and the launch screen show the symbol printed on the connected pad's button (✕ and ○ on a PlayStation pad, the face letters where they really are on an Xbox or Nintendo pad, L1 or LB), from the system's own symbol names, so Confirm is never assumed to be "A". Without a controller they keep their letters.
+- **Safer controller input**: a button still held when NXForge comes to the front (pressed to quit a game) does nothing until it is let go, and the pad does nothing while an alert, a sheet or a text field has the keyboard.
+- **Launch screen states**: it says Getting it ready while shaders are copied, then Starting the game; past 12 seconds it says it is taking longer and why. A second press of Play while a game starts does nothing.
+- **Why a game closed while starting**: a game that closes before its first picture leaves the launch screen up with what its log says (stopped by the GPU memory guard, stopped by macOS for memory, the engine could not start, a crash with its signal and last error, an error code), with Try Again, the step that helps (Play Options or Rebuild) and Show Log. A game that does not open says what macOS said.
+- **Your Week and Random Pick on Home**: beside "Your games", seven small bars show the time played each day this week with the total and the number of games (a session over midnight counts on both days); Random Pick puts a built game you have not played this week in front of you, marked RANDOM PICK.
+- **Smarter searching**: Go to Anything (⌘K), the front end's search and the Game Files and Builds searches fold case and accents ("pokemon" finds Pokémon), match words in any order and pass over a leading "The"; ⌘K ranks a title that starts with what you typed first, then a later word, then the game played last, and with nothing typed lists the five games played most recently. On the Game Files page, letters typed quickly jump to the first game starting with them, as in Finder.
+- **UX rules**: `docs/ux.md` writes down how the app behaves (selecting and playing, status words, launch states, repairs, controllers, writing), linked from AGENTS.md.
+
 ## 0.13.4 (2026-11-15)
 
 Each built game keeps its media and details in its own folder. Ships in NXForge 0.37.4.
