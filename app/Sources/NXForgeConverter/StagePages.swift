@@ -14,9 +14,15 @@ struct StageGamePage: View {
         let g = game
         let (_, record) = model.resolve(g.ref)
         GeometryReader { geo in
-            let showCase = geo.size.width > 820
-            let caseH = min(max(geo.size.height * 0.48, 260), 540)
-            let gutter: CGFloat = geo.size.width > 1250 ? 64 : 40
+            let showCase = geo.size.width > 760
+            let caseH = min(max(geo.size.height * 0.30, 230), 330)
+            let gutter: CGFloat = geo.size.width > 1250 ? 56 : 40
+            let inner = geo.size.width - gutter * 2
+            let info = model.settings.downloadStoreInfo ? StoreInfoStore.shared.info(g.coverKey) : nil
+            // Media and About side by side on a wide window, About under Media on a narrow one
+            let side = info != nil && geo.size.width > 1020
+            let aboutW = min(max(inner * 0.32, 320), 470)
+            let mediaW = side ? inner - aboutW - 61 : inner
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Button { model.gameDetail = nil } label: { Label(model.stageTab.rawValue, systemImage: "chevron.backward") }
@@ -37,56 +43,34 @@ struct StageGamePage: View {
                 .padding(.horizontal, gutter - 18).padding(.top, 6)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        Spacer(minLength: 0)
-                        HStack(alignment: .center, spacing: showCase ? 44 : 0) {
-                            if showCase {
-                                GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.74, height: caseH)
-                                    .overlay(alignment: .bottom) {
-                                        HStack(spacing: 8) {
-                                            Button { model.caseFlipped.toggle() } label: {
-                                                Label(model.caseFlipped ? "Show the front" : "Turn over", systemImage: "arrow.triangle.2.circlepath")
-                                                    .font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 14).frame(height: 30)
-                                                    .glassEffect(.regular.interactive(), in: .capsule).contentShape(.capsule)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .help("Drag the box to turn it, or use a controller's right stick")
-                                            Button { model.openCaseViewer(g) } label: {
-                                                Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 12, weight: .bold))
-                                                    .frame(width: 30, height: 30)
-                                                    .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
-                                            }
-                                            .buttonStyle(.plain).help("View the box full screen (R on a controller)").accessibilityLabel("View the box full screen")
-                                            if let m = GameManual.find(g) {
-                                                Button { model.openManual(m, title: g.name) } label: {
-                                                    Image(systemName: "book.pages").font(.system(size: 12, weight: .bold))
-                                                        .frame(width: 30, height: 30)
-                                                        .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
-                                                }
-                                                .buttonStyle(.plain).help("Read the manual").accessibilityLabel("Manual")
-                                            }
-                                        }
-                                        .padding(.bottom, caseH * 0.13)
-                                    }
-                                    .padding(.bottom, -caseH * 0.12)   // the floor's reflection may run under what follows
-                            }
-                            GameHeroColumn(model: model, game: g, titleSize: geo.size.width > 1100 ? 66 : 48)
-                                .frame(maxWidth: 680, alignment: .leading)
+                        HStack(alignment: .top, spacing: showCase ? 30 : 0) {
+                            if showCase { boxColumn(g, height: caseH) }
+                            GameHeroColumn(model: model, game: g, titleSize: geo.size.width > 1100 ? 60 : 46)
+                                .frame(maxWidth: 640, alignment: .leading)
+                                .padding(.top, showCase ? caseH * 0.07 : 10)
                             Spacer(minLength: 0)
                         }
-                        .padding(.top, 4)
-                        Spacer(minLength: 26)
-                        if let app = g.app {
-                            ScreenshotRow(model: model, game: g, app: app, width: geo.size.width - gutter * 2)
+                        .padding(.top, 10)
+                        Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 16)
+                        if side, let info {
+                            HStack(alignment: .top, spacing: 0) {
+                                GameMedia(model: model, game: g, width: mediaW).frame(width: mediaW, alignment: .leading)
+                                Rectangle().fill(.white.opacity(0.13)).frame(width: 1).padding(.horizontal, 30)
+                                GameAbout(game: g, info: info).frame(width: aboutW, alignment: .leading)
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 26)
+                        } else {
+                            GameMedia(model: model, game: g, width: mediaW).padding(.top, 26)
+                            if let info { GameAbout(game: g, info: info).padding(.top, 32) }
                         }
-                        if model.settings.downloadStoreInfo {
-                            StoreAbout(model: model, game: g, width: geo.size.width - gutter * 2)
-                        }
+                        Spacer(minLength: 0)
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 28)
-                        infoRow(g, record).fixedSize(horizontal: false, vertical: true).padding(.vertical, 18)
+                        infoRow(g, record).fixedSize(horizontal: false, vertical: true).padding(.vertical, 16)
                     }
                     .padding(.horizontal, gutter)
-                    .padding(.bottom, 8)
-                    .frame(minHeight: geo.size.height - 44)   // the box and title take the room the rest leaves
+                    .padding(.bottom, 4)
+                    .frame(minHeight: geo.size.height - 48)   // Save, Playtime and Build sit at the foot of the window
                 }
                 .scrollIndicators(.never)
                 // snapshot hook: NXC_SCROLL=1 opens the page scrolled to its end
@@ -96,6 +80,36 @@ struct StageGamePage: View {
         .task(id: g.coverKey + (model.settings.downloadStoreInfo ? "1" : "0")) {
             if model.settings.downloadStoreInfo { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) }
         }
+    }
+
+    /// The game's box, small, still turning to a drag, with View box (the box viewer) and the manual under it
+    func boxColumn(_ g: StageGame, height caseH: CGFloat) -> some View {
+        let accent = CoverArt.tint(g)
+        return GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.66, height: caseH)
+            .overlay(alignment: .bottom) {
+                HStack(spacing: 16) {
+                    Button { model.openCaseViewer(g) } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: "shippingbox").font(.system(size: 14, weight: .semibold))
+                            Text("View box")
+                            Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .bold))
+                        }
+                        .contentShape(.rect)
+                    }
+                    .help("View the box full screen (Y on a controller)")
+                    if let m = GameManual.find(g) {
+                        Button { model.openManual(m, title: g.name) } label: {
+                            HStack(spacing: 6) { Image(systemName: "book.pages").font(.system(size: 13, weight: .semibold)); Text("Manual") }.contentShape(.rect)
+                        }
+                        .help("Read the manual")
+                    }
+                }
+                .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).foregroundStyle(accent).brightness(0.35)
+                .fixedSize()
+                .padding(.bottom, caseH * 0.12)
+            }
+            .padding(.top, -caseH * 0.04)
+            .padding(.bottom, -caseH * 0.12)   // the floor's reflection may run under the line below
     }
 
     @ViewBuilder func infoRow(_ g: StageGame, _ record: BuildRecord?) -> some View {
@@ -130,30 +144,30 @@ struct StageGamePage: View {
     }
 
     var separator: some View {
-        Rectangle().fill(.white.opacity(0.13)).frame(width: 1, height: 58).padding(.horizontal, 22)
+        Rectangle().fill(.white.opacity(0.13)).frame(width: 1, height: 66).padding(.horizontal, 18)
     }
 
     func info(_ symbol: String, _ title: String, _ value: String, _ note: String, seal: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: symbol).font(.system(size: 21, weight: .semibold)).foregroundStyle(CoverArt.tint(game)).brightness(0.3)
-                    .frame(width: 28).padding(.top, 2)
+            HStack(alignment: .center, spacing: 16) {
+                Image(systemName: symbol).font(.system(size: 24, weight: .semibold)).foregroundStyle(CoverArt.tint(game)).brightness(0.35)
+                    .frame(width: 32)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 13.5, weight: .medium)).foregroundStyle(StageLook.soft)
-                    HStack(spacing: 7) {
+                    Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.soft)
+                    HStack(spacing: 8) {
                         Text(value).font(.system(size: 19, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
-                        if seal { Image(systemName: "checkmark.circle.fill").font(.system(size: 16)).foregroundStyle(Color(red: 0.30, green: 0.82, blue: 0.45)) }
+                        if seal { Image(systemName: "checkmark.circle.fill").font(.system(size: 17)).foregroundStyle(.white, Color(red: 0.30, green: 0.75, blue: 0.40)) }
                     }
-                    Text(note).font(.system(size: 13)).foregroundStyle(StageLook.faint).lineLimit(1).truncationMode(.middle)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(StageLook.faint).padding(.top, 22)
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(StageLook.soft)
             }
+            .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help("Manage in Converter")
+        .help(note + " · Manage in Converter")
         .accessibilityLabel("\(title): \(value). \(note)")
     }
 }
@@ -171,23 +185,21 @@ struct GameHeroColumn: View {
         let tint = CoverArt.tint(g)
         let playing = model.isPlaying(app: g.app ?? "")
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 9) {
-                Circle().fill(g.app == nil ? Color(white: 0.6) : playing ? Color(red: 0.38, green: 0.65, blue: 0.98) : tint)
-                    .brightness(g.app == nil ? 0 : 0.3).frame(width: 8, height: 8).shadow(color: tint.opacity(g.app == nil ? 0 : 0.9), radius: 6)
-                Text(eyebrow).font(.system(size: 12, weight: .bold)).fontWidth(.expanded).kerning(1.8).foregroundStyle(StageLook.soft)
-            }
-            Text(g.name).font(.system(size: titleSize, weight: .heavy)).tracking(-1.6).lineLimit(2).minimumScaleFactor(0.55)
-                .foregroundStyle(LinearGradient(colors: [.white, Color(white: 0.84)], startPoint: .top, endPoint: .bottom))
+            Text(g.name).font(.system(size: titleSize, weight: .heavy)).tracking(-1.4).lineLimit(2).minimumScaleFactor(0.55)
+                .foregroundStyle(LinearGradient(colors: [.white, Color(white: 0.86)], startPoint: .top, endPoint: .bottom))
                 .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 10)
             HStack(spacing: 10) {
-                Image(systemName: "gamecontroller.fill").font(.system(size: 15, weight: .semibold))
+                ConsoleGlyph(console: g.console).frame(width: 22, height: 18)
+                if playing {
+                    Circle().fill(Color(red: 0.38, green: 0.65, blue: 0.98)).frame(width: 7, height: 7)
+                }
                 Text(facts.joined(separator: "  ·  ")).lineLimit(1)
             }
-            .font(.system(size: 16, weight: .medium)).foregroundStyle(StageLook.soft)
+            .font(.system(size: 17, weight: .medium)).foregroundStyle(Color(white: 0.9))
             .shadow(color: .black.opacity(0.5), radius: 8)
-            .padding(.top, 10)
+            .padding(.top, 8)
+            .help(game.version.map { "Version \($0)" } ?? "")
             HStack(spacing: 12) {
                 if g.app != nil {
                     Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(playing ? "Resume" : "Play", systemImage: "play.fill").padding(.horizontal, 14) }
@@ -210,9 +222,9 @@ struct GameHeroColumn: View {
                 .buttonStyle(.plain).help(g.favorite ? "Remove from Favourites (F)" : "Add to Favourites (F)")
                 .accessibilityLabel(g.favorite ? "Remove from Favourites" : "Add to Favourites")
             }
-            .padding(.top, 26)
+            .padding(.top, 22)
             if !list.isEmpty {
-                let parts = [PlayOptions.current(settings: list, values: values).rawValue] + PlayOptions.summary(settings: list, values: values).prefix(2).map(\.value)
+                let parts = [PlayOptions.current(settings: list, values: values).rawValue] + PlayOptions.summary(settings: list, values: values).prefix(1).map(\.value)
                 Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "slider.horizontal.3").font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft)
@@ -229,20 +241,35 @@ struct GameHeroColumn: View {
         }
     }
 
-    var eyebrow: String {
-        if game.app == nil { return "NOT BUILT YET" }
-        if model.isSuspended(app: game.app ?? "") { return "PAUSED · STILL RUNNING" }
-        if model.isPlaying(app: game.app ?? "") { return "PLAYING NOW" }
-        if game.last == nil { return "IN YOUR LIBRARY" }
-        return "RECENTLY PLAYED"
-    }
-
     var facts: [String] {
-        var out = [game.console.rawValue]
-        if let v = game.version, !v.isEmpty { out.append("Version \(v)") }
-        if game.app != nil { out.append(game.last.map { "Played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet") }
-        else { out.append("Not built yet") }
+        var out = [game.console == .switch2 ? "Nintendo Switch 2" : "Nintendo Switch"]
+        if game.app == nil { out.append("Not built yet") }
+        else if model.isSuspended(app: game.app ?? "") { out.append("Paused · still running") }
+        else if model.isPlaying(app: game.app ?? "") { out.append("Playing now") }
+        else { out.append(game.last.map { "Played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet") }
         return out
+    }
+}
+
+/// The console's mark beside a game's name: the two Joy-Con, drawn (SF Symbols has no Switch)
+struct ConsoleGlyph: View {
+    let console: Console
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height, gap = w * 0.08, half = (w - gap) / 2
+            HStack(spacing: gap) {
+                UnevenRoundedRectangle(topLeadingRadius: half * 0.75, bottomLeadingRadius: half * 0.75, bottomTrailingRadius: 1.5, topTrailingRadius: 1.5)
+                    .fill(.white.opacity(0.92))
+                    .overlay(Circle().fill(.black.opacity(0.75)).frame(width: half * 0.38).offset(y: -h * 0.18))
+                    .frame(width: half, height: h)
+                UnevenRoundedRectangle(topLeadingRadius: 1.5, bottomLeadingRadius: 1.5, bottomTrailingRadius: half * 0.75, topTrailingRadius: half * 0.75)
+                    .strokeBorder(.white.opacity(0.92), lineWidth: max(1.4, w * 0.075))
+                    .overlay(Circle().fill(.white.opacity(0.92)).frame(width: half * 0.38).offset(y: h * 0.12))
+                    .frame(width: half, height: h)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

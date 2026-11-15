@@ -218,8 +218,7 @@ extension AppModel {
             case .a: playFromStage(r)
             case .x: openPlayOptions(r)
             case .b: gameDetail = nil
-            case .y: caseFlipped.toggle()
-            case .r: if let g = stageGames().first(where: { $0.isRef(r) }) { openCaseViewer(g) }
+            case .y, .r: if let g = stageGames().first(where: { $0.isRef(r) }) { openCaseViewer(g) }
             case .menu: settingsFocus = 0; stageSettings = true
             case .options: if let g = stageGames().first(where: { $0.isRef(r) }) { toggleFavorite(g) }
             default: break
@@ -398,9 +397,9 @@ struct StageView: View {
         let focus = detail ?? model.stageFocus(shown)
         let tint = focus.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
         ZStack {
-            StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "")
+            StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "", strength: detail == nil ? 1 : 0.45)
             // the game's key art behind its page, and behind Home's headline for the game in focus
-            if let g = detail { GameKeyArt(game: g).id(g.id).transition(.opacity) }
+            if let g = detail { GameKeyArt(game: g, banner: true).id(g.id).transition(.opacity) }
             else if model.stageTab == .home, let g = focus { GameKeyArt(game: g, coverFallback: false).id(g.id).transition(.opacity) }
             VStack(spacing: 0) {
                 if detail == nil { StageTopBar(model: model) }
@@ -915,7 +914,7 @@ struct StageHints: View {
         let built = focus?.app != nil
         if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
-        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]) + [(["Y"], "Turn over"), (["R"], "View box"), (["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"), (["B"], "Back")] }
+        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]) + [(["Y"], "View box"), (["B"], "Back")] }
         var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], "Build")]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))

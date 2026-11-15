@@ -1,5 +1,5 @@
 // The front end's small extras (Converter 0.11.0, 0.11.1): the marks a cover carries when a game needs a look (GameAttention), and the
-// screenshots a game's sidebar took, on its page (GameCaptures, ScreenshotRow), and the game page's key art (GameKeyArt).
+// screenshots a game's sidebar took, on its page (GameCaptures, GameMedia), and the game page's key art (GameKeyArt).
 import AppKit
 import CoreImage
 import SwiftUI
@@ -192,80 +192,6 @@ struct CoverMarks: View {
     }
 }
 
-/// The game page's Screenshots: the three newest, large, with View all opening every one in the gallery (MediaViewer.swift). A game with none says where they come from.
-struct ScreenshotRow: View {
-    let model: AppModel
-    let game: StageGame
-    let app: String
-    /// the row's width: three tiles across it
-    var width: CGFloat = 900
-    @State private var shots: [URL]? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Screenshots").font(.system(size: 24, weight: .heavy)).tracking(-0.4)
-                Spacer()
-                if let s = shots, !s.isEmpty {
-                    Button { open(at: 0) } label: {
-                        HStack(spacing: 6) { Text("View all"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
-                    }
-                    .buttonStyle(.plain).font(.system(size: 14.5, weight: .semibold)).foregroundStyle(StageLook.soft)
-                    .help("Shows every screenshot full screen")
-                }
-            }
-            if let s = shots, !s.isEmpty {
-                HStack(spacing: 14) {
-                    ForEach(0..<3, id: \.self) { i in
-                        if i < s.count { tile(s[i]) } else { Color.clear.frame(width: max((width - 28) / 3, 120), height: 1) }
-                    }
-                }
-            } else if shots != nil {
-                HStack(spacing: 12) {
-                    Image(systemName: "camera.viewfinder").font(.system(size: 20, weight: .semibold)).foregroundStyle(StageLook.soft)
-                    Text("No screenshots yet. Take one in game from the sidebar and it shows here.").font(.system(size: 14)).foregroundStyle(StageLook.faint)
-                }
-                .padding(.horizontal, 20).frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
-                .background(StageLook.card, in: .rect(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(StageLook.edge, lineWidth: 1))
-            }
-        }
-        .task(id: app) {
-            let a = app
-            shots = await Task.detached(priority: .utility) { GameCaptures.screenshots(app: a, limit: 200) }.value
-        }
-    }
-
-    func open(at i: Int) {
-        guard let s = shots else { return }
-        model.openGallery(s.map { .image($0) }, at: i, title: "\(game.name) · Screenshots")
-    }
-
-    func tile(_ u: URL) -> some View {
-        let img = ThumbStore.shared.image(u)
-        let w = max((width - 28) / 3, 120)
-        return Button { open(at: shots?.firstIndex(of: u) ?? 0) } label: {
-            Color(white: 0.12)
-                .frame(width: w, height: w * 9 / 16)
-                .overlay { if let img { Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill) } }
-                .clipShape(.rect(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.18), lineWidth: 1))
-                .shadow(color: .black.opacity(0.45), radius: 14, y: 8)
-                .contentShape(.rect(cornerRadius: 14))
-        }
-        .buttonStyle(.plain)
-        .help(u.lastPathComponent)
-        .accessibilityLabel("Screenshot \(u.deletingPathExtension().lastPathComponent)")
-        .contextMenu {
-            Button("View") { open(at: shots?.firstIndex(of: u) ?? 0) }
-            Button("Open in Preview") { NSWorkspace.shared.open(u) }
-            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([u]) }
-            Button("Copy") { if let i = NSImage(contentsOf: u) { NSPasteboard.general.clearContents(); NSPasteboard.general.writeObjects([i]) } }
-            ShareLink(item: u) { Text("Share…") }
-        }
-    }
-}
-
 /// The game page's key art, filling the top of the window behind the box and the title and fading into the stage below and to the
 /// left: the game's wide art from Nintendo's store (CoverStore.hero), else its newest screenshot, sharp; a game with neither gets its
 /// front cover, enlarged and blurred.
@@ -273,6 +199,8 @@ struct GameKeyArt: View {
     let game: StageGame
     /// the blurred cover when the game has no screenshot (the game's page); Home shows the 3D case instead
     var coverFallback = true
+    /// the game page's: a banner across the top right, as tall as the page's headline, fading to the left and into the line under it
+    var banner = false
     @State private var shot: NSImage?
     @Environment(\.accessibilityReduceTransparency) private var solid
     @MainActor static var cache: [String: NSImage] = [:]
@@ -292,7 +220,21 @@ struct GameKeyArt: View {
         let art = sharp ?? (coverFallback ? CoverArt.wide(game) : nil)
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
-            if let art, !solid {
+            if let art, !solid, banner {
+                // as tall as the page's headline (StageGamePage: the top bar, then the box at 30% of the page)
+                let bh = 72 + min(max((h - 48) * 0.30, 230), 330) * 0.92
+                let bw = min(w * 0.58, max(w - 480, w * 0.45))
+                Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                    .frame(width: bw, height: bh).clipped()
+                    .saturation(sharp == nil ? 1.2 : 1.05)
+                    .opacity(sharp == nil ? 0.6 : 0.95)
+                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.5), location: 0.2),
+                                                 .init(color: .black, location: 0.38)], startPoint: .leading, endPoint: .trailing))
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.72), .init(color: .clear, location: 1)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(width: w, height: h, alignment: .topTrailing)
+                    .id(hero != nil ? "hero" : shot == nil ? "cover" : "shot").transition(.opacity)
+            } else if let art, !solid {
                 ZStack(alignment: .top) {
                     Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                         .frame(width: w, height: h * 0.78).clipped()
