@@ -91,6 +91,24 @@ class CleanTest(Fake):
         self.assertFalse(res['categories']['build-cache']['items'])
         self.assertTrue(any('kept: changed' in n for n in res['categories']['build-cache']['notes']))
 
+    def test_overview_build_folder_is_its_entries(self):
+        ov = nx.overview(nx.context(game='0100C1F0141AA000'))
+        b = next(x for x in ov['build_folders'] if x['path'] == str(self.build))
+        self.assertEqual(b['bytes'], sum(b['entries'].values()) + self.build.lstat().st_blocks * 512)
+        self.assertGreaterEqual(b['bytes'], nx.size_of(self.build) - 64 * 1024)   # the same total du gives, give or take the folders' own blocks
+
+    def test_worktrees_listed_once(self):
+        calls = []
+        def git(repo, *a, **kw):
+            calls.append(a)
+            if a[:2] == ('worktree', 'list'): return f'worktree {self.home}/main\nworktree {self.home}/wt1\nworktree {self.home}/wt2'
+            return ''
+        with mock.patch.object(nx, 'git', git), mock.patch.object(nx, 'size_of', lambda p: 0):
+            ctx = nx.context(); ctx['repo'] = str(self.home / 'main')
+            notes = nx.find_worktrees(ctx)[1]
+        self.assertEqual(len(notes), 2)
+        self.assertEqual(sum(1 for a in calls if a[:2] == ('worktree', 'list')), 1)
+
     def test_gpuarchiver_one_item(self):
         idle = [write(self.home / f'gpu/gpuarchiver-{i}/r', age=2 * 3600).parent for i in range(3)]
         for d in idle: t = time.time() - 2 * 3600; os.utime(d, (t, t))
