@@ -180,7 +180,8 @@ static void qs_volume_apply(void) {
 }
 void front_qs_volume_apply(void) { qs_volume_apply(); }
 // Full screen from the Display section
-int front_qs_fullscreen(void) { return g_fullscreen; }
+int front_fullscreen_borderless(void);   // nxforge/front_mac_fullscreen.inc
+int front_qs_fullscreen(void) { return g_fullscreen || front_fullscreen_borderless(); }
 void front_qs_fullscreen_toggle(void) { [g_win toggleFullScreen:nil]; }
 // Where this game's settings file is ("" when there is none: DM_SETTINGS_FILE=0 or no folder), and my defaults
 const char *front_qs_settings_path(void) { NSString *p = settings_file_path(); return p ? p.fileSystemRepresentation : ""; }

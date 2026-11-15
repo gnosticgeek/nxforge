@@ -17323,6 +17323,9 @@ __attribute__((weak)) uint64_t dm_focus_in_since(void) { return 0; }
 - (void)metalDisplayLink:(CAMetalDisplayLink *)link needsUpdate:(CAMetalDisplayLinkUpdate *)update {
     (void)link;
     double cb = CACurrentMediaTime();
+    { static double w0; static uint64_t raw, tk0, pr0; raw++;   // TEMP measurement (qhvi8a): real callbacks, counted ticks and presents per wall-clock second
+      if (!w0) { w0 = cb; tk0 = g_link_tick_n; pr0 = g_present_n; raw = 0; }
+      else if (cb - w0 >= 5.0) { double d = cb - w0; MLOG("MEASURE link: %.1f callbacks/s, %.1f counted ticks/s, %.1f presents/s over %.1f s (vperiod %.2f ms)", raw / d, (g_link_tick_n - tk0) / d, (g_present_n - pr0) / d, d, g_link_vperiod * 1e3); w0 = cb; tk0 = g_link_tick_n; pr0 = g_present_n; raw = 0; } }
     pthread_mutex_lock(&g_pq_mu);
     if (g_stall_t0) { uint64_t since = dm_focus_in_since(), t = now_ns();
         MLOG("display link recovered: stalled %.0f ms (%.0f ms of it active), fallback dropped %llu frames (stall #%llu)", (t - g_stall_t0) / 1e6, (t - (g_stall_t0 > since ? g_stall_t0 : since)) / 1e6, (unsigned long long)g_stall_drop, (unsigned long long)g_stall_n); g_stall_t0 = 0; }

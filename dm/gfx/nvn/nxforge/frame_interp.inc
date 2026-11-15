@@ -45,6 +45,7 @@ int mtl_present_interp_active(void) { return nxf_fi_wants_link(); }
 #define FI_GAP_NS 50000000ull
 static int g_fi_slow;
 static int nxf_fi_link_rate(uint64_t now, NSUInteger w, NSUInteger h) {
+    if (getenv("DM_FI_NOCHECK")) return 1;   // TEMP measurement (qhvi8a)
     static uint64_t t0, last, n, mid0;
     uint64_t gap = last ? now - last : 0; last = now;
     if (!t0 || gap > FI_GAP_NS || now - t0 > 3 * FI_SETTLE_NS) { t0 = now; n = 0; mid0 = g_fi_mid_n; return 1; }   // a gap (a stall, a covered window, a pause, interpolation off) starts the count again

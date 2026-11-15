@@ -228,7 +228,7 @@ final class QuickSettings: ObservableObject {
     init(game: String, modsDir: String, modsRunOrder: [String]?, close: @escaping () -> Void, fpsChanged: @escaping () -> Void) {
         self.game = game; self.modsDir = modsDir; self.modsRunOrder = modsRunOrder; self.modsRun = modsRunOrder.map(Set.init); self.close = close; self.fpsChanged = fpsChanged
         page = min(max(UserDefaults.standard.integer(forKey: "DMQuickSettings.page.\(game)"), 0), pages.count - 1)
-        for n in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+        for n in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification, Notification.Name("NXFBorderlessFullScreenChanged")] {   // the last: borderless full screen (nxforge/front_mac_fullscreen.inc)
             observers.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.fullscreen = front_qs_fullscreen() != 0 })
         }
         refresh()
