@@ -49,7 +49,7 @@ enum DiscoverPlayers: String, CaseIterable {
     var least: Int? { switch self { case .any, .one: nil; case .two: 2; case .four: 4 } }
 }
 enum DiscoverLibrary: String, CaseIterable { case all = "All", inLibrary = "In library", notInLibrary = "Not in library" }
-enum DiscoverSort: String, CaseIterable { case title = "Title A–Z", newest = "Newest", popular = "Popular" }
+enum DiscoverSort: String, CaseIterable { case popular = "Popular", newest = "Newest", title = "Title A–Z" }
 
 /// The store's search, apart from the network (tested)
 enum DiscoverSource {
@@ -97,6 +97,8 @@ enum DiscoverSource {
         var fq = filters(genre: genre, platform: platform, players: players)
         // games with no date yet are listed as out on 31/12/2050
         if sort == .newest { fq.append("dates_released_dts:[* TO NOW]") }
+        // A–Z over the whole store opens on a wall of unranked shovelware (and titles saved with a leading space): only ranked games
+        if sort == .title && q.isEmpty { fq.append("popularity:[1 TO 999998]") }
         items += fq.map { URLQueryItem(name: "fq", value: $0) }
         items += [URLQueryItem(name: "rows", value: "\(rows)"), URLQueryItem(name: "start", value: "\(start)"), URLQueryItem(name: "fl", value: fields),
                   URLQueryItem(name: "wt", value: "json")]
@@ -215,7 +217,7 @@ final class DiscoverState {
     var platform: DiscoverPlatform = .all
     var players: DiscoverPlayers = .any
     var library: DiscoverLibrary = .all
-    var sort: DiscoverSort = .title
+    var sort: DiscoverSort = .popular
     var query = ""
     var items: [DiscoverItem] = []
     var total = 0
@@ -279,7 +281,7 @@ final class DiscoverState {
                 if library == .notInLibrary { pool = pool.filter { !DiscoverSource.owned($0, ids: ids, names: names) } }
                 let g = genre, p = platform, pl = players, q = query
                 pool = pool.filter { DiscoverSource.keep($0, genre: g, platform: p, players: pl, query: q) }
-                if browse != .wishlist || sort != .title { pool = DiscoverSource.sorted(pool, by: sort) }
+                if browse != .wishlist || sort != .popular { pool = DiscoverSource.sorted(pool, by: sort) }
                 if Task.isCancelled { return }
                 items = pool
                 total = pool.count
@@ -400,6 +402,8 @@ extension AppModel {
 /// A picture from the store, read once and kept small (the URL cache keeps the file between starts)
 struct RemoteArt: View {
     let url: URL?
+    /// tried in turn when the first does not answer (a larger copy the store does not have, then the usual one)
+    var fallbacks: [URL] = []
     var side = 600
     @State private var image: NSImage?
 
@@ -419,11 +423,15 @@ struct RemoteArt: View {
         }
         .animation(.easeOut(duration: 0.2), value: image != nil)
         .task(id: url) {
-            guard let url else { image = nil; return }
-            if let i = Self.cache.object(forKey: url as NSURL) { image = i; return }
+            guard let first = url else { image = nil; return }
+            if let i = Self.cache.object(forKey: first as NSURL) { image = i; return }
             image = nil
             let max = side
-            guard let (d, r) = try? await Self.session.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200 else { return }
+            var got: Data?
+            for u in [first] + fallbacks {
+                if let (d, r) = try? await Self.session.data(from: u), (r as? HTTPURLResponse)?.statusCode == 200, d.count > 1000 { got = d; break }
+            }
+            guard let d = got else { return }
             let cg: CGImage? = await Task.detached(priority: .userInitiated) {
                 guard let src = CGImageSourceCreateWithData(d as CFData, nil) else { return nil }
                 let o: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
@@ -432,7 +440,7 @@ struct RemoteArt: View {
             }.value
             guard let cg, !Task.isCancelled else { return }
             let i = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-            Self.cache.setObject(i, forKey: url as NSURL)
+            Self.cache.setObject(i, forKey: first as NSURL)
             image = i
         }
     }
@@ -724,7 +732,8 @@ struct DiscoverDetail: View {
     var body: some View {
         let wished = Wishlist.shared.contains(item)
         VStack(alignment: .leading, spacing: 0) {
-            RemoteArt(url: (item.wide ?? item.square).flatMap(DiscoverSource.larger), side: 1200)
+            let art = [item.wide, item.square].compactMap { $0 }
+            RemoteArt(url: art.first.flatMap(DiscoverSource.larger), fallbacks: art.flatMap { HeroSource.sizes($0) }, side: 1200)
                 .frame(height: 230).frame(maxWidth: .infinity).clipped()
                 .overlay(alignment: .topTrailing) {
                     Button { model.discover.detail = nil } label: {
