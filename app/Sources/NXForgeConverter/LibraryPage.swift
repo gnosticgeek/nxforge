@@ -480,7 +480,7 @@ struct LibraryPage: View {
                             .buttonStyle(.plain)
                             .help("Play \(r.record.name)")
                             .accessibilityLabel("Play \(r.record.name), played \(r.record.last.map { relativeDay($0).lowercasedFirst } ?? "before")")
-                            .contextBoxBoxBoxMenu {
+                            .contextMenu {
                                 Button("Game Page") { model.openGame(GameRef(libraryID: nil, app: r.record.app)) }
                                 Button("Show App in Finder") { reveal(r.record.app) }
                             }
@@ -507,14 +507,14 @@ struct LibraryPage: View {
             .padding(.horizontal, 12).frame(width: 300, height: 34)
             .background(.white.opacity(0.06), in: .rect(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.16)))
-            Menu {
+            BoxMenu {
                 Picker("Platform", selection: $model.libraryConsole) {
                     ForEach(ConsoleFilter.allCases, id: \.self) { c in Text("\(c.rawValue) (\(all.filter { c == .all || $0.console.rawValue == c.rawValue }.count))").tag(c) }
                 }
                 .pickerStyle(.inline)
             } label: { menuLabel("Platform", model.libraryConsole.rawValue) }
             .fixedSize()
-            Menu {
+            BoxMenu {
                 Picker("Status", selection: $model.libraryFilter) {
                     ForEach(LibraryFilter.allCases, id: \.self) { f in
                         Text("\(f.rawValue) (\(all.filter { model.matches($0, f, builds) && model.consoleOK($0) }.count))").tag(f)
@@ -533,7 +533,7 @@ struct LibraryPage: View {
                 Label("Covers", systemImage: "square.grid.2x2").labelStyle(.iconOnly).tag(LibraryLayout.grid).help("Covers")
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize()
-            Menu {
+            BoxMenu {
                 Picker("Sort by", selection: $model.settings.librarySort) {
                     ForEach(LibrarySort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }

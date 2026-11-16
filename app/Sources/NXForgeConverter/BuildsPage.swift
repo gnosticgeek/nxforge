@@ -142,13 +142,13 @@ struct BuildsPage: View {
             .padding(.horizontal, 14).frame(minWidth: 180, maxWidth: 420).frame(height: 34)
             .background(.white.opacity(0.06), in: .capsule)
             .overlay(Capsule().strokeBorder(.white.opacity(0.16)))
-            BoxBoxMenu {
+            BoxMenu {
                 Picker("Platform", selection: $model.buildConsole) { ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
                     .pickerStyle(.inline)
             } label: { filterLabel("Platform", model.buildConsole.rawValue) }
             .fixedSize()
             .help("Show the Switch 2 games, the Switch games, or both")
-            Menu {
+            BoxMenu {
                 Picker("Sort", selection: $model.buildSort) { ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
                     .pickerStyle(.inline)
             } label: { filterLabel("Sort", model.buildSort.rawValue) }
