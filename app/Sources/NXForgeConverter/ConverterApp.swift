@@ -137,7 +137,22 @@ struct ConverterApp: App {
         // after it: the first built game's)
         if let st = env["NXC_STAGE"] {
             model.frontEnd = true
-            model.stageTab = st == "library" ? .library : .home
+            model.stageTab = st == "library" ? .library : st == "discover" ? .discover : .home
+            // NXC_BROWSE=all, library, wishlist or a genre's name; NXC_QUERY=<words>: what Discover shows; NXC_DETAIL_FIRST=1 opens its first game's page
+            if st == "discover" {
+                switch env["NXC_BROWSE"] {
+                case "all"?: model.discover.browse = .all
+                case "library"?: model.discover.browse = .library
+                case "wishlist"?: model.discover.browse = .wishlist
+                case let g?: model.discover.browse = .genre(g)
+                case nil: break
+                }
+                if let q = env["NXC_QUERY"] { model.discover.query = q }
+                if env["NXC_DETAIL_FIRST"] != nil {
+                    for _ in 0..<40 where model.discover.items.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+                    if let i = model.discover.items.first(where: { model.discoverGame($0) == nil }) { model.discover.focus = i.id; model.discover.detail = i }
+                }
+            }
             try? await Task.sleep(for: .seconds(2))
             // NXC_GAME=<part of a name> picks the game instead
             let g = env["NXC_GAME"].flatMap { n in model.stageGames().first { $0.name.localizedCaseInsensitiveContains(n) } } ?? model.stageGames().first { $0.app != nil }

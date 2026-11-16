@@ -200,6 +200,15 @@ enum CoverArt {
         return front(g)
     }
 
+    /// The square art for a tile (Settings › Square covers): Nintendo Life's or the store's, else the game's own icon (the same
+    /// square art, smaller), else the front cut to a square about its top
+    static func squareTile(_ g: StageGame) -> NSImage? {
+        switch CoverStore.shared.squareThumb(g.coverKey) {
+        case .some(let i): return i
+        case .none: return icon(g) ?? tile(g)
+        }
+    }
+
     static func back(_ g: StageGame) -> NSImage? {
         let store = CoverStore.shared
         if let i = store.image(g.coverKey, .back) { return i }
@@ -262,17 +271,20 @@ struct CoverTile: View {
     var attention: GameAttention? = nil
     /// why it cannot play, when it cannot (GameStatus), as a label along the cover's foot instead of only dimming it
     var status: GameStatus? = nil
+    /// the game's square shop art in a rounded square, not its box (Settings › Square covers)
+    var square = false
     @State private var hover: CGPoint?
     @State private var size: CGSize = .zero
     @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
         let _ = CoverStore.shared.revision
-        let shape = UnevenRoundedRectangle(cornerRadii: .init(topLeading: 3, bottomLeading: 3, bottomTrailing: 7, topTrailing: 7))
-        let img = CoverArt.tile(game)
+        let shape = square ? UnevenRoundedRectangle(cornerRadii: .init(topLeading: 10, bottomLeading: 10, bottomTrailing: 10, topTrailing: 10))
+                           : UnevenRoundedRectangle(cornerRadii: .init(topLeading: 3, bottomLeading: 3, bottomTrailing: 7, topTrailing: 7))
+        let img = square ? CoverArt.squareTile(game) : CoverArt.tile(game)
         let tint = CoverArt.tint(game)
         Color(white: 0.14)
-            .aspectRatio(CoverSource.aspect, contentMode: .fit)
+            .aspectRatio(square ? 1 : CoverSource.aspect, contentMode: .fit)
             .overlay {
                 if let img {
                     Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill).saturation(dim ? 0.5 : 1)
@@ -286,9 +298,12 @@ struct CoverTile: View {
                 }
             }
             .overlay(alignment: .leading) {
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.black.opacity(0.40), .clear], startPoint: .leading, endPoint: .trailing).frame(width: 5)
-                    Rectangle().fill(.white.opacity(0.16)).frame(width: 1)
+                // a box's crease at the spine
+                if !square {
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.black.opacity(0.40), .clear], startPoint: .leading, endPoint: .trailing).frame(width: 5)
+                        Rectangle().fill(.white.opacity(0.16)).frame(width: 1)
+                    }
                 }
             }
             .overlay { if dim { Color.black.opacity(0.44) } }
@@ -298,7 +313,7 @@ struct CoverTile: View {
             .clipShape(shape)
             .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
             .overlay {
-                RoundedRectangle(cornerRadius: 11).strokeBorder(.white, lineWidth: 2.5).padding(-6)
+                RoundedRectangle(cornerRadius: square ? 14 : 11).strokeBorder(.white, lineWidth: 2.5).padding(-6)
                     .shadow(color: tint.opacity(0.9), radius: 9)
                     .opacity(focused ? 1 : 0)
             }
