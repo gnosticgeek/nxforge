@@ -104,3 +104,21 @@ extension ButtonStyle where Self == PillButtonStyle {
     static var stage: PillButtonStyle { PillButtonStyle() }
     static var stagePrimary: PillButtonStyle { PillButtonStyle(primary: true) }
 }
+
+/// A menu drawn as its own label: SwiftUI's Menu on macOS keeps only the label's text (no box, no chevron where we put it), so the
+/// label is drawn here and an all-but-invisible menu lies over it to take the click.
+struct BoxMenu<Label: View, Content: View>: View {
+    @ViewBuilder var content: Content
+    @ViewBuilder var label: Label
+
+    var body: some View {
+        label
+            .overlay {
+                Menu { content } label: { Color.clear }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(0.02)
+            }
+            .contentShape(.rect)
+    }
+}

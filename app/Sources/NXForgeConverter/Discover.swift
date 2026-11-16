@@ -505,7 +505,7 @@ struct DiscoverView: View {
             .foregroundStyle(on ? Color.white : Color(white: 0.88))
             .background {
                 if on {
-                    RoundedRectangle(cornerRadius: 10).fill(Color(red: 0.62, green: 0.45, blue: 0.98).opacity(0.55))
+                    RoundedRectangle(cornerRadius: 10).fill(convertAccent.opacity(0.42))
                         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.25), lineWidth: 1))
                         .matchedGeometryEffect(id: "browse", in: marks)
                 }
@@ -518,7 +518,7 @@ struct DiscoverView: View {
     }
 
     var heading: some View {
-        HStack(alignment: .lastTextBaseline) {
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(state.genre != nil ? "Discover / Genres" : "Discover").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.faint)
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -526,7 +526,18 @@ struct DiscoverView: View {
                     if state.total > 0 { Text("\(state.total.formatted()) game\(state.total == 1 ? "" : "s")").foregroundStyle(StageLook.soft).monospacedDigit() }
                 }
             }
-            Spacer()
+            Spacer(minLength: 16)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(StageLook.faint)
+                TextField("Search games", text: $state.query).textFieldStyle(.plain)
+                if !state.query.isEmpty {
+                    Button { state.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
+                        .buttonStyle(.plain).accessibilityLabel("Clear Search")
+                }
+            }
+            .padding(.horizontal, 14).frame(minWidth: 180, maxWidth: 360).frame(height: 34)
+            .background(.white.opacity(0.06), in: .capsule)
+            .overlay(Capsule().strokeBorder(.white.opacity(0.16)))
         }
         .padding(.top, 6)
     }
@@ -543,24 +554,24 @@ struct DiscoverView: View {
         }
     }
 
+    /// A boxed "Platform: All" menu, as on Builds (BoxMenu)
     func menu(_ label: String, _ value: String, _ options: [String], _ pick: @escaping (String) -> Void) -> some View {
-        Menu {
+        BoxMenu {
             ForEach(options, id: \.self) { o in
                 Button { pick(o) } label: { if o == value { Label(o, systemImage: "checkmark") } else { Text(o) } }
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text(label + ":").foregroundStyle(StageLook.soft)
-                Text(value).fontWeight(.semibold)
-                Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundStyle(StageLook.soft)
+                Text(value).fontWeight(.semibold).foregroundStyle(.white)
+                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(StageLook.soft).padding(.leading, 12)
             }
-            .font(.system(size: 13.5))
+            .font(.system(size: 14))
             .padding(.horizontal, 14).frame(height: 34)
-            .background(StageLook.card, in: .rect(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(StageLook.edge, lineWidth: 1))
-            .contentShape(.rect)
+            .background(.white.opacity(0.06), in: .rect(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.16)))
         }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .fixedSize()
         .accessibilityLabel("\(label): \(value)")
     }
 
@@ -635,13 +646,13 @@ struct DiscoverCard: View {
                 .overlay(alignment: .topTrailing) {
                     HStack(spacing: 6) {
                         if wished { badge(nil, symbol: "heart.fill", color: Color(red: 1, green: 0.42, blue: 0.55)) }
-                        if owned { badge("In library", symbol: "bookmark.fill", color: Color(red: 0.72, green: 0.58, blue: 1)) }
+                        if owned { badge("In library", symbol: "bookmark.fill", color: convertAccent) }
                     }
                     .padding(8)
                 }
                 .overlay {
-                    shape.strokeBorder(Color(red: 0.72, green: 0.58, blue: 1), lineWidth: 3).padding(-5)
-                        .shadow(color: Color(red: 0.62, green: 0.45, blue: 0.98).opacity(0.8), radius: 10)
+                    shape.strokeBorder(convertAccent, lineWidth: 3).padding(-5)
+                        .shadow(color: convertAccent.opacity(0.8), radius: 10)
                         .opacity(focused ? 1 : 0)
                 }
                 .shadow(color: .black.opacity(0.45), radius: focused ? 18 : 8, y: 6)
@@ -690,7 +701,7 @@ struct DiscoverBar: View {
             }
             Spacer(minLength: 8)
             if owned {
-                Label("In your library", systemImage: "bookmark.fill").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Color(red: 0.78, green: 0.68, blue: 1))
+                Label("In your library", systemImage: "bookmark.fill").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(convertAccent)
             }
             Button { Wishlist.shared.toggle(item); if model.discover.browse == .wishlist { model.discoverReload() } } label: {
                 Label("Wishlist", systemImage: wished ? "heart.fill" : "heart")

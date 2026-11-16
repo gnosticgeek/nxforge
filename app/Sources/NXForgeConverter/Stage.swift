@@ -590,12 +590,15 @@ struct StageTopBar: View {
     @Namespace private var marks
 
     var body: some View {
+        // the logo at the left, the Home / Library / Converter switch in the middle, the rest at the right
         HStack(spacing: 14) {
             HStack(spacing: 9) {
                 Image(nsImage: NSApp.applicationIconImage).resizable().interpolation(.high).frame(width: 26, height: 26)
                     .shadow(color: .black.opacity(0.4), radius: 4, y: 2).accessibilityHidden(true)
                 Text("NXForge").font(.system(size: 18, weight: .heavy)).fontWidth(.expanded).tracking(-0.4)
+                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity)
             HStack(spacing: 4) {
                 ForEach(StageTab.allCases, id: \.self) { t in
                     tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
@@ -606,7 +609,8 @@ struct StageTopBar: View {
             .padding(4)
             .glassEffect(.regular, in: .capsule)
             .animation(.spring(duration: 0.32), value: model.stageTab)
-            .padding(.leading, 12)
+            .layoutPriority(1)
+            HStack(spacing: 14) {
             Spacer(minLength: 0)
             if let pad = GCController.controllers().first?.vendorName {
                 Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).foregroundStyle(StageLook.soft)
@@ -625,32 +629,28 @@ struct StageTopBar: View {
             }
             round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
             round("slider.horizontal.3", "Settings") { model.stageSettings = true }
+            }
+            .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
+        // under the converter's bar, a hairline between it and the page's own tabs
+        .overlay(alignment: .bottom) {
+            if !model.frontEnd { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
+        }
     }
 
     /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
     var search: (prompt: String, text: Binding<String>)? {
-        if model.frontEnd {
-            switch model.stageTab {
-            case .library: return ("Search games", $model.stageSearch)
-            case .discover: return ("Search the store", Bindable(model.discover).query)
-            case .home: return nil
-            }
-        }
-        guard model.gameDetail == nil else { return nil }
-        switch model.page {
-        case .library: return ("Search games", $model.librarySearch)
-        case .builds: return ("Search builds", $model.buildSearch)
-        default: return nil
-        }
+        if model.frontEnd { return model.stageTab == .library ? ("Search games", $model.stageSearch) : nil }
+        // Discover, the converter's Game Files and Builds have their own search fields
+        return nil
     }
 
     func tab(_ title: String, on: Bool, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             Text(title).font(.system(size: 14, weight: .semibold)).padding(.horizontal, 16).frame(height: 30)
                 .foregroundStyle(on ? Color.black : Color(white: 0.92))
-                .background { if on { Capsule().fill(.white.opacity(0.94)).matchedGeometryEffect(id: "tab", in: marks) } }
+                .background { if on { Capsule().fill(convertAccent).matchedGeometryEffect(id: "tab", in: marks) } }
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)

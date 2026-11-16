@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.16.0 (2026-11-16)
+
+Convert, Game Files and Builds to Tom's mock-ups. Ships in NXForge 0.41.0.
+
+- **One top bar**: the NXForge name at the left, the Home / Library / Converter switch in the middle, Full Screen and Settings at the right; under the converter a hairline, then its pages as centred text tabs with the open one underlined. Health's count is red for a problem and amber for warnings, and hovering it names what is wrong; Toolchain carries an amber dot when a check fails. Game Files and Builds have their own search fields.
+- **Convert is one card** read top to bottom: GAME (icon, name, "Nintendo Switch · Base game + update", its folder, keys, Change game…, "2 files" opening the file table, a Recent games menu), SAVE APP TO (the folder's name, then its drive and full path), Build options folded under one line that names the main choices (clean up build files, rebuild from scratch, an engine update), the app already built with Open app and Show in Finder, and a foot that says Ready to build with the space needed, the space free and about how long it takes, beside one Build Mac app button. Rebuild from scratch is now a switch in Build options (still asked once more). The game's wide art lies faintly behind the card and the room takes its colour. Build progress and the log come in under the card once a build starts.
+- **Game Files is a table**: Game, Contents, Size and Status columns with a tick-all box, Platform and Status menus, Sort (click Game or Size to sort by them), "65 games" beside the title, Change folder… and Scan again at the right, Last scanned under the list. A bar along the foot shows the game in focus with Show in Finder, Details and the next step as the white button: Play a current build, Rebuild an old one, else Convert…; ticked games show the Build bar there instead. Continue playing moves to Home.
+- **Builds is a list and a panel**: larger rows with Older engine labels and a lilac selection, "2 builds use an older engine" with Review… (show only them, or rebuild them all) under the list; the panel has the icon large, Ready to play, Play, Show in Finder, Game page, one line with when it was built, how long it took and the engine, Keep this build, Build details (files, location, steps and log) folded, and Rebuild… with Rebuild from Scratch in its menu.
+- Snapshot hooks: `NXC_CONVERT=<name part>` puts that game on Convert without saving settings, `NXC_OPTIONS=1` opens Build options, `NXC_FOCUS=<name part>` focuses a Game Files row.
+
 ## 0.15.0 (2026-11-16)
 
 The build in sight on every page, and the Library's Owned and Built. Ships in NXForge 0.40.0.
