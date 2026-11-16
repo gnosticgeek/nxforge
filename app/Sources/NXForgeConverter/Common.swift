@@ -67,6 +67,8 @@ struct ConverterRoot: View {
 
     /// The light is the game's whose page is open, else the one the front end was on, so changing tabs keeps the room as it was.
     var lit: StageGame? {
+        // Convert: the game being converted, so the room has its colour as the card has its art
+        if model.page == .convert, model.gameDetail == nil, let g = model.convertStageGame { return g }
         let games = model.stageGames()
         return model.gameDetail.flatMap { r in games.first { $0.isRef(r) } } ?? model.stageFocus(model.stageShown(games))
     }
@@ -111,7 +113,7 @@ struct ConverterRoot: View {
         .onChange(of: model.page) { model.gameDetail = nil }
         // Health's badge: its problems and warnings, read again whenever something on disk may have changed
         .task(id: "\(model.revision)|\(model.lastDataBackup?.timeIntervalSince1970 ?? 0)|\(model.dataBackupFailed)") {
-            model.healthBadge = model.healthFindings().filter { $0.level != .note }.count
+            model.noteHealth(model.healthFindings())
         }
     }
 }
@@ -121,65 +123,76 @@ extension View {
     func pagePadding() -> some View { padding(.horizontal, Theme.gutter).padding(.top, 4).padding(.bottom, 28) }
 }
 
-/// The converter's pages as a row of capsules (the front end's filter chips), with the toolchain's state and a waiting
-/// update at the right.
+/// The converter's pages as a row of text tabs under the top bar, centred, the open one underlined; Health's count is red or
+/// amber by its worst finding and names them on hover, Toolchain carries its state as a dot, and a waiting update sits at the right.
 struct ConverterNav: View {
     @Bindable var model: AppModel
+    @Namespace private var line
 
     var body: some View {
         HStack(spacing: 8) {
+            Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
             ViewThatFits(in: .horizontal) {
                 pages
                 ScrollView(.horizontal, showsIndicators: false) { pages }
             }
-            Spacer(minLength: 8)
-            UpdateCapsule(model: model)
-            toolchain
+            .layoutPriority(1)
+            HStack { Spacer(minLength: 0); UpdateCapsule(model: model) }.frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, Theme.gutter).padding(.top, 2).padding(.bottom, 12)
+        .padding(.horizontal, Theme.gutter).padding(.top, 4).padding(.bottom, 10)
     }
 
     var pages: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             ForEach(Page.allCases) { p in
                 let on = model.page == p
-                let updates = p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : p == .health ? model.healthBadge : 0
+                let count = p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : p == .health ? model.healthBadge : 0
                 Button { if on { model.gameDetail = nil } else { model.page = p } } label: {
-                    HStack(spacing: 6) {
-                        Text(p.title)
-                        if updates > 0 {
-                            Text("\(updates)").font(.system(size: 11, weight: .bold)).frame(minWidth: 17, minHeight: 17)
-                                .foregroundStyle(on ? Color.white : Color.black)
-                                .background(on ? Color.black.opacity(0.8) : Color.white.opacity(0.9), in: .circle)
+                    VStack(spacing: 7) {
+                        HStack(spacing: 7) {
+                            Text(p.title)
+                            if p == .toolchain, model.checks != nil, !model.allOK || model.checking {
+                                Circle().fill(model.checking ? Color(white: 0.6) : Color(red: 0.98, green: 0.75, blue: 0.14)).frame(width: 7, height: 7)
+                            }
+                            if count > 0 {
+                                Text("\(count)").font(.system(size: 11, weight: .bold)).frame(minWidth: 18, minHeight: 18)
+                                    .foregroundStyle(.black).background(badgeColor(p), in: .circle)
+                            }
+                        }
+                        .font(.system(size: 15, weight: on ? .semibold : .regular))
+                        .foregroundStyle(on ? Color.white : Color(white: 0.78))
+                        ZStack {
+                            Capsule().fill(.clear).frame(height: 3)
+                            if on { Capsule().fill(convertAccent).frame(height: 3).matchedGeometryEffect(id: "line", in: line) }
                         }
                     }
-                    .font(.system(size: 13, weight: .semibold)).padding(.horizontal, 14).frame(height: 32)
-                    .foregroundStyle(on ? Color.black : Color(white: 0.9))
-                    .background(on ? Color.white.opacity(0.92) : Color.white.opacity(0.07), in: .capsule)
-                    .overlay(Capsule().strokeBorder(.white.opacity(on ? 0 : 0.16)))
-                    .contentShape(.capsule)
+                    .padding(.horizontal, 10).padding(.top, 6)
+                    .fixedSize()
+                    .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(updates > 0 ? "\(p.title), \(updates) waiting" : p.title)
+                .help(hint(p))
+                .accessibilityLabel(count > 0 ? "\(p.title), \(count) waiting" : p.title)
+                .accessibilityHint(p == .health ? model.healthHint : "")
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
+        .animation(.spring(duration: 0.3), value: model.page)
         .fixedSize()
     }
 
-    /// Ready or not: it opens the Toolchain page
-    var toolchain: some View {
-        Button { model.page = .toolchain } label: {
-            HStack(spacing: 7) {
-                if model.checking { ProgressView().controlSize(.mini) }
-                else { Circle().fill(model.allOK ? Color(red: 0.29, green: 0.87, blue: 0.50) : Color(red: 0.98, green: 0.75, blue: 0.14)).frame(width: 7, height: 7) }
-                Text(model.checking ? "Checking the toolchain…" : model.allOK ? "Toolchain ready" : "Toolchain incomplete · \(model.passed) of \(model.checks?.count ?? 0)")
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(StageLook.soft).lineLimit(1)
-            }
-            .padding(.horizontal, 4).frame(height: 32).contentShape(.rect)
+    /// Health's badge: red for a problem, amber for warnings only; the others white
+    func badgeColor(_ p: Page) -> Color {
+        guard p == .health else { return Color.white.opacity(0.92) }
+        return model.healthWorst == .problem ? Color(red: 1, green: 0.42, blue: 0.38) : Color(red: 0.98, green: 0.75, blue: 0.14)
+    }
+
+    func hint(_ p: Page) -> String {
+        switch p {
+        case .health: return model.healthHint.isEmpty ? "Nothing needs attention" : model.healthHint
+        case .toolchain: return model.checking ? "Checking the toolchain…" : "\(model.passed) of \(model.checks?.count ?? 0) checks passed. Converter \(CONVERTER_VERSION)."
+        default: return ""
         }
-        .buttonStyle(.plain).fixedSize()
-        .help("\(model.passed) of \(model.checks?.count ?? 0) checks passed. Converter \(CONVERTER_VERSION).")
     }
 }
 

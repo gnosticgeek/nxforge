@@ -93,24 +93,15 @@ struct LibraryPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if !model.couchMode {
-                        PageHeading(title: "Game Files", subtitle: "Every game in your games folder, to build one or many.") {
-                            if model.libraryScanning {
-                                Button { model.stopLibraryScan() } label: { Label("Stop Scan", systemImage: "stop.fill") }.help("Stop the scan")
-                            } else {
-                                Button { model.scanLibrary() } label: { Label("Scan Again", systemImage: "arrow.clockwise") }
-                                    .help("Scan the games folder again").disabled(model.settings.gamesRoot == nil)
-                            }
-                        }
-                        .buttonStyle(.stage)
+                        heading(all.count)
                         offlineCard
-                        rootCard
+                        if showsRootCard { rootCard }
                         undoCard
                         batchCard
                     }
                     if let l = model.library, l.root == model.settings.gamesRoot, !l.games.isEmpty {
-                        if model.librarySearch.isEmpty { continuePlaying }
+                        if model.couchMode, model.librarySearch.isEmpty { continuePlaying }
                         if !model.couchMode { filterBar(all, builds, l, shown: games.count) }
-                        if !model.librarySelection.isEmpty && !model.couchMode { selectionBar(all, builds) }
                         if games.isEmpty {
                             Group {
                                 if model.librarySearch.isEmpty {
@@ -137,15 +128,20 @@ struct LibraryPage: View {
                                     }
                                     .onGeometryChange(for: Int.self) { Int(($0.size.width + 18) / (min + 18)) } action: { model.libraryColumns = max($0, 1) }
                                 } else {
-                                    InsetTable {
+                                    VStack(spacing: 0) {
+                                        tableHeader(sec.games)
                                         ForEach(sec.games) { g in
-                                            if g.id != sec.games.first?.id { Divider() }
+                                            Rectangle().fill(.white.opacity(0.08)).frame(height: 1)
                                             row(g, build: model.build(of: g, in: builds)).id(g.id)
                                         }
                                     }
+                                    .background(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.6), in: .rect(cornerRadius: 14))
+                                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.14)))
+                                    .clipShape(.rect(cornerRadius: 14))
                                 }
                             }
                         }
+                        if !model.couchMode { Text(summary(l, shown: games.count)).font(.callout).foregroundStyle(StageLook.faint) }
                     } else if !model.libraryScanning, let root = model.settings.gamesRoot, model.offlineVolume(root) == nil {
                         ContentUnavailableView {
                             Label("No Games Found", systemImage: "questionmark.folder")
@@ -158,6 +154,9 @@ struct LibraryPage: View {
                     }
                 }
                 .padding(.horizontal, Theme.gutter).padding(.top, model.couchMode ? 40 : 4).padding(.bottom, 28)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !model.couchMode { actionBar(all, builds).padding(.horizontal, Theme.gutter - 4).padding(.bottom, 14) }
             }
             .onChange(of: model.libraryFocus) { _, f in
                 if let f { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) } }
@@ -216,6 +215,119 @@ struct LibraryPage: View {
         model.libraryFocus = g.id
         return .handled
     }
+
+    // MARK: the heading, the bar along the foot
+
+    /// "Game Files  65 games", with the games folder and Scan again at the right
+    func heading(_ count: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Text("Game Files").font(.system(size: 32, weight: .heavy)).tracking(-0.6).accessibilityAddTraits(.isHeader)
+            if count > 0 { Text("\(count) game\(count == 1 ? "" : "s")").font(.system(size: 16)).foregroundStyle(StageLook.soft) }
+            Spacer(minLength: 8)
+            Button { model.chooseGamesRoot() } label: { Label(model.settings.gamesRoot == nil ? "Choose folder…" : "Change folder…", systemImage: "folder") }
+                .buttonStyle(.stage).disabled(model.libraryScanning || model.batchRunning)
+                .help(model.settings.gamesRoot.map { "Games folder: \($0.tildePath)" } ?? "Choose the folder that holds your games")
+            if model.libraryScanning {
+                Button { model.stopLibraryScan() } label: { Label("Stop scan", systemImage: "stop.fill") }.buttonStyle(.plain).help("Stop the scan")
+            } else {
+                Button { model.scanLibrary() } label: { Label("Scan again", systemImage: "arrow.clockwise") }
+                    .buttonStyle(.plain).help("Scan the games folder again").disabled(model.settings.gamesRoot == nil)
+            }
+        }
+        .font(.system(size: 15, weight: .medium))
+        .padding(.top, 8)
+    }
+
+    /// The games folder's card: only while there is something to say (no folder yet, a scan or a read running, a warning)
+    var showsRootCard: Bool {
+        model.settings.gamesRoot == nil || model.libraryProgress != nil || model.libraryDetails != nil || model.libraryMessage != nil
+            || (model.library.map { $0.root == model.settings.gamesRoot && !$0.skipped.isEmpty } ?? false)
+    }
+
+    /// Along the foot: the ticked games with Build, else the game in focus with Show in Finder, Details, Play and Convert
+    @ViewBuilder func actionBar(_ all: [LibraryGame], _ builds: [String: LibraryBuild]) -> some View {
+        if !model.librarySelection.isEmpty {
+            selectionBar(all, builds)
+        } else if let g = model.libraryFocus.flatMap({ f in all.first { $0.id == f } }) ?? model.libraryShown(builds).first {
+            let b = model.build(of: g, in: builds)
+            HStack(spacing: 14) {
+                if let icon = g.icon { GameIcon(url: icon.url, size: 52) } else { GameIcon(url: nil, size: 52) }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(g.displayName).font(.system(size: 17, weight: .semibold)).lineLimit(1)
+                    HStack(spacing: 6) {
+                        let (word, color) = statusWord(g, b)
+                        Text(word).foregroundStyle(color).fontWeight(.semibold)
+                        Text("·  \(g.contents)").foregroundStyle(StageLook.soft)
+                    }
+                    .font(.system(size: 13.5)).lineLimit(1)
+                }
+                Spacer(minLength: 12)
+                Button { reveal(revealPath(g)) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.stage)
+                Button { model.openGame(GameRef(libraryID: g.id, app: b?.app)) } label: { Label("Details", systemImage: "info.circle") }.buttonStyle(.stage)
+                // the main button is the next step: Play a current build, Rebuild an old one, else Convert
+                if let b, let r = b.record, model.outdated(b) {
+                    Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill") }.buttonStyle(.stage)
+                    Button { model.rebuildAsked(r) } label: { Label("Rebuild", systemImage: "arrow.clockwise") }
+                        .buttonStyle(StageButton(primary: true, height: 40)).disabled(model.run.running || model.batchRunning || !model.allOK)
+                        .help("Builds it again on the current engine, reusing every step whose inputs have not changed")
+                } else if let b {
+                    Button("Convert…") { model.convertFromLibrary(g) }.buttonStyle(.stage)
+                        .disabled(model.run.running || model.batchRunning).help("Open it on the Convert page")
+                    Button { model.openApp(b.app) } label: { Label(model.isPlaying(app: b.app) ? "Resume" : "Play", systemImage: "play.fill") }
+                        .buttonStyle(StageButton(primary: true, height: 40))
+                } else {
+                    Button("Convert…") { model.convertFromLibrary(g) }
+                        .buttonStyle(StageButton(primary: true, height: 40))
+                        .disabled(model.run.running || model.batchRunning)
+                        .help(model.run.running ? "Not while a build runs" : "Make this the game on the Convert page")
+                }
+            }
+            .controlSize(.large)
+            .padding(.horizontal, 22).padding(.vertical, 14)
+            .background(Color(red: 0.08, green: 0.08, blue: 0.10), in: .rect(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.16)))
+            .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
+        }
+    }
+
+    /// The status column's word and colour
+    func statusWord(_ g: LibraryGame, _ b: LibraryBuild?) -> (String, Color) {
+        guard let b else { return ("Not built yet", StageLook.soft) }
+        if model.isPlaying(app: b.app) { return ("Playing now", Color(red: 0.38, green: 0.65, blue: 0.98)) }
+        if model.outdated(b) { return ("Older engine", .orange) }
+        return ("Built", Color(red: 0.29, green: 0.87, blue: 0.50))
+    }
+
+    /// The table's head: tick every game shown, then the columns
+    func tableHeader(_ games: [LibraryGame]) -> some View {
+        let ids = Set(games.map(\.id))
+        let all = !ids.isEmpty && ids.isSubset(of: model.librarySelection)
+        return HStack(spacing: 14) {
+            Toggle("", isOn: Binding(get: { all }, set: { on in if on { model.librarySelection.formUnion(ids) } else { model.librarySelection.subtract(ids) } }))
+                .toggleStyle(.checkbox).labelsHidden().disabled(model.batchRunning).help(all ? "Deselect all" : "Select every game shown")
+                .frame(width: 24)
+            sortHead("Game", .name).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 58)
+            Text("Contents").frame(width: Self.contentsW, alignment: .leading)
+            sortHead("Size", .size).frame(width: Self.sizeW, alignment: .leading)
+            Text("Status").frame(width: Self.statusW, alignment: .leading)
+        }
+        .font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.soft)
+        .padding(.horizontal, 18).padding(.vertical, 12)
+    }
+
+    /// A column heading that sorts by it, with a mark when it does
+    func sortHead(_ title: String, _ sort: LibrarySort) -> some View {
+        Button { model.settings.librarySort = sort } label: {
+            HStack(spacing: 5) {
+                Text(title)
+                if model.settings.librarySort == sort { Image(systemName: sort == .size ? "chevron.down" : "chevron.up").font(.system(size: 10, weight: .bold)) }
+            }
+            .foregroundStyle(model.settings.librarySort == sort ? Color.white : StageLook.soft).contentShape(.rect)
+        }
+        .buttonStyle(.plain).help("Sort by \(title.lowercased())")
+    }
+
+    static let contentsW: CGFloat = 230, sizeW: CGFloat = 100, statusW: CGFloat = 170
 
     // MARK: cards over the list
 
@@ -383,34 +495,45 @@ struct LibraryPage: View {
     // MARK: filters and selection
 
     func filterBar(_ all: [LibraryGame], _ builds: [String: LibraryBuild], _ l: LibraryScan, shown: Int) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 4) {
-                ForEach(ConsoleFilter.allCases, id: \.self) { c in
-                    Button { model.libraryConsole = c } label: {
-                        Text(c.rawValue).padding(.horizontal, 10).padding(.vertical, 4).contentShape(.capsule)
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(model.libraryConsole == c ? Color.black : Color(white: 0.9))
-                    .background(model.libraryConsole == c ? AnyShapeStyle(Color.white.opacity(0.92)) : AnyShapeStyle(.clear), in: .capsule)
-                    .accessibilityAddTraits(model.libraryConsole == c ? .isSelected : [])
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(StageLook.faint)
+                TextField("Search game files", text: $model.librarySearch).textFieldStyle(.plain)
+                if !model.librarySearch.isEmpty {
+                    Button { model.librarySearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
+                        .buttonStyle(.plain).accessibilityLabel("Clear Search")
                 }
             }
-            .padding(3)
-            .background(.white.opacity(0.08), in: .capsule)
-            .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
-            Menu {
-                Picker("Show", selection: $model.libraryFilter) {
+            .padding(.horizontal, 12).frame(width: 300, height: 34)
+            .background(.white.opacity(0.06), in: .rect(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.16)))
+            BoxMenu {
+                Picker("Platform", selection: $model.libraryConsole) {
+                    ForEach(ConsoleFilter.allCases, id: \.self) { c in Text("\(c.rawValue) (\(all.filter { c == .all || $0.console.rawValue == c.rawValue }.count))").tag(c) }
+                }
+                .pickerStyle(.inline)
+            } label: { menuLabel("Platform", model.libraryConsole.rawValue) }
+            .fixedSize()
+            BoxMenu {
+                Picker("Status", selection: $model.libraryFilter) {
                     ForEach(LibraryFilter.allCases, id: \.self) { f in
                         Text("\(f.rawValue) (\(all.filter { model.matches($0, f, builds) && model.consoleOK($0) }.count))").tag(f)
                     }
                 }
                 .pickerStyle(.inline)
-            } label: {
-                Label(model.libraryFilter.rawValue, systemImage: model.libraryFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+            } label: { menuLabel("Status", model.libraryFilter == .all ? "All" : model.libraryFilter.rawValue) }
+            .fixedSize()
+            Spacer()
+            if model.settings.libraryLayout == .grid {
+                Slider(value: $model.settings.libraryCoverSize, in: Settings.coverSizes).frame(width: 100).controlSize(.small)
+                    .accessibilityLabel("Cover size").help("Cover size (⌘+ and ⌘−)")
             }
-            .menuStyle(.button).buttonStyle(.glass).fixedSize()
-            Menu {
+            Picker("Layout", selection: $model.settings.libraryLayout) {
+                Label("List", systemImage: "list.bullet").labelStyle(.iconOnly).tag(LibraryLayout.list).help("List")
+                Label("Covers", systemImage: "square.grid.2x2").labelStyle(.iconOnly).tag(LibraryLayout.grid).help("Covers")
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            BoxMenu {
                 Picker("Sort by", selection: $model.settings.librarySort) {
                     ForEach(LibrarySort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
@@ -418,27 +541,22 @@ struct LibraryPage: View {
                 Divider()
                 Toggle("Group by Console", isOn: $model.settings.libraryGroupByConsole)
                     .disabled(model.libraryConsole != .all)
-            } label: {
-                Label(model.settings.librarySort.rawValue, systemImage: "arrow.up.arrow.down")
-            }
-            .menuStyle(.button).buttonStyle(.glass).fixedSize()
-            Spacer()
-            Text(summary(l, shown: shown)).foregroundStyle(.secondary).lineLimit(1)
-            if model.settings.libraryLayout == .grid {
-                HStack(spacing: 6) {
-                    Image(systemName: "square.grid.3x3").font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
-                    Slider(value: $model.settings.libraryCoverSize, in: Settings.coverSizes).frame(width: 100).controlSize(.small)
-                        .accessibilityLabel("Cover size")
-                    Image(systemName: "square.grid.2x2").foregroundStyle(.secondary).accessibilityHidden(true)
-                }
-                .help("Cover size (⌘+ and ⌘−)")
-            }
-            Picker("Layout", selection: $model.settings.libraryLayout) {
-                Label("List", systemImage: "list.bullet").labelStyle(.iconOnly).tag(LibraryLayout.list).help("List")
-                Label("Covers", systemImage: "square.grid.2x2").labelStyle(.iconOnly).tag(LibraryLayout.grid).help("Covers")
-            }
-            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            } label: { menuLabel("Sort", model.settings.librarySort.rawValue) }
+            .fixedSize()
         }
+    }
+
+    /// "Platform:  All  ⌄" on a bordered box, as the mock-up has them
+    func menuLabel(_ name: String, _ value: String) -> some View {
+        HStack(spacing: 6) {
+            Text("\(name):").foregroundStyle(StageLook.soft)
+            Text(value).fontWeight(.semibold).foregroundStyle(.white)
+            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(StageLook.soft).padding(.leading, 10)
+        }
+        .font(.system(size: 14))
+        .padding(.horizontal, 14).frame(height: 34)
+        .background(.white.opacity(0.06), in: .rect(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.16)))
     }
 
     func selectionBar(_ all: [LibraryGame], _ builds: [String: LibraryBuild]) -> some View {
@@ -489,7 +607,9 @@ struct LibraryPage: View {
     func summary(_ l: LibraryScan, shown n: Int) -> String {
         let s = n == l.games.count ? "\(n) game\(n == 1 ? "" : "s")" : "\(n) of \(l.games.count) games"
         let when = relativeDay(l.scanned)
-        return "\(s) · scanned \(when.hasPrefix("Today") || when.hasPrefix("Yesterday") ? when.lowercasedFirst : "on \(when)")"
+        let at = l.scanned.formatted(date: .omitted, time: .shortened)
+        let day = when.hasPrefix("Today") ? "today at \(at)" : when.hasPrefix("Yesterday") ? "yesterday at \(at)" : "on \(when)"
+        return (n == l.games.count ? "" : "Showing \(s) · ") + "Last scanned \(day)"
     }
 
     // MARK: the list's rows
@@ -497,64 +617,72 @@ struct LibraryPage: View {
     func row(_ g: LibraryGame, build b: LibraryBuild?) -> some View {
         let picked = model.librarySelection.contains(g.id)
         let focus = model.libraryFocus == g.id
-        return HStack(spacing: 12) {
+        let (word, color) = statusWord(g, b)
+        return HStack(spacing: 14) {
             Toggle("", isOn: Binding(get: { picked }, set: { on in if on { model.librarySelection.insert(g.id) } else { model.librarySelection.remove(g.id) } }))
-                .toggleStyle(.checkbox).labelsHidden().disabled(model.batchRunning)
-            if let icon = g.icon {
-                GameIcon(url: icon.url, size: 44)
-            } else {
-                Image(systemName: g.kind == .nup ? "shippingbox" : g.kind == .dump ? "folder.badge.gearshape" : "gamecontroller")
-                    .font(.title2).foregroundStyle(.secondary).frame(width: 44, height: 44)
-                    .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 9))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(g.displayName).font(.headline).lineLimit(1)
-                    GameBadge(text: g.console.rawValue)
-                    StatusBadges(model: model, game: g, build: b)
+                .toggleStyle(.checkbox).labelsHidden().disabled(model.batchRunning).frame(width: 24)
+            HStack(spacing: 14) {
+                if let icon = g.icon {
+                    GameIcon(url: icon.url, size: 44)
+                } else {
+                    Image(systemName: g.kind == .nup ? "shippingbox" : g.kind == .dump ? "folder.badge.gearshape" : "gamecontroller")
+                        .font(.title2).foregroundStyle(.secondary).frame(width: 44, height: 44)
+                        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 9))
                 }
-                Text(([g.contents, g.version.map { "v\($0)" }, g.publisher.flatMap { $0.isEmpty ? nil : $0 }, g.titleID, g.bytes > 0 ? Disk.gb(g.bytes) : nil].compactMap { $0 }).joined(separator: " · "))
-                    .font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                if g.shared {
-                    Label("Shares its folder with other games: Convert first moves its \(g.fileCount == 1 ? "file" : "\(g.fileCount) files") into a folder of its own", systemImage: "folder.badge.plus")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if model.newerUpdate(g, b) {
-                    Label("A newer update is here than the one the app was built with: rebuild to play it", systemImage: "arrow.up.circle.fill").font(.caption).foregroundStyle(.blue)
-                }
-                ForEach(g.notes, id: \.self) { n in
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Label(n, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
-                        if n.contains("not used: the build reads"), g.stray?.isEmpty == false {
-                            Button("Move beside the game…") { model.moveStray(g) }.buttonStyle(.link).font(.caption).disabled(model.run.running || model.batchRunning)
+                        Text(g.displayName).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                        if let v = g.titleID.flatMap({ model.verified[$0] }), v.result == "plays" { GameBadge(text: "Plays", color: .green).help(v.summary) }
+                    }
+                    Text(g.console.rawValue).font(.system(size: 13)).foregroundStyle(StageLook.faint)
+                    if g.shared {
+                        Label("Shares its folder with other games: Convert first moves its \(g.fileCount == 1 ? "file" : "\(g.fileCount) files") into a folder of its own", systemImage: "folder.badge.plus")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if model.newerUpdate(g, b) {
+                        Label("A newer update is here than the one the app was built with: rebuild to play it", systemImage: "arrow.up.circle.fill").font(.caption).foregroundStyle(.blue)
+                    }
+                    ForEach(g.notes, id: \.self) { n in
+                        HStack(spacing: 6) {
+                            Label(n, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+                            if n.contains("not used: the build reads"), g.stray?.isEmpty == false {
+                                Button("Move beside the game…") { model.moveStray(g) }.buttonStyle(.link).font(.caption).disabled(model.run.running || model.batchRunning)
+                            }
+                        }
+                    }
+                    ForEach(g.duplicates ?? [], id: \.self) { d in
+                        HStack(spacing: 6) {
+                            Label("The same game is also in “\(d.lastComponent)”", systemImage: "square.on.square").font(.caption).foregroundStyle(.secondary)
+                            Button("Show") { reveal(d) }.buttonStyle(.link).font(.caption)
                         }
                     }
                 }
-                ForEach(g.duplicates ?? [], id: \.self) { d in
-                    HStack(spacing: 6) {
-                        Label("The same game is also in “\(d.lastComponent)”", systemImage: "square.on.square").font(.caption).foregroundStyle(.secondary)
-                        Button("Show") { reveal(d) }.buttonStyle(.link).font(.caption)
-                    }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(g.contents.replacingOccurrences(of: "Base game", with: "Base").replacingOccurrences(of: " + \(g.dlc) DLC", with: " · \(g.dlc) DLC"))
+                .lineLimit(1).frame(width: Self.contentsW, alignment: .leading)
+            Text(g.bytes > 0 ? Disk.gb(g.bytes) : "–").monospacedDigit().frame(width: Self.sizeW, alignment: .leading)
+            HStack(spacing: 8) {
+                Group {
+                    if b == nil { Image(systemName: "hammer").foregroundStyle(StageLook.soft) }
+                    else if word == "Older engine" { Image(systemName: "arrow.clockwise.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.black, color) }
+                    else { Image(systemName: "checkmark.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.black, color) }
                 }
-                Text(g.path.tildePath).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+                .font(.system(size: 18))
+                Text(word).foregroundStyle(b == nil ? StageLook.soft : .white)
             }
-            Spacer()
-            Button { reveal(revealPath(g)) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage).help("Show in Finder")
-            if let b {
-                Button { model.openApp(b.app) } label: { Label("Play", systemImage: "play.fill").labelStyle(.iconOnly) }.buttonStyle(.stage).help("Open \(b.app.lastComponent)")
-            }
-            Button("Convert") { model.convertFromLibrary(g) }
-                .buttonStyle(.stage).disabled(model.run.running || model.batchRunning)
-                .help(model.run.running ? "Not while a build runs" : "Make this the game on the Convert page")
-                .frame(minWidth: 86)
+            .frame(width: Self.statusW, alignment: .leading)
+            .help(b.map { model.outdated($0) ? "\($0.app.lastComponent) was built on \($0.record?.engine.short ?? "an older engine"): rebuild for the newest fixes" : $0.app } ?? "")
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(picked ? Color.white.opacity(0.07) : .clear)
-        .overlay { if focus { RoundedRectangle(cornerRadius: 8).strokeBorder(.white, lineWidth: 2).padding(2) } }
+        .font(.system(size: 15))
+        .padding(.horizontal, 18).padding(.vertical, 9)
+        .background(focus ? convertAccent.opacity(0.10) : picked ? Color.white.opacity(0.05) : .clear)
+        .overlay { if focus { RoundedRectangle(cornerRadius: 10).strokeBorder(convertAccent.opacity(0.85), lineWidth: 1.5) } }
         .contentShape(.rect)
         .onTapGesture(count: 2) { model.openGame(GameRef(libraryID: g.id, app: b?.app)) }
         .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
         .contextMenu { LibraryGameMenu(model: model, game: g, build: b) }
+        .help(g.path.tildePath)
     }
 
     /// The games under their console's heading when grouped, else one untitled section.

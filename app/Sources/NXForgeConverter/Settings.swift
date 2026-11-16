@@ -189,6 +189,8 @@ struct Settings: Codable, Equatable {
     }
 
     func save() {
+        // a snapshot that picks a game for Convert (NXC_CONVERT) leaves the real settings as they were
+        if ProcessInfo.processInfo.environment["NXC_CONVERT"] != nil { return }
         try? FileManager.default.createDirectory(at: Settings.supportDir, withIntermediateDirectories: true)
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]

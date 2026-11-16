@@ -177,6 +177,13 @@ struct ConverterApp: App {
                 }
             }
         }
+        // NXC_CONVERT=<part of a name>: that Game Files game on the Convert page (settings are not saved while it is set);
+        // NXC_OPTIONS=1 opens Build options, NXC_FOCUS=<part of a name> focuses a Game Files row
+        if let n = env["NXC_CONVERT"], let g = model.library?.games.first(where: { $0.displayName.localizedCaseInsensitiveContains(n) }) {
+            model.setGameDir(g.path)
+            try? await Task.sleep(for: .seconds(3))
+        }
+        if let n = env["NXC_FOCUS"], let g = model.library?.games.first(where: { $0.displayName.localizedCaseInsensitiveContains(n) }) { model.libraryFocus = g.id }
         // NXC_SCOPE=built: the Library's Built collection
         if env["NXC_SCOPE"] == "built" { model.stageScope = .built }
         // NXC_BUILDSTRIP=1: a build running (pretend: nothing runs) for the strip along the foot of the window, on NXC_GAME's game

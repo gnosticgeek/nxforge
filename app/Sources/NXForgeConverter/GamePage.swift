@@ -97,7 +97,7 @@ struct GamePage: View {
                 }
                 if let b {
                     SaveSnapshotsCard(model: model, build: b)
-                    BuildDetail(model: model, build: b, name: name)
+                    BuildDetail(model: model, build: b, name: name, header: false)
                     PreviousBuilds(model: model, build: b)
                 }
             }
