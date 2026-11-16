@@ -644,7 +644,7 @@ struct StageTopBar: View {
         Button(action: act) {
             Text(title).font(.system(size: 14, weight: .semibold)).padding(.horizontal, 16).frame(height: 30)
                 .foregroundStyle(on ? Color.black : Color(white: 0.92))
-                .background { if on { Capsule().fill(.white.opacity(0.94)).matchedGeometryEffect(id: "tab", in: marks) } }
+                .background { if on { Capsule().fill(convertAccent).matchedGeometryEffect(id: "tab", in: marks) } }
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)
