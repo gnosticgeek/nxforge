@@ -302,12 +302,12 @@ struct BuildDetail: View {
                         .disabled(!model.allOK || model.run.running)
                 }
                 Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder") }
-                    .buttonStyle(StageButton(height: 44))
+                    .buttonStyle(StageButton(height: 44)).fixedSize()
                 Button { model.openGame(GameRef(libraryID: nil, app: build.app)) } label: {
                     HStack(spacing: 6) { Text("Game page").underline(); Image(systemName: "arrow.up.forward.square") }
                         .font(.system(size: 17, weight: .medium)).foregroundStyle(convertAccent).contentShape(.rect)
                 }
-                .buttonStyle(.plain).help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
+                .buttonStyle(.plain).fixedSize().help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
             }
             .padding(.top, 26)
             if build.launched != true { FirstLaunchNote().padding(.top, 12) }
