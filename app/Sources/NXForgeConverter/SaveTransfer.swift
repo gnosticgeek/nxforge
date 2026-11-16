@@ -127,6 +127,60 @@ enum SaveTransfer {
 }
 
 extension AppModel {
+    /// After a game quits: a checked snapshot of its save when it changed (Settings › Snapshot after every session), off the main thread.
+    func snapshotSaveAfterPlay(app: String) {
+        guard settings.snapshotAfterPlay, let tid = VerifiedGames.titleID(ofApp: app) else { return }
+        let loc = SaveSnapshots.location(app: app, titleID: tid)
+        Task.detached {
+            // the game has gone, but its last write can still be landing: give it a moment
+            try? await Task.sleep(for: .seconds(2))
+            let made: Bool
+            do { made = try SaveSnapshots.snapshotAfterPlay(loc) != nil } catch {
+                fputs("save snapshot after play (\(tid)): \(error)\n", stderr)
+                made = false
+            }
+            if made { await MainActor.run { self.revision += 1 } }
+        }
+    }
+
+    /// Settings › Snapshot folder: choose one, then offer to move the snapshots there.
+    func chooseSnapshotFolder() {
+        guard let d = choose(folder: true, start: settings.saveSnapshotsFolder) else { return }
+        setSnapshotFolder(d)
+    }
+
+    /// nil: back beside each save. Asks before moving the snapshots already made.
+    func setSnapshotFolder(_ folder: String?) {
+        guard folder != settings.saveSnapshotsFolder else { return }
+        settings.saveSnapshotsFolder = folder
+        let locs = saveLocations()
+        let waiting = locs.reduce(0) { n, loc in n + SaveSnapshots.list(loc).filter { $0.path.url.deletingLastPathComponent().path != loc.snapshots }.count }
+        revision += 1
+        guard waiting > 0 else { return }
+        let to = folder?.tildePath ?? "beside each save"
+        guard confirm("Move \(waiting) snapshot\(waiting == 1 ? "" : "s") \(folder == nil ? "back" : "there")?",
+                      "New snapshots go \(folder == nil ? "" : "to ")\(to). The ones already made can move too: each is copied, checked file by file, then the old copy goes to the Trash.",
+                      action: "Move Them") else { return }
+        showBanner("Moving save snapshots…", detail: "Each one is checked before its old copy goes.", tone: .info, symbol: "arrow.right.doc.on.clipboard")
+        Task.detached {
+            let r = SaveSnapshots.moveAll(locs)
+            await MainActor.run {
+                self.revision += 1
+                if r.failed.isEmpty { self.showBanner("Moved \(r.moved) save snapshot\(r.moved == 1 ? "" : "s")", detail: "They are \(folder == nil ? "" : "in ")\(to) now.", tone: .success, symbol: "checkmark.circle") }
+                else { self.showBanner("Moved \(r.moved); \(r.failed.count) stayed where they were", detail: r.failed.prefix(3).joined(separator: "\n"), tone: .warning) }
+            }
+        }
+    }
+
+    /// Every built game's save place, one per title ID (the newest build's).
+    func saveLocations() -> [SaveLocation] {
+        var seen = Set<String>()
+        return Engine.builds().compactMap { b -> SaveLocation? in
+            guard let t = VerifiedGames.titleID(ofApp: b.app), seen.insert(t).inserted else { return nil }
+            return SaveSnapshots.location(app: b.app, titleID: t)
+        }
+    }
+
     /// After a game quits: back its save up to the repository, if one is set (off the main thread).
     func backUpSaveAfterPlay(app: String, name: String) {
         guard settings.saveBackupRepo != nil else { return }
