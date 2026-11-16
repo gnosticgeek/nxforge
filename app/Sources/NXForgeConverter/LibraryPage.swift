@@ -284,7 +284,7 @@ struct LibraryPage: View {
             }
             .controlSize(.large)
             .padding(.horizontal, 22).padding(.vertical, 14)
-            .background(Color(red: 0.08, green: 0.08, blue: 0.10).opacity(0.92), in: .rect(cornerRadius: 16))
+            .background(Color(red: 0.08, green: 0.08, blue: 0.10), in: .rect(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.16)))
             .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
         }
