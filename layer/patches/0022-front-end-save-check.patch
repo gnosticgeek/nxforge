@@ -36,7 +36,7 @@ index f7479aeb6eb3d009f27c6f77284d43987c8f1cf1..c706afe5f22be3f276672654c717e34b
      if (shown == 2) saved_choices();
      cloud_saves_folder();
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 4f3f9d814ebd1d571de311349b90fa95bc69dd48..ff051a6480c0c6beedca4bd7e572f59ad17ad413 100644
+index d3dd658a9dd46ea8a9ab5b8d891be4ca9a4f41e6..921cb1b813c82e061d9ff2f346aef3e22240b242 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -50,6 +50,7 @@ DM_FPS	switch	`30` or `60` pins the frame rate the display link and frame pacing

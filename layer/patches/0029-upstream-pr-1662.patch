@@ -19,10 +19,10 @@ Drop this patch when #1662 lands upstream.
  8 files changed, 206 insertions(+), 27 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index ad72fce0c3b9f8c4214da00ffe3928136ad2e20d..81b309751735f21eb6383d6698a86d64d707d3c5 100644
+index da7bf6a35feb0b80e619c38f0cb9b4b5208a8140..5aa3a072379a3a28b1e6fc1432196b5a16e63075 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
-@@ -253,7 +253,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+@@ -276,7 +276,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
  - [A texture in a sparse pool came out CPU-written at its first use](../../../docs/reference/memory.md#a-texture-in-a-sparse-pool-came-out-cpu-written-at-its-first-use): found by the unit test, on this profile's `tex_dirty_upload`.
  - [Textures made for GPU use kept from their CPU rewrites](../../../docs/reference/nvn-objects.md#textures-made-for-gpu-use-kept-from-their-cpu-rewrites): the terrain tiles' height, blend and hole maps rewritten as tile slots are reused; flat blue holes in the ground after an hour of play.
  - [`EventFd` needs no network](../../../docs/reference/services.md#eventfd-needs-no-network)
@@ -44,7 +44,7 @@ index 85fb4e914b5abcc32490925da67e835a5ee12a5e..e66b18700d562978975a02179b881196
  DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
  DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
 diff --git a/dm/host/hle_audio.c b/dm/host/hle_audio.c
-index 8190080d5be876f99b365d0df3cde1b760a36653..0c43c58c49b1ddb88e5c76bd9d0181846714b3d7 100644
+index 2e52dacd178657677653b2537a1ea3c5abea4754..ab5ca92584ecb3830d969011d4dbdc9906b258a9 100644
 --- a/dm/host/hle_audio.c
 +++ b/dm/host/hle_audio.c
 @@ -9,6 +9,7 @@
@@ -280,10 +280,10 @@ index 8190080d5be876f99b365d0df3cde1b760a36653..0c43c58c49b1ddb88e5c76bd9d018184
  // Host-internal PCM output (used by the in-process audio renderer, see hle_audren.c): the same AudioOut machinery (real output / silent sink / background take-over), keyed by a host-allocated dummy object
  void *dm_pcmout_open(int ch) {
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 92435fd0a1604f39ae2551edfdd2f0792fc69de3..ed33c406299b6bfbea51bdda357daddce963b01c 100755
+index 2156578b668289f7960e8349edeef80a7e388c09..e38bb0049221a5934953c17a5ba09124dbecf0e1 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
-@@ -130,6 +130,8 @@ def info_plist(a, minos, icon):
+@@ -131,6 +131,8 @@ def info_plist(a, minos, icon):
      # DM_APP_GAME_MODE=1 when packing: an app that asks for Game Mode and whose launcher hands its process to the host (launcher.c DM_LAUNCH_EXEC), for a Mac where Game Mode
      # helps more than its GPU clock rule costs. The default stays off, for the reason above
      if os.environ.get('DM_APP_GAME_MODE') == '1': p['LSSupportsGameMode'] = True; p['GCSupportsGameMode'] = True; p['DMLaunchExec'] = '1'
@@ -306,10 +306,10 @@ index 09a96a6babfdafda8447a18b3a1eb3116ed44acd..f5265f5e257bb8196e96b641f015b219
          self.assertEqual((s['kind'], s['default'], s['options'], s['level']), ('choice', '0', [['0', 'Window'], ['1', 'Fullscreen']], 'basic'))
  
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 63e660c420eec72984f1e2070e138a44e254141f..7e744bf0bc25805266b0f43a7da131ff3a995796 100644
+index 7e853c3841307a3fbe672cfec80bbace470fbf69..d67bc121efcf2900f1cc71ee013d1856b434e17b 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -126,6 +126,9 @@ DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second write
+@@ -130,6 +130,9 @@ DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second write
  DM_MEM_CAP_GB	switch	`=<GB>`: the memory watchdog exits when resident memory exceeds that many GB (default 24 on the Mac, none on iOS; `0` turns it off)
  DM_METAL_CAPTURE	diagnostic	`=1` makes `build_ipa.sh` produce a build that can write GPU frame captures (`MetalCaptureEnabled` in `Info.plist`), for `DM_GPU_CAPTURE`
  DM_METAL_HUD	player	`1` shows Apple's Metal performance HUD over the game (frame rate, frame and GPU time, memory)
@@ -320,10 +320,10 @@ index 63e660c420eec72984f1e2070e138a44e254141f..7e744bf0bc25805266b0f43a7da131ff
  DM_MOTION_ACC_SIGN	switch	`-1` flips only GameController's acceleration, for a source that reports the specific force (+1 G up at rest) instead of the gravity direction (`motion_fusion.h`); phone and raw HID samples are already in the Switch frame
  DM_MOTION_AXES	switch	`=<map>` such as `x,-z,y`: maps Apple's controller axes to the Switch's, a signed permutation applied to acceleration and rotation alike, for a controller whose axes differ (default `x,y,z`; phone and raw HID samples are already in the Switch frame)
 diff --git a/docs/reference/audio.md b/docs/reference/audio.md
-index 1577039504ca6d30173ccb6396543f6d5df1d7b8..3246decec1064abad50c9f4d3f85762bad0c0cbf 100644
+index f016400ce98bb8b335288185c3bf82017f2b73a4..8dc71578ce3b5848f9364104a49c0baf27f62f51 100644
 --- a/docs/reference/audio.md
 +++ b/docs/reference/audio.md
-@@ -324,7 +324,7 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
+@@ -345,7 +345,7 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
  
  - **Symptom:** `[RED] sf: the game connects to service auddmg:u itself, which the host does not serve`, then `game called nn::diag abort: Result 0xa99` at `sdk+0x1f61ac` under `audio::ListVirtualInputDevices`.
  - **Cause:** the game lists the virtual input devices when its audio starts (`main+0xf48124`) and opens the first with `audio::OpenInputStream` if there is one. The list goes through a service the host does not serve.

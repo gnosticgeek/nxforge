@@ -11,7 +11,7 @@ A NUP with a base game and an update (Ocarina of Time, 0400486024DEC000 v131072)
  2 files changed, 12 insertions(+), 4 deletions(-)
 
 diff --git a/dm/tools/tests/test_nsp_nup.py b/dm/tools/tests/test_nsp_nup.py
-index 316ccb2e0bf318dc6dcf0612acaa58c5ffbb6964..22cfb7d7ba8baccf1608c855dcdc2b5dda01de77 100644
+index 85d506bcd08264d21e7ebe0e3a37880b0220de0c..0d0eb570cc9e5f7ebbd5cd5b2087bfed9d140c9a 100644
 --- a/dm/tools/tests/test_nsp_nup.py
 +++ b/dm/tools/tests/test_nsp_nup.py
 @@ -461,6 +461,7 @@ class Pack(Base):
@@ -23,10 +23,10 @@ index 316ccb2e0bf318dc6dcf0612acaa58c5ffbb6964..22cfb7d7ba8baccf1608c855dcdc2b5d
          b = self.out() / 'b'
          self.assertEqual((nacp.name(b / 'control.nacp'), nacp.version(b / 'control.nacp')), ('Test Game', '1.2.3'))
 diff --git a/scripts/pack_nup.py b/scripts/pack_nup.py
-index a6c3f6dc604200d8f4a55dca31ac7e8319b64a63..1067670b4929ce30ba07a91d7b7f1a2dc829f947 100644
+index 0ba213b6568c6ee894b88471c113b9a7d8cce096..5f5ad31a4793a0fc6e5ab9a85eb3d1ae5267a636 100644
 --- a/scripts/pack_nup.py
 +++ b/scripts/pack_nup.py
-@@ -336,12 +336,19 @@ def app_package(n):   # the record that holds application metadata when no base
+@@ -390,12 +390,19 @@ def app_package(n):   # the record that holds application metadata when no base
      return next((k for k in n.packages if k.kind == BASE), n.packages[0])
  
  
@@ -49,10 +49,10 @@ index a6c3f6dc604200d8f4a55dca31ac7e8319b64a63..1067670b4929ce30ba07a91d7b7f1a2d
      for name, data in (('control.nacp', nacp_bytes), ('icon.jpg', icon)):
          if data: (out / name).write_bytes(data)
          else: (out / name).unlink(missing_ok=True)
-@@ -360,7 +367,7 @@ def pack_version(n, k, base, app, out, say=print, step=lambda s: None):   # one
-     out.mkdir(parents=True, exist_ok=True)
-     exefs(n, k, out / 'ExeFS')
-     how = pack(n, d, out / 'RomFS.img', say, step)
+@@ -428,7 +435,7 @@ def pack_version(n, k, base, app, out, say=print, step=lambda s: None):
+     for name, sd in others.items():
+         say(f'program {name.removesuffix(".img")} of the application ({n.siblings[int(name.removesuffix(".img"))][0]:016X}): its RomFS → {PROGRAMS}/{name}')
+         pack(n, sd, progs / name, say, step)
 -    control(k, out, app_package(n) if base is None else None)
 +    control(k, out, app_package(n) if base is None else None, icon_from=base)
      return how

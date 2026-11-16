@@ -6,7 +6,7 @@ What counts as the converter: everything under `app/` (the SwiftUI app, its test
 
 ## 0.14.2 (2026-11-16)
 
-Less work on every redraw. Ships in NXForge 0.38.3.
+Less work on every redraw. Ships in NXForge 0.39.1.
 
 - **Build records, play times and app details read once**: Home, the Library, Builds and the menus asked for the build records and the time played several times per redraw, and each time `builds.json` and `playtime.json` were read and decoded again; each built app's `Info.plist` was read again too, often on an external drive or a share. They are now kept while the file is unchanged (its date and size), and the app's own writes refresh them.
 - **Build records written in one piece**: `builds.json` is written atomically, so a write cut off by a crash or a full disk can no longer lose every record.

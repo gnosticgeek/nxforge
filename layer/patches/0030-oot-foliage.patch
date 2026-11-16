@@ -17,10 +17,10 @@ From brad-n/TVPort 8609a1cb by Brad Norman (MIT), on upstream's frame step rule:
  7 files changed, 70 insertions(+), 3 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 81b309751735f21eb6383d6698a86d64d707d3c5..9556ab86342d959697946dda8d11fb0277f05cb6 100644
+index 5aa3a072379a3a28b1e6fc1432196b5a16e63075..f30261e31791d61f1d69b67dbfaddaf1982f76e7 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
-@@ -101,6 +101,10 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+@@ -111,6 +111,10 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
  - The game reads the scale when it sets its views' sizes, at start and when the level changes, not every frame. The setting takes effect at start, as the launcher sets it; written into the running game (`DM_CTL`) it has no effect until the level changes. The 3840x2160 output is set at start too.
  - Measured on an M5 Max (40-core GPU, 64 GB, 2026-11-12, docked, a window, [`bench.tsv`](bench.tsv) `kokiri-deck` from the deck save, two runs of each): the main passes at 1920x1080 with 1.0, 2560x1440 with 1.333, 2880x1620 with 1.5 and 3840x2160 with 2.0 (pass dumps in play). 1.0: 56.7 and 60.0 fps, GPU p50 13.41 and 13.85 ms; 1.333: 60.0 fps both, 13.90 and 13.88 ms; 2.0: 60.0 and 59.0 fps, 14.54 and 14.71 ms. So native 3840x2160 costs about 0.7 ms of GPU time a frame over 2560x1440 here, and the game holds 60 fps; the frame's cost on Apple GPUs hardly depends on its resolution ([Frame rate](#frame-rate)). Not measured: a slower Mac, handheld (the output stubs scale the handheld size too; not run), the iPhone.
  
@@ -32,7 +32,7 @@ index 81b309751735f21eb6383d6698a86d64d707d3c5..9556ab86342d959697946dda8d11fb02
  
  - Current, Mac: from about half of Metal's working set the GPU driver frees at every command buffer and the game runs at about 10 fps (Hyrule Field after 15 minutes on a 24 GB M4 Pro, 9.0-9.5 GB required): [the driver's low-water mark](../../../docs/reference/memory.md#the-gpu-driver-frees-at-every-command-buffer-from-about-half-the-working-set). The guard lets go of what has idled from 7.3 GB there and tells the player when the game is slow past 8.4 GB; saving and starting again empties it.
 diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
-index 47e6aa4f434645ee760b0a9e02ad2941b8d2574c..75c0436e3afa81d671cd5bf3304681da05283fd3 100644
+index 80a673377f648792e773cab8f46e4dc0a7f916c7..7a87b3e346d57c64f624610e513cf2edfc107a7b 100644
 --- a/dm/games/0400486024DEC000/patches.py
 +++ b/dm/games/0400486024DEC000/patches.py
 @@ -3,6 +3,12 @@
@@ -105,7 +105,7 @@ index 47e6aa4f434645ee760b0a9e02ad2941b8d2574c..75c0436e3afa81d671cd5bf3304681da
  ]}
  
  # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
-@@ -230,6 +277,9 @@ BINDING = [
+@@ -260,6 +307,9 @@ BINDING = [
      {'what': 'wide screen: the swap chain and frame buffer sizes and the scene cameras\' aspect (DM_SCREEN_WIDE)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
       'why': "the game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)",
       'checked': 'v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen\'s edges and the scene at 16:9\'s proportions with more at the sides (2026-11-12)'},
@@ -128,10 +128,10 @@ index e66b18700d562978975a02179b881196de352e78..decdffcc2b9410322db9e7365604d909
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index a3d84bea926a7de6a116795e43a39cc36cdb3d9a..4c71c943b085ebf6e21f4a352b270ad2f0593571 100644
+index 87ec991fb314eb3449607d32eb23c7859c49700b..9524c923799bc87e99e913888af944c230eac6a8 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
-@@ -344,6 +344,12 @@ void dm_fps_state_apply(void) {
+@@ -358,6 +358,12 @@ void dm_fps_state_apply(void) {
      memcpy(dm_fps_state + 0x40, &dyn, sizeof dyn);
      // A full model heap (Ocarina of Time's patches.py heap_retry): DM_HEAP_RETRY=0 writes 1 at +0x17c, and the game's allocations that found their heap full stay as shipped
      { const char *hr = getenv("DM_HEAP_RETRY"); if (hr && !strcmp(hr, "0")) { uint32_t off = 1; memcpy(dm_fps_state + 0x17c, &off, 4); LOG("%s: full model heap retry off (DM_HEAP_RETRY=0)", g_fps_mod); } }
@@ -145,32 +145,34 @@ index a3d84bea926a7de6a116795e43a39cc36cdb3d9a..4c71c943b085ebf6e21f4a352b270ad2
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index c9328aa3053f41ca1840f188656c67f8f41dd16f..5a0062e0f4ce15563be2d6c78dddeb764e163d6f 100644
+index 1b58ec60b750ea7700b53484d93f9e3b99935dc5..2e9bc9a7a53b8036d4f233de471c53c03ec7b260 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
-@@ -83,7 +83,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -81,7 +81,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  | [Taiko Risshiden V DX](#taiko-risshiden-v-dx) | 1 | 0 | 0 | 2 | 0 | `game` |
  | [The Legend of Zelda: Breath of the Wild](#the-legend-of-zelda-breath-of-the-wild) | 7 | 0 | 43 | 0 | 0 | `build` → `game` ×2 |
  | [The Legend of Zelda: Link's Awakening](#the-legend-of-zelda-links-awakening) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
--| [The Legend of Zelda: Ocarina of Time](#the-legend-of-zelda-ocarina-of-time) | 0 | 0 | 12 | 1 | 0 | `game` ×4 |
-+| [The Legend of Zelda: Ocarina of Time](#the-legend-of-zelda-ocarina-of-time) | 0 | 0 | 13 | 1 | 0 | `game` ×5 |
+-| [The Legend of Zelda: Ocarina of Time](#the-legend-of-zelda-ocarina-of-time) | 0 | 0 | 12 | 3 | 0 | `game` ×6 |
++| [The Legend of Zelda: Ocarina of Time](#the-legend-of-zelda-ocarina-of-time) | 0 | 0 | 13 | 3 | 0 | `game` ×7 |
  | [The Legend of Zelda: Tears of the Kingdom](#the-legend-of-zelda-tears-of-the-kingdom) | 0 | 0 | 9 | 0 | 0 | `game` |
  | [Xenoblade Chronicles 3](#xenoblade-chronicles-3) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
- 
-@@ -596,9 +596,10 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ | [Xenoblade Chronicles X: Definitive Edition](#xenoblade-chronicles-x-definitive-edition) | 6 | 0 | 1 | 1 | 0 | `game` ×2 |
+@@ -586,11 +586,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  - **`game`**, frame rate, at goal, checked: v131072 main: one function with this fingerprint, the site and its free registers read by disassembly (2026-11-08): frame ratio from the host's step. The game's own frame-ratio division, found by its function's fingerprint on any build that keeps the function
  - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
  - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen's edges and the scene at 16:9's proportions with more at the sides (2026-11-12): wide screen: the swap chain and frame buffer sizes and the scene cameras' aspect (DM_SCREEN_WIDE). The game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)
 +- **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags' readers (turf draw lists, per-draw callbacks, the type classes' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10): foliage off: the foliage module's grass / forest disables and type hide bits set each frame (DM_FOLIAGE). The foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default
  
  - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
+ - **function-matched** (`main` of builds without CUTS): movie update cap: 3 pictures a frame, the frame step's largest hold, in place of the limit (2), which also sizes the decoder pipeline: 1 function, 1 cut
+ - **function-matched** (`main` of builds without CUTS): movie frame: the pictures the player has taken (its +0xc), not 1 more for each frame drawn: 2 functions, 2 cuts
 -- **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; wide: nnMain create arg, a function of 0x570 bytes, `+0x200` in it; wide: framework constructor, a function of 0x273c bytes, `+0x164`, `+0x170` in it; wide: camera update A, a function of 0x1700 bytes, `+0xa74` in it; wide: camera update B, a function of 0xa40 bytes, `+0x204` in it; wide: camera update C, a function of 0x638 bytes, `+0x428` in it; output size init, a function of 0x2fc bytes, `+0xf4` in it; output size, a function of 0x554 bytes, `+0x300` in it; window size, a function of 0x6f0 bytes, `+0x3fc` in it; graphics init, a function of 0x858 bytes, `+0x88` in it; launcher capabilities: DYNAMIC_RESOLUTION, SCREEN_WIDE
 +- **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; wide: nnMain create arg, a function of 0x570 bytes, `+0x200` in it; wide: framework constructor, a function of 0x273c bytes, `+0x164`, `+0x170` in it; wide: camera update A, a function of 0x1700 bytes, `+0xa74` in it; wide: camera update B, a function of 0xa40 bytes, `+0x204` in it; wide: camera update C, a function of 0x638 bytes, `+0x428` in it; output size init, a function of 0x2fc bytes, `+0xf4` in it; output size, a function of 0x554 bytes, `+0x300` in it; window size, a function of 0x6f0 bytes, `+0x3fc` in it; graphics init, a function of 0x858 bytes, `+0x88` in it; foliage calc, a function of 0x6f8 bytes, `+0x0` in it; launcher capabilities: DYNAMIC_RESOLUTION, FOLIAGE, SCREEN_WIDE
  
  ### The Legend of Zelda: Tears of the Kingdom
  
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 7e744bf0bc25805266b0f43a7da131ff3a995796..da74c0541483a1c818843ea0bfc958a8aac5f825 100644
+index d67bc121efcf2900f1cc71ee013d1856b434e17b..9257eb69762ceac7f7ed94d70c90f5fd114abfa3 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -45,6 +45,7 @@ DM_EXFAT_DIR	test	`=<folder on an exFAT volume>`: `test_shader_cache.py` (`Renum
