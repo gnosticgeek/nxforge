@@ -967,7 +967,7 @@ struct StageLibrary: View {
         if building { return ("Building · \(Int((model.run.overall(now: Date()).fraction * 100).rounded()))%", amber) }
         if g.app == nil { let st = model.status(g); return (st.text, st == .notBuilt ? Color(white: 0.55) : st.color) }
         if model.isPlaying(app: g.app ?? "") { return ("Playing now", blue) }
-        if let a = need { return (a.kind == .update && g.last != nil ? StageLook.played(g.last) : a.text, a.color) }
+        if let a = need { return (a.text, a.color) }
         if g.outdated { return ("Older engine", amber) }
         return (g.last == nil ? "Ready on Mac" : StageLook.played(g.last), green)
     }

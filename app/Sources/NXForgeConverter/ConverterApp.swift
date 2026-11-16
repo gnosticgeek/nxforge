@@ -187,6 +187,7 @@ struct ConverterApp: App {
             }
             let r = model.run
             r.running = true
+            r.expected = ["Mac shaders": 2400, "Mac host": 240, "Mac app": 180, "Pipeline archive": 900]
             r.startedAt = Date().addingTimeInterval(-1260)
             r.stageStartedAt = Date().addingTimeInterval(-300)
             r.stage = Stage(k: 5, n: 9, name: "Mac shaders", step: "compiling", fraction: 0.36, detail: "1240/3412 shaders", eta: 1150)

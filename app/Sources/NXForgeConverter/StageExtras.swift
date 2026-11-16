@@ -39,7 +39,7 @@ struct GameAttention: Hashable, Identifiable {
             out.append(GameAttention(kind: .crashed, text: "Last run crashed", detail: "The game stopped on signal \(sig) last time. Its log is in ~/Library/Logs/nxnative/\(t).log."))
         }
         if outdated {
-            out.append(GameAttention(kind: .update, text: "Update ready", detail: "A newer NXForge can rebuild this game. It still plays as it is."))
+            out.append(GameAttention(kind: .update, text: "Older engine", detail: "A newer NXForge can rebuild this game. It still plays as it is."))
         }
         if let t = titleID {
             let loc = SaveSnapshots.location(app: app, titleID: t, home: home)
@@ -70,7 +70,7 @@ struct GameAttention: Hashable, Identifiable {
 }
 
 extension AppModel {
-    /// The mark a cover carries: a crash or a save with no copy elsewhere. Update ready stays in the line under the cover, not on
+    /// The mark a cover carries: a crash or a save with no copy elsewhere. Older engine stays in the line under the cover, not on
     /// it: after an NXForge update every built game has it, and a mark on every cover marks nothing.
     func coverMark(_ g: StageGame) -> GameAttention? { attention[g.id]?.first { $0.kind != .update } }
 

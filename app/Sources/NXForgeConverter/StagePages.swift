@@ -142,7 +142,7 @@ struct StageGamePage: View {
             }
             if let record {
                 let ok = !g.outdated
-                info("hammer.fill", "Build", g.outdated ? "Update ready" : record.kept == true ? "Kept as it is" : "Up to date",
+                info("hammer.fill", "Build", g.outdated ? "Older engine" : record.kept == true ? "Kept as it is" : "Up to date",
                      "NXForge \(record.engine.short) · built \(record.date.map { $0.formatted(.dateTime.day().month(.abbreviated)) } ?? record.builtAt)",
                      seal: ok, action: manage)
             } else if g.app == nil {
@@ -254,7 +254,7 @@ struct GameHeroColumn: View {
                 .buttonStyle(.plain).padding(.leading, -8).padding(.top, 18)
                 .help("What the game starts with: opens Play options")
             }
-            AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build line says Update ready
+            AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build line says Older engine
                 .padding(.top, 18)
         }
     }

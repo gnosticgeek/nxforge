@@ -6,6 +6,13 @@ import SwiftUI
 
 // MARK: 1 · the build on every page: BuildStrip.swift
 
+/// "1 h 12 m", "35 m", "<1 m": the time left, short.
+func shortTimeLeft(_ s: Double) -> String {
+    if s < 60 { return "<1 m" }
+    let m = Int((s / 60).rounded())
+    return m < 60 ? "\(m) m" : "\(m / 60) h \(m % 60) m"
+}
+
 // MARK: 3 · Storage deletes that can be undone
 
 /// Something Storage deleted, held under a hidden name beside where it was until the undo time is over. A rename on the same

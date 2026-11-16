@@ -60,7 +60,7 @@ struct BuildStrip: View {
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 5) {
                     HStack(spacing: 10) {
-                        if let r = o.remaining { Text(timeLeft(r)).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1) }
+                        if let r = o.remaining ?? run.stage.eta { Text(o.remaining == nil ? "\(timeLeft(r)) in this step" : timeLeft(r)).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1) }
                         Text("\(pct)%").font(.system(size: 14, weight: .bold).monospacedDigit())
                     }
                     GeometryReader { geo in
