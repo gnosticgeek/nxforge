@@ -244,7 +244,7 @@ final class DiscoverState {
     }
 
     /// "Platformer" → "Platformers" for the heading; RPG and the like stay as they are
-    static func plural(_ g: String) -> String {
+    nonisolated static func plural(_ g: String) -> String {
         switch g {
         case "Platformer", "Shooter", "Board game": g + "s"
         case "Puzzle": "Puzzles"

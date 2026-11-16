@@ -577,11 +577,18 @@ struct StageView: View {
             if let g = detail ?? focus { model.toggleFavorite(g) }
             return .handled
         }
-        .task(id: games.map(\.coverKey).joined(separator: "|") + (model.settings.downloadCovers ? "1" : "0") + (model.settings.downloadHeroes ? "1" : "0") + (model.settings.squareCovers ? "1" : "0")) { model.fetchCovers(games) }
+        .task(id: coverTaskKey(games)) { model.fetchCovers(games) }
         .task(id: "\(model.settings.mediaInGameFolder)|\(CoverStore.shared.revision)|\(StoreInfoStore.shared.revision)|\(model.revision)|" + games.map { "\($0.id)\($0.app ?? "")" }.joined(separator: "|")) {
             GameFolderMediaSync.shared.schedule(model)
         }
         .task(id: games.map { "\($0.id)\($0.outdated)" }.joined(separator: "|") + "|\(model.playing.count)|\(model.revision)") { await model.refreshAttention(games) }
+    }
+
+    /// The key that restarts the cover fetch: the games' covers and the three art settings. It is built in steps so the compiler can type-check it.
+    private func coverTaskKey(_ games: [StageGame]) -> String {
+        let covers: String = games.map { $0.coverKey }.joined(separator: "|")
+        let flags: String = [model.settings.downloadCovers, model.settings.downloadHeroes, model.settings.squareCovers].map { $0 ? "1" : "0" }.joined()
+        return covers + flags
     }
 }
 
