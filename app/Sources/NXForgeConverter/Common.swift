@@ -88,6 +88,7 @@ struct ConverterRoot: View {
                         case .convert: ScrollView { ConvertPage(model: model, wide: width > 860).pagePadding() }
                         case .library: LibraryPage(model: model)
                         case .builds: BuildsPage(model: model)
+                        case .saves: SavesPage(model: model)
                         case .storage: StoragePage(model: model)
                         case .health: ScrollView { HealthPage(model: model).pagePadding() }
                         case .toolchain: ScrollView { ToolchainPage(model: model).pagePadding() }

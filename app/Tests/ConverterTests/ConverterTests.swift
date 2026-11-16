@@ -379,6 +379,61 @@ import Testing
         #expect(all.filter { $0.reason == .manual }.count == 1)
         #expect(all.filter { $0.reason != .manual }.count == SaveSnapshots.keepAutomatic)
     }
+
+    @Test func afterPlaySkipsAnUnchangedSave() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "0100A00000000001")
+        #expect(try SaveSnapshots.snapshotAfterPlay(loc) == nil)   // no save yet
+        try write("one", loc.save + "/a")
+        let first = try #require(try SaveSnapshots.snapshotAfterPlay(loc))
+        #expect(first.reason == .afterPlay)
+        #expect(first.device == SaveSnapshots.deviceName)
+        #expect(try SaveSnapshots.snapshotAfterPlay(loc) == nil)   // nothing changed
+        try write("two", loc.save + "/a")
+        #expect(try SaveSnapshots.snapshotAfterPlay(loc) != nil)
+        #expect(SaveSnapshots.list(loc).count == 2)
+        #expect(SaveSnapshots.list(loc).first?.device == SaveSnapshots.deviceName)
+    }
+
+    @Test func sessionsNeverPushOutTheSnapshotBeforeARestore() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "0100A00000000002")
+        try write("start", loc.save + "/a")
+        try SaveSnapshots.snapshot(loc, reason: .beforeRestore)
+        for i in 0..<(SaveSnapshots.keepAutomatic + 2) {
+            try write("session \(i)", loc.save + "/a")
+            try SaveSnapshots.snapshotAfterPlay(loc)
+        }
+        let all = SaveSnapshots.list(loc)
+        #expect(all.filter { $0.reason == .afterPlay }.count == SaveSnapshots.keepAutomatic)
+        #expect(all.filter { $0.reason == .beforeRestore }.count == 1)
+    }
+
+    @Test func aSnapshotMovesCheckedToAnotherFolder() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "0100A00000000003")
+        try write("one", loc.save + "/a")
+        let s = try #require(try SaveSnapshots.snapshot(loc, reason: .manual))
+        let dest = base + "/NAS/0100A00000000003"
+        #expect(try SaveSnapshots.move(s, to: dest, titleID: loc.titleID))
+        #expect(!FileManager.default.fileExists(atPath: s.path))
+        let moved = SaveSnapshots.list(in: dest, titleID: loc.titleID)
+        #expect(moved.map(\.id) == [s.id])
+        try write("two", loc.save + "/a")
+        try SaveSnapshots.restore(try #require(moved.first), to: loc)
+        #expect(read(loc.save + "/a") == "one")
+    }
+
+    @Test func aDamagedSnapshotStaysWhereItWas() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "0100A00000000004")
+        try write("one", loc.save + "/a")
+        let s = try #require(try SaveSnapshots.snapshot(loc, reason: .manual))
+        try write("tampered", s.path + "/data/save/a")
+        #expect(throws: ConverterError.self) { try SaveSnapshots.move(s, to: base + "/NAS", titleID: loc.titleID) }
+        #expect(FileManager.default.fileExists(atPath: s.path))
+        #expect(SaveSnapshots.list(in: base + "/NAS", titleID: loc.titleID).isEmpty)
+    }
 }
 
 @Suite struct BuildTimeline {

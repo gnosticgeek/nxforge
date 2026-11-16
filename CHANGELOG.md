@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.41.0 (2026-11-16)
+
+- **Save manager** (Converter 0.16.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Saves page for every game's save, a checked snapshot after every session that changed the save, a snapshot folder of your choice (another drive, a NAS, iCloud Drive) with a checked move of the existing ones, Undo Restore, and the Mac each snapshot came from. No game rebuild needed for this.
+
 ## 0.40.0 (2026-11-16)
 
 - **Build strip, Owned and Built, and a status under every cover** (Converter 0.15.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a running build shows along the foot of every page with its step, files, time left, percent, View Build and Stop; the Library has Owned and Built collections with counts; each cover says Ready on Mac, Building, Not built yet or Older engine. No game rebuild needed for this.

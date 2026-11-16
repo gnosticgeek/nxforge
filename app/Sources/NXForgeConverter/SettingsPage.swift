@@ -81,6 +81,15 @@ struct SettingsPage: View {
                 }
             }
             Section("Saves") {
+                setting("Snapshot after every session", "A checked copy of the save each time a game quits with it changed. The newest \(SaveSnapshots.keepAutomatic) stay for each game.") {
+                    Toggle("", isOn: $model.settings.snapshotAfterPlay).toggleStyle(.switch).labelsHidden()
+                }
+                setting("Snapshot folder", "Where save snapshots go. Another drive, a NAS or iCloud Drive keeps them safe from the save's own drive.") {
+                    Text(model.settings.saveSnapshotsFolder?.tildePath ?? "Beside each save").foregroundStyle(model.settings.saveSnapshotsFolder == nil ? .secondary : .primary)
+                        .lineLimit(1).truncationMode(.middle).frame(maxWidth: 220, alignment: .trailing)
+                    Button("Choose…") { model.chooseSnapshotFolder() }
+                    if model.settings.saveSnapshotsFolder != nil { Button("Reset") { model.setSnapshotFolder(nil) } }
+                }
                 setting("Save backup repository", "A clone of a private Git repository: each game's save is committed to it when the game quits.") {
                     Text(model.settings.saveBackupRepo?.tildePath ?? "Off").foregroundStyle(model.settings.saveBackupRepo == nil ? .secondary : .primary)
                         .lineLimit(1).truncationMode(.middle).frame(maxWidth: 220, alignment: .trailing)

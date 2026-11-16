@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
-    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", health = "Health", toolchain = "Toolchain", updates = "Updates"
+    case convert = "Convert", library = "Library", builds = "Builds", saves = "Saves", storage = "Storage", health = "Health", toolchain = "Toolchain", updates = "Updates"
     var id: String { rawValue }
     /// as the window names it: the converter's own Library is the game files, the front end's Library the covers
     var title: String { self == .library ? "Game Files" : rawValue }
@@ -15,6 +15,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .convert: "macwindow.badge.plus"
         case .library: "books.vertical"
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
+        case .saves: "externaldrive.badge.timemachine"
         case .storage: "internaldrive"
         case .health: "stethoscope"
         case .toolchain: "wrench.and.screwdriver"
@@ -47,6 +48,7 @@ final class AppModel {
             settings.save()
             if settings.appearance != oldValue.appearance { applyAppearance() }
             if let g = settings.gameDir, g != oldValue.gameDir { settings.recentSources = RecentSources.adding(g, to: settings.recentSources) }
+            if settings.saveSnapshotsFolder != oldValue.saveSnapshotsFolder { SaveSnapshots.customRoot = settings.saveSnapshotsFolder }
             if settings.outDir != oldValue.outDir { Disk.outDir = settings.outDir; measure() }   // the app's drive is checked for room too
         }
     }
@@ -217,6 +219,7 @@ final class AppModel {
     init() {
         AppModel.shared = self
         Disk.outDir = settings.outDir
+        SaveSnapshots.customRoot = settings.saveSnapshotsFolder
         run.onChange = { [weak self] in
             guard let self else { return }
             DockProgress.show(self.run)

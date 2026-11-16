@@ -4,6 +4,17 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.16.0 (2026-11-16)
+
+A save manager. Ships in NXForge 0.41.0.
+
+- **Saves page**: a new page beside Builds lists every built game's save, most recently saved first, with when it last saved, the Mac its newest snapshot came from, how many snapshots it has and their size, and whether the save has changed since the last one. The top shows the total and where snapshots are kept. Open a game for its Save snapshots card (restore, import, export, Git backup).
+- **A snapshot after every session**: when a game quits with a changed save, a checked snapshot is made on its own (nothing is copied when the save did not change). The newest 10 of these stay for each game, counted apart from the ones made before a restore or a rebuild, so a run of sessions never pushes those out. On by default; Saves and Settings › Saves turn it off.
+- **A snapshot folder of your choice**: snapshots can go to another drive, a NAS or iCloud Drive (`<folder>/<title ID>/`) so they survive the save's own drive. The ones already made can move there: each is copied, checked file by file against its record, and only then is the old copy put in the Trash. While that folder is away, new snapshots go beside the save, and both places are listed.
+- **Undo Restore**: after a restore, the game's card offers to put back the save it replaced (and pressing it again goes forward to the restored one).
+- Each snapshot records the Mac it was made on, shown in a new Mac column.
+- Ideas from [RecompLauncher](https://github.com/elripalda/RecompLauncher)'s save backups (GPL-3.0); written fresh, no code taken.
+
 ## 0.15.0 (2026-11-16)
 
 The build in sight on every page, and the Library's Owned and Built. Ships in NXForge 0.40.0.

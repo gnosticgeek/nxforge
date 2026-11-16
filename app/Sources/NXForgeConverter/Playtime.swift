@@ -145,6 +145,7 @@ extension AppModel {
         let session = sessionEnded(p, pid: a.processIdentifier, end: end)
         if let r = Playtime.add(key: p.key, name: p.name, app: p.app, start: p.start, end: end, session: session), let session { showRecap(p, session: session, record: r) }
         revision += 1
+        snapshotSaveAfterPlay(app: p.app)
         backUpSaveAfterPlay(app: p.app, name: p.name)
         gameQuit(app: p.app)
     }
