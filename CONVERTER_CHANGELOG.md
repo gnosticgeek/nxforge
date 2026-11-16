@@ -10,7 +10,7 @@ Nintendo Life art. Ships in NXForge 0.39.2.
 
 - **Wide art from Nintendo Life first**: each game's wide art (behind Home and its page) is the header art of its page on Nintendo Life, found by the game's name (a second between requests, done once per game; a game not found is looked for again after a week). Nintendo's European store is now the fallback, and its banner stays when Nintendo Life's picture is too small to enlarge well. Art already downloaded from the store is replaced on the next start.
 - **One size for wide art**: every wide picture is kept at 2560 × 1280 (2:1, cut about its middle), the shape Home fills on a Mac's screen; the game page's banner shows a narrower band of the same picture.
-- **eShop boxes made from the game's square art**: a download-only game (GameTDB's red "Nintendo eShop" stand-in, or no box at all) gets a box made from its square art on Nintendo Life: the console's red band across the top, the art full width, its name under it. The shelf, the grid, the 3D box and the box viewer all show it; GameTDB's stand-in is kept beside it as `-front-eshop.jpg`. Settings › Artwork › Look again makes them again.
+- **eShop boxes made from the game's square art**: a download-only game (GameTDB's red "Nintendo eShop" stand-in, or no box at all) gets a box made from its square art on Nintendo Life: the console's red band across the top, the art full width, its name under it with the developer and the year it came out (from the same page). The shelf, the grid, the 3D box and the box viewer all show it; GameTDB's stand-in is kept beside it as `-front-eshop.jpg`. Settings › Artwork › Look again makes them again.
 - The pictures stay on this Mac (the artwork folder and each game's `media` folder), as before.
 
 ## 0.14.2 (2026-11-16)

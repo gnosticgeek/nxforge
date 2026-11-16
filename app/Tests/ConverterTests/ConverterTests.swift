@@ -1093,6 +1093,14 @@ import Testing
         #expect(page.cover?.absoluteString == "https://images.nintendolife.com/03b8fc1926726/cuphead-cover.original.jpg")
         #expect(NLifeSource.parse(#"<div class="background-desktop" data-bg-image="https://evil.example/a.1920x350.jpg"></div>"#).hero == nil)
         #expect(NLifeSource.parse("<p>nothing</p>") == NLifeSource.Page())
+        let facts = """
+        {"@type":"VideoGame","name":"Blazing Chrome","datePublished":"2019-07-11","x":1}
+        <dl><dt>Publisher</dt><dd><a href="/companies/the_arcade_crew">The Arcade Crew</a></dd><dt>Developer</dt>
+        <dd><a href="/companies/joymasher">JoyMasher</a>, <a href="/companies/x">Two &amp; Co</a></dd></dl>
+        """
+        #expect(NLifeSource.parse(facts).developer == "JoyMasher & Two & Co")
+        #expect(NLifeSource.parse(facts).year == "2019")
+        #expect(NLifeSource.developer("<dt>Developer</dt><dd>Nintendo EPD</dd>") == "Nintendo EPD")
     }
 
     @Test func standardWideArt() throws {
@@ -1131,7 +1139,7 @@ import Testing
         guard let dir = ProcessInfo.processInfo.environment["NXC_ART_PREVIEW"] else { return }
         for f in try FileManager.default.contentsOfDirectory(atPath: dir) {
             let u = URL(fileURLWithPath: dir).appending(path: f), d = try Data(contentsOf: u)
-            if f.hasSuffix(".square.jpg"), let box = CoverArt.eshopBox(name: String(f.dropLast(11)), console: "Switch", square: d) {
+            if f.hasSuffix(".square.jpg"), let box = CoverArt.eshopBox(name: String(f.dropLast(11)), console: "Switch", square: d, detail: "JoyMasher · 2019") {
                 try box.write(to: URL(fileURLWithPath: dir).appending(path: f.replacingOccurrences(of: ".square.jpg", with: ".box.out.jpg")))
             }
             if f.hasSuffix(".hero.jpg"), let h = HeroSource.standard(d) {

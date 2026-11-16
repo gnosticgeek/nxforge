@@ -337,7 +337,7 @@ enum NLifeSource {
         return Array(slugs(name).flatMap { s in sections.compactMap { URL(string: "\(site)/games/\($0)/\(s)") } }.prefix(maxTries))
     }
 
-    struct Page: Equatable { var hero: URL?; var cover: URL? }
+    struct Page: Equatable { var hero: URL?; var cover: URL?; var developer: String?; var year: String? }
 
     /// The header art (`<div class="… background-desktop" data-bg-image="…artwork.1920x350.jpg">`) and the cover
     /// (`<p id="cover" …><img src="…cover.cover_300x.jpg">`), both asked for at their original size
@@ -349,7 +349,28 @@ enum NLifeSource {
         }
         let hero = attr(#"<div[^>]*background-desktop[^>]*>"#, "data-bg-image")
         let cover = attr(#"<p id="cover"[^>]*>\s*<img[^>]*>"#, "src")
-        return Page(hero: hero.flatMap { URL(string: original($0)) }, cover: cover.flatMap { URL(string: original($0)) })
+        return Page(hero: hero.flatMap { URL(string: original($0)) }, cover: cover.flatMap { URL(string: original($0)) },
+                    developer: developer(html), year: year(html))
+    }
+
+    /// The developer from the page's facts (`<dt>Developer</dt><dd><a …>JoyMasher</a></dd>`), several joined with " & "
+    static func developer(_ html: String) -> String? {
+        guard let r = html.range(of: #"(?s)<dt[^>]*>\s*Developers?\s*</dt>\s*<dd[^>]*>.*?</dd>"#, options: .regularExpression) else { return nil }
+        let dd = String(html[r]).replacingOccurrences(of: #"(?s)^.*?<dd[^>]*>"#, with: "", options: .regularExpression)
+        let names = dd.split(separator: "</a>").compactMap { part -> String? in
+            guard let a = part.range(of: "<a[^>]*>", options: .regularExpression) else { return nil }
+            let n = StoreSource.plainText(String(part[a.upperBound...])).trimmingCharacters(in: .whitespacesAndNewlines)
+            return n.isEmpty ? nil : n
+        }
+        let plain = StoreSource.plainText(dd.replacingOccurrences(of: "</dd>", with: "")).trimmingCharacters(in: .whitespacesAndNewlines)
+        let out = names.isEmpty ? plain : names.joined(separator: " & ")
+        return out.isEmpty || out.count > 60 ? nil : out
+    }
+
+    /// The year of the game's first release: its schema.org entry's datePublished ("2019-07-11")
+    static func year(_ html: String) -> String? {
+        guard let r = html.range(of: #""datePublished":"[0-9]{4}"#, options: .regularExpression) else { return nil }
+        return String(html[r].suffix(4))
     }
 
     /// "…/cuphead-artwork.1920x350.jpg" → "…/cuphead-artwork.original.jpg"; the same for "….cover_300x.jpg"
@@ -631,8 +652,9 @@ final class CoverStore {
     }
 
     /// What a game's Nintendo Life pass took, kept in <key>.nlife so it is done once (Settings › Artwork › Look again does it over):
-    /// "hero" and "box" for the parts asked for. A game whose page is not found is looked for again after a week (<key>.nlifenone).
-    nonisolated static let nlifeVersion = "1"
+    /// the pass's version, then "hero" and "box" for the parts done. A new version makes the boxes again (2: the developer and year
+    /// on the box); the wide art stays. A game whose page is not found is looked for again after a week (<key>.nlifenone).
+    nonisolated static let nlifeVersion = "2"
 
     /// Nintendo Life first, for every game not done yet: its page (found by name, NLifeSource.pages, a second between requests),
     /// then its header art as the game's wide art (replacing the store's; a header too small to enlarge well keeps a store picture
@@ -653,8 +675,14 @@ final class CoverStore {
                 if Task.isCancelled { return }
                 let mark = Self.dir.appending(path: "\(g.key).nlife"), none = Self.dir.appending(path: "\(g.key).nlifenone")
                 let done = (try? String(contentsOf: mark, encoding: .utf8))?.split(whereSeparator: \.isNewline).map(String.init) ?? []
-                if done.first == Self.nlifeVersion, parts.allSatisfy(done.contains) { continue }
-                if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 7 * 86400 { continue }
+                let current = done.first == Self.nlifeVersion
+                let wantHero = heroes && !done.dropFirst().contains("hero"), wantBox = boxes && !(current && done.contains("box"))
+                if !wantHero && !wantBox { continue }
+                // an older pass that made no box (a boxed game): nothing to make again, so no page is asked for
+                if !wantHero, done.contains("box"), !fm.fileExists(atPath: Self.dir.appending(path: "\(g.key)-square.jpg").path) {
+                    try? ([Self.nlifeVersion] + Set(done.dropFirst() + parts).sorted()).joined(separator: "\n").write(to: mark, atomically: true, encoding: .utf8)
+                    continue
+                }
                 var page: NLifeSource.Page?
                 for u in NLifeSource.pages(name: g.name, titleID: g.titleID) {
                     try? await Task.sleep(for: .seconds(1))
@@ -664,7 +692,7 @@ final class CoverStore {
                 guard let page else { try? Data().write(to: none); continue }
                 try? fm.removeItem(at: none)
                 var changed = false
-                if heroes {
+                if wantHero {
                     let file = Self.dir.appending(path: "\(g.key)-hero.jpg")
                     if let u = page.hero {
                         try? await Task.sleep(for: .seconds(1))
@@ -678,16 +706,20 @@ final class CoverStore {
                     if !changed, let old = try? Data(contentsOf: file), CoverSource.size(old).map({ $0.0 != HeroSource.standardSize.width }) ?? false,
                        let std = HeroSource.standard(old), (try? std.write(to: file)) != nil { changed = true }
                 }
-                if boxes, let u = page.cover {
-                    try? await Task.sleep(for: .seconds(1))
-                    if let d = await Self.get(u) {
-                        let front = Self.dir.appending(path: "\(g.key)-front.jpg"), made = Self.dir.appending(path: "\(g.key).eshopbox")
+                if wantBox, let u = page.cover {
+                    let front = Self.dir.appending(path: "\(g.key)-front.jpg"), made = Self.dir.appending(path: "\(g.key).eshopbox")
+                    let squareFile = Self.dir.appending(path: "\(g.key)-square.jpg")
+                    // the square art downloaded before is used again
+                    var d = try? Data(contentsOf: squareFile)
+                    if d == nil { try? await Task.sleep(for: .seconds(1)); d = await Self.get(u) }
+                    if let d {
                         if NLifeSource.square(d), let sq = CoverSource.jpeg(d, maxHeight: 1000) {
-                            try? sq.write(to: Self.dir.appending(path: "\(g.key)-square.jpg"))
+                            try? sq.write(to: squareFile)
                             let old = try? Data(contentsOf: front)
                             let standIn = old.map(CoverSource.eshopStandIn) ?? false
+                            let detail = [page.developer, page.year].compactMap { $0 }.joined(separator: " · ")
                             if old == nil || standIn || fm.fileExists(atPath: made.path),
-                               let box = await MainActor.run(body: { CoverArt.eshopBox(name: g.name, console: g.console, square: sq) }) {
+                               let box = await MainActor.run(body: { CoverArt.eshopBox(name: g.name, console: g.console, square: sq, detail: detail) }) {
                                 if standIn, let old { try? old.write(to: Self.dir.appending(path: "\(g.key)-front-eshop.jpg")) }
                                 if (try? box.write(to: front)) != nil { try? Data().write(to: made); changed = true }
                             }
@@ -696,7 +728,7 @@ final class CoverStore {
                         }
                     }
                 }
-                let had = done.first == Self.nlifeVersion ? Array(done.dropFirst()) : []
+                let had = Array(done.dropFirst()).filter { $0 == "hero" || current }
                 try? ([Self.nlifeVersion] + Set(had + parts).sorted()).joined(separator: "\n").write(to: mark, atomically: true, encoding: .utf8)
                 if changed {
                     let key = g.key

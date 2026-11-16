@@ -67,6 +67,8 @@ struct EShopFront: View {
     let name: String
     let console: String
     let art: NSImage
+    /// "JoyMasher · 2019": the developer and the year it came out
+    var detail = ""
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -92,7 +94,7 @@ struct EShopFront: View {
                     .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
                     .shadow(color: .black.opacity(0.6), radius: 8, y: 2)
                     .padding(.horizontal, 26)
-                Text("DOWNLOAD EDITION").font(.system(size: 12, weight: .bold)).fontWidth(.expanded).kerning(2.5).opacity(0.7)
+                Text(detail.uppercased()).font(.system(size: 12, weight: .bold)).fontWidth(.expanded).kerning(2.5).lineLimit(1).minimumScaleFactor(0.6).opacity(0.75)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 26).padding(.top, 8).padding(.bottom, 26)
             }
             .foregroundStyle(.white)
@@ -164,9 +166,9 @@ enum CoverArt {
     }
 
     /// A download-only game's box made from its square shop art (EShopFront), as a JPEG the size of a downloaded front
-    static func eshopBox(name: String, console: String, square: Data) -> Data? {
+    static func eshopBox(name: String, console: String, square: Data, detail: String = "") -> Data? {
         guard let art = NSImage(data: square), art.isValid,
-              let img = render(EShopFront(name: name, console: console, art: art)),
+              let img = render(EShopFront(name: name, console: console, art: art, detail: detail)),
               let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         return NSBitmapImageRep(cgImage: cg).representation(using: .jpeg, properties: [.compressionFactor: 0.9])
     }
