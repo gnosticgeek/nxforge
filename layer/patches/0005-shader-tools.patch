@@ -14,7 +14,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/gfx/tools/dmsh_pch.py                      |  52 ++++++++-
  dm/gfx/tools/own_compilers.py                 |  41 ++++++-
  dm/gfx/tools/pso_offline.py                   | 109 ++++++++++++++++--
- dm/gfx/tools/shader_split.py                  |  97 +++++++++++++---
+ dm/gfx/tools/shader_split.py                  | 103 ++++++++++++++---
  dm/gfx/tools/vk_shaders.py                    |  12 +-
  dm/tools/fuzz/fuzz_shader_split.py            |  12 +-
  dm/tools/shader_cache.py                      |  21 +++-
@@ -22,7 +22,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/tools/tests/test_pso_offline.py            |  54 ++++++++-
  dm/tools/tests/test_shader_pch.py             |  16 ++-
  dm/tools/tests/test_shader_toolchain_cache.py |  64 +++++++++-
- 17 files changed, 604 insertions(+), 103 deletions(-)
+ 17 files changed, 609 insertions(+), 104 deletions(-)
 
 diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
 index 028af3aa6e4720e5cd5382b5fd66a5b9f29a331d..64af3dff52b62106537a395ef2d341738402cdd6 100644
@@ -816,7 +816,7 @@ index 2de4704197a01f2fd1f1a25689f40f39920f4270..1ab110f64596f269763eefb91639ea2f
      for arch, key in keys.items():
          dst, kf = out / f'{arch}.mtl4a', work / f'key.{arch}'
 diff --git a/dm/gfx/tools/shader_split.py b/dm/gfx/tools/shader_split.py
-index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7f8c77424 100644
+index 50c206cd165cd84373ad032e3aee6e1a44149590..745973dd8e0de95327b37f3998a895c9436cff43 100644
 --- a/dm/gfx/tools/shader_split.py
 +++ b/dm/gfx/tools/shader_split.py
 @@ -1,6 +1,6 @@
@@ -827,7 +827,20 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
  #   · BNSH ('BNSH\0\0\0\0', carried by bfsha / particle effect esetb / UI layout blarc / embedded in main):
  #       +0x60 grsc block; +0x7c variation count u32; +0x80 variation table pointer (pointers are relative to the BNSH start). A variation is 0x40 bytes; the binary program is at +0x10;
  #       the binary program has 6 stage pointers from +0x08: vertex, hull, domain, geometry, pixel, compute; the stage code descriptor has +0x08 control pointer, +0x10 code area pointer, +0x18 code area length, +0x1c control length.
-@@ -564,15 +564,15 @@ def pacx4_parts(d, label):
+@@ -550,7 +550,11 @@ def pacx4_unchunk(d, at, chunks, n, where):
+     out = bytearray()
+     for c, u in chunks:
+         raw = span(d, at, c, where)
+-        out += raw if c == u else lz4.block.decompress(raw, uncompressed_size=u)
++        if c == u: out += raw
++        else:
++            if u > 256 * c: red(f'{where}: a chunk at {at:#x} says it unpacks to {u:#x} bytes, more than LZ4 can pack into {c:#x}')   # LZ4 allocates the size up front
++            try: out += lz4.block.decompress(raw, uncompressed_size=u)
++            except lz4.block.LZ4BlockError as e: red(f'{where}: a chunk at {at:#x} does not unpack ({e})')
+         at += c
+     if len(out) != n: red(f'{where}: its chunks give {len(out):#x} bytes, its length is {n:#x}')
+     return bytes(out)
+@@ -564,15 +568,15 @@ def pacx4_parts(d, label):
      names a shader type is opened: decompressed whole, the game's archives give 15.6 GB, and NeedleShader.pac is the only one with a Needle container or a control section in it.
      → (name, bytes) of the root and of each block"""
      roff, rstored, rlen = struct.unpack_from('<III', span(d, 0x10, 12, f'{label}: PACx 403 header'))
@@ -846,7 +859,7 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
      out = [('root', root)]
      if not info: return out
      nb, tab = struct.unpack_from('<QQ', span(root, 0x30 + trees, 16, f'{label}: PACx 403 block table'))
-@@ -1708,6 +1708,41 @@ def gfpak_members(d, label):
+@@ -1708,6 +1712,41 @@ def gfpak_members(d, label):
          if len(data) != usz: red(f'{label}#{i}: {len(data):#x} bytes, the entry says {usz:#x}')
          yield f'#{i}', data
  
@@ -888,7 +901,7 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
  NLG_DICT = bytes.fromhex('5824f3a9')
  def nlg_dict(d, label):
      """Next Level Games' archive index (Luigi's Mansion 3: '<name>.dict' beside '<name>.data', every RomFS file but the Wwise banks): u32 magic 0xa9f32458, u8 4, u8 1, u8 compressed,
-@@ -3106,12 +3141,14 @@ def unzs_dict(d, did, where):
+@@ -3106,12 +3145,14 @@ def unzs_dict(d, did, where):
      return zstd.decompress(d, zstd_dict=_ZD[did])
  
  def unzs(path):
@@ -908,7 +921,7 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
  
  def frame_size(f):
      """The uncompressed size a zstd or LZ4 frame header records, None when it records none"""
-@@ -3269,6 +3306,20 @@ def unity_text_glslc(x, base):
+@@ -3269,6 +3310,20 @@ def unity_text_glslc(x, base):
          if b'\x91\x68\x86\x19' in b: out += glslc_shaders(b, f'{base}#{name}', need=False)
      return out
  
@@ -929,7 +942,7 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
  NEST = 16   # archives in archives scan_blob opens (SARC, PlatinumGames' DAT): real files nest a few. A damaged or crafted one could nest one per header's length, or have every
              # member point at the same inner archive, its work doubling with each level. Two budgets of NEST times the file bound the work: left[0], the members a file's archives open,
              # each counted by what it takes up in its archive, and left[1], what its Yaz0 members expand to. Counting a Yaz0 member by what it expands to in the first budget paid twice
-@@ -3306,14 +3357,7 @@ def scan_blob(d, label, out, depth=0, left=None):
+@@ -3306,14 +3361,7 @@ def scan_blob(d, label, out, depth=0, left=None):
          for nm, m in sarc_members(d, label): scan_blob(m, f'{label}/{nm}', out, depth + 1, left)
          return
      if d[:4] == b'NARC':   # Camelot's containers (cra.py): each member packed by its first byte, so its size says nothing about the budget above
@@ -945,7 +958,7 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
          return
      if d[:4] == b'BAHS': out.extend(bahs_shaders(d, label)); return
      if d[:4] == RGXD: out.extend(rgxd_shaders(d, label)); return
-@@ -3379,7 +3423,7 @@ def pixel_input_cover(shaders):
+@@ -3379,7 +3427,7 @@ def pixel_input_cover(shaders):
          k = min(ins, key=lambda k: (-len(ins[k] & left), k)); cover.append(k); left -= ins[k]
      return cover
  
@@ -954,7 +967,7 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
  # Unreal Engine 3's shader caches (ue3_shaders, '#UE3@'); MonoGame's effects, whose passes may name no vertex shader and keep the one bound (Celeste: 10 of its 13 effects draw through SpriteBatch's vertex shader, which is in main); Next Level Games'
  # archives (Luigi's Mansion 3 makes 5,317 programs of one stage each at boot); PlatinumGames' shader objects (Bayonetta 3: one stage each, pg_shader); control sections loose in main
  # (Advance Wars 1+2: Re-Boot Camp's Bink shaders, raw_shaders), which no file pairs; YEBIS's effect file (tfxo_shaders); and Sumo's Ninty_NX descriptors and NVNsh records, one stage
-@@ -3654,6 +3698,10 @@ def scan_file_in(args):
+@@ -3654,6 +3702,10 @@ def scan_file_in(args):
      if head[:8] == GFPAK:   # a Game Freak archive (gfpak_members): each entry scanned as a file of its own (the shaders are BNSH entries)
          for nm, m in gfpak_members(open(path, 'rb').read(), '/' + rel): scan_blob(m, f'/{rel}{nm}', found)
          return rel, uniq_keys(found), var_pairs(found), trees
@@ -965,7 +978,7 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
      if head[:4] == b'SRYK':
          import vbf
          with open(path, 'rb') as f:
-@@ -3727,6 +3775,16 @@ def pooled(ex, jobs, total, start=0, chunk=1):
+@@ -3727,6 +3779,16 @@ def pooled(ex, jobs, total, start=0, chunk=1):
      return [r for f in futures for r in f.result()]
  
  
@@ -982,7 +995,7 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..d097df3e2bc3e40900ac825ba97d9ee7
  def main():
      romfs_l, main_l, pkg, mapout, factsout = sys.argv[1:6]
      pairsout = sys.argv[6] if len(sys.argv) > 6 else None
-@@ -3867,6 +3925,9 @@ def main():
+@@ -3867,6 +3929,9 @@ def main():
              f.write('# kind: evidence  supplemental vertex / pixel shader pairs (BAHS program variations and legacy Unity pass-input covers) for vertex output padding and the pipeline prebuild (generated by dm/gfx/tools/shader_split.py, do not edit): vertex key <TAB> pixel key\n')
              for a, b in sorted(prog - pairs): f.write(f'{a}\t{b}\n')
      print(f'shaders: {len(rows)} (' + ', '.join(f'{STAGE_NAME[s]} {n}' for s, n in sorted(stat.items())) + '); sources ' + ', '.join(f'{g} {n}' for g, n in per_src.most_common()) + f'; compute shader answers {len(facts)} rows' + (f'; variation pairs {len(pairs)}' if pairsout else ''))
