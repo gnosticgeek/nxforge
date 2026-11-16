@@ -584,12 +584,15 @@ struct StageTopBar: View {
     @Namespace private var marks
 
     var body: some View {
+        // the logo at the left, the Home / Library / Converter switch in the middle, the rest at the right
         HStack(spacing: 14) {
             HStack(spacing: 9) {
                 Image(nsImage: NSApp.applicationIconImage).resizable().interpolation(.high).frame(width: 26, height: 26)
                     .shadow(color: .black.opacity(0.4), radius: 4, y: 2).accessibilityHidden(true)
                 Text("NXForge").font(.system(size: 18, weight: .heavy)).fontWidth(.expanded).tracking(-0.4)
+                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity)
             HStack(spacing: 4) {
                 ForEach(StageTab.allCases, id: \.self) { t in
                     tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
@@ -600,7 +603,8 @@ struct StageTopBar: View {
             .padding(4)
             .glassEffect(.regular, in: .capsule)
             .animation(.spring(duration: 0.32), value: model.stageTab)
-            .padding(.leading, 12)
+            .layoutPriority(1)
+            HStack(spacing: 14) {
             Spacer(minLength: 0)
             if let pad = GCController.controllers().first?.vendorName {
                 Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).foregroundStyle(StageLook.soft)
@@ -619,8 +623,14 @@ struct StageTopBar: View {
             }
             round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
             round("slider.horizontal.3", "Settings") { model.stageSettings = true }
+            }
+            .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
+        // under the converter's bar, a hairline between it and the page's own tabs
+        .overlay(alignment: .bottom) {
+            if !model.frontEnd { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
+        }
     }
 
     /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
@@ -628,7 +638,6 @@ struct StageTopBar: View {
         if model.frontEnd { return model.stageTab == .library ? ("Search games", $model.stageSearch) : nil }
         guard model.gameDetail == nil else { return nil }
         switch model.page {
-        case .library: return ("Search games", $model.librarySearch)
         case .builds: return ("Search builds", $model.buildSearch)
         default: return nil
         }
