@@ -283,6 +283,8 @@ extension AppModel {
     /// The pictures the games still lack are fetched (a setting).
     func fetchCovers(_ games: [StageGame]) {
         CoverStore.shared.showHeroes = settings.downloadHeroes
+        CoverStore.shared.fetchNintendoLife(games.map { ($0.coverKey, $0.titleID, $0.name, $0.console.rawValue) },
+                                            heroes: settings.downloadHeroes, boxes: settings.downloadCovers)
         if settings.downloadHeroes { CoverStore.shared.fetchHeroes(games.map { ($0.coverKey, $0.titleID, $0.name) }) }
         guard settings.downloadCovers else { return }
         CoverStore.shared.fetchMissing(games.map { ($0.coverKey, $0.name) })
@@ -1173,8 +1175,8 @@ struct StageSettings: View {
                 }
             }
             group("ARTWORK") {
-                toggle("Download box art", "Front and back covers from GameTDB, matched by the game's name. Only a cover's ID is sent.", $model.settings.downloadCovers, row: .downloadCovers)
-                toggle("Download wide art", "The banner from each game's page on Nintendo's European store, behind its page and Home. Found by title ID or name; only those are sent.", $model.settings.downloadHeroes, row: .downloadHeroes)
+                toggle("Download box art", "Front and back covers from GameTDB, matched by the game's name; a download-only game gets a box made from its square art on Nintendo Life. Only a cover's ID or the game's name is sent.", $model.settings.downloadCovers, row: .downloadCovers)
+                toggle("Download wide art", "The header art from each game's page on Nintendo Life, else the banner from Nintendo's European store, behind its page and Home. Found by name or title ID; only those are sent.", $model.settings.downloadHeroes, row: .downloadHeroes)
                 toggle("Download store details", "A game's description, details and official screenshots from its store page, fetched when you open the game's page.", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
                 toggle("Keep media in each game's folder", "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
                 row("Artwork folder", "Your own covers and the downloaded art, kept on this Mac only.", last: true) {
