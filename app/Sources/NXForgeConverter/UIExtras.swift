@@ -4,39 +4,13 @@
 import AppKit
 import SwiftUI
 
-// MARK: 1 · the build on the sidebar
+// MARK: 1 · the build on every page: BuildStrip.swift
 
-/// "1 h 12 m", "35 m", "<1 m": the time left, short enough for a sidebar row.
+/// "1 h 12 m", "35 m", "<1 m": the time left, short.
 func shortTimeLeft(_ s: Double) -> String {
     if s < 60 { return "<1 m" }
     let m = Int((s / 60).rounded())
     return m < 60 ? "\(m) m" : "\(m / 60) h \(m % 60) m"
-}
-
-/// A ring filling with the build and the time left, beside "Convert" while a build runs, so the build stays in sight from
-/// every page. Redrawn every few seconds, only while it is shown.
-struct SidebarBuildProgress: View {
-    let run: BuildRun
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 3)) { ctx in
-            let o = run.overall(now: ctx.date)
-            let pct = Int((o.fraction * 100).rounded())
-            HStack(spacing: 6) {
-                Text(o.remaining.map(shortTimeLeft) ?? "\(pct)%").font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                ZStack {
-                    Circle().stroke(.quaternary, lineWidth: 2.5)
-                    Circle().trim(from: 0, to: max(o.fraction, 0.02))
-                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                }
-                .frame(width: 14, height: 14)
-            }
-            .help(o.remaining.map { "Building · \(pct)% · \(timeLeft($0).lowercasedFirst)" } ?? "Building · \(pct)%")
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Building, \(pct) percent\(o.remaining.map { ", \(timeLeft($0).lowercasedFirst)" } ?? "")")
-        }
-    }
 }
 
 // MARK: 3 · Storage deletes that can be undone

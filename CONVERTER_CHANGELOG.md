@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.15.0 (2026-11-16)
+
+The build in sight on every page, and the Library's Owned and Built. Ships in NXForge 0.40.0.
+
+- **The build along the foot of the window**: while a game builds, a strip under every page (Home, the Library, a game's page and the converter's pages) names the game and shows the step, how many files are done, the time left and the percent, with View Build (the Convert page) and Stop. Games waiting in a batch build are counted beside the name. The Convert page shows the build itself, so the strip steps aside there; the Building capsule in the top bar is gone.
+- **Owned and Built**: the Library has a pair beside its title, Owned (every game in your games folder) and Built (only the games built and ready to play on this Mac), each with its count, and the number of games on screen. The filters (All, Favourites, Switch 2, Switch, Not built yet) work inside either one; Ready to play is now Built. L and R walk Owned's filters, then Built's.
+- **A status under every cover**: Ready on Mac (green) for a built game not played yet, how it was last played (green) after that, Building with its percent (amber), Not built yet (grey), and Older engine (amber) for a game built with an older NXForge, which still plays as it is.
+- The game in focus has a short line in its colour under its name.
+- **Home fits a shorter window**: the shelf's covers size to the room the headline leaves, so the names under them no longer run into the hints along the foot (they did in a window under about 1,000 points tall, and the build strip takes 60 more).
+
 ## 0.14.5 (2026-11-16)
 
 Settings scrolls. Ships in NXForge 0.39.4.

@@ -10,6 +10,7 @@ struct RootView: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
+        VStack(spacing: 0) {
         ZStack {
             // the games and the converter are one window on one stage: the same top bar, the same light
             if model.standby { StandbyView(model: model).transition(.opacity) }
@@ -24,6 +25,11 @@ struct RootView: View {
                     .onExitCommand { model.stageSettings = false }
             }
         }
+            // a running build, under every page (BuildStrip.swift)
+            if model.showsBuildStrip { BuildStrip(model: model).transition(.move(edge: .bottom).combined(with: .opacity)) }
+        }
+        .background(StageLook.background)
+        .animation(.easeInOut(duration: 0.25), value: model.showsBuildStrip)
         .environment(\.colorScheme, .dark)
         .animation(.easeInOut(duration: 0.2), value: model.frontEnd)
         .animation(.spring(duration: 0.3), value: model.stageSettings)

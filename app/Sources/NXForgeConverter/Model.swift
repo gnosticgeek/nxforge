@@ -145,6 +145,9 @@ final class AppModel {
     /// the front end (Stage.swift): the games as covers on a dark stage, shown instead of the converter's pages
     var frontEnd = true
     var stageTab: StageTab = .home
+    var stageScope: StageScope = .owned
+    /// the game folder a snapshot pretends is building (NXC_BUILDSTRIP), so the real settings stay as they are
+    var snapshotBuildDir: String?
     var stageFilter: StageFilter = .all
     var stageColumns = 6
     var stageSettings = false
