@@ -1013,18 +1013,25 @@ struct StageHints: View {
 
     var body: some View {
         HStack(spacing: 24) {
-            ForEach(Array(hints.enumerated()), id: \.offset) { _, h in
-                HStack(spacing: 7) {
-                    ForEach(h.0, id: \.self) { PadGlyph(text: $0, filled: $0 == "A") }
-                    Text(h.1).font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft)
-                }
-            }
+            ForEach(Array(hints.enumerated()), id: \.offset) { _, h in hint(h.0, h.1) }
             Spacer(minLength: 0)
-            HStack(spacing: 7) { PadGlyph(text: "+"); Text("Settings").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
+            hint(["+"], "Settings")
         }
         .padding(.horizontal, 40).frame(height: 48)
         .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.horizontal, 24) }
-        .accessibilityHidden(true)
+    }
+
+    /// One hint; a click does what its button does (the first of a pair, as L in L R)
+    func hint(_ keys: [String], _ text: String) -> some View {
+        Button { if let k = keys.first.flatMap(PadLabels.key) { model.stagePad(k) } } label: {
+            HStack(spacing: 7) {
+                ForEach(keys, id: \.self) { PadGlyph(text: $0, filled: $0 == "A") }
+                Text(text).font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(text)
     }
 
     var hints: [([String], String)] {
