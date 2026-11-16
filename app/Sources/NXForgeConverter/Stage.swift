@@ -768,14 +768,18 @@ struct StageHome: View {
 
     var body: some View {
         GeometryReader { geo in
-            let tile = min(max(min(geo.size.width * 0.112, geo.size.height * 0.20), 100), 190)
+            // the hero keeps the room it needs (a smaller title in a short window, as under the build strip), and the shelf's
+            // covers take what is left, so the names under them never run into the hints
+            let bigTitle = geo.size.width > 1100 && geo.size.height > 760
+            let heroRoom: CGFloat = bigTitle ? 440 : 380
+            let tile = min(max(min(geo.size.width * 0.112, (geo.size.height - heroRoom - 140) * CoverSource.aspect), 90), 190)
             let caseH = min(max(geo.size.height - tile / CoverSource.aspect - 150, 220), 560)
             let tileH = tile / CoverSource.aspect
             let shelf = tileH + 78
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 24) {
                     if let g = focus {
-                        StageHero(model: model, game: g, first: AppModel.lastPlayed(games)?.id == g.id, titleSize: geo.size.width > 1100 ? 60 : 44)
+                        StageHero(model: model, game: g, first: AppModel.lastPlayed(games)?.id == g.id, titleSize: bigTitle ? 60 : 44)
                             .frame(maxWidth: 640, alignment: .leading)
                             .id(g.id)
                             .transition(.asymmetric(insertion: still ? .opacity : .opacity.combined(with: .offset(y: 14)), removal: .opacity))
