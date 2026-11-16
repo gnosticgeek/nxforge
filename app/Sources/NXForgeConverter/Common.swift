@@ -17,7 +17,10 @@ struct RootView: View {
             else if model.frontEnd { StageView(model: model).transition(.opacity) } else { ConverterRoot(model: model).transition(.opacity) }
             if model.stageSettings {
                 Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { model.stageSettings = false }
-                StageSettings(model: model, openConverterSettings: { openSettings() }).transition(.scale(scale: 0.96).combined(with: .opacity))
+                StageSettings(model: model, openConverterSettings: { openSettings() })
+                    // never taller than the window: the rows scroll inside it
+                    .padding(.top, 44).padding(.bottom, 28)
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .foregroundStyle(.white)
                     .onExitCommand { model.stageSettings = false }
             }

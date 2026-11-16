@@ -6,6 +6,10 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 - **Build strip, Owned and Built, and a status under every cover** (Converter 0.15.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a running build shows along the foot of every page with its step, files, time left, percent, View Build and Stop; the Library has Owned and Built collections with counts; each cover says Ready on Mac, Building, Not built yet or Older engine. No game rebuild needed for this.
 
+## 0.39.4 (2026-11-16)
+
+- **Settings scrolls** (Converter 0.14.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the front end's Settings panel was taller than the window and could not scroll, so its later sections were out of reach. It now fits the window, with its title, a Find a setting field, section jumps and Done pinned at the top and the folder buttons pinned at the foot. No game rebuild needed for this.
+
 ## 0.39.3 (2026-11-16)
 
 - **Game page to the Blaster Master Zero 2 mock-up** (Converter 0.14.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the store's facts under the game's name, Media across the page with Official media and Your captures beside its title, the store's pitch with More details opening About, a larger box and clickable hints. No game rebuild needed for this.
