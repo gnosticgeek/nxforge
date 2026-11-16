@@ -49,6 +49,10 @@ struct Settings: Codable, Equatable {
     var saveBackupRepo: String?
     /// push the save backup commit as well
     var saveBackupPush = false
+    /// where save snapshots go (another drive, a NAS, iCloud Drive): <folder>/<title ID>/; nil beside each save (SaveSnapshots)
+    var saveSnapshotsFolder: String?
+    /// a checked snapshot of the save each time a game quits, when it changed
+    var snapshotAfterPlay = true
     /// each network volume's address to mount it again ("Gaming" → smb://nas/Gaming), learned while it was mounted
     var remounts: [String: String] = [:]
     /// Updates: update the engine and the converter without asking (at launch, and on an hourly check)
@@ -102,6 +106,7 @@ struct Settings: Codable, Equatable {
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
+        case saveSnapshotsFolder = "save_snapshots_folder", snapshotAfterPlay = "snapshot_after_play"
         case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
         case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
@@ -138,6 +143,8 @@ struct Settings: Codable, Equatable {
         librarySort = (try? c.decodeIfPresent(LibrarySort.self, forKey: .librarySort)) ?? .name
         saveBackupRepo = try? c.decodeIfPresent(String.self, forKey: .saveBackupRepo)
         saveBackupPush = (try? c.decodeIfPresent(Bool.self, forKey: .saveBackupPush)) ?? false
+        saveSnapshotsFolder = try? c.decodeIfPresent(String.self, forKey: .saveSnapshotsFolder)
+        snapshotAfterPlay = (try? c.decodeIfPresent(Bool.self, forKey: .snapshotAfterPlay)) ?? true
         remounts = (try? c.decodeIfPresent([String: String].self, forKey: .remounts)) ?? [:]
         autoUpdate = (try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)) ?? false
         skippedUpdate = try? c.decodeIfPresent(String.self, forKey: .skippedUpdate)

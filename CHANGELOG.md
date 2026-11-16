@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.43.0 (2026-11-16)
+
+- **Save manager** (Converter 0.18.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Saves page for every game's save, a checked snapshot after every session that changed the save, a snapshot folder of your choice (another drive, a NAS, iCloud Drive) with a checked move of the existing ones, Undo Restore, and the Mac each snapshot came from. No game rebuild needed for this.
+
 ## 0.42.0 (2026-11-16)
 
 - **Discover and square covers** (Converter 0.17.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Discover tab browses Nintendo's European store by genre with Platform, Players, Library and Sort filters, a search, In library badges, a Wishlist kept on this Mac and a bar with Wishlist and View game; Home and the Library can show square shop art instead of boxes (Settings › Artwork › Square covers), with every game's square art fetched from the store. No game rebuild needed for this.

@@ -555,7 +555,7 @@ struct SaveSnapshotsCard: View {
                     }
                     Button { make(loc) } label: { Label("Snapshot now", systemImage: "camera") }
                         .buttonStyle(.stage).disabled(busy || !SaveSnapshots.hasSave(loc))
-                        .help("Copies the save beside it, in save-snapshots, and checks every file of the copy")
+                        .help("Copies the save into its snapshot folder and checks every file of the copy")
                     Menu {
                         Button("Import Save…") { pickImport(loc) }
                         Button("Export Save…") { export(loc) }.disabled(!SaveSnapshots.hasSave(loc))
@@ -583,13 +583,26 @@ struct SaveSnapshotsCard: View {
                         Text(m.text).font(.callout).foregroundStyle(m.ok ? Color.secondary : Color.red).textSelection(.enabled)
                     }
                 }
+                if let last = snaps.first, last.reason == .beforeRestore {
+                    // the newest snapshot is the save a restore replaced: putting it back undoes that restore (and makes a redo of its own)
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.uturn.backward.circle").foregroundStyle(.secondary)
+                        Text("The save was restored \(lowerFirst(relativeDay(last.created))). Undo puts back the save it replaced.")
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Undo Restore") { restore(last, loc, undo: true) }.buttonStyle(.stage).disabled(busy)
+                    }
+                }
                 if snaps.isEmpty {
-                    Text("None yet. A rebuild and Restore this version make one on their own; so does every restore, of the save it replaces.").foregroundStyle(.secondary)
+                    Text(model.settings.snapshotAfterPlay
+                         ? "None yet. One is made each time the game quits with a changed save, and before a rebuild or a restore."
+                         : "None yet. A rebuild and Restore this version make one on their own; so does every restore, of the save it replaces.").foregroundStyle(.secondary)
                 } else {
                     InsetTable {
                         HStack {
                             Text("Made").frame(width: 170, alignment: .leading)
-                            Text("Why").frame(width: 200, alignment: .leading)
+                            Text("Why").frame(width: 150, alignment: .leading)
+                            Text("Mac").frame(width: 150, alignment: .leading)
                             Text("Size").frame(width: 120, alignment: .leading)
                             Spacer()
                         }
@@ -598,7 +611,8 @@ struct SaveSnapshotsCard: View {
                             Divider()
                             HStack {
                                 Text(relativeDay(s.created)).frame(width: 170, alignment: .leading).help(s.id)
-                                Text(s.reason.label).frame(width: 200, alignment: .leading)
+                                Text(s.reason.label).frame(width: 150, alignment: .leading)
+                                Text(s.device ?? "—").foregroundStyle(.secondary).lineLimit(1).frame(width: 150, alignment: .leading)
                                 Text("\(s.files) files · \(ByteCountFormatter.string(fromByteCount: s.bytes, countStyle: .file))").frame(width: 120, alignment: .leading)
                                 Spacer()
                                 Button("Restore") { restore(s, loc) }.buttonStyle(.stage).disabled(busy)
@@ -612,7 +626,7 @@ struct SaveSnapshotsCard: View {
                             .padding(.horizontal, 12).padding(.vertical, 6)
                         }
                     }
-                    Text("Automatic snapshots: the newest \(SaveSnapshots.keepAutomatic) stay. With Cloud saves on, start the game on this Mac after a restore so the restored save is the one that syncs.")
+                    Text("Automatic snapshots: the newest \(SaveSnapshots.keepAutomatic) after playing and the newest \(SaveSnapshots.keepAutomatic) others stay; ones you make stay until you remove them. Kept \(model.settings.saveSnapshotsFolder.map { "in \($0.tildePath)" } ?? "beside the save"). With Cloud saves on, start the game on this Mac after a restore so the restored save is the one that syncs.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -696,14 +710,17 @@ struct SaveSnapshotsCard: View {
         work { try SaveSnapshots.snapshot(loc, reason: .manual).map { "Snapshot made and checked: \($0.files) files" } ?? "No save to copy yet" }
     }
 
-    private func restore(_ s: SaveSnapshot, _ loc: SaveLocation) {
+    private func restore(_ s: SaveSnapshot, _ loc: SaveLocation, undo: Bool = false) {
         if SaveSnapshots.isRunning(app: build.app) {
             model.showBanner("Quit \(gameName) first", detail: "The game is running: it would write over the restored save. Quit it, then restore.", tone: .warning)
             return
         }
-        guard model.confirm("Restore this snapshot?", "The save from \(relativeDay(s.created)) replaces the current one. The current save is kept as a snapshot first.", action: "Restore") else { return }
+        if !undo {
+            guard model.confirm("Restore this snapshot?", "The save from \(relativeDay(s.created)) replaces the current one. The current save is kept as a snapshot first, and Undo Restore puts it back.", action: "Restore") else { return }
+        }
         work {
             let safety = try SaveSnapshots.restore(s, to: loc)
+            if undo { return "Restore undone: the save from before it is back. Undo Restore again goes forward to the restored one." }
             return "Save restored from \(relativeDay(s.created))" + (safety.map { "; the one it replaced is snapshot \($0.id)" } ?? "")
         }
     }
