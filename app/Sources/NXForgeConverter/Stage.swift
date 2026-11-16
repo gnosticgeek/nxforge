@@ -1167,7 +1167,8 @@ struct StageSettings: View {
         var short: String { self == .opens ? "On Open" : rawValue }
     }
 
-    @State private var query = ""
+    // NXC_FIND: the snapshot hook starts the find field with that text
+    @State private var query = ProcessInfo.processInfo.environment["NXC_FIND"] ?? ""
     @State private var contentHeight: CGFloat = 640
     @State private var offset: CGFloat = 0
     @State private var viewport: CGFloat = 0
