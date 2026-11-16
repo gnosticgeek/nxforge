@@ -177,6 +177,20 @@ struct ConverterApp: App {
                 }
             }
         }
+        // NXC_SCOPE=built: the Library's Built collection
+        if env["NXC_SCOPE"] == "built" { model.stageScope = .built }
+        // NXC_BUILDSTRIP=1: a build running (pretend: nothing runs) for the strip along the foot of the window, on NXC_GAME's game
+        if env["NXC_BUILDSTRIP"] != nil, !model.run.running {
+            try? await Task.sleep(for: .seconds(1))
+            if let g = env["NXC_GAME"].flatMap({ n in model.library?.games.first { $0.displayName.localizedCaseInsensitiveContains(n) } }) ?? model.library?.games.first(where: { g in !model.stageGames().contains { $0.game?.id == g.id && $0.app != nil } }) {
+                model.snapshotBuildDir = g.path
+            }
+            let r = model.run
+            r.running = true
+            r.startedAt = Date().addingTimeInterval(-1260)
+            r.stageStartedAt = Date().addingTimeInterval(-300)
+            r.stage = Stage(k: 5, n: 9, name: "Mac shaders", step: "compiling", fraction: 0.36, detail: "1240/3412 shaders", eta: 1150)
+        }
         // NXC_DETAIL=1 with NXC_PAGE=library or builds: the converter's page of the first built game
         if env["NXC_DETAIL"] != nil, env["NXC_STAGE"] == nil {
             try? await Task.sleep(for: .seconds(2))

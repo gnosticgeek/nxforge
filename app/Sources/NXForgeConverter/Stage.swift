@@ -7,7 +7,13 @@ import GameController
 import SwiftUI
 
 enum StageTab: String, CaseIterable { case home = "Home", library = "Library" }
-enum StageFilter: String, CaseIterable { case all = "All", favorites = "Favourites", ready = "Ready to play", switch2 = "Switch 2", switch1 = "Switch", notBuilt = "Not built yet" }
+/// The Library's two collections: every game in the games folder, or only the ones built and playable on this Mac
+enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
+enum StageFilter: String, CaseIterable {
+    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", notBuilt = "Not built yet"
+    /// the filters that mean something in a collection: Built has no unbuilt games
+    static func shown(_ scope: StageScope) -> [StageFilter] { scope == .built ? allCases.filter { $0 != .notBuilt } : allCases }
+}
 
 /// A game as the front end shows it: a Library game with its build, or an app built from files outside the games folder.
 struct StageGame: Identifiable, Hashable {
@@ -120,11 +126,10 @@ extension AppModel {
             let shelf = built.isEmpty ? games : built
             return shelf.filter(\.favorite) + shelf.filter { !$0.favorite }
         }
-        var out = games
+        var out = stageScope == .built ? games.filter { $0.app != nil } : games
         switch stageFilter {
         case .all: break
         case .favorites: out = out.filter(\.favorite)
-        case .ready: out = out.filter { $0.app != nil }
         case .switch2: out = out.filter { $0.console == .switch2 }
         case .switch1: out = out.filter { $0.console == .switch1 }
         case .notBuilt: out = out.filter { $0.app == nil }
@@ -133,6 +138,9 @@ extension AppModel {
         if !q.isEmpty { out = TitleMatch.sorted(out.filter { TitleMatch.matches(q, [$0.name, $0.titleID]) }, query: q, title: \.name, last: \.last) }
         return out
     }
+
+    /// Where L and R go in the Library, in order
+    static let libraryStops: [(StageScope, StageFilter)] = StageScope.allCases.flatMap { sc in StageFilter.shown(sc).map { (sc, $0) } }
 
     /// The game in focus: the one picked, else on Home the one played last (Continue playing), else the first
     func stageFocus(_ shown: [StageGame]) -> StageGame? {
@@ -241,11 +249,14 @@ extension AppModel {
         case .x: if let g = focus { libraryFocus = g.id; openPlayOptions(g.ref) }
         case .y: if let g = focus { libraryFocus = g.id; caseFlipped = false; gameDetail = g.ref }
         case .b: if stageTab == .library { stageTab = .home }
+        // L and R walk Home, then the Library's collections and their filters: Owned's, then Built's
         case .l:
-            if stageTab == .library, let i = StageFilter.allCases.firstIndex(of: stageFilter), i > 0 { stageFilter = StageFilter.allCases[i - 1] } else { stageTab = .home }
+            let steps = Self.libraryStops
+            if stageTab == .library, let i = steps.firstIndex(where: { $0 == (stageScope, stageFilter) }), i > 0 { (stageScope, stageFilter) = steps[i - 1] } else { stageTab = .home }
         case .r:
+            let steps = Self.libraryStops
             if stageTab == .home { stageTab = .library }
-            else if let i = StageFilter.allCases.firstIndex(of: stageFilter), i + 1 < StageFilter.allCases.count { stageFilter = StageFilter.allCases[i + 1] }
+            else if let i = steps.firstIndex(where: { $0 == (stageScope, stageFilter) }), i + 1 < steps.count { (stageScope, stageFilter) = steps[i + 1] }
         case .menu: settingsFocus = 0; stageSettings = true
         case .options: if let g = focus { libraryFocus = g.id; toggleFavorite(g) }
         }
@@ -588,13 +599,6 @@ struct StageTopBar: View {
             .glassEffect(.regular, in: .capsule)
             .animation(.spring(duration: 0.32), value: model.stageTab)
             .padding(.leading, 12)
-            if model.run.running && !model.run.planning {
-                Button { model.showConverter(); model.page = .convert } label: {
-                    HStack(spacing: 8) { Text("Building").font(.callout.weight(.semibold)); SidebarBuildProgress(run: model.run) }
-                        .padding(.horizontal, 12).frame(height: 36).glassEffect(.regular, in: .capsule)
-                }
-                .buttonStyle(.plain).help("Show the build")
-            }
             Spacer(minLength: 0)
             if let pad = GCController.controllers().first?.vendorName {
                 Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).foregroundStyle(StageLook.soft)
@@ -844,16 +848,18 @@ struct StageLibrary: View {
     let all: [StageGame]
     let games: [StageGame]
     let focus: StageGame?
+    @Namespace private var scopeMark
     static let cell: CGFloat = 142, gap: CGFloat = 28, side: CGFloat = 56
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 14) {
                 Text("Library").font(.system(size: 32, weight: .heavy)).tracking(-0.6)
-                Text("\(all.count) game\(all.count == 1 ? "" : "s") · \(all.filter { $0.app != nil }.count) ready to play").foregroundStyle(StageLook.soft)
+                scopes
+                Text("\(games.count) game\(games.count == 1 ? "" : "s")").foregroundStyle(StageLook.soft).monospacedDigit()
                 Spacer(minLength: 8)
                 HStack(spacing: 8) {
-                    ForEach(StageFilter.allCases, id: \.self) { f in
+                    ForEach(StageFilter.shown(model.stageScope), id: \.self) { f in
                         let on = model.stageFilter == f
                         Button { model.stageFilter = f } label: {
                             HStack(spacing: 7) {
@@ -873,7 +879,7 @@ struct StageLibrary: View {
             }
             .padding(.horizontal, Self.side).padding(.top, 8)
             if games.isEmpty {
-                Text(model.stageSearch.isEmpty ? "No games here." : "Nothing matches “\(model.stageSearch)”.").foregroundStyle(StageLook.soft)
+                Text(model.stageSearch.isEmpty ? (model.stageScope == .built && model.stageFilter == .all ? "No game is built on this Mac yet. Owned has every game in your games folder." : "No games here.") : "Nothing matches “\(model.stageSearch)”.").foregroundStyle(StageLook.soft)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
@@ -885,6 +891,10 @@ struct StageLibrary: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(g.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                                         status(g)
+                                        // a short line under the game in focus, in its colour
+                                        Capsule().fill(CoverArt.tint(g).mix(with: .white, by: 0.35)).frame(width: 30, height: 3).padding(.top, 4)
+                                            .opacity(focus?.id == g.id ? 1 : 0).animation(.easeOut(duration: 0.18), value: focus?.id == g.id)
+                                            .accessibilityHidden(true)
                                     }
                                 }
                                 .id(g.id)
@@ -909,29 +919,61 @@ struct StageLibrary: View {
         }
     }
 
+    /// The games in the collection on screen
+    var inScope: [StageGame] { model.stageScope == .built ? all.filter { $0.app != nil } : all }
+
     func count(_ f: StageFilter) -> Int {
-        switch f {
-        case .all: all.count
-        case .favorites: all.filter(\.favorite).count
-        case .ready: all.filter { $0.app != nil }.count
-        case .switch2: all.filter { $0.console == .switch2 }.count
-        case .switch1: all.filter { $0.console == .switch1 }.count
-        case .notBuilt: all.filter { $0.app == nil }.count
+        let pool = inScope
+        return switch f {
+        case .all: pool.count
+        case .favorites: pool.filter(\.favorite).count
+        case .switch2: pool.filter { $0.console == .switch2 }.count
+        case .switch1: pool.filter { $0.console == .switch1 }.count
+        case .notBuilt: pool.filter { $0.app == nil }.count
         }
+    }
+
+    /// Owned | Built, with each collection's count: a pair like the top bar's tabs
+    var scopes: some View {
+        HStack(spacing: 2) {
+            ForEach(StageScope.allCases, id: \.self) { sc in
+                let on = model.stageScope == sc
+                let n = sc == .built ? all.filter { $0.app != nil }.count : all.count
+                Button {
+                    model.stageScope = sc
+                    if !StageFilter.shown(sc).contains(model.stageFilter) { model.stageFilter = .all }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(sc.rawValue).font(.system(size: 13, weight: .semibold))
+                        Text("\(n)").font(.system(size: 11.5, weight: .bold).monospacedDigit()).foregroundStyle(on ? Color(white: 0.35) : StageLook.faint)
+                    }
+                    .padding(.horizontal, 14).frame(height: 28)
+                    .foregroundStyle(on ? Color.black : Color(white: 0.92))
+                    .background { if on { Capsule().fill(.white.opacity(0.94)).matchedGeometryEffect(id: "scope", in: scopeMark) } }
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .help(sc == .built ? "Only the games built and ready to play on this Mac" : "Every game in your games folder, built or not")
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .glassEffect(.regular, in: .capsule)
+        .animation(.spring(duration: 0.3), value: model.stageScope)
     }
 
     func statusLine(_ g: StageGame, building: Bool, need: GameAttention?) -> (String, Color) {
         let blue = Color(red: 0.38, green: 0.65, blue: 0.98), amber = Color(red: 0.98, green: 0.75, blue: 0.14), green = Color(red: 0.29, green: 0.87, blue: 0.50)
-        if building { return ("Building · \(Int((model.run.overall(now: Date()).fraction * 100).rounded())) %", blue) }
+        if building { return ("Building · \(Int((model.run.overall(now: Date()).fraction * 100).rounded()))%", amber) }
         if g.app == nil { let st = model.status(g); return (st.text, st == .notBuilt ? Color(white: 0.55) : st.color) }
         if model.isPlaying(app: g.app ?? "") { return ("Playing now", blue) }
         if let a = need { return (a.kind == .update && g.last != nil ? StageLook.played(g.last) : a.text, a.color) }
-        if g.outdated && g.last == nil { return ("Update ready", amber) }
-        return (StageLook.played(g.last), g.outdated ? amber : green)
+        if g.outdated { return ("Older engine", amber) }
+        return (g.last == nil ? "Ready on Mac" : StageLook.played(g.last), green)
     }
 
     @ViewBuilder func status(_ g: StageGame) -> some View {
-        let building = model.run.running && g.game.map { model.settings.gameDir == $0.path || model.settings.gameDir == $0.folder } == true
+        let building = model.run.running && !model.run.planning && g.game.map { model.buildingDir == $0.path || model.buildingDir == $0.folder } == true
         let need = model.attention[g.id]?.first
         let (text, color) = statusLine(g, building: building, need: need)
         HStack(spacing: 6) {
