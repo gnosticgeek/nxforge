@@ -4,6 +4,18 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.17.0 (2026-11-16)
+
+Discover, and square covers. Ships in NXForge 0.42.0.
+
+- **Discover**: a new tab between Home and Library for browsing Switch and Switch 2 games from Nintendo's European store. Browse has All games, In your library and Wishlist; Genres lists Action, Adventure, Platformers, RPGs, Racing, Puzzles, Strategy, Sports, Fighting, Shooters, Party, Simulation, Arcade, Music, Board games and Lifestyle. Each game shows its square store art, its name and genres, with **In library** on the ones in your games folder (by title ID, else by name) and a heart on the ones on your Wishlist.
+- **Filters and sort**: Platform (All, Switch, Switch 2), Players (Any, 1 player, 2+, 4+), Library (All, In library, Not in library) and Sort (Title A–Z, Newest, Popular, the store's own ranking), plus a search field. The grid loads more as you scroll; Newest leaves out games with no release date yet.
+- **The bar along the foot** names the game in focus with its genres, players and console, with Wishlist and View game. View game opens a game's page in your Library when you have it, else a panel with its wide art, publisher, year, genres, the store's description, Wishlist and Nintendo eShop (opens its store page).
+- **Wishlist**: kept on this Mac only, in wishlist.json beside the settings. Y or the heart adds and removes a game.
+- **Controller and keyboard**: the arrows walk the grid, A views the game, Y wishlists it, X opens its store page, L and R step through Browse and the genres, B goes back to Home.
+- **Square covers**: Settings › Artwork › Square covers (or the square button beside the Library's filters) shows each game's square shop art instead of its box on Home and in the Library, so more fit in a row. The art is Nintendo Life's for download-only games, else the square picture of the game's entry on Nintendo's store, found by title ID (one search for 40 games at a time) or exact name, kept as <key>-square-store.jpg; a game with none falls back to its own icon. Every game in the library is looked up once (Look Again does it over); one with none is tried again after a week.
+- Only the genre, the filters and what is typed go to the store; the pictures are cached on this Mac.
+
 ## 0.16.0 (2026-11-16)
 
 Convert, Game Files and Builds to Tom's mock-ups. Ships in NXForge 0.41.0.
