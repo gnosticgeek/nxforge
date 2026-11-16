@@ -30,10 +30,10 @@ index 693f7ae618bc9ec3b53b1838d3010dbef5fe8b1e..85fb4e914b5abcc32490925da67e835a
 +DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
  DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 83ea6d015bc91109254d25070ebeb2bb731c6db0..dd4545bb44fcc1f86af1a6345b40032d0eff5cee 100644
+index 51e466d283697ecced53d4c88cdc7d82f07d067b..6fd7b8a068731c1ec1fb4c91eab2c955ba5a11ab 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -522,6 +522,23 @@ static void res_check(id r, const char *what, int reg) {
+@@ -575,6 +575,23 @@ static void res_check(id r, const char *what, int reg) {
          MLOG("[RED] missing residency #%d: %s slot %d %s %p (parent chain %d deep) allocated %lu B storage mode %lu%s", nbad, what, reg, is_tex ? "texture" : "buffer", (__bridge void *)a, hops, (unsigned long)a.allocatedSize, (unsigned long)a.storageMode,
               t ? [NSString stringWithFormat:@" format %lu %lux%lu type %lu usage %#lx", (unsigned long)t.pixelFormat, (unsigned long)t.width, (unsigned long)t.height, (unsigned long)t.textureType, (unsigned long)t.usage].UTF8String : ""); }
  }
@@ -57,7 +57,7 @@ index 83ea6d015bc91109254d25070ebeb2bb731c6db0..dd4545bb44fcc1f86af1a6345b40032d
  // GPU memory guard. GPU memory is wired, and the driver refuses to wire past Metal's working set (recommendedMaxWorkingSetSize: IOGPUScheduler freeToWireMemory fails there). The submit thread
  // then waits in the kernel, where nothing can kill the process: GitHub issue #1326 ended with a Mac frozen until the power button, PR #1319's 8 GB Mac with WindowServer's watchdog. So every commit
  // of the residency set looks first, at the larger of what the commit would leave (the set's allocatedSize, which counts only what was committed, and what was added since) and the device's
-@@ -848,7 +865,7 @@ static void guard_init(void) {
+@@ -902,7 +919,7 @@ static void guard_init(void) {
      { const char *d = getenv("DM_NVN_GUARD_DEVICE"); g_guard_dev = d && atoi(d); }
      const char *e = getenv("DM_NVN_RES_LIMIT_MB"); uint64_t ws = g_dev.recommendedMaxWorkingSetSize, lim = e ? strtoull(e, NULL, 0) << 20 : 0;
      if (!g_res) return;
@@ -66,7 +66,7 @@ index 83ea6d015bc91109254d25070ebeb2bb731c6db0..dd4545bb44fcc1f86af1a6345b40032d
  #if TARGET_OS_IPHONE
          if (!lim) g_guard.stop = g_guard.wall = UINT64_MAX;
  #endif
-@@ -7536,7 +7553,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
+@@ -7499,7 +7516,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
  enum { SEEN_REARM = 60, SEEN_CAP_DIV = 4 };
  static uint32_t g_seen_at[POOL_SEEN_WORDS * 32]; static uint64_t g_seen_rearm, g_seen_kept, g_seen_dropped;
  static int seen_keep(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_SEEN_KEEP"); v = e ? MAX(atoi(e), 0) : 600; } return v; }
@@ -75,7 +75,7 @@ index 83ea6d015bc91109254d25070ebeb2bb731c6db0..dd4545bb44fcc1f86af1a6345b40032d
  static int pool_seen_stale(int id_) {   // caller holds g_rmu
      if (!seen_keep() || g_seen_kb_all <= seen_cap_kb() || id_ < 0 || id_ >= (int)(POOL_SEEN_WORDS * 32) || !pool_seen(id_)) return 0;
      return (uint32_t)atomic_load(&g_cur_frame) - g_seen_at[id_] > (uint32_t)seen_keep();
-@@ -11509,7 +11526,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
+@@ -11727,7 +11744,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
  static uint64_t g_walk_frame = ~0ull, g_walk_spent, g_walk_sub = ~0ull; static double g_walk_ms; static int g_walk_over;
  static uint64_t pool_tex_size(const tex_t *t) { return t->L.size ? t->L.size : 1; }
  static int pool_size_cmp(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }
@@ -98,15 +98,15 @@ index 0069eca826718305095ffe09f426e13bb157f017..09a96a6babfdafda8447a18b3a1eb311
  
  def build(gid, api, platform=None):
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 397d15bd2226282f81232684686b5c46feef279f..b5c0df0730effeb984381a10c196af044c82a73d 100644
+index e4591cb0c69b6f174bf1492ba4b21798ae669387..34e3b6a134bddc721bcb0a11751c06edd7e3136f 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -117,6 +117,7 @@ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz M
+@@ -121,6 +121,7 @@ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz M
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
  DM_LONGFRAME	diagnostic	`0` turns off the long-frame log (on by default), a line for a frame over 20 ms or with GPU time over 16.7 ms that is clearly above recent frames
  DM_MEASURE_LOCK	path	`=<file>`: `scripts/regress.py`'s default `--lock`, the measuring lock `scripts/bench.py --lock` shares: held only while a game runs, and the harness's shader builds pause while another process holds it
 +DM_MEMORY_GB	player	`auto` (default) or a number of GB: the device memory the host's rules plan for (the launcher's Memory): where the memory guard begins to let go, how many textures are made ahead
- DM_MEMSTAT	diagnostic	`=<tsv>` writes one line per second of memory accounting: footprint, Metal allocation and resident and charged memory by region class (guest, code, malloc, gpu, …)
+ DM_MEMSTAT	diagnostic	`=<tsv>` writes one line per second of memory accounting: footprint, Metal allocation and resident and charged memory by region class (guest, code, malloc, gpu, …); on iOS a relative path is under `Documents`, and `Documents/env.txt` can set it
  DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second writes every VM region of 1 MiB or more to `<tsv>.regions`
  DM_MEM_CAP_GB	switch	`=<GB>`: the memory watchdog exits when resident memory exceeds that many GB (default 24 on the Mac, none on iOS; `0` turns it off)
 diff --git a/docs/settings.md b/docs/settings.md

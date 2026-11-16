@@ -33,7 +33,7 @@ index 74fbb73b851b5602786f8397a8b1d3890a6e0c99..693f7ae618bc9ec3b53b1838d3010dbe
  DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
  DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
 diff --git a/dm/host/hle_hid.c b/dm/host/hle_hid.c
-index a3dd59334409ae5d4263889f702f6ce9a8412e3b..a1b94d00ab4497075d47072457cc03939f88c10f 100644
+index 8d10b6b5a6018c0846a06e24460fbf43e8c09f88..91885d14c8cb2b1d4a49edb9462f0497aaa08cf3 100644
 --- a/dm/host/hle_hid.c
 +++ b/dm/host/hle_hid.c
 @@ -8,6 +8,7 @@
@@ -95,10 +95,10 @@ index 0000000000000000000000000000000000000000..36fa9e797fa94166fc165dd605c490cf
 +    *y = (int32_t)lrintf(fmaxf(-1, fminf(1, fy * scale)) * DM_STICK_MAX);
 +}
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 1b7c405fb91a43fa812b13240e2f1866d915cce8..6d14eb057d577486f907c13e74a5847ec9d79cb4 100644
+index 2bc98509d8585142138008ddd249815517c7a9f3..fd071b1722b8095777a5c052eed46f612ced52e3 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
-@@ -82,6 +82,9 @@ run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_siz
+@@ -87,6 +87,9 @@ run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_siz
  	TMPDIR="$(abspath $(B))" $(B)/t_cheats $(QUIET)
  	$(B)/t_nro
  	$(B)/t_symbols
@@ -167,10 +167,10 @@ index 0000000000000000000000000000000000000000..d9ac75c2b4809ebca2dcbacbbf9dd17e
 +    return 0;
 +}
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index ff051a6480c0c6beedca4bd7e572f59ad17ad413..397d15bd2226282f81232684686b5c46feef279f 100644
+index 921cb1b813c82e061d9ff2f346aef3e22240b242..e4591cb0c69b6f174bf1492ba4b21798ae669387 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -414,6 +414,8 @@ DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log on
+@@ -412,6 +412,8 @@ DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log on
  DM_SPIN	switch	`0` makes the rewriter's spin gate return at once, so guest poll loops spin with no sleep; the gate stays (on by default)
  DM_SPIN_LIST	diagnostic	`=1` makes `patch_nso.py` print every guest poll loop it found and sends through a spin gate
  DM_SPIN_POLL	switch	`=<µs>`: how long a spin-gate wait polls before it sleeps with the yield back-off (default 2000; `0` yields on every pass)

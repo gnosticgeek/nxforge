@@ -43,10 +43,10 @@ index c706afe5f22be3f276672654c717e34b13eb2a79..55e4e7b16178aa8eeffd49d2b3491c92
          restart_choices();
      }
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 9b4714a092b6f6b4c89d911e2975e6a91083197b..725834459e31bbf8b928b9e4f3217beca552265a 100755
+index ef49f714cfe9dda9a37159fbbcab6964c4479804..d15e7535e2fc7fd28226b36c8e6b3e93debc08fa 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
-@@ -334,7 +334,7 @@ def pack(a):
+@@ -338,7 +338,7 @@ def pack(a):
          if not codesign: raise SystemExit('codesign is not available')
          codesign = Path(codesign).resolve()
          minos = min_os(a.host)
@@ -54,4 +54,4 @@ index 9b4714a092b6f6b4c89d911e2975e6a91083197b..725834459e31bbf8b928b9e4f3217bec
 +        sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE / 'nxforge/launcher_slots.inc', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'tools/romfs.py'] + swift_sources()
          large = {*msls, *pso, *(p for x in programs for p in x[5])}   # the shader libraries and pipeline archives (13.5 GB for Ocarina of Time): by stat, as the RomFS trees below
          inputs = {'options': {k: v for k, v in vars(a).items() if k != 'check'}, 'files': [file_row(p, p in large) for p in files + sources],
-                   'trees': [(p, inventory(Path(p))) for p in (a.romfs, a.aoc, a.html, *(str(x[1]) for x in programs), *(str(x[3]) for x in programs)) if p and Path(p).exists()],
+                   'trees': [(p, inventory(Path(p))) for p in (a.romfs, a.aoc, a.html, str(Path(a.romfs).parent / PROGRAM_ROMFS), *(str(x[1]) for x in programs), *(str(x[3]) for x in programs)) if p and Path(p).exists()],

@@ -13,8 +13,8 @@ the child host (macOS privacy checks refuse an exec'ed process's opens there).
 ---
  dm/mac/launcher.c     | 17 +++++++++++++++++
  dm/mac/pack_app.py    |  3 +++
- docs/env_switches.tsv |  6 +++++-
- 3 files changed, 25 insertions(+), 1 deletion(-)
+ docs/env_switches.tsv |  4 ++++
+ 3 files changed, 24 insertions(+)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
 index 55e4e7b16178aa8eeffd49d2b3491c922ed9854a..5aeb91e527828c99e1dc38915b7ae1a61e889849 100644
@@ -45,10 +45,10 @@ index 55e4e7b16178aa8eeffd49d2b3491c922ed9854a..5aeb91e527828c99e1dc38915b7ae1a6
      for (;;) {
          int err = posix_spawn(&g_child, host, NULL, NULL, host_argv, environ);
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 725834459e31bbf8b928b9e4f3217beca552265a..92435fd0a1604f39ae2551edfdd2f0792fc69de3 100755
+index d15e7535e2fc7fd28226b36c8e6b3e93debc08fa..2156578b668289f7960e8349edeef80a7e388c09 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
-@@ -127,6 +127,9 @@ def info_plist(a, minos, icon):
+@@ -128,6 +128,9 @@ def info_plist(a, minos, icon):
           'NSBluetoothAlwaysUsageDescription': 'Connect Switch 2 Joy-Con and Pro Controllers over Bluetooth.',
           'LSApplicationCategoryType': a.category or 'public.app-category.games', 'LSSupportsGameMode': False, 'DMTitleID': a.title_id.upper(), 'DMRomfsMarker': a.marker or '', 'DMLanguage': a.lang or 'en-US', 'DMSaveSyncChoice': 1}
      if icon: p['CFBundleIconFile'] = 'AppIcon'
@@ -59,7 +59,7 @@ index 725834459e31bbf8b928b9e4f3217beca552265a..92435fd0a1604f39ae2551edfdd2f079
          listed = json.loads(Path(a.settings).read_text(encoding='utf-8'))['settings']
          p['DMSettings'] = settings_rules(listed)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index c9791e7f8e6f3712692f6befa3ef2192b8bc34fa..63e660c420eec72984f1e2070e138a44e254141f 100644
+index 1929f7070c4883b3479c9c0ca650dc71dbffbcdc..7e853c3841307a3fbe672cfec80bbace470fbf69 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -7,6 +7,7 @@ DM_ANISO	diagnostic	`0`, `2`, `4`, `8` or `16`: anisotropic filtering of at leas
@@ -70,7 +70,7 @@ index c9791e7f8e6f3712692f6befa3ef2192b8bc34fa..63e660c420eec72984f1e2070e138a44
  DM_APP_VERSION	switch	Overrides the IPA's version in `build_ipa.sh`; by default it is the packed game's display version from its control data (the update's when one is packed)
  DM_AUDIO	switch	`1` plays audio through Core Audio, `0` uses the silent sink; real output is the default on iOS, the silent sink on the Mac (the Mac launcher sets `1`)
  DM_AUDIO_DUMP	diagnostic	`=<file>` writes every PCM block the game appends as is (16-bit, 48 kHz, channel count as in the OpenAudioOut log), to judge whether a sound played
-@@ -112,6 +113,8 @@ DM_KEYS	switch	Scripted input: `<seconds or f<frame>>:<key>[+key][~hold or ~f<fr
+@@ -116,6 +117,8 @@ DM_KEYS	switch	Scripted input: `<seconds or f<frame>>:<key>[+key][~hold or ~f<fr
  DM_LANG	player	Game language as a language code (default `en-US`; the iOS app sets the one the IPA was packed with)
  DM_LAUNCHER	switch	`0` skips the iOS settings screen or the Mac settings window and starts the game at once, with the saved choices (on the Mac also `--no-launcher`)
  DM_LAUNCHER_RESTART	diagnostic	Set by the Mac launcher (dm/mac/launcher.c): the file Quick settings › Restart game writes before quitting, so the launcher starts the game again
@@ -79,19 +79,8 @@ index c9791e7f8e6f3712692f6befa3ef2192b8bc34fa..63e660c420eec72984f1e2070e138a44
  DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once; `oe::ExecuteProgram` sets it for the program it starts; a relaunch removes it
  DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz Mac screens; by default the link counts only the refreshes nearest a steady 1/60 s clock
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
-@@ -233,9 +236,9 @@ DM_NVN_ROP_ROUND	switch	`0` leaves float colours going into 8-bit, 16-bit and RG
- DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover the whole target, as before; by default a draw pass that loads what it keeps stops at the far corner of its scissor when that is at most half the target
- DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render targets, as before; by default SetRenderTargets naming the open pass's targets continues the pass
- DM_NVN_RT_DEAD	switch	`0` keeps every shared render target of a GPU-only pool while a texture object names it, as before; by default one another target drew over and that has not been used for 3 s is released once a second, and made again at its next use (`ab` alternates it with the `DM_AB` phases)
-+DM_NVN_RT_LOSSY	switch	`1` enables lossy compression for standalone private render targets of an explicit Apple8+ format whitelist, without shader writes, atomics or pixel-format-view usage; family/pool heaps keep their existing layout (off by default)
- DM_NVN_RT_RANGE	switch	`=1` (experimental, off by default; with `DM_NVN_TBDR=1`) keeps the pass open when the game sets the same colour and depth target again with a view that differs only in its level count
- DM_NVN_RT_RANGE_CHECK	diagnostic	With `DM_NVN_RT_RANGE=1` and `DM_NVN_PASSDUMP`, renders a candidate pass both ways in the same frame and logs and writes the comparison (`CHECK_RESULTS.tsv`, `[RED]` on a difference)
--DM_NVN_RT_LOSSY	switch	`1` enables lossy compression for standalone private render targets of an explicit Apple8+ format whitelist, without shader writes, atomics or pixel-format-view usage; family/pool heaps keep their existing layout (off by default)
- DM_NVN_RT_RECYCLE	switch	`0` makes each render target in a GPU-only pool, each feedback snapshot and each resolution family heap its own exact Metal allocation, freed with its texture, as before; by default they are placed in heaps from one free list, and a freed one's heap waits, resident, for the next texture it fits (`ab` alternates it with the `DM_AB` phases)
- DM_NVN_SEEN_KEEP	switch	`=<frames>` (600 by default): while the marked textures come to more than a quarter of Metal's working set, a texture ID's read mark goes with its next texture when no shader has read the ID for that many frames, so the walk makes that texture under its budget and holds the stand-in until it is read; `0` keeps every mark until its ID is emptied, as before
- DM_NVN_SHDUMP	diagnostic	`=<dir>` saves programs missing from the shader map as `<key>.ctl` (control section) and `<key>.code`, to find the files that hold them
-@@ -412,6 +415,7 @@ DM_SHARED_FONT	path	Font file served for every shared-font type except the Ninte
- DM_SHARED_FONT_EXT	path	Font file served for shared-font type 5, the Nintendo extension with the button icons (default `$DM_FONT_DIR/nintendo_ext.ttf`, made by `make_ext_font.py`)
+@@ -410,6 +413,7 @@ DM_SHARED_FONT	path	One font file served for every shared-font type except the N
+ DM_SHARED_FONT_EXT	path	Font file served for shared-font type 5, the Nintendo extension with the button icons (default `$DM_FONT_DIR/nintendo_ext.ttf`, made by `make_shared_fonts.py`)
  DM_SHOW_FPS	player	`1` shows the frame-rate counter on the iPhone (frames put on screen per second, top left); at IPA build it sets `DMShowFPS` in `Info.plist`, which `Documents/env.txt` overrides
  DM_SIX_DELAY	switch	`=0` (the default), `=auto` or `=<ms>` (up to 40): `DM_IMU_DELAY`'s playout delay for the six-axis states (`GetSixAxisSensorStates`) instead of the IMU samples. None by default: a Switch 1 game reads the newest state each frame (aiming, steering), so a delay only adds latency. Also through `DM_CTL`'s `env`
 +DM_SLOT_LOADED	player	Set by the launcher for the host after a slot load: the slot's folder, or `!` and why it was not loaded; the sidebar's toast says which

@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.39.0 (unreleased)
+
+- **The engine moves to the newest nxnative** (upstream `3ce43e2a`, 97 commits past the last pin `bee218d9`): upstream's fixes since 15 Nov come in, among them Ocarina of Time's movie player taking two pictures a frame (upstream #2456, so NXForge's early copy of it is dropped), held submissions that commit together while the GPU is busy (#2645), every command buffer naming the residency sets (#2715), MSL 3.2 for every shader, jump tables proved by dataflow (#2562), original Joy-Cons read wholly from their HID reports on the Mac (#2594), lazy clears taken by every pass (#2780), occlusion-query and sparse stand-in fixes, frame-step tuning (#2611), and new game profiles (DOOM 3, Burnout Paradise Remastered, Mega Man Legacy Collection, FINAL FANTASY V and VI, Overcooked, Xenoblade Chronicles X). NXForge's layer patches are rebased onto it: the thread patch keeps only a comment now that upstream signals wakes after the lock (#1466), and upstream's direct MetalFX screen write stays off so anti-aliasing, pixel art, filters and HDR highlights still follow the upscaler. The early upstream patches still open there (#2344 read marks, #2497, #2538 wide screen, #2532 render scale, #2621 Mario Kart World 1.8.0, #1662 microphone) are carried as before. Games need a full rebuild to pick up the new engine.
+- **Pause warm names its residency** (layer patch fstep-settle): the 64-byte fill that keeps the GPU powered through a pause takes its command buffer from `cl_cb`, as upstream's residency check (#2715) now requires of every command buffer.
+
 ## 0.38.2 (2026-11-15)
 
 - **Cheats easy to find** (Converter 0.14.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's page in the front end has a Cheats tile, and its ⋯ menu and the Library's game menu have Cheats…, opening Get Cheats and the cheat switches. A game not built yet finds its build from the version its files hold, so cheats can be fetched before the first build. No game rebuild needed for this.

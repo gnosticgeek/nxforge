@@ -24,10 +24,10 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
  6 files changed, 79 insertions(+), 10 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 5aef3f528ee9451c09c9d48f96a6655af67c9ef8..1e9916777d6b0766d057317d7a1cfd2fbe02d790 100644
+index f50b643a7f0a7d97f3ae96335528479a2ddfb8a4..54cc406749ee0a5dc620bc1f5d5cec79bdbdedbb 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
-@@ -189,6 +189,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+@@ -217,6 +217,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
  - [The pool walk's statistics made chunks of a large pool](../../../docs/reference/memory.md#the-pool-walks-statistics-made-chunks-of-a-large-pool): resolved, GPU allocated 3.3 to 15.8 GB in the area load on a 16 GB Mac (issue #2068); 77 overlapping 80 MB chunks of the 2,432 MB pool, made by two log statistics.
  - [Models black for one frame when a streaming step replaces their textures](../../../docs/reference/rendering.md#models-black-for-one-frame-when-a-streaming-step-replaces-their-textures): resolved, the castle town wall, Hyrule Castle, rocks and trees near the town and Lon Lon Ranch's barn black for one frame, twice, 4-5 frames apart, at the streaming steps that replace their material sets (PR #2022; seen on an M4 Pro and an M5 Max).
  - [A streamed texture's first read drew its surface dark for one frame](../../../docs/reference/rendering.md#a-streamed-textures-first-read-drew-its-surface-dark-for-one-frame): resolved, the cliff beside the castle town wall in Hyrule Field darker for one frame as the game streamed it a sharper texture set ([issue #1969](https://github.com/seedds/nxnative/issues/1969), PR #2075); the first read now samples the texture's own colours, coarse, for that frame. Seen also in Kakariko Village and its graveyard on a MacBook Air M5 (three flashes in 8 minutes before, none in 4 after, by eye).
@@ -36,10 +36,10 @@ index 5aef3f528ee9451c09c9d48f96a6655af67c9ef8..1e9916777d6b0766d057317d7a1cfd2f
  - [Unused border corrections retain sample registers](../../../docs/reference/rendering.md#unused-border-corrections-retain-sample-registers): about 1.5 ms of GPU a frame at 1080p ([measurements](#unused-border-corrections)).
  
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index be34f57452c1ee09cc0cad4dfb66e1614f6f56f1..7867de1a5d1bb969475f3ada82fa7ab5f1b6ea2f 100644
+index 7777372a8b65f3c162a921a4d5e4ad446ca4822f..4bf1e6aaa69b59ca26e4e1bf642d707b4f893396 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -7453,10 +7453,15 @@ static inline int pool_seen_t(int id_, int dtt) {
+@@ -7416,10 +7416,15 @@ static inline int pool_seen_t(int id_, int dtt) {
      if (dtt < 0 || dtt >= POOL_SEEN_TYPES) return pool_seen(id_);
      return id_ >= 0 && id_ < (int)(POOL_SEEN_WORDS * 32) && (g_seen_typed[seen_sec(dtt)][(unsigned)id_ >> 5] >> (id_ & 31) & 1);
  }
@@ -55,7 +55,7 @@ index be34f57452c1ee09cc0cad4dfb66e1614f6f56f1..7867de1a5d1bb969475f3ada82fa7ab5
      g_seen_done[(unsigned)id_ >> 5] &= ~b;
      for (unsigned s_ = 0; s_ < POOL_SEEN_TYPES; s_++) {
          g_seen_typed[s_][(unsigned)id_ >> 5] &= ~b;
-@@ -7477,6 +7482,23 @@ static void pool_seen_retype(int id_) {
+@@ -7440,6 +7445,23 @@ static void pool_seen_retype(int id_) {
  // The NVN target a registration is read as: its view's, if the view sets one
  static int tex_reg_target_of(const tex_t *t, const view_t *v) { return v && v->set_target ? (int)v->target : t->d.target; }
  static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->has_v ? &r->v : NULL); }
@@ -79,7 +79,7 @@ index be34f57452c1ee09cc0cad4dfb66e1614f6f56f1..7867de1a5d1bb969475f3ada82fa7ab5
  void mtl_reg_tex_gone(int tid) {
      os_unfair_lock_lock(&g_rmu);
      if (tid >= 0 && tid < g_ntreg && g_treg[tid].ok) treg_gone(&g_treg[tid]);
-@@ -7497,10 +7519,14 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
+@@ -7460,10 +7482,14 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
          // Ocarina of Time allocates 15-18 GB against a 909 MB budget on a 24 GB Mac, and when its streaming replaced the 17 textures of the castle town wall's material set (3-7 MB each,
          // each step registered twice, 4-5 frames apart), each registration's first read found the dummy, and the wall, the rocks and the trees drew black for one frame, twice (PR #2022).
          // A render target no pass has written stays the dummy all the same (pool_unwritten_target). A texture streamed into an ID no shader has read yet holds its stand-in until its first read (pool_stand, issue #1969)
@@ -95,16 +95,16 @@ index be34f57452c1ee09cc0cad4dfb66e1614f6f56f1..7867de1a5d1bb969475f3ada82fa7ab5
          rr->retired = 0; rr->transient_sub = 0;
          if (t && t->serial) {
              rr->retired = !own_tex_live(t->serial);
-@@ -11639,22 +11665,32 @@ static void pool_seen_scan(void) {
+@@ -11893,22 +11919,32 @@ static void pool_seen_scan(void) {
      g_seen_sub = g_sub_serial;
      uint64_t f = atomic_load(&g_cur_frame); if (f != g_walk_frame) { g_walk_frame = f; g_walk_spent = 0; g_walk_req = 0; }
      if (g_stand_todo_n) pool_stand_scan();
 -    { static uint64_t at, was; uint64_t now = g_stand_made + g_first_stand + g_first_dummy;   // the totals, every 300 frames in which they changed
 +    { static uint64_t at, was; uint64_t now = g_stand_made + g_first_stand + g_first_dummy + g_seen_kept + g_seen_dropped;   // the totals, every 300 frames in which they changed
        if (f >= at + 300 && now != was) { at = f; was = now;
--          MLOG("pool stand-ins up to frame %llu: %llu made in %.1f ms (%llu of them a level cut down), %llu gave way to their texture, %llu held now in %d heaps of %u MB (%llu not made: the heaps were full), %u waiting; first reads of a texture not made found a stand-in %llu times%s and the dummy %llu times (%llu of them textures of 256 KB or more)",
-+          MLOG("pool stand-ins up to frame %llu: %llu made in %.1f ms (%llu of them a level cut down), %llu gave way to their texture, %llu held now in %d heaps of %u MB (%llu not made: the heaps were full), %u waiting; first reads of a texture not made found a stand-in %llu times%s and the dummy %llu times (%llu of them textures of 256 KB or more); a new texture kept its ID's read mark %llu times, dropped it %llu times (not read for %d frames, with the marked textures above %llu MB; %llu MB now)",
-                (unsigned long long)f, (unsigned long long)g_stand_made, g_stand_ns / 1e6, (unsigned long long)g_stand_picked, (unsigned long long)g_stand_done, (unsigned long long)g_stand_live, g_nstand_heap, (unsigned)(STAND_HEAP >> 20), (unsigned long long)g_stand_full, g_stand_todo_n, (unsigned long long)g_first_stand,
+-          MLOG("pool stand-ins up to frame %llu: %llu made in %.1f ms (%llu of them a level cut down, %llu in a sparse pool; %llu of a sparse pool not made: a page unmapped), %llu gave way to their texture, %llu held now in %d heaps of %u MB (%llu not made: the heaps were full), %u waiting; first reads of a texture not made found a stand-in %llu times%s and the dummy %llu times (%llu of them textures of 256 KB or more)",
++          MLOG("pool stand-ins up to frame %llu: %llu made in %.1f ms (%llu of them a level cut down, %llu in a sparse pool; %llu of a sparse pool not made: a page unmapped), %llu gave way to their texture, %llu held now in %d heaps of %u MB (%llu not made: the heaps were full), %u waiting; first reads of a texture not made found a stand-in %llu times%s and the dummy %llu times (%llu of them textures of 256 KB or more); a new texture kept its ID's read mark %llu times, dropped it %llu times (not read for %d frames, with the marked textures above %llu MB; %llu MB now)",
+                (unsigned long long)f, (unsigned long long)g_stand_made, g_stand_ns / 1e6, (unsigned long long)g_stand_picked, (unsigned long long)g_stand_sparse, (unsigned long long)g_stand_sparse_unmapped, (unsigned long long)g_stand_done, (unsigned long long)g_stand_live, g_nstand_heap, (unsigned)(STAND_HEAP >> 20), (unsigned long long)g_stand_full, g_stand_todo_n, (unsigned long long)g_first_stand,
 -               g_first_stale ? [NSString stringWithFormat:@" (%llu written since the stand-in was made)", (unsigned long long)g_first_stale].UTF8String : "", (unsigned long long)g_first_dummy, (unsigned long long)g_first_dummy_big); } }
 -    const uint32_t *w = (const uint32_t *)g_seen_buf.contents; unsigned words = MIN((unsigned)g_ntreg / 32 + 1, (unsigned)POOL_SEEN_WORDS);
 +               g_first_stale ? [NSString stringWithFormat:@" (%llu written since the stand-in was made)", (unsigned long long)g_first_stale].UTF8String : "", (unsigned long long)g_first_dummy, (unsigned long long)g_first_dummy_big,
@@ -176,31 +176,31 @@ index 5c66f94ec74f821508725e1f0cbaf181d5dd6af0..cc2461dd20790969c84ae5685d0ce891
      mtl_pool_del(mem); mtl_drain(); munmap(mem,LEN);
      fprintf(stderr,"pool_seen_replace: %d checks, %d failed\n",checks,failed);
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index cf8944a2cbf516fcae2c6926d65c1508253b5dc4..0871b30e37dd1bc14f97a77e2bc00f86ac26e9a9 100644
+index acce07f618dde085cd9ca5c9c010ae352ef90f11..c217f850e685ab22376d99925c97fb3cbf2f5962 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -822,6 +822,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
- - in an Unreal Engine game, textures and lighting turn blurry and muddy about a second after an area loads and stay that way, whatever the frame rate, render scale or upscaling; no red line. → [Unreal's texture streaming pool](../reference/rendering.md#unreals-texture-streaming-pool)
+@@ -859,6 +859,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - large static and mesh-shader models (Ocarina of Time's castle town wall, rocks, trees, Lon Lon Ranch's barn) draw black for exactly one frame, with the fog in front and the terrain untouched, in pairs four or five frames apart; a few times a minute in play, at fixed places of a route. → [Models black for one frame when a streaming step replaces their textures](../reference/rendering.md#models-black-for-one-frame-when-a-streaming-step-replaces-their-textures)
  - a patch of scenery (Ocarina of Time's cliff beside the castle town wall) draws darker for exactly one frame, once, as the game gives it a sharper texture; a few times a minute while walking through Hyrule Field. Single frames, not the pairs of the entry above; no red line. → [A streamed texture's first read drew its surface dark for one frame](../reference/rendering.md#a-streamed-textures-first-read-drew-its-surface-dark-for-one-frame)
+ - the first frame after a scene cut is dark where newly visible materials are: PRAGMATA's cut from the tower to the tablet draws the cockpit and tablet with their G-buffer base colour at 0.068 on that frame against 0.18 on the next. → [A sparse pool's streamed textures read 0 at their first read](../reference/rendering.md#a-sparse-pools-streamed-textures-read-0-at-their-first-read)
 +- about an hour into a session, walking into an area or through a passage between areas freezes the picture in runs of 200-670 ms frames for seconds, where the same loads were smooth in the session's first minutes; GPU allocated climbs from 3.9 GB to 9.8 GB, and the `[longframe]` lines show 100-300 first texture uploads a frame. No red line. → [Area loads froze late in a session as read marks piled up](../reference/rendering.md#area-loads-froze-late-in-a-session-as-read-marks-piled-up)
  - ≈13 MB/frame leak. → [Transient render targets shared by storage](../reference/rendering.md#transient-render-targets-shared-by-storage)
  - the residency line adds and removes thousands of allocations every 300 frames, nearly all from one line, the `res_add` of a buffer texture's view in `tex_mtl_`; the memory line's `finalized textures still referenced` stays at the ghost table's 512 while its puts in total climb by about a hundred or more a frame. No red line and no visible effect: the cost is submit-thread time in residency commits. → [Transient buffer textures shared by storage](../reference/rendering.md#transient-buffer-textures-shared-by-storage)
  - a model has correct geometry, base colour and normals but appears as a black silhouette; deferred lighting's material-ID depth texture stays zero. → [IMAGE usage does not split texture storage](../reference/rendering.md#image-usage-does-not-split-texture-storage)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 41382f06eab9a0f2f6b01eefc0bc13b4f93200b6..e4ee3e117fb40683460dfc8214d9172640b7b9af 100644
+index 4bc26ea48a66b5bb9be7c1172856755379c316c6..96ce5dbe474a5f0dbb9a0e1665000535058451a9 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -231,6 +231,7 @@ DM_NVN_RT_DEAD	switch	`0` keeps every shared render target of a GPU-only pool wh
- DM_NVN_RT_RANGE	switch	`=1` (experimental, off by default; with `DM_NVN_TBDR=1`) keeps the pass open when the game sets the same colour and depth target again with a view that differs only in its level count
- DM_NVN_RT_RANGE_CHECK	diagnostic	With `DM_NVN_RT_RANGE=1` and `DM_NVN_PASSDUMP`, renders a candidate pass both ways in the same frame and logs and writes the comparison (`CHECK_RESULTS.tsv`, `[RED]` on a difference)
+@@ -227,6 +227,7 @@ DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover t
+ DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render targets, as before; by default SetRenderTargets naming the open pass's targets continues the pass
+ DM_NVN_RT_DEAD	switch	`0` keeps every shared render target of a GPU-only pool while a texture object names it, as before; by default one another target drew over and that has not been used for 3 s is released once a second, and made again at its next use (`ab` alternates it with the `DM_AB` phases)
  DM_NVN_RT_RECYCLE	switch	`0` makes each render target in a GPU-only pool, each feedback snapshot and each resolution family heap its own exact Metal allocation, freed with its texture, as before; by default they are placed in heaps from one free list, and a freed one's heap waits, resident, for the next texture it fits (`ab` alternates it with the `DM_AB` phases)
 +DM_NVN_SEEN_KEEP	switch	`=<frames>` (600 by default): while the marked textures come to more than a quarter of Metal's working set, a texture ID's read mark goes with its next texture when no shader has read the ID for that many frames, so the walk makes that texture under its budget and holds the stand-in until it is read; `0` keeps every mark until its ID is emptied, as before
  DM_NVN_SHDUMP	diagnostic	`=<dir>` saves programs missing from the shader map as `<key>.ctl` (control section) and `<key>.code`, to find the files that hold them
  DM_NVN_SHMAP	path	The shader map (`shader_map.tsv`); `c1_full.tsv` and `pso_manifest.tsv` are taken from the same folder. Default: the game profile's folder on the Mac; the iOS app sets it
  DM_NVN_SHOT	diagnostic	`=<frame>[,<frame>…]:<path>` saves the swapchain texture as an image at those frames (`%d` in the path = frame number); a window the game crops is saved as presented (the crop drawn at the texture's own size)
 diff --git a/docs/reference/rendering.md b/docs/reference/rendering.md
-index 71bdfe8a222e0254cefaff43dd06d925aad7a398..912c558af685b17c2ebf122ce8473120d3f8d916 100644
+index eb6f4a250dee3521cbd43517b87c9dc8e937b4c2..69214a14808ab46d7543773757d2dac3cb8e9ff9 100644
 --- a/docs/reference/rendering.md
 +++ b/docs/reference/rendering.md
 @@ -356,7 +356,7 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
@@ -212,9 +212,9 @@ index 71bdfe8a222e0254cefaff43dd06d925aad7a398..912c558af685b17c2ebf122ce8473120
  - **Check:** a replay of a route past the castle town wall, counting single-frame dips of a per-frame luminance grid, each checked by picture: 4-5 flagged per run before (2-4 at the wall's streaming steps), 0 after (PR #2022); `t_pool_chunks` checks which registrations keep the mark, `t_pool_seen_replace` the replacement's pixels in the first table with the walk's room at 0 (a live replacement, one after Finalize, one for an ID whose texture waited for the read budget).
  - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (a player's recording, M4 Pro, macOS 27.0.1).
  
-@@ -370,6 +370,14 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
- - **Check:** `t_pool_standin` (which registrations get a stand-in and what it holds, read back from the GPU; the first read; a frame's share), `t_tex` P (the picked blocks against the level decoded whole, in both GOB orders). `DM_NVN_POOL_FIRST=1` logs each first read of a texture not made yet and what it found; the totals go to the log every 300 frames (`pool stand-ins up to frame`). Replays of a player's route past the cliff, 10 with `DM_NVN_POOL_STANDIN=0` and 8 without: after the area load, 31 first reads of a texture not made found the dummy in the 10 runs and none in the 8, where 49 found a stand-in (none of them made from storage the game wrote afterwards). On a 32x18 luminance grid of every present, the cliff's first read is a connected group of 9-12 cells at 0.70-0.79 of the presents before and after in each of the 4 baseline runs in which its set streamed, and at most 2 cells, the grid's noise, in the 5 runs with stand-ins; by picture the cliff is dark for one frame in the one and a little soft in the other. At the area load 39 first reads a run found the dummy, and 5-11 with stand-ins (the frame's share). A run makes about 57,000 stand-ins in 355 ms (6 µs each on an M4 Pro) and holds about 6,000 at a time, in 16 MB of heaps. Resident memory, GPU allocated, the residency set, frame times and submit+present stay within the run-to-run range (medians: resident 10,830 and 10,883 MB; frame p95 16.85 and 17.19 ms, with runs of both kinds between 16.8 and 19.4).
- - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (a player's recording, M4 Pro, macOS 27.0.1).
+@@ -378,6 +378,14 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
+ - **Check:** `make -C dm/gfx/tests GAME=<id> check_t_pool_standin_sparse` (Metal validation): a sparse pool's texture left out holds its stand-in, with its level 4 read back from the GPU against the level decoded from the physical pages; one whose small levels are unmapped holds the dummy, charges nothing of the frame's 512, and a walk with no mapping does not look at it again; mapped later in the same frame, it holds its stand-in once the mapping notes it, with no walk; registered again, it holds its stand-in at the next walk. A refused ID looked at on every walk fails two checks, and one whose wait the note does not end fails the same-frame check. `t_pool_standin` (51 checks; 31 with `DM_NVN_POOL_STANDIN=0`) and `t_pool_notes` pass.
+ - **Found on:** [PRAGMATA](../../dm/games/0400C76024710000/README.md) (M4 Pro, macOS 26.6.2, a main-line host with the first version of this change, which looked at an unmapped texture again at every walk, two runs a side): the whole-picture luma at the cut from the tower to the tablet was 65 / 65 / 65 (before / cut / next) with the sparse stand-ins and 65 / 22 / 50 without; 4,872 of the 5,694 stand-ins were in sparse pools; the resident set peaked at 6.5 to 6.6 GB against 6.7 GB without. An earlier build with a G-buffer dump read the cut frame's base colour at 0.181 against 0.181 on the next (0.068 without). [Resident Evil 4](../../dm/games/0400569027BF4000/README.md) (M6, a host at chain `d254f45e8002` with and without this change, title to the forest path in 330 s, one run a side): first reads of a texture not made found the dummy 695 times and a stand-in never without it, and the dummy 27 times and a stand-in 999 times with it; 6,834 of its 7,486 stand-ins were in sparse pools, made in 42 ms over the run (20 ms for 655 without), and 149 were not made for an unmapped page, each looked at again only after a mapping over it.
  
 +### Area loads froze late in a session as read marks piled up
 +

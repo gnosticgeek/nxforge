@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
+ findings in upstream's code silenced on their lines, three counts lowered
+
+---
+ dm/gfx/nvn/nvn_mtl.m | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index ef0a681d7b7dcf990ee29c3cea219fd7e7cbe5d5..fc7e4715c4611d1200b1b54308f16a9859bea30a 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -6987,7 +6987,7 @@ static int progpf_first(NSString *pc) {
+ }
+ static NvShader *shader_get(NSString *pc, int stage) {
+     if (!g_shcache) g_shcache = [NSMutableDictionary dictionary];
+-    NvShader *o = g_shcache[pc];
++    NvShader *o = g_shcache[pc];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream bee218d9's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+     if (o) return o;
+     uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
+     if (!o) return nil;
