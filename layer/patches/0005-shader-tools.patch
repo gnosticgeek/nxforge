@@ -14,7 +14,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/gfx/tools/dmsh_pch.py                      |  52 ++++++++-
  dm/gfx/tools/own_compilers.py                 |  41 ++++++-
  dm/gfx/tools/pso_offline.py                   | 109 ++++++++++++++++--
- dm/gfx/tools/shader_split.py                  |  82 +++++++++++--
+ dm/gfx/tools/shader_split.py                  |  88 ++++++++++++--
  dm/gfx/tools/vk_shaders.py                    |  12 +-
  dm/tools/fuzz/fuzz_shader_split.py            |  12 +-
  dm/tools/shader_cache.py                      |  21 +++-
@@ -22,7 +22,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/tools/tests/test_pso_offline.py            |  54 ++++++++-
  dm/tools/tests/test_shader_pch.py             |  16 ++-
  dm/tools/tests/test_shader_toolchain_cache.py |  64 +++++++++-
- 17 files changed, 600 insertions(+), 92 deletions(-)
+ 17 files changed, 603 insertions(+), 95 deletions(-)
 
 diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
 index 028af3aa6e4720e5cd5382b5fd66a5b9f29a331d..64af3dff52b62106537a395ef2d341738402cdd6 100644
@@ -816,7 +816,7 @@ index 2de4704197a01f2fd1f1a25689f40f39920f4270..1ab110f64596f269763eefb91639ea2f
      for arch, key in keys.items():
          dst, kf = out / f'{arch}.mtl4a', work / f'key.{arch}'
 diff --git a/dm/gfx/tools/shader_split.py b/dm/gfx/tools/shader_split.py
-index 50c206cd165cd84373ad032e3aee6e1a44149590..272bfc87375c116bbc663b80f4b3d7fe0b8c48d0 100644
+index 50c206cd165cd84373ad032e3aee6e1a44149590..0623048dcd163f7fe6c7517deb844e3a73ae2781 100644
 --- a/dm/gfx/tools/shader_split.py
 +++ b/dm/gfx/tools/shader_split.py
 @@ -1,6 +1,6 @@
@@ -827,6 +827,25 @@ index 50c206cd165cd84373ad032e3aee6e1a44149590..272bfc87375c116bbc663b80f4b3d7fe
  #   · BNSH ('BNSH\0\0\0\0', carried by bfsha / particle effect esetb / UI layout blarc / embedded in main):
  #       +0x60 grsc block; +0x7c variation count u32; +0x80 variation table pointer (pointers are relative to the BNSH start). A variation is 0x40 bytes; the binary program is at +0x10;
  #       the binary program has 6 stage pointers from +0x08: vertex, hull, domain, geometry, pixel, compute; the stage code descriptor has +0x08 control pointer, +0x10 code area pointer, +0x18 code area length, +0x1c control length.
+@@ -564,15 +564,15 @@ def pacx4_parts(d, label):
+     names a shader type is opened: decompressed whole, the game's archives give 15.6 GB, and NeedleShader.pac is the only one with a Needle container or a control section in it.
+     → (name, bytes) of the root and of each block"""
+     roff, rstored, rlen = struct.unpack_from('<III', span(d, 0x10, 12, f'{label}: PACx 403 header'))
+-    deps, ctab = struct.unpack_from('<II', d, 0x20)
++    deps, ctab = struct.unpack_from('<II', span(d, 0x20, 8, f'{label}: PACx 403 header'))
+     n = struct.unpack_from('<I', span(d, 0x30 + deps, 4, f'{label}: PACx 403 root chunk table'))[0]
+     if not n or 4 + 8 * n > ctab: red(f'{label}: PACx 403 root chunk count {n} in a table of {ctab:#x} bytes')
+-    chunks = [struct.unpack_from('<II', d, 0x34 + deps + 8 * i) for i in range(n)]
++    chunks = [struct.unpack_from('<II', span(d, 0x34 + deps + 8 * i, 8, f'{label}: PACx 403 root chunk {i}')) for i in range(n)]
+     if sum(c for c, _ in chunks) != rstored: red(f'{label}: the PACx 403 root chunks do not add up to its stored length {rstored:#x}')
+     root = pacx4_unchunk(d, roff, chunks, rlen, f'{label}: PACx 403 root')
+     if root[:8] != PACX4_ROOT: red(f'{label}: the PACx 403 root is not a PACx 402 archive')
+     if b'Shader' not in root: return []   # the type tree names no shader type (VertexShader, PixelShader, ComputeShader in NeedleShader.pac)
+-    trees, info = struct.unpack_from('<II', root, 0x10)
++    trees, info = struct.unpack_from('<II', span(root, 0x10, 8, f'{label}: PACx 403 root header'))
+     out = [('root', root)]
+     if not info: return out
+     nb, tab = struct.unpack_from('<QQ', span(root, 0x30 + trees, 16, f'{label}: PACx 403 block table'))
 @@ -1708,6 +1708,41 @@ def gfpak_members(d, label):
          if len(data) != usz: red(f'{label}#{i}: {len(data):#x} bytes, the entry says {usz:#x}')
          yield f'#{i}', data
