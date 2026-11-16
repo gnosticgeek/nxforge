@@ -25,29 +25,26 @@ struct GameMedia: View {
         let items = current == .store ? storeItems : mine
         let accent = CoverArt.tint(game)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .center, spacing: 40) {
                 Text("Media").font(.system(size: 26, weight: .heavy)).tracking(-0.4)
+                if !storeItems.isEmpty {
+                    HStack(spacing: 0) {
+                        segment("Official media (\(storeItems.count))", on: current == .store, accent: accent) { tab = .store }
+                        segment("Your captures (\(mine.count))", on: current == .captures, accent: accent) { tab = .captures }
+                    }
+                    .padding(3)
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1))
+                    .help(caption(current, videos: videos.count, shots: shots.count, mine: mine.count))
+                }
                 Spacer()
                 if !items.isEmpty {
                     Button { open(items, at: 0, current) } label: {
-                        HStack(spacing: 6) { Text("View all \(items.count)"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
+                        HStack(spacing: 8) { Text("View all"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
                     }
                     .buttonStyle(.plain).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(accent).brightness(0.35)
-                    .help("Shows them all full screen")
+                    .help("Shows all \(items.count) full screen")
                 }
             }
-            if !storeItems.isEmpty {
-                HStack(spacing: 0) {
-                    segment("From the store (\(storeItems.count))", on: current == .store, accent: accent) { tab = .store }
-                    segment("Your captures (\(mine.count))", on: current == .captures, accent: accent) { tab = .captures }
-                }
-                .padding(3)
-                .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 1))
-                .padding(.top, 16)
-            }
-            Text(caption(current, videos: videos.count, shots: shots.count, mine: mine.count))
-                .font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.soft)
-                .padding(.top, storeItems.isEmpty ? 10 : 18)
             if !items.isEmpty {
                 HStack(spacing: 16) {
                     ForEach(0..<3, id: \.self) { i in
@@ -55,7 +52,7 @@ struct GameMedia: View {
                         else { Color.clear.frame(width: tileWidth, height: 1) }
                     }
                 }
-                .padding(.top, 14)
+                .padding(.top, 16)
             } else if captures != nil {
                 HStack(spacing: 12) {
                     Image(systemName: "camera.viewfinder").font(.system(size: 20, weight: .semibold)).foregroundStyle(StageLook.soft)
@@ -65,7 +62,7 @@ struct GameMedia: View {
                 .padding(.horizontal, 20).frame(maxWidth: .infinity, minHeight: tileWidth * 9 / 16, alignment: .leading)
                 .background(StageLook.card, in: .rect(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(StageLook.edge, lineWidth: 1))
-                .padding(.top, 14)
+                .padding(.top, 16)
             }
         }
         .task(id: game.app ?? game.id) {
@@ -83,7 +80,7 @@ struct GameMedia: View {
     }
 
     func open(_ items: [GalleryItem], at i: Int, _ t: Tab) {
-        model.openGallery(items, at: i, title: "\(game.name) · " + (t == .store ? "From the store" : "Screenshots"))
+        model.openGallery(items, at: i, title: "\(game.name) · " + (t == .store ? "Official media" : "Screenshots"))
     }
 
     func segment(_ title: String, on: Bool, accent: Color, action: @escaping () -> Void) -> some View {
@@ -116,9 +113,13 @@ struct GameMedia: View {
                         ZStack(alignment: .bottomLeading) {
                             LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
                             PlayGlyph(size: min(56, w * 0.18)).frame(maxWidth: .infinity, maxHeight: .infinity)
-                            Text("Trailer").font(.system(size: 13.5, weight: .semibold))
-                                .padding(.horizontal, 9).frame(height: 24)
-                                .background(.black.opacity(0.6), in: .rect(cornerRadius: 6)).padding(10)
+                            HStack(spacing: 7) {
+                                Image(systemName: "video").font(.system(size: 13, weight: .semibold))
+                                Text("Trailer").font(.system(size: 13.5, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).frame(height: 28)
+                            .background(Color(red: 0.80, green: 0.13, blue: 0.16), in: .rect(cornerRadius: 6)).padding(12)
                         }
                     }
                 }
@@ -152,6 +153,16 @@ struct GameAbout: View {
     let info: StoreInfo
     @State private var readMore = false
     @State private var details = false
+
+    init(game: StageGame, info: StoreInfo, full: Bool = false) {
+        self.game = game; self.info = info
+        _readMore = State(initialValue: full); _details = State(initialValue: full)
+    }
+
+    /// The store's short pitch: its excerpt, else the description's first paragraph
+    static func pitch(_ info: StoreInfo) -> String? {
+        (info.excerpt ?? info.about.first).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     var body: some View {
         let accent = CoverArt.tint(game)
