@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: NXForge layer <layer@nxforge.invalid>
 Date: Mon, 16 Nov 2026 21:57:12 +0000
-Subject: fx-min-scale: MetalFX only where it enlarges the picture by 1.3x or
+Subject: fx-min-scale: MetalFX only where it enlarges the picture by 1.4x or
  more (DM_FX_MIN_SCALE)
 
 ---
