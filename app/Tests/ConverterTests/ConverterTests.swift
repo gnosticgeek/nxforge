@@ -1,5 +1,6 @@
 // Unit tests for the converter's pure logic: the release names it shows and how it reads title IDs.
 // Run with `swift test --package-path app` on a Mac (CI runs them in tests.yml's converter job).
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -1066,6 +1067,85 @@ import Testing
         let q = HeroSource.byIDs(["0100C2700C252000", "bad"])?.absoluteString ?? ""
         #expect(q.contains("application_id_s%3A(0100c2700c252000)") || q.contains("application_id_s:(0100c2700c252000)"))
         #expect(HeroSource.byName("Cruis'n Blast™")?.absoluteString.contains("q=Cruis%20n%20Blast") == true)
+    }
+
+    @Test func nintendoLifePages() {
+        #expect(NLifeSource.slugs("Mario & Luigi - Brothership").first == "mario_and_luigi_brothership")
+        #expect(NLifeSource.slugs("Kirby's Return to Dream Land Deluxe").first == "kirbys_return_to_dream_land_deluxe")
+        #expect(NLifeSource.slugs("Super Mario 3D World + Bowser's Fury").first == "super_mario_3d_world_plus_bowsers_fury")
+        #expect(NLifeSource.slugs("New Super Mario Bros. U Deluxe [NSP]").first == "new_super_mario_bros_u_deluxe")
+        #expect(NLifeSource.slugs("Shadow of the Ninja - Reborn").contains("shadow_of_the_ninja_-_reborn"))
+        #expect(NLifeSource.slugs("Pac-Man Championship Edition 2 Plus").contains("pac-man_championship_edition_2_plus"))
+        #expect(NLifeSource.slugs("Pac-Man Museum+").contains("pac-man_museumplus"))
+        #expect(NLifeSource.slugs("The Legend of Zelda - Echoes of Wisdom").contains("legend_of_zelda_echoes_of_wisdom"))
+        #expect(NLifeSource.slugs("Alpaca Ball Allstars Legacy Edition").contains("alpaca_ball_allstars"))
+        #expect(NLifeSource.slugs("Pokémon™ Legends").first == "pokemon_legends")
+        let p = NLifeSource.pages(name: "Mario Kart World", titleID: "0400C3F00006E000").map(\.absoluteString)
+        #expect(p.first == "https://www.nintendolife.com/games/nintendo-switch-2/mario_kart_world")
+        #expect(p.count == 3)
+        #expect(NLifeSource.pages(name: "Pac-Man Museum+", titleID: nil).count <= NLifeSource.maxTries)
+        let html = """
+        <section class="hero hero-game"><div class="background accent-bg background-desktop" data-bg-image="https://images.nintendolife.com/e93460d4eb1df/cuphead-artwork.1920x350.jpg"></div>
+        <div class="accent-bg"><p id="cover" class="image scanlines accent-bg"><img src="https://images.nintendolife.com/03b8fc1926726/cuphead-cover.cover_300x.jpg" width="300" height="300" alt="Cuphead Cover" /></p>
+        """
+        let page = NLifeSource.parse(html)
+        #expect(page.hero?.absoluteString == "https://images.nintendolife.com/e93460d4eb1df/cuphead-artwork.original.jpg")
+        #expect(page.cover?.absoluteString == "https://images.nintendolife.com/03b8fc1926726/cuphead-cover.original.jpg")
+        #expect(NLifeSource.parse(#"<div class="background-desktop" data-bg-image="https://evil.example/a.1920x350.jpg"></div>"#).hero == nil)
+        #expect(NLifeSource.parse("<p>nothing</p>") == NLifeSource.Page())
+        let facts = """
+        {"@type":"VideoGame","name":"Blazing Chrome","datePublished":"2019-07-11","x":1}
+        <dl><dt>Publisher</dt><dd><a href="/companies/the_arcade_crew">The Arcade Crew</a></dd><dt>Developer</dt>
+        <dd><a href="/companies/joymasher">JoyMasher</a>, <a href="/companies/x">Two &amp; Co</a></dd></dl>
+        """
+        #expect(NLifeSource.parse(facts).developer == "JoyMasher & Two & Co")
+        #expect(NLifeSource.parse(facts).year == "2019")
+        #expect(NLifeSource.developer("<dt>Developer</dt><dd>Nintendo EPD</dd>") == "Nintendo EPD")
+    }
+
+    @Test func standardWideArt() throws {
+        func picture(_ w: Int, _ h: Int, red: Bool = false) -> Data {
+            let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+            ctx.setFillColor(red ? CGColor(red: 0.9, green: 0, blue: 0.07, alpha: 1) : CGColor(red: 0.2, green: 0.5, blue: 0.3, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            return CoverSource.jpeg(Data(NSBitmapImageRep(cgImage: ctx.makeImage()!).representation(using: .png, properties: [:])!), maxHeight: 4000)!
+        }
+        for (w, h) in [(2000, 600), (3840, 1154), (1600, 800), (993, 298), (1280, 1280)] {
+            let out = try #require(HeroSource.standard(picture(w, h)))
+            #expect(CoverSource.size(out).map { [$0.0, $0.1] } == [2560, 1280])
+        }
+        #expect(CoverSource.eshopStandIn(picture(864, 1400, red: true)))
+        #expect(!CoverSource.eshopStandIn(picture(864, 1400)))
+        #expect(NLifeSource.square(picture(500, 500)) && !NLifeSource.square(picture(1500, 2439)))
+    }
+
+    /// NXC_NL_RUN=1: the Nintendo Life pass for every game in this Mac's library, as the app runs it (real network, real artwork folder)
+    @MainActor @Test func nintendoLifeRun() async throws {
+        guard ProcessInfo.processInfo.environment["NXC_NL_RUN"] == "1" else { return }
+        let lib = Settings.supportDir.appending(path: "library.json")
+        let o = try JSONSerialization.jsonObject(with: Data(contentsOf: lib)) as? [String: Any]
+        let games = (o?["games"] as? [[String: Any]] ?? []).compactMap { g -> (key: String, titleID: String?, name: String, console: String)? in
+            guard let name = g["name"] as? String else { return nil }
+            let tid = g["titleID"] as? String
+            return (CoverStore.key(titleID: tid, name: name), tid, name, tid?.hasPrefix("04") == true ? "Switch 2" : "Switch")
+        }
+        CoverStore.shared.fetchNintendoLife(games, heroes: true, boxes: true)
+        await CoverStore.shared.nintendoLifeTask?.value
+    }
+
+    /// NXC_ART_PREVIEW=<folder>: draws the eShop box of every <name>.square.jpg there and standardises every <name>.hero.jpg, beside them
+    @MainActor @Test func artPreview() throws {
+        guard let dir = ProcessInfo.processInfo.environment["NXC_ART_PREVIEW"] else { return }
+        for f in try FileManager.default.contentsOfDirectory(atPath: dir) {
+            let u = URL(fileURLWithPath: dir).appending(path: f), d = try Data(contentsOf: u)
+            if f.hasSuffix(".square.jpg"), let box = CoverArt.eshopBox(name: String(f.dropLast(11)), console: "Switch", square: d, detail: "JoyMasher · 2019") {
+                try box.write(to: URL(fileURLWithPath: dir).appending(path: f.replacingOccurrences(of: ".square.jpg", with: ".box.out.jpg")))
+            }
+            if f.hasSuffix(".hero.jpg"), let h = HeroSource.standard(d) {
+                try h.write(to: URL(fileURLWithPath: dir).appending(path: f.replacingOccurrences(of: ".hero.jpg", with: ".hero.out.jpg")))
+            }
+        }
     }
 
     @Test func storeDetails() {

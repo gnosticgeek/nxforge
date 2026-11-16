@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.39.2 (2026-11-16)
+
+- **Nintendo Life art** (Converter 0.14.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): wide art comes from each game's Nintendo Life page first (Nintendo's store is the fallback) and is kept at one size, 2560 × 1280, for Home's full-window background and the game page's narrower banner; download-only games get an eShop box made from their square art on Nintendo Life in place of GameTDB's red stand-in. No game rebuild needed for this.
+
 ## 0.39.1 (2026-11-16)
 
 - **Efficiency sweep** (Converter 0.14.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the app no longer reads and decodes its build records, play times and every built app's Info.plist again on each redraw of Home, the Library and Builds; build records are written in one piece. CI leaves out the engine's six macOS jobs for a change that cannot reach them (the converter, NXForge's own scripts, docs, changelogs; `scripts/ci_changes.py`), and NXForge's script tests run on Linux every time. `nxforge clean` and `nxforge disk` list worktrees once and size each build folder once; `layer.py` loses two duplicated checks. No game rebuild needed for this.
