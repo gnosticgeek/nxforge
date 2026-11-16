@@ -213,6 +213,12 @@ struct ConverterApp: App {
         // the window can be ordered out for a moment when the app starts behind another one: bring it back rather than give up
         guard let w = NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first(where: { $0.contentView != nil }) else { exit(1) }
         if !w.isVisible { NSApp.unhide(nil); w.orderFrontRegardless(); try? await Task.sleep(for: .seconds(1)) }
+        // NXC_WINSIZE=<w>x<h>: the window at that size, e.g. a short one to check that the Settings panel scrolls
+        if let sz = env["NXC_WINSIZE"]?.split(separator: "x").compactMap({ Double($0) }), sz.count == 2 {
+            w.setContentSize(NSSize(width: sz[0], height: sz[1])); try? await Task.sleep(for: .seconds(1))
+        }
+        // NXC_SETTINGSROW=<n>: the Settings panel scrolled to the nth row, as a controller moving down it does
+        if let n = env["NXC_SETTINGSROW"].flatMap(Int.init) { model.settingsFocus = n; try? await Task.sleep(for: .seconds(1)) }
         // a sheet over the window (NXC_SHEET) is a window of its own: picture that
         let shown = env["NXC_SHEET"] != nil ? (w.attachedSheet ?? w) : w
         guard let view = shown.contentView?.superview ?? shown.contentView else { exit(1) }

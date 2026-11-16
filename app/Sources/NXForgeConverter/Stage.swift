@@ -69,7 +69,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, startIn }
 
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
 
@@ -260,6 +260,8 @@ extension AppModel {
         case .batteryPreset: flip(&settings.batteryPreset)
         case .returnToLibrary: flip(&settings.returnToLibrary)
         case .localShaders: flip(&settings.localShaders)
+        case .sessionRecap: flip(&settings.sessionRecap)
+        case .lightWhilePlaying: flip(&settings.lightWhilePlaying)
         case .downloadCovers: flip(&settings.downloadCovers)
         case .downloadHeroes: flip(&settings.downloadHeroes)
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
@@ -1152,109 +1154,280 @@ struct LaunchScreen: View {
     }
 }
 
-/// The front end's own settings.
+/// The front end's own settings: a panel no taller than the window, with its title, a find field and the section jumps
+/// pinned at the top, the folder buttons pinned at the foot, and the rows scrolling between them.
 struct StageSettings: View {
     @Bindable var model: AppModel
     let openConverterSettings: () -> Void
     @Environment(\.accessibilityReduceTransparency) private var solid
 
+    enum Section: String, CaseIterable, Identifiable {
+        case launching = "Launching", artwork = "Artwork", building = "Building", opens = "When NXForge Opens"
+        var id: String { rawValue }
+        var short: String { self == .opens ? "On Open" : rawValue }
+    }
+
+    // NXC_FIND: the snapshot hook starts the find field with that text
+    @State private var query = ProcessInfo.processInfo.environment["NXC_FIND"] ?? ""
+    @State private var contentHeight: CGFloat = 640
+    @State private var offset: CGFloat = 0
+    @State private var viewport: CGFloat = 0
+    @State private var tops: [Section: CGFloat] = [:]
+    @State private var position = ScrollPosition(edge: .top)
+    @FocusState private var findFocused: Bool
+    @FocusState private var scrollFocused: Bool
+
+    /// the section at the top of the scroll, lit in the jump row
+    var current: Section {
+        // scrolled to the end, the last section that shows is lit even though it never reaches the top
+        if !moreBelow && moreAbove { return Section.allCases.last { (tops[$0] ?? .infinity) < offset + viewport - 40 } ?? .opens }
+        return Section.allCases.last { (tops[$0] ?? .infinity) <= offset + 24 } ?? .launching
+    }
+    var moreAbove: Bool { offset > 2 }
+    var moreBelow: Bool { offset + viewport < contentHeight - 2 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("Settings").font(.system(size: 26, weight: .heavy)).tracking(-0.5)
-                Spacer()
-                Button { model.stageSettings = false } label: {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).frame(width: 32, height: 32)
-                        .background(.white.opacity(0.10), in: .circle).contentShape(.circle)
+        ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                header(proxy)
+                Rectangle().fill(.white.opacity(moreAbove ? 0.12 : 0)).frame(height: 1)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) { sections }
+                        .coordinateSpace(.named("settingsContent"))
+                        .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 18)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
-                .buttonStyle(.plain).accessibilityLabel("Close")
-            }
-            group("LAUNCHING") {
-                toggle("Play goes straight into the game", "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.", $model.settings.straightPlay, row: .straightPlay)
-                toggle("Show Play options the first time", "A game you have not played yet opens its options once before it starts.", $model.settings.firstPlayOptions, row: .firstPlayOptions)
-                toggle("Battery preset on battery", "Unplugged, a run takes the Battery preset. Your saved options are not changed.", $model.settings.batteryPreset, row: .batteryPreset)
-                toggle("Return here when a game quits", "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.", $model.settings.returnToLibrary, row: .returnToLibrary)
-                toggle("Keep shaders on this Mac", "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.", $model.settings.localShaders, row: .localShaders)
-                toggle("Show a recap when a game quits", "How long you played this time and in total, with the game's peak memory.", $model.settings.sessionRecap)
-                toggle("Rest while a game runs", "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.", $model.settings.lightWhilePlaying)
-                row("Controllers", "See every button, stick and trigger as a game reads it, and try the rumble.", last: true) {
-                    Button("Test…") { model.stageSettings = false; model.showControllerTest = true }.buttonStyle(StageButton(height: 32))
+                .scrollPosition($position)
+                .scrollIndicators(.visible)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: contentHeight)
+                .onScrollGeometryChange(for: [CGFloat].self) { [$0.contentOffset.y, $0.containerSize.height] } action: { _, v in
+                    offset = v[0]; viewport = v[1]
                 }
-            }
-            group("ARTWORK") {
-                toggle("Download box art", "Front and back covers from GameTDB, matched by the game's name; a download-only game gets a box made from its square art on Nintendo Life. Only a cover's ID or the game's name is sent.", $model.settings.downloadCovers, row: .downloadCovers)
-                toggle("Download wide art", "The header art from each game's page on Nintendo Life, else the banner from Nintendo's European store, behind its page and Home. Found by name or title ID; only those are sent.", $model.settings.downloadHeroes, row: .downloadHeroes)
-                toggle("Download store details", "A game's description, details and official screenshots from its store page, fetched when you open the game's page.", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
-                toggle("Keep media in each game's folder", "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
-                row("Artwork folder", "Your own covers and the downloaded art, kept on this Mac only.", last: true) {
-                    HStack(spacing: 8) {
-                        Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
-                        Button("Show") { try? FileManager.default.createDirectory(at: CoverStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(CoverStore.dir) }.buttonStyle(StageButton(height: 32))
-                    }
+                // the keyboard: arrows, page up and down, space, home and end
+                .focusable().focusEffectDisabled().focused($scrollFocused)
+                .onKeyPress(keys: [.upArrow, .downArrow, .pageUp, .pageDown, .space, .home, .end]) { press in
+                    scroll(press); return .handled
                 }
-            }
-            group("BUILDING") {
-                row("Keys file (prod.keys)", "Chosen once, used for every build and rebuild.", last: true) {
-                    HStack(spacing: 8) {
-                        if let k = model.settings.defaultKeys {
-                            Text(k.tildePath).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1).truncationMode(.middle).frame(maxWidth: 210, alignment: .trailing)
-                        }
-                        Button(model.settings.defaultKeys == nil ? "Choose…" : "Change…") { model.chooseSavedKeys() }.buttonStyle(StageButton(height: 32))
-                    }
+                // a controller's row stays in view
+                .onChange(of: model.settingsFocus) { _, f in
+                    if let r = StageSettingRow(rawValue: f) { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(AnyHashable(r), anchor: .center) } }
                 }
-                KeysStatusRow(model: model, dark: true).padding(.bottom, 11)
-            }
-            group("WHEN NXFORGE OPENS") {
-                row("Open on", "", last: true, focus: .startIn) {
-                    Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.rawValue) } }
-                        .pickerStyle(.segmented).labelsHidden().frame(width: 280)
-                }
-            }
-            HStack(spacing: 10) {
-                Button("Games Folder…") { model.chooseGamesRoot() }.buttonStyle(StageButton(height: 38))
-                Button("Scan Again") { model.scanLibrary() }.buttonStyle(StageButton(height: 38)).disabled(model.libraryScanning)
-                Spacer()
-                Button("Converter Settings…") { openConverterSettings() }.buttonStyle(StageButton(height: 38))
+                Rectangle().fill(.white.opacity(moreBelow ? 0.12 : 0)).frame(height: 1)
+                footer
             }
         }
-        .padding(28)
         .frame(width: 640)
         .background(StageLook.panel.opacity(solid ? 1 : 0.80), in: .rect(cornerRadius: 28))
         .glassEffect(.regular, in: .rect(cornerRadius: 28))
         .shadow(color: .black.opacity(0.55), radius: 50, y: 24)
+        .onAppear { scrollFocused = true }
+        // ⌘F finds a setting
+        .background { Button("") { findFocused = true }.keyboardShortcut("f").hidden() }
     }
 
-    func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 11, weight: .bold)).fontWidth(.expanded).kerning(1.6).foregroundStyle(StageLook.soft)
-            VStack(spacing: 0) { content() }
-                .padding(.horizontal, 18)
-                .background(StageLook.card, in: .rect(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(StageLook.edge, lineWidth: 1))
+    func header(_ proxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Text("Settings").font(.system(size: 26, weight: .heavy)).tracking(-0.5)
+                Spacer()
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .semibold)).foregroundStyle(StageLook.faint)
+                    TextField("Find a setting", text: $query).textFieldStyle(.plain).font(.system(size: 13.5)).focused($findFocused)
+                        .onSubmit { scrollFocused = true }
+                        .onExitCommand { if query.isEmpty { model.stageSettings = false } else { query = "" } }
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
+                            .buttonStyle(.plain).accessibilityLabel("Clear")
+                    }
+                }
+                .padding(.horizontal, 12).frame(width: 210, height: 32)
+                .background(StageLook.card, in: .capsule).overlay(Capsule().strokeBorder(StageLook.edge, lineWidth: 1))
+                Button { model.stageSettings = false } label: {
+                    Text("Done").font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
+                        .padding(.horizontal, 16).frame(height: 32).background(.white, in: .capsule).contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+            }
+            if query.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Section.allCases) { s in
+                        let on = s == current
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(s, anchor: .top) }
+                        } label: {
+                            Text(s.short).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(on ? Color.black : StageLook.soft)
+                                .padding(.horizontal, 12).frame(height: 26)
+                                .background(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.white.opacity(0.08)), in: .capsule)
+                                .contentShape(.capsule)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                    Spacer()
+                }
+                .animation(.easeOut(duration: 0.15), value: current)
+            }
+        }
+        .padding(.horizontal, 28).padding(.top, 26).padding(.bottom, 14)
+    }
+
+    var footer: some View {
+        HStack(spacing: 10) {
+            Button("Games Folder…") { model.chooseGamesRoot() }.buttonStyle(StageButton(height: 36))
+            Button("Scan Again") { model.scanLibrary() }.buttonStyle(StageButton(height: 36)).disabled(model.libraryScanning)
+            Spacer()
+            Button("Converter Settings…") { openConverterSettings() }.buttonStyle(StageButton(height: 36))
+        }
+        .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 22)
+    }
+
+    /// every row's title, by section, and the note under it: the find field looks in both
+    static let titles: [Section: [String]] = [
+        .launching: ["Play goes straight into the game", "Show Play options the first time", "Battery preset on battery", "Return here when a game quits", "Keep shaders on this Mac", "Show a recap when a game quits", "Rest while a game runs", "Controllers"],
+        .artwork: ["Download box art", "Download wide art", "Download store details", "Keep media in each game's folder", "Artwork folder"],
+        .building: ["Keys file (prod.keys)"],
+        .opens: ["Open on"],
+    ]
+    static let notes: [String: String] = [
+        "Play goes straight into the game": "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.",
+        "Show Play options the first time": "A game you have not played yet opens its options once before it starts.",
+        "Battery preset on battery": "Unplugged, a run takes the Battery preset. Your saved options are not changed.",
+        "Return here when a game quits": "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.",
+        "Keep shaders on this Mac": "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.",
+        "Show a recap when a game quits": "How long you played this time and in total, with the game's peak memory.",
+        "Rest while a game runs": "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.",
+        "Controllers": "See every button, stick and trigger as a game reads it, and try the rumble.",
+        "Download box art": "Front and back covers from GameTDB, matched by the game's name; a download-only game gets a box made from its square art on Nintendo Life. Only a cover's ID or the game's name is sent.",
+        "Download wide art": "The header art from each game's page on Nintendo Life, else the banner from Nintendo's European store, behind its page and Home. Found by name or title ID; only those are sent.",
+        "Download store details": "A game's description, details and official screenshots from its store page, fetched when you open the game's page.",
+        "Keep media in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.",
+        "Artwork folder": "Your own covers and the downloaded art, kept on this Mac only.",
+        "Keys file (prod.keys)": "Chosen once, used for every build and rebuild.",
+        "Open on": "Where NXForge starts: Home, the Library or the Converter.",
+    ]
+
+    @ViewBuilder var sections: some View {
+        group(.launching) {
+            toggle("Play goes straight into the game", $model.settings.straightPlay, row: .straightPlay)
+            toggle("Show Play options the first time", $model.settings.firstPlayOptions, row: .firstPlayOptions)
+            toggle("Battery preset on battery", $model.settings.batteryPreset, row: .batteryPreset)
+            toggle("Return here when a game quits", $model.settings.returnToLibrary, row: .returnToLibrary)
+            toggle("Keep shaders on this Mac", $model.settings.localShaders, row: .localShaders)
+            toggle("Show a recap when a game quits", $model.settings.sessionRecap, row: .sessionRecap)
+            toggle("Rest while a game runs", $model.settings.lightWhilePlaying, row: .lightWhilePlaying)
+            row("Controllers") {
+                Button("Test…") { model.stageSettings = false; model.showControllerTest = true }.buttonStyle(StageButton(height: 32))
+            }
+        }
+        group(.artwork) {
+            toggle("Download box art", $model.settings.downloadCovers, row: .downloadCovers)
+            toggle("Download wide art", $model.settings.downloadHeroes, row: .downloadHeroes)
+            toggle("Download store details", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
+            toggle("Keep media in each game's folder", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
+            row("Artwork folder") {
+                HStack(spacing: 8) {
+                    Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
+                    Button("Show") { try? FileManager.default.createDirectory(at: CoverStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(CoverStore.dir) }.buttonStyle(StageButton(height: 32))
+                }
+            }
+        }
+        group(.building) {
+            row("Keys file (prod.keys)") {
+                HStack(spacing: 8) {
+                    if let k = model.settings.defaultKeys {
+                        Text(k.tildePath).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1).truncationMode(.middle).frame(maxWidth: 210, alignment: .trailing)
+                    }
+                    Button(model.settings.defaultKeys == nil ? "Choose…" : "Change…") { model.chooseSavedKeys() }.buttonStyle(StageButton(height: 32))
+                }
+            }
+            if query.isEmpty { KeysStatusRow(model: model, dark: true).padding(.bottom, 11) }
+        }
+        group(.opens) {
+            row("Open on", focus: .startIn) {
+                Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.rawValue) } }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 280)
+            }
+        }
+        if !query.isEmpty && !Section.allCases.contains(where: anyShown) {
+            Text("No setting matches “\(query)”.").font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.faint)
+                .frame(maxWidth: .infinity).padding(.vertical, 30)
         }
     }
 
-    func row<C: View>(_ title: String, _ note: String, last: Bool = false, focus: StageSettingRow? = nil, @ViewBuilder _ control: () -> C) -> some View {
+    /// a row is shown when the find field is empty, or every word typed starts a word of its title or note
+    /// ("art" finds box art and the artwork folder, not "starts")
+    func matches(_ text: String) -> Bool {
+        let typed = query.lowercased().split(separator: " ")
+        if typed.isEmpty { return true }
+        let words = text.lowercased().split { !$0.isLetter && !$0.isNumber }
+        return typed.allSatisfy { t in words.contains { $0.hasPrefix(t) } }
+    }
+    func shown(_ title: String) -> Bool { matches(title + " " + (Self.notes[title] ?? "")) }
+    func anyShown(_ s: Section) -> Bool { Self.titles[s, default: []].contains(where: shown) }
+
+    /// The keyboard over the scroll: a line, a page, or an end at a time
+    func scroll(_ press: KeyPress) {
+        let page = max(viewport - 60, 80)
+        let top = max(contentHeight - viewport, 0)
+        var y = offset
+        switch press.key {
+        case .upArrow: y -= 48
+        case .downArrow: y += 48
+        case .pageUp: y -= page
+        case .pageDown: y += page
+        case .space: y += press.modifiers.contains(.shift) ? -page : page
+        case .home: y = 0
+        case .end: y = top
+        default: return
+        }
+        withAnimation(.easeOut(duration: 0.18)) { position.scrollTo(y: min(max(y, 0), top)) }
+    }
+
+    func group<C: View>(_ section: Section, @ViewBuilder _ content: () -> C) -> some View {
+        Group {
+            if query.isEmpty || anyShown(section) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(section.rawValue.uppercased()).font(.system(size: 11, weight: .bold)).fontWidth(.expanded).kerning(1.6).foregroundStyle(StageLook.soft)
+                    VStack(spacing: 0) { content() }
+                        .padding(.horizontal, 18)
+                        // the line under the last row of a card is covered by the card's own edge
+                        .padding(.bottom, -1).clipped()
+                        .background(StageLook.card, in: .rect(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(StageLook.edge, lineWidth: 1))
+                }
+                .id(section)
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("settingsContent")).minY } action: { tops[section] = $0 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    func row<C: View>(_ title: String, focus: StageSettingRow? = nil, @ViewBuilder _ control: () -> C) -> some View {
         // the row a controller is on is lit (only while one is connected: the pointer needs no mark)
         let lit = focus != nil && focus?.rawValue == model.settingsFocus && !GCController.controllers().isEmpty
-        return VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 15, weight: .semibold))
-                    if !note.isEmpty { Text(note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).fixedSize(horizontal: false, vertical: true) }
+        let note = Self.notes[title] ?? ""
+        if shown(title) {
+            VStack(spacing: 0) {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.system(size: 15, weight: .semibold))
+                        if !note.isEmpty { Text(note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).fixedSize(horizontal: false, vertical: true) }
+                    }
+                    Spacer(minLength: 8)
+                    control()
                 }
-                Spacer(minLength: 8)
-                control()
+                .padding(.vertical, 11)
+                .padding(.horizontal, 8)
+                .background(lit ? Color.white.opacity(0.10) : Color.clear, in: .rect(cornerRadius: 10))
+                .padding(.horizontal, -8)
+                Rectangle().fill(.white.opacity(0.10)).frame(height: 1)
             }
-            .padding(.vertical, 11)
-            .padding(.horizontal, 8)
-            .background(lit ? Color.white.opacity(0.10) : Color.clear, in: .rect(cornerRadius: 10))
-            .padding(.horizontal, -8)
-            if !last { Rectangle().fill(.white.opacity(0.10)).frame(height: 1) }
+            .id(focus.map { AnyHashable($0) } ?? AnyHashable(title))
         }
     }
 
-    func toggle(_ title: String, _ note: String, _ on: Binding<Bool>, last: Bool = false, row focus: StageSettingRow? = nil) -> some View {
-        row(title, note, last: last, focus: focus) { Toggle(title, isOn: on).toggleStyle(.switch).labelsHidden().tint(.green) }
+    func toggle(_ title: String, _ on: Binding<Bool>, row focus: StageSettingRow? = nil) -> some View {
+        row(title, focus: focus) { Toggle(title, isOn: on).toggleStyle(.switch).labelsHidden().tint(.green) }
     }
 }
