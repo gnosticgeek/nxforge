@@ -385,7 +385,7 @@ struct PreviousBuilds: View {
             // the record now describes the restored copy: its engine is the one its backup name carries
             var r = build
             r.engine = EngineVersion(commit: b.engine, subject: "Restored from app-backups", date: "", branch: "", dirty: false)
-            r.builtAt = b.date.map { d in let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm"; return f.string(from: d) } ?? build.builtAt
+            r.builtAt = b.date.map(Engine.builtAtFormat.string(from:)) ?? build.builtAt
             r.steps = nil; r.shaders = nil
             Engine.record(r)
         } catch {

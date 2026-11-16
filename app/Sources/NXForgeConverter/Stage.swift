@@ -143,8 +143,6 @@ extension AppModel {
         games.filter { $0.last != nil }.max { ($0.last ?? .distantPast) < ($1.last ?? .distantPast) }
     }
 
-    func isFavorite(_ g: StageGame) -> Bool { settings.favorites.contains(g.favoriteKey) }
-
     /// Adds the game to Favourites (Home's shelf starts with them, and the Library has a filter), or takes it off
     func toggleFavorite(_ g: StageGame) {
         if let i = settings.favorites.firstIndex(of: g.favoriteKey) { settings.favorites.remove(at: i) } else { settings.favorites.append(g.favoriteKey) }

@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.14.2 (2026-11-16)
+
+Less work on every redraw. Ships in NXForge 0.39.1.
+
+- **Build records, play times and app details read once**: Home, the Library, Builds and the menus asked for the build records and the time played several times per redraw, and each time `builds.json` and `playtime.json` were read and decoded again; each built app's `Info.plist` was read again too, often on an external drive or a share. They are now kept while the file is unchanged (its date and size), and the app's own writes refresh them.
+- **Build records written in one piece**: `builds.json` is written atomically, so a write cut off by a crash or a full disk can no longer lose every record.
+- **Build times**: one date formatter for every build time (one was made per row per redraw), with fixed digits and a 24-hour clock whatever the Mac's region.
+- `bundle.sh` keeps the drawn app icon in `app/.build` and reuses it while `make_icon.swift` is unchanged, so an install no longer compiles and runs the icon script each time.
+- Three unused members removed.
+
 ## 0.14.1 (2026-11-15)
 
 Cheats are easy to find, and work before a game is built. Ships in NXForge 0.38.2.

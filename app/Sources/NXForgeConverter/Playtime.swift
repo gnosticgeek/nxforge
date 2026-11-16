@@ -38,16 +38,21 @@ enum Playtime {
     /// sessions kept per game (older ones still count in no total: the chart shows weeks, the total is the kept sessions)
     static let keep = 500
 
+    /// playtime.json decoded, kept while the file is unchanged (DecodedFile): Home and the Library read it on every redraw
+    private static let decoded = DecodedFile<[String: PlayRecord]>()
+
     static func load() -> [String: PlayRecord] {
-        guard let d = try? Data(contentsOf: file) else { return [:] }
-        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        return (try? dec.decode([String: PlayRecord].self, from: d)) ?? [:]
+        decoded.value(file) { d in
+            let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+            return try? dec.decode([String: PlayRecord].self, from: d)
+        } ?? [:]
     }
 
     static func save(_ all: [String: PlayRecord]) {
         try? FileManager.default.createDirectory(at: Settings.supportDir, withIntermediateDirectories: true)
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601; enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         if let d = try? enc.encode(all) { try? d.write(to: file, options: .atomic) }
+        decoded.drop()
     }
 
     @discardableResult

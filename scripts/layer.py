@@ -55,6 +55,11 @@ class LayerError(Exception):
     pass
 
 
+def already_in(am_output: str) -> bool:
+    """Whether git am stopped because the engine already has the patch (nothing left to apply), not on a conflict."""
+    return 'No changes' in am_output or 'already applied' in am_output or 'Patch is empty' in am_output
+
+
 def git(*args: str, cwd: Path = ROOT, check: bool = True, env: dict | None = None, quiet: bool = False) -> subprocess.CompletedProcess:
     p = subprocess.run(['git', *args], cwd=cwd, capture_output=True, text=True, env={**os.environ, **(env or {})})
     if check and p.returncode:
@@ -202,8 +207,8 @@ def assemble(force: bool = False, log=print) -> bool:
             return False
         if not force and dirty():
             raise LayerError('tree/ has uncommitted changes: commit them and run `layer.py export`, or `layer.py assemble --force` to throw them away')
-        if not force and unexported():
-            raise LayerError(f'tree/ has {len(unexported())} commit(s) not exported to layer/: run `layer.py export`, or `layer.py assemble --force` to throw them away')
+        if not force and (pending := unexported()):
+            raise LayerError(f'tree/ has {len(pending)} commit(s) not exported to layer/: run `layer.py export`, or `layer.py assemble --force` to throw them away')
     ensure_commit(url, commit)
     if not (TREE / '.git').exists():
         git('worktree', 'prune')
@@ -230,8 +235,7 @@ def _apply(patches: list[Path], commit: str, log=print) -> None:
     for i, p in enumerate(patches):
         r = git('am', '-3', '--quiet', '--keep-cr', str(p), cwd=TREE, check=False, env=IDENT)
         if r.returncode:
-            out = (r.stdout + r.stderr)
-            if 'No changes' in out or 'already applied' in out or 'Patch is empty' in out:
+            if already_in(r.stdout + r.stderr):
                 git('am', '--skip', cwd=TREE, env=IDENT)
                 log(f'  {p.name}: nxnative already has it; it can be dropped (delete the file, or `layer.py export`)')
                 continue
@@ -324,12 +328,7 @@ def update(ref: str | None, log=print) -> None:
     if TREE.exists() and (TREE / '.git').exists() and (dirty() or unexported() or in_am() or rest_file().exists()):
         raise LayerError('tree/ has work that is not exported: run `layer.py export` first')
     local_file().unlink(missing_ok=True)   # the pin moves anyway
-    git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}')
-    target = ref or MAIN_REF
-    if git('rev-parse', '--verify', '--quiet', f'{target}^{{commit}}', check=False).returncode:
-        git('fetch', '--quiet', url, target)
-        target = 'FETCH_HEAD'
-    new = git('rev-parse', f'{target}^{{commit}}').stdout.strip()
+    new = resolve(url, ref, strict=True)
     if new == old:
         log(f'already on nxnative {new[:10]}')
         assemble(log=log)
@@ -341,9 +340,9 @@ def update(ref: str | None, log=print) -> None:
     export(log=log)
 
 
-def resolve(url: str, ref: str | None) -> str:
-    """The nxnative commit REF names (default: nxnative's main, fetched)."""
-    git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=False)
+def resolve(url: str, ref: str | None, strict: bool = False) -> str:
+    """The nxnative commit REF names (default: nxnative's main, fetched). strict: a failed fetch of main is an error (update)."""
+    git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=strict)
     target = ref or MAIN_REF
     if git('rev-parse', '--verify', '--quiet', f'{target}^{{commit}}', check=False).returncode:
         git('fetch', '--quiet', url, target)
@@ -395,10 +394,9 @@ def try_update(ref: str | None, log=print) -> list[tuple[str, str, list[str]]]:
         try:
             for p in patch_files():
                 r = git('am', '-3', '--quiet', '--keep-cr', str(p), cwd=w, check=False, env=IDENT)
-                text = r.stdout + r.stderr
                 if not r.returncode:
                     out.append((p.name, 'applies', []))
-                elif 'No changes' in text or 'already applied' in text or 'Patch is empty' in text:
+                elif already_in(r.stdout + r.stderr):
                     out.append((p.name, 'in nxnative', []))
                     git('am', '--skip', cwd=w, check=False, env=IDENT)
                 else:

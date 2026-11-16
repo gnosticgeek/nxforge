@@ -1617,3 +1617,34 @@ import Testing
         _ = dec
     }
 }
+
+@Suite struct DecodedFiles {
+    @Test func keptUntilTheFileChanges() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxc-decoded-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "list.json")
+        let cache = DecodedFile<[Int]>()
+        var decodes = 0
+        func read() -> [Int]? { cache.value(url) { decodes += 1; return try? JSONDecoder().decode([Int].self, from: $0) } }
+        #expect(read() == nil)   // no file yet
+        try Data("[1,2]".utf8).write(to: url)
+        #expect(read() == [1, 2])
+        #expect(read() == [1, 2])
+        #expect(decodes == 1)   // the second read is the kept copy
+        try Data("[1,2,3]".utf8).write(to: url)   // another size: read again
+        #expect(read() == [1, 2, 3])
+        #expect(decodes == 2)
+        cache.drop()
+        #expect(read() == [1, 2, 3])
+        #expect(decodes == 3)
+        try Data("not json".utf8).write(to: url)
+        #expect(read() == nil)
+    }
+
+    @Test func builtAtRoundTrips() {
+        let d = Engine.builtAtFormat.date(from: "2026-11-15 22:46")
+        #expect(d != nil)
+        #expect(d.map(Engine.builtAtFormat.string(from:)) == "2026-11-15 22:46")
+    }
+}
