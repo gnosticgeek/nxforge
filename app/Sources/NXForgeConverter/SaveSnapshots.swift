@@ -8,7 +8,7 @@
 // Snapshots go beside it: <save's folder>/save-snapshots/<id>/{manifest.json, data/save, data/save_device}. (save-backups/ there is
 // Cloud saves' own, dm/host/save_sync.c.) With Settings › Snapshot folder set (another drive, a NAS, iCloud Drive), they go to
 // <that folder>/<title ID>/<id> instead, and back beside the save while that folder is away.
-// Converter 0.16.0 adds a snapshot after every session (skipped when nothing changed), the Mac's name on each snapshot, Undo Restore
+// Converter 0.18.0 adds a snapshot after every session (skipped when nothing changed), the Mac's name on each snapshot, Undo Restore
 // and the Saves page: ideas from RecompLauncher's save backups (GPL-3.0, github.com/elripalda/RecompLauncher), written fresh here.
 import AppKit
 import CryptoKit
@@ -44,7 +44,7 @@ struct SnapshotManifest: Codable {
     var created: Date
     var reason: SnapshotReason
     var inventory: SaveInventory
-    /// the Mac it was made on (nil in snapshots made before Converter 0.16.0)
+    /// the Mac it was made on (nil in snapshots made before Converter 0.18.0)
     var device: String? = nil
 }
 

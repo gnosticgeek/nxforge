@@ -4,6 +4,9 @@ import SwiftUI
 
 struct BuildsPage: View {
     @Bindable var model: AppModel
+    /// Review… › Show only these: the builds on an older engine
+    @State private var olderOnly = false
+    @FocusState private var listFocused: Bool
 
     var builds: [BuildRecord] {
         let _ = model.revision
@@ -15,6 +18,7 @@ struct BuildsPage: View {
         case .switch2: b = b.filter { Console.of($0) == .switch2 }
         case .switch1: b = b.filter { Console.of($0) == .switch1 }
         }
+        if olderOnly { b = b.filter { model.engine != nil && !model.isCurrent($0) && $0.kept != true } }
         switch model.buildSort {
         case .newest: b.sort { $0.builtAt > $1.builtAt }
         case .oldest: b.sort { $0.builtAt < $1.builtAt }
@@ -29,29 +33,8 @@ struct BuildsPage: View {
         let list = builds
         let selected = list.first { $0.app == model.selectedBuild } ?? list.first
         VStack(alignment: .leading, spacing: 0) {
-            PageHeading(title: "Builds", subtitle: "Your native Mac apps, ready to play.") {
-                let outdated = model.outdatedBuilds
-                if !outdated.isEmpty || !model.rebuildQueue.isEmpty {
-                    Button { model.rebuildAll() } label: {
-                        Label(model.queueMessage == "" ? "Rebuilding All… \(model.rebuildQueue.count) to Go" : "Rebuild All on \(model.engine?.short ?? "Current Engine") (\(outdated.count))",
-                              systemImage: "arrow.clockwise")
-                    }
-                    .labelStyle(.titleAndIcon).buttonStyle(.stage)
-                    .disabled(model.run.running || !model.allOK)
-                    .help("Rebuilds every app built on an older engine, one after another; a failure stops the rest")
-                }
-                Picker("Console", selection: $model.buildConsole) {
-                    ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue) }
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .help("Show the Switch 2 games, the Switch games, or both")
-                Picker("Sort", selection: $model.buildSort) {
-                    ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue) }
-                }
-                .pickerStyle(.menu).fixedSize()
-                .help("Sort the builds")
-            }
-            .padding(.horizontal, Theme.gutter).padding(.top, 4).padding(.bottom, 12)
+            heading(list.count)
+                .padding(.horizontal, Theme.gutter).padding(.top, 8).padding(.bottom, 14)
             if let m = model.queueMessage, !m.isEmpty {
                 HStack {
                     StatusDot(color: .red, text: m)
@@ -60,10 +43,11 @@ struct BuildsPage: View {
                 }
                 .padding(.horizontal, Theme.gutter).padding(.bottom, 10)
             }
-            Rectangle().fill(.white.opacity(0.10)).frame(height: 1)
+            Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, Theme.gutter)
             if list.isEmpty {
                 Group {
                     if !model.buildSearch.isEmpty { ContentUnavailableView.search(text: model.buildSearch) }
+                    else if olderOnly { ContentUnavailableView("Every Build Is Current", systemImage: "checkmark.circle", description: Text("No build uses an older engine.")) }
                     else {
                         ContentUnavailableView(model.buildConsole != .all ? "No \(model.buildConsole.rawValue) Games Built" : "No Builds Yet",
                                                systemImage: "macwindow.badge.plus",
@@ -71,38 +55,43 @@ struct BuildsPage: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if olderOnly { Button("Show every build") { olderOnly = false }.buttonStyle(.stage).frame(maxWidth: .infinity).padding(.bottom, 30) }
             } else {
-                HSplitView {
-                    // a real list: arrow keys move the selection, ⌘⌫ moves the app to the Trash, VoiceOver reads the rows
-                    List(selection: Binding(get: { selected?.app }, set: { model.selectedBuild = $0 })) {
-                        // Switch 2 games first, then Switch games, each under its own heading when both are listed
-                        let groups = Console.allCases.map { c in (c, list.filter { Console.of($0) == c }) }.filter { !$0.1.isEmpty }
-                        if groups.count > 1 {
-                            ForEach(groups, id: \.0) { c, items in
-                                Section("\(c.rawValue) · \(items.count)") {
-                                    ForEach(items) { b in BuildRow(model: model, build: b, name: name(b)).tag(b.app) }
+                HStack(alignment: .top, spacing: 0) {
+                    VStack(spacing: 0) {
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 0) {
+                                    // Switch 2 games first, then Switch games, each under its own heading when both are listed
+                                    let groups = Console.allCases.map { c in (c, list.filter { Console.of($0) == c }) }.filter { !$0.1.isEmpty }
+                                    ForEach(groups, id: \.0) { c, items in
+                                        if groups.count > 1 {
+                                            Text("\(c.rawValue) · \(items.count)").font(.system(size: 12, weight: .bold)).kerning(1).foregroundStyle(StageLook.faint)
+                                                .padding(.leading, 18).padding(.top, 10).padding(.bottom, 4)
+                                        }
+                                        ForEach(items) { b in
+                                            BuildRow(model: model, build: b, name: name(b), selected: b.app == selected?.app)
+                                                .id(b.app)
+                                                .onTapGesture(count: 2) { model.openGame(GameRef(libraryID: nil, app: b.app)) }
+                                                .simultaneousGesture(TapGesture().onEnded { model.selectedBuild = b.app; listFocused = true })
+                                        }
+                                    }
                                 }
+                                .padding(.vertical, 12).padding(.trailing, 6)
                             }
-                        } else {
-                            ForEach(list) { b in BuildRow(model: model, build: b, name: name(b)).tag(b.app) }
+                            .onChange(of: model.selectedBuild) { _, a in if let a { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(a) } } }
                         }
+                        olderFooter
                     }
-                    .listStyle(.inset)
-                    .scrollContentBackground(.hidden)
-                    .alternatingRowBackgrounds(.disabled)
-                    .onDeleteCommand { if let s = selected { trashBuild(model, s, name(s)) } }
-                    .contextMenu(forSelectionType: String.self) { apps in
-                        if let a = apps.first {
-                            Button("Game Page") { model.openGame(GameRef(libraryID: nil, app: a)) }
-                            Button("Quick Look") { model.preview = GameRef(libraryID: nil, app: a) }
-                            Button("Play") { model.openApp(a) }
-                            Divider()
-                            Button("Show in Finder") { reveal(a) }
-                        }
-                    } primaryAction: { apps in
-                        if let a = apps.first { model.openGame(GameRef(libraryID: nil, app: a)) }   // double-click opens the game's page
+                    .frame(width: 400)
+                    .focusable().focusEffectDisabled().focused($listFocused)
+                    // arrow keys move the selection, Space a quick look, Return the game's page, ⌘⌫ moves the app to the Trash
+                    .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                        guard let s = selected, let i = list.firstIndex(where: { $0.app == s.app }) else { return .ignored }
+                        let j = press.key == .upArrow ? max(i - 1, 0) : min(i + 1, list.count - 1)
+                        model.selectedBuild = list[j].app
+                        return .handled
                     }
-                    // Space: a quick look; Return: the game's page
                     .onKeyPress(.space) {
                         guard let s = selected else { return .ignored }
                         model.preview = model.preview == nil ? GameRef(libraryID: nil, app: s.app) : nil
@@ -112,26 +101,99 @@ struct BuildsPage: View {
                         guard let s = selected else { return .ignored }
                         model.openGame(GameRef(libraryID: nil, app: s.app)); return .handled
                     }
-                    .padding(.leading, Theme.gutter - 16)
-                    .frame(minWidth: 264, idealWidth: 344, maxWidth: 444)
+                    .onDeleteCommand { if let s = selected { trashBuild(model, s, name(s)) } }
+                    .padding(.leading, Theme.gutter - 8)
+                    Rectangle().fill(.white.opacity(0.10)).frame(width: 1).padding(.leading, 16)
                     if let s = selected {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 16) {
                                 if model.offlineVolume(s.gameDir) != nil || !FileManager.default.fileExists(atPath: s.gameDir) { OfflineBanner(model: model, build: s) }
-                                HStack {
-                                    Spacer()
-                                    Button { model.openGame(GameRef(libraryID: nil, app: s.app)) } label: { Label("Game Page", systemImage: "rectangle.portrait.and.arrow.right") }
-                                        .buttonStyle(.stage).help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
-                                }
                                 BuildDetail(model: model, build: s, name: name(s))
                                 PreviousBuilds(model: model, build: s)
                                 SaveSnapshotsCard(model: model, build: s)
                             }
-                            .padding(.leading, 20).padding(.trailing, Theme.gutter).padding(.vertical, 20)
+                            .padding(.leading, 26).padding(.trailing, Theme.gutter).padding(.vertical, 26)
                         }
                         .frame(minWidth: 380, maxWidth: .infinity)
                     }
                 }
+            }
+        }
+        .task { listFocused = true }
+    }
+
+    /// "Builds  5 apps", then search, Platform and Sort
+    func heading(_ n: Int) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text("Builds").font(.system(size: 32, weight: .heavy)).tracking(-0.6).accessibilityAddTraits(.isHeader)
+                Text("\(n) app\(n == 1 ? "" : "s")").font(.system(size: 16)).foregroundStyle(StageLook.soft)
+            }
+            .fixedSize()
+            Spacer(minLength: 16)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(StageLook.faint)
+                TextField("Search builds", text: $model.buildSearch).textFieldStyle(.plain)
+                if !model.buildSearch.isEmpty {
+                    Button { model.buildSearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
+                        .buttonStyle(.plain).accessibilityLabel("Clear Search")
+                }
+            }
+            .padding(.horizontal, 14).frame(minWidth: 180, maxWidth: 420).frame(height: 34)
+            .background(.white.opacity(0.06), in: .capsule)
+            .overlay(Capsule().strokeBorder(.white.opacity(0.16)))
+            BoxMenu {
+                Picker("Platform", selection: $model.buildConsole) { ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                    .pickerStyle(.inline)
+            } label: { filterLabel("Platform", model.buildConsole.rawValue) }
+            .fixedSize()
+            .help("Show the Switch 2 games, the Switch games, or both")
+            BoxMenu {
+                Picker("Sort", selection: $model.buildSort) { ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                    .pickerStyle(.inline)
+            } label: { filterLabel("Sort", model.buildSort.rawValue) }
+            .fixedSize()
+        }
+    }
+
+    func filterLabel(_ name: String, _ value: String) -> some View {
+        HStack(spacing: 6) {
+            Text("\(name):").foregroundStyle(StageLook.soft)
+            Text(value).fontWeight(.semibold).foregroundStyle(.white)
+            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(StageLook.soft).padding(.leading, 12)
+        }
+        .font(.system(size: 14))
+        .padding(.horizontal, 14).frame(height: 34)
+        .background(.white.opacity(0.06), in: .rect(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.16)))
+    }
+
+    /// Under the list: how many builds use an older engine, with Review… (show only them, or rebuild them all)
+    @ViewBuilder var olderFooter: some View {
+        let outdated = model.outdatedBuilds
+        if !outdated.isEmpty || !model.rebuildQueue.isEmpty || olderOnly {
+            VStack(spacing: 0) {
+                Rectangle().fill(.white.opacity(0.10)).frame(height: 1)
+                HStack(spacing: 10) {
+                    if model.queueMessage == "" {
+                        ProgressView().controlSize(.small)
+                        Text("Rebuilding all · \(model.rebuildQueue.count) to go").foregroundStyle(StageLook.soft)
+                    } else {
+                        Image(systemName: "info.circle").foregroundStyle(StageLook.soft)
+                        Text(outdated.isEmpty ? "Every build is current" : "\(outdated.count) build\(outdated.count == 1 ? " uses" : "s use") an older engine").foregroundStyle(StageLook.soft)
+                    }
+                    Spacer(minLength: 8)
+                    BoxMenu {
+                        Button(olderOnly ? "Show Every Build" : "Show Only These") { olderOnly.toggle() }
+                        Divider()
+                        Button("Rebuild All on \(model.engine?.short ?? "the Current Engine") (\(outdated.count))") { model.rebuildAll() }
+                            .disabled(model.run.running || !model.allOK || outdated.isEmpty)
+                    } label: { Text("Review…").underline().foregroundStyle(convertAccent) }
+                    .fixedSize()
+                    .help("Show only the builds on an older engine, or rebuild them all one after another (a failure stops the rest)")
+                }
+                .font(.system(size: 14))
+                .padding(.horizontal, 10).padding(.vertical, 14)
             }
         }
     }
@@ -150,26 +212,33 @@ struct BuildRow: View {
     let model: AppModel
     let build: BuildRecord
     let name: String
+    var selected = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            AppIcon(path: build.app, size: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.headline).lineLimit(1)
-                Text("\(Console.of(build).rawValue) · \(build.date.map(relativeDay) ?? build.builtAt)").font(.callout).foregroundStyle(.secondary).lineLimit(1)
+        HStack(spacing: 16) {
+            AppIcon(path: build.app, size: 60)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name).font(.system(size: 16, weight: .semibold)).lineLimit(2)
+                Text(build.date.map(relativeDay) ?? build.builtAt).font(.system(size: 14)).foregroundStyle(StageLook.soft).lineLimit(1)
             }
             Spacer(minLength: 4)
             if build.kept == true {
-                Label("kept", systemImage: "lock.fill").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Label("Kept", systemImage: "lock.fill").font(.caption.weight(.semibold)).foregroundStyle(StageLook.soft)
                     .help("Kept as it is: Rebuild all passes it by")
             } else if model.engine != nil && !model.isCurrent(build) {
-                Text("older").font(.caption.weight(.semibold))
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(.orange.opacity(0.25), in: .capsule)
+                Text("Older engine").font(.system(size: 12, weight: .medium)).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.6))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.22), in: .rect(cornerRadius: 6))
                     .help("Built on \(build.engine.short); the engine is now \(model.engine?.short ?? "")")
+            } else if model.isPlaying(app: build.app) {
+                Text("Playing").font(.caption.weight(.semibold)).foregroundStyle(Color(red: 0.38, green: 0.65, blue: 0.98))
             }
         }
-        .padding(.vertical, 3)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(selected ? convertAccent.opacity(0.13) : .clear, in: .rect(cornerRadius: 12))
+        .overlay { if selected { RoundedRectangle(cornerRadius: 12).strokeBorder(convertAccent.opacity(0.85), lineWidth: 1.5) } }
+        .overlay(alignment: .bottom) { if !selected { Rectangle().fill(.white.opacity(0.08)).frame(height: 1).padding(.horizontal, 16) } }
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
         .contextMenu {
             Button("Open") { model.openApp(build.app) }
@@ -190,123 +259,178 @@ struct BuildDetail: View {
     @Bindable var model: AppModel
     let build: BuildRecord
     let name: String
-    @State private var detailsOpen = true
+    /// off on the game's page, which has its own name, icon and Play
+    var header = true
+    @AppStorage("buildDetailsOpen") private var detailsOpen = false
 
     var body: some View {
         // current: built on today's engine, or on an older one where nothing this game's build reads has changed since
         let current = model.isCurrent(build)
         let sameEngine = model.isSameEngine(build)
-        // a kept build is not nudged towards a rebuild: Open stays the blue button
+        // a kept build is not nudged towards a rebuild: Play stays the white button
         let nudge = !current && build.kept != true && model.engine != nil
-        Card {
-            HStack(spacing: 16) {
-                AppIcon(path: build.app, size: 96)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(name).font(.title2.weight(.semibold)).lineLimit(2)
-                    Text("Apple Silicon · Metal").foregroundStyle(.secondary)
-                    StatusDot(color: .green, text: "Ready")
+        VStack(alignment: .leading, spacing: 0) {
+            if header {
+            HStack(alignment: .center, spacing: 26) {
+                AppIcon(path: build.app, size: 160)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(name).font(.system(size: 34, weight: .bold)).tracking(-0.5).lineLimit(2)
+                    Text("Nintendo \(Console.of(build).rawValue)").font(.system(size: 19)).foregroundStyle(StageLook.soft)
+                    HStack(spacing: 8) {
+                        if model.isPlaying(app: build.app) {
+                            Image(systemName: "gamecontroller.fill").foregroundStyle(Color(red: 0.38, green: 0.65, blue: 0.98))
+                            Text("Playing now").foregroundStyle(Color(red: 0.38, green: 0.65, blue: 0.98))
+                        } else if nudge {
+                            Image(systemName: "arrow.clockwise.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.black, .orange)
+                            Text("Plays · built on an older engine").foregroundStyle(.orange)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, Color(red: 0.2, green: 0.78, blue: 0.4))
+                            Text("Ready to play").foregroundStyle(Color(red: 0.29, green: 0.87, blue: 0.50))
+                        }
+                    }
+                    .font(.system(size: 19, weight: .medium))
                 }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 18) {
+                Button { model.openApp(build.app) } label: { Label(model.isPlaying(app: build.app) ? "Resume" : "Play", systemImage: "play.fill").frame(minWidth: 150) }
+                    .buttonStyle(StageButton(primary: !nudge, height: 50))
+                    .keyboardShortcut(nudge ? nil : .defaultAction)
+                if nudge {
+                    Button { model.rebuildAsked(build) } label: { Label("Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise") }
+                        .buttonStyle(StageButton(primary: true, height: 50)).keyboardShortcut(.defaultAction)
+                        .disabled(!model.allOK || model.run.running)
+                }
+                Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder") }
+                    .buttonStyle(StageButton(height: 44)).fixedSize()
+                Button { model.openGame(GameRef(libraryID: nil, app: build.app)) } label: {
+                    HStack(spacing: 6) { Text("Game page").underline(); Image(systemName: "arrow.up.forward.square") }
+                        .font(.system(size: 17, weight: .medium)).foregroundStyle(convertAccent).contentShape(.rect)
+                }
+                .buttonStyle(.plain).fixedSize().help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
+            }
+            .padding(.top, 26)
+            if build.launched != true { FirstLaunchNote().padding(.top, 12) }
+            rule.padding(.top, 26)
+            }
+            // "Built today at 21:11 · 2 min · Engine 0.40.0"
+            HStack(spacing: 8) {
+                Text(([builtText] + [build.seconds.map { duration(Double($0)) }].compactMap { $0 } + ["Engine \(build.engine.short)"]).joined(separator: "  ·  "))
+                    .help("\(build.engine.commit.prefix(7)) · \(build.engine.subject)")
+                if !current, model.engine != nil {
+                    Text("older").font(.caption).padding(.horizontal, 6).padding(.vertical, 2).background(.orange.opacity(0.25), in: .capsule)
+                } else if !sameEngine, let now = model.engine {
+                    Text("nothing it uses changed in \(now.short)").font(.caption).foregroundStyle(.secondary)
+                        .help("The engine moved on from \(build.engine.short), but only in files this game's build does not read (notes, tests, the converter, other games' profiles), so a rebuild would make the same app")
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 17)).foregroundStyle(StageLook.soft).padding(.vertical, 18)
+            rule
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Keep this build").font(.system(size: 17))
+                    if build.kept == true { Text("Rebuild all passes it by").font(.callout).foregroundStyle(StageLook.faint) }
+                }
+                Spacer()
+                Toggle("Keep this build", isOn: Binding(get: { build.kept == true }, set: { model.setKept(build, $0) })).toggleStyle(.switch).labelsHidden()
+            }
+            .padding(.vertical, 16)
+            .help("A kept build stays as it is when the engine updates: no \"older\" nudge and Rebuild all passes it by. Rebuild still replaces it, after asking.")
+            rule
+            Button { withAnimation(.easeInOut(duration: 0.2)) { detailsOpen.toggle() } } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).rotationEffect(.degrees(detailsOpen ? 90 : 0))
+                    Text("Build details").font(.system(size: 19, weight: .semibold))
+                    Text("Files, location and build log").font(.system(size: 15)).foregroundStyle(StageLook.soft).padding(.leading, 26)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain).padding(.vertical, 16)
+            if detailsOpen { details.padding(.leading, 28).padding(.bottom, 16) }
+            rule
+            Menu {
+                Button("Rebuild from Scratch…") { model.rebuildAsked(build, scratch: true) }
+            } label: { Text(current ? "Rebuild…" : "Rebuild on \(model.engine?.short ?? "the current engine")…") } primaryAction: { model.rebuildAsked(build) }
+                .menuStyle(.button).buttonStyle(.glass).controlSize(.large).fixedSize()
+                .disabled(!model.allOK || model.run.running)
+                .help("Rebuild reuses the steps whose inputs have not changed. The menu has Rebuild from Scratch, which reuses none.")
+                .padding(.top, 22)
+        }
+        .padding(34)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.6), in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.16)))
+    }
+
+    var rule: some View { Rectangle().fill(.white.opacity(0.12)).frame(height: 1) }
+
+    /// "Built today at 21:11", "Built yesterday at 17:32", "Built on 3 Nov"
+    var builtText: String {
+        guard let d = build.date else { return "Built \(build.builtAt)" }
+        let at = d.formatted(date: .omitted, time: .shortened)
+        if Calendar.current.isDateInToday(d) { return "Built today at \(at)" }
+        if Calendar.current.isDateInYesterday(d) { return "Built yesterday at \(at)" }
+        return "Built " + relativeDay(d).lowercasedFirst
+    }
+
+    /// Behind Build details: the game files, how it plays, its frame times, where it is, each step's time and the log
+    @ViewBuilder var details: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            detail("Game files", build.gameFiles ?? Engine.describeFiles(build.gameDir))
+            Divider()
+            if let v = VerifiedGames.titleID(ofApp: build.app).flatMap({ model.verified[$0] }) {
+                detail("On NXForge", v.summary).help("From docs/nxforge-games.tsv: the last time this game was played on NXForge. \(v.note)")
+                Divider()
+            }
+            if let rec = FrameTimes.latest(app: build.app, titleID: VerifiedGames.titleID(ofApp: build.app)) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Frame times").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+                    Text(rec.summary.line).lineLimit(1).truncationMode(.tail)
+                    Spacer()
+                    Button { reveal(rec.file.path) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage)
+                }
+                .padding(.vertical, 6)
+                .help("The newest recording, \(rec.file.lastPathComponent): frames per second, the median and 99th-percentile frame time, frames over \(Int(FrameTimes.Summary.hitchMs)) ms and frames never shown. Record frame times is in the game's Quick settings › Performance.")
+                Divider()
             }
             HStack {
-                Button { model.openApp(build.app) } label: { Label("Open app", systemImage: "play.fill").frame(maxWidth: .infinity) }
-                    .modifier(GlassButton(prominent: !nudge))   // on an older engine Rebuild is the blue one, unless the build is kept
-                    .keyboardShortcut(nudge ? nil : .defaultAction)   // Return acts on the blue button
-                Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").frame(maxWidth: .infinity) }
-                    .buttonStyle(.stage)
+                Text("Location").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+                Text(build.app.url.deletingLastPathComponent().path.tildePath).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage)
             }
-            .controlSize(.large)
-            if build.launched != true { FirstLaunchNote() }
-            VStack(spacing: 0) {
-                detail("Built", (build.date.map(relativeDay) ?? build.builtAt) + (build.seconds.map { " · took \(duration(Double($0)))" } ?? ""))
-                Divider()
-                HStack {
-                    Text("Engine").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
-                    Text(build.engine.short).help("\(build.engine.commit.prefix(7)) · \(build.engine.subject)")
-                    if !current, model.engine != nil { Text("older").font(.caption).padding(.horizontal, 6).padding(.vertical, 2).background(.orange.opacity(0.25), in: .capsule) }
-                    else if !sameEngine, let now = model.engine {
-                        Text("nothing it uses changed in \(now.short)").font(.caption).foregroundStyle(.secondary)
-                            .help("The engine moved on from \(build.engine.short), but only in files this game's build does not read (notes, tests, the converter, other games' profiles), so a rebuild would make the same app")
-                    }
-                    Spacer()
-                }
-                .padding(.vertical, 8)
-                Divider()
-                HStack {
-                    Text("Keep").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
-                    Toggle("Keep this build", isOn: Binding(get: { build.kept == true }, set: { model.setKept(build, $0) })).toggleStyle(.switch).labelsHidden()
-                    Text(build.kept == true ? "Rebuild all passes it by" : "For a build that plays well").foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.vertical, 6)
-                .help("A kept build stays as it is when the engine updates: no \"older\" nudge and Rebuild all passes it by. Rebuild still replaces it, after asking.")
-                Divider()
-                detail("Game files", build.gameFiles ?? Engine.describeFiles(build.gameDir))
-                Divider()
-                if let v = VerifiedGames.titleID(ofApp: build.app).flatMap({ model.verified[$0] }) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("On NXForge").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
-                        Text(v.summary).lineLimit(1).help(v.note)
-                        Spacer()
-                    }
-                    .padding(.vertical, 8)
-                    .help("From docs/nxforge-games.tsv: the last time this game was played on NXForge. \(v.note)")
-                    Divider()
-                }
-                if let rec = FrameTimes.latest(app: build.app, titleID: VerifiedGames.titleID(ofApp: build.app)) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Frame times").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
-                        Text(rec.summary.line).lineLimit(1).truncationMode(.tail)
-                        Spacer()
-                        Button { reveal(rec.file.path) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage)
-                    }
-                    .padding(.vertical, 6)
-                    .help("The newest recording, \(rec.file.lastPathComponent): frames per second, the median and 99th-percentile frame time, frames over \(Int(FrameTimes.Summary.hitchMs)) ms and frames never shown. Record frame times is in the game's Quick settings › Performance.")
-                    Divider()
-                }
-                HStack {
-                    Text("Location").foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
-                    Text(build.app.url.deletingLastPathComponent().path.tildePath).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Button { reveal(build.app) } label: { Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly) }.buttonStyle(.stage)
-                }
-                .padding(.vertical, 6)
-            }
-            Button { model.rebuildAsked(build) } label: {
-                Label(current ? "Rebuild app" : "Rebuild on \(model.engine?.short ?? "the current engine")", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
-            }
-            .modifier(GlassButton(prominent: nudge)).controlSize(.large)
-            .keyboardShortcut(nudge ? .defaultAction : nil)
-            .disabled(!model.allOK || model.run.running)
-            DisclosureGroup(isExpanded: $detailsOpen) {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let stages = build.stages, !stages.isEmpty {
-                        // the build's own timeline: each step's share of the time, reused ones faint
-                        TimelineBar(segments: stages.enumerated().map { i, st in
-                            Segment(id: i, name: st.name, state: !st.ok ? .failed : st.reused ? .reused : .done, seconds: Double(st.seconds))
-                        }, height: 12)
-                        ForEach(Array(stages.enumerated()), id: \.offset) { _, st in
-                            HStack {
-                                StatusIcon(ok: st.ok, size: 15)
-                                Text(friendly(st.name))
-                                Spacer()
-                                Text(st.reused ? "reused" : mmss(st.seconds)).foregroundStyle(.secondary).monospacedDigit()
-                            }
-                            .font(.callout)
-                        }
-                    } else {
-                        HStack { StatusIcon(ok: build.steps.map { $0 > 0 }); Text(build.steps.map { "\($0) steps completed" } ?? "Steps not recorded") }
-                    }
-                    HStack { StatusIcon(ok: build.shaders == nil ? nil : true); Text(build.shaders.map { "\($0) Metal shaders ready" } ?? "Metal shaders ready") }
-                    Text(build.engine.subject).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    if let log = build.log, FileManager.default.fileExists(atPath: log) {
+            .padding(.vertical, 6)
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                if let stages = build.stages, !stages.isEmpty {
+                    // the build's own timeline: each step's share of the time, reused ones faint
+                    TimelineBar(segments: stages.enumerated().map { i, st in
+                        Segment(id: i, name: st.name, state: !st.ok ? .failed : st.reused ? .reused : .done, seconds: Double(st.seconds))
+                    }, height: 12)
+                    ForEach(Array(stages.enumerated()), id: \.offset) { _, st in
                         HStack {
-                            Button { NSWorkspace.shared.open(log.url) } label: { Label("Open build log", systemImage: "doc.text") }.buttonStyle(.stage)
-                            Button { reveal(log) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.stage)
+                            StatusIcon(ok: st.ok, size: 15)
+                            Text(friendly(st.name))
+                            Spacer()
+                            Text(st.reused ? "reused" : mmss(st.seconds)).foregroundStyle(.secondary).monospacedDigit()
                         }
+                        .font(.callout)
+                    }
+                } else {
+                    HStack { StatusIcon(ok: build.steps.map { $0 > 0 }); Text(build.steps.map { "\($0) steps completed" } ?? "Steps not recorded") }
+                }
+                HStack { StatusIcon(ok: build.shaders == nil ? nil : true); Text(build.shaders.map { "\($0) Metal shaders ready" } ?? "Metal shaders ready") }
+                Text(build.engine.subject).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                if let log = build.log, FileManager.default.fileExists(atPath: log) {
+                    HStack {
+                        Button { NSWorkspace.shared.open(log.url) } label: { Label("Open build log", systemImage: "doc.text") }.buttonStyle(.stage)
+                        Button { reveal(log) } label: { Label("Show in Finder", systemImage: "folder") }.buttonStyle(.stage)
                     }
                 }
-                .padding(.top, 6)
-            } label: { Text("Build details").font(.headline) }
+            }
+            .padding(.top, 10)
         }
     }
 

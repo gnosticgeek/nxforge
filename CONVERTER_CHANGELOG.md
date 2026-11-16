@@ -4,9 +4,9 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
-## 0.16.0 (2026-11-16)
+## 0.18.0 (2026-11-16)
 
-A save manager. Ships in NXForge 0.41.0.
+A save manager. Ships in NXForge 0.43.0.
 
 - **Saves page**: a new page beside Builds lists every built game's save, most recently saved first, with when it last saved, the Mac its newest snapshot came from, how many snapshots it has and their size, and whether the save has changed since the last one. The top shows the total and where snapshots are kept. Open a game for its Save snapshots card (restore, import, export, Git backup).
 - **A snapshot after every session**: when a game quits with a changed save, a checked snapshot is made on its own (nothing is copied when the save did not change). The newest 10 of these stay for each game, counted apart from the ones made before a restore or a rebuild, so a run of sessions never pushes those out. On by default; Saves and Settings › Saves turn it off.
@@ -14,6 +14,28 @@ A save manager. Ships in NXForge 0.41.0.
 - **Undo Restore**: after a restore, the game's card offers to put back the save it replaced (and pressing it again goes forward to the restored one).
 - Each snapshot records the Mac it was made on, shown in a new Mac column.
 - Ideas from [RecompLauncher](https://github.com/elripalda/RecompLauncher)'s save backups (GPL-3.0); written fresh, no code taken.
+
+## 0.17.0 (2026-11-16)
+
+Discover, and square covers. Ships in NXForge 0.42.0.
+
+- **Discover**: a new tab between Home and Library for browsing Switch and Switch 2 games from Nintendo's European store. Browse has All games, In your library and Wishlist; Genres lists Action, Adventure, Platformers, RPGs, Racing, Puzzles, Strategy, Sports, Fighting, Shooters, Party, Simulation, Arcade, Music, Board games and Lifestyle. Each game shows its square store art, its name and genres, with **In library** on the ones in your games folder (by title ID, else by name) and a heart on the ones on your Wishlist.
+- **Filters and sort**: Platform (All, Switch, Switch 2), Players (Any, 1 player, 2+, 4+), Library (All, In library, Not in library) and Sort (Popular, the store's own ranking and the default; Newest; Title A–Z, over ranked games only), plus a search field. The grid loads more as you scroll; Newest leaves out games with no release date yet. The Wishlist keeps the order games were added under Popular.
+- **The bar along the foot** names the game in focus with its genres, players and console, with Wishlist and View game. View game opens a game's page in your Library when you have it, else a panel with its wide art, publisher, year, genres, the store's description, Wishlist and Nintendo eShop (opens its store page).
+- **Wishlist**: kept on this Mac only, in wishlist.json beside the settings. Y or the heart adds and removes a game.
+- **Controller and keyboard**: the arrows walk the grid, A views the game, Y wishlists it, X opens its store page, L and R step through Browse and the genres, B goes back to Home.
+- **Square covers**: Settings › Artwork › Square covers (or the square button beside the Library's filters) shows each game's square shop art instead of its box on Home and in the Library, so more fit in a row. The art is Nintendo Life's for download-only games, else the square picture of the game's entry on Nintendo's store, found by title ID (one search for 40 games at a time) or exact name, kept as <key>-square-store.jpg; a game with none falls back to its own icon. Every game in the library is looked up once (Look Again does it over); one with none is tried again after a week.
+- Only the genre, the filters and what is typed go to the store; the pictures are cached on this Mac.
+
+## 0.16.0 (2026-11-16)
+
+Convert, Game Files and Builds to Tom's mock-ups. Ships in NXForge 0.41.0.
+
+- **One top bar**: the NXForge name at the left, the Home / Library / Converter switch in the middle, Full Screen and Settings at the right; under the converter a hairline, then its pages as centred text tabs with the open one underlined. Health's count is red for a problem and amber for warnings, and hovering it names what is wrong; Toolchain carries an amber dot when a check fails. Game Files and Builds have their own search fields.
+- **Convert is one card** read top to bottom: GAME (icon, name, "Nintendo Switch · Base game + update", its folder, keys, Change game…, "2 files" opening the file table, a Recent games menu), SAVE APP TO (the folder's name, then its drive and full path), Build options folded under one line that names the main choices (clean up build files, rebuild from scratch, an engine update), the app already built with Open app and Show in Finder, and a foot that says Ready to build with the space needed, the space free and about how long it takes, beside one Build Mac app button. Rebuild from scratch is now a switch in Build options (still asked once more). The game's wide art lies faintly behind the card and the room takes its colour. Build progress and the log come in under the card once a build starts.
+- **Game Files is a table**: Game, Contents, Size and Status columns with a tick-all box, Platform and Status menus, Sort (click Game or Size to sort by them), "65 games" beside the title, Change folder… and Scan again at the right, Last scanned under the list. A bar along the foot shows the game in focus with Show in Finder, Details and the next step as the white button: Play a current build, Rebuild an old one, else Convert…; ticked games show the Build bar there instead. Continue playing moves to Home.
+- **Builds is a list and a panel**: larger rows with Older engine labels and a lilac selection, "2 builds use an older engine" with Review… (show only them, or rebuild them all) under the list; the panel has the icon large, Ready to play, Play, Show in Finder, Game page, one line with when it was built, how long it took and the engine, Keep this build, Build details (files, location, steps and log) folded, and Rebuild… with Rebuild from Scratch in its menu.
+- Snapshot hooks: `NXC_CONVERT=<name part>` puts that game on Convert without saving settings, `NXC_OPTIONS=1` opens Build options, `NXC_FOCUS=<name part>` focuses a Game Files row.
 
 ## 0.15.0 (2026-11-16)
 

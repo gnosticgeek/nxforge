@@ -147,6 +147,8 @@ final class AppModel {
     /// the front end (Stage.swift): the games as covers on a dark stage, shown instead of the converter's pages
     var frontEnd = true
     var stageTab: StageTab = .home
+    /// the Discover tab: the store's games by genre (Discover.swift)
+    let discover = DiscoverState()
     var stageScope: StageScope = .owned
     /// the game folder a snapshot pretends is building (NXC_BUILDSTRIP), so the real settings stay as they are
     var snapshotBuildDir: String?
@@ -180,6 +182,10 @@ final class AppModel {
     var dataBackupFailed = false
     /// problems and warnings on the Health page, for its tab's badge
     var healthBadge = 0
+    /// what the badge counts, named: the first findings' titles, most pressing first (the tab's tooltip)
+    var healthHint = ""
+    /// the worst of them, for the badge's colour
+    var healthWorst: HealthFinding.Level?
     /// Home's Random Pick: the game it turned up, until it is played or picked again
     var randomPick: String?
     var commandPalette = false
@@ -848,5 +854,16 @@ final class AppModel {
     /// An answer that deletes, stops or quits something.
     nonisolated static func isDestructive(_ action: String) -> Bool {
         ["Trash", "Delete", "Stop", "Quit", "Clear", "Remove"].contains(where: { action.contains($0) })
+    }
+}
+
+extension AppModel {
+    /// Health's badge, its colour and its hint, from what Health found (problems and warnings; notes are not counted)
+    func noteHealth(_ found: [HealthFinding]) {
+        let shown = found.filter { $0.level != .note }.sorted { $0.level < $1.level }
+        healthBadge = shown.count
+        healthWorst = shown.first?.level
+        let names = shown.prefix(3).map(\.title)
+        healthHint = names.joined(separator: "\n") + (shown.count > 3 ? "\nand \(shown.count - 3) more" : "")
     }
 }

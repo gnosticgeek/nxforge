@@ -181,8 +181,8 @@ struct HealthPage: View {
             ForEach(found) { f in row(f) }
             backupsCard
         }
-        .onAppear { model.healthBadge = found.filter { $0.level != .note }.count }
-        .onChange(of: found.map(\.id)) { model.healthBadge = found.filter { $0.level != .note }.count }
+        .onAppear { model.noteHealth(found) }
+        .onChange(of: found.map(\.id)) { model.noteHealth(found) }
         .task(id: "\(model.lastDataBackup?.timeIntervalSince1970 ?? 0)|\(model.revision)") {
             backups = await Task.detached(priority: .utility) { DataBackup.list() }.value
         }

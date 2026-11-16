@@ -1098,6 +1098,56 @@ import Testing
         #expect(CoverSource.urls(id: "AAACA", kind: "cover").first?.absoluteString == "https://art.gametdb.com/switch/cover/US/AAACA.jpg")
     }
 
+    @Test func discoverSearch() {
+        let u = DiscoverSource.url(query: "", genre: "Platformer", platform: .switch2, players: .two, sort: .newest, start: 48)!.absoluteString
+        #expect(u.contains("fq=pretty_game_categories_txt:%22Platformer%22"))
+        #expect(u.contains("playable_on_txt:BEE"))
+        #expect(u.contains("players_to:%5B2%20TO%20*%5D"))
+        #expect(u.contains("dates_released_dts:%5B*%20TO%20NOW%5D"))
+        #expect(u.contains("start=48") && u.contains("sort=dates_released_dts%20desc"))
+        // a search is by relevance under Title A-Z, and only words go out
+        let q = DiscoverSource.url(query: "mario: (kart)", genre: nil, platform: .all, players: .any, sort: .title, start: 0)!.absoluteString
+        #expect(q.contains("q=mario%20kart") && !q.contains("sort="))
+        let json = """
+        {"response":{"numFound":2,"docs":[
+          {"fs_id":"2179556","application_id_s":"0100a3d008c5c000","title":"Pokémon Scarlet","url":"/en-gb/Games/Pokemon-Scarlet-2179556.html",
+           "pretty_game_categories_txt":["Adventure","RPG"],"players_to":4,"playable_on_txt":["HAC"],"image_url_sq_s":"https://x/1x1_a_image500w.jpg",
+           "pretty_date_s":"18/11/2022"},
+          {"fs_id":"1","application_id_s":"0400c3f00006e000","title":" Mario Kart World","playable_on_txt":["BEE"],"system_names_txt":["Nintendo Switch 2"]}
+        ]}}
+        """
+        let page = DiscoverSource.parse(Data(json.utf8))
+        #expect(page.total == 2 && page.items.count == 2)
+        let p = page.items[0], m = page.items[1]
+        #expect(p.titleID == "0100A3D008C5C000" && p.console == "Switch" && p.players == "1–4 players" && p.year == "2022")
+        #expect(p.page == "https://www.nintendo.com/en-gb/Games/Pokemon-Scarlet-2179556.html")
+        #expect(p.subtitle(besides: "RPG") == "Adventure")
+        #expect(m.console == "Switch 2" && m.title == "Mario Kart World")
+        #expect(DiscoverSource.owned(m, ids: ["0400C3F00006E000"], names: []))
+        #expect(DiscoverSource.owned(p, ids: [], names: [CoverSource.normalize("Pokemon Scarlet")]))
+        #expect(DiscoverSource.keep(p, genre: "RPG", platform: .switch1, players: .four, query: "poke"))
+        #expect(!DiscoverSource.keep(p, genre: "Racing", platform: .all, players: .any, query: ""))
+        #expect(!DiscoverSource.keep(m, genre: nil, platform: .switch1, players: .any, query: ""))
+        #expect(DiscoverSource.sorted([m, p], by: .newest).first == p)
+        #expect(DiscoverState.plural("Platformer") == "Platformers")
+    }
+
+    @Test func squareArtLookup() {
+        let json = """
+        {"response":{"docs":[
+          {"application_id_s":"0100dcd01f306000","title":"Mina the Hollower - Nintendo Switch™ 2 Edition","type":"GAME","image_url_sq_s":"https://x/b.jpg"},
+          {"application_id_s":"0100dcd01f306000","title":"Mina the Hollower","type":"GAME","image_url_sq_s":"https://x/a.jpg"},
+          {"application_id_s":"0100dcd01f306000","title":"Mina","type":"DLC","image_url_sq_s":"https://x/d.jpg"},
+          {"title":"Cyber Shadow","type":"GAME","image_url_sq_s":"//x/c.jpg"}
+        ]}}
+        """
+        let docs = SquareSource.parse(Data(json.utf8))
+        #expect(docs.count == 4)
+        #expect(SquareSource.pick(docs, id: "0100DCD01F306000") == "https://x/a.jpg")
+        #expect(SquareSource.pick(docs, name: "Cyber Shadow") == "https://x/c.jpg")
+        #expect(SquareSource.pick(docs, name: "Cyber") == nil)
+    }
+
     @Test func heroArtLookup() {
         let json = """
         {"response":{"docs":[

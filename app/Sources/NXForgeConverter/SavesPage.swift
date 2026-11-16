@@ -1,4 +1,4 @@
-// Saves (Converter 0.16.0): every built game's save on one page, after RecompLauncher's Saves screen (an idea only: that project is
+// Saves (Converter 0.18.0): every built game's save on one page, after RecompLauncher's Saves screen (an idea only: that project is
 // GPL-3.0, this is written fresh). The top says how much is kept and where, with the after-session switch and the snapshot folder;
 // each game's row says when it last saved, on which Mac its newest snapshot was made, and how many snapshots it has. Opening a row
 // shows the game's Save snapshots card (BuildsPage.swift), with Restore, Undo Restore, import, export and Git backup.
