@@ -15,7 +15,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .convert: "macwindow.badge.plus"
         case .library: "books.vertical"
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
-        case .saves: "externaldrive.badge.timemachine"
+        case .saves: "clock.arrow.circlepath"
         case .storage: "internaldrive"
         case .health: "stethoscope"
         case .toolchain: "wrench.and.screwdriver"

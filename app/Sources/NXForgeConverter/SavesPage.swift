@@ -47,6 +47,7 @@ struct SavesPage: View {
     @Bindable var model: AppModel
     @State private var rows: [SaveRow]?
     @State private var open: String?
+    @State private var openName: String?
 
     var body: some View {
         ScrollView {
@@ -62,6 +63,10 @@ struct SavesPage: View {
             .pagePadding()
         }
         .task(id: model.revision) { await load() }
+        .onAppear {
+            // NXC_SAVES_OPEN=<part of a game's name>: the screenshot hook opens that game's snapshots
+            if open == nil, let n = ProcessInfo.processInfo.environment["NXC_SAVES_OPEN"] { openName = n }
+        }
     }
 
     private func load() async {
@@ -74,7 +79,7 @@ struct SavesPage: View {
             }
         }.value
         // games that saved most recently first, then the rest by name
-        rows = r.sorted { a, b in
+        let sorted = r.sorted { a, b in
             switch (a.lastSaved, b.lastSaved) {
             case let (x?, y?): x > y
             case (_?, nil): true
@@ -82,6 +87,8 @@ struct SavesPage: View {
             default: a.name.localizedStandardCompare(b.name) == .orderedAscending
             }
         }
+        rows = sorted
+        if let n = openName, let hit = sorted.first(where: { $0.name.localizedCaseInsensitiveContains(n) }) { open = hit.id; openName = nil }
     }
 
     // MARK: the top
@@ -95,7 +102,7 @@ struct SavesPage: View {
         return HStack(alignment: .top, spacing: 16) {
             Card(fillHeight: true) {
                 HStack(spacing: 12) {
-                    Image(systemName: "externaldrive.badge.timemachine").font(.title2).frame(width: 36)
+                    Image(systemName: "clock.arrow.circlepath").font(.title2).frame(width: 36)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Snapshots").font(.headline)
                         Text("\(withSave.count) game\(withSave.count == 1 ? "" : "s") with a save · \(count) snapshot\(count == 1 ? "" : "s")").foregroundStyle(.secondary)
@@ -109,7 +116,7 @@ struct SavesPage: View {
                         Text("When a game quits with a changed save. The newest \(SaveSnapshots.keepAutomatic) of these stay for each game.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(.switch).frame(maxWidth: .infinity, alignment: .leading)
             }
             Card(fillHeight: true) {
                 HStack(spacing: 12) {
@@ -191,10 +198,14 @@ struct SavesPage: View {
                     chip("Changed since the last snapshot", Color.orange)
                 } else if r.newest != nil {
                     chip("Snapshot up to date", Color.green)
+                } else {
+                    chip("No snapshot yet", Color.secondary)
                 }
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(r.snapshots) snapshot\(r.snapshots == 1 ? "" : "s")").font(.callout.weight(.semibold))
-                    Text(ByteCountFormatter.string(fromByteCount: r.bytes, countStyle: .file)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    if r.snapshots > 0 {
+                        Text(ByteCountFormatter.string(fromByteCount: r.bytes, countStyle: .file)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
                 }
                 .frame(minWidth: 96, alignment: .trailing)
                 Image(systemName: "chevron.down").rotationEffect(.degrees(open == r.id ? 180 : 0)).foregroundStyle(.secondary)
