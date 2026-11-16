@@ -110,13 +110,14 @@ struct SavesPage: View {
                     Spacer()
                     Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)).font(.title3.weight(.semibold)).monospacedDigit()
                 }
-                Toggle(isOn: $model.settings.snapshotAfterPlay) {
+                HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Snapshot after every session")
                         Text("When a game quits with a changed save. The newest \(SaveSnapshots.keepAutomatic) of these stay for each game.").font(.caption).foregroundStyle(.secondary)
                     }
+                    Spacer()
+                    Toggle("Snapshot after every session", isOn: $model.settings.snapshotAfterPlay).toggleStyle(.switch).labelsHidden()
                 }
-                .toggleStyle(.switch).frame(maxWidth: .infinity, alignment: .leading)
             }
             Card(fillHeight: true) {
                 HStack(spacing: 12) {
