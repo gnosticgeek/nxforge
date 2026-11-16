@@ -9,7 +9,7 @@ struct StageGamePage: View {
     @Bindable var model: AppModel
     let game: StageGame
     /// More details under the media: the store's About
-    @State private var aboutOpen = false
+    @State private var aboutOpen = ProcessInfo.processInfo.environment["NXC_ABOUT"] != nil   // snapshot hook: opened
 
     var body: some View {
         let _ = model.revision
@@ -17,7 +17,7 @@ struct StageGamePage: View {
         let (_, record) = model.resolve(g.ref)
         GeometryReader { geo in
             let showCase = geo.size.width > 760
-            let caseH = min(max(geo.size.height * 0.34, 240), 360)
+            let caseH = min(max(geo.size.height * 0.37, 250), 390)
             let gutter: CGFloat = geo.size.width > 1250 ? 56 : 40
             let inner = geo.size.width - gutter * 2
             let info = model.settings.downloadStoreInfo ? StoreInfoStore.shared.info(g.coverKey) : nil

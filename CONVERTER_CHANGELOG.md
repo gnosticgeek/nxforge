@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.14.4 (2026-11-16)
+
+Game page to the Blaster Master Zero 2 mock-up. Ships in NXForge 0.39.3.
+
+- **The store's facts under the name**: the console, publisher and release date on the first line, then genres, players, age rating and size, from the game's page on Nintendo's store (a game without store details keeps "Not played yet" or how it was last played).
+- **Media across the page**: Official media and Your captures sit beside the Media title with View all at the right, and the three tiles span the page; a trailer has a red Trailer badge.
+- **The pitch and More details**: the store's one-line pitch sits under the tiles, and More details opens About (the whole description and the facts table) below it, in place of the About column beside Media.
+- A larger box, no View box link under it (the box viewer is Y, a click on View box in the hint bar, or the box's right-click menu), and every hint along the foot of the window can be clicked.
+
 ## 0.14.3 (2026-11-16)
 
 Nintendo Life art. Ships in NXForge 0.39.2.
