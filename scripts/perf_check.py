@@ -56,6 +56,7 @@ def parse(path: Path) -> dict:
             elif 'switched to' in ln and 'in fullscreen' in ln: s['screen'] = 'switched ' + (re.search(r'switched to (\d+) Hz', ln) or [None, '?'])[1] + ' Hz'
             elif 'present upscaling: MetalFX' in ln and 'where the picture' in ln: s['upscale'] = 'metalfx'
             elif 'present upscaling: off' in ln and not s['upscale']: s['upscale'] = 'off'
+            elif 'present upscaling:' in ln and 'MetalFX\'s GPU time saved' in ln: s['upscale'] = 'bilinear (enlargement under DM_FX_MIN_SCALE)'
             elif 'frames are not held longer' in ln: s['fps_hold'] = 'off'
             elif 'frame step:' in ln and (m := R_STEP.search(ln)): s['held2'], s['held3'] = int(m[2]), int(m[3])
             elif 'Low Power Mode on' in ln: s['low_power'] = True
@@ -78,7 +79,7 @@ def causes(s: dict) -> list[str]:
     """What is known to cost frames on a Mac, as found in the session (most likely first)"""
     out = []
     if s['screen'].startswith('fixed'): out.append(f'full screen switched the screen to {s["screen"].removeprefix("fixed ")} (a late frame waits a whole refresh; NXForge 0.42 keeps a ProMotion screen at 120 Hz)')
-    if s['upscale'] == 'metalfx': out.append('MetalFX upscaler on (about 1.3-2 ms of GPU a frame)')
+    if s['upscale'] == 'metalfx': out.append('MetalFX upscaler on (0.8-1.4 ms of GPU a present on an M4 Pro, against 0.24 for the bilinear pass)')
     if s['gpu_p50'] and s['gpu_p50'] > 14.5: out.append(f'GPU-bound: GPU p50 {s["gpu_p50"]} ms of the 16.7')
     if s['held2'] + s['held3'] and s['fps_hold'] != 'off': out.append(f'frame-step hold: {s["held2"] + s["held3"]} frames held at 30 or 20 fps')
     if s['thermal_max'] >= 2: out.append(f'heat: thermal state {s["thermal_max"]}')

@@ -1,6 +1,6 @@
 // NXForge: the MetalFX spatial scaler only where it enlarges the picture by at least DM_FX_MIN_SCALE (1.4 by default; 1 = wherever it is larger, upstream's rule).
-// MetalFX costs about 1.3-1.4 ms of GPU a present on an M4 Pro at 120 Hz presents (Mario Kart World, 2560x1440 → 3024x1701 in full screen on the built-in screen,
-// "present command buffer GPU time over 600 presents through MetalFX: p50 1.30-1.45 ms"), the bilinear pass a few tenths. Ocarina of Time, 2292x1440 → 3024x1898 (1.32x):
+// MetalFX costs 0.8-1.45 ms of GPU a present on an M4 Pro (Mario Kart World, 2560x1440 → 3024x1701 in full screen on the built-in screen, "present command buffer
+// GPU time over 600 presents through MetalFX": p50 0.81 ms in a race on 16 Nov 2026, 1.30-1.45 ms in Tom's evening sessions), the bilinear pass 0.24 ms. Ocarina of Time, 2292x1440 → 3024x1898 (1.32x):
 // 0.83-1.19 ms. Enlargements that small gain little sharpness, and in a game at the edge of its 16.7 ms that millisecond decides whether a frame is late. Games that
 // render 720p or 1080p (1.75x and more to a MacBook's screen) keep it
 static int nxf_fx_scale_ok(NSUInteger cw, NSUInteger ch, NSUInteger w, NSUInteger h) {
