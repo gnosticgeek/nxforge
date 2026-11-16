@@ -20,6 +20,7 @@ Every command takes `--json` (before the command) for one JSON document on stand
 | `clean --worktree <path>` | Removes one engine worktree, only when it is clean, pushed and not the engine |
 | `build <game folder> [--plan] [--rebuild <app>] [--background]` | Builds the game's Mac app as the converter does (keys: the folder's `prod.keys`, else the settings'); refused before it starts, with the install command, when the game needs glslang, nsz or zbic and it is missing (see `doctor`); `--plan` is the dry run that lists the stages that will be reused or redone (engines that have it); `--background` starts a job |
 | `jobs`, `job <id>`, `stop <id>` | Background builds: stage, progress, result and the last log lines; `stop` is the app's Stop |
+| `perf [title ID …] [--record]` | How smoothly each game's last session ran, from its log (`scripts/perf_check.py`, [performance.md](performance.md#a-sessions-check)): the share of frames on time, GPU time, full screen and the screen's refresh mode, upscaler, footprint and the known causes of lost frames found in the log, with a verdict against the game's earlier sessions. `--record` adds each session to the history once. Exits 1 when a session is slower than usual |
 | `update [--apply]` | Fetches the engine and lists the commits waiting on its update branch; `--apply` fast-forwards (refused while a build runs or with uncommitted changes) |
 
 Exit codes: 0 on success (also when there is nothing to delete), 1 on an error or a file that could not be deleted, 2 when the request was refused (a build already running, another cleanup running, no keys, a worktree that is not removable).
@@ -56,4 +57,4 @@ or in Claude Desktop's `claude_desktop_config.json`:
 {"mcpServers": {"nxforge": {"command": "python3", "args": ["/Users/<you>/Development/NXForge/scripts/nxforge_mcp.py"]}}}
 ```
 
-Tools: `nxforge_status`, `nxforge_builds`, `nxforge_doctor`, `nxforge_disk_report`, `nxforge_clean` (`dry_run` defaults to true; `categories` defaults to the safe set), `nxforge_build` (starts a background job), `nxforge_jobs`, `nxforge_job`, `nxforge_stop_job` and `nxforge_update`. A refusal comes back as a tool error with its reason. `dm/tools/tests/test_nxforge_cli.py` tests the categories, the guards and the protocol on a fake home folder.
+Tools: `nxforge_status`, `nxforge_builds`, `nxforge_doctor`, `nxforge_disk_report`, `nxforge_clean` (`dry_run` defaults to true; `categories` defaults to the safe set), `nxforge_build` (starts a background job), `nxforge_jobs`, `nxforge_job`, `nxforge_stop_job`, `nxforge_update` and `nxforge_perf`. A refusal comes back as a tool error with its reason. `dm/tools/tests/test_nxforge_cli.py` tests the categories, the guards and the protocol on a fake home folder.

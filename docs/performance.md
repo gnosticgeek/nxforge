@@ -48,6 +48,23 @@ game's frame rate fell by more than 3 % or its p99 frame time rose by more than 
 shows a change, and say why if a game got slower on purpose. `dm/tools/tests/test_perf_release.py` checks the comparison and
 that the stored files parse.
 
+## A session's check
+
+```
+nxforge perf [title ID …] [--record]          # or python3 scripts/perf_check.py
+```
+
+reads each game's last log (`~/Library/Logs/nxnative/<title ID>.log`, the previous one is `.prev.log`) and says how smoothly it ran: the share of
+frames shown on time over the session (the host's `on-screen up to frame` lines, the first 600 frames left out), GPU time, whether it went full
+screen and what that did to the screen's refresh rate, the upscaler, the footprint, and the causes of lost frames the log shows (a ProMotion
+screen switched to a fixed 60 Hz, MetalFX, the frame-step hold, heat, Low Power Mode, battery, a footprint big enough to swap). With `--record`
+the session goes into `~/Library/Application Support/NXForge/perf-history.tsv`, once per log, and the verdict compares it with the game's last
+five sessions: **slower** when its share of frames on time is more than 3 points under their median and under 97 % (exit status 1, so a routine
+can notice), otherwise smooth (97 % or more), as usual or uneven. The MCP server has it as `nxforge_perf`.
+
+It would have named 16 Nov 2026's Mario Kart World drop at once: every slow session had gone full screen mid-game, which switched the built-in
+screen to a fixed 60 Hz (60-79 % of frames on time against 98-99 % at the screen's own 120 Hz; from 0.43 a ProMotion screen keeps 120 Hz).
+
 ## Which games
 
 Two or three that cover different engines, built on the Mac doing the measuring: for example Bloodstained: Curse of the Moon (2D,
