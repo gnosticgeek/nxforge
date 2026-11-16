@@ -1179,7 +1179,9 @@ struct StageSettings: View {
 
     /// the section at the top of the scroll, lit in the jump row
     var current: Section {
-        Section.allCases.last { (tops[$0] ?? .infinity) <= offset + 24 } ?? .launching
+        // scrolled to the end, the last section that shows is lit even though it never reaches the top
+        if !moreBelow && moreAbove { return Section.allCases.last { (tops[$0] ?? .infinity) < offset + viewport - 40 } ?? .opens }
+        return Section.allCases.last { (tops[$0] ?? .infinity) <= offset + 24 } ?? .launching
     }
     var moreAbove: Bool { offset > 2 }
     var moreBelow: Bool { offset + viewport < contentHeight - 2 }
@@ -1353,10 +1355,13 @@ struct StageSettings: View {
         }
     }
 
-    /// a row is shown when the find field is empty, or its title or note has every word typed
+    /// a row is shown when the find field is empty, or every word typed starts a word of its title or note
+    /// ("art" finds box art and the artwork folder, not "starts")
     func matches(_ text: String) -> Bool {
-        let words = query.split(separator: " ")
-        return words.isEmpty || words.allSatisfy { text.localizedCaseInsensitiveContains($0) }
+        let typed = query.lowercased().split(separator: " ")
+        if typed.isEmpty { return true }
+        let words = text.lowercased().split { !$0.isLetter && !$0.isNumber }
+        return typed.allSatisfy { t in words.contains { $0.hasPrefix(t) } }
     }
     func shown(_ title: String) -> Bool { matches(title + " " + (Self.notes[title] ?? "")) }
     func anyShown(_ s: Section) -> Bool { Self.titles[s, default: []].contains(where: shown) }

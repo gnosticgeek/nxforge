@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.14.5 (2026-11-16)
+
+Settings scrolls. Ships in NXForge 0.39.4.
+
+- **The panel fits the window and scrolls**: Settings (the front end's slider button, or a controller's Menu button) was one tall card with no scroll, cut off at the top and foot of a smaller window. Its rows now scroll inside it with a visible scroll bar, by trackpad, mouse wheel or the keyboard (arrows, Page Up and Down, Space, Home and End).
+- **Pinned header and foot**: Settings, Find a setting and Done stay at the top, and Games Folder…, Scan Again and Converter Settings… stay at the foot; a hairline shows when there is more above or below.
+- **Section jumps**: Launching, Artwork, Building and On Open under the title scroll to their section, and the one in view is lit.
+- **Find a setting** (⌘F): shows only the rows whose title or note has a word starting with what is typed; Esc clears it, then closes Settings.
+- **A controller reaches every row**: Show a recap and Rest while a game runs join the rows a controller steps through, and the panel scrolls to keep the lit row in view. Open on has a note saying what it does.
+
 ## 0.14.4 (2026-11-16)
 
 Game page to the Blaster Master Zero 2 mock-up. Ships in NXForge 0.39.3.
