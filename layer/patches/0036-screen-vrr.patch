@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Mon, 16 Nov 2026 21:53:02 +0000
+Subject: screen-vrr: a ProMotion screen keeps its variable refresh in
+ fullscreen (NXForge presents without the display link there)
+
+---
+ dm/host/front_mac.m | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
+index 85b0363dd68b67c3934577f7d761051b132bbc7b..d1a7e376deccbff91ec3b80bbb3d5ac2976b6004 100644
+--- a/dm/host/front_mac.m
++++ b/dm/host/front_mac.m
+@@ -103,6 +103,7 @@ static void screen_match_restore(int on_it) {   // main thread: the screen this
+     if (r == kCGErrorSuccess && on_it) { if (hz > 0) g_screen_fps = (int)round(hz); g_screen_variable_refresh = g_match_orig_vrr; }   // the screen observer may not show the mode yet
+     CGDisplayModeRelease(g_match_orig); g_match_orig = NULL;
+ }
++#include "nxforge/screen_vrr.inc"   // NXForge: a ProMotion screen keeps its variable refresh in fullscreen
+ static void screen_match_apply(void) {   // main thread: on a new frame rate, on entering and leaving fullscreen and on a move to another screen
+     static int off = -1; if (off < 0) { const char *e = getenv("DM_SCREEN_MATCH"); off = e && !strcmp(e, "0"); if (off) LOG("front end: the screen keeps its refresh rate in fullscreen too (DM_SCREEN_MATCH=0)"); }
+     NSScreen *scr = g_win.screen; int want = g_match_want, full = (g_win.styleMask & NSWindowStyleMaskFullScreen) != 0;
+@@ -115,6 +116,7 @@ static void screen_match_apply(void) {   // main thread: on a new frame rate, on
+     // the current mode is variable-refresh: the screen's own mode as screen_refresh saw it; one this host switched to as it chose it (the screen observer may lag), so a
+     // fixed mode is never left for the variable one at a rate it already matches
+     int vrr = !g_match_orig ? g_screen_variable_refresh : CGDisplayModeGetIODisplayModeID(cur) == CGDisplayModeGetIODisplayModeID(g_match_orig) ? g_match_orig_vrr : 0;
++    if (vrr && hz > 0 && hz_multiple(hz, want) && nxf_screen_keeps_vrr()) { CGDisplayModeRelease(cur); return; }   // NXForge: nxforge/screen_vrr.inc
+     if (!vrr && (hz <= 0 || hz_multiple(hz, want))) {   // already a multiple, or not known
+         if (g_match_orig && hz > 0) g_screen_fps = (int)round(hz);   // the screen this host switched: its rate from the mode, which maximumFramesPerSecond (the screen observer) may not show yet
+         CGDisplayModeRelease(cur); return;
