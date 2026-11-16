@@ -78,7 +78,7 @@ def parse(path: Path) -> dict:
 def causes(s: dict) -> list[str]:
     """What is known to cost frames on a Mac, as found in the session (most likely first)"""
     out = []
-    if s['screen'].startswith('fixed'): out.append(f'full screen switched the screen to {s["screen"].removeprefix("fixed ")} (a late frame waits a whole refresh; NXForge 0.42 keeps a ProMotion screen at 120 Hz)')
+    if s['screen'].startswith('fixed'): out.append(f'full screen switched the screen to {s["screen"].removeprefix("fixed ")} (a late frame waits a whole refresh; NXForge 0.44 keeps a ProMotion screen at 120 Hz)')
     if s['upscale'] == 'metalfx': out.append('MetalFX upscaler on (0.8-1.4 ms of GPU a present on an M4 Pro, against 0.24 for the bilinear pass)')
     if s['gpu_p50'] and s['gpu_p50'] > 14.5: out.append(f'GPU-bound: GPU p50 {s["gpu_p50"]} ms of the 16.7')
     if s['held2'] + s['held3'] and s['fps_hold'] != 'off': out.append(f'frame-step hold: {s["held2"] + s["held3"]} frames held at 30 or 20 fps')

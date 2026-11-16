@@ -63,7 +63,7 @@ five sessions: **slower** when its share of frames on time is more than 3 points
 can notice), otherwise smooth (97 % or more), as usual or uneven. The MCP server has it as `nxforge_perf`.
 
 It would have named 16 Nov 2026's Mario Kart World drop at once: every slow session had gone full screen mid-game, which switched the built-in
-screen to a fixed 60 Hz (60-79 % of frames on time against 98-99 % at the screen's own 120 Hz; from 0.43 a ProMotion screen keeps 120 Hz).
+screen to a fixed 60 Hz (60-79 % of frames on time against 98-99 % at the screen's own 120 Hz; from 0.44 a ProMotion screen keeps 120 Hz).
 
 ## Which games
 
