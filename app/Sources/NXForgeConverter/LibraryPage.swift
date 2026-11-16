@@ -480,7 +480,7 @@ struct LibraryPage: View {
                             .buttonStyle(.plain)
                             .help("Play \(r.record.name)")
                             .accessibilityLabel("Play \(r.record.name), played \(r.record.last.map { relativeDay($0).lowercasedFirst } ?? "before")")
-                            .contextMenu {
+                            .contextBoxBoxBoxMenu {
                                 Button("Game Page") { model.openGame(GameRef(libraryID: nil, app: r.record.app)) }
                                 Button("Show App in Finder") { reveal(r.record.app) }
                             }
@@ -513,7 +513,7 @@ struct LibraryPage: View {
                 }
                 .pickerStyle(.inline)
             } label: { menuLabel("Platform", model.libraryConsole.rawValue) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
             Menu {
                 Picker("Status", selection: $model.libraryFilter) {
                     ForEach(LibraryFilter.allCases, id: \.self) { f in
@@ -522,7 +522,7 @@ struct LibraryPage: View {
                 }
                 .pickerStyle(.inline)
             } label: { menuLabel("Status", model.libraryFilter == .all ? "All" : model.libraryFilter.rawValue) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
             Spacer()
             if model.settings.libraryLayout == .grid {
                 Slider(value: $model.settings.libraryCoverSize, in: Settings.coverSizes).frame(width: 100).controlSize(.small)
@@ -542,7 +542,7 @@ struct LibraryPage: View {
                 Toggle("Group by Console", isOn: $model.settings.libraryGroupByConsole)
                     .disabled(model.libraryConsole != .all)
             } label: { menuLabel("Sort", model.settings.librarySort.rawValue) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
         }
     }
 

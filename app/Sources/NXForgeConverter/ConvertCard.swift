@@ -101,6 +101,7 @@ struct ConvertCard: View {
         .clipShape(.rect(cornerRadius: 18))
         .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
         .onChange(of: model.settings.gameDir) { scratch = false }
+        .onAppear { if ProcessInfo.processInfo.environment["NXC_OPTIONS"] != nil { optionsOpen = true } }   // snapshot hook
     }
 
     func section<C: View>(@ViewBuilder _ c: () -> C) -> some View { VStack(alignment: .leading, spacing: 0) { c() }.frame(maxWidth: .infinity, alignment: .leading) }
@@ -119,7 +120,7 @@ struct ConvertCard: View {
             GeometryReader { geo in
                 Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                     .frame(width: geo.size.width * 0.68, height: min(geo.size.height, 380)).clipped()
-                    .opacity(sharp ? 0.30 : 0.22)
+                    .opacity(sharp ? 0.17 : 0.13)
                     .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)], startPoint: .leading, endPoint: .trailing))
                     .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.55), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
                     .frame(width: geo.size.width, height: geo.size.height, alignment: .topTrailing)
@@ -249,7 +250,7 @@ struct ConvertCard: View {
         let list = model.settings.recentSources.filter { $0 != model.settings.gameDir }
         if !list.isEmpty {
             let fm = FileManager.default
-            Menu {
+            BoxMenu {
                 ForEach(list, id: \.self) { p in
                     Button { model.setGameDir(p) } label: {
                         Text(model.library?.games.first(where: { $0.path == p })?.displayName ?? p.lastComponent)
@@ -263,7 +264,7 @@ struct ConvertCard: View {
                 HStack(spacing: 6) { Text("Recent games"); Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)) }
                     .font(.system(size: 15)).foregroundStyle(StageLook.soft)
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
             .disabled(model.run.running)
         }
     }
@@ -360,7 +361,7 @@ struct ConvertCard: View {
         }
         .buttonStyle(.plain)
         .help("Clean-up after the build, rebuilding from scratch, Preview build and the engine")
-        if optionsOpen || ProcessInfo.processInfo.environment["NXC_OPTIONS"] != nil {
+        if optionsOpen {
             VStack(alignment: .leading, spacing: 14) {
                 // the same choice as Settings › After a build: on deletes <id>_build once the app is built and signed
                 Toggle(isOn: Binding(get: { model.settings.cleanup == .all }, set: { model.settings.cleanup = $0 ? .all : .off })) {
@@ -423,7 +424,7 @@ struct ConvertCard: View {
     /// "Clean up build files: On · Reuses finished steps · Engine update available"
     var optionsSummary: String {
         var parts = ["Clean up build files: \(model.settings.cleanup == .all ? "On" : "Off")"]
-        if model.buildCache != nil { parts.append(scratch ? "Rebuild from scratch" : "Reuses finished steps") }
+        parts.append(model.buildCache == nil ? "Every step runs (no build folder kept)" : scratch ? "Rebuild from scratch: On" : "Rebuild from scratch: Off")
         if model.updatesAvailable { parts.append("Engine update available") }
         return parts.joined(separator: "  ·  ")
     }

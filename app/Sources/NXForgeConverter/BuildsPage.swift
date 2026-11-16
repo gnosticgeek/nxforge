@@ -142,17 +142,17 @@ struct BuildsPage: View {
             .padding(.horizontal, 14).frame(minWidth: 180, maxWidth: 420).frame(height: 34)
             .background(.white.opacity(0.06), in: .capsule)
             .overlay(Capsule().strokeBorder(.white.opacity(0.16)))
-            Menu {
+            BoxBoxMenu {
                 Picker("Platform", selection: $model.buildConsole) { ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
                     .pickerStyle(.inline)
             } label: { filterLabel("Platform", model.buildConsole.rawValue) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
             .help("Show the Switch 2 games, the Switch games, or both")
             Menu {
                 Picker("Sort", selection: $model.buildSort) { ForEach(BuildSort.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
                     .pickerStyle(.inline)
             } label: { filterLabel("Sort", model.buildSort.rawValue) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
         }
     }
 
@@ -183,13 +183,13 @@ struct BuildsPage: View {
                         Text(outdated.isEmpty ? "Every build is current" : "\(outdated.count) build\(outdated.count == 1 ? " uses" : "s use") an older engine").foregroundStyle(StageLook.soft)
                     }
                     Spacer(minLength: 8)
-                    Menu {
+                    BoxMenu {
                         Button(olderOnly ? "Show Every Build" : "Show Only These") { olderOnly.toggle() }
                         Divider()
                         Button("Rebuild All on \(model.engine?.short ?? "the Current Engine") (\(outdated.count))") { model.rebuildAll() }
                             .disabled(model.run.running || !model.allOK || outdated.isEmpty)
                     } label: { Text("Review…").underline().foregroundStyle(convertAccent) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .fixedSize()
                     .help("Show only the builds on an older engine, or rebuild them all one after another (a failure stops the rest)")
                 }
                 .font(.system(size: 14))
