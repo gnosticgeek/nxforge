@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import statistics
 import sys
@@ -31,6 +30,11 @@ R_ONSCREEN = re.compile(r'on-screen up to frame (\d+): (\d+) frames, dropped (\d
 R_TIMING = re.compile(r'timing up to frame (\d+):.*?GPU p50 ([\d.]+) / p95 ([\d.]+)')
 R_BUILD = re.compile(r'\[dm\] build: commit (\w+), shader chain (\w+)(?:, profile ([0-9A-Fa-f]{16}))?')
 R_STEP = re.compile(r'frame step: .*held 1 / 2 / 3 vsyncs (\d+) / (\d+) / (\d+) frames')
+
+
+def hz(pattern: str, line: str) -> str:
+    m = re.search(pattern, line)
+    return m[1] if m else '?'
 
 
 def parse(path: Path) -> dict:
@@ -52,8 +56,8 @@ def parse(path: Path) -> dict:
                 s['build'], s['chain'] = m[1], m[2]
                 if m[3]: s['title_id'] = m[3].upper()
             elif 'front end: full screen' in ln or 'NSWindowDidEnterFullScreen' in ln: s['fullscreen'] = True
-            elif 'switched to fixed' in ln and 'Hz' in ln: s['screen'] = 'fixed ' + (re.search(r'fixed (\d+) Hz', ln) or [None, '?'])[1] + ' Hz'
-            elif 'switched to' in ln and 'in fullscreen' in ln: s['screen'] = 'switched ' + (re.search(r'switched to (\d+) Hz', ln) or [None, '?'])[1] + ' Hz'
+            elif 'switched to fixed' in ln and 'Hz' in ln: s['screen'] = 'fixed ' + hz(r'fixed (\d+) Hz', ln) + ' Hz'
+            elif 'switched to' in ln and 'in fullscreen' in ln: s['screen'] = 'switched ' + hz(r'switched to (\d+) Hz', ln) + ' Hz'
             elif 'present upscaling: MetalFX' in ln and 'where the picture' in ln: s['upscale'] = 'metalfx'
             elif 'present upscaling: off' in ln and not s['upscale']: s['upscale'] = 'off'
             elif 'present upscaling:' in ln and 'MetalFX\'s GPU time saved' in ln: s['upscale'] = 'bilinear (enlargement under DM_FX_MIN_SCALE)'
@@ -153,7 +157,7 @@ def human(res: list[dict]) -> str:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
     ap.add_argument('games', nargs='*', help='title IDs or log files (default: every game with a log)')
     ap.add_argument('--all', action='store_true')
     ap.add_argument('--record', action='store_true', help='add each session to the history once')
