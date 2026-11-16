@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.42.0 (2026-11-16)
+
+- **Discover and square covers** (Converter 0.17.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Discover tab browses Nintendo's European store by genre with Platform, Players, Library and Sort filters, a search, In library badges, a Wishlist kept on this Mac and a bar with Wishlist and View game; Home and the Library can show square shop art instead of boxes (Settings › Artwork › Square covers), with every game's square art fetched from the store. No game rebuild needed for this.
+
 ## 0.41.0 (2026-11-16)
 
 - **Convert, Game Files and Builds to the mock-ups** (Converter 0.16.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Home / Library / Converter switch centred with the converter's pages as underlined tabs; Convert as one card with the game, where the app goes, Build options in one line and Ready to build with space and time beside one button; Game Files as a sortable table with a bar for the game in focus; Builds as a list with a large detail panel. No game rebuild needed for this.

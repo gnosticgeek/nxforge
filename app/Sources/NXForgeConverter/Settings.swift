@@ -89,6 +89,8 @@ struct Settings: Codable, Equatable {
     var sessionRecap = true
     /// while a game runs and NXForge is behind it, the window shows a plain card and holds no artwork
     var lightWhilePlaying = true
+    /// the front end's covers as the games' square shop art instead of boxes: more to a row, and the same shape as Discover's
+    var squareCovers = false
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -108,6 +110,7 @@ struct Settings: Codable, Equatable {
         case mediaInGameFolder = "media_in_game_folder"
         case localShaders = "local_shaders"
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
+        case squareCovers = "square_covers"
     }
 
     init() {}
@@ -157,6 +160,7 @@ struct Settings: Codable, Equatable {
         localShaders = (try? c.decodeIfPresent(Bool.self, forKey: .localShaders)) ?? true
         sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true
         lightWhilePlaying = (try? c.decodeIfPresent(Bool.self, forKey: .lightWhilePlaying)) ?? true
+        squareCovers = (try? c.decodeIfPresent(Bool.self, forKey: .squareCovers)) ?? false
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

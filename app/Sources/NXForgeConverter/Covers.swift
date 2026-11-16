@@ -290,6 +290,45 @@ enum HeroSource {
     }
 }
 
+/// The lookup of a game's square art on Nintendo's European store, apart from the network (tested)
+enum SquareSource {
+    static func byIDs(_ ids: [String]) -> URL? {
+        let q = ids.map { $0.lowercased() }.filter { $0.count == 16 && $0.allSatisfy(\.isHexDigit) }
+        guard !q.isEmpty else { return nil }
+        return HeroSource.url(["q": "*", "fq": "application_id_s:(\(q.joined(separator: " OR ")))", "rows": "\(q.count * 6)"], fields: "application_id_s,title,type,image_url_sq_s")
+    }
+
+    static func byName(_ name: String) -> URL? {
+        let n = String(CoverSource.plain(name).map { $0.isLetter || $0.isNumber ? $0 : " " }).split(separator: " ").joined(separator: " ")
+        guard CoverSource.normalize(n).count >= 3 else { return nil }
+        return HeroSource.url(["q": n, "fq": "type:GAME", "rows": "8"], fields: "application_id_s,title,type,image_url_sq_s")
+    }
+
+    struct Doc: Equatable { var id: String?; var title: String; var game: Bool; var image: String }
+
+    static func parse(_ data: Data) -> [Doc] {
+        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let r = o["response"] as? [String: Any],
+              let docs = r["docs"] as? [[String: Any]] else { return [] }
+        return docs.compactMap { d in
+            guard let t = d["title"] as? String, let i = d["image_url_sq_s"] as? String else { return nil }
+            let img = i.hasPrefix("//") ? "https:" + i : i
+            guard img.hasPrefix("https://") else { return nil }
+            return Doc(id: (d["application_id_s"] as? String)?.uppercased(), title: t, game: (d["type"] as? String) == "GAME", image: img)
+        }
+    }
+
+    /// For a title ID: a game's before an add-on's (they share the ID), the shortest title first
+    static func pick(_ docs: [Doc], id: String) -> String? {
+        docs.filter { $0.id == id.uppercased() }.min { ($0.game ? 0 : 1, $0.title.count) < ($1.game ? 0 : 1, $1.title.count) }?.image
+    }
+
+    /// For a name: only a game whose title is that name
+    static func pick(_ docs: [Doc], name: String) -> String? {
+        let want = CoverSource.normalize(CoverSource.plain(name))
+        return docs.first { $0.game && (CoverSource.normalize($0.title) == want || CoverSource.normalize(CoverSource.plain($0.title)) == want) }?.image
+    }
+}
+
 /// A game's page on Nintendo Life, apart from the network (tested): its header art (the wide art) and its cover (the square eShop
 /// art of a download-only game, the box of a boxed one). The page's address is made from the game's name, as the site makes it
 /// ("Kirby's Return to Dream Land Deluxe" → kirbys_return_to_dream_land_deluxe), under the site's console sections in turn.
@@ -401,6 +440,8 @@ final class CoverStore {
     /// the Nintendo Life pass under way (tests wait on it)
     var nintendoLifeTask: Task<Void, Never>? { nlFetch }
     @ObservationIgnored private var heroAsked = Set<String>()
+    @ObservationIgnored private var squareFetch: Task<Void, Never>?
+    @ObservationIgnored private var squareAsked = Set<String>()
     /// the wide art is shown (Settings › Artwork)
     var showHeroes = true
     @ObservationIgnored private var reading = Set<String>()
@@ -455,9 +496,15 @@ final class CoverStore {
     /// A side's cover for a tile on the shelf or in the grid: a smaller copy, read and decoded off the main thread so a scroll past
     /// covers not seen yet never waits for a JPEG. `.none`: no cover on disk (a drawn stand-in takes its place);
     /// `.some(nil)`: there is one and it is being read, and `revision` moves when it arrives
-    func thumb(_ key: String, _ side: CoverSide) -> NSImage?? {
+    func thumb(_ key: String, _ side: CoverSide) -> NSImage?? { thumb(named: key + "-" + side.rawValue) }
+
+    /// The game's square art for a tile (Settings › Square covers), as `thumb`: Nintendo Life's (<key>-square.jpg), else the
+    /// store's (<key>-square-store.jpg), else one the player gave (<key>-square-own.png)
+    func squareThumb(_ key: String) -> NSImage?? { thumb(named: key + "-square") }
+
+    private func thumb(named k: String) -> NSImage?? {
         let _ = revision
-        let k = key + "-" + side.rawValue, tk = k + "-thumb"
+        let tk = k + "-thumb"
         if let i = memory[tk] { return .some(i) }
         if absent.contains(k) { return .none }
         if reading.contains(tk) { return .some(nil) }
@@ -472,7 +519,7 @@ final class CoverStore {
 
     /// The cover on disk under a side's name: the player's own first, then the downloaded one
     nonisolated static func file(_ k: String) -> URL? {
-        [k + "-own.png", k + ".jpg"].map { dir.appending(path: $0) }.first { FileManager.default.fileExists(atPath: $0.path) }
+        [k + "-own.png", k + ".jpg", k + "-store.jpg"].map { dir.appending(path: $0) }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     /// A picture file no longer than `side` pixels, decoded here and now (ImageIO reads a JPEG at a reduced size without decoding all of it)
@@ -643,11 +690,12 @@ final class CoverStore {
     /// Look again for every game's art (Settings › Covers)
     func lookAgain() {
         if let files = try? FileManager.default.contentsOfDirectory(at: Self.dir, includingPropertiesForKeys: nil) {
-            for f in files where ["none", "heronone", "nlife", "nlifenone"].contains(f.pathExtension) { try? FileManager.default.removeItem(at: f) }
+            for f in files where ["none", "heronone", "nlife", "nlifenone", "squarenone"].contains(f.pathExtension) { try? FileManager.default.removeItem(at: f) }
         }
         asked = []
         heroAsked = []
         nlAsked = []
+        squareAsked = []
         revision += 1
     }
 
@@ -795,6 +843,62 @@ final class CoverStore {
                     try? Data().write(to: none)
                 }
             }
+        }
+    }
+
+    /// Square art for every game, for Settings › Square covers: Nintendo Life's pass keeps a download-only game's (<key>-square.jpg);
+    /// any other game gets the square picture of its entry on Nintendo's European store (image_url_sq_s), found by title ID in one
+    /// search for many games, else by its exact name, as <key>-square-store.jpg. A game with none is looked for again after a week
+    /// (<key>.squarenone). Offline, nothing is marked.
+    func fetchSquares(_ games: [(key: String, titleID: String?, name: String)]) {
+        let todo = games.filter { !squareAsked.contains($0.key) }
+        guard !todo.isEmpty else { return }
+        for g in todo { squareAsked.insert(g.key) }
+        let previous = squareFetch, nl = nlFetch
+        squareFetch = Task.detached(priority: .utility) {
+            await previous?.value
+            await nl?.value   // Nintendo Life's square art first
+            let fm = FileManager.default
+            try? fm.createDirectory(at: Self.dir, withIntermediateDirectories: true)
+            let want = todo.filter { g in
+                if Self.file(g.key + "-square") != nil { return false }
+                let none = Self.dir.appending(path: "\(g.key).squarenone")
+                if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 7 * 86400 { return false }
+                return true
+            }
+            guard !want.isEmpty else { return }
+            var found: [String: String] = [:]
+            let ids = want.compactMap(\.titleID)
+            for start in stride(from: 0, to: ids.count, by: HeroSource.batch) {
+                let part = Array(ids[start..<min(start + HeroSource.batch, ids.count)])
+                guard let u = SquareSource.byIDs(part) else { continue }
+                guard let data = await Self.get(u) else { return }   // offline or refused: try again at the next start
+                let docs = SquareSource.parse(data)
+                for id in part { if let s = SquareSource.pick(docs, id: id) { found[id.uppercased()] = s } }
+            }
+            var changed: [String] = []
+            for g in want {
+                if Task.isCancelled { return }
+                var image = g.titleID.flatMap { found[$0.uppercased()] }
+                if image == nil, let u = SquareSource.byName(g.name) {
+                    guard let data = await Self.get(u) else { return }
+                    image = SquareSource.pick(SquareSource.parse(data), name: g.name)
+                }
+                var got = false
+                if let image {
+                    for u in HeroSource.sizes(image) {
+                        guard let d = await Self.get(u), NLifeSource.square(d), let jpg = CoverSource.jpeg(d, maxHeight: 1000) else { continue }
+                        got = (try? jpg.write(to: Self.dir.appending(path: "\(g.key)-square-store.jpg"))) != nil
+                        if got { break }
+                    }
+                }
+                let none = Self.dir.appending(path: "\(g.key).squarenone")
+                if got { try? fm.removeItem(at: none); changed.append(g.key) } else { try? Data().write(to: none) }
+                // the covers drawn again a few at a time, not once for each
+                if changed.count >= 8 { let c = changed; changed = []; await MainActor.run { for k in c { CoverStore.shared.forget(k) } } }
+            }
+            let c = changed
+            await MainActor.run { for k in c { CoverStore.shared.forget(k) } }
         }
     }
 

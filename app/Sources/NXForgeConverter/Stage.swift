@@ -6,7 +6,7 @@ import AppKit
 import GameController
 import SwiftUI
 
-enum StageTab: String, CaseIterable { case home = "Home", library = "Library" }
+enum StageTab: String, CaseIterable { case home = "Home", discover = "Discover", library = "Library" }
 /// The Library's two collections: every game in the games folder, or only the ones built and playable on this Mac
 enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
 enum StageFilter: String, CaseIterable {
@@ -75,7 +75,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, startIn }
 
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
 
@@ -126,6 +126,7 @@ extension AppModel {
             let shelf = built.isEmpty ? games : built
             return shelf.filter(\.favorite) + shelf.filter { !$0.favorite }
         }
+        if stageTab == .discover { return [] }
         var out = stageScope == .built ? games.filter { $0.app != nil } : games
         switch stageFilter {
         case .all: break
@@ -239,6 +240,7 @@ extension AppModel {
             }
             return
         }
+        if stageTab == .discover { discoverPad(k); return }
         let focus = stageFocus(stageShown(stageGames()))
         switch k {
         case .left: moveStageFocus(dx: -1)
@@ -273,6 +275,7 @@ extension AppModel {
         case .localShaders: flip(&settings.localShaders)
         case .sessionRecap: flip(&settings.sessionRecap)
         case .lightWhilePlaying: flip(&settings.lightWhilePlaying)
+        case .squareCovers: flip(&settings.squareCovers)
         case .downloadCovers: flip(&settings.downloadCovers)
         case .downloadHeroes: flip(&settings.downloadHeroes)
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
@@ -299,6 +302,7 @@ extension AppModel {
         CoverStore.shared.fetchNintendoLife(games.map { ($0.coverKey, $0.titleID, $0.name, $0.console.rawValue) },
                                             heroes: settings.downloadHeroes, boxes: settings.downloadCovers)
         if settings.downloadHeroes { CoverStore.shared.fetchHeroes(games.map { ($0.coverKey, $0.titleID, $0.name) }) }
+        if settings.downloadCovers || settings.squareCovers { CoverStore.shared.fetchSquares(games.map { ($0.coverKey, $0.titleID, $0.name) }) }
         guard settings.downloadCovers else { return }
         CoverStore.shared.fetchMissing(games.map { ($0.coverKey, $0.name) })
     }
@@ -498,7 +502,7 @@ struct StageView: View {
         let shown = model.stageShown(games)
         let detail = model.gameDetail.flatMap { r in games.first { $0.isRef(r) } }
         let focus = detail ?? model.stageFocus(shown)
-        let tint = focus.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
+        let tint = focus.map { CoverArt.tint($0) } ?? (model.stageTab == .discover ? Color(red: 0.45, green: 0.30, blue: 0.80) : Color(red: 0.25, green: 0.35, blue: 0.75))
         ZStack {
             StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "", strength: detail == nil ? 1 : 0.45)
             // the game's key art behind its page, and behind Home's headline for the game in focus
@@ -509,6 +513,8 @@ struct StageView: View {
                 Group {
                     if let g = detail {
                         StageGamePage(model: model, game: g)
+                    } else if model.stageTab == .discover {
+                        DiscoverView(model: model, state: model.discover)
                     } else if games.isEmpty {
                         StageEmpty(model: model)
                     } else if model.stageTab == .home {
@@ -571,11 +577,18 @@ struct StageView: View {
             if let g = detail ?? focus { model.toggleFavorite(g) }
             return .handled
         }
-        .task(id: games.map(\.coverKey).joined(separator: "|") + (model.settings.downloadCovers ? "1" : "0") + (model.settings.downloadHeroes ? "1" : "0")) { model.fetchCovers(games) }
+        .task(id: coverTaskKey(games)) { model.fetchCovers(games) }
         .task(id: "\(model.settings.mediaInGameFolder)|\(CoverStore.shared.revision)|\(StoreInfoStore.shared.revision)|\(model.revision)|" + games.map { "\($0.id)\($0.app ?? "")" }.joined(separator: "|")) {
             GameFolderMediaSync.shared.schedule(model)
         }
         .task(id: games.map { "\($0.id)\($0.outdated)" }.joined(separator: "|") + "|\(model.playing.count)|\(model.revision)") { await model.refreshAttention(games) }
+    }
+
+    /// The key that restarts the cover fetch: the games' covers and the three art settings. It is built in steps so the compiler can type-check it.
+    private func coverTaskKey(_ games: [StageGame]) -> String {
+        let covers: String = games.map { $0.coverKey }.joined(separator: "|")
+        let flags: String = [model.settings.downloadCovers, model.settings.downloadHeroes, model.settings.squareCovers].map { $0 ? "1" : "0" }.joined()
+        return covers + flags
     }
 }
 
@@ -636,7 +649,7 @@ struct StageTopBar: View {
     /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
     var search: (prompt: String, text: Binding<String>)? {
         if model.frontEnd { return model.stageTab == .library ? ("Search games", $model.stageSearch) : nil }
-        // the converter's Game Files and Builds have their own search fields
+        // Discover, the converter's Game Files and Builds have their own search fields
         return nil
     }
 
@@ -780,9 +793,10 @@ struct StageHome: View {
             // covers take what is left, so the names under them never run into the hints
             let bigTitle = geo.size.width > 1100 && geo.size.height > 760
             let heroRoom: CGFloat = bigTitle ? 440 : 380
-            let tile = min(max(min(geo.size.width * 0.112, (geo.size.height - heroRoom - 140) * CoverSource.aspect), 90), 190)
-            let caseH = min(max(geo.size.height - tile / CoverSource.aspect - 150, 220), 560)
-            let tileH = tile / CoverSource.aspect
+            let aspect = model.settings.squareCovers ? 1 : CoverSource.aspect
+            let tile = min(max(min(geo.size.width * 0.112, (geo.size.height - heroRoom - 140) * aspect), 90), 190)
+            let caseH = min(max(geo.size.height - tile / aspect - 150, 220), 560)
+            let tileH = tile / aspect
             let shelf = tileH + 78
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 24) {
@@ -825,7 +839,7 @@ struct StageHome: View {
                         LazyHStack(alignment: .top, spacing: 26) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 10) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil).frame(width: tile)
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil, square: model.settings.squareCovers).frame(width: tile)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(g.name).font(.system(size: 14.5, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                                         Text(g.console.rawValue).font(.system(size: 13)).foregroundStyle(StageLook.faint).lineLimit(1)
@@ -888,6 +902,15 @@ struct StageLibrary: View {
                         .accessibilityAddTraits(model.stageFilter == f ? .isSelected : [])
                     }
                 }
+                // boxes or square art (Settings › Square covers)
+                Button { withAnimation(.spring(duration: 0.3)) { model.settings.squareCovers.toggle() } } label: {
+                    Image(systemName: model.settings.squareCovers ? "rectangle.portrait" : "square").font(.system(size: 14, weight: .semibold))
+                        .frame(width: 32, height: 32).background(StageLook.card, in: .circle).overlay(Circle().strokeBorder(StageLook.edge, lineWidth: 1))
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.plain)
+                .help(model.settings.squareCovers ? "Show boxes" : "Show square covers: more to a row")
+                .accessibilityLabel(model.settings.squareCovers ? "Show Boxes" : "Show Square Covers")
             }
             .padding(.horizontal, Self.side).padding(.top, 8)
             if games.isEmpty {
@@ -899,7 +922,7 @@ struct StageLibrary: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cell, maximum: Self.cell + 44), spacing: Self.gap, alignment: .top)], alignment: .leading, spacing: 28) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 9) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil)
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil, square: model.settings.squareCovers)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(g.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                                         status(g)
@@ -1094,6 +1117,13 @@ struct StageHints: View {
         if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
         if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]) + [(["Y"], "View box"), (["B"], "Back")] }
+        if model.stageTab == .discover {
+            if let d = model.discover.detail {
+                return [(["A"], "Nintendo eShop"), (["Y"], Wishlist.shared.contains(d) ? "Remove from Wishlist" : "Wishlist"), (["B"], "Close")]
+            }
+            let wished = model.discover.focused.map { Wishlist.shared.contains($0) } ?? false
+            return [(["A"], "View game"), (["Y"], wished ? "Remove from Wishlist" : "Wishlist"), (["X"], "Nintendo eShop"), (["L", "R"], "Genre"), (["B"], "Back")]
+        }
         var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))
@@ -1337,7 +1367,7 @@ struct StageSettings: View {
     /// every row's title, by section, and the note under it: the find field looks in both
     static let titles: [Section: [String]] = [
         .launching: ["Play goes straight into the game", "Show Play options the first time", "Battery preset on battery", "Return here when a game quits", "Keep shaders on this Mac", "Show a recap when a game quits", "Rest while a game runs", "Controllers"],
-        .artwork: ["Download box art", "Download wide art", "Download store details", "Keep media in each game's folder", "Artwork folder"],
+        .artwork: ["Square covers", "Download box art", "Download wide art", "Download store details", "Keep media in each game's folder", "Artwork folder"],
         .building: ["Keys file (prod.keys)"],
         .opens: ["Open on"],
     ]
@@ -1350,6 +1380,7 @@ struct StageSettings: View {
         "Show a recap when a game quits": "How long you played this time and in total, with the game's peak memory.",
         "Rest while a game runs": "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.",
         "Controllers": "See every button, stick and trigger as a game reads it, and try the rumble.",
+        "Square covers": "Shows each game's square shop art instead of its box on Home and in the Library: smaller, so more fit in a row. The same as the Library's square button.",
         "Download box art": "Front and back covers from GameTDB, matched by the game's name; a download-only game gets a box made from its square art on Nintendo Life. Only a cover's ID or the game's name is sent.",
         "Download wide art": "The header art from each game's page on Nintendo Life, else the banner from Nintendo's European store, behind its page and Home. Found by name or title ID; only those are sent.",
         "Download store details": "A game's description, details and official screenshots from its store page, fetched when you open the game's page.",
@@ -1373,6 +1404,7 @@ struct StageSettings: View {
             }
         }
         group(.artwork) {
+            toggle("Square covers", $model.settings.squareCovers, row: .squareCovers)
             toggle("Download box art", $model.settings.downloadCovers, row: .downloadCovers)
             toggle("Download wide art", $model.settings.downloadHeroes, row: .downloadHeroes)
             toggle("Download store details", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
