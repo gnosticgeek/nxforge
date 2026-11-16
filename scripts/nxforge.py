@@ -901,6 +901,9 @@ def main(argv=None):
     sub.add_parser('job', help='one background build: stage, progress, last lines').add_argument('id')
     sub.add_parser('stop', help='stop a background build').add_argument('id')
     sub.add_parser('update', help='engine updates').add_argument('--apply', action='store_true', help='fast-forward the engine')
+    p = sub.add_parser('perf', help="how smoothly each game's last session ran, against its usual (scripts/perf_check.py)")
+    p.add_argument('games', nargs='*', help='title IDs or log files (default: every game with a log)')
+    p.add_argument('--record', action='store_true', help='add each session to the history once')
     a = ap.parse_args(argv)
 
     try:
@@ -934,6 +937,10 @@ def main(argv=None):
         elif a.cmd == 'job': res = job_state(a.id)
         elif a.cmd == 'stop': res = stop_job(a.id)
         elif a.cmd == 'update': res = update(a.apply)
+        elif a.cmd == 'perf':
+            import perf_check
+            res = perf_check.check(a.games, not a.games, a.record)
+            if not a.json: print(perf_check.human(res)); return 1 if any(s.get('verdict') == 'slower' for s in res) else 0
         else: ap.error(a.cmd)
     except Refused as e:
         if a.json: print(json.dumps({'error': str(e), 'refused': True}))

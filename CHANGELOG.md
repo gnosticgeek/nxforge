@@ -2,6 +2,13 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.44.0 (2026-11-16)
+
+- **Full screen keeps a ProMotion screen at 120 Hz** (layer patch screen-vrr): going full screen while a game runs switched the MacBook's built-in screen to a fixed 60 Hz (upstream's rule for its display link, which NXForge does not use in full screen), and there a frame a moment late waits a whole 16.7 ms refresh. Mario Kart World on an M4 Pro, the same race with full screen entered after launch: 79 % and 73 % of frames on time at the fixed 60 Hz against 98.9 % and 99.1 % at the screen's own 120 Hz, with the GPU at 9.2 ms a frame instead of 11.7. Tom's own sessions on 16 Nov (Mario Kart World 60-75 %, Ocarina of Time 73 %) had all switched. `DM_SCREEN_MATCH=1` switches as upstream does; a 144 Hz screen still goes to 120 Hz as before.
+- **MetalFX only where it really enlarges the picture** (layer patch fx-min-scale): the spatial scaler runs where the picture is shown at least 1.4 times larger than the game renders it (`DM_FX_MIN_SCALE`), and a smaller enlargement takes the bilinear pass. Mario Kart World in full screen (2560x1440 → 3024x1701, 1.18x): the present's GPU time 0.81 → 0.24 ms; Ocarina of Time (1.32x) saves 0.8-1.2 ms. Games rendering 720p or 1080p keep MetalFX.
+- **`nxforge perf`: how smoothly a game's last session ran** (`scripts/perf_check.py`, the MCP tool `nxforge_perf`, [docs/performance.md](docs/performance.md#a-sessions-check)): the share of frames on time from the game's log, GPU time, full screen and the screen's refresh mode, upscaler and footprint, the causes of lost frames the log shows, and with `--record` a history per game with a verdict (smooth, as usual, uneven, slower) against its last five sessions. Today's Mario Kart World drop would have read "full screen switched the screen to 60 Hz" at once.
+- Games pick up the first two at their next build (an update rebuild is enough; the shader chain is unchanged). Tonight's Mario Kart World app already has the new player, and Ocarina of Time and Cuphead have `DM_SCREEN_MATCH=0` in their env.txt until they are rebuilt.
+
 ## 0.43.0 (2026-11-16)
 
 - **Save manager** (Converter 0.18.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Saves page for every game's save, a checked snapshot after every session that changed the save, a snapshot folder of your choice (another drive, a NAS, iCloud Drive) with a checked move of the existing ones, Undo Restore, and the Mac each snapshot came from. No game rebuild needed for this.
