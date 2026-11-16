@@ -636,11 +636,8 @@ struct StageTopBar: View {
     /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
     var search: (prompt: String, text: Binding<String>)? {
         if model.frontEnd { return model.stageTab == .library ? ("Search games", $model.stageSearch) : nil }
-        guard model.gameDetail == nil else { return nil }
-        switch model.page {
-        case .builds: return ("Search builds", $model.buildSearch)
-        default: return nil
-        }
+        // the converter's Game Files and Builds have their own search fields
+        return nil
     }
 
     func tab(_ title: String, on: Bool, _ act: @escaping () -> Void) -> some View {
