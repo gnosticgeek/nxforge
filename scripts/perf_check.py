@@ -85,6 +85,7 @@ def causes(s: dict) -> list[str]:
     if s['thermal_max'] >= 2: out.append(f'heat: thermal state {s["thermal_max"]}')
     if s['low_power']: out.append('Low Power Mode')
     if s['battery']: out.append('on battery')
+    if s['covered']: out.append(f'the game window was covered or lost focus {s["covered"]} time(s): frames around that do not measure the game')
     if s['footprint_mb'] > 14000: out.append(f'footprint {s["footprint_mb"] / 1024:.1f} GB (close other apps: swapping costs frames)')
     return out
 
