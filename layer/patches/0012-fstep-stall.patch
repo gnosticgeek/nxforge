@@ -13,15 +13,15 @@ frames after every pause stepped the hold to 3: about a second at 20 and 30 fps
  dm/gfx/nvn/hle_nvn.c         |  4 ++--
  dm/gfx/nvn/nvn_fstep.h       | 13 +++++++++++--
  dm/gfx/tests/t_fstep.c       | 24 ++++++++++++++++++++++++
- docs/agents/symptoms.md      |  1 +
+ docs/agents/symptoms.md      |  5 +++--
  docs/reference/frame-rate.md |  9 +++++++++
- 5 files changed, 47 insertions(+), 4 deletions(-)
+ 5 files changed, 49 insertions(+), 6 deletions(-)
 
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 9175cd43fb2ef3698875c5079726840ec813df4a..bf601acdded6f3cd38cc57c30712f5e3334f16e0 100644
+index d066925b0ca3bc8fd9cdc0df1d0ea92910e21105..18a5ae53d9c04e812d4434b1d52522253484b499 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -2569,9 +2569,9 @@ static void fstep_tick(const win_t *o, int c) {
+@@ -2585,9 +2585,9 @@ static void fstep_tick(const win_t *o, int c) {
          if (o->presents % 1800 == 0) { LOG("[nvn] 120 fps: held 1 / 2 ticks %llu / %llu frames, %llu late, %llu up / %llu down (%llu probes, %llu failed trials); standing-frame drains taken out of %llu frames (%.1f ticks)", (unsigned long long)held[1], (unsigned long long)held[2], (unsigned long long)g_fs.late, (unsigned long long)g_fs.ups, (unsigned long long)g_fs.downs, (unsigned long long)g_fs.probes, (unsigned long long)g_fs.failed, (unsigned long long)drain_n, drain_cut / v); memset(held, 0, sizeof held); drain_n = drain_cut = 0; }
      } else if (o->presents % 1800 == 0) {   // game time against real time (1.000 = normal speed; lower when a device cannot hold 20 fps or after long stalls)
          uint64_t vs = __atomic_load_n((uint64_t *)(dm_fps_state + 0x30), __ATOMIC_RELAXED) + fixed_sum, t = now_ns();
@@ -34,10 +34,10 @@ index 9175cd43fb2ef3698875c5079726840ec813df4a..bf601acdded6f3cd38cc57c30712f5e3
          t0 = t; v0 = vs; memset(held, 0, sizeof held); drain_n = drain_cut = 0;
      }
 diff --git a/dm/gfx/nvn/nvn_fstep.h b/dm/gfx/nvn/nvn_fstep.h
-index 58e7200ee7682f215cfaa507b1ce74fda0ade656..47893993de634f421da7b2839e603f8680c475c3 100644
+index df3b773c8873f5a3f040ef12ce7d92aff669b46e..0480d7bf869b774a4294f5b5189fa843844cc8e3 100644
 --- a/dm/gfx/nvn/nvn_fstep.h
 +++ b/dm/gfx/nvn/nvn_fstep.h
-@@ -46,12 +46,19 @@
+@@ -52,12 +52,19 @@
  // second half cost at most 1 − FSTEP_RAMP of its first half, and had a late frame (a window on time is judged as a trial), starts another, up to FSTEP_PROBE_MAX frames in all
  #define FSTEP_RAMP 0.05       // the fall in cost from one half of a grace window to the next that shows the clock still rising (the per-frame noise of a 25 ms frame is 4%, of 15 frames 1%)
  #define FSTEP_PROBE_MAX 180   // grace frames a probe may take in all (3 s at 60 fps): a clock that keeps rising without reaching the hold is not waited for longer
@@ -57,7 +57,7 @@ index 58e7200ee7682f215cfaa507b1ce74fda0ade656..47893993de634f421da7b2839e603f86
      int probe, grace;         // 1: the trial in progress is a probe; 2: a probe held and its run at kmin has not ended yet; frames left of the probe's grace
      int ramp;                 // set by the caller (kept): 1 = a probe's grace is renewed while its frames keep getting cheaper (FSTEP_RAMP; the host's DM_FSTEP_PROBE_RAMP)
      double pa, pb; int plate, ptotal;   // the current grace window: the cost of its first and second halves (sums), its late frames; grace frames this probe has taken in all
-@@ -69,7 +76,7 @@ typedef struct {
+@@ -76,7 +83,7 @@ typedef struct {
      double last_cost[3];      // the last three frames' costs, oldest first
      int smax;                 // set by the caller: the largest step the game takes (its stub's STEP_MAX; 0 = FSTEP_MAX)
      int no_payback;           // set by the caller: 1 = the game does not take the step (120 fps: it steps by its target), so three late frames raise the hold whatever the average
@@ -66,7 +66,7 @@ index 58e7200ee7682f215cfaa507b1ce74fda0ade656..47893993de634f421da7b2839e603f86
  } nvn_fstep;
  
  // A drain of frames standing in the display link's queue in a frame's time (hle_nvn.c fstep_tick, g_fs_drain; nvn_link_drain.h): the acquire waited extra link ticks while the
-@@ -129,7 +136,9 @@ static inline int nvn_fstep_next(nvn_fstep *s, double shown, double cost, int km
+@@ -137,7 +144,9 @@ static inline int nvn_fstep_next(nvn_fstep *s, double shown, double cost, int km
          s->plate += late; s->ptotal++;
          if (!--s->grace && s->ramp && s->plate && s->ptotal + FSTEP_GRACE <= FSTEP_PROBE_MAX && s->pb <= (1 - FSTEP_RAMP) * s->pa) { s->grace = FSTEP_GRACE; s->pa = s->pb = 0; s->plate = 0; }   // still getting cheaper: another window
      }
@@ -78,10 +78,10 @@ index 58e7200ee7682f215cfaa507b1ce74fda0ade656..47893993de634f421da7b2839e603f86
      if (kmin != s->ckmin) {   // another cap: its run starts over, and what held it before comes back
          if (s->ckmin >= 1 && s->ckmin <= FSTEP_MAX) {
 diff --git a/dm/gfx/tests/t_fstep.c b/dm/gfx/tests/t_fstep.c
-index 0f4634cdc56a0efb259e7908b4ace2a3fde61372..0de1bfdcb285d25b7d7a60cb60a2f9f1ffec3284 100644
+index 865d79e25381e28cfc426c02a4535fc35fe55ed4..46b18e3d7c92c7a99f1ef72a7b03347914ddf16f 100644
 --- a/dm/gfx/tests/t_fstep.c
 +++ b/dm/gfx/tests/t_fstep.c
-@@ -447,6 +447,30 @@ int main(void) {
+@@ -547,6 +547,30 @@ int main(void) {
          pw = 3; check(nvn_fstep_drain_cut(40, 17, 9, 0, &pw) == 37 && pw == 0, "a drain counted no larger than the pacing wait it was part of");
          pw = 0; check(nvn_fstep_drain_cut(0, 17, 0, 5, &pw) == 0, "the first frame (no previous start): nothing to cut");
      }
@@ -113,24 +113,44 @@ index 0f4634cdc56a0efb259e7908b4ace2a3fde61372..0de1bfdcb285d25b7d7a60cb60a2f9f1
      return fail != 0;
  }
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index 23009c8dc43e8129787419845334c545b9465a41..078a9859ff78cf2b1318cc8f9b311bc57da953b6 100644
+index f6c778b0056ef8808e60ac477d70aa27d225a623..f0e312ed76cf93911033a2d2592d861690453825 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -555,6 +555,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
- - after a 30 fps cap ends (a prerendered movie, the thermal cap), a GPU-bound game stays at 30 fps in a scene that held 60 before the cap; the log shows `frame step cap 30 → 60 fps` and a few frames later `frame step: hold 1 → 2 vsyncs at present … (3 late frames; …)`, with no probe after it. → [The frame step after a 30 fps cap ends](../reference/frame-rate.md#the-frame-step-after-a-30-fps-cap-ends)
- - on a Mac, a GPU-bound game at 60 fps falls to 30 or 20 fps when the scene gets heavier and stays there until a menu or a lighter scene, while the GPU clock sits at its floor (338–400 MHz on an M5 Pro) and the GPU is powered 60–75% of the time; the log shows probes back to hold 1 that fail after about 33 frames (`frame step: hold 2 → 1 vsyncs … (probe, GPU 1.67× its time at hold 1)` then `the probe failed`), and the host's profiler (`@gpu_mhz`) shows the clock rising during each probe and falling back after it. → [A probe's grace lasts while its frames keep getting cheaper](../reference/frame-rate.md#a-probes-grace-lasts-while-its-frames-keep-getting-cheaper)
+@@ -45,8 +45,8 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - the first build of a game whose build folder is on an exFAT drive stops at its shader step, before any shader is compiled: `dmsh_build.py` fails opening `shader/cache/cas.db` with `sqlite3.OperationalError: attempt to write a readonly database` at `PRAGMA journal_mode=WAL` in `shader_cache.Store._open`, and the step ends with `[RED] own_compilers.py exit code 1`. Running the build again goes past it, as the failed run has left the file 16 KB long. → [A new compile cache on an exFAT drive is "a readonly database"](../reference/packing.md#a-new-compile-cache-on-an-exfat-drive-is-a-readonly-database)
+ - a game's shader libraries are slow to copy or delete: Skyward Sword HD's `b-<chain>/` held 12,064 files for 2,470 shaders, a third of its build folder's files, and each `regress.py` chain build held another set. A tar would not do: the host reads these files at every run. → [Shader libraries take a file per shader variant](../reference/packing.md#shader-libraries-take-a-file-per-shader-variant)
+ - a game's build folder holds tens of thousands of small files while its shaders build, and keeps them when the build stops: Octopath Traveler 0's `_build`, stopped in its compile, held 68,230 files (38,376 in `tmp/dmsh_*`, 29,757 in `shader/cache/b-<chain>/`), against 105 once a build finished. Every later build made another `tmp/dmsh_*` beside the old one. → [A shader build leaves a file per shader output while it runs or after a stop](../reference/packing.md#a-shader-build-leaves-a-file-per-shader-output-while-it-runs-or-after-a-stop)
+-- after a shader build on a nearly full drive (one `[RED] the shader compile cache … cannot be written` line), the library image lacks some outputs of a shader that built: the host finds no reflection or library for it. → [A full drive during a shader build drops finished outputs from the library](../reference/packing.md#a-full-drive-during-a-shader-build-drops-finished-outputs-from-the-library)
+ - `mds_stores` and `mdworker_shared` keep the Mac busy during and after a build: after a full Ocarina of Time build, `mds_stores` stayed at 100 to 156% CPU for more than 40 minutes with nothing else running, and `mdfind` found the build folder's `.metal` sources. → [Spotlight indexes the files a shader build writes](../reference/packing.md#spotlight-indexes-the-files-a-shader-build-writes)
++- after a shader build on a nearly full drive (one `[RED] the shader compile cache … cannot be written` line), the library image lacks some outputs of a shader that built: the host finds no reflection or library for it. → [A full drive during a shader build drops finished outputs from the library](../reference/packing.md#a-full-drive-during-a-shader-build-drops-finished-outputs-from-the-library)
+ - a game's `<id>-work` folder is too slow to count: Tears of the Kingdom's held 8,893,028 files and 509 GB, and its count ran past ten minutes. → [A work folder holds millions of small files](../reference/packing.md#a-work-folder-holds-millions-of-small-files)
+ - the NSP script stops at the shader split of a registered profile with `[RED] 13744 file(s) could not be read, their shaders are left out (first: AI/FileEntry/FileEntry.Product.100.byml.zs: CalledProcessError: Command ['zstd', '-d', '-c', '-q', '…/extract/v0/RomFS.img/AI/…'] returned non-zero exit status 1.)`. → [The zstd command given a path inside the image](../reference/packing.md#the-zstd-command-given-a-path-inside-the-image)
+ - an iPhone build of Super Mario 3D All-Stars with `--work-dir` (as NX2Apple runs the script) builds every program, then stops at the app build with `[RED] missing RomFS marker 'MovieData/BgMovieGalaxy.mp4' in <work dir>/extract/v393216/RomFS.img` and `FAIL: no RomFS at …`. → [Under `--work-dir` the programs of one game overwrote each other's RomFS](../reference/packing.md#under---work-dir-the-programs-of-one-game-overwrote-each-others-romfs)
+@@ -585,6 +585,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - a GPU-bound game whose GPU time is more than a vsync even at hold 1 keeps probing back to 60 fps and failing: the log repeats `frame step: hold 2 → 1 vsyncs … (probe, GPU …× its time at hold 1)` and `the probe failed` every few seconds, each after a grace of late frames at hold 1, often followed by hold 3 (20 fps). On an M2 Pro, Ocarina of Time standing in Hyrule Field at night: 22 probes in a minute, all failed, 159 frames at 20 fps; a 30 fps cap (`DM_FPS_TARGET=30`) had none. → [A scene that does not fit the shorter hold probed against another scene's GPU time](../reference/frame-rate.md#a-scene-that-does-not-fit-the-shorter-hold-probed-against-another-scenes-gpu-time)
  - on a Mac, 20 or 30 fps for 10–40 s after a new area loads, then a steady 60 again, with nothing compiling or uploading in between; the log shows `frame step: hold 1 → 2` and `hold 2 → 3 vsyncs … (3 late frames` within a few presents of each other at the load, long-frame lines of exactly 50 ms with `GPU` 22–44 ms and no new pipelines or uploads, and much later `hold 3 → 1 vsyncs … (probe, GPU 6.24× its time at hold 1` followed by `the probe held`. → [Single frames over the fit keep a longer hold](../reference/frame-rate.md#single-frames-over-the-fit-keep-a-longer-hold)
+ - on a Mac whose GPU clock barely follows the hold, a scene that costs a little under a vsync stays at 30 fps for good once a heavier moment or a load steps it up, though it held 60 before and would hold it again: `frame step: hold 1 → 2` and then no `hold 2 → 1` line, few or no probes, and the `held 1 / 2 / 3 vsyncs` counts all at 2. GPU time is the same at either hold, about 0.86–1.0 vsyncs (14.5–16.7 ms). Ocarina of Time on an M4 Pro at full resolution, GPU p50 15.0 ms: 48.1 fps, holding 2 vsyncs much of the time; its castle town market at a mean of 0.86 vsyncs: 30 fps for the rest of the scene after its load. → [A scene that fits hold 1 kept at 30 fps by the fit's margin](../reference/frame-rate.md#a-scene-that-fits-hold-1-kept-at-30-fps-by-the-fits-margin)
 +- after every pause (the game out of focus, then back), fullscreen switch or covered window, a game that held 60 fps plays at 20 and then 30 fps for about a second; the log shows `frame step: hold 1 → 3 vsyncs at present … (3 late frames; cost 3.00, GPU 0.89; …)` right after `oe focus state → 1` or `front end: window visible`, then a trial to 2 and a probe back to 1 that holds. → [A pause or a window switch steps the hold up](../reference/frame-rate.md#a-pause-or-a-window-switch-steps-the-hold-up)
  - a game whose profile has a frame step (`FRAME_STEP` in its `patches.py`) runs at double speed when packed from another update; the log has no `frame step in whole vsyncs` line, and the frame counter shows 60. → [A derived profile drops the frame step its build lacks](../reference/frame-rate.md#a-derived-profile-drops-the-frame-step-its-build-lacks)
  - a fixed-step game runs at double speed (or slow motion at 30) after `DM_FPS_TARGET` is set, in `Documents/env.txt` or the launcher, on a build its profile's frame step stubs and limiter rows do not know. → [A present cap applies only with a frame step or an engine limit the host writes](../reference/frame-rate.md#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)
  - a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick. → [A present interval that is the game's only limit, in display mode](../reference/frame-rate.md#a-present-interval-that-is-the-games-only-limit-in-display-mode)
+@@ -868,8 +869,8 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - GPU memory grows as resolution changes or rooms load, although almost every retained texture still has a live NVN descriptor; reclaiming unused sharing-table entries cannot recover it. → [Live resolution variants share physical image storage](../reference/rendering.md#live-resolution-variants-share-physical-image-storage)
+ - after the game renders at another resolution for a while (a pause menu, a resolution switch) and comes back, a render target it loads instead of clearing holds non-finite or random pixels, in a screen-shaped region that opaque draws wipe away and transparent ones keep; bloom spreads them into a strobing glow. A non-finite scan (`DM_NVN_MAGSCAN`) counts about a million of them in the first pass back. → [A resolution family member reads another size's compressed blocks as garbage](../reference/rendering.md#a-resolution-family-member-reads-another-sizes-compressed-blocks-as-garbage)
+ - while a game's dynamic resolution moves, the residency set's `added` count in the `residency set up to frame` lines stays at hundreds of MB per 300 frames from the shared-texture site, and frames stutter. On a 16 GB Mac, wired memory and swap follow, with p95 frame times near 100 ms. Ocarina of Time after 04419bc2, which freed its dynamic resolution from its floor (GitHub issue #1831). → [Render targets that move with the dynamic resolution get new Metal memory each time](../reference/rendering.md#render-targets-that-move-with-the-dynamic-resolution-get-new-metal-memory-each-time)
+-- on an iPhone the game is ended for memory (a jetsam event, iOS ends the app once the guest's touched pages reach its memory limit) at an area load, with the guest memory already in files. On the Mac, `footprint` shows most of the process as `Owned physical footprint (unmapped) (graphics)`: Ocarina of Time reached 6.36 GB of footprint stepping into the village, 4.4 GB of it Metal memory, the phone's limit being about 6.1 GB. → [Render targets drawn over stayed while their texture objects lived](../reference/rendering.md#render-targets-drawn-over-stayed-while-their-texture-objects-lived)
+ - GPU memory far above what the game's render target pools hold: on a 16 GB Mac (Metal's working set about 10.7 GB) or an iPad the residency set reaches the working set, frames take 100 ms and more, and command buffers fail or the submissions block in the kernel. `restop` shows thousands of render targets, many over the same pool offsets under other descriptions. → [A GPU-only pool's render targets share its memory](../reference/rendering.md#a-gpu-only-pools-render-targets-share-its-memory)
++- on an iPhone the game is ended for memory (a jetsam event, iOS ends the app once the guest's touched pages reach its memory limit) at an area load, with the guest memory already in files. On the Mac, `footprint` shows most of the process as `Owned physical footprint (unmapped) (graphics)`: Ocarina of Time reached 6.36 GB of footprint stepping into the village, 4.4 GB of it Metal memory, the phone's limit being about 6.1 GB. → [Render targets drawn over stayed while their texture objects lived](../reference/rendering.md#render-targets-drawn-over-stayed-while-their-texture-objects-lived)
+ - the whole picture came out darker and more saturated on the Mac and the iPhone: comparing with a Switch screenshot, every channel at every level equalled the Switch value decoded from sRGB once more (0.55 → 0.26, 0.75 → 0.52). → [Render-target views that change the format](../reference/rendering.md#render-target-views-that-change-the-format)
+ - whenever a Switch 2 game's NDSR upscaler runs, the upscaled 3D scene is solid red with black specks, and the UI drawn over it has its red channel gone (white text cyan, skin teal): menus whose scene is not upscaled look right. The log has `[RED] render target view format 0xb cannot be attached (base texture Metal format 93 was created without the format-view usage): drawing in the base format` once. → [A render-target view of another class: the texture is upgraded, not drawn in its base format](../reference/rendering.md#a-render-target-view-of-another-class-the-texture-is-upgraded-not-drawn-in-its-base-format)
+ - a movie (or another picture the game converts each frame) does not show: the screen keeps the last 3D frame while the decoder delivers every picture. A pass dump shows a pass writing one serial and the composite sampling another serial of the same size, the two Metal formats `RGBA8Unorm` (70) and `RGBA8Unorm_sRGB` (71). → [Textures of an sRGB / linear pair over the same storage](../reference/rendering.md#textures-of-an-srgb--linear-pair-over-the-same-storage)
 diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
-index 4b79ca57debfc4d1e2bac52643da8817cdb80f2c..f67633c6beb4c9869e7f00fdf28817d20abcd6f4 100644
+index 69691ae1ec42826cfc29b043db1628f7c634c149..4ccc0dfeec2e324b6a37bf9c53650756122441d9 100644
 --- a/docs/reference/frame-rate.md
 +++ b/docs/reference/frame-rate.md
-@@ -104,6 +104,15 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
- - **Cost:** a scene whose mean fits the shorter hold while a quarter of its frames are late there (0.7 vsyncs, a quarter at 1.3) goes back and forth between the holds about once every 8 s, where the per-frame rule kept the longer one for good (`t_fstep` pins that rate).
- - **Open:** a scene at the edge of the fit keeps the longer hold after a load. The castle town market holds 60 fps at a mean GPU cost of 0.86 vsyncs (p95 1.05); stepped to hold 2 by the load before any 8 s at hold 1 gave the probes a cost to compare (`cref` still the title screen's 0.29), it stayed at 30 fps for the rest of the scene (17.6 s to the run's end, the GPU as fast as at hold 1, so not slowed either). The recorded GPU times of that stretch leave hold 2 after 11.6 s with the rule above and never without it; only a probe that needs no evidence would bring such a scene back at once, at the price of a failed probe every 8 s in a scene that does not hold 60.
+@@ -130,6 +130,15 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
+ - **Check:** `make -C dm/gfx/tests GAME=0400486024DEC000 t_fstep && dm/gfx/tests/t_fstep`: a scene of 0.90 vsyncs (±0.03) at either hold after a heavier moment from a light one: 5,962 of 6,000 frames at hold 1, one failed trial (with the fit at 0.85: 0 of 6,000); the M5's walk, 1.14 vsyncs (its 19 ms frames with the hold off), stays at 30 fps; the edge scene steps down 72 times in 36,000 frames, under its rate of one per 8 s. A simulation of `nvn_fstep_next` with the GPU-slowed probes on, 10 minutes, cost jitter of 0.066 vsyncs (the M5's): scenes of 0.86–1.02 vsyncs spend 99.3–99.8% of frames at hold 1 against 1.8–98% with the fit at 0.85, 0.90 the worst; 1.06 stays at 30 either way; with hold 1 9% slower than hold 2 (the M4 Pro's worst measured), the same, with no more failed trials than before.
+ - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#found-on-this-game): issue [#2400](https://github.com/seedds/nxnative/issues/2400) (a base M5 at 30 fps in Kokiri Forest after the fit-mean change), the M4 Pro's full-resolution run (2026-11-08) and the castle town market's open item. The M5's walk itself costs 1.06 vsyncs of GPU time and 19 ms frames (53 fps, 1,641 of 1,800 frames late with the hold off), so 30 fps is right there and unchanged; Dynamic resolution holds 60 on that Mac at 14.5 ms. Not measured in the game with the change yet.
  
 +### A pause or a window switch steps the hold up
 +

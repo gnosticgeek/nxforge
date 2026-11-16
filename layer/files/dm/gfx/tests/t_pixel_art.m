@@ -75,7 +75,7 @@ static id<MTLTexture> target(int w, int h) {
 static int window_present(id<MTLTexture> src, id<MTLTexture> out) {   // the window's present path (the finder runs there), waited for
     id<MTL4CommandAllocator> al = [g_dev newCommandAllocator]; id<MTL4CommandBuffer> cb = [g_dev newCommandBuffer]; id<MTLSharedEvent> ev = [g_dev newSharedEvent];
     if (!al || !cb || !ev) return 0;
-    [cb beginCommandBufferWithAllocator:al]; int kind = present_encode_m4(cb, src, out, NULL, g_present_uv[0], &g_fx_present); [cb endCommandBuffer];
+    [cb beginCommandBufferWithAllocator:al]; int kind = present_encode_m4(cb, src, out, NULL, g_present_uv[0], &g_fx_present); cb_end(cb, nil);   // the residency sets named: no queue carries them (#2715)
     [g_q4 commit:&cb count:1]; [g_q4 signalEvent:ev value:1];
     return kind && [ev waitUntilSignaledValue:1 timeoutMS:10000];
 }

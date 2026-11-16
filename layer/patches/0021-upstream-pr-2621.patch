@@ -27,7 +27,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  create mode 100644 dm/tools/tests/test_nsp_registered_update.py
 
 diff --git a/dm/games/0400C3F00006E000/README.md b/dm/games/0400C3F00006E000/README.md
-index 40ec194f0983d7b1043185ae9c5975f198c24dfb..3eb7a33c01ad1565101319810e1efa208dbc19fc 100644
+index 11787ab2422b1932546c72a6bc552904211b730e..2866629c89c4fce61a5b878b4041ac0f992d9c61 100644
 --- a/dm/games/0400C3F00006E000/README.md
 +++ b/dm/games/0400C3F00006E000/README.md
 @@ -104,7 +104,7 @@ The work folder `0400C3F00006E000-work` beside the dump has `rewrite.sh`, `rebui
@@ -58,10 +58,10 @@ index 10f143d53ee49bfef2e5bd9927a9029c18dd9056..94b8ed38c480b4ad48c75d9865ac105d
  modules	main subsdk0 subsdk1 sdk
  romfs_marker	Movie/StaffRoll_00.webm
 diff --git a/dm/games/README.md b/dm/games/README.md
-index bc17c2990195af82327830986cf913086d28a9ea..59e5f7ac809f3a677f46c0a1ba2136043b1ca3ae 100644
+index d457df60354051f4e889c1160f40501fba0cfd79..e9e15a76493fb6d1ccba0c9eb8ed2061474f2251 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -119,7 +119,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -123,7 +123,7 @@ One row per profile; the notes are each profile's `README.md`.
  | [Luigi's Mansion 3](0100DCA0064A6000/README.md) | `0100DCA0064A6000` | 1.4.0 | 7.3.2 | Next Level Games' engine | NVN |
  | [Mario & Luigi: Brothership](01006D0017F7A000/README.md) | `01006D0017F7A000` | 1.0.0 | 12.3.2 | Unreal Engine 4.27.2, Wwise | NVN |
  | [Mario Golf: Super Rush](0100C9C00E25C000/README.md) | `0100C9C00E25C000` | 4.0.0 | 11.4.0 | Camelot's engine, NintendoWare | NVN |
@@ -139,7 +139,7 @@ index 0000000000000000000000000000000000000000..d1a5b2cdb67d3bea72002416788925ea
 +if __name__ == '__main__':
 +    unittest.main()
 diff --git a/docs/reference/packing.md b/docs/reference/packing.md
-index 2669ad78609523c209338eccf5fb33343446c553..0f2460175291c2093557886d455632a7f57ecbb2 100644
+index 06799570209d1e8fbbdc42f4b1ab3c46ae1f6a65..210f9c54821ea830ee7be9e16fec29395411724a 100644
 --- a/docs/reference/packing.md
 +++ b/docs/reference/packing.md
 @@ -17,6 +17,13 @@
@@ -157,10 +157,10 @@ index 2669ad78609523c209338eccf5fb33343446c553..0f2460175291c2093557886d455632a7
  
  - **Symptom:** `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder ([issue #1265](https://github.com/seedds/nxnative/issues/1265)). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`.
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index cfdc1d2a2d0821bd4f67eccffdf85c05aa2d1a97..03646976f6b3a046aaa5d5f1c6d8f87e1890b9a7 100755
+index a5ced24cd3ae4b6ea34c561add40d08bf9f0088d..04bdfd15a426ed4794b2c23ea481911365c09c84 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3453,7 +3453,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
+@@ -3519,7 +3519,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
          known = {(m, b) for row in reg.builds().values() for m, b in row.items() if m != 'display'}
          other = [m for m, b in g.builds()[pkg_ver].items() if m != 'display' and (m, b) not in known]
          registered_builds = ", ".join(f'{v} {b["display"]}' for v, b in reg.builds().items())
