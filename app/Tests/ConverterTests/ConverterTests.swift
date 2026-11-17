@@ -1079,6 +1079,18 @@ import Testing
         #expect(PlayOptions.difference(Self.list, from: Self.defaults, to: v) == ["DM_FPS_TARGET": "30"])
     }
 
+    // Ocarina of Time on 17 Nov ran at 30 fps on battery without a word: the Battery preset stood in for the run.
+    // A frame rate the person saved for the game is kept; only the rows left on the default follow the preset.
+    @Test func batteryRunKeepsSavedChoices() {
+        let all = PlayOptions.batteryRun(settings: Self.list, saved: Self.defaults, chosen: [])
+        #expect(all["DM_FPS_TARGET"] == "30" && all["DM_RENDER_SCALE"] == "0.75")
+        var saved = Self.defaults
+        saved["DM_FPS_TARGET"] = "60"
+        let mine = PlayOptions.batteryRun(settings: Self.list, saved: saved, chosen: ["DM_FPS_TARGET"])
+        #expect(mine["DM_FPS_TARGET"] == nil && mine["DM_RENDER_SCALE"] == "0.75")
+        #expect(PlayOptions.onceText(Self.list, all) == "frame rate 30 fps, render scale 75 %")
+    }
+
     @Test func tabsAndSummary() {
         #expect(PlayOptions.rows(.graphics, settings: Self.list, values: Self.defaults).map(\.env) == ["DM_FPS_TARGET", "DM_RENDER_SCALE", "DM_PRESENT_UPSCALE", "DM_PRESENT_EDR"])
         #expect(PlayOptions.rows(.general, settings: Self.list, values: Self.defaults).map(\.env) == ["DM_LANG"])
