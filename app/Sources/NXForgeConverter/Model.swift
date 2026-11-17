@@ -147,7 +147,7 @@ final class AppModel {
     /// the front end (Stage.swift): the games as covers on a dark stage, shown instead of the converter's pages
     var frontEnd = true
     var stageTab: StageTab = .home
-    /// the Discover tab: the store's games by genre (Discover.swift)
+    /// the Discover tab: your games, all or by genre (Discover.swift)
     let discover = DiscoverState()
     var stageScope: StageScope = .owned
     /// the game folder a snapshot pretends is building (NXC_BUILDSTRIP), so the real settings stay as they are
@@ -245,7 +245,7 @@ final class AppModel {
         watchActive()
         watchLaunch()
         frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
-        stageTab = settings.startIn == .library ? .library : .home
+        stageTab = settings.startIn == .library ? .discover : .home
         restoreBatchQueue()
         if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { backUpDataIfDue() }
         if settings.gameDir != nil { validate() }

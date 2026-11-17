@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.18.1 (2026-11-17)
+
+Discover is your games by genre, and takes the Library's place. Ships in NXForge 0.44.1.
+
+- **Only your games**: Discover no longer lists the store's games. All games is every game in your games folder (and apps built from files outside it), and each genre lists the ones of yours in it, with a count beside it; only genres you have a game in are listed. The genres come from each game's store page, looked up once by title ID; a game the store does not list goes under Other.
+- **The Library page is gone**: the top bar is Home, Discover and Converter. What the Library had is in Discover: Owned and Built with their counts, the All, Favourites, Switch 2, Switch and Not built yet filters, the square covers button, the status under every cover (Ready on Mac, Playing now, Building, Not built yet, Older engine), the cover menu, and the top bar's search. Home's See all opens All games, and Settings › Open on says Discover where it said Library (the saved setting is unchanged).
+- **Controller**: A plays, X opens Play options, Y the game's page, − favourites, L and R step through All games and the genres (L from All games goes Home), B goes Home.
+- The Wishlist, the store search, the Platform, Players, Library and Sort menus, and the store-game panel are removed with the store's games. wishlist.json is left where it was.
+
 ## 0.18.0 (2026-11-16)
 
 A save manager. Ships in NXForge 0.43.0.
