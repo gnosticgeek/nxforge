@@ -17,6 +17,12 @@ Since 0.36.0 a game's page in the NXForge app (Manage) has a Cheats card: the sa
 - **Quick settings sidebar** (Esc): the Cheats page has a switch per cheat, a Refresh button that reads the file again, and a button that opens the folder. When the last run ended without a clean exit while cheats were on, every cheat starts off, and the section offers to restore the saved switches.
 - **Cheats menu and panel** (⇧⌘C): everything the sidebar has, plus sections, search, the master switch, values for cheats that take one, a dry run, and the import of cheat files.
 
+## Pointer guard
+
+Many community cheats follow a pointer chain: they load a static pointer of the game, add or subtract an offset and store a value there. Before the game has set up the object the cheat looks for (at boot, on a title screen, while a save or a quick-save slot loads) the same static can point at something else, and the store lands inside it. On a Switch that crashes the game; it did here too, with Blazing Chrome's "P1 Lives unlimited" when a quick-save slot restarted the game.
+
+Since 0.45.3 the engine looks at the aligned 8-byte words a cheat's store would change. When one holds a pointer into the game's memory and the store would leave something that is not a pointer, nothing is written: the log names the cheat, the address and the pointer it kept, the cheat's row counts it like any failed access, and the cheat stays on and is tried again every pass. Once the game has its object, the word holds a value (lives, health, a double) and the store goes through as before. A store that keeps a pointer a pointer, or writes over a value, is not affected. `DM_CHEATS_POINTER_GUARD=0` (in a game's `env.txt`) turns the check off.
+
 ## Markdown files from 0.4.0 to 0.8.0
 
 Before 0.9.0, NXForge read its own Markdown cheat files (`<build ID>.md`). The engine reads only `.txt` now. Convert old files once:
