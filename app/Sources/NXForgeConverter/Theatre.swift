@@ -109,7 +109,9 @@ extension AppModel {
     func toggleTheatre() { if theatre { leaveTheatre() } else { enterTheatre() } }
 
     /// Theatre on the TV (the first one found, else the screen the window is on), full screen
-    func enterTheatre(on tv: TVScreen? = TVScreens.find()) {
+    func enterTheatre() { enterTheatre(on: TVScreens.find()) }
+
+    func enterTheatre(on tv: TVScreen?) {
         theatreOffer = nil
         guard !theatre else { return }
         stageSettings = false
