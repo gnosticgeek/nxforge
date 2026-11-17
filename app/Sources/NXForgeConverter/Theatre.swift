@@ -176,9 +176,10 @@ extension AppModel {
     /// Cinema's rows: Continue playing, Favourites, a row per genre, then the games not built yet
     func theatreRows() -> [TheatreRow] {
         let all = stageGames()
-        let built = all.filter { $0.app != nil }
+        // the games drive away (or nothing built yet): every game, so Theatre still has rows
+        let built = all.contains { $0.app != nil } ? all.filter { $0.app != nil } : all
         var rows: [TheatreRow] = []
-        let recent = all.filter { $0.last != nil && $0.app != nil }.sorted { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }
+        let recent = built.filter { $0.last != nil }.sorted { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }
         if !recent.isEmpty { rows.append(TheatreRow(title: "Continue playing", games: Array(recent.prefix(12)))) }
         let favs = built.filter(\.favorite)
         if !favs.isEmpty { rows.append(TheatreRow(title: "Favourites", games: favs)) }
@@ -189,7 +190,7 @@ extension AppModel {
         let byName = built.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         if rows.count < 3, !byName.isEmpty { rows.append(TheatreRow(title: "All games", games: byName)) }
         let unbuilt = all.filter { $0.app == nil }
-        if !unbuilt.isEmpty { rows.append(TheatreRow(title: "Not built yet", games: unbuilt)) }
+        if !unbuilt.isEmpty, unbuilt.count < all.count { rows.append(TheatreRow(title: "Not built yet", games: unbuilt)) }
         return rows
     }
 
@@ -319,8 +320,8 @@ struct TheatreView: View {
                     // the game's page, as on the front end (B comes back here)
                     StageView(model: model).transition(.opacity)
                 } else {
-                    stage
-                    overlays
+                    stage.frame(width: geo.size.width, height: geo.size.height).clipped()
+                    overlays.frame(width: geo.size.width, height: geo.size.height)
                 }
             }
             .environment(\.tu, u)
@@ -693,6 +694,11 @@ struct TheatreCarousel: NSViewRepresentable {
             let f = SCNNode(geometry: floor)
             f.position = SCNVector3(x: 0, y: -0.86, z: 0)
             scene.rootNode.addChildNode(f)
+            // far away, the floor (and the back of the ring a little) fades into the room instead of ending in a line
+            scene.fogColor = NSColor(white: 0, alpha: 0)
+            scene.fogStartDistance = 9
+            scene.fogEndDistance = 30
+            scene.fogDensityExponent = 1.4
             let ambient = SCNNode()
             ambient.light = SCNLight()
             ambient.light?.type = .ambient
@@ -732,8 +738,8 @@ struct TheatreCarousel: NSViewRepresentable {
             cam.camera?.fieldOfView = 30
             cam.camera?.zNear = 0.1
             cam.camera?.zFar = 100
-            cam.position = SCNVector3(x: 0, y: 1.25, z: CGFloat(r + 6.6))
-            cam.look(at: SCNVector3(x: 0, y: 0.32, z: CGFloat(r - 1.2)))
+            cam.position = SCNVector3(x: 0, y: 1.35, z: CGFloat(r + 8.4))
+            cam.look(at: SCNVector3(x: 0, y: -0.42, z: CGFloat(r - 1.0)))
             scene.rootNode.addChildNode(cam)
             camera = cam
         }
@@ -876,6 +882,10 @@ struct CinemaTheme: View {
     @State private var drift = false
 
     var body: some View {
+        GeometryReader { geo in content(width: geo.size.width) }
+    }
+
+    func content(width: CGFloat) -> some View {
         let rows = model.theatreRows()
         let r = model.cinemaRow(rows)
         let list = rows.indices.contains(r) ? rows[r].games : []
@@ -886,6 +896,7 @@ struct CinemaTheme: View {
             if let g = focus {
                 CinemaArt(game: g)
                     .scaleEffect(drift ? 1.10 : 1.03, anchor: UnitPoint(x: 0.7, y: 0.35))
+                    .animation(.easeInOut(duration: 28).repeatForever(autoreverses: true), value: drift)
                     .id(g.id).transition(.opacity)
                     .ignoresSafeArea()
             }
@@ -896,17 +907,17 @@ struct CinemaTheme: View {
             LinearGradient(stops: [.init(color: .clear, location: 0.38), .init(color: StageLook.background.opacity(0.86), location: 0.68), .init(color: StageLook.background, location: 1)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
-                TheatreTopBar(theme: .cinema)
+                TheatreTopBar(theme: .cinema).frame(width: width)
                 Spacer(minLength: 0)
                 if let g = focus { info(g, row: rows.indices.contains(r) ? rows[r].title : "").id(g.id).transition(.opacity) }
                 rowsView(rows, current: r, col: col)
-                    .frame(height: 360 * u, alignment: .top).clipped()
+                    .frame(width: width, height: 350 * u, alignment: .topLeading).clipped()
                 HStack { Spacer(); TheatreHints(model: model, focus: focus) }
-                    .padding(.horizontal, 96 * u).padding(.bottom, 40 * u)
+                    .padding(.horizontal, 96 * u).padding(.bottom, 40 * u).frame(width: width)
             }
+            .frame(width: width)
         }
         .animation(.easeInOut(duration: 0.45), value: focus?.id)
-        .animation(.easeInOut(duration: 28).repeatForever(autoreverses: true), value: drift)
         .onAppear { if !still { drift = true } }
     }
 
