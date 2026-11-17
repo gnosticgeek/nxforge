@@ -1824,3 +1824,38 @@ import Testing
         #expect(d.map(Engine.builtAtFormat.string(from:)) == "2026-11-15 22:46")
     }
 }
+
+@Suite struct Theatre {
+    @Test(arguments: [
+        ("LG TV SSCR2", 1600.0, true),
+        ("SAMSUNG", 0.0, true),
+        ("SONY TV  *00", 0.0, true),
+        ("BRAVIA", 0.0, true),
+        ("Studio Display", 597.0, false),
+        ("LG UltraFine", 600.0, false),
+        ("DELL U2723QE", 597.0, false),
+        ("HDMI", 1210.0, true),          // a 55-inch set that names nothing
+        ("Projector", 9999.0, false),    // nonsense size
+        ("Built-in Retina Display", 0.0, false),
+    ])
+    func tvByName(_ name: String, _ width: Double, _ tv: Bool) {
+        #expect(TVScreens.isTV(name: name, widthMM: width) == tv)
+    }
+
+    @Test func ringShowsNeighbours() {
+        // 20 games on a ring of 16: in front the game at the position, either side the ones next to it in the list
+        let slots = CarouselRing.slots(for: 20)
+        #expect(slots == 16)
+        let front = 21 % slots   // position 21: game 1 in front, in place 5
+        #expect(CarouselRing.game(slot: front, position: 21, slots: slots, count: 20) == 1)
+        #expect(CarouselRing.game(slot: (front + 1) % slots, position: 21, slots: slots, count: 20) == 2)
+        #expect(CarouselRing.game(slot: (front + slots - 1) % slots, position: 21, slots: slots, count: 20) == 0)
+        #expect(CarouselRing.game(slot: (front + slots - 2) % slots, position: 21, slots: slots, count: 20) == 19)
+        // backwards past zero
+        #expect(CarouselRing.game(slot: ((-1 % slots) + slots) % slots, position: -1, slots: slots, count: 20) == 19)
+        // fewer games than places: the ring is that small
+        #expect(CarouselRing.slots(for: 5) == 5)
+        let five = (0..<5).map { CarouselRing.game(slot: $0, position: 0, slots: 5, count: 5) }
+        #expect(Set(five).count == 5)
+    }
+}

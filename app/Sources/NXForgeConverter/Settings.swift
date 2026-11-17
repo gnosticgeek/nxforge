@@ -99,6 +99,9 @@ struct Settings: Codable, Equatable {
     var lightWhilePlaying = true
     /// the front end's covers as the games' square shop art instead of boxes: more to a row, and the same shape as Discover's
     var squareCovers = false
+    /// Theatre's theme, and what happens when a TV is plugged in (Theatre.swift)
+    var theatreTheme: TheatreTheme = .carousel
+    var theatreOnTV: TheatreOnTV = .ask
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -120,6 +123,7 @@ struct Settings: Codable, Equatable {
         case localShaders = "local_shaders"
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
         case squareCovers = "square_covers"
+        case theatreTheme = "theatre_theme", theatreOnTV = "theatre_on_tv"
     }
 
     init() {}
@@ -172,6 +176,8 @@ struct Settings: Codable, Equatable {
         sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true
         lightWhilePlaying = (try? c.decodeIfPresent(Bool.self, forKey: .lightWhilePlaying)) ?? true
         squareCovers = (try? c.decodeIfPresent(Bool.self, forKey: .squareCovers)) ?? false
+        theatreTheme = (try? c.decodeIfPresent(TheatreTheme.self, forKey: .theatreTheme)) ?? .carousel
+        theatreOnTV = (try? c.decodeIfPresent(TheatreOnTV.self, forKey: .theatreOnTV)) ?? .ask
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

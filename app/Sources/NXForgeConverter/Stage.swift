@@ -75,7 +75,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, theatreTheme, theatreOnTV, startIn }
 
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
 
@@ -272,6 +272,12 @@ extension AppModel {
         case .downloadHeroes: flip(&settings.downloadHeroes)
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
         case .mediaInGameFolder: flip(&settings.mediaInGameFolder)
+        case .theatreTheme:
+            let all = TheatreTheme.allCases
+            if let i = all.firstIndex(of: settings.theatreTheme) { settings.theatreTheme = all[(i + d + all.count) % all.count]; theatreTheme = settings.theatreTheme }
+        case .theatreOnTV:
+            let all = TheatreOnTV.allCases
+            if let i = all.firstIndex(of: settings.theatreOnTV) { settings.theatreOnTV = all[(i + d + all.count) % all.count] }
         case .startIn:
             let all = StartIn.allCases
             if let i = all.firstIndex(of: settings.startIn) { settings.startIn = all[(i + d + all.count) % all.count] }
@@ -609,6 +615,12 @@ struct StageTopBar: View {
             .layoutPriority(1)
             HStack(spacing: 14) {
             Spacer(minLength: 0)
+            // Theatre: full screen for a TV (⇧⌘F)
+            Button { model.enterTheatre() } label: {
+                Label("Theatre", systemImage: "tv").font(.callout.weight(.semibold)).padding(.horizontal, 12).frame(height: 36).contentShape(.capsule)
+            }
+            .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .capsule)
+            .help("Theatre: your games full screen on a TV, driven by a controller (⇧⌘F)")
             if let pad = GCController.controllers().first?.vendorName {
                 Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).foregroundStyle(StageLook.soft)
                     .padding(.horizontal, 12).frame(height: 36).glassEffect(.regular, in: .capsule)
@@ -1238,7 +1250,7 @@ struct StageSettings: View {
     @Environment(\.accessibilityReduceTransparency) private var solid
 
     enum Section: String, CaseIterable, Identifiable {
-        case launching = "Launching", artwork = "Artwork", building = "Building", opens = "When NXForge Opens"
+        case launching = "Launching", artwork = "Artwork", theatre = "Theatre", building = "Building", opens = "When NXForge Opens"
         var id: String { rawValue }
         var short: String { self == .opens ? "On Open" : rawValue }
     }
@@ -1362,6 +1374,7 @@ struct StageSettings: View {
     static let titles: [Section: [String]] = [
         .launching: ["Play goes straight into the game", "Show Play options the first time", "Battery preset on battery", "Return here when a game quits", "Keep shaders on this Mac", "Show a recap when a game quits", "Rest while a game runs", "Controllers"],
         .artwork: ["Square covers", "Download box art", "Download wide art", "Download store details", "Keep media in each game's folder", "Artwork folder"],
+        .theatre: ["Theatre", "Theme", "When a TV is plugged in"],
         .building: ["Keys file (prod.keys)"],
         .opens: ["Open on"],
     ]
@@ -1380,6 +1393,9 @@ struct StageSettings: View {
         "Download store details": "A game's description, details and official screenshots from its store page, fetched when you open the game's page.",
         "Keep media in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.",
         "Artwork folder": "Your own covers and the downloaded art, kept on this Mac only.",
+        "Theatre": "Your games full screen on a TV, for the sofa and a controller. Also ⇧⌘F. B leaves it.",
+        "Theme": "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app. L and R switch them on Theatre.",
+        "When a TV is plugged in": "Ask offers Theatre when a controller is connected too; Always opens it straight away.",
         "Keys file (prod.keys)": "Chosen once, used for every build and rebuild.",
         "Open on": "Where NXForge starts: Home, Discover or the Converter.",
     ]
@@ -1408,6 +1424,21 @@ struct StageSettings: View {
                     Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
                     Button("Show") { try? FileManager.default.createDirectory(at: CoverStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(CoverStore.dir) }.buttonStyle(StageButton(height: 32))
                 }
+            }
+        }
+        group(.theatre) {
+            row("Theatre") {
+                Button(model.theatre ? "Leave" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }.buttonStyle(StageButton(height: 32))
+            }
+            row("Theme", focus: .theatreTheme) {
+                Picker("", selection: Binding(get: { model.settings.theatreTheme }, set: { model.settings.theatreTheme = $0; model.theatreTheme = $0 })) {
+                    ForEach(TheatreTheme.allCases, id: \.self) { Text($0.rawValue) }
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 220)
+            }
+            row("When a TV is plugged in", focus: .theatreOnTV) {
+                Picker("", selection: $model.settings.theatreOnTV) { ForEach(TheatreOnTV.allCases, id: \.self) { Text($0.rawValue) } }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 240)
             }
         }
         group(.building) {

@@ -142,8 +142,20 @@ final class AppModel {
     /// the game the keyboard or a controller is on, in the Library (and the grid's columns, for up and down)
     var libraryFocus: String? { didSet { if libraryFocus != oldValue { rememberWindowState() } } }
     var libraryColumns = 1
-    /// the couch: the Library's covers full screen, driven by a controller (ControllerNav)
-    var couchMode = false
+    /// Theatre (Theatre.swift): the front end full screen on a TV; its theme, the game in focus, Cinema's row, the Theatre menu's
+    /// row while it is open, a TV's offer, the screen it is on, and when a button was last pressed (the carousel turns on by itself)
+    var theatre = false
+    var theatreTheme: TheatreTheme = .carousel
+    var theatreFocus: String?
+    var theatreRow = 0
+    var theatreMenu: Int?
+    var theatreOffer: TVScreen?
+    var theatreScreen: CGDirectDisplayID?
+    var theatreTouched = Date()
+    /// the window's frame before Theatre moved it to the TV, whether Theatre put it in full screen, and the Mac kept awake
+    @ObservationIgnored var theatreSavedFrame: NSRect?
+    @ObservationIgnored var theatreMadeFullScreen = false
+    @ObservationIgnored var theatreActivity: NSObjectProtocol?
     /// the front end (Stage.swift): the games as covers on a dark stage, shown instead of the converter's pages
     var frontEnd = true
     var stageTab: StageTab = .home
