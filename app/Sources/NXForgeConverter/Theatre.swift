@@ -1213,6 +1213,15 @@ struct GalleryTheme: View {
 /// One cover in the Gallery: the real front at its own proportions, or the icon on a plain card with the name. The one in
 /// focus lifts a little and has a fine bronze outline with a gap of the wall's colour, and a marker and "Selected" under it.
 struct GalleryCover: View {
+    /// the square art read once a game (only the few covers on screen ask)
+    @MainActor static var squares: [String: NSImage?] = [:]
+    @MainActor static func square(_ key: String) -> NSImage? {
+        if let s = squares[key] { return s }
+        let img = CoverStore.file(key + "-square").flatMap { NSImage(contentsOf: $0) }
+        squares[key] = .some(img)
+        return img
+    }
+
     let game: StageGame
     let focused: Bool
     let width: CGFloat
@@ -1256,17 +1265,18 @@ struct GalleryCover: View {
         .accessibilityLabel(game.name + (focused ? ", selected" : ""))
     }
 
-    /// No cover: the icon, sharp and no bigger than it has pixels for, on a matte card with the game's name
+    /// No cover: the store's square art for the game, else its icon, sharp and no bigger than it has pixels for (a Retina point
+    /// is two pixels), on a matte card with the game's name. Never a made-up box.
     func fallback(h: CGFloat) -> some View {
-        let icon = CoverArt.icon(game)
-        let px = icon?.cgImage(forProposedRect: nil, context: nil, hints: nil).map { CGFloat($0.width) / 2 } ?? 0
-        let side = min(width * 0.56, max(px, 1))
+        let art = Self.square(game.coverKey) ?? CoverArt.icon(game)
+        let px = art.map { img in img.representations.map { CGFloat($0.pixelsWide) }.max() ?? img.size.width } ?? 0
+        let side = min(width * 0.8, max(px / 2, 1))
         return ZStack {
             Color(red: 0.91, green: 0.88, blue: 0.83)
             VStack(spacing: 18 * u) {
-                if let icon {
-                    Image(nsImage: icon).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-                        .frame(width: side, height: side).clipShape(RoundedRectangle(cornerRadius: side * 0.12))
+                if let art {
+                    Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                        .frame(width: side, height: side).clipShape(RoundedRectangle(cornerRadius: side * 0.08))
                 }
                 Text(game.name).font(.system(size: width * 0.075, weight: .medium, design: .serif)).multilineTextAlignment(.center)
                     .foregroundStyle(GalleryTheme.ink).lineLimit(3).padding(.horizontal, width * 0.1)
