@@ -112,7 +112,7 @@ struct ConverterApp: App {
             CommandGroup(after: .sidebar) {
                 Divider()
                 Button("Go to Anything…") { model.commandPalette = true }.keyboardShortcut("k")
-                Button(model.couchMode ? "Leave Couch Mode" : "Couch Mode") { model.toggleCouch() }.keyboardShortcut("f", modifiers: [.command, .shift])
+                Button(model.theatre ? "Leave Theatre" : "Theatre") { model.toggleTheatre() }.keyboardShortcut("f", modifiers: [.command, .shift])
                 Button("Back") { model.goBack() }.keyboardShortcut("[").disabled(model.gameDetail == nil)
                 Divider()
                 Button("Bigger Covers") { model.page = .library; model.resizeCovers(by: 30) }.keyboardShortcut("+")
@@ -135,7 +135,16 @@ struct ConverterApp: App {
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.frontEnd = false; model.page = page }
         // NXC_STAGE=home, library, game, back, options, settings, launch, box, gallery or manual: the front end on that screen (game and the ones
         // after it: the first built game's)
-        if let st = env["NXC_STAGE"] {
+        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=carousel, cinema or shelf, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
+        if env["NXC_STAGE"] == "theatre" {
+            try? await Task.sleep(for: .seconds(2))
+            model.enterTheatre(on: nil)
+            model.theatreTheme = TheatreTheme(rawValue: (env["NXC_THEATRE"] ?? "").capitalized) ?? .carousel
+            if let n = env["NXC_GAME"], let g = model.stageGames().first(where: { $0.name.localizedCaseInsensitiveContains(n) }) { model.theatreFocus = g.id }
+            if env["NXC_THEATREMENU"] != nil { model.theatreMenu = TheatreMenuRow.leave.rawValue }
+        }
+        if let n = env["NXC_OFFER"] { model.theatreOffer = TVScreen(id: 0, name: n) }
+        if let st = env["NXC_STAGE"], st != "theatre" {
             model.frontEnd = true
             model.stageTab = st == "library" || st == "discover" ? .discover : .home
             // NXC_BROWSE=all or a genre's name; NXC_QUERY=<words>: what Discover shows

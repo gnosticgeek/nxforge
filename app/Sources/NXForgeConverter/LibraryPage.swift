@@ -61,7 +61,7 @@ extension AppModel {
     func moveLibraryFocus(dx: Int = 0, dy: Int = 0) {
         let games = libraryShown(libraryBuilds())
         guard !games.isEmpty else { return }
-        let cols = settings.libraryLayout == .grid || couchMode ? max(libraryColumns, 1) : 1
+        let cols = settings.libraryLayout == .grid ? max(libraryColumns, 1) : 1
         let i = libraryFocus.flatMap { f in games.firstIndex { $0.id == f } }
         guard let i else { libraryFocus = games.first?.id; return }
         let j = min(max(i + dx + dy * cols, 0), games.count - 1)
@@ -83,7 +83,7 @@ struct LibraryPage: View {
     /// Finder's type-to-select over the games shown (TitleMatch.swift)
     @State private var typed = TypeSelectBuffer()
 
-    var grid: Bool { model.settings.libraryLayout == .grid || model.couchMode }
+    var grid: Bool { model.settings.libraryLayout == .grid }
 
     var body: some View {
         let builds = model.libraryBuilds()
@@ -92,7 +92,7 @@ struct LibraryPage: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if !model.couchMode {
+                    Group {
                         heading(all.count)
                         offlineCard
                         if showsRootCard { rootCard }
@@ -100,8 +100,7 @@ struct LibraryPage: View {
                         batchCard
                     }
                     if let l = model.library, l.root == model.settings.gamesRoot, !l.games.isEmpty {
-                        if model.couchMode, model.librarySearch.isEmpty { continuePlaying }
-                        if !model.couchMode { filterBar(all, builds, l, shown: games.count) }
+                        filterBar(all, builds, l, shown: games.count)
                         if games.isEmpty {
                             Group {
                                 if model.librarySearch.isEmpty {
@@ -122,9 +121,9 @@ struct LibraryPage: View {
                                     .accessibilityAddTraits(.isHeader)
                                 }
                                 if grid {
-                                    let min: CGFloat = model.couchMode ? 210 : CGFloat(model.settings.libraryCoverSize)
+                                    let min: CGFloat = CGFloat(model.settings.libraryCoverSize)
                                     LazyVGrid(columns: [GridItem(.adaptive(minimum: min, maximum: min * 1.4), spacing: 18)], alignment: .leading, spacing: 20) {
-                                        ForEach(sec.games) { g in GameTile(model: model, game: g, build: model.build(of: g, in: builds), big: model.couchMode).id(g.id) }
+                                        ForEach(sec.games) { g in GameTile(model: model, game: g, build: model.build(of: g, in: builds)).id(g.id) }
                                     }
                                     .onGeometryChange(for: Int.self) { Int(($0.size.width + 18) / (min + 18)) } action: { model.libraryColumns = max($0, 1) }
                                 } else {
@@ -141,7 +140,7 @@ struct LibraryPage: View {
                                 }
                             }
                         }
-                        if !model.couchMode { Text(summary(l, shown: games.count)).font(.callout).foregroundStyle(StageLook.faint) }
+                        Text(summary(l, shown: games.count)).font(.callout).foregroundStyle(StageLook.faint)
                     } else if !model.libraryScanning, let root = model.settings.gamesRoot, model.offlineVolume(root) == nil {
                         ContentUnavailableView {
                             Label("No Games Found", systemImage: "questionmark.folder")
@@ -153,10 +152,10 @@ struct LibraryPage: View {
                         .padding(.top, 24)
                     }
                 }
-                .padding(.horizontal, Theme.gutter).padding(.top, model.couchMode ? 40 : 4).padding(.bottom, 28)
+                .padding(.horizontal, Theme.gutter).padding(.top, 4).padding(.bottom, 28)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !model.couchMode { actionBar(all, builds).padding(.horizontal, Theme.gutter - 4).padding(.bottom, 14) }
+                actionBar(all, builds).padding(.horizontal, Theme.gutter - 4).padding(.bottom, 14)
             }
             .onChange(of: model.libraryFocus) { _, f in
                 if let f { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) } }
@@ -176,7 +175,7 @@ struct LibraryPage: View {
         .focusEffectDisabled()
         .focused($focused)
         .onKeyPress(characters: CharacterSet(charactersIn: "=")) { press in
-            guard press.modifiers.contains(.command), !model.couchMode else { return .ignored }
+            guard press.modifiers.contains(.command) else { return .ignored }
             model.resizeCovers(by: 30)
             return .handled
         }
@@ -456,14 +455,14 @@ struct LibraryPage: View {
         let recent = model.recentlyPlayed()
         if !recent.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Continue Playing").font(model.couchMode ? .title.weight(.bold) : .title3.weight(.bold))
+                Text("Continue Playing").font(.title3.weight(.bold))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
                         ForEach(recent, id: \.key) { r in
                             let tint = IconColor.of(r.record.app)
                             Button { model.openApp(r.record.app) } label: {
                                 HStack(spacing: 12) {
-                                    AppIcon(path: r.record.app, size: model.couchMode ? 72 : 52)
+                                    AppIcon(path: r.record.app, size: 52)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(r.record.name).font(.headline).lineLimit(1)
                                         Text(r.record.last.map { "Played \(relativeDay($0).lowercasedFirst)" } ?? "").font(.caption).foregroundStyle(.secondary)
@@ -472,7 +471,7 @@ struct LibraryPage: View {
                                     Image(systemName: model.isPlaying(app: r.record.app) ? "gamecontroller.fill" : "play.fill").foregroundStyle(.white)
                                         .frame(width: 30, height: 30).background(tint.opacity(0.9), in: .circle)
                                 }
-                                .padding(10).frame(width: model.couchMode ? 360 : 290, alignment: .leading)
+                                .padding(10).frame(width: 290, alignment: .leading)
                                 .background(LinearGradient(colors: [tint.opacity(0.35), tint.opacity(0.08)], startPoint: .leading, endPoint: .trailing), in: .rect(cornerRadius: 14))
                                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(tint.opacity(0.35)))
                                 .contentShape(.rect)

@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.0 (2026-11-17)
+
+Theatre: a full-screen front end for a TV. Ships in NXForge 0.45.0.
+
+- **Theatre** replaces Couch Mode: the Theatre button in the top bar, Theatre in the menu bar (⇧⌘F), the command palette or the controller's Menu button on the converter pages open it. It moves the window to the TV (or keeps the screen it is on), goes full screen, hides the pointer and keeps the Mac and the TV awake; Leave Theatre puts the window back where it was.
+- **Three themes**: Carousel, a lit 3D ring of your game cases on a reflective floor that turns to the game you pick, with the front case in the right stick's hands and a slow turn on its own when nobody touches it; Cinema, a full-screen hero image of the game with Continue playing, Favourites and a row per genre underneath; and Shelf, your cases stood on a stone shelf against a sunlit wall that takes the colour of the game in front, with its art washed through it and leaf shadows drifting over it. L and R switch theme, and the theme is remembered.
+- **TV offer**: plugging in a TV (a screen named as one, or 88 cm wide or more) with a controller connected asks "Open Theatre on <TV>?" once per TV; Settings › Theatre can make it always open there or never ask. Unplugging the TV leaves Theatre.
+- **Controller**: A plays (or opens the page of a game not built yet), Y the game's page, X Play options, − favourites, Menu the Theatre menu (themes, Settings, Leave Theatre), B the menu at Leave. The keyboard works too: arrows, Return, Space, Esc, M, [ and ].
+
 ## 0.18.1 (2026-11-17)
 
 Discover is your games by genre, and takes the Library's place. Ships in NXForge 0.44.1.

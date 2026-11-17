@@ -14,7 +14,9 @@ struct RootView: View {
         ZStack {
             // the games and the converter are one window on one stage: the same top bar, the same light
             if model.standby { StandbyView(model: model).transition(.opacity) }
+            else if model.theatre { TheatreView(model: model).transition(.opacity) }
             else if model.frontEnd { StageView(model: model).transition(.opacity) } else { ConverterRoot(model: model).transition(.opacity) }
+            if let tv = model.theatreOffer, !model.theatre, !model.standby { TheatreOffer(model: model, tv: tv).transition(.opacity) }
             if model.stageSettings {
                 Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { model.stageSettings = false }
                 StageSettings(model: model, openConverterSettings: { openSettings() })
@@ -32,6 +34,8 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.25), value: model.showsBuildStrip)
         .environment(\.colorScheme, .dark)
         .animation(.easeInOut(duration: 0.2), value: model.frontEnd)
+        .animation(.easeInOut(duration: 0.35), value: model.theatre)
+        .animation(.easeInOut(duration: 0.25), value: model.theatreOffer)
         .animation(.spring(duration: 0.3), value: model.stageSettings)
         // a note for work that ended in the background, over the foot of the window (idea 7)
         .overlay(alignment: .bottom) {
@@ -56,7 +60,7 @@ struct RootView: View {
         .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }
         .sheet(item: $model.cheatsFor) { CheatsSheet(model: model, ref: $0) }
         .sheet(isPresented: $model.commandPalette) { CommandPalette(model: model) }
-        .task { ControllerNav.shared.start(model) }
+        .task { ControllerNav.shared.start(model); TheatreWatch.shared.start(model) }
     }
 }
 
@@ -78,10 +82,8 @@ struct ConverterRoot: View {
             let g = lit
             StageBackdrop(tint: g.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75), art: g.flatMap { CoverArt.ambient($0) }, artKey: g?.id ?? "", strength: 0.55)
             VStack(spacing: 0) {
-                if !model.couchMode {
-                    StageTopBar(model: model)
-                    ConverterNav(model: model)
-                }
+                StageTopBar(model: model)
+                ConverterNav(model: model)
                 Group {
                     if let r = model.gameDetail, model.page == .library || model.page == .builds {
                         GamePage(model: model, ref: r, wide: width > 860)
