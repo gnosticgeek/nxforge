@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.44.1 (2026-11-17)
+
+- **Discover shows only your games and replaces the Library** (Converter 0.18.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): All games and each genre list only the games in your games folder (genres from their store pages, Other for the rest); the Library page is removed, with its Owned and Built, filters, status under each cover and search now in Discover. No game rebuild needed for this.
+
 ## 0.44.0 (2026-11-16)
 
 - **Full screen keeps a ProMotion screen at 120 Hz** (layer patch screen-vrr): going full screen while a game runs switched the MacBook's built-in screen to a fixed 60 Hz (upstream's rule for its display link, which NXForge does not use in full screen), and there a frame a moment late waits a whole 16.7 ms refresh. Mario Kart World on an M4 Pro, the same race with full screen entered after launch: 79 % and 73 % of frames on time at the fixed 60 Hz against 98.9 % and 99.1 % at the screen's own 120 Hz, with the GPU at 9.2 ms a frame instead of 11.7. Tom's own sessions on 16 Nov (Mario Kart World 60-75 %, Ocarina of Time 73 %) had all switched. `DM_SCREEN_MATCH=1` switches as upstream does; a 144 Hz screen still goes to 120 Hz as before.

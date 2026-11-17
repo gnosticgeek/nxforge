@@ -1,13 +1,13 @@
 // The front end: the games as covers on a dark stage lit by the focused game's colours, shown instead of the converter's
-// pages (the Converter tab goes back to them). Home is a shelf under the game last played, Library every game in the games
-// folder (the ones not built yet dimmed), a game's page has its box in 3D, and Play goes straight into the game
+// pages (the Converter tab goes back to them). Home is a shelf under the game last played, Discover every game in the games
+// folder, all of them or by genre (the ones not built yet dimmed, Discover.swift), a game's page has its box in 3D, and Play goes straight into the game
 // (PlayOptions.swift). Everything works from a controller (ControllerNav → stagePad), the keyboard and the pointer.
 import AppKit
 import GameController
 import SwiftUI
 
-enum StageTab: String, CaseIterable { case home = "Home", discover = "Discover", library = "Library" }
-/// The Library's two collections: every game in the games folder, or only the ones built and playable on this Mac
+enum StageTab: String, CaseIterable { case home = "Home", discover = "Discover" }
+/// Discover's two collections: every game in the games folder, or only the ones built and playable on this Mac
 enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
 enum StageFilter: String, CaseIterable {
     case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", notBuilt = "Not built yet"
@@ -119,15 +119,16 @@ extension AppModel {
         }
     }
 
-    /// The games on screen: Home's shelf has the built ones (every game when none is built), favourites first, Library the filter's.
+    /// The games on screen: Home's shelf has the built ones (every game when none is built), favourites first, Discover the genre's
+    /// and the filter's.
     func stageShown(_ games: [StageGame]) -> [StageGame] {
         if stageTab == .home {
             let built = games.filter { $0.app != nil }
             let shelf = built.isEmpty ? games : built
             return shelf.filter(\.favorite) + shelf.filter { !$0.favorite }
         }
-        if stageTab == .discover { return [] }
-        var out = stageScope == .built ? games.filter { $0.app != nil } : games
+        var out = discover.inBrowse(games)
+        if stageScope == .built { out = out.filter { $0.app != nil } }
         switch stageFilter {
         case .all: break
         case .favorites: out = out.filter(\.favorite)
@@ -140,9 +141,6 @@ extension AppModel {
         return out
     }
 
-    /// Where L and R go in the Library, in order
-    static let libraryStops: [(StageScope, StageFilter)] = StageScope.allCases.flatMap { sc in StageFilter.shown(sc).map { (sc, $0) } }
-
     /// The game in focus: the one picked, else on Home the one played last (Continue playing), else the first
     func stageFocus(_ shown: [StageGame]) -> StageGame? {
         shown.first { $0.id == libraryFocus } ?? (stageTab == .home ? Self.lastPlayed(shown) : nil) ?? shown.first
@@ -152,7 +150,7 @@ extension AppModel {
         games.filter { $0.last != nil }.max { ($0.last ?? .distantPast) < ($1.last ?? .distantPast) }
     }
 
-    /// Adds the game to Favourites (Home's shelf starts with them, and the Library has a filter), or takes it off
+    /// Adds the game to Favourites (Home's shelf starts with them, and Discover has a filter), or takes it off
     func toggleFavorite(_ g: StageGame) {
         if let i = settings.favorites.firstIndex(of: g.favoriteKey) { settings.favorites.remove(at: i) } else { settings.favorites.append(g.favoriteKey) }
         revision += 1
@@ -240,7 +238,6 @@ extension AppModel {
             }
             return
         }
-        if stageTab == .discover { discoverPad(k); return }
         let focus = stageFocus(stageShown(stageGames()))
         switch k {
         case .left: moveStageFocus(dx: -1)
@@ -250,15 +247,10 @@ extension AppModel {
         case .a: if let g = focus { libraryFocus = g.id; playFromStage(g.ref) }
         case .x: if let g = focus { libraryFocus = g.id; openPlayOptions(g.ref) }
         case .y: if let g = focus { libraryFocus = g.id; caseFlipped = false; gameDetail = g.ref }
-        case .b: if stageTab == .library { stageTab = .home }
-        // L and R walk Home, then the Library's collections and their filters: Owned's, then Built's
-        case .l:
-            let steps = Self.libraryStops
-            if stageTab == .library, let i = steps.firstIndex(where: { $0 == (stageScope, stageFilter) }), i > 0 { (stageScope, stageFilter) = steps[i - 1] } else { stageTab = .home }
-        case .r:
-            let steps = Self.libraryStops
-            if stageTab == .home { stageTab = .library }
-            else if let i = steps.firstIndex(where: { $0 == (stageScope, stageFilter) }), i + 1 < steps.count { (stageScope, stageFilter) = steps[i + 1] }
+        case .b: if stageTab == .discover { stageTab = .home }
+        // L and R walk Home, then Discover's All games and its genres
+        case .l: if stageTab == .discover { discoverStep(-1) }
+        case .r: if stageTab == .home { stageTab = .discover } else { discoverStep(1) }
         case .menu: settingsFocus = 0; stageSettings = true
         case .options: if let g = focus { libraryFocus = g.id; toggleFavorite(g) }
         }
@@ -513,14 +505,12 @@ struct StageView: View {
                 Group {
                     if let g = detail {
                         StageGamePage(model: model, game: g)
-                    } else if model.stageTab == .discover {
-                        DiscoverView(model: model, state: model.discover)
                     } else if games.isEmpty {
                         StageEmpty(model: model)
                     } else if model.stageTab == .home {
                         StageHome(model: model, games: shown, focus: focus, total: games.count)
                     } else {
-                        StageLibrary(model: model, all: games, games: shown, focus: focus)
+                        DiscoverView(model: model, state: model.discover, games: games, shown: shown, focus: focus)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -648,8 +638,8 @@ struct StageTopBar: View {
 
     /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
     var search: (prompt: String, text: Binding<String>)? {
-        if model.frontEnd { return model.stageTab == .library ? ("Search games", $model.stageSearch) : nil }
-        // Discover, the converter's Game Files and Builds have their own search fields
+        if model.frontEnd { return model.stageTab == .discover ? ("Search games", $model.stageSearch) : nil }
+        // the converter's Game Files and Builds have their own search fields
         return nil
     }
 
@@ -828,7 +818,7 @@ struct StageHome: View {
                         .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft).padding(.trailing, 14)
                         .help("Puts a built game you have not played this week in front of you")
                     }
-                    Button { model.stageTab = .library } label: {
+                    Button { model.discover.browse = .all; model.stageTab = .discover } label: {
                         HStack(spacing: 6) { Text("See all \(total)"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
                     }
                     .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft)
@@ -869,20 +859,31 @@ struct StageHome: View {
     }
 }
 
+/// Discover's grid of covers: the heading with Owned | Built and the filters, then the games with their status under each
 struct StageLibrary: View {
     @Bindable var model: AppModel
+    /// the games under the genre on screen, for the counts
     let all: [StageGame]
     let games: [StageGame]
     let focus: StageGame?
+    var title = "All games"
+    var eyebrow = "Discover"
+    var side: CGFloat = 56
     @Namespace private var scopeMark
-    static let cell: CGFloat = 142, gap: CGFloat = 28, side: CGFloat = 56
+    static let cell: CGFloat = 142, gap: CGFloat = 28
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Text("Library").font(.system(size: 32, weight: .heavy)).tracking(-0.6)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow).font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.faint)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(title).font(.system(size: 32, weight: .heavy)).tracking(-0.6).lineLimit(1)
+                    Text("\(games.count) game\(games.count == 1 ? "" : "s")").foregroundStyle(StageLook.soft).monospacedDigit()
+                }
+            }
+            .padding(.horizontal, side).padding(.top, 6)
+            HStack(alignment: .center, spacing: 14) {
                 scopes
-                Text("\(games.count) game\(games.count == 1 ? "" : "s")").foregroundStyle(StageLook.soft).monospacedDigit()
                 Spacer(minLength: 8)
                 HStack(spacing: 8) {
                     ForEach(StageFilter.shown(model.stageScope), id: \.self) { f in
@@ -912,7 +913,7 @@ struct StageLibrary: View {
                 .help(model.settings.squareCovers ? "Show boxes" : "Show square covers: more to a row")
                 .accessibilityLabel(model.settings.squareCovers ? "Show Boxes" : "Show Square Covers")
             }
-            .padding(.horizontal, Self.side).padding(.top, 8)
+            .padding(.horizontal, side)
             if games.isEmpty {
                 Text(model.stageSearch.isEmpty ? (model.stageScope == .built && model.stageFilter == .all ? "No game is built on this Mac yet. Owned has every game in your games folder." : "No games here.") : "Nothing matches “\(model.stageSearch)”.").foregroundStyle(StageLook.soft)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -940,7 +941,7 @@ struct StageLibrary: View {
                                 .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
                             }
                         }
-                        .padding(.horizontal, Self.side).padding(.top, 22).padding(.bottom, 30)
+                        .padding(.horizontal, side).padding(.top, 22).padding(.bottom, 30)
                     }
                     // the covers fade out under the heading instead of being cut by it
                     .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.035), .init(color: .black, location: 0.97),
@@ -950,7 +951,7 @@ struct StageLibrary: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { w in
-            model.stageColumns = max(Int((w - 2 * Self.side + Self.gap) / (Self.cell + Self.gap)), 1)
+            model.stageColumns = max(Int((w - 2 * side + Self.gap) / (Self.cell + Self.gap)), 1)
         }
     }
 
@@ -1117,18 +1118,11 @@ struct StageHints: View {
         if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
         if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]) + [(["Y"], "View box"), (["B"], "Back")] }
-        if model.stageTab == .discover {
-            if let d = model.discover.detail {
-                return [(["A"], "Nintendo eShop"), (["Y"], Wishlist.shared.contains(d) ? "Remove from Wishlist" : "Wishlist"), (["B"], "Close")]
-            }
-            let wished = model.discover.focused.map { Wishlist.shared.contains($0) } ?? false
-            return [(["A"], "View game"), (["Y"], wished ? "Remove from Wishlist" : "Wishlist"), (["X"], "Nintendo eShop"), (["L", "R"], "Genre"), (["B"], "Back")]
-        }
         var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))
-        h.append((["L", "R"], model.stageTab == .home ? "Library" : "Change filter"))
-        if model.stageTab == .library { h.append((["B"], "Home")) }
+        h.append((["L", "R"], model.stageTab == .home ? "Discover" : "Genre"))
+        if model.stageTab == .discover { h.append((["B"], "Home")) }
         return h
     }
 }
@@ -1380,14 +1374,14 @@ struct StageSettings: View {
         "Show a recap when a game quits": "How long you played this time and in total, with the game's peak memory.",
         "Rest while a game runs": "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.",
         "Controllers": "See every button, stick and trigger as a game reads it, and try the rumble.",
-        "Square covers": "Shows each game's square shop art instead of its box on Home and in the Library: smaller, so more fit in a row. The same as the Library's square button.",
+        "Square covers": "Shows each game's square shop art instead of its box on Home and in Discover: smaller, so more fit in a row. The same as Discover's square button.",
         "Download box art": "Front and back covers from GameTDB, matched by the game's name; a download-only game gets a box made from its square art on Nintendo Life. Only a cover's ID or the game's name is sent.",
         "Download wide art": "The header art from each game's page on Nintendo Life, else the banner from Nintendo's European store, behind its page and Home. Found by name or title ID; only those are sent.",
         "Download store details": "A game's description, details and official screenshots from its store page, fetched when you open the game's page.",
         "Keep media in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.",
         "Artwork folder": "Your own covers and the downloaded art, kept on this Mac only.",
         "Keys file (prod.keys)": "Chosen once, used for every build and rebuild.",
-        "Open on": "Where NXForge starts: Home, the Library or the Converter.",
+        "Open on": "Where NXForge starts: Home, Discover or the Converter.",
     ]
 
     @ViewBuilder var sections: some View {
@@ -1429,7 +1423,7 @@ struct StageSettings: View {
         }
         group(.opens) {
             row("Open on", focus: .startIn) {
-                Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.rawValue) } }
+                Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.title) } }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 280)
             }
         }

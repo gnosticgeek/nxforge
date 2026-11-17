@@ -10,7 +10,11 @@ enum LibraryLayout: String, Codable, CaseIterable { case list, grid }
 /// The Library's order
 enum LibrarySort: String, Codable, CaseIterable { case name = "Name", recent = "Recently played", size = "Size" }
 /// What the window opens on: the front end's Home shelf or Library, or the converter's pages
-enum StartIn: String, Codable, CaseIterable { case home = "Home", library = "Library", converter = "Converter" }
+/// "Library" is kept as the saved value of Discover (it took the Library's place in 0.45)
+enum StartIn: String, Codable, CaseIterable {
+    case home = "Home", library = "Library", converter = "Converter"
+    var title: String { self == .library ? "Discover" : rawValue }
+}
 /// --cleanup: what the script deletes from <id>_build after a successful build
 enum Cleanup: String, Codable, CaseIterable {
     case off, unused, all
