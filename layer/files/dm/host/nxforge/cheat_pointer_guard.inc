@@ -39,14 +39,19 @@ static int nxf_write_breaks_pointer(uint64_t addr, uint64_t len, uint64_t val, u
     return 0;
 }
 
-// The first refusal of each cheat is logged once with the pointer it kept (later ones are counted on its row like any failed
-// access); a handful of cheat slots is plenty for a log line
-static void nxf_log_pointer_refusal(cheat_t *c, uint64_t addr, uint64_t word, uint64_t old) {
+// Refuse the write: a failed access like any other (cheat_fail: counted on the cheat's row, retried every pass). Its first failure
+// is logged there with this reason; a cheat that already failed another way (a null static at boot) gets one line of its own
+// for its first refusal, so the log still names the pointer it kept
+static void nxf_pointer_refusal(cheat_t *c, uint64_t addr, uint64_t word, uint64_t old) {
+    char why[200];
+    snprintf(why, sizeof why, "it would break the pointer 0x%llx at 0x%llx: the game has not set up what the cheat looks for yet, "
+             "or the cheat does not match this build", (unsigned long long)old, (unsigned long long)word);
     static const void *seen[64]; static int nseen;
-    for (int i = 0; i < nseen; i++) if (seen[i] == c) return;
-    if (nseen < 64) seen[nseen++] = c;
-    LOG("[RED] cheat \"%s\": write at guest address 0x%llx refused: it would break the pointer 0x%llx at 0x%llx (the game has not "
-        "set up what the cheat looks for yet, or the cheat does not match it); retried every pass, it applies once the word holds a "
-        "value (DM_CHEATS_POINTER_GUARD=0 turns this check off)", c->name, (unsigned long long)addr, (unsigned long long)old,
-        (unsigned long long)word);
+    int logged = 0;
+    for (int i = 0; i < nseen; i++) if (seen[i] == c) logged = 1;
+    if (!logged && nseen < 64) seen[nseen++] = c;
+    if (!g_dry && !logged && c->fails > 0)
+        LOG("[RED] cheat \"%s\": write at guest address 0x%llx refused (%s; DM_CHEATS_POINTER_GUARD=0 turns this check off)",
+            c->name, (unsigned long long)addr, why);
+    cheat_fail(c, "write", addr, why);
 }
