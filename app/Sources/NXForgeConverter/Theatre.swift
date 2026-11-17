@@ -697,7 +697,7 @@ struct TheatreCarousel: NSViewRepresentable {
 
         var radius: Double { max(Double(slots) * Self.spacing / (2 * .pi), 1.6) }
 
-        static let floorAlpha: CGFloat = ProcessInfo.processInfo.environment["NXC_FLOORALPHA"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.12
+        static let floorAlpha: CGFloat = 0   // the reflections still show on a clear floor
 
         override init() {
             super.init()
