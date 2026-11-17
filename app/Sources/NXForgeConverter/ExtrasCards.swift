@@ -80,7 +80,7 @@ struct CheatsCard: View {
                 }
             }
         }
-        .task(id: "\(app ?? "")|\(titleID)|\(version.map(String.init) ?? "")") { await lookUp(); load() }
+        .task(id: "\(app ?? "")|\(titleID)|\(version.map(String.init) ?? "")") { await GameFolderMediaSync.shared.syncCheats(titleID: titleID, model: model); await lookUp(); load() }
         .onChange(of: app) { found = nil; note = nil; load() }
         .onChange(of: model.revision) { load() }
     }
@@ -147,7 +147,11 @@ struct CheatsCard: View {
 
     func save(_ build: String, order: [String]) {
         do { try CheatFile.setEnabled(on, order: order, dir: dir, build: build) } catch { note = "Could not save: \(error.localizedDescription)" }
+        toGameFolder()
     }
+
+    /// The game's folder keeps its cheats as Markdown (GameFolderCheats.swift)
+    func toGameFolder() { Task { await GameFolderMediaSync.shared.syncCheats(titleID: titleID, model: model) } }
 
     func fetch(_ build: String) {
         busy = true; note = nil
@@ -166,13 +170,20 @@ struct CheatsCard: View {
         do {
             let n = try CheatFile.add(list, dir: dir, build: build)
             note = "Added \(n) cheat\(n == 1 ? "" : "s")."
-            picked = []; found = nil; load()
+            picked = []; found = nil; load(); toGameFolder()
         } catch { note = "Could not add: \(error.localizedDescription)" }
     }
 
+    /// The game's own cheats folder when NXForge keeps them there, else the engine's
     func openFolder() {
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(dir.url)
+        Task {
+            await GameFolderMediaSync.shared.syncCheats(titleID: titleID, model: model)
+            if let f = GameFolderMediaSync.shared.cheatsFolder(titleID: titleID, model: model), FileManager.default.fileExists(atPath: f.path) {
+                NSWorkspace.shared.open(f); return
+            }
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(dir.url)
+        }
     }
 }
 
@@ -363,9 +374,16 @@ struct ModsCard: View {
         load()
     }
 
+    /// The game's own cheats folder when NXForge keeps them there, else the engine's
     func openFolder() {
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(dir.url)
+        Task {
+            await GameFolderMediaSync.shared.syncCheats(titleID: titleID, model: model)
+            if let f = GameFolderMediaSync.shared.cheatsFolder(titleID: titleID, model: model), FileManager.default.fileExists(atPath: f.path) {
+                NSWorkspace.shared.open(f); return
+            }
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(dir.url)
+        }
     }
 }
 
