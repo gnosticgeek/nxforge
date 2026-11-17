@@ -885,7 +885,7 @@ struct CinemaTheme: View {
         GeometryReader { geo in content(width: geo.size.width) }
     }
 
-    func content(width: CGFloat) -> some View {
+    @ViewBuilder func content(width: CGFloat) -> some View {
         let rows = model.theatreRows()
         let r = model.cinemaRow(rows)
         let list = rows.indices.contains(r) ? rows[r].games : []
