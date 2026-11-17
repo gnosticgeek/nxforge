@@ -1394,7 +1394,7 @@ struct StageSettings: View {
         "Keep media in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.",
         "Artwork folder": "Your own covers and the downloaded art, kept on this Mac only.",
         "Theatre": "Your games full screen on a TV, for the sofa and a controller. Also ⇧⌘F. B leaves it.",
-        "Theme": "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Shelf stands them on a sunlit shelf that takes each game's colour. L and R switch them on Theatre.",
+        "Theme": "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Gallery shows three covers beside the game's name on a quiet wall. L and R switch them on Theatre.",
         "When a TV is plugged in": "Ask offers Theatre when a controller is connected too; Always opens it straight away.",
         "Keys file (prod.keys)": "Chosen once, used for every build and rebuild.",
         "Open on": "Where NXForge starts: Home, Discover or the Converter.",

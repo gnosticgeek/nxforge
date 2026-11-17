@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.1 (2026-11-17)
+
+Theatre's Shelf theme becomes Gallery, to Tom's brief. Ships in NXForge 0.45.1.
+
+- **Gallery** replaces Shelf: three covers on a plain ivory wall (no shelf, grain or vignette), the game in focus in the middle with a fine bronze outline, a small lift and a "Selected" marker, one neighbour either side, all inside their own region so nothing reaches the words on the left. The left column has the name (up to three lines), the platform, the time played when there is some, the status word and symbol when the game cannot play, and the main button. Covers keep their own proportions; a game with no cover shows its icon, sharp and no larger than it has pixels for, on a plain card with its name. Steps slide the covers in about 0.2 s (a fade with Reduce Motion) and nothing moves on its own. The foot shows Your collection with the real position, and Play, Details, Options, Menu and Back; themes switch from the menu. A narrow screen drops the neighbours before any text shrinks. A saved Shelf choice opens as Gallery.
+- **The main button tells the truth** in every theme: Play, or the step that stops the game playing (Build, Choose Keys…, Check Again, Scan Again, as in docs/ux.md), the same word on the button and in the hints, and A does that step. Cinema no longer says Resume.
+
 ## 0.19.0 (2026-11-17)
 
 Theatre: a full-screen front end for a TV. Ships in NXForge 0.45.0.

@@ -135,7 +135,7 @@ struct ConverterApp: App {
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.frontEnd = false; model.page = page }
         // NXC_STAGE=home, library, game, back, options, settings, launch, box, gallery or manual: the front end on that screen (game and the ones
         // after it: the first built game's)
-        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=carousel, cinema or shelf, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
+        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=carousel, cinema or gallery, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
         if env["NXC_STAGE"] == "theatre" {
             try? await Task.sleep(for: .seconds(2))
             model.enterTheatre(on: nil)
