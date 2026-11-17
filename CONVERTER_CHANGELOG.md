@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.2 (2026-11-17)
+
+Cheats live in each game's folder as Markdown. Ships in NXForge 0.45.2.
+
+- **`cheats/` beside `media/`**: every game's cheats, from the Cheats card, Get Cheats or the game's sidebar, are written to `cheats/<build ID>.md` in the game's own folder (beside a built game's `media` folder; for a game not built yet, its files' folder when no other game shares it). One file per build: front matter with the title, title ID, build ID and version, then a `## Name` per cheat with its code in a ```` ```dmnt ```` block; ```` ```dmnt on ```` is a cheat switched on, ```` ```dmnt master ```` a master code. Text under a heading is a note NXForge keeps.
+- **Both ways**: the engine still runs its Atmosphère copy in Application Support, kept in step. A file edited by hand (newer than NXForge's copy) is read back, switches included, and a Mac with no cheats for a game takes them from its folder. Synced when the library opens or changes, when a game ends, and on every change in the Cheats card; a running game is left alone. Show Folder in the Cheats card opens the game's cheats folder.
+- The setting is now **Keep media and cheats in each game's folder** (Settings › Artwork), on by default.
+
 ## 0.19.1 (2026-11-17)
 
 Theatre's Shelf theme becomes Gallery, to Tom's brief. Ships in NXForge 0.45.1.

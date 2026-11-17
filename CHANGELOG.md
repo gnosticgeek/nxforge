@@ -5,6 +5,9 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 ## 0.45.3 (2026-11-17)
 
 - **A cheat can no longer crash a game by writing into the wrong object** (engine patch 0038, [docs/cheats.md](docs/cheats.md#pointer-guard)): a pointer-chain cheat that runs before the game has set up what it looks for (at boot, on a title screen, while a save or a quick-save slot loads) could land its store on a pointer the game then follows. Blazing Chrome's "P1 Lives unlimited" did that when a quick-save slot restarted the game: it wrote the high half of 5.0 over a heap pointer and the game crashed with signal 11. The engine now refuses a write that would turn a pointer into something that is not one, logs the pointer it kept, and retries the cheat every pass, so it takes effect as soon as the game is ready. `DM_CHEATS_POINTER_GUARD=0` turns the check off. Games need a rebuild for this.
+## 0.45.2 (2026-11-17)
+
+- **Cheats in each game's folder as Markdown** (Converter 0.19.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): every cheat NXForge loads or downloads is kept in `cheats/<build ID>.md` beside the game's `media` folder, with the on/off switches, and a hand-edited file is read back. The engine's own copy is kept in step. No game rebuild needed for this.
 
 ## 0.45.1 (2026-11-17)
 
