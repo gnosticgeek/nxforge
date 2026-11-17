@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.3 (2026-11-17)
+
+The Battery preset keeps the choices you saved for a game. Ships in NXForge 0.45.4.
+
+- **Saved choices win on battery**: Battery preset on battery (Settings › Launching) used to lower the frame rate, render scale, upscaling, HDR highlights and frame interpolation for a run on battery, whatever the game had saved. It now lowers only the ones still on the game's default; a frame rate (or any of the others) you set in Play options or the game's sidebar is kept. Turn the setting off to have no run-only changes at all.
+- **The starting note says what changed**: "On battery: the Battery preset for this run (frame rate 30 fps, render scale 75 %)" instead of the bare line, and the setting's description says the same.
+
 ## 0.19.2 (2026-11-17)
 
 Cheats live in each game's folder as Markdown. Ships in NXForge 0.45.2.

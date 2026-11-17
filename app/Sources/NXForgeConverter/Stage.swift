@@ -1381,7 +1381,7 @@ struct StageSettings: View {
     static let notes: [String: String] = [
         "Play goes straight into the game": "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.",
         "Show Play options the first time": "A game you have not played yet opens its options once before it starts.",
-        "Battery preset on battery": "Unplugged, a run takes the Battery preset. Your saved options are not changed.",
+        "Battery preset on battery": "Unplugged, a run takes the Battery preset (lowest frame rate, 75 % render scale) for the options still on the game's default. A choice you saved for a game, such as its frame rate, is kept.",
         "Return here when a game quits": "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.",
         "Keep shaders on this Mac": "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.",
         "Show a recap when a game quits": "How long you played this time and in total, with the game's peak memory.",

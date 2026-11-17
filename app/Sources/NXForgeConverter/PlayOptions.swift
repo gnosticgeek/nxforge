@@ -137,6 +137,23 @@ enum PlayOptions {
         return Array(out.prefix(4))
     }
 
+    /// What the Battery preset changes for one run on battery: its values, except for the settings the person chose for this
+    /// game (`chosen`), which stay as they saved them. A frame rate set to 60 or 30 in Play options is never lowered behind
+    /// their back; only the rows left on the game's default follow the preset.
+    static func batteryRun(settings: [LaunchSetting], saved: [String: String], chosen: Set<String>) -> [String: String] {
+        var v = saved
+        apply(.battery, settings: settings.filter { !chosen.contains($0.env) }, to: &v)
+        return difference(settings, from: saved, to: v)
+    }
+
+    /// The run-only changes in words, frame rate first ("30 fps, render scale 75 %")
+    static func onceText(_ settings: [LaunchSetting], _ once: [String: String]) -> String {
+        settings.filter { once[$0.env] != nil }
+            .sorted { (presetKeys.firstIndex(of: $0.env) ?? 99) < (presetKeys.firstIndex(of: $1.env) ?? 99) }
+            .map { s in "\(s.label.lowercased()) \(valueText(s, once[s.env]!))" }
+            .joined(separator: ", ")
+    }
+
     /// Whether the Mac runs on its battery now
     static var onBattery: Bool {
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
@@ -287,10 +304,8 @@ extension AppModel {
         var once: [String: String] = [:]
         var note: String?
         if settings.batteryPreset, PlayOptions.onBattery, !list.isEmpty {
-            var v = saved
-            PlayOptions.apply(.battery, settings: list, to: &v)
-            once = PlayOptions.difference(list, from: saved, to: v)
-            if !once.isEmpty { note = "On battery: the Battery preset for this run" }
+            once = PlayOptions.batteryRun(settings: list, saved: saved, chosen: LaunchSettings.chosen(list, app: app))
+            if !once.isEmpty { note = "On battery: the Battery preset for this run (" + PlayOptions.onceText(list, once) + ")" }
         }
         launch(ref, app: app, name: g?.displayName ?? app.url.deletingPathExtension().lastPathComponent, settings: list, saved: saved, once: once, note: note)
     }
