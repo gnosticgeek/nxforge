@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.45.1 (2026-11-17)
+
+- **Theatre's Shelf theme becomes Gallery** (Converter 0.19.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): three covers on a quiet ivory wall beside the game's name, a fine bronze outline on the one in focus, icon cards for games with no cover, and the main button and hints saying Play or the step a game needs (Build, Choose Keys…). No game rebuild needed for this.
+
 ## 0.45.0 (2026-11-17)
 
 - **Theatre, a full-screen front end for a TV** (Converter 0.19.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): replaces Couch Mode with three themes, Carousel (a 3D ring of your game cases), Cinema (hero art with rows by genre) and Shelf (cases on a sunlit shelf whose wall takes each game's colour), moves to the TV and goes full screen, offers itself when a TV is plugged in with a controller connected, and is driven by the controller. No game rebuild needed for this.
