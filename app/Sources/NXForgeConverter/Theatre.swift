@@ -571,6 +571,8 @@ struct CarouselTheme: View {
             RadialGradient(colors: [Color(red: 1, green: 0.98, blue: 0.92).opacity(0.14), .clear], center: UnitPoint(x: 0.5, y: 0.25), startRadius: 0, endRadius: 560 * u)
                 .ignoresSafeArea().allowsHitTesting(false)
             TheatreCarousel(games: games, focus: index, revision: CoverStore.shared.revision)
+                // the floor's far edge fades into the room instead of ending in a line across it
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0.10), .init(color: .black, location: 0.26)], startPoint: .top, endPoint: .bottom))
                 .ignoresSafeArea()
             // the foot of the room darkens under the caption
             LinearGradient(stops: [.init(color: .clear, location: 0.62), .init(color: .black.opacity(0.85), location: 0.9), .init(color: .black, location: 1)],
@@ -694,11 +696,6 @@ struct TheatreCarousel: NSViewRepresentable {
             let f = SCNNode(geometry: floor)
             f.position = SCNVector3(x: 0, y: -0.86, z: 0)
             scene.rootNode.addChildNode(f)
-            // far away, the floor (and the back of the ring a little) fades into the room instead of ending in a line
-            scene.fogColor = NSColor(white: 0, alpha: 0)
-            scene.fogStartDistance = 9
-            scene.fogEndDistance = 30
-            scene.fogDensityExponent = 1.4
             let ambient = SCNNode()
             ambient.light = SCNLight()
             ambient.light?.type = .ambient
@@ -911,7 +908,7 @@ struct CinemaTheme: View {
                 Spacer(minLength: 0)
                 if let g = focus { info(g, row: rows.indices.contains(r) ? rows[r].title : "").id(g.id).transition(.opacity) }
                 rowsView(rows, current: r, col: col)
-                    .frame(width: width, height: 350 * u, alignment: .topLeading).clipped()
+                    .frame(width: width, height: 344 * u, alignment: .topLeading).clipped()
                 HStack { Spacer(); TheatreHints(model: model, focus: focus) }
                     .padding(.horizontal, 96 * u).padding(.bottom, 40 * u).frame(width: width)
             }
