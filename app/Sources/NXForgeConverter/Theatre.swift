@@ -588,9 +588,10 @@ struct CarouselTheme: View {
             // a soft light from above, on the box in front
             RadialGradient(colors: [Color(red: 1, green: 0.98, blue: 0.92).opacity(0.14), .clear], center: UnitPoint(x: 0.5, y: 0.25), startRadius: 0, endRadius: 560 * u)
                 .ignoresSafeArea().allowsHitTesting(false)
+            // the room darkens smoothly down to the floor, which is all but clear, so there is no line where the floor ends
+            LinearGradient(stops: [.init(color: .clear, location: 0.04), .init(color: .black.opacity(0.42), location: 0.24), .init(color: .black.opacity(0.62), location: 0.6)],
+                           startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
             TheatreCarousel(games: games, focus: index, revision: CoverStore.shared.revision)
-                // the floor's far edge fades into the room instead of ending in a line across it
-                .mask(LinearGradient(stops: [.init(color: .clear, location: 0.10), .init(color: .black, location: 0.26)], startPoint: .top, endPoint: .bottom))
                 .ignoresSafeArea()
             // the foot of the room darkens under the caption
             LinearGradient(stops: [.init(color: .clear, location: 0.62), .init(color: .black.opacity(0.85), location: 0.9), .init(color: .black, location: 1)],
@@ -680,7 +681,6 @@ struct TheatreCarousel: NSViewRepresentable {
         private let ring = SCNNode()
         private(set) var camera: SCNNode?
         private var boxes: [TheatreBox] = []
-        private var floorNode: SCNNode?
         private var slots = 0
         /// the ring's step: grows or shrinks by one a step, either way round, never jumping back across the ends of the list
         private var position = 0
@@ -697,17 +697,7 @@ struct TheatreCarousel: NSViewRepresentable {
 
         var radius: Double { max(Double(slots) * Self.spacing / (2 * .pi), 1.6) }
 
-        /// The floor's fade: opaque under the ring, clear by the edge of the texture
-        static let pool: NSImage = {
-            let side = 256
-            let img = NSImage(size: NSSize(width: side, height: side))
-            img.lockFocus()
-            let g = NSGradient(colors: [NSColor(white: 1, alpha: 1), NSColor(white: 1, alpha: 0.85), NSColor(white: 1, alpha: 0)], atLocations: [0, 0.45, 1],
-                               colorSpace: .sRGB)
-            g?.draw(in: NSRect(x: 0, y: 0, width: side, height: side), relativeCenterPosition: .zero)
-            img.unlockFocus()
-            return img
-        }()
+        static let floorAlpha: CGFloat = ProcessInfo.processInfo.environment["NXC_FLOORALPHA"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.12
 
         override init() {
             super.init()
@@ -721,18 +711,13 @@ struct TheatreCarousel: NSViewRepresentable {
             let m = SCNMaterial()
             m.diffuse.contents = NSColor(white: 0.02, alpha: 1)
             m.lightingModel = .constant
-            m.transparency = 0.55
+            // all but clear, so the floor has no far edge to draw a line across the room: the room darkens behind it instead
+            m.transparency = Self.floorAlpha
             m.writesToDepthBuffer = true
-            // the floor fades out round the ring, so its far edge never draws a line across the room
-            m.transparent.contents = Self.pool
-            m.transparencyMode = .aOne
-            m.transparent.wrapS = .clamp
-            m.transparent.wrapT = .clamp
             floor.materials = [m]
             let f = SCNNode(geometry: floor)
             f.position = SCNVector3(x: 0, y: -0.86, z: 0)
             scene.rootNode.addChildNode(f)
-            floorNode = f
             let ambient = SCNNode()
             ambient.light = SCNLight()
             ambient.light?.type = .ambient
@@ -758,11 +743,6 @@ struct TheatreCarousel: NSViewRepresentable {
             slots = n
             boxes = (0..<n).map { _ in TheatreBox() }
             let r = radius
-            if let m = floorNode?.geometry?.firstMaterial {
-                // texture coordinates on a floor run one per unit from its centre: the fade spans the ring and a few units beyond
-                let span = CGFloat(2 * (r + 3.2))
-                m.transparent.contentsTransform = SCNMatrix4Mult(SCNMatrix4MakeScale(1 / span, 1 / span, 1), SCNMatrix4MakeTranslation(0.5, 0.5, 0))
-            }
             for (s, b) in boxes.enumerated() {
                 let a = Double(s) * 2 * .pi / Double(n)
                 b.place = a
