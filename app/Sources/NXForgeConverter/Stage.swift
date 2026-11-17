@@ -574,7 +574,7 @@ struct StageView: View {
             return .handled
         }
         .task(id: coverTaskKey(games)) { model.fetchCovers(games) }
-        .task(id: "\(model.settings.mediaInGameFolder)|\(CoverStore.shared.revision)|\(StoreInfoStore.shared.revision)|\(model.revision)|" + games.map { "\($0.id)\($0.app ?? "")" }.joined(separator: "|")) {
+        .task(id: "\(model.settings.mediaInGameFolder)|\(CoverStore.shared.revision)|\(StoreInfoStore.shared.revision)|\(model.revision)|\(model.playing.count)|" + games.map { "\($0.id)\($0.app ?? "")" }.joined(separator: "|")) {
             GameFolderMediaSync.shared.schedule(model)
         }
         .task(id: games.map { "\($0.id)\($0.outdated)" }.joined(separator: "|") + "|\(model.playing.count)|\(model.revision)") { await model.refreshAttention(games) }
@@ -1373,7 +1373,7 @@ struct StageSettings: View {
     /// every row's title, by section, and the note under it: the find field looks in both
     static let titles: [Section: [String]] = [
         .launching: ["Play goes straight into the game", "Show Play options the first time", "Battery preset on battery", "Return here when a game quits", "Keep shaders on this Mac", "Show a recap when a game quits", "Rest while a game runs", "Controllers"],
-        .artwork: ["Square covers", "Download box art", "Download wide art", "Download store details", "Keep media in each game's folder", "Artwork folder"],
+        .artwork: ["Square covers", "Download box art", "Download wide art", "Download store details", "Keep media and cheats in each game's folder", "Artwork folder"],
         .theatre: ["Theatre", "Theme", "When a TV is plugged in"],
         .building: ["Keys file (prod.keys)"],
         .opens: ["Open on"],
@@ -1391,7 +1391,7 @@ struct StageSettings: View {
         "Download box art": "Front and back covers from GameTDB, matched by the game's name; a download-only game gets a box made from its square art on Nintendo Life. Only a cover's ID or the game's name is sent.",
         "Download wide art": "The header art from each game's page on Nintendo Life, else the banner from Nintendo's European store, behind its page and Home. Found by name or title ID; only those are sent.",
         "Download store details": "A game's description, details and official screenshots from its store page, fetched when you open the game's page.",
-        "Keep media in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.",
+        "Keep media and cheats in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Its cheats go in a cheats folder beside that, one Markdown file per build, with the switches. Both are read back on a Mac that has none for the game yet, and a cheats file edited by hand is read back too.",
         "Artwork folder": "Your own covers and the downloaded art, kept on this Mac only.",
         "Theatre": "Your games full screen on a TV, for the sofa and a controller. Also ⇧⌘F. B leaves it.",
         "Theme": "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Gallery shows three covers beside the game's name on a quiet wall. L and R switch them on Theatre.",
@@ -1418,7 +1418,7 @@ struct StageSettings: View {
             toggle("Download box art", $model.settings.downloadCovers, row: .downloadCovers)
             toggle("Download wide art", $model.settings.downloadHeroes, row: .downloadHeroes)
             toggle("Download store details", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
-            toggle("Keep media in each game's folder", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
+            toggle("Keep media and cheats in each game's folder", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
             row("Artwork folder") {
                 HStack(spacing: 8) {
                     Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))

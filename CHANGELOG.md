@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.45.2 (2026-11-17)
+
+- **Cheats in each game's folder as Markdown** (Converter 0.19.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): every cheat NXForge loads or downloads is kept in `cheats/<build ID>.md` beside the game's `media` folder, with the on/off switches, and a hand-edited file is read back. The engine's own copy is kept in step. No game rebuild needed for this.
+
 ## 0.45.1 (2026-11-17)
 
 - **Theatre's Shelf theme becomes Gallery** (Converter 0.19.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): three covers on a quiet ivory wall beside the game's name, a fine bronze outline on the one in focus, icon cards for games with no cover, and the main button and hints saying Play or the step a game needs (Build, Choose Keys…). No game rebuild needed for this.
