@@ -47,6 +47,9 @@ TOOLS = [
     ('nxforge_stop_job', 'Stop a background build (as the converter\'s Stop button).', obj({'id': {'type': 'string'}}, ['id']), False),
     ('nxforge_update', 'Engine updates: fetch and list the commits waiting on its update branch; apply true fast-forwards (refused while a build runs or with uncommitted changes).',
      obj({'apply': {'type': 'boolean'}}), False),
+    ('nxforge_perf', "How smoothly each game's last session ran, from its log: share of frames on time, GPU time, full screen and the screen's refresh mode, upscaler, "
+     'footprint, the known causes of lost frames found in it, and a verdict against that game\'s earlier sessions (smooth, as usual, uneven, slower). record true adds the session to the history.',
+     obj({'games': {'type': 'array', 'items': {'type': 'string'}, 'description': 'title IDs or log paths (default: every game with a log)'}, 'record': {'type': 'boolean'}}), True),
 ]
 
 
@@ -79,6 +82,9 @@ def call(name, a):
     if name == 'nxforge_job': return nx.job_state(a['id'], a.get('tail', 20))
     if name == 'nxforge_stop_job': return nx.stop_job(a['id'])
     if name == 'nxforge_update': return nx.update(a.get('apply', False))
+    if name == 'nxforge_perf':
+        import perf_check
+        return perf_check.check(a.get('games'), not a.get('games'), a.get('record', False))
     raise KeyError(name)
 
 

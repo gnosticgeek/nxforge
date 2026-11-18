@@ -5,9 +5,6 @@ import AppKit
 import Foundation
 
 extension AppModel {
-    /// Whether this engine's script can make an IPA (it always could; checked so an odd checkout fails with words, not a usage line).
-    var canBuildIPA: Bool { ready }
-
     func buildIPA() {
         guard let env, let dir = settings.gameDir, ready else { return }
         guard confirm("Build an iPhone and iPad IPA?", "The converter builds \(game?.name ?? "this game") as an unsigned IPA beside its files, for AltStore, Sideloadly or Xcode. It reuses the Mac build's extracted game and code; the iOS shaders compile on their own, so a first IPA takes about as long as a first Mac build. It needs Xcode's iOS platform (Xcode › Settings › Components). The Mac app is not touched.", action: "Build IPA") else { return }

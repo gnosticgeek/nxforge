@@ -4,6 +4,164 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.7 (2026-11-18)
+
+Theatre's Trailer theme rebuilt to Tom's Browse / Watch mock-up. Ships in NXForge 0.45.8.
+
+- **Browse**: the focused game's trailer plays across the top two thirds, with "TRAILER • 00:24 / 01:32" and a speaker button at the top right. A dark panel under it holds the game's name, publisher, console and status, the main button (Play or the step the game needs) and Details on the left, and a strip of every game (favourites first, built or not) on the right; ← → move along it. The words never sit on the video.
+- **Watch**: after 6 s with no input, or ↓, the panel and bar fade away and the trailer fills the screen, with only the game's name and ↑ Browse at the foot. Any button, or moving the pointer, brings Browse back, and that press does nothing else.
+- **Sound**: 25 % while browsing, full while watching; S or the speaker mutes it.
+- **No playable trailer**: the wide art drifts slowly, and Watch shows the store's screenshots in turn, a new one every 6 s.
+- The trailer fades in a second after it starts (past YouTube's pause sign), YouTube's captions are turned off, and the trailer time comes from YouTube's player.
+- Snapshot hooks: `NXC_THEATRE=trailer`, `NXC_WATCH=1` (sound is off while snapshotting).
+
+## 0.19.6 (2026-11-18)
+
+A test of video on Theatre. Ships in NXForge 0.45.7.
+
+- **Trailer theme (test)**: a fourth Theatre theme (L/R or the Theatre menu) with Cinema's words and rows over the focused game's YouTube trailer, playing full bleed from 5 s in (past most trailers' opening logos), with sound at 60 %, looping back to 5 s. It starts once the focus rests on a game for about a second, fades in over the art once the picture moves, and stops while a game runs, a viewer is open or NXForge is in the background. A trailer whose owner only allows it on YouTube (Blazing Chrome's) is skipped for the game's next one; with none left the art stays. Snapshot hook `NXC_THEATRE=trailer` with `NXC_WAIT=<seconds>`.
+
+## 0.19.5 (2026-11-18)
+
+Eight small touches to the game page. Ships in NXForge 0.45.6.
+
+- **Media row shows there is more**: the edge with more tiles beyond it fades out, and round arrows appear over the row's edges while the pointer is over it (a click moves three tiles).
+- **Description and More details on one line**: the store's one-line pitch and More details now sit centred on the same line, on the page's edges like View all.
+- **No repeated status under the title**: a game not built yet no longer says "Drive offline" (or Not built) under its name; the Build card below says it.
+- **One separator under the title**: the store line uses the same dots as the line above ("Action, Arcade · 1–2 players · PEGI 7 · 3.6 GB") instead of slashes.
+- **Smaller Trailer label**: a small dark label at the trailer's top left, clear of the logo trailers carry at their foot.
+- **Fainter glow behind the box**: the game's colour behind the box on its page is much fainter, so it no longer muddies the key art.
+- **Glass tab switch**: the selected Official media / Your captures tab is glass with a hint of the game's colour instead of a solid fill.
+- **Hint bar line on the page's edges**: on a game's page the line above the button hints lines up with the page's other lines.
+
+## 0.19.4 (2026-11-18)
+
+Game page polish. Ships in NXForge 0.45.5.
+
+- **Swipe through Media**: the row under Media now holds every trailer and screenshot, three across; a two-finger swipe on the trackpad (or a scroll wheel) moves along it and settles on a tile's edge. Switching between Official media and Your captures starts again at the first tile.
+- **The header art reaches the line**: the game's wide art at the top of its page now runs all the way down to the line above Media at any window size (it stopped short of it, fading out above the line), softening into the line instead of fading out before it.
+
+## 0.19.3 (2026-11-17)
+
+The Battery preset keeps the choices you saved for a game. Ships in NXForge 0.45.4.
+
+- **Saved choices win on battery**: Battery preset on battery (Settings › Launching) used to lower the frame rate, render scale, upscaling, HDR highlights and frame interpolation for a run on battery, whatever the game had saved. It now lowers only the ones still on the game's default; a frame rate (or any of the others) you set in Play options or the game's sidebar is kept. Turn the setting off to have no run-only changes at all.
+- **The starting note says what changed**: "On battery: the Battery preset for this run (frame rate 30 fps, render scale 75 %)" instead of the bare line, and the setting's description says the same.
+
+## 0.19.2 (2026-11-17)
+
+Cheats live in each game's folder as Markdown. Ships in NXForge 0.45.2.
+
+- **`cheats/` beside `media/`**: every game's cheats, from the Cheats card, Get Cheats or the game's sidebar, are written to `cheats/<build ID>.md` in the game's own folder (beside a built game's `media` folder; for a game not built yet, its files' folder when no other game shares it). One file per build: front matter with the title, title ID, build ID and version, then a `## Name` per cheat with its code in a ```` ```dmnt ```` block; ```` ```dmnt on ```` is a cheat switched on, ```` ```dmnt master ```` a master code. Text under a heading is a note NXForge keeps.
+- **Both ways**: the engine still runs its Atmosphère copy in Application Support, kept in step. A file edited by hand (newer than NXForge's copy) is read back, switches included, and a Mac with no cheats for a game takes them from its folder. Synced when the library opens or changes, when a game ends, and on every change in the Cheats card; a running game is left alone. Show Folder in the Cheats card opens the game's cheats folder.
+- The setting is now **Keep media and cheats in each game's folder** (Settings › Artwork), on by default.
+
+## 0.19.1 (2026-11-17)
+
+Theatre's Shelf theme becomes Gallery, to Tom's brief. Ships in NXForge 0.45.1.
+
+- **Gallery** replaces Shelf: three covers on a plain ivory wall (no shelf, grain or vignette), the game in focus in the middle with a fine bronze outline, a small lift and a "Selected" marker, one neighbour either side, all inside their own region so nothing reaches the words on the left. The left column has the name (up to three lines), the platform, the time played when there is some, the status word and symbol when the game cannot play, and the main button. Covers keep their own proportions; a game with no cover shows its icon, sharp and no larger than it has pixels for, on a plain card with its name. Steps slide the covers in about 0.2 s (a fade with Reduce Motion) and nothing moves on its own. The foot shows Your collection with the real position, and Play, Details, Options, Menu and Back; themes switch from the menu. A narrow screen drops the neighbours before any text shrinks. A saved Shelf choice opens as Gallery.
+- **The main button tells the truth** in every theme: Play, or the step that stops the game playing (Build, Choose Keys…, Check Again, Scan Again, as in docs/ux.md), the same word on the button and in the hints, and A does that step. Cinema no longer says Resume.
+
+## 0.19.0 (2026-11-17)
+
+Theatre: a full-screen front end for a TV. Ships in NXForge 0.45.0.
+
+- **Theatre** replaces Couch Mode: the Theatre button in the top bar, Theatre in the menu bar (⇧⌘F), the command palette or the controller's Menu button on the converter pages open it. It moves the window to the TV (or keeps the screen it is on), goes full screen, hides the pointer and keeps the Mac and the TV awake; Leave Theatre puts the window back where it was.
+- **Three themes**: Carousel, a lit 3D ring of your game cases on a reflective floor that turns to the game you pick, with the front case in the right stick's hands and a slow turn on its own when nobody touches it; Cinema, a full-screen hero image of the game with Continue playing, Favourites and a row per genre underneath; and Shelf, your cases stood on a stone shelf against a sunlit wall that takes the colour of the game in front, with its art washed through it and leaf shadows drifting over it. L and R switch theme, and the theme is remembered.
+- **TV offer**: plugging in a TV (a screen named as one, or 88 cm wide or more) with a controller connected asks "Open Theatre on <TV>?" once per TV; Settings › Theatre can make it always open there or never ask. Unplugging the TV leaves Theatre.
+- **Controller**: A plays (or opens the page of a game not built yet), Y the game's page, X Play options, − favourites, Menu the Theatre menu (themes, Settings, Leave Theatre), B the menu at Leave. The keyboard works too: arrows, Return, Space, Esc, M, [ and ].
+
+## 0.18.1 (2026-11-17)
+
+Discover is your games by genre, and takes the Library's place. Ships in NXForge 0.44.1.
+
+- **Only your games**: Discover no longer lists the store's games. All games is every game in your games folder (and apps built from files outside it), and each genre lists the ones of yours in it, with a count beside it; only genres you have a game in are listed. The genres come from each game's store page, looked up once by title ID; a game the store does not list goes under Other.
+- **The Library page is gone**: the top bar is Home, Discover and Converter. What the Library had is in Discover: Owned and Built with their counts, the All, Favourites, Switch 2, Switch and Not built yet filters, the square covers button, the status under every cover (Ready on Mac, Playing now, Building, Not built yet, Older engine), the cover menu, and the top bar's search. Home's See all opens All games, and Settings › Open on says Discover where it said Library (the saved setting is unchanged).
+- **Controller**: A plays, X opens Play options, Y the game's page, − favourites, L and R step through All games and the genres (L from All games goes Home), B goes Home.
+- The Wishlist, the store search, the Platform, Players, Library and Sort menus, and the store-game panel are removed with the store's games. wishlist.json is left where it was.
+
+## 0.18.0 (2026-11-16)
+
+A save manager. Ships in NXForge 0.43.0.
+
+- **Saves page**: a new page beside Builds lists every built game's save, most recently saved first, with when it last saved, the Mac its newest snapshot came from, how many snapshots it has and their size, and whether the save has changed since the last one. The top shows the total and where snapshots are kept. Open a game for its Save snapshots card (restore, import, export, Git backup).
+- **A snapshot after every session**: when a game quits with a changed save, a checked snapshot is made on its own (nothing is copied when the save did not change). The newest 10 of these stay for each game, counted apart from the ones made before a restore or a rebuild, so a run of sessions never pushes those out. On by default; Saves and Settings › Saves turn it off.
+- **A snapshot folder of your choice**: snapshots can go to another drive, a NAS or iCloud Drive (`<folder>/<title ID>/`) so they survive the save's own drive. The ones already made can move there: each is copied, checked file by file against its record, and only then is the old copy put in the Trash. While that folder is away, new snapshots go beside the save, and both places are listed.
+- **Undo Restore**: after a restore, the game's card offers to put back the save it replaced (and pressing it again goes forward to the restored one).
+- Each snapshot records the Mac it was made on, shown in a new Mac column.
+- Ideas from [RecompLauncher](https://github.com/elripalda/RecompLauncher)'s save backups (GPL-3.0); written fresh, no code taken.
+
+## 0.17.0 (2026-11-16)
+
+Discover, and square covers. Ships in NXForge 0.42.0.
+
+- **Discover**: a new tab between Home and Library for browsing Switch and Switch 2 games from Nintendo's European store. Browse has All games, In your library and Wishlist; Genres lists Action, Adventure, Platformers, RPGs, Racing, Puzzles, Strategy, Sports, Fighting, Shooters, Party, Simulation, Arcade, Music, Board games and Lifestyle. Each game shows its square store art, its name and genres, with **In library** on the ones in your games folder (by title ID, else by name) and a heart on the ones on your Wishlist.
+- **Filters and sort**: Platform (All, Switch, Switch 2), Players (Any, 1 player, 2+, 4+), Library (All, In library, Not in library) and Sort (Popular, the store's own ranking and the default; Newest; Title A–Z, over ranked games only), plus a search field. The grid loads more as you scroll; Newest leaves out games with no release date yet. The Wishlist keeps the order games were added under Popular.
+- **The bar along the foot** names the game in focus with its genres, players and console, with Wishlist and View game. View game opens a game's page in your Library when you have it, else a panel with its wide art, publisher, year, genres, the store's description, Wishlist and Nintendo eShop (opens its store page).
+- **Wishlist**: kept on this Mac only, in wishlist.json beside the settings. Y or the heart adds and removes a game.
+- **Controller and keyboard**: the arrows walk the grid, A views the game, Y wishlists it, X opens its store page, L and R step through Browse and the genres, B goes back to Home.
+- **Square covers**: Settings › Artwork › Square covers (or the square button beside the Library's filters) shows each game's square shop art instead of its box on Home and in the Library, so more fit in a row. The art is Nintendo Life's for download-only games, else the square picture of the game's entry on Nintendo's store, found by title ID (one search for 40 games at a time) or exact name, kept as <key>-square-store.jpg; a game with none falls back to its own icon. Every game in the library is looked up once (Look Again does it over); one with none is tried again after a week.
+- Only the genre, the filters and what is typed go to the store; the pictures are cached on this Mac.
+
+## 0.16.0 (2026-11-16)
+
+Convert, Game Files and Builds to Tom's mock-ups. Ships in NXForge 0.41.0.
+
+- **One top bar**: the NXForge name at the left, the Home / Library / Converter switch in the middle, Full Screen and Settings at the right; under the converter a hairline, then its pages as centred text tabs with the open one underlined. Health's count is red for a problem and amber for warnings, and hovering it names what is wrong; Toolchain carries an amber dot when a check fails. Game Files and Builds have their own search fields.
+- **Convert is one card** read top to bottom: GAME (icon, name, "Nintendo Switch · Base game + update", its folder, keys, Change game…, "2 files" opening the file table, a Recent games menu), SAVE APP TO (the folder's name, then its drive and full path), Build options folded under one line that names the main choices (clean up build files, rebuild from scratch, an engine update), the app already built with Open app and Show in Finder, and a foot that says Ready to build with the space needed, the space free and about how long it takes, beside one Build Mac app button. Rebuild from scratch is now a switch in Build options (still asked once more). The game's wide art lies faintly behind the card and the room takes its colour. Build progress and the log come in under the card once a build starts.
+- **Game Files is a table**: Game, Contents, Size and Status columns with a tick-all box, Platform and Status menus, Sort (click Game or Size to sort by them), "65 games" beside the title, Change folder… and Scan again at the right, Last scanned under the list. A bar along the foot shows the game in focus with Show in Finder, Details and the next step as the white button: Play a current build, Rebuild an old one, else Convert…; ticked games show the Build bar there instead. Continue playing moves to Home.
+- **Builds is a list and a panel**: larger rows with Older engine labels and a lilac selection, "2 builds use an older engine" with Review… (show only them, or rebuild them all) under the list; the panel has the icon large, Ready to play, Play, Show in Finder, Game page, one line with when it was built, how long it took and the engine, Keep this build, Build details (files, location, steps and log) folded, and Rebuild… with Rebuild from Scratch in its menu.
+- Snapshot hooks: `NXC_CONVERT=<name part>` puts that game on Convert without saving settings, `NXC_OPTIONS=1` opens Build options, `NXC_FOCUS=<name part>` focuses a Game Files row.
+
+## 0.15.0 (2026-11-16)
+
+The build in sight on every page, and the Library's Owned and Built. Ships in NXForge 0.40.0.
+
+- **The build along the foot of the window**: while a game builds, a strip under every page (Home, the Library, a game's page and the converter's pages) names the game and shows the step, how many files are done, the time left and the percent, with View Build (the Convert page) and Stop. Games waiting in a batch build are counted beside the name. The Convert page shows the build itself, so the strip steps aside there; the Building capsule in the top bar is gone.
+- **Owned and Built**: the Library has a pair beside its title, Owned (every game in your games folder) and Built (only the games built and ready to play on this Mac), each with its count, and the number of games on screen. The filters (All, Favourites, Switch 2, Switch, Not built yet) work inside either one; Ready to play is now Built. L and R walk Owned's filters, then Built's.
+- **A status under every cover**: Ready on Mac (green) for a built game not played yet, how it was last played (green) after that, Building with its percent (amber), Not built yet (grey), and Older engine (amber) for a game built with an older NXForge, which still plays as it is.
+- The game in focus has a short line in its colour under its name.
+- **Home fits a shorter window**: the shelf's covers size to the room the headline leaves, so the names under them no longer run into the hints along the foot (they did in a window under about 1,000 points tall, and the build strip takes 60 more).
+
+## 0.14.5 (2026-11-16)
+
+Settings scrolls. Ships in NXForge 0.39.4.
+
+- **The panel fits the window and scrolls**: Settings (the front end's slider button, or a controller's Menu button) was one tall card with no scroll, cut off at the top and foot of a smaller window. Its rows now scroll inside it with a visible scroll bar, by trackpad, mouse wheel or the keyboard (arrows, Page Up and Down, Space, Home and End).
+- **Pinned header and foot**: Settings, Find a setting and Done stay at the top, and Games Folder…, Scan Again and Converter Settings… stay at the foot; a hairline shows when there is more above or below.
+- **Section jumps**: Launching, Artwork, Building and On Open under the title scroll to their section, and the one in view is lit.
+- **Find a setting** (⌘F): shows only the rows whose title or note has a word starting with what is typed; Esc clears it, then closes Settings.
+- **A controller reaches every row**: Show a recap and Rest while a game runs join the rows a controller steps through, and the panel scrolls to keep the lit row in view. Open on has a note saying what it does.
+
+## 0.14.4 (2026-11-16)
+
+Game page to the Blaster Master Zero 2 mock-up. Ships in NXForge 0.39.3.
+
+- **The store's facts under the name**: the console, publisher and release date on the first line, then genres, players, age rating and size, from the game's page on Nintendo's store (a game without store details keeps "Not played yet" or how it was last played).
+- **Media across the page**: Official media and Your captures sit beside the Media title with View all at the right, and the three tiles span the page; a trailer has a red Trailer badge.
+- **The pitch and More details**: the store's one-line pitch sits under the tiles, and More details opens About (the whole description and the facts table) below it, in place of the About column beside Media.
+- A larger box, no View box link under it (the box viewer is Y, a click on View box in the hint bar, or the box's right-click menu), and every hint along the foot of the window can be clicked.
+
+## 0.14.3 (2026-11-16)
+
+Nintendo Life art. Ships in NXForge 0.39.2.
+
+- **Wide art from Nintendo Life first**: each game's wide art (behind Home and its page) is the header art of its page on Nintendo Life, found by the game's name (a second between requests, done once per game; a game not found is looked for again after a week). Nintendo's European store is now the fallback, and its banner stays when Nintendo Life's picture is too small to enlarge well. Art already downloaded from the store is replaced on the next start.
+- **One size for wide art**: every wide picture is kept at 2560 × 1280 (2:1, cut about its middle), the shape Home fills on a Mac's screen; the game page's banner shows a narrower band of the same picture.
+- **eShop boxes made from the game's square art**: a download-only game (GameTDB's red "Nintendo eShop" stand-in, or no box at all) gets a box made from its square art on Nintendo Life: the console's red band across the top, the art full width, its name under it with the developer and the year it came out (from the same page). The shelf, the grid, the 3D box and the box viewer all show it; GameTDB's stand-in is kept beside it as `-front-eshop.jpg`. Settings › Artwork › Look again makes them again.
+- The pictures stay on this Mac (the artwork folder and each game's `media` folder), as before.
+
+## 0.14.2 (2026-11-16)
+
+Less work on every redraw. Ships in NXForge 0.39.1.
+
+- **Build records, play times and app details read once**: Home, the Library, Builds and the menus asked for the build records and the time played several times per redraw, and each time `builds.json` and `playtime.json` were read and decoded again; each built app's `Info.plist` was read again too, often on an external drive or a share. They are now kept while the file is unchanged (its date and size), and the app's own writes refresh them.
+- **Build records written in one piece**: `builds.json` is written atomically, so a write cut off by a crash or a full disk can no longer lose every record.
+- **Build times**: one date formatter for every build time (one was made per row per redraw), with fixed digits and a 24-hour clock whatever the Mac's region.
+- `bundle.sh` keeps the drawn app icon in `app/.build` and reuses it while `make_icon.swift` is unchanged, so an install no longer compiles and runs the icon script each time.
+- Three unused members removed.
+
 ## 0.14.1 (2026-11-15)
 
 Cheats are easy to find, and work before a game is built. Ships in NXForge 0.38.2.

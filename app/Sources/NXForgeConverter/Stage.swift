@@ -1,13 +1,19 @@
 // The front end: the games as covers on a dark stage lit by the focused game's colours, shown instead of the converter's
-// pages (the Converter tab goes back to them). Home is a shelf under the game last played, Library every game in the games
-// folder (the ones not built yet dimmed), a game's page has its box in 3D, and Play goes straight into the game
+// pages (the Converter tab goes back to them). Home is a shelf under the game last played, Discover every game in the games
+// folder, all of them or by genre (the ones not built yet dimmed, Discover.swift), a game's page has its box in 3D, and Play goes straight into the game
 // (PlayOptions.swift). Everything works from a controller (ControllerNav → stagePad), the keyboard and the pointer.
 import AppKit
 import GameController
 import SwiftUI
 
-enum StageTab: String, CaseIterable { case home = "Home", library = "Library" }
-enum StageFilter: String, CaseIterable { case all = "All", favorites = "Favourites", ready = "Ready to play", switch2 = "Switch 2", switch1 = "Switch", notBuilt = "Not built yet" }
+enum StageTab: String, CaseIterable { case home = "Home", discover = "Discover" }
+/// Discover's two collections: every game in the games folder, or only the ones built and playable on this Mac
+enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
+enum StageFilter: String, CaseIterable {
+    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", notBuilt = "Not built yet"
+    /// the filters that mean something in a collection: Built has no unbuilt games
+    static func shown(_ scope: StageScope) -> [StageFilter] { scope == .built ? allCases.filter { $0 != .notBuilt } : allCases }
+}
 
 /// A game as the front end shows it: a Library game with its build, or an app built from files outside the games folder.
 struct StageGame: Identifiable, Hashable {
@@ -69,7 +75,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, theatreTheme, theatreOnTV, startIn }
 
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
 
@@ -113,18 +119,19 @@ extension AppModel {
         }
     }
 
-    /// The games on screen: Home's shelf has the built ones (every game when none is built), favourites first, Library the filter's.
+    /// The games on screen: Home's shelf has the built ones (every game when none is built), favourites first, Discover the genre's
+    /// and the filter's.
     func stageShown(_ games: [StageGame]) -> [StageGame] {
         if stageTab == .home {
             let built = games.filter { $0.app != nil }
             let shelf = built.isEmpty ? games : built
             return shelf.filter(\.favorite) + shelf.filter { !$0.favorite }
         }
-        var out = games
+        var out = discover.inBrowse(games)
+        if stageScope == .built { out = out.filter { $0.app != nil } }
         switch stageFilter {
         case .all: break
         case .favorites: out = out.filter(\.favorite)
-        case .ready: out = out.filter { $0.app != nil }
         case .switch2: out = out.filter { $0.console == .switch2 }
         case .switch1: out = out.filter { $0.console == .switch1 }
         case .notBuilt: out = out.filter { $0.app == nil }
@@ -143,9 +150,7 @@ extension AppModel {
         games.filter { $0.last != nil }.max { ($0.last ?? .distantPast) < ($1.last ?? .distantPast) }
     }
 
-    func isFavorite(_ g: StageGame) -> Bool { settings.favorites.contains(g.favoriteKey) }
-
-    /// Adds the game to Favourites (Home's shelf starts with them, and the Library has a filter), or takes it off
+    /// Adds the game to Favourites (Home's shelf starts with them, and Discover has a filter), or takes it off
     func toggleFavorite(_ g: StageGame) {
         if let i = settings.favorites.firstIndex(of: g.favoriteKey) { settings.favorites.remove(at: i) } else { settings.favorites.append(g.favoriteKey) }
         revision += 1
@@ -242,12 +247,10 @@ extension AppModel {
         case .a: if let g = focus { libraryFocus = g.id; playFromStage(g.ref) }
         case .x: if let g = focus { libraryFocus = g.id; openPlayOptions(g.ref) }
         case .y: if let g = focus { libraryFocus = g.id; caseFlipped = false; gameDetail = g.ref }
-        case .b: if stageTab == .library { stageTab = .home }
-        case .l:
-            if stageTab == .library, let i = StageFilter.allCases.firstIndex(of: stageFilter), i > 0 { stageFilter = StageFilter.allCases[i - 1] } else { stageTab = .home }
-        case .r:
-            if stageTab == .home { stageTab = .library }
-            else if let i = StageFilter.allCases.firstIndex(of: stageFilter), i + 1 < StageFilter.allCases.count { stageFilter = StageFilter.allCases[i + 1] }
+        case .b: if stageTab == .discover { stageTab = .home }
+        // L and R walk Home, then Discover's All games and its genres
+        case .l: if stageTab == .discover { discoverStep(-1) }
+        case .r: if stageTab == .home { stageTab = .discover } else { discoverStep(1) }
         case .menu: settingsFocus = 0; stageSettings = true
         case .options: if let g = focus { libraryFocus = g.id; toggleFavorite(g) }
         }
@@ -262,10 +265,19 @@ extension AppModel {
         case .batteryPreset: flip(&settings.batteryPreset)
         case .returnToLibrary: flip(&settings.returnToLibrary)
         case .localShaders: flip(&settings.localShaders)
+        case .sessionRecap: flip(&settings.sessionRecap)
+        case .lightWhilePlaying: flip(&settings.lightWhilePlaying)
+        case .squareCovers: flip(&settings.squareCovers)
         case .downloadCovers: flip(&settings.downloadCovers)
         case .downloadHeroes: flip(&settings.downloadHeroes)
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
         case .mediaInGameFolder: flip(&settings.mediaInGameFolder)
+        case .theatreTheme:
+            let all = TheatreTheme.allCases
+            if let i = all.firstIndex(of: settings.theatreTheme) { settings.theatreTheme = all[(i + d + all.count) % all.count]; theatreTheme = settings.theatreTheme }
+        case .theatreOnTV:
+            let all = TheatreOnTV.allCases
+            if let i = all.firstIndex(of: settings.theatreOnTV) { settings.theatreOnTV = all[(i + d + all.count) % all.count] }
         case .startIn:
             let all = StartIn.allCases
             if let i = all.firstIndex(of: settings.startIn) { settings.startIn = all[(i + d + all.count) % all.count] }
@@ -285,7 +297,10 @@ extension AppModel {
     /// The pictures the games still lack are fetched (a setting).
     func fetchCovers(_ games: [StageGame]) {
         CoverStore.shared.showHeroes = settings.downloadHeroes
+        CoverStore.shared.fetchNintendoLife(games.map { ($0.coverKey, $0.titleID, $0.name, $0.console.rawValue) },
+                                            heroes: settings.downloadHeroes, boxes: settings.downloadCovers)
         if settings.downloadHeroes { CoverStore.shared.fetchHeroes(games.map { ($0.coverKey, $0.titleID, $0.name) }) }
+        if settings.downloadCovers || settings.squareCovers { CoverStore.shared.fetchSquares(games.map { ($0.coverKey, $0.titleID, $0.name) }) }
         guard settings.downloadCovers else { return }
         CoverStore.shared.fetchMissing(games.map { ($0.coverKey, $0.name) })
     }
@@ -479,29 +494,32 @@ struct StageBackdrop: View {
 struct StageView: View {
     @Bindable var model: AppModel
     @FocusState private var keys: Bool
+    /// the game page's line under its headline, in the window: the key art's banner ends there
+    @State private var bannerBottom: CGFloat?
 
     var body: some View {
         let games = model.stageGames()
         let shown = model.stageShown(games)
         let detail = model.gameDetail.flatMap { r in games.first { $0.isRef(r) } }
         let focus = detail ?? model.stageFocus(shown)
-        let tint = focus.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75)
+        let tint = focus.map { CoverArt.tint($0) } ?? (model.stageTab == .discover ? Color(red: 0.45, green: 0.30, blue: 0.80) : Color(red: 0.25, green: 0.35, blue: 0.75))
         ZStack {
             StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "", strength: detail == nil ? 1 : 0.45)
             // the game's key art behind its page, and behind Home's headline for the game in focus
-            if let g = detail { GameKeyArt(game: g, banner: true).id(g.id).transition(.opacity) }
+            if let g = detail { GameKeyArt(game: g, banner: true, bannerBottom: bannerBottom).id(g.id).transition(.opacity) }
             else if model.stageTab == .home, let g = focus { GameKeyArt(game: g, coverFallback: false).id(g.id).transition(.opacity) }
             VStack(spacing: 0) {
                 if detail == nil { StageTopBar(model: model) }
                 Group {
                     if let g = detail {
                         StageGamePage(model: model, game: g)
+                            .onPreferenceChange(GameBannerBottom.self) { v in Task { @MainActor in bannerBottom = v } }
                     } else if games.isEmpty {
                         StageEmpty(model: model)
                     } else if model.stageTab == .home {
                         StageHome(model: model, games: shown, focus: focus, total: games.count)
                     } else {
-                        StageLibrary(model: model, all: games, games: shown, focus: focus)
+                        DiscoverView(model: model, state: model.discover, games: games, shown: shown, focus: focus)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -558,11 +576,18 @@ struct StageView: View {
             if let g = detail ?? focus { model.toggleFavorite(g) }
             return .handled
         }
-        .task(id: games.map(\.coverKey).joined(separator: "|") + (model.settings.downloadCovers ? "1" : "0") + (model.settings.downloadHeroes ? "1" : "0")) { model.fetchCovers(games) }
-        .task(id: "\(model.settings.mediaInGameFolder)|\(CoverStore.shared.revision)|\(StoreInfoStore.shared.revision)|\(model.revision)|" + games.map { "\($0.id)\($0.app ?? "")" }.joined(separator: "|")) {
+        .task(id: coverTaskKey(games)) { model.fetchCovers(games) }
+        .task(id: "\(model.settings.mediaInGameFolder)|\(CoverStore.shared.revision)|\(StoreInfoStore.shared.revision)|\(model.revision)|\(model.playing.count)|" + games.map { "\($0.id)\($0.app ?? "")" }.joined(separator: "|")) {
             GameFolderMediaSync.shared.schedule(model)
         }
         .task(id: games.map { "\($0.id)\($0.outdated)" }.joined(separator: "|") + "|\(model.playing.count)|\(model.revision)") { await model.refreshAttention(games) }
+    }
+
+    /// The key that restarts the cover fetch: the games' covers and the three art settings. It is built in steps so the compiler can type-check it.
+    private func coverTaskKey(_ games: [StageGame]) -> String {
+        let covers: String = games.map { $0.coverKey }.joined(separator: "|")
+        let flags: String = [model.settings.downloadCovers, model.settings.downloadHeroes, model.settings.squareCovers].map { $0 ? "1" : "0" }.joined()
+        return covers + flags
     }
 }
 
@@ -571,12 +596,15 @@ struct StageTopBar: View {
     @Namespace private var marks
 
     var body: some View {
+        // the logo at the left, the Home / Library / Converter switch in the middle, the rest at the right
         HStack(spacing: 14) {
             HStack(spacing: 9) {
                 Image(nsImage: NSApp.applicationIconImage).resizable().interpolation(.high).frame(width: 26, height: 26)
                     .shadow(color: .black.opacity(0.4), radius: 4, y: 2).accessibilityHidden(true)
                 Text("NXForge").font(.system(size: 18, weight: .heavy)).fontWidth(.expanded).tracking(-0.4)
+                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity)
             HStack(spacing: 4) {
                 ForEach(StageTab.allCases, id: \.self) { t in
                     tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
@@ -587,15 +615,15 @@ struct StageTopBar: View {
             .padding(4)
             .glassEffect(.regular, in: .capsule)
             .animation(.spring(duration: 0.32), value: model.stageTab)
-            .padding(.leading, 12)
-            if model.run.running && !model.run.planning {
-                Button { model.showConverter(); model.page = .convert } label: {
-                    HStack(spacing: 8) { Text("Building").font(.callout.weight(.semibold)); SidebarBuildProgress(run: model.run) }
-                        .padding(.horizontal, 12).frame(height: 36).glassEffect(.regular, in: .capsule)
-                }
-                .buttonStyle(.plain).help("Show the build")
-            }
+            .layoutPriority(1)
+            HStack(spacing: 14) {
             Spacer(minLength: 0)
+            // Theatre: full screen for a TV (⇧⌘F)
+            Button { model.enterTheatre() } label: {
+                Label("Theatre", systemImage: "tv").font(.callout.weight(.semibold)).padding(.horizontal, 12).frame(height: 36).contentShape(.capsule)
+            }
+            .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .capsule)
+            .help("Theatre: your games full screen on a TV, driven by a controller (⇧⌘F)")
             if let pad = GCController.controllers().first?.vendorName {
                 Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).foregroundStyle(StageLook.soft)
                     .padding(.horizontal, 12).frame(height: 36).glassEffect(.regular, in: .capsule)
@@ -613,26 +641,28 @@ struct StageTopBar: View {
             }
             round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
             round("slider.horizontal.3", "Settings") { model.stageSettings = true }
+            }
+            .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
+        // under the converter's bar, a hairline between it and the page's own tabs
+        .overlay(alignment: .bottom) {
+            if !model.frontEnd { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
+        }
     }
 
     /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
     var search: (prompt: String, text: Binding<String>)? {
-        if model.frontEnd { return model.stageTab == .library ? ("Search games", $model.stageSearch) : nil }
-        guard model.gameDetail == nil else { return nil }
-        switch model.page {
-        case .library: return ("Search games", $model.librarySearch)
-        case .builds: return ("Search builds", $model.buildSearch)
-        default: return nil
-        }
+        if model.frontEnd { return model.stageTab == .discover ? ("Search games", $model.stageSearch) : nil }
+        // the converter's Game Files and Builds have their own search fields
+        return nil
     }
 
     func tab(_ title: String, on: Bool, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             Text(title).font(.system(size: 14, weight: .semibold)).padding(.horizontal, 16).frame(height: 30)
                 .foregroundStyle(on ? Color.black : Color(white: 0.92))
-                .background { if on { Capsule().fill(.white.opacity(0.94)).matchedGeometryEffect(id: "tab", in: marks) } }
+                .background { if on { Capsule().fill(convertAccent).matchedGeometryEffect(id: "tab", in: marks) } }
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)
@@ -764,14 +794,19 @@ struct StageHome: View {
 
     var body: some View {
         GeometryReader { geo in
-            let tile = min(max(min(geo.size.width * 0.112, geo.size.height * 0.20), 100), 190)
-            let caseH = min(max(geo.size.height - tile / CoverSource.aspect - 150, 220), 560)
-            let tileH = tile / CoverSource.aspect
+            // the hero keeps the room it needs (a smaller title in a short window, as under the build strip), and the shelf's
+            // covers take what is left, so the names under them never run into the hints
+            let bigTitle = geo.size.width > 1100 && geo.size.height > 760
+            let heroRoom: CGFloat = bigTitle ? 440 : 380
+            let aspect = model.settings.squareCovers ? 1 : CoverSource.aspect
+            let tile = min(max(min(geo.size.width * 0.112, (geo.size.height - heroRoom - 140) * aspect), 90), 190)
+            let caseH = min(max(geo.size.height - tile / aspect - 150, 220), 560)
+            let tileH = tile / aspect
             let shelf = tileH + 78
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .center, spacing: 24) {
                     if let g = focus {
-                        StageHero(model: model, game: g, first: AppModel.lastPlayed(games)?.id == g.id, titleSize: geo.size.width > 1100 ? 60 : 44)
+                        StageHero(model: model, game: g, first: AppModel.lastPlayed(games)?.id == g.id, titleSize: bigTitle ? 60 : 44)
                             .frame(maxWidth: 640, alignment: .leading)
                             .id(g.id)
                             .transition(.asymmetric(insertion: still ? .opacity : .opacity.combined(with: .offset(y: 14)), removal: .opacity))
@@ -798,7 +833,7 @@ struct StageHome: View {
                         .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft).padding(.trailing, 14)
                         .help("Puts a built game you have not played this week in front of you")
                     }
-                    Button { model.stageTab = .library } label: {
+                    Button { model.discover.browse = .all; model.stageTab = .discover } label: {
                         HStack(spacing: 6) { Text("See all \(total)"); Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)) }
                     }
                     .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft)
@@ -809,7 +844,7 @@ struct StageHome: View {
                         LazyHStack(alignment: .top, spacing: 26) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 10) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil).frame(width: tile)
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil, square: model.settings.squareCovers).frame(width: tile)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(g.name).font(.system(size: 14.5, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                                         Text(g.console.rawValue).font(.system(size: 13)).foregroundStyle(StageLook.faint).lineLimit(1)
@@ -839,21 +874,34 @@ struct StageHome: View {
     }
 }
 
+/// Discover's grid of covers: the heading with Owned | Built and the filters, then the games with their status under each
 struct StageLibrary: View {
     @Bindable var model: AppModel
+    /// the games under the genre on screen, for the counts
     let all: [StageGame]
     let games: [StageGame]
     let focus: StageGame?
-    static let cell: CGFloat = 142, gap: CGFloat = 28, side: CGFloat = 56
+    var title = "All games"
+    var eyebrow = "Discover"
+    var side: CGFloat = 56
+    @Namespace private var scopeMark
+    static let cell: CGFloat = 142, gap: CGFloat = 28
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Text("Library").font(.system(size: 32, weight: .heavy)).tracking(-0.6)
-                Text("\(all.count) game\(all.count == 1 ? "" : "s") · \(all.filter { $0.app != nil }.count) ready to play").foregroundStyle(StageLook.soft)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow).font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.faint)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(title).font(.system(size: 32, weight: .heavy)).tracking(-0.6).lineLimit(1)
+                    Text("\(games.count) game\(games.count == 1 ? "" : "s")").foregroundStyle(StageLook.soft).monospacedDigit()
+                }
+            }
+            .padding(.horizontal, side).padding(.top, 6)
+            HStack(alignment: .center, spacing: 14) {
+                scopes
                 Spacer(minLength: 8)
                 HStack(spacing: 8) {
-                    ForEach(StageFilter.allCases, id: \.self) { f in
+                    ForEach(StageFilter.shown(model.stageScope), id: \.self) { f in
                         let on = model.stageFilter == f
                         Button { model.stageFilter = f } label: {
                             HStack(spacing: 7) {
@@ -870,10 +918,19 @@ struct StageLibrary: View {
                         .accessibilityAddTraits(model.stageFilter == f ? .isSelected : [])
                     }
                 }
+                // boxes or square art (Settings › Square covers)
+                Button { withAnimation(.spring(duration: 0.3)) { model.settings.squareCovers.toggle() } } label: {
+                    Image(systemName: model.settings.squareCovers ? "rectangle.portrait" : "square").font(.system(size: 14, weight: .semibold))
+                        .frame(width: 32, height: 32).background(StageLook.card, in: .circle).overlay(Circle().strokeBorder(StageLook.edge, lineWidth: 1))
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.plain)
+                .help(model.settings.squareCovers ? "Show boxes" : "Show square covers: more to a row")
+                .accessibilityLabel(model.settings.squareCovers ? "Show Boxes" : "Show Square Covers")
             }
-            .padding(.horizontal, Self.side).padding(.top, 8)
+            .padding(.horizontal, side)
             if games.isEmpty {
-                Text(model.stageSearch.isEmpty ? "No games here." : "Nothing matches “\(model.stageSearch)”.").foregroundStyle(StageLook.soft)
+                Text(model.stageSearch.isEmpty ? (model.stageScope == .built && model.stageFilter == .all ? "No game is built on this Mac yet. Owned has every game in your games folder." : "No games here.") : "Nothing matches “\(model.stageSearch)”.").foregroundStyle(StageLook.soft)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
@@ -881,10 +938,14 @@ struct StageLibrary: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cell, maximum: Self.cell + 44), spacing: Self.gap, alignment: .top)], alignment: .leading, spacing: 28) {
                             ForEach(games) { g in
                                 VStack(alignment: .leading, spacing: 9) {
-                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil)
+                                    CoverTile(game: g, focused: focus?.id == g.id, dim: g.app == nil, attention: model.coverMark(g), status: g.app == nil ? model.status(g) : nil, square: model.settings.squareCovers)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(g.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                                         status(g)
+                                        // a short line under the game in focus, in its colour
+                                        Capsule().fill(CoverArt.tint(g).mix(with: .white, by: 0.35)).frame(width: 30, height: 3).padding(.top, 4)
+                                            .opacity(focus?.id == g.id ? 1 : 0).animation(.easeOut(duration: 0.18), value: focus?.id == g.id)
+                                            .accessibilityHidden(true)
                                     }
                                 }
                                 .id(g.id)
@@ -895,7 +956,7 @@ struct StageLibrary: View {
                                 .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
                             }
                         }
-                        .padding(.horizontal, Self.side).padding(.top, 22).padding(.bottom, 30)
+                        .padding(.horizontal, side).padding(.top, 22).padding(.bottom, 30)
                     }
                     // the covers fade out under the heading instead of being cut by it
                     .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.035), .init(color: .black, location: 0.97),
@@ -905,33 +966,65 @@ struct StageLibrary: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { w in
-            model.stageColumns = max(Int((w - 2 * Self.side + Self.gap) / (Self.cell + Self.gap)), 1)
+            model.stageColumns = max(Int((w - 2 * side + Self.gap) / (Self.cell + Self.gap)), 1)
         }
     }
 
+    /// The games in the collection on screen
+    var inScope: [StageGame] { model.stageScope == .built ? all.filter { $0.app != nil } : all }
+
     func count(_ f: StageFilter) -> Int {
-        switch f {
-        case .all: all.count
-        case .favorites: all.filter(\.favorite).count
-        case .ready: all.filter { $0.app != nil }.count
-        case .switch2: all.filter { $0.console == .switch2 }.count
-        case .switch1: all.filter { $0.console == .switch1 }.count
-        case .notBuilt: all.filter { $0.app == nil }.count
+        let pool = inScope
+        return switch f {
+        case .all: pool.count
+        case .favorites: pool.filter(\.favorite).count
+        case .switch2: pool.filter { $0.console == .switch2 }.count
+        case .switch1: pool.filter { $0.console == .switch1 }.count
+        case .notBuilt: pool.filter { $0.app == nil }.count
         }
+    }
+
+    /// Owned | Built, with each collection's count: a pair like the top bar's tabs
+    var scopes: some View {
+        HStack(spacing: 2) {
+            ForEach(StageScope.allCases, id: \.self) { sc in
+                let on = model.stageScope == sc
+                let n = sc == .built ? all.filter { $0.app != nil }.count : all.count
+                Button {
+                    model.stageScope = sc
+                    if !StageFilter.shown(sc).contains(model.stageFilter) { model.stageFilter = .all }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(sc.rawValue).font(.system(size: 13, weight: .semibold))
+                        Text("\(n)").font(.system(size: 11.5, weight: .bold).monospacedDigit()).foregroundStyle(on ? Color(white: 0.35) : StageLook.faint)
+                    }
+                    .padding(.horizontal, 14).frame(height: 28)
+                    .foregroundStyle(on ? Color.black : Color(white: 0.92))
+                    .background { if on { Capsule().fill(.white.opacity(0.94)).matchedGeometryEffect(id: "scope", in: scopeMark) } }
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .help(sc == .built ? "Only the games built and ready to play on this Mac" : "Every game in your games folder, built or not")
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .glassEffect(.regular, in: .capsule)
+        .animation(.spring(duration: 0.3), value: model.stageScope)
     }
 
     func statusLine(_ g: StageGame, building: Bool, need: GameAttention?) -> (String, Color) {
         let blue = Color(red: 0.38, green: 0.65, blue: 0.98), amber = Color(red: 0.98, green: 0.75, blue: 0.14), green = Color(red: 0.29, green: 0.87, blue: 0.50)
-        if building { return ("Building · \(Int((model.run.overall(now: Date()).fraction * 100).rounded())) %", blue) }
+        if building { return ("Building · \(Int((model.run.overall(now: Date()).fraction * 100).rounded()))%", amber) }
         if g.app == nil { let st = model.status(g); return (st.text, st == .notBuilt ? Color(white: 0.55) : st.color) }
         if model.isPlaying(app: g.app ?? "") { return ("Playing now", blue) }
-        if let a = need { return (a.kind == .update && g.last != nil ? StageLook.played(g.last) : a.text, a.color) }
-        if g.outdated && g.last == nil { return ("Update ready", amber) }
-        return (StageLook.played(g.last), g.outdated ? amber : green)
+        if let a = need { return (a.text, a.color) }
+        if g.outdated { return ("Older engine", amber) }
+        return (g.last == nil ? "Ready on Mac" : StageLook.played(g.last), green)
     }
 
     @ViewBuilder func status(_ g: StageGame) -> some View {
-        let building = model.run.running && g.game.map { model.settings.gameDir == $0.path || model.settings.gameDir == $0.folder } == true
+        let building = model.run.running && !model.run.planning && g.game.map { model.buildingDir == $0.path || model.buildingDir == $0.folder } == true
         let need = model.attention[g.id]?.first
         let (text, color) = statusLine(g, building: building, need: need)
         HStack(spacing: 6) {
@@ -1013,18 +1106,31 @@ struct StageHints: View {
 
     var body: some View {
         HStack(spacing: 24) {
-            ForEach(Array(hints.enumerated()), id: \.offset) { _, h in
-                HStack(spacing: 7) {
-                    ForEach(h.0, id: \.self) { PadGlyph(text: $0, filled: $0 == "A") }
-                    Text(h.1).font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft)
-                }
-            }
+            ForEach(Array(hints.enumerated()), id: \.offset) { _, h in hint(h.0, h.1) }
             Spacer(minLength: 0)
-            HStack(spacing: 7) { PadGlyph(text: "+"); Text("Settings").font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft) }
+            hint(["+"], "Settings")
         }
         .padding(.horizontal, 40).frame(height: 48)
-        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.horizontal, 24) }
-        .accessibilityHidden(true)
+        .overlay(alignment: .top) {
+            // on a game's page the line sits on the page's own edges (StageGamePage's gutter), like the lines above it
+            GeometryReader { geo in
+                Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.horizontal, detail ? (geo.size.width > 1250 ? 56 : 40) : 24)
+            }
+            .frame(height: 1)
+        }
+    }
+
+    /// One hint; a click does what its button does (the first of a pair, as L in L R)
+    func hint(_ keys: [String], _ text: String) -> some View {
+        Button { if let k = keys.first.flatMap(PadLabels.key) { model.stagePad(k) } } label: {
+            HStack(spacing: 7) {
+                ForEach(keys, id: \.self) { PadGlyph(text: $0, filled: $0 == "A") }
+                Text(text).font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.soft)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(text)
     }
 
     var hints: [([String], String)] {
@@ -1036,8 +1142,8 @@ struct StageHints: View {
         var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))
-        h.append((["L", "R"], model.stageTab == .home ? "Library" : "Change filter"))
-        if model.stageTab == .library { h.append((["B"], "Home")) }
+        h.append((["L", "R"], model.stageTab == .home ? "Discover" : "Genre"))
+        if model.stageTab == .discover { h.append((["B"], "Home")) }
         return h
     }
 }
@@ -1145,109 +1251,301 @@ struct LaunchScreen: View {
     }
 }
 
-/// The front end's own settings.
+/// The front end's own settings: a panel no taller than the window, with its title, a find field and the section jumps
+/// pinned at the top, the folder buttons pinned at the foot, and the rows scrolling between them.
 struct StageSettings: View {
     @Bindable var model: AppModel
     let openConverterSettings: () -> Void
     @Environment(\.accessibilityReduceTransparency) private var solid
 
+    enum Section: String, CaseIterable, Identifiable {
+        case launching = "Launching", artwork = "Artwork", theatre = "Theatre", building = "Building", opens = "When NXForge Opens"
+        var id: String { rawValue }
+        var short: String { self == .opens ? "On Open" : rawValue }
+    }
+
+    // NXC_FIND: the snapshot hook starts the find field with that text
+    @State private var query = ProcessInfo.processInfo.environment["NXC_FIND"] ?? ""
+    @State private var contentHeight: CGFloat = 640
+    @State private var offset: CGFloat = 0
+    @State private var viewport: CGFloat = 0
+    @State private var tops: [Section: CGFloat] = [:]
+    @State private var position = ScrollPosition(edge: .top)
+    @FocusState private var findFocused: Bool
+    @FocusState private var scrollFocused: Bool
+
+    /// the section at the top of the scroll, lit in the jump row
+    var current: Section {
+        // scrolled to the end, the last section that shows is lit even though it never reaches the top
+        if !moreBelow && moreAbove { return Section.allCases.last { (tops[$0] ?? .infinity) < offset + viewport - 40 } ?? .opens }
+        return Section.allCases.last { (tops[$0] ?? .infinity) <= offset + 24 } ?? .launching
+    }
+    var moreAbove: Bool { offset > 2 }
+    var moreBelow: Bool { offset + viewport < contentHeight - 2 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("Settings").font(.system(size: 26, weight: .heavy)).tracking(-0.5)
-                Spacer()
-                Button { model.stageSettings = false } label: {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).frame(width: 32, height: 32)
-                        .background(.white.opacity(0.10), in: .circle).contentShape(.circle)
+        ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                header(proxy)
+                Rectangle().fill(.white.opacity(moreAbove ? 0.12 : 0)).frame(height: 1)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) { sections }
+                        .coordinateSpace(.named("settingsContent"))
+                        .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 18)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
-                .buttonStyle(.plain).accessibilityLabel("Close")
-            }
-            group("LAUNCHING") {
-                toggle("Play goes straight into the game", "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.", $model.settings.straightPlay, row: .straightPlay)
-                toggle("Show Play options the first time", "A game you have not played yet opens its options once before it starts.", $model.settings.firstPlayOptions, row: .firstPlayOptions)
-                toggle("Battery preset on battery", "Unplugged, a run takes the Battery preset. Your saved options are not changed.", $model.settings.batteryPreset, row: .batteryPreset)
-                toggle("Return here when a game quits", "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.", $model.settings.returnToLibrary, row: .returnToLibrary)
-                toggle("Keep shaders on this Mac", "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.", $model.settings.localShaders, row: .localShaders)
-                toggle("Show a recap when a game quits", "How long you played this time and in total, with the game's peak memory.", $model.settings.sessionRecap)
-                toggle("Rest while a game runs", "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.", $model.settings.lightWhilePlaying)
-                row("Controllers", "See every button, stick and trigger as a game reads it, and try the rumble.", last: true) {
-                    Button("Test…") { model.stageSettings = false; model.showControllerTest = true }.buttonStyle(StageButton(height: 32))
+                .scrollPosition($position)
+                .scrollIndicators(.visible)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: contentHeight)
+                .onScrollGeometryChange(for: [CGFloat].self) { [$0.contentOffset.y, $0.containerSize.height] } action: { _, v in
+                    offset = v[0]; viewport = v[1]
                 }
-            }
-            group("ARTWORK") {
-                toggle("Download box art", "Front and back covers from GameTDB, matched by the game's name. Only a cover's ID is sent.", $model.settings.downloadCovers, row: .downloadCovers)
-                toggle("Download wide art", "The banner from each game's page on Nintendo's European store, behind its page and Home. Found by title ID or name; only those are sent.", $model.settings.downloadHeroes, row: .downloadHeroes)
-                toggle("Download store details", "A game's description, details and official screenshots from its store page, fetched when you open the game's page.", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
-                toggle("Keep media in each game's folder", "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Read back on a Mac that has no artwork for it yet.", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
-                row("Artwork folder", "Your own covers and the downloaded art, kept on this Mac only.", last: true) {
-                    HStack(spacing: 8) {
-                        Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
-                        Button("Show") { try? FileManager.default.createDirectory(at: CoverStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(CoverStore.dir) }.buttonStyle(StageButton(height: 32))
-                    }
+                // the keyboard: arrows, page up and down, space, home and end
+                .focusable().focusEffectDisabled().focused($scrollFocused)
+                .onKeyPress(keys: [.upArrow, .downArrow, .pageUp, .pageDown, .space, .home, .end]) { press in
+                    scroll(press); return .handled
                 }
-            }
-            group("BUILDING") {
-                row("Keys file (prod.keys)", "Chosen once, used for every build and rebuild.", last: true) {
-                    HStack(spacing: 8) {
-                        if let k = model.settings.defaultKeys {
-                            Text(k.tildePath).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1).truncationMode(.middle).frame(maxWidth: 210, alignment: .trailing)
-                        }
-                        Button(model.settings.defaultKeys == nil ? "Choose…" : "Change…") { model.chooseSavedKeys() }.buttonStyle(StageButton(height: 32))
-                    }
+                // a controller's row stays in view
+                .onChange(of: model.settingsFocus) { _, f in
+                    if let r = StageSettingRow(rawValue: f) { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(AnyHashable(r), anchor: .center) } }
                 }
-                KeysStatusRow(model: model, dark: true).padding(.bottom, 11)
-            }
-            group("WHEN NXFORGE OPENS") {
-                row("Open on", "", last: true, focus: .startIn) {
-                    Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.rawValue) } }
-                        .pickerStyle(.segmented).labelsHidden().frame(width: 280)
-                }
-            }
-            HStack(spacing: 10) {
-                Button("Games Folder…") { model.chooseGamesRoot() }.buttonStyle(StageButton(height: 38))
-                Button("Scan Again") { model.scanLibrary() }.buttonStyle(StageButton(height: 38)).disabled(model.libraryScanning)
-                Spacer()
-                Button("Converter Settings…") { openConverterSettings() }.buttonStyle(StageButton(height: 38))
+                Rectangle().fill(.white.opacity(moreBelow ? 0.12 : 0)).frame(height: 1)
+                footer
             }
         }
-        .padding(28)
         .frame(width: 640)
         .background(StageLook.panel.opacity(solid ? 1 : 0.80), in: .rect(cornerRadius: 28))
         .glassEffect(.regular, in: .rect(cornerRadius: 28))
         .shadow(color: .black.opacity(0.55), radius: 50, y: 24)
+        .onAppear { scrollFocused = true }
+        // ⌘F finds a setting
+        .background { Button("") { findFocused = true }.keyboardShortcut("f").hidden() }
     }
 
-    func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 11, weight: .bold)).fontWidth(.expanded).kerning(1.6).foregroundStyle(StageLook.soft)
-            VStack(spacing: 0) { content() }
-                .padding(.horizontal, 18)
-                .background(StageLook.card, in: .rect(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(StageLook.edge, lineWidth: 1))
+    func header(_ proxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Text("Settings").font(.system(size: 26, weight: .heavy)).tracking(-0.5)
+                Spacer()
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .semibold)).foregroundStyle(StageLook.faint)
+                    TextField("Find a setting", text: $query).textFieldStyle(.plain).font(.system(size: 13.5)).focused($findFocused)
+                        .onSubmit { scrollFocused = true }
+                        .onExitCommand { if query.isEmpty { model.stageSettings = false } else { query = "" } }
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
+                            .buttonStyle(.plain).accessibilityLabel("Clear")
+                    }
+                }
+                .padding(.horizontal, 12).frame(width: 210, height: 32)
+                .background(StageLook.card, in: .capsule).overlay(Capsule().strokeBorder(StageLook.edge, lineWidth: 1))
+                Button { model.stageSettings = false } label: {
+                    Text("Done").font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
+                        .padding(.horizontal, 16).frame(height: 32).background(.white, in: .capsule).contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+            }
+            if query.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Section.allCases) { s in
+                        let on = s == current
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(s, anchor: .top) }
+                        } label: {
+                            Text(s.short).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(on ? Color.black : StageLook.soft)
+                                .padding(.horizontal, 12).frame(height: 26)
+                                .background(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.white.opacity(0.08)), in: .capsule)
+                                .contentShape(.capsule)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                    Spacer()
+                }
+                .animation(.easeOut(duration: 0.15), value: current)
+            }
+        }
+        .padding(.horizontal, 28).padding(.top, 26).padding(.bottom, 14)
+    }
+
+    var footer: some View {
+        HStack(spacing: 10) {
+            Button("Games Folder…") { model.chooseGamesRoot() }.buttonStyle(StageButton(height: 36))
+            Button("Scan Again") { model.scanLibrary() }.buttonStyle(StageButton(height: 36)).disabled(model.libraryScanning)
+            Spacer()
+            Button("Converter Settings…") { openConverterSettings() }.buttonStyle(StageButton(height: 36))
+        }
+        .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 22)
+    }
+
+    /// every row's title, by section, and the note under it: the find field looks in both
+    static let titles: [Section: [String]] = [
+        .launching: ["Play goes straight into the game", "Show Play options the first time", "Battery preset on battery", "Return here when a game quits", "Keep shaders on this Mac", "Show a recap when a game quits", "Rest while a game runs", "Controllers"],
+        .artwork: ["Square covers", "Download box art", "Download wide art", "Download store details", "Keep media and cheats in each game's folder", "Artwork folder"],
+        .theatre: ["Theatre", "Theme", "When a TV is plugged in"],
+        .building: ["Keys file (prod.keys)"],
+        .opens: ["Open on"],
+    ]
+    static let notes: [String: String] = [
+        "Play goes straight into the game": "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.",
+        "Show Play options the first time": "A game you have not played yet opens its options once before it starts.",
+        "Battery preset on battery": "Unplugged, a run takes the Battery preset (lowest frame rate, 75 % render scale) for the options still on the game's default. A choice you saved for a game, such as its frame rate, is kept.",
+        "Return here when a game quits": "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.",
+        "Keep shaders on this Mac": "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.",
+        "Show a recap when a game quits": "How long you played this time and in total, with the game's peak memory.",
+        "Rest while a game runs": "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.",
+        "Controllers": "See every button, stick and trigger as a game reads it, and try the rumble.",
+        "Square covers": "Shows each game's square shop art instead of its box on Home and in Discover: smaller, so more fit in a row. The same as Discover's square button.",
+        "Download box art": "Front and back covers from GameTDB, matched by the game's name; a download-only game gets a box made from its square art on Nintendo Life. Only a cover's ID or the game's name is sent.",
+        "Download wide art": "The header art from each game's page on Nintendo Life, else the banner from Nintendo's European store, behind its page and Home. Found by name or title ID; only those are sent.",
+        "Download store details": "A game's description, details and official screenshots from its store page, fetched when you open the game's page.",
+        "Keep media and cheats in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Its cheats go in a cheats folder beside that, one Markdown file per build, with the switches. Both are read back on a Mac that has none for the game yet, and a cheats file edited by hand is read back too.",
+        "Artwork folder": "Your own covers and the downloaded art, kept on this Mac only.",
+        "Theatre": "Your games full screen on a TV, for the sofa and a controller. Also ⇧⌘F. B leaves it.",
+        "Theme": "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Gallery shows three covers beside the game's name on a quiet wall. L and R switch them on Theatre.",
+        "When a TV is plugged in": "Ask offers Theatre when a controller is connected too; Always opens it straight away.",
+        "Keys file (prod.keys)": "Chosen once, used for every build and rebuild.",
+        "Open on": "Where NXForge starts: Home, Discover or the Converter.",
+    ]
+
+    @ViewBuilder var sections: some View {
+        group(.launching) {
+            toggle("Play goes straight into the game", $model.settings.straightPlay, row: .straightPlay)
+            toggle("Show Play options the first time", $model.settings.firstPlayOptions, row: .firstPlayOptions)
+            toggle("Battery preset on battery", $model.settings.batteryPreset, row: .batteryPreset)
+            toggle("Return here when a game quits", $model.settings.returnToLibrary, row: .returnToLibrary)
+            toggle("Keep shaders on this Mac", $model.settings.localShaders, row: .localShaders)
+            toggle("Show a recap when a game quits", $model.settings.sessionRecap, row: .sessionRecap)
+            toggle("Rest while a game runs", $model.settings.lightWhilePlaying, row: .lightWhilePlaying)
+            row("Controllers") {
+                Button("Test…") { model.stageSettings = false; model.showControllerTest = true }.buttonStyle(StageButton(height: 32))
+            }
+        }
+        group(.artwork) {
+            toggle("Square covers", $model.settings.squareCovers, row: .squareCovers)
+            toggle("Download box art", $model.settings.downloadCovers, row: .downloadCovers)
+            toggle("Download wide art", $model.settings.downloadHeroes, row: .downloadHeroes)
+            toggle("Download store details", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
+            toggle("Keep media and cheats in each game's folder", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
+            row("Artwork folder") {
+                HStack(spacing: 8) {
+                    Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
+                    Button("Show") { try? FileManager.default.createDirectory(at: CoverStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(CoverStore.dir) }.buttonStyle(StageButton(height: 32))
+                }
+            }
+        }
+        group(.theatre) {
+            row("Theatre") {
+                Button(model.theatre ? "Leave" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }.buttonStyle(StageButton(height: 32))
+            }
+            row("Theme", focus: .theatreTheme) {
+                Picker("", selection: Binding(get: { model.settings.theatreTheme }, set: { model.settings.theatreTheme = $0; model.theatreTheme = $0 })) {
+                    ForEach(TheatreTheme.allCases, id: \.self) { Text($0.rawValue) }
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 290)
+            }
+            row("When a TV is plugged in", focus: .theatreOnTV) {
+                Picker("", selection: $model.settings.theatreOnTV) { ForEach(TheatreOnTV.allCases, id: \.self) { Text($0.rawValue) } }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 240)
+            }
+        }
+        group(.building) {
+            row("Keys file (prod.keys)") {
+                HStack(spacing: 8) {
+                    if let k = model.settings.defaultKeys {
+                        Text(k.tildePath).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1).truncationMode(.middle).frame(maxWidth: 210, alignment: .trailing)
+                    }
+                    Button(model.settings.defaultKeys == nil ? "Choose…" : "Change…") { model.chooseSavedKeys() }.buttonStyle(StageButton(height: 32))
+                }
+            }
+            if query.isEmpty { KeysStatusRow(model: model, dark: true).padding(.bottom, 11) }
+        }
+        group(.opens) {
+            row("Open on", focus: .startIn) {
+                Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.title) } }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 280)
+            }
+        }
+        if !query.isEmpty && !Section.allCases.contains(where: anyShown) {
+            Text("No setting matches “\(query)”.").font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.faint)
+                .frame(maxWidth: .infinity).padding(.vertical, 30)
         }
     }
 
-    func row<C: View>(_ title: String, _ note: String, last: Bool = false, focus: StageSettingRow? = nil, @ViewBuilder _ control: () -> C) -> some View {
+    /// a row is shown when the find field is empty, or every word typed starts a word of its title or note
+    /// ("art" finds box art and the artwork folder, not "starts")
+    func matches(_ text: String) -> Bool {
+        let typed = query.lowercased().split(separator: " ")
+        if typed.isEmpty { return true }
+        let words = text.lowercased().split { !$0.isLetter && !$0.isNumber }
+        return typed.allSatisfy { t in words.contains { $0.hasPrefix(t) } }
+    }
+    func shown(_ title: String) -> Bool { matches(title + " " + (Self.notes[title] ?? "")) }
+    func anyShown(_ s: Section) -> Bool { Self.titles[s, default: []].contains(where: shown) }
+
+    /// The keyboard over the scroll: a line, a page, or an end at a time
+    func scroll(_ press: KeyPress) {
+        let page = max(viewport - 60, 80)
+        let top = max(contentHeight - viewport, 0)
+        var y = offset
+        switch press.key {
+        case .upArrow: y -= 48
+        case .downArrow: y += 48
+        case .pageUp: y -= page
+        case .pageDown: y += page
+        case .space: y += press.modifiers.contains(.shift) ? -page : page
+        case .home: y = 0
+        case .end: y = top
+        default: return
+        }
+        withAnimation(.easeOut(duration: 0.18)) { position.scrollTo(y: min(max(y, 0), top)) }
+    }
+
+    func group<C: View>(_ section: Section, @ViewBuilder _ content: () -> C) -> some View {
+        Group {
+            if query.isEmpty || anyShown(section) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(section.rawValue.uppercased()).font(.system(size: 11, weight: .bold)).fontWidth(.expanded).kerning(1.6).foregroundStyle(StageLook.soft)
+                    VStack(spacing: 0) { content() }
+                        .padding(.horizontal, 18)
+                        // the line under the last row of a card is covered by the card's own edge
+                        .padding(.bottom, -1).clipped()
+                        .background(StageLook.card, in: .rect(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(StageLook.edge, lineWidth: 1))
+                }
+                .id(section)
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("settingsContent")).minY } action: { tops[section] = $0 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    func row<C: View>(_ title: String, focus: StageSettingRow? = nil, @ViewBuilder _ control: () -> C) -> some View {
         // the row a controller is on is lit (only while one is connected: the pointer needs no mark)
         let lit = focus != nil && focus?.rawValue == model.settingsFocus && !GCController.controllers().isEmpty
-        return VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 15, weight: .semibold))
-                    if !note.isEmpty { Text(note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).fixedSize(horizontal: false, vertical: true) }
+        let note = Self.notes[title] ?? ""
+        if shown(title) {
+            VStack(spacing: 0) {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.system(size: 15, weight: .semibold))
+                        if !note.isEmpty { Text(note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).fixedSize(horizontal: false, vertical: true) }
+                    }
+                    Spacer(minLength: 8)
+                    control()
                 }
-                Spacer(minLength: 8)
-                control()
+                .padding(.vertical, 11)
+                .padding(.horizontal, 8)
+                .background(lit ? Color.white.opacity(0.10) : Color.clear, in: .rect(cornerRadius: 10))
+                .padding(.horizontal, -8)
+                Rectangle().fill(.white.opacity(0.10)).frame(height: 1)
             }
-            .padding(.vertical, 11)
-            .padding(.horizontal, 8)
-            .background(lit ? Color.white.opacity(0.10) : Color.clear, in: .rect(cornerRadius: 10))
-            .padding(.horizontal, -8)
-            if !last { Rectangle().fill(.white.opacity(0.10)).frame(height: 1) }
+            .id(focus.map { AnyHashable($0) } ?? AnyHashable(title))
         }
     }
 
-    func toggle(_ title: String, _ note: String, _ on: Binding<Bool>, last: Bool = false, row focus: StageSettingRow? = nil) -> some View {
-        row(title, note, last: last, focus: focus) { Toggle(title, isOn: on).toggleStyle(.switch).labelsHidden().tint(.green) }
+    func toggle(_ title: String, _ on: Binding<Bool>, row focus: StageSettingRow? = nil) -> some View {
+        row(title, focus: focus) { Toggle(title, isOn: on).toggleStyle(.switch).labelsHidden().tint(.green) }
     }
 }

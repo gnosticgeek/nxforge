@@ -5,9 +5,19 @@
 import AppKit
 import SwiftUI
 
+/// The game page's line under its headline, in window coordinates (GameKeyArt's banner ends on it)
+struct GameBannerBottom: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) { value = nextValue() ?? value }
+}
+
 struct StageGamePage: View {
     @Bindable var model: AppModel
     let game: StageGame
+    /// More details under the media: the store's About
+    @State private var aboutOpen = ProcessInfo.processInfo.environment["NXC_ABOUT"] != nil   // snapshot hook: opened
+    @State private var lineY: CGFloat?
+    @State private var scrollTop: CGFloat = 0
 
     var body: some View {
         let _ = model.revision
@@ -15,14 +25,10 @@ struct StageGamePage: View {
         let (_, record) = model.resolve(g.ref)
         GeometryReader { geo in
             let showCase = geo.size.width > 760
-            let caseH = min(max(geo.size.height * 0.30, 230), 330)
+            let caseH = min(max(geo.size.height * 0.37, 250), 390)
             let gutter: CGFloat = geo.size.width > 1250 ? 56 : 40
             let inner = geo.size.width - gutter * 2
             let info = model.settings.downloadStoreInfo ? StoreInfoStore.shared.info(g.coverKey) : nil
-            // Media and About side by side on a wide window, About under Media on a narrow one
-            let side = info != nil && geo.size.width > 1020
-            let aboutW = min(max(inner * 0.32, 320), 470)
-            let mediaW = side ? inner - aboutW - 61 : inner
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Button { model.gameDetail = nil } label: { Label(model.stageTab.rawValue, systemImage: "chevron.backward") }
@@ -45,24 +51,36 @@ struct StageGamePage: View {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack(alignment: .top, spacing: showCase ? 30 : 0) {
                             if showCase { boxColumn(g, height: caseH) }
-                            GameHeroColumn(model: model, game: g, titleSize: geo.size.width > 1100 ? 60 : 46)
+                            GameHeroColumn(model: model, game: g, info: info, titleSize: geo.size.width > 1100 ? 50 : 42)
                                 .frame(maxWidth: 640, alignment: .leading)
-                                .padding(.top, showCase ? caseH * 0.07 : 10)
+                                .padding(.top, showCase ? caseH * 0.12 : 10)
                             Spacer(minLength: 0)
                         }
                         .padding(.top, 10)
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 16)
-                        if side, let info {
-                            HStack(alignment: .top, spacing: 0) {
-                                GameMedia(model: model, game: g, width: mediaW).frame(width: mediaW, alignment: .leading)
-                                Rectangle().fill(.white.opacity(0.13)).frame(width: 1).padding(.horizontal, 30)
-                                GameAbout(game: g, info: info).frame(width: aboutW, alignment: .leading)
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("gamePage")).maxY } action: { lineY = $0 }
+                        // Media across the page (three tiles), then the store's one-line pitch with More details, which opens About
+                        GameMedia(model: model, game: g, width: inner).padding(.top, 22)
+                        if let info {
+                            let pitch = GameAbout.pitch(info)
+                            HStack(alignment: .center, spacing: 16) {
+                                if let pitch { Text(pitch).font(.system(size: 17, weight: .medium)).lineLimit(1).truncationMode(.tail) }
+                                Spacer(minLength: 0)
+                                Button { withAnimation(.easeOut(duration: 0.2)) { aboutOpen.toggle() } } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).rotationEffect(.degrees(aboutOpen ? 90 : 0))
+                                        Text(aboutOpen ? "Fewer details" : "More details")
+                                    }
+                                    .contentShape(.rect)
+                                }
+                                .buttonStyle(.plain).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(CoverArt.tint(g)).brightness(0.35)
+                                .help("The store's description and facts")
                             }
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 26)
-                        } else {
-                            GameMedia(model: model, game: g, width: mediaW).padding(.top, 26)
-                            if let info { GameAbout(game: g, info: info).padding(.top, 32) }
+                            .padding(.top, 16)
+                            if aboutOpen {
+                                GameAbout(game: g, info: info, full: true).frame(maxWidth: 820, alignment: .leading)
+                                    .padding(.top, 18).transition(.opacity)
+                            }
                         }
                         Spacer(minLength: 0)
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 28)
@@ -70,13 +88,18 @@ struct StageGamePage: View {
                     }
                     .padding(.horizontal, gutter)
                     .padding(.bottom, 4)
-                    .frame(minHeight: geo.size.height - 48)   // Save, Playtime and Build sit at the foot of the window
+                    .frame(minHeight: geo.size.height - 48)
+                    .animation(.easeOut(duration: 0.2), value: aboutOpen)   // Save, Playtime and Build sit at the foot of the window
+                    .coordinateSpace(.named("gamePage"))   // scrolls with the page, so the line's place in it stays put
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { scrollTop = $0 }
                 .scrollIndicators(.never)
                 // snapshot hook: NXC_SCROLL=1 opens the page scrolled to its end
                 .defaultScrollAnchor(ProcessInfo.processInfo.environment["NXC_SCROLL"] == nil ? .top : .bottom)
             }
         }
+        // where the line under the headline sits in the window, unscrolled: the key art behind the page reaches down to it
+        .preference(key: GameBannerBottom.self, value: lineY.map { scrollTop + $0 })
         .task(id: g.coverKey + (model.settings.downloadStoreInfo ? "1" : "0")) {
             if model.settings.downloadStoreInfo { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) }
         }
@@ -85,18 +108,11 @@ struct StageGamePage: View {
     /// The game's box, small, still turning to a drag, with View box (the box viewer) and the manual under it
     func boxColumn(_ g: StageGame, height caseH: CGFloat) -> some View {
         let accent = CoverArt.tint(g)
-        return GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.66, height: caseH)
+        return GameCase(game: g, flipped: model.caseFlipped, glow: 0.16).frame(width: caseH * 0.66, height: caseH)
+            .contextMenu { Button("View Box") { model.openCaseViewer(g) } }
+            .help("Drag to turn it. View box (Y) shows it full screen.")
             .overlay(alignment: .bottom) {
                 HStack(spacing: 16) {
-                    Button { model.openCaseViewer(g) } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: "shippingbox").font(.system(size: 14, weight: .semibold))
-                            Text("View box")
-                            Image(systemName: "arrow.up.right").font(.system(size: 11, weight: .bold))
-                        }
-                        .contentShape(.rect)
-                    }
-                    .help("View the box full screen (Y on a controller)")
                     if let m = GameManual.find(g) {
                         Button { model.openManual(m, title: g.name) } label: {
                             HStack(spacing: 6) { Image(systemName: "book.pages").font(.system(size: 13, weight: .semibold)); Text("Manual") }.contentShape(.rect)
@@ -139,7 +155,7 @@ struct StageGamePage: View {
             }
             if let record {
                 let ok = !g.outdated
-                info("hammer.fill", "Build", g.outdated ? "Update ready" : record.kept == true ? "Kept as it is" : "Up to date",
+                info("hammer.fill", "Build", g.outdated ? "Older engine" : record.kept == true ? "Kept as it is" : "Up to date",
                      "NXForge \(record.engine.short) · built \(record.date.map { $0.formatted(.dateTime.day().month(.abbreviated)) } ?? record.builtAt)",
                      seal: ok, action: manage)
             } else if g.app == nil {
@@ -182,6 +198,8 @@ struct StageGamePage: View {
 struct GameHeroColumn: View {
     let model: AppModel
     let game: StageGame
+    /// the store's facts, for the two lines under the name
+    var info: StoreInfo? = nil
     var titleSize: CGFloat = 66
 
     var body: some View {
@@ -206,6 +224,12 @@ struct GameHeroColumn: View {
             .shadow(color: .black.opacity(0.5), radius: 8)
             .padding(.top, 8)
             .help(game.version.map { "Version \($0)" } ?? "")
+            if !storeLine.isEmpty {
+                Text(storeLine).lineLimit(1)
+                    .font(.system(size: 17, weight: .medium)).foregroundStyle(Color(white: 0.9))
+                    .shadow(color: .black.opacity(0.5), radius: 8)
+                    .padding(.top, 6)
+            }
             HStack(spacing: 12) {
                 if g.app != nil {
                     Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(playing ? "Resume" : "Play", systemImage: "play.fill").padding(.horizontal, 14) }
@@ -230,32 +254,46 @@ struct GameHeroColumn: View {
                 .buttonStyle(.plain).help(g.favorite ? "Remove from Favourites (F)" : "Add to Favourites (F)")
                 .accessibilityLabel(g.favorite ? "Remove from Favourites" : "Add to Favourites")
             }
-            .padding(.top, 22)
+            .padding(.top, 20)
             if !list.isEmpty {
                 let parts = [PlayOptions.current(settings: list, values: values).rawValue] + PlayOptions.summary(settings: list, values: values).prefix(1).map(\.value)
                 Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "slider.horizontal.3").font(.system(size: 15, weight: .semibold)).foregroundStyle(StageLook.soft)
                         Text(parts.joined(separator: "  ·  ")).font(.system(size: 15.5, weight: .semibold)).lineLimit(1)
-                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(StageLook.faint)
                     }
                     .padding(.vertical, 6).padding(.horizontal, 8).contentShape(.rect)
                 }
                 .buttonStyle(.plain).padding(.leading, -8).padding(.top, 18)
                 .help("What the game starts with: opens Play options")
             }
-            AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build line says Update ready
+            AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build line says Older engine
                 .padding(.top, 18)
         }
     }
 
+    /// "Nintendo Switch · Inti Creates · 20 Mar 2019", or with no store facts, how it stands ("Not played yet")
     var facts: [String] {
         var out = [game.console == .switch2 ? "Nintendo Switch 2" : "Nintendo Switch"]
-        if game.app == nil { out.append(model.status(game).text) }
-        else if model.isSuspended(app: game.app ?? "") { out.append("Paused · still running") }
-        else if model.isPlaying(app: game.app ?? "") { out.append("Playing now") }
-        else { out.append(game.last.map { "Played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet") }
+        let suspended = model.isSuspended(app: game.app ?? ""), playing = model.isPlaying(app: game.app ?? "")
+        // a game not built yet says how it stands in the Build card below, not here
+        if game.app == nil {}
+        else if suspended { out.append("Paused · still running") }
+        else if playing { out.append("Playing now") }
+        if let info, info.publisher != nil || info.released != nil {
+            out += [info.publisher, GameAbout.date(info.released)].compactMap { $0 }.filter { !$0.isEmpty }
+        } else if game.app != nil && !suspended && !playing {
+            out.append(game.last.map { "Played \(relativeDay($0).lowercasedFirst)" } ?? "Not played yet")
+        }
         return out
+    }
+
+    /// "Action, Adventure  ·  1 player  ·  PEGI 7  ·  227 MB": the store's genres, players, rating and size, with the same dots as the line above
+    var storeLine: String {
+        guard let info else { return "" }
+        let genres = info.genres.prefix(2).joined(separator: ", ")
+        let size = info.size.map { $0.replacingOccurrences(of: ".0 ", with: " ") }
+        return [genres.isEmpty ? nil : genres, info.players, info.rating, size].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "  ·  ")
     }
 }
 

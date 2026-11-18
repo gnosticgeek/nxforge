@@ -112,7 +112,7 @@ struct ConverterApp: App {
             CommandGroup(after: .sidebar) {
                 Divider()
                 Button("Go to Anything…") { model.commandPalette = true }.keyboardShortcut("k")
-                Button(model.couchMode ? "Leave Couch Mode" : "Couch Mode") { model.toggleCouch() }.keyboardShortcut("f", modifiers: [.command, .shift])
+                Button(model.theatre ? "Leave Theatre" : "Theatre") { model.toggleTheatre() }.keyboardShortcut("f", modifiers: [.command, .shift])
                 Button("Back") { model.goBack() }.keyboardShortcut("[").disabled(model.gameDetail == nil)
                 Divider()
                 Button("Bigger Covers") { model.page = .library; model.resizeCovers(by: 30) }.keyboardShortcut("+")
@@ -135,9 +135,26 @@ struct ConverterApp: App {
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.frontEnd = false; model.page = page }
         // NXC_STAGE=home, library, game, back, options, settings, launch, box, gallery or manual: the front end on that screen (game and the ones
         // after it: the first built game's)
-        if let st = env["NXC_STAGE"] {
+        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=carousel, cinema, gallery or trailer, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
+        if env["NXC_STAGE"] == "theatre" {
+            try? await Task.sleep(for: .seconds(2))
+            model.enterTheatre(on: nil)
+            model.theatreTheme = TheatreTheme(rawValue: (env["NXC_THEATRE"] ?? "").capitalized) ?? .carousel
+            // Trailer: NXC_WATCH=1 its Watch; sound off while snapshotting
+            model.theatreWatch = env["NXC_WATCH"] != nil
+            model.theatreMuted = true
+            if let n = env["NXC_GAME"], let g = model.stageGames().first(where: { $0.name.localizedCaseInsensitiveContains(n) }) { model.theatreFocus = g.id }
+            if env["NXC_THEATREMENU"] != nil { model.theatreMenu = TheatreMenuRow.leave.rawValue }
+        }
+        if let n = env["NXC_OFFER"] { model.theatreOffer = TVScreen(id: 0, name: n) }
+        if let st = env["NXC_STAGE"], st != "theatre" {
             model.frontEnd = true
-            model.stageTab = st == "library" ? .library : .home
+            model.stageTab = st == "library" || st == "discover" ? .discover : .home
+            // NXC_BROWSE=all or a genre's name; NXC_QUERY=<words>: what Discover shows
+            if st == "library" || st == "discover" {
+                if let b = env["NXC_BROWSE"] { model.discover.browse = b == "all" ? .all : .genre(b) }
+                if let q = env["NXC_QUERY"] { model.stageSearch = q }
+            }
             try? await Task.sleep(for: .seconds(2))
             // NXC_GAME=<part of a name> picks the game instead
             let g = env["NXC_GAME"].flatMap { n in model.stageGames().first { $0.name.localizedCaseInsensitiveContains(n) } } ?? model.stageGames().first { $0.app != nil }
@@ -177,6 +194,28 @@ struct ConverterApp: App {
                 }
             }
         }
+        // NXC_CONVERT=<part of a name>: that Game Files game on the Convert page (settings are not saved while it is set);
+        // NXC_OPTIONS=1 opens Build options, NXC_FOCUS=<part of a name> focuses a Game Files row
+        if let n = env["NXC_CONVERT"], let g = model.library?.games.first(where: { $0.displayName.localizedCaseInsensitiveContains(n) }) {
+            model.setGameDir(g.path)
+            try? await Task.sleep(for: .seconds(3))
+        }
+        if let n = env["NXC_FOCUS"], let g = model.library?.games.first(where: { $0.displayName.localizedCaseInsensitiveContains(n) }) { model.libraryFocus = g.id }
+        // NXC_SCOPE=built: Discover's Built collection
+        if env["NXC_SCOPE"] == "built" { model.stageScope = .built }
+        // NXC_BUILDSTRIP=1: a build running (pretend: nothing runs) for the strip along the foot of the window, on NXC_GAME's game
+        if env["NXC_BUILDSTRIP"] != nil, !model.run.running {
+            try? await Task.sleep(for: .seconds(1))
+            if let g = env["NXC_GAME"].flatMap({ n in model.library?.games.first { $0.displayName.localizedCaseInsensitiveContains(n) } }) ?? model.library?.games.first(where: { g in !model.stageGames().contains { $0.game?.id == g.id && $0.app != nil } }) {
+                model.snapshotBuildDir = g.path
+            }
+            let r = model.run
+            r.running = true
+            r.expected = ["Mac shaders": 2400, "Mac host": 240, "Mac app": 180, "Pipeline archive": 900]
+            r.startedAt = Date().addingTimeInterval(-1260)
+            r.stageStartedAt = Date().addingTimeInterval(-300)
+            r.stage = Stage(k: 5, n: 9, name: "Mac shaders", step: "compiling", fraction: 0.36, detail: "1240/3412 shaders", eta: 1150)
+        }
         // NXC_DETAIL=1 with NXC_PAGE=library or builds: the converter's page of the first built game
         if env["NXC_DETAIL"] != nil, env["NXC_STAGE"] == nil {
             try? await Task.sleep(for: .seconds(2))
@@ -194,6 +233,8 @@ struct ConverterApp: App {
             if let g = env["NXC_GAME"].flatMap({ n in games.first { $0.name.localizedCaseInsensitiveContains(n) } }) ?? games.first(where: { $0.titleID != nil }) { model.cheatsFor = g.ref }
         default: break
         }
+        // NXC_WAIT=<seconds>: longer before the picture (a trailer starting on Theatre's Trailer theme)
+        if let w = env["NXC_WAIT"].flatMap(Double.init) { try? await Task.sleep(for: .seconds(w)) }
         try? await Task.sleep(for: .seconds(5))
         // NXC_CONFIRM=1 puts a delete confirmation over the window, to check how its buttons draw
         if env["NXC_CONFIRM"] != nil {
@@ -213,6 +254,12 @@ struct ConverterApp: App {
         // the window can be ordered out for a moment when the app starts behind another one: bring it back rather than give up
         guard let w = NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first(where: { $0.contentView != nil }) else { exit(1) }
         if !w.isVisible { NSApp.unhide(nil); w.orderFrontRegardless(); try? await Task.sleep(for: .seconds(1)) }
+        // NXC_WINSIZE=<w>x<h>: the window at that size, e.g. a short one to check that the Settings panel scrolls
+        if let sz = env["NXC_WINSIZE"]?.split(separator: "x").compactMap({ Double($0) }), sz.count == 2 {
+            w.setContentSize(NSSize(width: sz[0], height: sz[1])); try? await Task.sleep(for: .seconds(1))
+        }
+        // NXC_SETTINGSROW=<n>: the Settings panel scrolled to the nth row, as a controller moving down it does
+        if let n = env["NXC_SETTINGSROW"].flatMap(Int.init) { model.settingsFocus = n; try? await Task.sleep(for: .seconds(1)) }
         // a sheet over the window (NXC_SHEET) is a window of its own: picture that
         let shown = env["NXC_SHEET"] != nil ? (w.attachedSheet ?? w) : w
         guard let view = shown.contentView?.superview ?? shown.contentView else { exit(1) }

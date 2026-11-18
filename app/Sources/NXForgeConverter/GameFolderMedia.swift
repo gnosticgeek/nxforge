@@ -465,7 +465,16 @@ final class GameFolderMediaSync {
     }
 
     private func run(_ model: AppModel) {
-        let games = model.stageGames().filter { $0.app != nil }
+        let all = model.stageGames()
+        // every game's cheats, built or not, into its folder (and back from it), apart from a game that is running
+        let cheats = all.compactMap { g in cheatsTarget(g, model: model, games: all) }.filter { !failed.contains($0.folder.path) }
+        if !cheats.isEmpty {
+            Task.detached(priority: .utility) {
+                let bad = cheats.filter { !GameFolderCheats.sync($0.info, folder: $0.folder, engineDir: $0.engineDir) }.map(\.folder.path)
+                await MainActor.run { GameFolderMediaSync.shared.failed.formUnion(bad) }
+            }
+        }
+        let games = all.filter { $0.app != nil }
         guard !games.isEmpty else { return }
         let builds = Engine.builds()
         let appParents = games.compactMap { $0.app.map { $0.url.deletingLastPathComponent().path } }
@@ -508,6 +517,40 @@ final class GameFolderMediaSync {
                 if !back.isEmpty { StoreInfoStore.shared.reread(back) }
             }
         }
+    }
+
+    struct CheatsTarget: Sendable { var info: GameFolderCheats.Info; var folder: URL; var engineDir: String }
+
+    /// Where a game's cheats go: beside its media folder; for a game not built yet, `cheats/` in its own folder (not one shared
+    /// with other games). nil without a title ID, while the game runs, or with the setting off.
+    func cheatsTarget(_ g: StageGame, model: AppModel, games: [StageGame]? = nil) -> CheatsTarget? {
+        guard model.settings.mediaInGameFolder, let tid = g.titleID else { return nil }
+        let folder: URL
+        if let app = g.app {
+            guard FileManager.default.fileExists(atPath: app), !model.isPlaying(app: app) else { return nil }
+            let parent = app.url.deletingLastPathComponent().path
+            let n = (games ?? model.stageGames()).filter { $0.app?.url.deletingLastPathComponent().path == parent }.count
+            folder = GameFolderCheats.folder(media: GameFolderMedia.folder(app: app, gameFolder: g.game?.folder, appsBeside: n))
+        } else if let lg = g.game, !lg.shared, FileManager.default.fileExists(atPath: lg.folder) {
+            folder = lg.folder.url.appending(path: GameFolderCheats.folderName)
+        } else { return nil }
+        return CheatsTarget(info: .init(title: g.name, titleID: tid, version: g.version), folder: folder, engineDir: GameExtras.cheatsDir(titleID: tid))
+    }
+
+    /// The game's cheats folder, for Show Folder; nil when they are not kept in the game's folder
+    func cheatsFolder(titleID: String, model: AppModel) -> URL? {
+        guard let g = model.stageGames().first(where: { $0.titleID?.uppercased() == titleID.uppercased() }) else { return nil }
+        return cheatsTarget(g, model: model).map(\.folder)
+    }
+
+    /// A Cheats card changed or is about to read a game's cheats: bring that game's into step now
+    func syncCheats(titleID: String, model: AppModel) async {
+        let targets = model.stageGames().filter { $0.titleID?.uppercased() == titleID.uppercased() }.compactMap { cheatsTarget($0, model: model) }
+        guard !targets.isEmpty else { return }
+        let bad = await Task.detached(priority: .userInitiated) {
+            targets.filter { !GameFolderCheats.sync($0.info, folder: $0.folder, engineDir: $0.engineDir) }.map(\.folder.path)
+        }.value
+        failed.formUnion(bad)
     }
 
     /// A built game's media folder

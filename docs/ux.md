@@ -8,7 +8,7 @@ The rules every change to the NXForge app (`app/`) and the in-game sidebar follo
 | --- | --- |
 | Click | Selects the game (focus only) |
 | Return, controller A (front end) | Plays it, or does the step that stops it from playing (see Status words) |
-| Double-click | Plays from Home's shelf; opens the game's page from the Library |
+| Double-click | Plays from Home's shelf; opens the game's page from Discover |
 | Space, controller Y | Shows details without playing |
 | Context menu, controller X | Play Options and the other ways to start |
 | Typing letters (Game Files page) | Jumps to the first game starting with them, as in Finder |

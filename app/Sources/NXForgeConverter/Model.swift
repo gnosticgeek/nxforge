@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum Page: String, CaseIterable, Identifiable {
-    case convert = "Convert", library = "Library", builds = "Builds", storage = "Storage", health = "Health", toolchain = "Toolchain", updates = "Updates"
+    case convert = "Convert", library = "Library", builds = "Builds", saves = "Saves", storage = "Storage", health = "Health", toolchain = "Toolchain", updates = "Updates"
     var id: String { rawValue }
     /// as the window names it: the converter's own Library is the game files, the front end's Library the covers
     var title: String { self == .library ? "Game Files" : rawValue }
@@ -15,6 +15,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .convert: "macwindow.badge.plus"
         case .library: "books.vertical"
         case .builds: "clock.arrow.trianglehead.counterclockwise.rotate.90"
+        case .saves: "clock.arrow.circlepath"
         case .storage: "internaldrive"
         case .health: "stethoscope"
         case .toolchain: "wrench.and.screwdriver"
@@ -47,6 +48,7 @@ final class AppModel {
             settings.save()
             if settings.appearance != oldValue.appearance { applyAppearance() }
             if let g = settings.gameDir, g != oldValue.gameDir { settings.recentSources = RecentSources.adding(g, to: settings.recentSources) }
+            if settings.saveSnapshotsFolder != oldValue.saveSnapshotsFolder { SaveSnapshots.customRoot = settings.saveSnapshotsFolder }
             if settings.outDir != oldValue.outDir { Disk.outDir = settings.outDir; measure() }   // the app's drive is checked for room too
         }
     }
@@ -140,11 +142,31 @@ final class AppModel {
     /// the game the keyboard or a controller is on, in the Library (and the grid's columns, for up and down)
     var libraryFocus: String? { didSet { if libraryFocus != oldValue { rememberWindowState() } } }
     var libraryColumns = 1
-    /// the couch: the Library's covers full screen, driven by a controller (ControllerNav)
-    var couchMode = false
+    /// Theatre (Theatre.swift): the front end full screen on a TV; its theme, the game in focus, Cinema's row, the Theatre menu's
+    /// row while it is open, a TV's offer, the screen it is on, and when a button was last pressed (the carousel turns on by itself)
+    var theatre = false
+    var theatreTheme: TheatreTheme = .carousel
+    var theatreFocus: String?
+    var theatreRow = 0
+    var theatreMenu: Int?
+    var theatreOffer: TVScreen?
+    var theatreScreen: CGDirectDisplayID?
+    var theatreTouched = Date()
+    /// Trailer: the trailer has the room (Watch), and its sound is off (S)
+    var theatreWatch = false
+    var theatreMuted = false
+    /// the window's frame before Theatre moved it to the TV, whether Theatre put it in full screen, and the Mac kept awake
+    @ObservationIgnored var theatreSavedFrame: NSRect?
+    @ObservationIgnored var theatreMadeFullScreen = false
+    @ObservationIgnored var theatreActivity: NSObjectProtocol?
     /// the front end (Stage.swift): the games as covers on a dark stage, shown instead of the converter's pages
     var frontEnd = true
     var stageTab: StageTab = .home
+    /// the Discover tab: your games, all or by genre (Discover.swift)
+    let discover = DiscoverState()
+    var stageScope: StageScope = .owned
+    /// the game folder a snapshot pretends is building (NXC_BUILDSTRIP), so the real settings stay as they are
+    var snapshotBuildDir: String?
     var stageFilter: StageFilter = .all
     var stageColumns = 6
     var stageSettings = false
@@ -175,6 +197,10 @@ final class AppModel {
     var dataBackupFailed = false
     /// problems and warnings on the Health page, for its tab's badge
     var healthBadge = 0
+    /// what the badge counts, named: the first findings' titles, most pressing first (the tab's tooltip)
+    var healthHint = ""
+    /// the worst of them, for the badge's colour
+    var healthWorst: HealthFinding.Level?
     /// Home's Random Pick: the game it turned up, until it is played or picked again
     var randomPick: String?
     var commandPalette = false
@@ -214,6 +240,7 @@ final class AppModel {
     init() {
         AppModel.shared = self
         Disk.outDir = settings.outDir
+        SaveSnapshots.customRoot = settings.saveSnapshotsFolder
         run.onChange = { [weak self] in
             guard let self else { return }
             DockProgress.show(self.run)
@@ -233,7 +260,7 @@ final class AppModel {
         watchActive()
         watchLaunch()
         frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
-        stageTab = settings.startIn == .library ? .library : .home
+        stageTab = settings.startIn == .library ? .discover : .home
         restoreBatchQueue()
         if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { backUpDataIfDue() }
         if settings.gameDir != nil { validate() }
@@ -842,5 +869,16 @@ final class AppModel {
     /// An answer that deletes, stops or quits something.
     nonisolated static func isDestructive(_ action: String) -> Bool {
         ["Trash", "Delete", "Stop", "Quit", "Clear", "Remove"].contains(where: { action.contains($0) })
+    }
+}
+
+extension AppModel {
+    /// Health's badge, its colour and its hint, from what Health found (problems and warnings; notes are not counted)
+    func noteHealth(_ found: [HealthFinding]) {
+        let shown = found.filter { $0.level != .note }.sorted { $0.level < $1.level }
+        healthBadge = shown.count
+        healthWorst = shown.first?.level
+        let names = shown.prefix(3).map(\.title)
+        healthHint = names.joined(separator: "\n") + (shown.count > 3 ? "\nand \(shown.count - 3) more" : "")
     }
 }

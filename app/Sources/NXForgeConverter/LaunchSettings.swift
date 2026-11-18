@@ -74,6 +74,12 @@ enum LaunchSettings {
         return saved.flatMap { s.accepts($0) ? $0 : nil } ?? s.def
     }
 
+    /// The settings with a choice saved for this game (a value that is not the default; the default is not stored)
+    static func chosen(_ settings: [LaunchSetting], app: String) -> Set<String> {
+        guard let d = defaults(app: app) else { return [] }
+        return Set(settings.filter { s in (d.object(forKey: "launcher." + s.env) as? String).map { s.accepts($0) } ?? false }.map(\.env))
+    }
+
     static func set(_ s: LaunchSetting, _ v: String, app: String) {
         guard let d = defaults(app: app) else { return }
         if s.isDefault(v) { d.removeObject(forKey: "launcher." + s.env) } else { d.set(v, forKey: "launcher." + s.env) }

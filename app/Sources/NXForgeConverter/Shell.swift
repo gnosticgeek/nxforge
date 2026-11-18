@@ -1,25 +1,12 @@
-// The pieces over the pages: Go to Anything (⌘K, idea 15), the quick preview (Space, 18), What's New (1), and the couch:
-// the Library's covers full screen, driven by a controller (16). The controller works whenever the converter is the active app:
-// the pad moves between games, A opens a game's page (and on its page plays it), B goes back, X plays, Y previews, and Menu
-// (or ⇧⌘F) enters and leaves couch mode.
+// The pieces over the pages: Go to Anything (⌘K, idea 15), the quick preview (Space, 18), What's New (1), and the controller.
+// The controller works whenever NXForge is the active app: on Theatre (Theatre.swift) and the front end every button goes to
+// them (theatrePad, stagePad); on the converter's pages the pad moves between games, A opens a game's page (and on its page
+// plays it), B goes back, X plays, Y previews, and Menu opens Theatre (as ⇧⌘F does).
 import AppKit
 import GameController
 import SwiftUI
 
 extension AppModel {
-    func toggleCouch() {
-        couchMode.toggle()
-        if couchMode {
-            page = .library
-            gameDetail = nil
-            if libraryFocus == nil { moveLibraryFocus() }
-        }
-        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true }) ?? NSApp.mainWindow ?? NSApp.keyWindow,
-           w.styleMask.contains(.fullScreen) != couchMode {
-            w.toggleFullScreen(nil)
-        }
-    }
-
     /// Play the game a reference points at, if it is built.
     func play(_ r: GameRef) {
         if let a = r.app ?? resolve(r).build?.app { openApp(a) }
@@ -81,7 +68,10 @@ final class ControllerNav {
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] n in
             let c = n.object as? GCController
-            MainActor.assumeIsolated { if let c { self?.attach(c) } }
+            MainActor.assumeIsolated {
+                if let c { self?.attach(c) }
+                TheatreWatch.shared.check()   // a controller picked up while a TV is plugged in: Theatre is offered then
+            }
         })
         observers.append(nc.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { PadLabels.shared.refresh() }
@@ -127,9 +117,14 @@ final class ControllerNav {
                 }
             }
         }
-        // the front end takes every button (stagePad); the converter's pages keep the couch's
+        // the front end takes every button (stagePad); the converter's pages keep the old pad map
         func key(_ b: GCControllerButtonInput, _ k: PadKey, repeating: Bool = false, _ f: @escaping @MainActor (AppModel) -> Void) {
-            let act: @MainActor (AppModel) -> Void = { m in if m.controllerTest { return }; if m.frontEnd { m.stagePad(k) } else { f(m) } }
+            let act: @MainActor (AppModel) -> Void = { m in
+                if m.controllerTest { return }
+                if m.theatre { m.theatrePad(k) }
+                else if m.theatreOffer != nil { m.offerPad(k) }
+                else if m.frontEnd { m.stagePad(k) } else { f(m) }
+            }
             if repeating { held(b, act) } else { on(b, act) }
         }
         key(pad.dpad.left, .left, repeating: true) { $0.moveLibraryFocus(dx: -1) }
@@ -148,13 +143,13 @@ final class ControllerNav {
         key(pad.buttonB, .b) { m in
             if m.preview != nil { m.preview = nil }
             else if m.gameDetail != nil { m.goBack() }
-            else if m.couchMode { m.toggleCouch() }
+
         }
         key(pad.buttonX, .x) { m in if let r = m.gameDetail ?? m.focusedGame() { m.play(r) } }
         key(pad.buttonY, .y) { m in m.preview = m.preview == nil ? m.focusedGame() : nil }
         key(pad.leftShoulder, .l) { _ in }
         key(pad.rightShoulder, .r) { _ in }
-        key(pad.buttonMenu, .menu) { $0.toggleCouch() }
+        key(pad.buttonMenu, .menu) { $0.enterTheatre() }
         // − (Options / View): Favourites on the front end
         if let o = pad.buttonOptions { key(o, .options) { _ in } }
         // the right stick turns the box on screen (CaseModelView)
@@ -306,7 +301,7 @@ struct CommandPalette: View {
         }
         out.append(PaletteItem(id: "act-scan", title: "Scan Library Again", detail: "Action", symbol: "arrow.clockwise") { m.showConverter(); m.page = .library; m.scanLibrary() })
         out.append(PaletteItem(id: "act-ipa", title: "Build iPhone and iPad IPA…", detail: "Action", symbol: "iphone") { m.buildIPA() })
-        out.append(PaletteItem(id: "act-couch", title: m.couchMode ? "Leave Couch Mode" : "Couch Mode", detail: "Action", symbol: "sofa") { m.toggleCouch() })
+        out.append(PaletteItem(id: "act-theatre", title: m.theatre ? "Leave Theatre" : "Theatre", detail: "Action", symbol: "tv") { m.toggleTheatre() })
         out.append(PaletteItem(id: "act-check", title: "Check the Toolchain Again", detail: "Action", symbol: "checkmark.seal") { m.showConverter(); m.page = .toolchain; m.recheck() })
         out.append(PaletteItem(id: "act-updates", title: "Check for Updates", detail: "Action", symbol: "arrow.down.circle") { m.showConverter(); m.page = .updates; m.engineAction(update: false) })
         out.append(PaletteItem(id: "act-new", title: "What's New in NXForge", detail: "Action", symbol: "sparkles") { m.showWhatsNew() })

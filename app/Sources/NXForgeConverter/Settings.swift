@@ -10,7 +10,11 @@ enum LibraryLayout: String, Codable, CaseIterable { case list, grid }
 /// The Library's order
 enum LibrarySort: String, Codable, CaseIterable { case name = "Name", recent = "Recently played", size = "Size" }
 /// What the window opens on: the front end's Home shelf or Library, or the converter's pages
-enum StartIn: String, Codable, CaseIterable { case home = "Home", library = "Library", converter = "Converter" }
+/// "Library" is kept as the saved value of Discover (it took the Library's place in 0.45)
+enum StartIn: String, Codable, CaseIterable {
+    case home = "Home", library = "Library", converter = "Converter"
+    var title: String { self == .library ? "Discover" : rawValue }
+}
 /// --cleanup: what the script deletes from <id>_build after a successful build
 enum Cleanup: String, Codable, CaseIterable {
     case off, unused, all
@@ -49,6 +53,10 @@ struct Settings: Codable, Equatable {
     var saveBackupRepo: String?
     /// push the save backup commit as well
     var saveBackupPush = false
+    /// where save snapshots go (another drive, a NAS, iCloud Drive): <folder>/<title ID>/; nil beside each save (SaveSnapshots)
+    var saveSnapshotsFolder: String?
+    /// a checked snapshot of the save each time a game quits, when it changed
+    var snapshotAfterPlay = true
     /// each network volume's address to mount it again ("Gaming" → smb://nas/Gaming), learned while it was mounted
     var remounts: [String: String] = [:]
     /// Updates: update the engine and the converter without asking (at launch, and on an hourly check)
@@ -89,6 +97,11 @@ struct Settings: Codable, Equatable {
     var sessionRecap = true
     /// while a game runs and NXForge is behind it, the window shows a plain card and holds no artwork
     var lightWhilePlaying = true
+    /// the front end's covers as the games' square shop art instead of boxes: more to a row, and the same shape as Discover's
+    var squareCovers = false
+    /// Theatre's theme, and what happens when a TV is plugged in (Theatre.swift)
+    var theatreTheme: TheatreTheme = .carousel
+    var theatreOnTV: TheatreOnTV = .ask
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -100,6 +113,7 @@ struct Settings: Codable, Equatable {
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
+        case saveSnapshotsFolder = "save_snapshots_folder", snapshotAfterPlay = "snapshot_after_play"
         case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
         case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
@@ -108,6 +122,8 @@ struct Settings: Codable, Equatable {
         case mediaInGameFolder = "media_in_game_folder"
         case localShaders = "local_shaders"
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
+        case squareCovers = "square_covers"
+        case theatreTheme = "theatre_theme", theatreOnTV = "theatre_on_tv"
     }
 
     init() {}
@@ -135,6 +151,8 @@ struct Settings: Codable, Equatable {
         librarySort = (try? c.decodeIfPresent(LibrarySort.self, forKey: .librarySort)) ?? .name
         saveBackupRepo = try? c.decodeIfPresent(String.self, forKey: .saveBackupRepo)
         saveBackupPush = (try? c.decodeIfPresent(Bool.self, forKey: .saveBackupPush)) ?? false
+        saveSnapshotsFolder = try? c.decodeIfPresent(String.self, forKey: .saveSnapshotsFolder)
+        snapshotAfterPlay = (try? c.decodeIfPresent(Bool.self, forKey: .snapshotAfterPlay)) ?? true
         remounts = (try? c.decodeIfPresent([String: String].self, forKey: .remounts)) ?? [:]
         autoUpdate = (try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)) ?? false
         skippedUpdate = try? c.decodeIfPresent(String.self, forKey: .skippedUpdate)
@@ -157,6 +175,9 @@ struct Settings: Codable, Equatable {
         localShaders = (try? c.decodeIfPresent(Bool.self, forKey: .localShaders)) ?? true
         sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true
         lightWhilePlaying = (try? c.decodeIfPresent(Bool.self, forKey: .lightWhilePlaying)) ?? true
+        squareCovers = (try? c.decodeIfPresent(Bool.self, forKey: .squareCovers)) ?? false
+        theatreTheme = (try? c.decodeIfPresent(TheatreTheme.self, forKey: .theatreTheme)) ?? .carousel
+        theatreOnTV = (try? c.decodeIfPresent(TheatreOnTV.self, forKey: .theatreOnTV)) ?? .ask
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)
@@ -189,6 +210,8 @@ struct Settings: Codable, Equatable {
     }
 
     func save() {
+        // a snapshot that picks a game for Convert (NXC_CONVERT) leaves the real settings as they were
+        if ProcessInfo.processInfo.environment["NXC_CONVERT"] != nil { return }
         try? FileManager.default.createDirectory(at: Settings.supportDir, withIntermediateDirectories: true)
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]

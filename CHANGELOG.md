@@ -2,6 +2,83 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.45.8 (2026-11-18)
+
+- **Theatre's Trailer theme, Browse and Watch** (Converter 0.19.7, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the trailer plays across the top with the game and a strip of every game on a dark panel under it; left alone for 6 seconds (or ↓) the panel fades and the trailer fills the screen. Sound is low while browsing and full while watching, S mutes it. No game rebuild needed for this.
+
+## 0.45.7 (2026-11-18)
+
+- **Theatre: a Trailer test theme** (Converter 0.19.6, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Cinema's layout with the game in focus's trailer playing full screen behind it, from 5 seconds in, with sound. An experiment to see how video feels on Theatre. No game rebuild needed for this.
+
+## 0.45.6 (2026-11-18)
+
+- **Game page polish** (Converter 0.19.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Media row fades at an edge with more beyond it and shows arrows on hover, the pitch and More details line up, no repeated "Drive offline" under the title, one separator in the store line, a smaller Trailer label, a fainter glow behind the box, a glass tab switch and the hint bar's line on the page's edges. No game rebuild needed for this.
+
+## 0.45.5 (2026-11-18)
+
+- **Game page: swipe through Media, header art down to the line** (Converter 0.19.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a two-finger swipe moves along every trailer and screenshot in the Media row, and the game's wide art at the top of the page now reaches the line above Media. No game rebuild needed for this.
+
+## 0.45.4 (2026-11-17)
+
+- **A frame rate you set for a game stays as you set it on battery** (Converter 0.19.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): with Settings › Launching › Battery preset on battery (on by default), a Play while the Mac is unplugged took the Battery preset for that run, and that lowered every one of its rows, a frame rate saved for the game included. Ocarina of Time played at 30 fps and 75 % render scale today for that reason. The preset now leaves alone any option saved for the game and only lowers the ones left on the game's default, and the note while the game starts names what it changed for the run. No game rebuild needed for this.
+
+## 0.45.3 (2026-11-17)
+
+- **A cheat can no longer crash a game by writing into the wrong object** (engine patch 0038, [docs/cheats.md](docs/cheats.md#pointer-guard)): a pointer-chain cheat that runs before the game has set up what it looks for (at boot, on a title screen, while a save or a quick-save slot loads) could land its store on a pointer the game then follows. Blazing Chrome's "P1 Lives unlimited" did that when a quick-save slot restarted the game: it wrote the high half of 5.0 over a heap pointer and the game crashed with signal 11. The engine now refuses a write that would turn a pointer into something that is not one, logs the pointer it kept, and retries the cheat every pass, so it takes effect as soon as the game is ready. `DM_CHEATS_POINTER_GUARD=0` turns the check off. Games need a rebuild for this.
+## 0.45.2 (2026-11-17)
+
+- **Cheats in each game's folder as Markdown** (Converter 0.19.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): every cheat NXForge loads or downloads is kept in `cheats/<build ID>.md` beside the game's `media` folder, with the on/off switches, and a hand-edited file is read back. The engine's own copy is kept in step. No game rebuild needed for this.
+
+## 0.45.1 (2026-11-17)
+
+- **Theatre's Shelf theme becomes Gallery** (Converter 0.19.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): three covers on a quiet ivory wall beside the game's name, a fine bronze outline on the one in focus, icon cards for games with no cover, and the main button and hints saying Play or the step a game needs (Build, Choose Keys…). No game rebuild needed for this.
+
+## 0.45.0 (2026-11-17)
+
+- **Theatre, a full-screen front end for a TV** (Converter 0.19.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): replaces Couch Mode with three themes, Carousel (a 3D ring of your game cases), Cinema (hero art with rows by genre) and Shelf (cases on a sunlit shelf whose wall takes each game's colour), moves to the TV and goes full screen, offers itself when a TV is plugged in with a controller connected, and is driven by the controller. No game rebuild needed for this.
+
+## 0.44.1 (2026-11-17)
+
+- **Discover shows only your games and replaces the Library** (Converter 0.18.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): All games and each genre list only the games in your games folder (genres from their store pages, Other for the rest); the Library page is removed, with its Owned and Built, filters, status under each cover and search now in Discover. No game rebuild needed for this.
+
+## 0.44.0 (2026-11-16)
+
+- **Full screen keeps a ProMotion screen at 120 Hz** (layer patch screen-vrr): going full screen while a game runs switched the MacBook's built-in screen to a fixed 60 Hz (upstream's rule for its display link, which NXForge does not use in full screen), and there a frame a moment late waits a whole 16.7 ms refresh. Mario Kart World on an M4 Pro, the same race with full screen entered after launch: 79 % and 73 % of frames on time at the fixed 60 Hz against 98.9 % and 99.1 % at the screen's own 120 Hz, with the GPU at 9.2 ms a frame instead of 11.7. Tom's own sessions on 16 Nov (Mario Kart World 60-75 %, Ocarina of Time 73 %) had all switched. `DM_SCREEN_MATCH=1` switches as upstream does; a 144 Hz screen still goes to 120 Hz as before.
+- **MetalFX only where it really enlarges the picture** (layer patch fx-min-scale): the spatial scaler runs where the picture is shown at least 1.4 times larger than the game renders it (`DM_FX_MIN_SCALE`), and a smaller enlargement takes the bilinear pass. Mario Kart World in full screen (2560x1440 → 3024x1701, 1.18x): the present's GPU time 0.81 → 0.24 ms; Ocarina of Time (1.32x) saves 0.8-1.2 ms. Games rendering 720p or 1080p keep MetalFX.
+- **`nxforge perf`: how smoothly a game's last session ran** (`scripts/perf_check.py`, the MCP tool `nxforge_perf`, [docs/performance.md](docs/performance.md#a-sessions-check)): the share of frames on time from the game's log, GPU time, full screen and the screen's refresh mode, upscaler and footprint, the causes of lost frames the log shows, and with `--record` a history per game with a verdict (smooth, as usual, uneven, slower) against its last five sessions. Today's Mario Kart World drop would have read "full screen switched the screen to 60 Hz" at once.
+- Games pick up the first two at their next build (an update rebuild is enough; the shader chain is unchanged). Tonight's Mario Kart World app already has the new player, and Ocarina of Time and Cuphead have `DM_SCREEN_MATCH=0` in their env.txt until they are rebuilt.
+
+## 0.43.0 (2026-11-16)
+
+- **Save manager** (Converter 0.18.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Saves page for every game's save, a checked snapshot after every session that changed the save, a snapshot folder of your choice (another drive, a NAS, iCloud Drive) with a checked move of the existing ones, Undo Restore, and the Mac each snapshot came from. No game rebuild needed for this.
+
+## 0.42.0 (2026-11-16)
+
+- **Discover and square covers** (Converter 0.17.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Discover tab browses Nintendo's European store by genre with Platform, Players, Library and Sort filters, a search, In library badges, a Wishlist kept on this Mac and a bar with Wishlist and View game; Home and the Library can show square shop art instead of boxes (Settings › Artwork › Square covers), with every game's square art fetched from the store. No game rebuild needed for this.
+
+## 0.41.0 (2026-11-16)
+
+- **Convert, Game Files and Builds to the mock-ups** (Converter 0.16.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Home / Library / Converter switch centred with the converter's pages as underlined tabs; Convert as one card with the game, where the app goes, Build options in one line and Ready to build with space and time beside one button; Game Files as a sortable table with a bar for the game in focus; Builds as a list with a large detail panel. No game rebuild needed for this.
+
+## 0.40.0 (2026-11-16)
+
+- **Build strip, Owned and Built, and a status under every cover** (Converter 0.15.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a running build shows along the foot of every page with its step, files, time left, percent, View Build and Stop; the Library has Owned and Built collections with counts; each cover says Ready on Mac, Building, Not built yet or Older engine. No game rebuild needed for this.
+
+## 0.39.4 (2026-11-16)
+
+- **Settings scrolls** (Converter 0.14.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the front end's Settings panel was taller than the window and could not scroll, so its later sections were out of reach. It now fits the window, with its title, a Find a setting field, section jumps and Done pinned at the top and the folder buttons pinned at the foot. No game rebuild needed for this.
+
+## 0.39.3 (2026-11-16)
+
+- **Game page to the Blaster Master Zero 2 mock-up** (Converter 0.14.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the store's facts under the game's name, Media across the page with Official media and Your captures beside its title, the store's pitch with More details opening About, a larger box and clickable hints. No game rebuild needed for this.
+
+## 0.39.2 (2026-11-16)
+
+- **Nintendo Life art** (Converter 0.14.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): wide art comes from each game's Nintendo Life page first (Nintendo's store is the fallback) and is kept at one size, 2560 × 1280, for Home's full-window background and the game page's narrower banner; download-only games get an eShop box made from their square art on Nintendo Life in place of GameTDB's red stand-in. No game rebuild needed for this.
+
+## 0.39.1 (2026-11-16)
+
+- **Efficiency sweep** (Converter 0.14.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the app no longer reads and decodes its build records, play times and every built app's Info.plist again on each redraw of Home, the Library and Builds; build records are written in one piece. CI leaves out the engine's six macOS jobs for a change that cannot reach them (the converter, NXForge's own scripts, docs, changelogs; `scripts/ci_changes.py`), and NXForge's script tests run on Linux every time. `nxforge clean` and `nxforge disk` list worktrees once and size each build folder once; `layer.py` loses two duplicated checks. No game rebuild needed for this.
 ## 0.39.0 (2026-11-16)
 
 - **The engine moves to the newest nxnative** (upstream `3ce43e2a`, 97 commits past the last pin `bee218d9`): upstream's fixes since 15 Nov come in, among them Ocarina of Time's movie player taking two pictures a frame (upstream #2456, so NXForge's early copy of it is dropped), held submissions that commit together while the GPU is busy (#2645), every command buffer naming the residency sets (#2715), MSL 3.2 for every shader, jump tables proved by dataflow (#2562), original Joy-Cons read wholly from their HID reports on the Mac (#2594), lazy clears taken by every pass (#2780), occlusion-query and sparse stand-in fixes, frame-step tuning (#2611), and new game profiles (DOOM 3, Burnout Paradise Remastered, Mega Man Legacy Collection, FINAL FANTASY V and VI, Overcooked, Xenoblade Chronicles X). NXForge's layer patches are rebased onto it: the thread patch keeps only a comment now that upstream signals wakes after the lock (#1466), and upstream's direct MetalFX screen write stays off so anti-aliasing, pixel art, filters and HDR highlights still follow the upscaler. The early upstream patches still open there (#2344 read marks, #2497, #2538 wide screen, #2532 render scale, #2621 Mario Kart World 1.8.0, #1662 microphone) are carried as before. Games need a full rebuild to pick up the new engine.

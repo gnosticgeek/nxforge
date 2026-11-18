@@ -1,13 +1,18 @@
 // Cover art for the front end: a game's front cover, back cover and spine. In order: an image the player chose, box art
 // downloaded from GameTDB (its public list of Switch titles is matched by name on this Mac, so only a GameTDB ID is ever
-// asked for; a setting turns the downloads off), and else a cover drawn from the game's own icon. Kept in
-// ~/Library/Application Support/NXForge Converter/covers as <title ID>-front.jpg, -back.jpg and -spine.jpg
-// (an own image: -front-own.png, -back-own.png, chosen from a file or a link, a shop's render of a whole case cut down to its cover).
-// Wide key art ("hero" art) for the game page and Home: the 2:1 share image of the game's page on Nintendo's European store
-// (nintendo.com/en-gb), found through the search service that store's own pages use (searching.nintendo-europe.com), by the game's
-// title ID, else by its exact name; a game the search has no banner for (new Switch 2 games) gets the picture its store page
-// shares (og:image). Only title IDs and names go out. Kept beside the covers as <key>-hero.jpg; a setting turns it off.
+// asked for; a setting turns the downloads off), a download-only game's eShop box made from its square shop art (Nintendo Life,
+// below), and else a cover drawn from the game's own icon. Kept in ~/Library/Application Support/NXForge Converter/covers as
+// <title ID>-front.jpg, -back.jpg and -spine.jpg (an own image: -front-own.png, -back-own.png, chosen from a file or a link, a
+// shop's render of a whole case cut down to its cover; the square art: -square.jpg).
+// Wide key art ("hero" art) for the game page and Home: first the header art of the game's page on Nintendo Life
+// (nintendolife.com/games/<platform>/<slug>, the slug made from the game's name), which also gives the square eShop art; else the
+// 2:1 share image of the game's page on Nintendo's European store (nintendo.com/en-gb), found through the search service that
+// store's own pages use (searching.nintendo-europe.com), by the game's title ID, else by its exact name; a game the search has no
+// banner for (new Switch 2 games) gets the picture its store page shares (og:image). Only title IDs and names go out. Every wide
+// picture is kept the same shape and size (HeroSource.standard: 2:1, 2560 x 1280, the shape Home fills; the game page shows a
+// narrower band of it) beside the covers as <key>-hero.jpg; a setting turns it off. The pictures stay on this Mac.
 import AppKit
+import CoreImage
 import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
@@ -79,10 +84,38 @@ enum CoverSource {
     /// A picture as a JPEG no taller than `maxHeight`, or the part of it `unit` names
     /// Whether a downloaded front is a box's shape. Download-only games have a wide shop banner there, which is no cover.
     static func boxShaped(_ data: Data) -> Bool {
+        guard case let (w, h)? = size(data) else { return false }
+        return (0.5...0.75).contains(w / h)
+    }
+
+    /// A picture's width and height in pixels, read from its header
+    static func size(_ data: Data) -> (Double, Double)? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
               let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
-              let w = p[kCGImagePropertyPixelWidth] as? Double, let h = p[kCGImagePropertyPixelHeight] as? Double, h > 0 else { return false }
-        return (0.5...0.75).contains(w / h)
+              let w = p[kCGImagePropertyPixelWidth] as? Double, let h = p[kCGImagePropertyPixelHeight] as? Double, w > 0, h > 0 else { return nil }
+        return (w, h)
+    }
+
+    /// Whether a downloaded front is GameTDB's stand-in for a download-only game: the console's red all round a small shop banner
+    /// and a shop sign (no printed box). The game's square shop art makes a better box (CoverArt.eshopBox).
+    static func eshopStandIn(_ data: Data) -> Bool {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return false }
+        return eshopStandIn(cg)
+    }
+
+    static func eshopStandIn(_ image: CGImage) -> Bool {
+        let w = 60, h = 97
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue), let raw = ctx.data else { return false }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let px = raw.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        // points down both sides and along the bottom (the top row first in memory)
+        let points: [(Double, Double)] = [(0.04, 0.5), (0.96, 0.5), (0.5, 0.93), (0.04, 0.2), (0.96, 0.8), (0.1, 0.97), (0.9, 0.97)]
+        let red = points.filter { p in
+            let i = (min(Int(p.1 * Double(h)), h - 1) * w + min(Int(p.0 * Double(w)), w - 1)) * 4
+            return px[i] > 190 && px[i + 1] < 60 && px[i + 2] < 70
+        }
+        return red.count >= 6
     }
 
     /// A shop's picture of a whole case (a product render: the cover inside the case's plastic, on a see-through background)
@@ -226,10 +259,168 @@ enum HeroSource {
 
     /// Whether a picture is wide art (about 2:1), not a square or a box
     static func wide(_ data: Data) -> Bool {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
-              let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
-              let w = p[kCGImagePropertyPixelWidth] as? Double, let h = p[kCGImagePropertyPixelHeight] as? Double, h > 0 else { return false }
+        guard case let (w, h)? = CoverSource.size(data) else { return false }
         return (1.6...2.4).contains(w / h)
+    }
+
+    /// The one shape and size every wide picture is kept at: 2:1 (Home fills the top of the window with it, about that shape on a
+    /// Mac's screen; the game page's banner is a narrower band of the same picture), 2560 × 1280 so a full-screen window on a
+    /// Retina display barely enlarges it. A wider picture loses its sides (cut about the middle, as Home would show it), a taller
+    /// one its top and bottom.
+    static let standardSize = CGSize(width: 2560, height: 1280)
+
+    static func standard(_ data: Data) -> Data? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let full = CGImageSourceCreateImageAtIndex(src, 0, nil),
+              full.width > 0, full.height > 0 else { return nil }
+        let w = CGFloat(full.width), h = CGFloat(full.height), want = standardSize.width / standardSize.height
+        let crop = w / h > want ? CGRect(x: ((w - h * want) / 2).rounded(), y: 0, width: (h * want).rounded(), height: h)
+                                : CGRect(x: 0, y: ((h - w / want) / 2).rounded(), width: w, height: (w / want).rounded())
+        guard let part = full.cropping(to: crop) else { return nil }
+        let ow = Int(standardSize.width), oh = Int(standardSize.height)
+        // Lanczos rather than CoreGraphics' own scaling: most art is enlarged here, and that keeps its edges cleaner
+        let ci = CIImage(cgImage: part)
+        let scaled = ci.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: CGFloat(oh) / CGFloat(part.height),
+                                                                               kCIInputAspectRatioKey: (CGFloat(ow) / CGFloat(part.width)) / (CGFloat(oh) / CGFloat(part.height))])
+        let out = CIContext(options: [.useSoftwareRenderer: false]).createCGImage(scaled, from: CGRect(x: 0, y: 0, width: ow, height: oh))
+            ?? part
+        let buf = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(buf, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, out, [kCGImageDestinationLossyCompressionQuality: 0.88] as CFDictionary)
+        return CGImageDestinationFinalize(dest) ? buf as Data : nil
+    }
+}
+
+/// The lookup of a game's square art on Nintendo's European store, apart from the network (tested)
+enum SquareSource {
+    static func byIDs(_ ids: [String]) -> URL? {
+        let q = ids.map { $0.lowercased() }.filter { $0.count == 16 && $0.allSatisfy(\.isHexDigit) }
+        guard !q.isEmpty else { return nil }
+        return HeroSource.url(["q": "*", "fq": "application_id_s:(\(q.joined(separator: " OR ")))", "rows": "\(q.count * 6)"], fields: "application_id_s,title,type,image_url_sq_s")
+    }
+
+    static func byName(_ name: String) -> URL? {
+        let n = String(CoverSource.plain(name).map { $0.isLetter || $0.isNumber ? $0 : " " }).split(separator: " ").joined(separator: " ")
+        guard CoverSource.normalize(n).count >= 3 else { return nil }
+        return HeroSource.url(["q": n, "fq": "type:GAME", "rows": "8"], fields: "application_id_s,title,type,image_url_sq_s")
+    }
+
+    struct Doc: Equatable { var id: String?; var title: String; var game: Bool; var image: String }
+
+    static func parse(_ data: Data) -> [Doc] {
+        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let r = o["response"] as? [String: Any],
+              let docs = r["docs"] as? [[String: Any]] else { return [] }
+        return docs.compactMap { d in
+            guard let t = d["title"] as? String, let i = d["image_url_sq_s"] as? String else { return nil }
+            let img = i.hasPrefix("//") ? "https:" + i : i
+            guard img.hasPrefix("https://") else { return nil }
+            return Doc(id: (d["application_id_s"] as? String)?.uppercased(), title: t, game: (d["type"] as? String) == "GAME", image: img)
+        }
+    }
+
+    /// For a title ID: a game's before an add-on's (they share the ID), the shortest title first
+    static func pick(_ docs: [Doc], id: String) -> String? {
+        docs.filter { $0.id == id.uppercased() }.min { ($0.game ? 0 : 1, $0.title.count) < ($1.game ? 0 : 1, $1.title.count) }?.image
+    }
+
+    /// For a name: only a game whose title is that name
+    static func pick(_ docs: [Doc], name: String) -> String? {
+        let want = CoverSource.normalize(CoverSource.plain(name))
+        return docs.first { $0.game && (CoverSource.normalize($0.title) == want || CoverSource.normalize(CoverSource.plain($0.title)) == want) }?.image
+    }
+}
+
+/// A game's page on Nintendo Life, apart from the network (tested): its header art (the wide art) and its cover (the square eShop
+/// art of a download-only game, the box of a boxed one). The page's address is made from the game's name, as the site makes it
+/// ("Kirby's Return to Dream Land Deluxe" → kirbys_return_to_dream_land_deluxe), under the site's console sections in turn.
+enum NLifeSource {
+    static let site = "https://www.nintendolife.com"
+    /// a wide picture this low (in pixels) is soft once enlarged: the store's is taken instead when it has one
+    static let lowHeight = 500.0
+    /// pages asked for at most for one game (a second each); one not found is looked for again after a week
+    static let maxTries = 16
+
+    /// The page names the site may use for a game, likeliest first: words joined by "_" ("Mario & Luigi - Brothership" →
+    /// mario_and_luigi_brothership), then with its hyphens kept (pac-man_championship_edition_2_plus, shadow_of_the_ninja_-_reborn),
+    /// "+" said as "plus" apart or joined to its word (pac-man_museumplus), without a leading "The" (legend_of_zelda_…) or a
+    /// closing "… Edition" (alpaca_ball_allstars)
+    static func slugs(_ name: String) -> [String] {
+        let n = CoverSource.plain(name).folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en"))
+            .lowercased().replacingOccurrences(of: "'", with: "").replacingOccurrences(of: "\u{2019}", with: "").replacingOccurrences(of: ".", with: "")
+        var names = [n]
+        let words = n.split(separator: " ")
+        if words.first == "the", words.count > 2 { names.append(words.dropFirst().joined(separator: " ")) }
+        if words.last == "edition", words.count > 3 { names += names.map { $0.split(separator: " ").dropLast(2).joined(separator: " ") } }
+        var out: [String] = []
+        for t in names {
+            for hyphens in [false, true] {
+                for glue in n.contains("+") ? [false, true] : [false] {
+                    var u = glue ? t.replacingOccurrences(of: #"([a-z0-9])\+"#, with: "$1plus", options: .regularExpression) : t
+                    u = u.replacingOccurrences(of: "&", with: " and ").replacingOccurrences(of: "+", with: " plus ")
+                    let kept = u.unicodeScalars.map { c -> Character in
+                        if c.isASCII, CharacterSet.alphanumerics.contains(c) { return Character(c) }
+                        return hyphens && c == "-" ? "-" : " "
+                    }
+                    let s = String(kept).split(separator: " ").joined(separator: "_")
+                    if s.count >= 2, !out.contains(s) { out.append(s) }
+                }
+            }
+        }
+        return out
+    }
+
+    /// The pages to try, likeliest first: Switch 2 games (title IDs from 04) under its section first; every game under the
+    /// boxed games' section, then the download games'
+    static func pages(name: String, titleID: String?) -> [URL] {
+        var sections = ["nintendo-switch", "switch-eshop"]
+        if titleID?.hasPrefix("04") == true { sections.insert("nintendo-switch-2", at: 0) }
+        return Array(slugs(name).flatMap { s in sections.compactMap { URL(string: "\(site)/games/\($0)/\(s)") } }.prefix(maxTries))
+    }
+
+    struct Page: Equatable { var hero: URL?; var cover: URL?; var developer: String?; var year: String? }
+
+    /// The header art (`<div class="… background-desktop" data-bg-image="…artwork.1920x350.jpg">`) and the cover
+    /// (`<p id="cover" …><img src="…cover.cover_300x.jpg">`), both asked for at their original size
+    static func parse(_ html: String) -> Page {
+        func attr(_ pattern: String, _ name: String) -> String? {
+            guard let r = html.range(of: pattern, options: .regularExpression), let a = html[r].range(of: name + #"="[^"]*""#, options: .regularExpression) else { return nil }
+            let v = html[r][a].dropFirst(name.count + 2).dropLast()
+            return v.hasPrefix("https://images.nintendolife.com/") ? String(v) : nil
+        }
+        let hero = attr(#"<div[^>]*background-desktop[^>]*>"#, "data-bg-image")
+        let cover = attr(#"<p id="cover"[^>]*>\s*<img[^>]*>"#, "src")
+        return Page(hero: hero.flatMap { URL(string: original($0)) }, cover: cover.flatMap { URL(string: original($0)) },
+                    developer: developer(html), year: year(html))
+    }
+
+    /// The developer from the page's facts (`<dt>Developer</dt><dd><a …>JoyMasher</a></dd>`), several joined with " & "
+    static func developer(_ html: String) -> String? {
+        guard let r = html.range(of: #"(?s)<dt[^>]*>\s*Developers?\s*</dt>\s*<dd[^>]*>.*?</dd>"#, options: .regularExpression) else { return nil }
+        let dd = String(html[r]).replacingOccurrences(of: #"(?s)^.*?<dd[^>]*>"#, with: "", options: .regularExpression)
+        let names = dd.split(separator: "</a>").compactMap { part -> String? in
+            guard let a = part.range(of: "<a[^>]*>", options: .regularExpression) else { return nil }
+            let n = StoreSource.plainText(String(part[a.upperBound...])).trimmingCharacters(in: .whitespacesAndNewlines)
+            return n.isEmpty ? nil : n
+        }
+        let plain = StoreSource.plainText(dd.replacingOccurrences(of: "</dd>", with: "")).trimmingCharacters(in: .whitespacesAndNewlines)
+        let out = names.isEmpty ? plain : names.joined(separator: " & ")
+        return out.isEmpty || out.count > 60 ? nil : out
+    }
+
+    /// The year of the game's first release: its schema.org entry's datePublished ("2019-07-11")
+    static func year(_ html: String) -> String? {
+        guard let r = html.range(of: #""datePublished":"[0-9]{4}"#, options: .regularExpression) else { return nil }
+        return String(html[r].suffix(4))
+    }
+
+    /// "…/cuphead-artwork.1920x350.jpg" → "…/cuphead-artwork.original.jpg"; the same for "….cover_300x.jpg"
+    static func original(_ u: String) -> String {
+        u.replacingOccurrences(of: #"\.[a-z_]*[0-9]+x[0-9]*\.(jpg|jpeg|png)$"#, with: ".original.$1", options: .regularExpression)
+    }
+
+    /// Whether a cover is square art (a download game's) rather than a box
+    static func square(_ data: Data) -> Bool {
+        guard case let (w, h)? = CoverSource.size(data) else { return false }
+        return (0.9...1.1).contains(w / h)
     }
 }
 
@@ -244,7 +435,13 @@ final class CoverStore {
     @ObservationIgnored private var fetch: Task<Void, Never>?
     @ObservationIgnored private var asked = Set<String>()
     @ObservationIgnored private var heroFetch: Task<Void, Never>?
+    @ObservationIgnored private var nlFetch: Task<Void, Never>?
+    @ObservationIgnored private var nlAsked = Set<String>()
+    /// the Nintendo Life pass under way (tests wait on it)
+    var nintendoLifeTask: Task<Void, Never>? { nlFetch }
     @ObservationIgnored private var heroAsked = Set<String>()
+    @ObservationIgnored private var squareFetch: Task<Void, Never>?
+    @ObservationIgnored private var squareAsked = Set<String>()
     /// the wide art is shown (Settings › Artwork)
     var showHeroes = true
     @ObservationIgnored private var reading = Set<String>()
@@ -299,9 +496,15 @@ final class CoverStore {
     /// A side's cover for a tile on the shelf or in the grid: a smaller copy, read and decoded off the main thread so a scroll past
     /// covers not seen yet never waits for a JPEG. `.none`: no cover on disk (a drawn stand-in takes its place);
     /// `.some(nil)`: there is one and it is being read, and `revision` moves when it arrives
-    func thumb(_ key: String, _ side: CoverSide) -> NSImage?? {
+    func thumb(_ key: String, _ side: CoverSide) -> NSImage?? { thumb(named: key + "-" + side.rawValue) }
+
+    /// The game's square art for a tile (Settings › Square covers), as `thumb`: Nintendo Life's (<key>-square.jpg), else the
+    /// store's (<key>-square-store.jpg), else one the player gave (<key>-square-own.png)
+    func squareThumb(_ key: String) -> NSImage?? { thumb(named: key + "-square") }
+
+    private func thumb(named k: String) -> NSImage?? {
         let _ = revision
-        let k = key + "-" + side.rawValue, tk = k + "-thumb"
+        let tk = k + "-thumb"
         if let i = memory[tk] { return .some(i) }
         if absent.contains(k) { return .none }
         if reading.contains(tk) { return .some(nil) }
@@ -316,7 +519,7 @@ final class CoverStore {
 
     /// The cover on disk under a side's name: the player's own first, then the downloaded one
     nonisolated static func file(_ k: String) -> URL? {
-        [k + "-own.png", k + ".jpg"].map { dir.appending(path: $0) }.first { FileManager.default.fileExists(atPath: $0.path) }
+        [k + "-own.png", k + ".jpg", k + "-store.jpg"].map { dir.appending(path: $0) }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     /// A picture file no longer than `side` pixels, decoded here and now (ImageIO reads a JPEG at a reduced size without decoding all of it)
@@ -447,9 +650,10 @@ final class CoverStore {
         let todo = games.filter { !asked.contains($0.key) }
         guard !todo.isEmpty else { return }
         for g in todo { asked.insert(g.key) }
-        let previous = fetch
+        let previous = fetch, nl = nlFetch
         fetch = Task.detached(priority: .utility) {
             await previous?.value
+            await nl?.value   // a game's eShop box (from Nintendo Life) is made before GameTDB's stand-in is taken
             let fm = FileManager.default
             try? fm.createDirectory(at: Self.dir, withIntermediateDirectories: true)
             var list: [(id: String, title: String)]?
@@ -486,11 +690,100 @@ final class CoverStore {
     /// Look again for every game's art (Settings › Covers)
     func lookAgain() {
         if let files = try? FileManager.default.contentsOfDirectory(at: Self.dir, includingPropertiesForKeys: nil) {
-            for f in files where f.pathExtension == "none" || f.pathExtension == "heronone" { try? FileManager.default.removeItem(at: f) }
+            for f in files where ["none", "heronone", "nlife", "nlifenone", "squarenone"].contains(f.pathExtension) { try? FileManager.default.removeItem(at: f) }
         }
         asked = []
         heroAsked = []
+        nlAsked = []
+        squareAsked = []
         revision += 1
+    }
+
+    /// What a game's Nintendo Life pass took, kept in <key>.nlife so it is done once (Settings › Artwork › Look again does it over):
+    /// the pass's version, then "hero" and "box" for the parts done. A new version makes the boxes again (2: the developer and year
+    /// on the box); the wide art stays. A game whose page is not found is looked for again after a week (<key>.nlifenone).
+    nonisolated static let nlifeVersion = "2"
+
+    /// Nintendo Life first, for every game not done yet: its page (found by name, NLifeSource.pages, a second between requests),
+    /// then its header art as the game's wide art (replacing the store's; a header too small to enlarge well keeps a store picture
+    /// already there) and its cover: square shop art becomes the game's eShop box when it has no printed box (none yet, or
+    /// GameTDB's red stand-in, kept as -front-eshop.jpg), a box is the front when it has none. Offline, nothing is marked.
+    func fetchNintendoLife(_ games: [(key: String, titleID: String?, name: String, console: String)], heroes: Bool, boxes: Bool) {
+        guard heroes || boxes else { return }
+        let parts = (heroes ? ["hero"] : []) + (boxes ? ["box"] : [])
+        let todo = games.filter { !nlAsked.contains($0.key) }
+        guard !todo.isEmpty else { return }
+        for g in todo { nlAsked.insert(g.key) }
+        let previous = nlFetch
+        nlFetch = Task.detached(priority: .utility) {
+            await previous?.value
+            let fm = FileManager.default
+            try? fm.createDirectory(at: Self.dir, withIntermediateDirectories: true)
+            for g in todo {
+                if Task.isCancelled { return }
+                let mark = Self.dir.appending(path: "\(g.key).nlife"), none = Self.dir.appending(path: "\(g.key).nlifenone")
+                let done = (try? String(contentsOf: mark, encoding: .utf8))?.split(whereSeparator: \.isNewline).map(String.init) ?? []
+                let current = done.first == Self.nlifeVersion
+                let wantHero = heroes && !done.dropFirst().contains("hero"), wantBox = boxes && !(current && done.contains("box"))
+                if !wantHero && !wantBox { continue }
+                // an older pass that made no box (a boxed game): nothing to make again, so no page is asked for
+                if !wantHero, done.contains("box"), !fm.fileExists(atPath: Self.dir.appending(path: "\(g.key)-square.jpg").path) {
+                    try? ([Self.nlifeVersion] + Set(done.dropFirst() + parts).sorted()).joined(separator: "\n").write(to: mark, atomically: true, encoding: .utf8)
+                    continue
+                }
+                var page: NLifeSource.Page?
+                for u in NLifeSource.pages(name: g.name, titleID: g.titleID) {
+                    try? await Task.sleep(for: .seconds(1))
+                    guard case let (data, code)? = await Self.fetch(u) else { return }   // offline: try again at the next start
+                    if code == 200 { page = NLifeSource.parse(String(decoding: data, as: UTF8.self)); break }
+                }
+                guard let page else { try? Data().write(to: none); continue }
+                try? fm.removeItem(at: none)
+                var changed = false
+                if wantHero {
+                    let file = Self.dir.appending(path: "\(g.key)-hero.jpg")
+                    if let u = page.hero {
+                        try? await Task.sleep(for: .seconds(1))
+                        if let d = await Self.get(u), let h = CoverSource.size(d)?.1, h >= NLifeSource.lowHeight || !fm.fileExists(atPath: file.path),
+                           let jpg = HeroSource.standard(d), (try? jpg.write(to: file)) != nil {
+                            changed = true
+                            try? fm.removeItem(at: Self.dir.appending(path: "\(g.key).heronone"))
+                        }
+                    }
+                    // a store picture kept (Nintendo Life's too small, or none) goes to the standard size too
+                    if !changed, let old = try? Data(contentsOf: file), CoverSource.size(old).map({ $0.0 != HeroSource.standardSize.width }) ?? false,
+                       let std = HeroSource.standard(old), (try? std.write(to: file)) != nil { changed = true }
+                }
+                if wantBox, let u = page.cover {
+                    let front = Self.dir.appending(path: "\(g.key)-front.jpg"), made = Self.dir.appending(path: "\(g.key).eshopbox")
+                    let squareFile = Self.dir.appending(path: "\(g.key)-square.jpg")
+                    // the square art downloaded before is used again
+                    var d = try? Data(contentsOf: squareFile)
+                    if d == nil { try? await Task.sleep(for: .seconds(1)); d = await Self.get(u) }
+                    if let d {
+                        if NLifeSource.square(d), let sq = CoverSource.jpeg(d, maxHeight: 1000) {
+                            try? sq.write(to: squareFile)
+                            let old = try? Data(contentsOf: front)
+                            let standIn = old.map(CoverSource.eshopStandIn) ?? false
+                            let detail = [page.developer, page.year].compactMap { $0 }.joined(separator: " · ")
+                            if old == nil || standIn || fm.fileExists(atPath: made.path),
+                               let box = await MainActor.run(body: { CoverArt.eshopBox(name: g.name, console: g.console, square: sq, detail: detail) }) {
+                                if standIn, let old { try? old.write(to: Self.dir.appending(path: "\(g.key)-front-eshop.jpg")) }
+                                if (try? box.write(to: front)) != nil { try? Data().write(to: made); changed = true }
+                            }
+                        } else if CoverSource.boxShaped(d), !fm.fileExists(atPath: front.path), let jpg = CoverSource.jpeg(d) {
+                            changed = (try? jpg.write(to: front)) != nil || changed
+                        }
+                    }
+                }
+                let had = Array(done.dropFirst()).filter { $0 == "hero" || current }
+                try? ([Self.nlifeVersion] + Set(had + parts).sorted()).joined(separator: "\n").write(to: mark, atomically: true, encoding: .utf8)
+                if changed {
+                    let key = g.key
+                    await MainActor.run { CoverStore.shared.forget(key) }
+                }
+            }
+        }
     }
 
     /// Fetch the wide art of the games that have none yet: one search for all their title IDs, then one by name for each game
@@ -500,9 +793,10 @@ final class CoverStore {
         let todo = games.filter { !heroAsked.contains($0.key) }
         guard !todo.isEmpty else { return }
         for g in todo { heroAsked.insert(g.key) }
-        let previous = heroFetch
+        let previous = heroFetch, nl = nlFetch
         heroFetch = Task.detached(priority: .utility) {
             await previous?.value
+            await nl?.value   // Nintendo Life's art first; the store's only for a game still without any
             let fm = FileManager.default
             try? fm.createDirectory(at: Self.dir, withIntermediateDirectories: true)
             let want = todo.filter { g in
@@ -536,7 +830,7 @@ final class CoverStore {
                 }
                 if let image {
                     for u in HeroSource.sizes(image) {
-                        guard let d = await Self.get(u), HeroSource.wide(d), let jpg = CoverSource.jpeg(d, maxHeight: 900) else { continue }
+                        guard let d = await Self.get(u), HeroSource.wide(d), let jpg = HeroSource.standard(d) else { continue }
                         got = (try? jpg.write(to: file)) != nil
                         if got { break }
                     }
@@ -549,6 +843,62 @@ final class CoverStore {
                     try? Data().write(to: none)
                 }
             }
+        }
+    }
+
+    /// Square art for every game, for Settings › Square covers: Nintendo Life's pass keeps a download-only game's (<key>-square.jpg);
+    /// any other game gets the square picture of its entry on Nintendo's European store (image_url_sq_s), found by title ID in one
+    /// search for many games, else by its exact name, as <key>-square-store.jpg. A game with none is looked for again after a week
+    /// (<key>.squarenone). Offline, nothing is marked.
+    func fetchSquares(_ games: [(key: String, titleID: String?, name: String)]) {
+        let todo = games.filter { !squareAsked.contains($0.key) }
+        guard !todo.isEmpty else { return }
+        for g in todo { squareAsked.insert(g.key) }
+        let previous = squareFetch, nl = nlFetch
+        squareFetch = Task.detached(priority: .utility) {
+            await previous?.value
+            await nl?.value   // Nintendo Life's square art first
+            let fm = FileManager.default
+            try? fm.createDirectory(at: Self.dir, withIntermediateDirectories: true)
+            let want = todo.filter { g in
+                if Self.file(g.key + "-square") != nil { return false }
+                let none = Self.dir.appending(path: "\(g.key).squarenone")
+                if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 7 * 86400 { return false }
+                return true
+            }
+            guard !want.isEmpty else { return }
+            var found: [String: String] = [:]
+            let ids = want.compactMap(\.titleID)
+            for start in stride(from: 0, to: ids.count, by: HeroSource.batch) {
+                let part = Array(ids[start..<min(start + HeroSource.batch, ids.count)])
+                guard let u = SquareSource.byIDs(part) else { continue }
+                guard let data = await Self.get(u) else { return }   // offline or refused: try again at the next start
+                let docs = SquareSource.parse(data)
+                for id in part { if let s = SquareSource.pick(docs, id: id) { found[id.uppercased()] = s } }
+            }
+            var changed: [String] = []
+            for g in want {
+                if Task.isCancelled { return }
+                var image = g.titleID.flatMap { found[$0.uppercased()] }
+                if image == nil, let u = SquareSource.byName(g.name) {
+                    guard let data = await Self.get(u) else { return }
+                    image = SquareSource.pick(SquareSource.parse(data), name: g.name)
+                }
+                var got = false
+                if let image {
+                    for u in HeroSource.sizes(image) {
+                        guard let d = await Self.get(u), NLifeSource.square(d), let jpg = CoverSource.jpeg(d, maxHeight: 1000) else { continue }
+                        got = (try? jpg.write(to: Self.dir.appending(path: "\(g.key)-square-store.jpg"))) != nil
+                        if got { break }
+                    }
+                }
+                let none = Self.dir.appending(path: "\(g.key).squarenone")
+                if got { try? fm.removeItem(at: none); changed.append(g.key) } else { try? Data().write(to: none) }
+                // the covers drawn again a few at a time, not once for each
+                if changed.count >= 8 { let c = changed; changed = []; await MainActor.run { for k in c { CoverStore.shared.forget(k) } } }
+            }
+            let c = changed
+            await MainActor.run { for k in c { CoverStore.shared.forget(k) } }
         }
     }
 
@@ -576,6 +926,15 @@ final class CoverStore {
         req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
         guard let (_, resp) = try? await URLSession.shared.data(for: req), let code = (resp as? HTTPURLResponse)?.statusCode else { return false }
         return (200..<400).contains(code)
+    }
+
+    /// A page and its status (a missing page answers 404, which is no reason to stop); nil when nothing answered
+    nonisolated static func fetch(_ url: URL) async -> (Data, Int)? {
+        var req = URLRequest(url: url, timeoutInterval: 30)
+        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        req.httpShouldHandleCookies = false
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), let code = (resp as? HTTPURLResponse)?.statusCode else { return nil }
+        return (data, code)
     }
 
     nonisolated static func get(_ url: URL, browser: Bool = false) async -> Data? {

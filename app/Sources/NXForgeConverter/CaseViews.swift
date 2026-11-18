@@ -60,6 +60,50 @@ struct DrawnFront: View {
     }
 }
 
+/// A download-only game's box (420 × 680, rendered once into a picture and kept as its front): the console's red band across the
+/// top as on a printed Switch box, the game's square shop art full width under it, and below that the same art carried on out
+/// of focus behind the game's name
+struct EShopFront: View {
+    let name: String
+    let console: String
+    let art: NSImage
+    /// "JoyMasher · 2019": the developer and the year it came out
+    var detail = ""
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.black
+            // the art's lower edge stretched and blurred down the rest of the box, so the picture seems to carry on
+            Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                .frame(width: 420, height: 680).scaleEffect(x: 1.6, y: 1.6, anchor: .bottom).blur(radius: 26).saturation(1.3).clipped()
+            LinearGradient(stops: [.init(color: .clear, location: 0.6), .init(color: .black.opacity(0.35), location: 0.75), .init(color: .black.opacity(0.75), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 3).fill(.white).frame(width: 7, height: 22)
+                    Text(console.uppercased()).font(.system(size: 17, weight: .heavy)).fontWidth(.expanded).kerning(3)
+                    Spacer()
+                }
+                .padding(.horizontal, 24).frame(height: 54)
+                .background(Color(red: 0.90, green: 0.0, blue: 0.07))
+                Image(nsImage: art).resizable().interpolation(.high).aspectRatio(1, contentMode: .fill)
+                    .frame(width: 420, height: 420).clipped()
+                    .overlay(alignment: .bottom) { LinearGradient(colors: [.clear, .black.opacity(0.22)], startPoint: .top, endPoint: .bottom).frame(height: 60) }
+                Spacer(minLength: 0)
+                Text(name).font(.system(size: 30, weight: .heavy)).tracking(-0.5).lineLimit(2).minimumScaleFactor(0.6)
+                    .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+                    .shadow(color: .black.opacity(0.6), radius: 8, y: 2)
+                    .padding(.horizontal, 26)
+                Text(detail.uppercased()).font(.system(size: 12, weight: .bold)).fontWidth(.expanded).kerning(2.5).lineLimit(1).minimumScaleFactor(0.6).opacity(0.75)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 26).padding(.top, 8).padding(.bottom, 26)
+            }
+            .foregroundStyle(.white)
+        }
+        .frame(width: 420, height: 680)
+        .clipped()
+    }
+}
+
 /// A back cover with the game's details, for a game with no back art
 struct DrawnBack: View {
     let name: String
@@ -121,6 +165,14 @@ enum CoverArt {
         return r.nsImage
     }
 
+    /// A download-only game's box made from its square shop art (EShopFront), as a JPEG the size of a downloaded front
+    static func eshopBox(name: String, console: String, square: Data, detail: String = "") -> Data? {
+        guard let art = NSImage(data: square), art.isValid,
+              let img = render(EShopFront(name: name, console: console, art: art, detail: detail)),
+              let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return NSBitmapImageRep(cgImage: cg).representation(using: .jpeg, properties: [.compressionFactor: 0.9])
+    }
+
     static func icon(_ g: StageGame) -> NSImage? {
         if let i = g.icon, let img = NSImage(contentsOfFile: i) { return img }
         // an app built without an icon has the system's blank one: no picture is better than that
@@ -146,6 +198,15 @@ enum CoverArt {
     static func tile(_ g: StageGame) -> NSImage? {
         if let t = CoverStore.shared.thumb(g.coverKey, .front) { return t }
         return front(g)
+    }
+
+    /// The square art for a tile (Settings › Square covers): Nintendo Life's or the store's, else the game's own icon (the same
+    /// square art, smaller), else the front cut to a square about its top
+    static func squareTile(_ g: StageGame) -> NSImage? {
+        switch CoverStore.shared.squareThumb(g.coverKey) {
+        case .some(let i): return i
+        case .none: return icon(g) ?? tile(g)
+        }
     }
 
     static func back(_ g: StageGame) -> NSImage? {
@@ -210,17 +271,20 @@ struct CoverTile: View {
     var attention: GameAttention? = nil
     /// why it cannot play, when it cannot (GameStatus), as a label along the cover's foot instead of only dimming it
     var status: GameStatus? = nil
+    /// the game's square shop art in a rounded square, not its box (Settings › Square covers)
+    var square = false
     @State private var hover: CGPoint?
     @State private var size: CGSize = .zero
     @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
         let _ = CoverStore.shared.revision
-        let shape = UnevenRoundedRectangle(cornerRadii: .init(topLeading: 3, bottomLeading: 3, bottomTrailing: 7, topTrailing: 7))
-        let img = CoverArt.tile(game)
+        let shape = square ? UnevenRoundedRectangle(cornerRadii: .init(topLeading: 10, bottomLeading: 10, bottomTrailing: 10, topTrailing: 10))
+                           : UnevenRoundedRectangle(cornerRadii: .init(topLeading: 3, bottomLeading: 3, bottomTrailing: 7, topTrailing: 7))
+        let img = square ? CoverArt.squareTile(game) : CoverArt.tile(game)
         let tint = CoverArt.tint(game)
         Color(white: 0.14)
-            .aspectRatio(CoverSource.aspect, contentMode: .fit)
+            .aspectRatio(square ? 1 : CoverSource.aspect, contentMode: .fit)
             .overlay {
                 if let img {
                     Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill).saturation(dim ? 0.5 : 1)
@@ -234,9 +298,12 @@ struct CoverTile: View {
                 }
             }
             .overlay(alignment: .leading) {
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.black.opacity(0.40), .clear], startPoint: .leading, endPoint: .trailing).frame(width: 5)
-                    Rectangle().fill(.white.opacity(0.16)).frame(width: 1)
+                // a box's crease at the spine
+                if !square {
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.black.opacity(0.40), .clear], startPoint: .leading, endPoint: .trailing).frame(width: 5)
+                        Rectangle().fill(.white.opacity(0.16)).frame(width: 1)
+                    }
                 }
             }
             .overlay { if dim { Color.black.opacity(0.44) } }
@@ -246,7 +313,7 @@ struct CoverTile: View {
             .clipShape(shape)
             .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
             .overlay {
-                RoundedRectangle(cornerRadius: 11).strokeBorder(.white, lineWidth: 2.5).padding(-6)
+                RoundedRectangle(cornerRadius: square ? 14 : 11).strokeBorder(.white, lineWidth: 2.5).padding(-6)
                     .shadow(color: tint.opacity(0.9), radius: 9)
                     .opacity(focused ? 1 : 0)
             }
@@ -675,6 +742,8 @@ final class CaseSCNView: SCNView {
 struct GameCase: View {
     let game: StageGame
     var flipped = false
+    /// how strong the game's colour glows behind the box (the game page keeps it faint over the key art)
+    var glow: Double = 0.40
     /// where the floor is, down the view (CaseModelView's camera)
     static let floor = 0.722
 
@@ -688,7 +757,7 @@ struct GameCase: View {
             .background {
                 GeometryReader { geo in
                     let w = geo.size.width, h = geo.size.height
-                    Ellipse().fill(RadialGradient(colors: [tint.opacity(0.40), tint.opacity(0)], center: .center, startRadius: 0, endRadius: h * 0.55))
+                    Ellipse().fill(RadialGradient(colors: [tint.opacity(glow), tint.opacity(0)], center: .center, startRadius: 0, endRadius: h * 0.55))
                         .frame(width: h * 1.1, height: h * 0.95).position(x: w / 2, y: h * 0.38)
                     Ellipse().fill(.black.opacity(0.62)).frame(width: h * 0.50, height: h * 0.045).blur(radius: h * 0.028).position(x: w / 2, y: h * (Self.floor + 0.012))
                 }

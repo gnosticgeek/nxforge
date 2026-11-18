@@ -38,11 +38,22 @@ enum VerifiedGames {
         return parse(text)
     }
 
-    /// The game's title ID from a built app's bundle ID (org.nxforge.<title ID>, the packer's), nil for anything else
+    /// The game's title ID from a built app's bundle ID (org.nxforge.<title ID>, the packer's), nil for anything else.
+    /// Kept per app while its Info.plist is unchanged: the Library, Home and Builds ask for every app on each redraw, and the apps
+    /// are often on an external drive or a share, where reading the plist each time is slow.
     static func titleID(ofApp app: String) -> String? {
-        guard let id = NSDictionary(contentsOfFile: app + "/Contents/Info.plist")?["CFBundleIdentifier"] as? String else { return nil }
-        return titleID(bundleID: id)
+        let plist = app + "/Contents/Info.plist"
+        let stamp = (try? FileManager.default.attributesOfItem(atPath: plist))?[.modificationDate] as? Date
+        guard let stamp else { return nil }   // no Info.plist: not an app (or gone)
+        titleLock.lock(); let hit = titleCache[app]; titleLock.unlock()
+        if let hit, hit.stamp == stamp { return hit.titleID }
+        let t = (NSDictionary(contentsOfFile: plist)?["CFBundleIdentifier"] as? String).flatMap { titleID(bundleID: $0) }
+        titleLock.lock(); titleCache[app] = (stamp, t); titleLock.unlock()
+        return t
     }
+
+    nonisolated(unsafe) private static var titleCache: [String: (stamp: Date, titleID: String?)] = [:]
+    private static let titleLock = NSLock()
 
     static func titleID(bundleID id: String) -> String? {
         guard let t = id.split(separator: ".").last, t.count == 16, UInt64(t, radix: 16) != nil else { return nil }

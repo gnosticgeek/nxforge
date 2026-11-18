@@ -6,7 +6,10 @@
 // Where the save is (dm/mac/launcher.c): <game folder>/Saves/save beside the app, or ~/Library/Application Support/nxnative/<title ID>/save
 // when the game folder is no place for it (or on a drive that is not APFS, or before the launcher has copied it in); the device save is the same path with _device.
 // Snapshots go beside it: <save's folder>/save-snapshots/<id>/{manifest.json, data/save, data/save_device}. (save-backups/ there is
-// Cloud saves' own, dm/host/save_sync.c.)
+// Cloud saves' own, dm/host/save_sync.c.) With Settings › Snapshot folder set (another drive, a NAS, iCloud Drive), they go to
+// <that folder>/<title ID>/<id> instead, and back beside the save while that folder is away.
+// Converter 0.18.0 adds a snapshot after every session (skipped when nothing changed), the Mac's name on each snapshot, Undo Restore
+// and the Saves page: ideas from RecompLauncher's save backups (GPL-3.0, github.com/elripalda/RecompLauncher), written fresh here.
 import AppKit
 import CryptoKit
 import Foundation
@@ -21,10 +24,11 @@ struct SaveInventory: Codable, Equatable {
 }
 
 enum SnapshotReason: String, Codable, CaseIterable {
-    case manual, beforeRestore, beforeRebuild, beforeAppRestore, imported
+    case manual, beforeRestore, beforeRebuild, beforeAppRestore, imported, afterPlay
     var label: String {
         switch self {
         case .manual: "Snapshot"
+        case .afterPlay: "After playing"
         case .imported: "Imported"
         case .beforeRestore: "Before a restore"
         case .beforeRebuild: "Before a rebuild"
@@ -40,6 +44,8 @@ struct SnapshotManifest: Codable {
     var created: Date
     var reason: SnapshotReason
     var inventory: SaveInventory
+    /// the Mac it was made on (nil in snapshots made before Converter 0.18.0)
+    var device: String? = nil
 }
 
 struct SaveSnapshot: Identifiable, Hashable {
@@ -49,6 +55,7 @@ struct SaveSnapshot: Identifiable, Hashable {
     var reason: SnapshotReason
     var files: Int
     var bytes: Int64
+    var device: String? = nil
 }
 
 /// A game's save: the folder the launcher hands the game, and the device save beside it.
@@ -57,7 +64,16 @@ struct SaveLocation: Equatable {
     var titleID: String
     var device: String { save + "_device" }
     var folder: String { save.url.deletingLastPathComponent().path }
-    var snapshots: String { folder + "/save-snapshots" }
+    /// beside the save
+    var besideSave: String { folder + "/save-snapshots" }
+    /// where new snapshots go: the chosen snapshot folder while it is there, else beside the save
+    var snapshots: String { SaveSnapshots.usableRoot.map { "\($0)/\(titleID)" } ?? besideSave }
+    /// every place this game's snapshots can be: where new ones go first, then beside the save and the chosen folder
+    var snapshotFolders: [String] {
+        var out = [snapshots]
+        for f in [besideSave] + (SaveSnapshots.customRoot.map { ["\($0)/\(titleID)"] } ?? []) where !out.contains(f) { out.append(f) }
+        return out
+    }
     var parts: [(name: String, path: String)] { [("save", save), ("save_device", device)] }
 }
 
@@ -66,6 +82,16 @@ enum SaveSnapshots {
     static let renameSwap: UInt32 = 0x0000_0002
     /// How many automatic snapshots (before a restore or a rebuild) stay; snapshots made with the button are never removed.
     static let keepAutomatic = 10
+    /// Settings › Snapshot folder (set by AppModel from the settings), nil: beside each save
+    nonisolated(unsafe) static var customRoot: String?
+    /// the chosen folder when it is reachable now (a NAS or a drive can be away)
+    static var usableRoot: String? {
+        guard let r = customRoot else { return nil }
+        var d: ObjCBool = false
+        return FileManager.default.fileExists(atPath: r, isDirectory: &d) && d.boolValue ? r : nil
+    }
+    /// this Mac's name, as Sharing in System Settings gives it
+    static let deviceName: String = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
 
     /// Where the app's save is, as the launcher picks it: the game folder's when it has one, else the Library's when that has one
     /// (or the game folder can't hold a save), else the game folder's, where the next start puts it.
@@ -166,10 +192,10 @@ enum SaveSnapshots {
 
     /// A checked copy of the save; nil when there is no save yet.
     @discardableResult
-    static func snapshot(_ loc: SaveLocation, reason: SnapshotReason) throws -> SaveSnapshot? {
+    static func snapshot(_ loc: SaveLocation, reason: SnapshotReason, inventory known: SaveInventory? = nil) throws -> SaveSnapshot? {
         guard hasSave(loc) else { return nil }
         let fm = FileManager.default
-        let inv = try inventory(loc.parts)
+        let inv = try known ?? inventory(loc.parts)
         try fm.createDirectory(atPath: loc.snapshots, withIntermediateDirectories: true)
         try enoughSpace(loc.snapshots, for: inv)
         let id = snapshotID()
@@ -178,11 +204,20 @@ enum SaveSnapshots {
         try copyChecked(inv, from: loc.parts, to: stage + "/data")
         // a save the game changed while it was being copied is no snapshot
         guard try inventory(loc.parts) == inv else { throw ConverterError("the save changed while it was being copied: quit the game and try again") }
-        let m = SnapshotManifest(id: id, titleID: loc.titleID, created: Date(), reason: reason, inventory: inv)
+        let m = SnapshotManifest(id: id, titleID: loc.titleID, created: Date(), reason: reason, inventory: inv, device: deviceName)
         try encoder.encode(m).write(to: URL(fileURLWithPath: stage + "/manifest.json"), options: .atomic)
         try fm.moveItem(atPath: stage, toPath: "\(loc.snapshots)/\(id)")
         if reason != .manual { prune(loc) }
-        return SaveSnapshot(id: id, path: "\(loc.snapshots)/\(id)", created: m.created, reason: reason, files: inv.files.count, bytes: inv.bytes)
+        return SaveSnapshot(id: id, path: "\(loc.snapshots)/\(id)", created: m.created, reason: reason, files: inv.files.count, bytes: inv.bytes, device: deviceName)
+    }
+
+    /// After a session: a snapshot when the save differs from the newest snapshot (nil when there is no save or nothing changed).
+    @discardableResult
+    static func snapshotAfterPlay(_ loc: SaveLocation) throws -> SaveSnapshot? {
+        guard hasSave(loc) else { return nil }
+        let inv = try inventory(loc.parts)
+        if let newest = list(loc).first, let m = try? manifest(newest.path, titleID: loc.titleID), m.inventory == inv { return nil }
+        return try snapshot(loc, reason: .afterPlay, inventory: inv)
     }
 
     /// "2026-11-05 21.44.42 3f9a": the time it was made and four random characters, so two in one second differ.
@@ -212,21 +247,62 @@ enum SaveSnapshots {
         return m
     }
 
-    /// The game's snapshots, newest first.
-    static func list(_ loc: SaveLocation) -> [SaveSnapshot] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: loc.snapshots)) ?? []
+    /// The game's snapshots in one folder, newest first.
+    static func list(in folder: String, titleID: String) -> [SaveSnapshot] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
         return names.filter { !$0.hasPrefix(".") }.compactMap { n in
-            let p = "\(loc.snapshots)/\(n)"
-            guard let m = try? manifest(p, titleID: loc.titleID) else { return nil }
-            return SaveSnapshot(id: n, path: p, created: m.created, reason: m.reason, files: m.inventory.files.count, bytes: m.inventory.bytes)
+            let p = "\(folder)/\(n)"
+            guard let m = try? manifest(p, titleID: titleID) else { return nil }
+            return SaveSnapshot(id: n, path: p, created: m.created, reason: m.reason, files: m.inventory.files.count, bytes: m.inventory.bytes, device: m.device)
         }.sorted { $0.created > $1.created }
     }
 
-    /// Automatic snapshots beyond keepAutomatic go to the Trash, oldest first.
+    /// The game's snapshots wherever they are (the chosen folder and beside the save), newest first.
+    static func list(_ loc: SaveLocation) -> [SaveSnapshot] {
+        var seen = Set<String>()
+        return loc.snapshotFolders.flatMap { list(in: $0, titleID: loc.titleID) }.filter { seen.insert($0.id).inserted }.sorted { $0.created > $1.created }
+    }
+
+    /// Automatic snapshots beyond keepAutomatic go to the Trash, oldest first: the ones after a session counted on their own, so a
+    /// run of sessions never pushes out the snapshot taken before a restore or a rebuild.
     static func prune(_ loc: SaveLocation) {
-        for s in list(loc).filter({ $0.reason != .manual }).dropFirst(keepAutomatic) {
-            try? FileManager.default.trashItem(at: s.path.url, resultingItemURL: nil)
+        let auto = list(loc).filter { $0.reason != .manual }
+        for group in [auto.filter { $0.reason == .afterPlay }, auto.filter { $0.reason != .afterPlay }] {
+            for s in group.dropFirst(keepAutomatic) { try? FileManager.default.trashItem(at: s.path.url, resultingItemURL: nil) }
         }
+    }
+
+    /// Move a snapshot into another folder: copied, checked against its manifest, then the original goes to the Trash.
+    /// One with the same name already there is left where it is. True when it moved.
+    @discardableResult
+    static func move(_ s: SaveSnapshot, to folder: String, titleID: String) throws -> Bool {
+        let fm = FileManager.default
+        let dest = "\(folder)/\(s.id)"
+        guard s.path.url.standardizedFileURL.path != dest.url.standardizedFileURL.path, !fm.fileExists(atPath: dest) else { return false }
+        let m = try manifest(s.path, titleID: titleID)
+        try fm.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        try enoughSpace(folder, for: m.inventory)
+        let stage = "\(folder)/.moving-\(UUID().uuidString)"
+        defer { try? fm.removeItem(atPath: stage) }
+        try fm.copyItem(atPath: s.path, toPath: stage)
+        let parts = m.inventory.directories.filter { !$0.contains("/") }
+        guard try inventory(parts.map { ($0, "\(stage)/data/\($0)") }) == m.inventory else {
+            throw ConverterError("the copy of snapshot \(s.id) does not match it; it stays where it was")
+        }
+        try fm.moveItem(atPath: stage, toPath: dest)
+        try fm.trashItem(at: s.path.url, resultingItemURL: nil)
+        return true
+    }
+
+    /// Every snapshot of these games into the folder new ones go to now. (moved, left where they were)
+    static func moveAll(_ locs: [SaveLocation]) -> (moved: Int, failed: [String]) {
+        var moved = 0, failed: [String] = []
+        for loc in locs {
+            for s in list(loc) where s.path.url.deletingLastPathComponent().standardizedFileURL.path != loc.snapshots.url.standardizedFileURL.path {
+                do { if try move(s, to: loc.snapshots, titleID: loc.titleID) { moved += 1 } } catch { failed.append("\(s.id): \(error)") }
+            }
+        }
+        return (moved, failed)
     }
 
     /// Put a snapshot back: checked again, copied beside the save and checked, the current save kept as a snapshot,
@@ -278,10 +354,10 @@ enum SaveSnapshots {
         let stage = "\(loc.snapshots)/.making-\(UUID().uuidString)"
         defer { try? fm.removeItem(atPath: stage) }
         try copyChecked(inv, from: parts, to: stage + "/data")
-        let m = SnapshotManifest(id: id, titleID: loc.titleID, created: Date(), reason: .imported, inventory: inv)
+        let m = SnapshotManifest(id: id, titleID: loc.titleID, created: Date(), reason: .imported, inventory: inv, device: deviceName)
         try encoder.encode(m).write(to: URL(fileURLWithPath: stage + "/manifest.json"), options: .atomic)
         try fm.moveItem(atPath: stage, toPath: "\(loc.snapshots)/\(id)")
-        return SaveSnapshot(id: id, path: "\(loc.snapshots)/\(id)", created: m.created, reason: .imported, files: inv.files.count, bytes: inv.bytes)
+        return SaveSnapshot(id: id, path: "\(loc.snapshots)/\(id)", created: m.created, reason: .imported, files: inv.files.count, bytes: inv.bytes, device: deviceName)
     }
 
     static func trash(_ s: SaveSnapshot) throws { try FileManager.default.trashItem(at: s.path.url, resultingItemURL: nil) }

@@ -367,14 +367,19 @@ def last_change(b):
 
 
 def idle_builds(ctx, notes):
-    """The build folders unchanged for ctx['idle_hours'] (default 24): one built or worked on today is someone's current work"""
+    """The build folders unchanged for ctx['idle_hours'] (default 24): one built or worked on today is someone's current work.
+    Worked out once per context (build-unused and build-cache both ask), its notes added for each asker."""
     h = ctx.get('idle_hours', 24)
-    out = []
-    for b in ctx['build_dirs']:
-        age = (time.time() - last_change(b)) / 3600
-        if age < h: notes.append(f'{b} kept: changed {age:.1f} hours ago (--idle-hours {h:g})')
-        else: out.append(b)
-    return out
+    if '_idle' not in ctx:
+        out, kept = [], []
+        for b in ctx['build_dirs']:
+            age = (time.time() - last_change(b)) / 3600
+            if age < h: kept.append(f'{b} kept: changed {age:.1f} hours ago (--idle-hours {h:g})')
+            else: out.append(b)
+        ctx['_idle'] = (out, kept)
+    out, kept = ctx['_idle']
+    notes += kept
+    return list(out)
 
 
 def find_build_unused(ctx):
@@ -401,11 +406,13 @@ def find_build_cache(ctx):
 
 
 def checkouts(ctx):
-    """The engine and its worktrees (git worktree list), as Paths"""
+    """The engine and its worktrees (git worktree list), as Paths; listed once per context (each worktree's check asks again)"""
     repo = ctx['repo']
     if not repo: return []
-    out = [Path(l[9:]) for l in (git(repo, 'worktree', 'list', '--porcelain') or '').splitlines() if l.startswith('worktree ')]
-    return out or [Path(repo)]
+    if '_checkouts' not in ctx:
+        out = [Path(l[9:]) for l in (git(repo, 'worktree', 'list', '--porcelain') or '').splitlines() if l.startswith('worktree ')]
+        ctx['_checkouts'] = out or [Path(repo)]
+    return list(ctx['_checkouts'])
 
 
 def find_swift_build(ctx):
@@ -418,9 +425,10 @@ def find_swift_build(ctx):
 def worktree_state(ctx, wt):
     """(removable, why, info) for one worktree of the engine"""
     wt = Path(wt).expanduser().resolve()
-    main_wt = checkouts(ctx)[0].resolve() if checkouts(ctx) else None
+    all_wt = [c.resolve() for c in checkouts(ctx)]
+    main_wt = all_wt[0] if all_wt else None
     info = {'path': str(wt), 'branch': git(wt, 'rev-parse', '--abbrev-ref', 'HEAD') or '?'}
-    if wt not in [c.resolve() for c in checkouts(ctx)]: return False, 'not a worktree of the engine', info
+    if wt not in all_wt: return False, 'not a worktree of the engine', info
     if wt == main_wt: return False, 'the main checkout', info
     if ctx['repo'] and wt == Path(ctx['repo']).resolve(): return False, 'the converter engine (settings "repo") runs from it', info
     if ctx['repo'] and layered(ctx['repo']) and wt == Path(tree_of(ctx['repo'])).resolve(): return False, 'the engine tree builds run in (scripts/layer.py assemble makes it)', info
@@ -480,7 +488,10 @@ def overview(ctx):
                 except OSError: continue
                 if apps: other.append({'path': str(p), 'bytes': size_of(p), 'kind': 'game folder', 'apps': [str(a) for a in apps]})
     games += [{'folder': o['path'], 'entries': [o], 'bytes': o['bytes'], 'unrecorded': True} for o in other]
-    builds = [{'path': str(b), 'bytes': size_of(b), 'entries': {p.name: size_of(p) for p in sorted(b.iterdir())}} for b in ctx['build_dirs']]
+    builds = []
+    for b in ctx['build_dirs']:   # the folder's size is its entries' (one du each), not a second du over the whole tree
+        entries = {p.name: size_of(p) for p in sorted(b.iterdir())}
+        builds.append({'path': str(b), 'bytes': sum(entries.values()) + b.lstat().st_blocks * 512, 'entries': entries})
     return {'games': games, 'build_folders': builds, 'caches': caches, 'checkouts': [{'path': str(c), 'bytes': size_of(c)} for c in checkouts(ctx)]}
 
 
@@ -890,6 +901,9 @@ def main(argv=None):
     sub.add_parser('job', help='one background build: stage, progress, last lines').add_argument('id')
     sub.add_parser('stop', help='stop a background build').add_argument('id')
     sub.add_parser('update', help='engine updates').add_argument('--apply', action='store_true', help='fast-forward the engine')
+    p = sub.add_parser('perf', help="how smoothly each game's last session ran, against its usual (scripts/perf_check.py)")
+    p.add_argument('games', nargs='*', help='title IDs or log files (default: every game with a log)')
+    p.add_argument('--record', action='store_true', help='add each session to the history once')
     a = ap.parse_args(argv)
 
     try:
@@ -923,6 +937,10 @@ def main(argv=None):
         elif a.cmd == 'job': res = job_state(a.id)
         elif a.cmd == 'stop': res = stop_job(a.id)
         elif a.cmd == 'update': res = update(a.apply)
+        elif a.cmd == 'perf':
+            import perf_check
+            res = perf_check.check(a.games, not a.games, a.record)
+            if not a.json: print(perf_check.human(res)); return 1 if any(s.get('verdict') == 'slower' for s in res) else 0
         else: ap.error(a.cmd)
     except Refused as e:
         if a.json: print(json.dumps({'error': str(e), 'refused': True}))

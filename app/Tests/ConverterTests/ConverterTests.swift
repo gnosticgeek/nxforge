@@ -1,5 +1,6 @@
 // Unit tests for the converter's pure logic: the release names it shows and how it reads title IDs.
 // Run with `swift test --package-path app` on a Mac (CI runs them in tests.yml's converter job).
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -377,6 +378,61 @@ import Testing
         let all = SaveSnapshots.list(loc)
         #expect(all.filter { $0.reason == .manual }.count == 1)
         #expect(all.filter { $0.reason != .manual }.count == SaveSnapshots.keepAutomatic)
+    }
+
+    @Test func afterPlaySkipsAnUnchangedSave() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "0100A00000000001")
+        #expect(try SaveSnapshots.snapshotAfterPlay(loc) == nil)   // no save yet
+        try write("one", loc.save + "/a")
+        let first = try #require(try SaveSnapshots.snapshotAfterPlay(loc))
+        #expect(first.reason == .afterPlay)
+        #expect(first.device == SaveSnapshots.deviceName)
+        #expect(try SaveSnapshots.snapshotAfterPlay(loc) == nil)   // nothing changed
+        try write("two", loc.save + "/a")
+        #expect(try SaveSnapshots.snapshotAfterPlay(loc) != nil)
+        #expect(SaveSnapshots.list(loc).count == 2)
+        #expect(SaveSnapshots.list(loc).first?.device == SaveSnapshots.deviceName)
+    }
+
+    @Test func sessionsNeverPushOutTheSnapshotBeforeARestore() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "0100A00000000002")
+        try write("start", loc.save + "/a")
+        try SaveSnapshots.snapshot(loc, reason: .beforeRestore)
+        for i in 0..<(SaveSnapshots.keepAutomatic + 2) {
+            try write("session \(i)", loc.save + "/a")
+            try SaveSnapshots.snapshotAfterPlay(loc)
+        }
+        let all = SaveSnapshots.list(loc)
+        #expect(all.filter { $0.reason == .afterPlay }.count == SaveSnapshots.keepAutomatic)
+        #expect(all.filter { $0.reason == .beforeRestore }.count == 1)
+    }
+
+    @Test func aSnapshotMovesCheckedToAnotherFolder() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "0100A00000000003")
+        try write("one", loc.save + "/a")
+        let s = try #require(try SaveSnapshots.snapshot(loc, reason: .manual))
+        let dest = base + "/NAS/0100A00000000003"
+        #expect(try SaveSnapshots.move(s, to: dest, titleID: loc.titleID))
+        #expect(!FileManager.default.fileExists(atPath: s.path))
+        let moved = SaveSnapshots.list(in: dest, titleID: loc.titleID)
+        #expect(moved.map(\.id) == [s.id])
+        try write("two", loc.save + "/a")
+        try SaveSnapshots.restore(try #require(moved.first), to: loc)
+        #expect(read(loc.save + "/a") == "one")
+    }
+
+    @Test func aDamagedSnapshotStaysWhereItWas() throws {
+        let base = try temp()
+        let loc = SaveLocation(save: base + "/Saves/save", titleID: "0100A00000000004")
+        try write("one", loc.save + "/a")
+        let s = try #require(try SaveSnapshots.snapshot(loc, reason: .manual))
+        try write("tampered", s.path + "/data/save/a")
+        #expect(throws: ConverterError.self) { try SaveSnapshots.move(s, to: base + "/NAS", titleID: loc.titleID) }
+        #expect(FileManager.default.fileExists(atPath: s.path))
+        #expect(SaveSnapshots.list(in: base + "/NAS", titleID: loc.titleID).isEmpty)
     }
 }
 
@@ -1023,6 +1079,18 @@ import Testing
         #expect(PlayOptions.difference(Self.list, from: Self.defaults, to: v) == ["DM_FPS_TARGET": "30"])
     }
 
+    // Ocarina of Time on 17 Nov ran at 30 fps on battery without a word: the Battery preset stood in for the run.
+    // A frame rate the person saved for the game is kept; only the rows left on the default follow the preset.
+    @Test func batteryRunKeepsSavedChoices() {
+        let all = PlayOptions.batteryRun(settings: Self.list, saved: Self.defaults, chosen: [])
+        #expect(all["DM_FPS_TARGET"] == "30" && all["DM_RENDER_SCALE"] == "0.75")
+        var saved = Self.defaults
+        saved["DM_FPS_TARGET"] = "60"
+        let mine = PlayOptions.batteryRun(settings: Self.list, saved: saved, chosen: ["DM_FPS_TARGET"])
+        #expect(mine["DM_FPS_TARGET"] == nil && mine["DM_RENDER_SCALE"] == "0.75")
+        #expect(PlayOptions.onceText(Self.list, all) == "frame rate 30 fps, render scale 75 %")
+    }
+
     @Test func tabsAndSummary() {
         #expect(PlayOptions.rows(.graphics, settings: Self.list, values: Self.defaults).map(\.env) == ["DM_FPS_TARGET", "DM_RENDER_SCALE", "DM_PRESENT_UPSCALE", "DM_PRESENT_EDR"])
         #expect(PlayOptions.rows(.general, settings: Self.list, values: Self.defaults).map(\.env) == ["DM_LANG"])
@@ -1040,6 +1108,47 @@ import Testing
         #expect(CoverSource.match("SUPER MARIO ODYSSEY™", in: list) == ["AAACA", "AAAC3"])
         #expect(CoverSource.match("Mario Kart World", in: list).isEmpty)
         #expect(CoverSource.urls(id: "AAACA", kind: "cover").first?.absoluteString == "https://art.gametdb.com/switch/cover/US/AAACA.jpg")
+    }
+
+    @Test func discoverGenres() {
+        let json = """
+        {"response":{"numFound":3,"docs":[
+          {"fs_id":"2179556","application_id_s":"0100a3d008c5c000","title":"Pokémon Scarlet","pretty_game_categories_txt":["Adventure","RPG"],
+           "players_to":4,"playable_on_txt":["HAC"]},
+          {"fs_id":"1","application_id_s":"0400c3f00006e000","title":" Mario Kart World","playable_on_txt":["BEE"],"system_names_txt":["Nintendo Switch 2"],
+           "pretty_game_categories_txt":["Racing"]},
+          {"fs_id":"2","application_id_s":"0100a3d008c5c000","title":"Pokémon Scarlet - Nintendo Switch 2 Edition","pretty_game_categories_txt":["Education"]}
+        ]}}
+        """
+        let page = DiscoverSource.parse(Data(json.utf8))
+        #expect(page.total == 3 && page.items.count == 3)
+        let p = page.items[0], m = page.items[1]
+        #expect(p.titleID == "0100A3D008C5C000" && p.console == "Switch" && p.players == "1–4 players")
+        #expect(m.console == "Switch 2" && m.title == "Mario Kart World")
+        // the shortest title's genres win (a Switch 2 Edition shares the ID); no store page or no genre = Other
+        let map = DiscoverSource.genreMap(page.items)
+        #expect(DiscoverSource.genres(of: "0100a3d008c5c000", in: map) == ["Adventure", "RPG"])
+        #expect(DiscoverSource.genres(of: "0100000000010000", in: map) == [DiscoverSource.other])
+        #expect(DiscoverSource.genres(of: nil, in: map) == [DiscoverSource.other])
+        #expect(DiscoverSource.order(["Other", "RPG", "Education", "Action"]) == ["Action", "RPG", "Education", "Other"])
+        #expect(DiscoverSource.byIDs(["0100A3D008C5C000", "bad"])!.absoluteString.contains("0100a3d008c5c000"))
+        #expect(DiscoverState.plural("Platformer") == "Platformers")
+    }
+
+    @Test func squareArtLookup() {
+        let json = """
+        {"response":{"docs":[
+          {"application_id_s":"0100dcd01f306000","title":"Mina the Hollower - Nintendo Switch™ 2 Edition","type":"GAME","image_url_sq_s":"https://x/b.jpg"},
+          {"application_id_s":"0100dcd01f306000","title":"Mina the Hollower","type":"GAME","image_url_sq_s":"https://x/a.jpg"},
+          {"application_id_s":"0100dcd01f306000","title":"Mina","type":"DLC","image_url_sq_s":"https://x/d.jpg"},
+          {"title":"Cyber Shadow","type":"GAME","image_url_sq_s":"//x/c.jpg"}
+        ]}}
+        """
+        let docs = SquareSource.parse(Data(json.utf8))
+        #expect(docs.count == 4)
+        #expect(SquareSource.pick(docs, id: "0100DCD01F306000") == "https://x/a.jpg")
+        #expect(SquareSource.pick(docs, name: "Cyber Shadow") == "https://x/c.jpg")
+        #expect(SquareSource.pick(docs, name: "Cyber") == nil)
     }
 
     @Test func heroArtLookup() {
@@ -1066,6 +1175,85 @@ import Testing
         let q = HeroSource.byIDs(["0100C2700C252000", "bad"])?.absoluteString ?? ""
         #expect(q.contains("application_id_s%3A(0100c2700c252000)") || q.contains("application_id_s:(0100c2700c252000)"))
         #expect(HeroSource.byName("Cruis'n Blast™")?.absoluteString.contains("q=Cruis%20n%20Blast") == true)
+    }
+
+    @Test func nintendoLifePages() {
+        #expect(NLifeSource.slugs("Mario & Luigi - Brothership").first == "mario_and_luigi_brothership")
+        #expect(NLifeSource.slugs("Kirby's Return to Dream Land Deluxe").first == "kirbys_return_to_dream_land_deluxe")
+        #expect(NLifeSource.slugs("Super Mario 3D World + Bowser's Fury").first == "super_mario_3d_world_plus_bowsers_fury")
+        #expect(NLifeSource.slugs("New Super Mario Bros. U Deluxe [NSP]").first == "new_super_mario_bros_u_deluxe")
+        #expect(NLifeSource.slugs("Shadow of the Ninja - Reborn").contains("shadow_of_the_ninja_-_reborn"))
+        #expect(NLifeSource.slugs("Pac-Man Championship Edition 2 Plus").contains("pac-man_championship_edition_2_plus"))
+        #expect(NLifeSource.slugs("Pac-Man Museum+").contains("pac-man_museumplus"))
+        #expect(NLifeSource.slugs("The Legend of Zelda - Echoes of Wisdom").contains("legend_of_zelda_echoes_of_wisdom"))
+        #expect(NLifeSource.slugs("Alpaca Ball Allstars Legacy Edition").contains("alpaca_ball_allstars"))
+        #expect(NLifeSource.slugs("Pokémon™ Legends").first == "pokemon_legends")
+        let p = NLifeSource.pages(name: "Mario Kart World", titleID: "0400C3F00006E000").map(\.absoluteString)
+        #expect(p.first == "https://www.nintendolife.com/games/nintendo-switch-2/mario_kart_world")
+        #expect(p.count == 3)
+        #expect(NLifeSource.pages(name: "Pac-Man Museum+", titleID: nil).count <= NLifeSource.maxTries)
+        let html = """
+        <section class="hero hero-game"><div class="background accent-bg background-desktop" data-bg-image="https://images.nintendolife.com/e93460d4eb1df/cuphead-artwork.1920x350.jpg"></div>
+        <div class="accent-bg"><p id="cover" class="image scanlines accent-bg"><img src="https://images.nintendolife.com/03b8fc1926726/cuphead-cover.cover_300x.jpg" width="300" height="300" alt="Cuphead Cover" /></p>
+        """
+        let page = NLifeSource.parse(html)
+        #expect(page.hero?.absoluteString == "https://images.nintendolife.com/e93460d4eb1df/cuphead-artwork.original.jpg")
+        #expect(page.cover?.absoluteString == "https://images.nintendolife.com/03b8fc1926726/cuphead-cover.original.jpg")
+        #expect(NLifeSource.parse(#"<div class="background-desktop" data-bg-image="https://evil.example/a.1920x350.jpg"></div>"#).hero == nil)
+        #expect(NLifeSource.parse("<p>nothing</p>") == NLifeSource.Page())
+        let facts = """
+        {"@type":"VideoGame","name":"Blazing Chrome","datePublished":"2019-07-11","x":1}
+        <dl><dt>Publisher</dt><dd><a href="/companies/the_arcade_crew">The Arcade Crew</a></dd><dt>Developer</dt>
+        <dd><a href="/companies/joymasher">JoyMasher</a>, <a href="/companies/x">Two &amp; Co</a></dd></dl>
+        """
+        #expect(NLifeSource.parse(facts).developer == "JoyMasher & Two & Co")
+        #expect(NLifeSource.parse(facts).year == "2019")
+        #expect(NLifeSource.developer("<dt>Developer</dt><dd>Nintendo EPD</dd>") == "Nintendo EPD")
+    }
+
+    @Test func standardWideArt() throws {
+        func picture(_ w: Int, _ h: Int, red: Bool = false) -> Data {
+            let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+            ctx.setFillColor(red ? CGColor(red: 0.9, green: 0, blue: 0.07, alpha: 1) : CGColor(red: 0.2, green: 0.5, blue: 0.3, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            return CoverSource.jpeg(Data(NSBitmapImageRep(cgImage: ctx.makeImage()!).representation(using: .png, properties: [:])!), maxHeight: 4000)!
+        }
+        for (w, h) in [(2000, 600), (3840, 1154), (1600, 800), (993, 298), (1280, 1280)] {
+            let out = try #require(HeroSource.standard(picture(w, h)))
+            #expect(CoverSource.size(out).map { [$0.0, $0.1] } == [2560, 1280])
+        }
+        #expect(CoverSource.eshopStandIn(picture(864, 1400, red: true)))
+        #expect(!CoverSource.eshopStandIn(picture(864, 1400)))
+        #expect(NLifeSource.square(picture(500, 500)) && !NLifeSource.square(picture(1500, 2439)))
+    }
+
+    /// NXC_NL_RUN=1: the Nintendo Life pass for every game in this Mac's library, as the app runs it (real network, real artwork folder)
+    @MainActor @Test func nintendoLifeRun() async throws {
+        guard ProcessInfo.processInfo.environment["NXC_NL_RUN"] == "1" else { return }
+        let lib = Settings.supportDir.appending(path: "library.json")
+        let o = try JSONSerialization.jsonObject(with: Data(contentsOf: lib)) as? [String: Any]
+        let games = (o?["games"] as? [[String: Any]] ?? []).compactMap { g -> (key: String, titleID: String?, name: String, console: String)? in
+            guard let name = g["name"] as? String else { return nil }
+            let tid = g["titleID"] as? String
+            return (CoverStore.key(titleID: tid, name: name), tid, name, tid?.hasPrefix("04") == true ? "Switch 2" : "Switch")
+        }
+        CoverStore.shared.fetchNintendoLife(games, heroes: true, boxes: true)
+        await CoverStore.shared.nintendoLifeTask?.value
+    }
+
+    /// NXC_ART_PREVIEW=<folder>: draws the eShop box of every <name>.square.jpg there and standardises every <name>.hero.jpg, beside them
+    @MainActor @Test func artPreview() throws {
+        guard let dir = ProcessInfo.processInfo.environment["NXC_ART_PREVIEW"] else { return }
+        for f in try FileManager.default.contentsOfDirectory(atPath: dir) {
+            let u = URL(fileURLWithPath: dir).appending(path: f), d = try Data(contentsOf: u)
+            if f.hasSuffix(".square.jpg"), let box = CoverArt.eshopBox(name: String(f.dropLast(11)), console: "Switch", square: d, detail: "JoyMasher · 2019") {
+                try box.write(to: URL(fileURLWithPath: dir).appending(path: f.replacingOccurrences(of: ".square.jpg", with: ".box.out.jpg")))
+            }
+            if f.hasSuffix(".hero.jpg"), let h = HeroSource.standard(d) {
+                try h.write(to: URL(fileURLWithPath: dir).appending(path: f.replacingOccurrences(of: ".hero.jpg", with: ".hero.out.jpg")))
+            }
+        }
     }
 
     @Test func storeDetails() {
@@ -1615,5 +1803,147 @@ import Testing
         let kept = try fm.contentsOfDirectory(atPath: root.appending(path: "backups").path)
         #expect(kept.contains { $0.hasSuffix("before-restore") })
         _ = dec
+    }
+}
+
+@Suite struct DecodedFiles {
+    @Test func keptUntilTheFileChanges() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxc-decoded-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "list.json")
+        let cache = DecodedFile<[Int]>()
+        var decodes = 0
+        func read() -> [Int]? { cache.value(url) { decodes += 1; return try? JSONDecoder().decode([Int].self, from: $0) } }
+        #expect(read() == nil)   // no file yet
+        try Data("[1,2]".utf8).write(to: url)
+        #expect(read() == [1, 2])
+        #expect(read() == [1, 2])
+        #expect(decodes == 1)   // the second read is the kept copy
+        try Data("[1,2,3]".utf8).write(to: url)   // another size: read again
+        #expect(read() == [1, 2, 3])
+        #expect(decodes == 2)
+        cache.drop()
+        #expect(read() == [1, 2, 3])
+        #expect(decodes == 3)
+        try Data("not json".utf8).write(to: url)
+        #expect(read() == nil)
+    }
+
+    @Test func builtAtRoundTrips() {
+        let d = Engine.builtAtFormat.date(from: "2026-11-15 22:46")
+        #expect(d != nil)
+        #expect(d.map(Engine.builtAtFormat.string(from:)) == "2026-11-15 22:46")
+    }
+}
+
+@Suite struct Theatre {
+    @Test(arguments: [
+        ("LG TV SSCR2", 1600.0, true),
+        ("SAMSUNG", 0.0, true),
+        ("SONY TV  *00", 0.0, true),
+        ("BRAVIA", 0.0, true),
+        ("Studio Display", 597.0, false),
+        ("LG UltraFine", 600.0, false),
+        ("DELL U2723QE", 597.0, false),
+        ("HDMI", 1210.0, true),          // a 55-inch set that names nothing
+        ("Projector", 9999.0, false),    // nonsense size
+        ("Built-in Retina Display", 0.0, false),
+    ])
+    func tvByName(_ name: String, _ width: Double, _ tv: Bool) {
+        #expect(TVScreens.isTV(name: name, widthMM: width) == tv)
+    }
+
+    @Test func ringShowsNeighbours() {
+        // 20 games on a ring of 16: in front the game at the position, either side the ones next to it in the list
+        let slots = CarouselRing.slots(for: 20)
+        #expect(slots == 16)
+        let front = 21 % slots   // position 21: game 1 in front, in place 5
+        #expect(CarouselRing.game(slot: front, position: 21, slots: slots, count: 20) == 1)
+        #expect(CarouselRing.game(slot: (front + 1) % slots, position: 21, slots: slots, count: 20) == 2)
+        #expect(CarouselRing.game(slot: (front + slots - 1) % slots, position: 21, slots: slots, count: 20) == 0)
+        #expect(CarouselRing.game(slot: (front + slots - 2) % slots, position: 21, slots: slots, count: 20) == 19)
+        // backwards past zero
+        #expect(CarouselRing.game(slot: ((-1 % slots) + slots) % slots, position: -1, slots: slots, count: 20) == 19)
+        // fewer games than places: the ring is that small
+        #expect(CarouselRing.slots(for: 5) == 5)
+        let five = (0..<5).map { CarouselRing.game(slot: $0, position: 0, slots: 5, count: 5) }
+        #expect(Set(five).count == 5)
+    }
+}
+
+@Suite struct GameFolderCheatsFormat {
+    let info = GameFolderCheats.Info(title: "Blazing Chrome", titleID: "0100C2700C252000", version: "1.0.3")
+    let txt = "580F0000 01234567\n[P1 Lives unlimited]\n580F0000 0241BCE8\n780F1000 000012BC\n\n[P2 Lives unlimited]\n580F0000 0241CD08\n\n{Always}\n04000000 00001000 D65F03C0\n\n[P2 Lives unlimited]\n580F0000 00000001\n"
+
+    @Test func markdownReadsBackAsTheSameCheatsAndSwitches() {
+        let entries = CheatFile.parse(txt)
+        let on: Set<String> = ["P1 Lives unlimited", "P2 Lives unlimited #2"]
+        let md = GameFolderCheats.document(info, build: "318f9f225a532857", entries: entries, on: on, notes: ["P1 Lives unlimited": "Tested in stage 1."])
+        #expect(md.contains("build_id: \"318F9F225A532857\""))
+        #expect(md.contains("## P1 Lives unlimited\n\nTested in stage 1.\n\n```dmnt on\n580F0000 0241BCE8"))
+        #expect(md.contains("## Always\n\n```dmnt master\n"))
+        let d = GameFolderCheats.parse(md)
+        #expect(d.build == "318F9F225A532857")
+        #expect(d.entries.map(\.id) == entries.map(\.id))
+        #expect(d.on == on)
+        #expect(d.notes == ["P1 Lives unlimited": "Tested in stage 1."])
+        #expect(CheatFile.text(d.entries) == CheatFile.text(entries))
+        // written again, it reads the same
+        #expect(GameFolderCheats.document(info, build: "318F9F225A532857", entries: d.entries, on: d.on, notes: d.notes) == md)
+    }
+
+    @Test func aHandWrittenFileIsRead() {
+        let d = GameFolderCheats.parse("# My cheats\n\n## Infinite HP\nKeeps the bar full.\n\n```dmnt on\n580f0000 006e1c10\n```\n\n```text\nnot code\n```\n\n## Off one\n```dmnt\n04000000 0029AB30 D65F03C0\n```\n")
+        #expect(d.build == nil)
+        #expect(d.entries.map(\.name) == ["Infinite HP", "Off one"])
+        #expect(d.entries[0].lines == ["580f0000 006e1c10"])
+        #expect(d.on == ["Infinite HP"])
+        #expect(d.notes["Infinite HP"]?.hasPrefix("Keeps the bar full.") == true)
+        #expect(d.notes["Infinite HP"]?.hasSuffix("```text\nnot code\n```") == true)
+    }
+
+    @Test func theFolderSitsBesideMedia() {
+        #expect(GameFolderCheats.folder(media: URL(fileURLWithPath: "/Volumes/Games/Switch 1/Blazing Chrome/media")).path == "/Volumes/Games/Switch 1/Blazing Chrome/cheats")
+        #expect(GameFolderCheats.folder(media: URL(fileURLWithPath: "/Users/t/Games/Odyssey media")).path == "/Users/t/Games/Odyssey cheats")
+    }
+
+    @Test func theNewerSideWins() {
+        let old = Date(timeIntervalSince1970: 1000), new = Date(timeIntervalSince1970: 2000)
+        #expect(GameFolderCheats.direction(folderText: nil, folderDate: nil, engine: nil, written: nil) == .none)
+        #expect(GameFolderCheats.direction(folderText: nil, folderDate: nil, engine: old, written: "a") == .toFolder)
+        #expect(GameFolderCheats.direction(folderText: "a", folderDate: old, engine: nil, written: nil) == .fromFolder)
+        #expect(GameFolderCheats.direction(folderText: "a", folderDate: old, engine: new, written: "a") == .none)
+        #expect(GameFolderCheats.direction(folderText: "b", folderDate: new, engine: old, written: "a") == .fromFolder)
+        #expect(GameFolderCheats.direction(folderText: "b", folderDate: old, engine: new, written: "a") == .toFolder)
+    }
+
+    @Test func syncMovesCheatsBothWays() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: "nxf-cheats-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let engine = root.appending(path: "engine").path, folder = root.appending(path: "game/cheats")
+        try fm.createDirectory(atPath: engine, withIntermediateDirectories: true)
+        try txt.write(toFile: engine + "/318F9F225A532857.txt", atomically: true, encoding: .utf8)
+        try "P1 Lives unlimited\n".write(toFile: engine + "/318F9F225A532857.enabled", atomically: true, encoding: .utf8)
+        // the engine's cheats go to the folder
+        #expect(GameFolderCheats.sync(info, folder: folder, engineDir: engine))
+        let md = GameFolderCheats.file(folder, build: "318F9F225A532857")
+        var d = GameFolderCheats.parse(try String(contentsOf: md, encoding: .utf8))
+        #expect(d.on == ["P1 Lives unlimited"])
+        // a hand edit (newer) comes back: P1 off, P2 on
+        let edited = try String(contentsOf: md, encoding: .utf8)
+            .replacingOccurrences(of: "```dmnt on\n580F0000 0241BCE8", with: "```dmnt\n580F0000 0241BCE8")
+            .replacingOccurrences(of: "## P2 Lives unlimited\n\n```dmnt\n580F0000 0241CD08", with: "## P2 Lives unlimited\n\n```dmnt on\n580F0000 0241CD08")
+        try Data(edited.utf8).write(to: md)
+        try fm.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: md.path)
+        #expect(GameFolderCheats.sync(info, folder: folder, engineDir: engine))
+        #expect(CheatFile.enabled(dir: engine, build: "318F9F225A532857") == ["P2 Lives unlimited"])
+        // a Mac with no cheats for the game takes them from the folder
+        try fm.removeItem(atPath: engine)
+        #expect(GameFolderCheats.sync(info, folder: folder, engineDir: engine))
+        #expect(CheatFile.load(dir: engine, build: "318F9F225A532857").count == 5)
+        d = GameFolderCheats.parse(try String(contentsOf: md, encoding: .utf8))
+        #expect(d.on == ["P2 Lives unlimited"])
     }
 }
