@@ -1104,7 +1104,7 @@ struct TrailerTheme: View {
                     HStack {
                         Text(g.name.uppercased()).font(.system(size: 17 * u, weight: .semibold)).tracking(5 * u).lineLimit(1)
                         Spacer()
-                        Label("Browse", systemImage: "arrow.up").font(.system(size: 18 * u, weight: .medium))
+                        HStack(spacing: 10 * u) { Image(systemName: "arrow.up"); Text("Browse") }.font(.system(size: 18 * u, weight: .medium))
                     }
                     .shadow(color: .black.opacity(0.7), radius: 8 * u)
                     .padding(.horizontal, 64 * u).padding(.bottom, 44 * u)
@@ -1159,13 +1159,16 @@ struct TrailerTheme: View {
             HStack(alignment: .top, spacing: 0) {
                 info(focus).frame(width: 600 * u, alignment: .leading)
                 Rectangle().fill(.white.opacity(0.16)).frame(width: 1, height: 150 * u).padding(.top, 8 * u)
-                strip(games, focus).frame(maxWidth: .infinity, alignment: .leading).clipped()
+                // the strip is far wider than the screen: it hangs off a box the width that is left, and is cut to it
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 200 * u)
+                    .overlay(alignment: .topLeading) { strip(games, focus).fixedSize() }
+                    .clipped()
             }
             .padding(.top, 34 * u)
             Spacer(minLength: 0)
             HStack(spacing: 34 * u) {
                 Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
-                Label("Watch trailer", systemImage: "arrow.down")
+                HStack(spacing: 8 * u) { Image(systemName: "arrow.down"); Text("Watch trailer") }
                 HStack(spacing: 6 * u) { Image(systemName: "arrow.left"); Image(systemName: "arrow.right"); Text("Browse") }
                 HStack(spacing: 8 * u) { TheatreHints(model: model).glyph("+"); Text("Menu") }
             }
@@ -1241,7 +1244,7 @@ struct TrailerCard: View {
         VStack(spacing: 12 * u) {
             ZStack {
                 CoverArt.tint(game).opacity(0.5)
-                if near, let art = CoverStore.shared.hero(game.coverKey) ?? CoverArt.wide(game) {
+                if near, let art = CoverStore.shared.hero(game.coverKey) ?? CoverArt.wide(game) ?? GalleryCover.square(game.coverKey) {
                     Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                 }
             }
@@ -1379,6 +1382,7 @@ struct TrailerBackdropPlayer: NSViewRepresentable {
         </style></head><body><div id="p"></div><script>
         var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
         var told = false, player = null, want = \(volume);
+        function nocc() { try { player.unloadModule('captions'); player.unloadModule('cc'); player.setOption('captions', 'track', {}); } catch (x) {} }
         function vol(n) { want = n; if (!player || !player.setVolume) return; if (n <= 0) { player.mute(); } else { player.unMute(); player.setVolume(n); } }
         setInterval(function () {
           if (told && player && player.getCurrentTime) { window.webkit.messageHandlers.nxf.postMessage('t ' + player.getCurrentTime() + ' ' + player.getDuration()); }
@@ -1388,9 +1392,10 @@ struct TrailerBackdropPlayer: NSViewRepresentable {
             playerVars: { autoplay: 1, start: \(start), controls: 0, disablekb: 1, rel: 0, modestbranding: 1, iv_load_policy: 3,
                           playsinline: 1, fs: 0, cc_load_policy: 0 },
             events: {
-              onReady: function (e) { vol(want); e.target.playVideo(); },
+              onReady: function (e) { nocc(); vol(want); e.target.playVideo(); },
               onError: function (e) { window.webkit.messageHandlers.nxf.postMessage('error ' + e.data); },
               onStateChange: function (e) {
+                if (e.data === YT.PlayerState.PLAYING) { nocc(); }
                 if (e.data === YT.PlayerState.PLAYING && !told) { told = true; window.webkit.messageHandlers.nxf.postMessage('playing'); }
                 if (e.data === YT.PlayerState.ENDED) { e.target.seekTo(\(start)); e.target.playVideo(); }
               }
