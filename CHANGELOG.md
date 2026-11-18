@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.45.6 (2026-11-18)
+
+- **Game page polish** (Converter 0.19.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Media row fades at an edge with more beyond it and shows arrows on hover, the pitch and More details line up, no repeated "Drive offline" under the title, one separator in the store line, a smaller Trailer label, a fainter glow behind the box, a glass tab switch and the hint bar's line on the page's edges. No game rebuild needed for this.
+
 ## 0.45.5 (2026-11-18)
 
 - **Game page: swipe through Media, header art down to the line** (Converter 0.19.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a two-finger swipe moves along every trailer and screenshot in the Media row, and the game's wide art at the top of the page now reaches the line above Media. No game rebuild needed for this.

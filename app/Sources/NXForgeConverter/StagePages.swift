@@ -63,7 +63,7 @@ struct StageGamePage: View {
                         GameMedia(model: model, game: g, width: inner).padding(.top, 22)
                         if let info {
                             let pitch = GameAbout.pitch(info)
-                            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                            HStack(alignment: .center, spacing: 16) {
                                 if let pitch { Text(pitch).font(.system(size: 17, weight: .medium)).lineLimit(1).truncationMode(.tail) }
                                 Spacer(minLength: 0)
                                 Button { withAnimation(.easeOut(duration: 0.2)) { aboutOpen.toggle() } } label: {
@@ -76,7 +76,7 @@ struct StageGamePage: View {
                                 .buttonStyle(.plain).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(CoverArt.tint(g)).brightness(0.35)
                                 .help("The store's description and facts")
                             }
-                            .padding(.top, 16).padding(.horizontal, 4)
+                            .padding(.top, 16)
                             if aboutOpen {
                                 GameAbout(game: g, info: info, full: true).frame(maxWidth: 820, alignment: .leading)
                                     .padding(.top, 18).transition(.opacity)
@@ -108,7 +108,7 @@ struct StageGamePage: View {
     /// The game's box, small, still turning to a drag, with View box (the box viewer) and the manual under it
     func boxColumn(_ g: StageGame, height caseH: CGFloat) -> some View {
         let accent = CoverArt.tint(g)
-        return GameCase(game: g, flipped: model.caseFlipped).frame(width: caseH * 0.66, height: caseH)
+        return GameCase(game: g, flipped: model.caseFlipped, glow: 0.16).frame(width: caseH * 0.66, height: caseH)
             .contextMenu { Button("View Box") { model.openCaseViewer(g) } }
             .help("Drag to turn it. View box (Y) shows it full screen.")
             .overlay(alignment: .bottom) {
@@ -276,7 +276,8 @@ struct GameHeroColumn: View {
     var facts: [String] {
         var out = [game.console == .switch2 ? "Nintendo Switch 2" : "Nintendo Switch"]
         let suspended = model.isSuspended(app: game.app ?? ""), playing = model.isPlaying(app: game.app ?? "")
-        if game.app == nil { out.append(model.status(game).text) }
+        // a game not built yet says how it stands in the Build card below, not here
+        if game.app == nil {}
         else if suspended { out.append("Paused · still running") }
         else if playing { out.append("Playing now") }
         if let info, info.publisher != nil || info.released != nil {
@@ -287,12 +288,12 @@ struct GameHeroColumn: View {
         return out
     }
 
-    /// "Action · Adventure  /  1 player  /  PEGI 7  /  227 MB": the store's genres, players, rating and size
+    /// "Action, Adventure  ·  1 player  ·  PEGI 7  ·  227 MB": the store's genres, players, rating and size, with the same dots as the line above
     var storeLine: String {
         guard let info else { return "" }
-        let genres = info.genres.prefix(2).joined(separator: " · ")
+        let genres = info.genres.prefix(2).joined(separator: ", ")
         let size = info.size.map { $0.replacingOccurrences(of: ".0 ", with: " ") }
-        return [genres.isEmpty ? nil : genres, info.players, info.rating, size].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "   /   ")
+        return [genres.isEmpty ? nil : genres, info.players, info.rating, size].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "  ·  ")
     }
 }
 

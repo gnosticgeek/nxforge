@@ -4,6 +4,19 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.5 (2026-11-18)
+
+Eight small touches to the game page. Ships in NXForge 0.45.6.
+
+- **Media row shows there is more**: the edge with more tiles beyond it fades out, and round arrows appear over the row's edges while the pointer is over it (a click moves three tiles).
+- **Description and More details on one line**: the store's one-line pitch and More details now sit centred on the same line, on the page's edges like View all.
+- **No repeated status under the title**: a game not built yet no longer says "Drive offline" (or Not built) under its name; the Build card below says it.
+- **One separator under the title**: the store line uses the same dots as the line above ("Action, Arcade · 1–2 players · PEGI 7 · 3.6 GB") instead of slashes.
+- **Smaller Trailer label**: a small dark label at the trailer's top left, clear of the logo trailers carry at their foot.
+- **Fainter glow behind the box**: the game's colour behind the box on its page is much fainter, so it no longer muddies the key art.
+- **Glass tab switch**: the selected Official media / Your captures tab is glass with a hint of the game's colour instead of a solid fill.
+- **Hint bar line on the page's edges**: on a game's page the line above the button hints lines up with the page's other lines.
+
 ## 0.19.4 (2026-11-18)
 
 Game page polish. Ships in NXForge 0.45.5.

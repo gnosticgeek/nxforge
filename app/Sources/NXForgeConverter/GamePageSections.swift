@@ -13,6 +13,9 @@ struct GameMedia: View {
     enum Tab { case store, captures }
     @State private var tab: Tab? = nil
     @State private var captures: [URL]? = nil
+    /// the first tile in view, and whether the pointer is over the row (its arrows show then)
+    @State private var first: Int? = 0
+    @State private var hovering = false
 
     var body: some View {
         let store = StoreInfoStore.shared
@@ -47,6 +50,8 @@ struct GameMedia: View {
             }
             if !items.isEmpty {
                 // three tiles across, the rest a two-finger swipe (or a scroll wheel) away; each swipe settles on a tile's edge
+                let at = first ?? 0
+                let canBack = at > 0, canOn = at + 3 < items.count
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 16) {
                         ForEach(items.indices, id: \.self) { i in tile(items[i]) { open(items, at: i, current) } }
@@ -55,9 +60,20 @@ struct GameMedia: View {
                     .padding(.vertical, 20)   // room for the tiles' shadows, which the row would otherwise cut off
                 }
                 .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: $first, anchor: .leading)
                 .scrollIndicators(.never)
                 .id(current)   // the other tab starts at its first tile
                 .frame(width: width)
+                // the edge with more beyond it fades out, so the row reads as one to swipe along
+                .mask(LinearGradient(stops: [.init(color: canBack ? .clear : .black, location: 0), .init(color: .black, location: 36 / width),
+                                             .init(color: .black, location: 1 - 36 / width), .init(color: canOn ? .clear : .black, location: 1)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .overlay(alignment: .leading) { if hovering && canBack { arrow("chevron.left") { step(-3, count: items.count) } } }
+                .overlay(alignment: .trailing) { if hovering && canOn { arrow("chevron.right") { step(3, count: items.count) } } }
+                .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }
+                .animation(.easeOut(duration: 0.2), value: canBack)
+                .animation(.easeOut(duration: 0.2), value: canOn)
+                .onChange(of: current) { first = 0 }
                 .padding(.vertical, -20)
                 .padding(.top, 16)
             } else if captures != nil {
@@ -80,6 +96,22 @@ struct GameMedia: View {
 
     var tileWidth: CGFloat { max((width - 32) / 3, 120) }
 
+    /// Moves the row along by a page of tiles
+    func step(_ by: Int, count: Int) {
+        withAnimation(.easeInOut(duration: 0.35)) { first = min(max((first ?? 0) + by, 0), max(count - 3, 0)) }
+    }
+
+    /// A round glass arrow over the row's edge, shown while the pointer is over it
+    func arrow(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 16, weight: .bold)).frame(width: 44, height: 44)
+                .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
+        }
+        .buttonStyle(.plain).padding(.horizontal, 12)
+        .transition(.opacity)
+        .accessibilityLabel(symbol == "chevron.left" ? "Earlier media" : "More media")
+    }
+
     func caption(_ t: Tab, videos: Int, shots: Int, mine: Int) -> String {
         func count(_ n: Int, _ what: String) -> String { "\(n) \(what)\(n == 1 ? "" : "s")" }
         if t == .store { return [videos > 0 ? count(videos, "trailer") : nil, shots > 0 ? count(shots, "screenshot") : nil].compactMap { $0 }.joined(separator: " · ") }
@@ -95,10 +127,8 @@ struct GameMedia: View {
             Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(on ? .white : StageLook.soft)
                 .padding(.horizontal, 26).frame(height: 38)
                 .background {
-                    if on {
-                        Capsule().fill(accent.opacity(0.42)).brightness(-0.05)
-                            .overlay(Capsule().strokeBorder(accent.opacity(0.9), lineWidth: 1).brightness(0.2))
-                    }
+                    // glass with a hint of the game's colour, lighter than a solid fill
+                    if on { Capsule().fill(.clear).glassEffect(.regular.tint(accent.opacity(0.22)), in: .capsule) }
                 }
                 .contentShape(.capsule)
         }
@@ -118,15 +148,20 @@ struct GameMedia: View {
                 .overlay {
                     if video != nil {
                         ZStack(alignment: .bottomLeading) {
-                            LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
+                            LinearGradient(colors: [.black.opacity(0.35), .clear], startPoint: .top, endPoint: .center)
                             PlayGlyph(size: min(56, w * 0.18)).frame(maxWidth: .infinity, maxHeight: .infinity)
-                            HStack(spacing: 7) {
-                                Image(systemName: "video").font(.system(size: 13, weight: .semibold))
-                                Text("Trailer").font(.system(size: 13.5, weight: .semibold))
+                            // a small dark label in the top corner, clear of the logos trailers carry at their foot
+                            HStack(spacing: 6) {
+                                Image(systemName: "play.rectangle.fill").font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(Color(red: 1, green: 0.33, blue: 0.33))
+                                Text("Trailer").font(.system(size: 12.5, weight: .semibold))
                             }
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 10).frame(height: 28)
-                            .background(Color(red: 0.80, green: 0.13, blue: 0.16), in: .rect(cornerRadius: 6)).padding(12)
+                            .padding(.horizontal, 9).frame(height: 24)
+                            .background(.black.opacity(0.55), in: .capsule)
+                            .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                            .padding(10)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         }
                     }
                 }
