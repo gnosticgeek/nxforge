@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.46.3 (2026-11-18)
+
+- **Buttons never wrap, and a sweep of small UI refinements** (Converter 0.20.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Resume no longer breaks into "Resu / me" beside Play options, Quit game and Details; every large button keeps its label on one line, and a row too narrow for all of them turns the secondary ones into round icon buttons. Plus seven small fixes across Home, Play options, the launch screen, Theatre, Health and Updates. No game rebuild needed for this.
+
 ## 0.46.2 (2026-11-18)
 
 - **Games on an exFAT or SMB drive no longer fail the survey with "no MOD0"** (engine patch 0039): macOS writes a hidden `._name.nro` file beside every file it copies to such a drive, and the survey read Horizon Chase 2's `._EOSSDK-Switch-Shipping.nro` as a code module. It now skips any file in the game's NRO folder that is not an NRO, as the rest of the survey already did. No game rebuild needed for games that built before.

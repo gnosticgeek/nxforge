@@ -277,6 +277,12 @@ extension AppModel {
 // MARK: The Updates page
 
 struct UpdatesPage: View {
+    /// "2026-11-19" (git's %cs) as "19 Nov 2026", the way the rest of the app writes a day
+    static func day(_ iso: String) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: iso)?.formatted(.dateTime.day().month(.abbreviated).year()) ?? iso
+    }
+
     @Bindable var model: AppModel
 
     var body: some View {
@@ -295,7 +301,7 @@ struct UpdatesPage: View {
             else { Image(systemName: model.anyUpdate ? "arrow.down.circle.fill" : "checkmark.circle.fill").font(.system(size: 34)).foregroundStyle(model.anyUpdate ? Color.accentColor : .green).frame(width: 40) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.engineBusy ? "Checking…" : model.anyUpdate ? "Updates are available" : "Everything is up to date").font(.title3.weight(.bold))
-                Text(model.lastUpdateCheck.map { "Last checked: \(relativeDay($0))." } ?? "Not checked yet.").foregroundStyle(.secondary)
+                Text(model.lastUpdateCheck.map { "Last checked \(relativeDay($0).lowercasedFirst)" } ?? "Not checked yet").foregroundStyle(.secondary)
             }
             Spacer()
             Toggle("Update automatically", isOn: $model.settings.autoUpdate).toggleStyle(.switch)
@@ -343,7 +349,7 @@ struct UpdatesPage: View {
                         .font(.callout).foregroundStyle(.orange)
                 } else if let s = model.upstream {
                     Label(s.count == 0 ? "Upstream nxnative: nothing new beyond what NXForge has merged."
-                                       : "Upstream nxnative: \(s.count) commit\(s.count == 1 ? "" : "s") not in NXForge yet (newest \(s.date)). They arrive with the next NXForge release, or now on this Mac.",
+                                       : "Upstream nxnative: \(s.count) commit\(s.count == 1 ? "" : "s") not in NXForge yet (newest \(Self.day(s.date))). They arrive with the next NXForge release, or now on this Mac.",
                           systemImage: "arrow.triangle.branch")
                         .font(.callout).foregroundStyle(.secondary)
                         .help(s.subject.isEmpty ? "" : "Newest upstream commit: \(s.subject)")

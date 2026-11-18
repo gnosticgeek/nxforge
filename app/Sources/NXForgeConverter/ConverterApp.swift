@@ -164,6 +164,8 @@ struct ConverterApp: App {
             try? await Task.sleep(for: .seconds(2))
             // NXC_GAME=<part of a name> picks the game instead
             let g = env["NXC_GAME"].flatMap { n in model.stageGames().first { $0.name.localizedCaseInsensitiveContains(n) } } ?? model.stageGames().first { $0.app != nil }
+            // NXC_PLAYING=1: that game shows as running (Resume and Quit game), nothing is started
+            if let g, env["NXC_PLAYING"] != nil, let a = g.app { model.playing[-1] = PlayingNow(key: a, name: g.name, app: a, start: Date()); model.libraryFocus = g.id }
             if let g, ["game", "back", "options"].contains(st) { model.gameDetail = g.ref; model.caseFlipped = st == "back" }
             if let g, st == "options" { model.openPlayOptions(g.ref) }
             if st == "settings" { model.stageSettings = true }
