@@ -325,7 +325,7 @@ struct PlayOptionsPanel: View {
                                 .foregroundStyle(on ? Color.black : Color.white.opacity(p == .custom ? 0.5 : 0.9))
                             Text(p.rawValue).font(.system(size: 14, weight: .bold))
                             Text(p.note).font(.system(size: 11)).foregroundStyle(on ? Color(white: 0.25) : StageLook.faint)
-                                .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                                .lineLimit(4).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(11).frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
                         .foregroundStyle(on ? Color.black : Color.white)
@@ -334,7 +334,8 @@ struct PlayOptionsPanel: View {
                         .shadow(color: .white.opacity(on ? 0.22 : 0), radius: 14, y: 4)
                         .contentShape(.rect(cornerRadius: 14))
                     }
-                    .buttonStyle(.plain).disabled(p == .custom)
+                    // Custom is where your own changes land, not a choice: it takes no click but is not greyed out when it is the one in use
+                    .buttonStyle(.plain).allowsHitTesting(p != .custom).opacity(p == .custom && !on ? 0.6 : 1)
                     .accessibilityAddTraits(on ? .isSelected : [])
                 }
             }

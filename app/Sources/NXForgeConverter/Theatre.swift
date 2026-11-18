@@ -1354,7 +1354,7 @@ struct CinemaTheme: View {
                 }
                 .buttonStyle(.plain)
                 Button { model.theatrePad(.y) } label: { ghost("Details") }.buttonStyle(.plain)
-                if g.app != nil { Button { model.theatrePad(.x) } label: { ghost("Play Options") }.buttonStyle(.plain) }
+                if g.app != nil { Button { model.theatrePad(.x) } label: { ghost("Play options") }.buttonStyle(.plain) }
             }
             .padding(.top, 28 * u)
         }

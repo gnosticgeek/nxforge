@@ -876,7 +876,7 @@ struct StageHome: View {
                 HStack(alignment: .center, spacing: 24) {
                     if let g = focus {
                         StageHero(model: model, game: g, first: AppModel.lastPlayed(games)?.id == g.id, titleSize: bigTitle ? 60 : 44)
-                            .frame(maxWidth: 640, alignment: .leading)
+                            .frame(maxWidth: bigTitle ? 760 : 640, alignment: .leading)
                             .id(g.id)
                             .transition(.asymmetric(insertion: still ? .opacity : .opacity.combined(with: .offset(y: 14)), removal: .opacity))
                     }
@@ -1205,10 +1205,12 @@ struct StageHints: View {
     var hints: [([String], String)] {
         let built = focus?.app != nil
         let fix = focus.map { model.status($0).action } ?? "Build"
+        // the A hint says what the main button says
+        let play = focus.flatMap(\.app).map { model.isPlaying(app: $0) } == true ? "Resume" : "Play"
         if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
-        if detail { return (built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]) + [(["Y"], "View box"), (["B"], "Back")] }
-        var h: [([String], String)] = built ? [(["A"], "Play"), (["X"], "Play options")] : [(["A"], fix)]
+        if detail { return (built ? [(["A"], play), (["X"], "Play options")] : [(["A"], fix)]) + [(["Y"], "View box"), (["B"], "Back")] }
+        var h: [([String], String)] = built ? [(["A"], play), (["X"], "Play options")] : [(["A"], fix)]
         h.append((["Y"], "Details"))
         h.append((["−"], focus?.favorite == true ? "Unfavourite" : "Favourite"))
         h.append((["L", "R"], model.stageTab == .home ? "Discover" : "Genre"))

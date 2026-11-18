@@ -19,7 +19,7 @@ struct LaunchFailure: Equatable {
 
     var fixLabel: String? {
         switch fix {
-        case .playOptions: "Play Options"
+        case .playOptions: "Play options"
         case .rebuild: "Rebuild"
         case .showLog, nil: nil
         }
@@ -57,12 +57,12 @@ enum LaunchDiagnosis {
         let t = tail.lowercased(), red = lastRedLine(tail)
         if t.contains("gpu memory guard:") && t.contains("stopping the game") {
             return LaunchFailure(code: .gpuMemory, title: "Stopped before the Mac ran out of graphics memory",
-                                 detail: "The game asked for more graphics memory than this Mac can give it. Lower Memory or the resolution in Play Options, or quit other large apps, and try again.",
+                                 detail: "The game asked for more graphics memory than this Mac can give it. Lower Memory or the resolution in Play options, or quit other large apps, and try again.",
                                  fix: .playOptions, line: red, log: log)
         }
         if t.contains("out of memory") || t.contains("the host stopped on signal 9\n") || t.hasSuffix("the host stopped on signal 9") {
             return LaunchFailure(code: .memory, title: "macOS stopped the game for using too much memory",
-                                 detail: "Quit other large apps, or lower Memory in Play Options, and try again.", fix: .playOptions, line: red, log: log)
+                                 detail: "Quit other large apps, or lower Memory in Play options, and try again.", fix: .playOptions, line: red, log: log)
         }
         if let r = tail.range(of: "launcher: cannot start ", options: .backwards) {
             let what = tail[r.upperBound...].prefix { $0 != "\n" }
