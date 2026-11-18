@@ -98,7 +98,8 @@ enum Disk {
     /// A rebuild: room for a second copy of the app (the old one stays until the new one is complete) and the shader cache's
     /// growth. Either way plus what the shared Metal cache may still grow by. Each volume is checked for its own share: the
     /// build folder (<title ID>_build, in buildHome) on its own, the app on the output folder's, the Metal
-    /// cache on the home folder's; the one with the least room to spare is returned.
+    /// cache on the home folder's. A volume without room is returned (the one with least to spare); else the app's volume, so the
+    /// footer's "available" is the drive the app is saved to.
     /// firstBuild: a Switch 2 game's own first-build need (Source.firstBuildBytes); gameBytes: the game files' size.
     static func need(gameDir: String, outDir: String?, app: String?, firstBuild: Int64? = nil, gameBytes: Int64? = nil) -> Need? {
         let home = buildHome(gameDir)
@@ -114,8 +115,11 @@ enum Disk {
         let metal = max(0, metalCacheLimit - size(metalCache))
         if let i = shares.firstIndex(where: { volumeID($0.path) == volumeID(cacheDir) }) { shares[i].bytes += metal }
         else if metal > 0 { shares.append((cacheDir, metal)) }
-        let needs = shares.compactMap { s in free(s.path).map { Need(free: $0, need: s.bytes, rebuild: cached, volume: volumeName(s.path)) } }
-        return needs.min { $0.free - $0.need < $1.free - $1.need }
+        let needs = shares.compactMap { s in free(s.path).map { (id: volumeID(s.path), need: Need(free: $0, need: s.bytes, rebuild: cached, volume: volumeName(s.path))) } }
+        // a volume that is short wins; otherwise the line names the drive the app is saved to (an external drive's own free
+        // space, not the Mac's), and the others are only checked
+        if let short = needs.filter({ $0.need.short }).min(by: { $0.need.free - $0.need.need < $1.need.free - $1.need.need }) { return short.need }
+        return (needs.first { $0.id == volumeID(appDir) } ?? needs.min { $0.need.free - $0.need.need < $1.need.free - $1.need.need })?.need
     }
 
     /// While a build runs: below `stopBelow` on a volume the build writes to, it is stopped at once (the stage in progress is

@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.46.1 (2026-11-18)
+
+- **Ready to build shows the target drive's free space** (Converter 0.20.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): saving the app to an external drive, the footer said how much was free on the Mac rather than on that drive. It now reads the drive the app goes to; every drive the build writes to is still checked. No game rebuild needed for this.
+
 ## 0.46.0 (2026-11-18)
 
 - **Theatre: ten improvements for the sofa** (Converter 0.20.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): L and R filter the games (All, Favourites, Recently played, each genre) and ZL and ZR switch the theme; the trailer's volume and mute are on the right stick; A says Continue for a game played before, with favourites and recent games first; every theme shows its controller buttons at the foot; a change of game fades art, trailer and sound together; a game's genre, players, size and build status appear once the focus rests on it; a screensaver after 5 minutes alone; Theatre reopens on the theme, filter and game it was left on (and Settings › Open on can start in it); the game's colour tints every theme; and TV Edges insets the picture for a TV that crops it. No game rebuild needed for this.
