@@ -327,7 +327,7 @@ struct PlayOptionsPanel: View {
                             Text(p.note).font(.system(size: 11)).foregroundStyle(on ? Color(white: 0.25) : StageLook.faint)
                                 .lineLimit(4).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(11).frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
+                        .padding(11).frame(maxWidth: .infinity, minHeight: 108, maxHeight: .infinity, alignment: .topLeading)
                         .foregroundStyle(on ? Color.black : Color.white)
                         .background(on ? AnyShapeStyle(LinearGradient(colors: [.white, Color(white: 0.86)], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(StageLook.card), in: .rect(cornerRadius: 14))
                         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(on ? AnyShapeStyle(Color.clear) : AnyShapeStyle(StageLook.edge), lineWidth: 1))
@@ -339,6 +339,8 @@ struct PlayOptionsPanel: View {
                     .accessibilityAddTraits(on ? .isSelected : [])
                 }
             }
+            // the four cards as tall as the one with the longest note
+            .fixedSize(horizontal: false, vertical: true)
             if state.tabs.count > 1 {
                 HStack(spacing: 0) {
                     ForEach(state.tabs) { t in

@@ -4,6 +4,19 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.20.2 (2026-11-18)
+
+Buttons that never wrap, and small refinements. Ships in NXForge 0.46.3.
+
+- **Resume stays on one line**: with a game running, Home's row (Resume, Play options, Quit game, Details, the star) was wider than the space beside the box, so Resume wrapped to "Resu / me". Every large button now keeps its label on one line at its own width. Where the whole row does not fit, Quit game becomes a round ✕ first, then Play options and Details become round icons, each with its name as the tooltip, so Resume or Play is never squeezed. The same row is on the game's page. Play options' own Play still fills its row.
+- **Home's game is given more room in a large window**, so the full row with Quit game and Details fits as words.
+- **The A hint says Resume** while the game in focus is running, as its button does.
+- **Play options' presets**: a note is no longer cut off ("where the game ha…"), the four cards are the same height, and Custom no longer looks greyed out when it is the preset in use.
+- **Sentence case for Play options** on the launch screen's fix button and message, and in Theatre, as everywhere else in the front end.
+- **Updates**: upstream's newest commit date reads "19 Nov 2026" rather than "2026-11-19", and "Last checked today at 19:39" loses its colon and full stop.
+- **Health**: a backup's size reads in KB or MB rather than "0.0 GB".
+- Snapshot hook: `NXC_PLAYING=1` shows the chosen game as running (Resume and Quit game) without starting it.
+
 ## 0.20.1 (2026-11-18)
 
 Free space from the drive the app is saved to. Ships in NXForge 0.46.1.

@@ -301,7 +301,7 @@ struct UpdatesPage: View {
             else { Image(systemName: model.anyUpdate ? "arrow.down.circle.fill" : "checkmark.circle.fill").font(.system(size: 34)).foregroundStyle(model.anyUpdate ? Color.accentColor : .green).frame(width: 40) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.engineBusy ? "Checking…" : model.anyUpdate ? "Updates are available" : "Everything is up to date").font(.title3.weight(.bold))
-                Text(model.lastUpdateCheck.map { "Last checked: \(relativeDay($0))." } ?? "Not checked yet.").foregroundStyle(.secondary)
+                Text(model.lastUpdateCheck.map { "Last checked \(relativeDay($0).lowercasedFirst)" } ?? "Not checked yet").foregroundStyle(.secondary)
             }
             Spacer()
             Toggle("Update automatically", isOn: $model.settings.autoUpdate).toggleStyle(.switch)
