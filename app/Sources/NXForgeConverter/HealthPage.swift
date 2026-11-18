@@ -231,7 +231,7 @@ struct HealthPage: View {
                                 Text(e.manifest.made.formatted(date: .abbreviated, time: .shortened))
                                 if e.name.contains("before-restore") { Text("before a restore").foregroundStyle(.secondary) }
                                 Spacer()
-                                Text("\(e.manifest.files.count) files · \(Disk.gb(e.manifest.files.reduce(0) { $0 + $1.bytes }))").foregroundStyle(.secondary)
+                                Text("\(e.manifest.files.count) files · \(ByteCountFormatter.string(fromByteCount: e.manifest.files.reduce(0) { $0 + $1.bytes }, countStyle: .file))").foregroundStyle(.secondary)
                                 Button("Restore…") { model.restoreData(e) }.disabled(!e.manifest.verified)
                             }
                             .padding(.horizontal, 12).padding(.vertical, 8)

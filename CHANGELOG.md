@@ -2,6 +2,27 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.46.4 (2026-11-18)
+
+- **Horizon Chase 2 boots and draws its roads** (a profile of its own, `dm/games/0100001019F6E000`): it crashed 0.8 s after starting, because its online service (Epic Online Services) is never loaded and Unreal's fallback names a service the game does not ship; one cut points the fallback at Unreal's Switch service, which plays offline. Its roads, bushes and signs were magenta: Unreal fills those textures from the CPU after the game first draws them, so the profile turns on `tex_dirty_upload`, which uploads them again once written. Menus, car select and a race render at the game's 30 fps on the Mac; not played through yet. A Horizon Chase 2 app built before needs a rebuild to get this.
+- A survey test from 0.46.2 fed fake NROs without an NRO header, which the new check skipped; it now builds real headers and checks that an AppleDouble file adds nothing.
+
+## 0.46.3 (2026-11-18)
+
+- **Buttons never wrap, and a sweep of small UI refinements** (Converter 0.20.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Resume no longer breaks into "Resu / me" beside Play options, Quit game and Details; every large button keeps its label on one line, and a row too narrow for all of them turns the secondary ones into round icon buttons. Plus seven small fixes across Home, Play options, the launch screen, Theatre, Health and Updates. No game rebuild needed for this.
+
+## 0.46.2 (2026-11-18)
+
+- **Games on an exFAT or SMB drive no longer fail the survey with "no MOD0"** (engine patch 0039): macOS writes a hidden `._name.nro` file beside every file it copies to such a drive, and the survey read Horizon Chase 2's `._EOSSDK-Switch-Shipping.nro` as a code module. It now skips any file in the game's NRO folder that is not an NRO, as the rest of the survey already did. No game rebuild needed for games that built before.
+
+## 0.46.1 (2026-11-18)
+
+- **Ready to build shows the target drive's free space** (Converter 0.20.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): saving the app to an external drive, the footer said how much was free on the Mac rather than on that drive. It now reads the drive the app goes to; every drive the build writes to is still checked. No game rebuild needed for this.
+
+## 0.46.0 (2026-11-18)
+
+- **Theatre: ten improvements for the sofa** (Converter 0.20.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): L and R filter the games (All, Favourites, Recently played, each genre) and ZL and ZR switch the theme; the trailer's volume and mute are on the right stick; A says Continue for a game played before, with favourites and recent games first; every theme shows its controller buttons at the foot; a change of game fades art, trailer and sound together; a game's genre, players, size and build status appear once the focus rests on it; a screensaver after 5 minutes alone; Theatre reopens on the theme, filter and game it was left on (and Settings › Open on can start in it); the game's colour tints every theme; and TV Edges insets the picture for a TV that crops it. No game rebuild needed for this.
+
 ## 0.45.8 (2026-11-18)
 
 - **Theatre's Trailer theme, Browse and Watch** (Converter 0.19.7, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the trailer plays across the top with the game and a strip of every game on a dark panel under it; left alone for 6 seconds (or ↓) the panel fades and the trailer fills the screen. Sound is low while browsing and full while watching, S mutes it. No game rebuild needed for this.

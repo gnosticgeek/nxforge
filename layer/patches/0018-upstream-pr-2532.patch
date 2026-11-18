@@ -157,10 +157,10 @@ index c9016d047686210400df39489295454b23fe0921..80a673377f648792e773cab8f46e4dc0
  
  # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index 2da2cd6a30fdeb6bfc17dc64403726b4e3605460..1b58ec60b750ea7700b53484d93f9e3b99935dc5 100644
+index 37df2ceb0fc2093501d0d2246dd7ea5922378230..7baff3f4dffe3644bc4989bab21b0531aaa715e7 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
-@@ -81,7 +81,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -83,7 +83,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  | [Taiko Risshiden V DX](#taiko-risshiden-v-dx) | 1 | 0 | 0 | 2 | 0 | `game` |
  | [The Legend of Zelda: Breath of the Wild](#the-legend-of-zelda-breath-of-the-wild) | 7 | 0 | 43 | 0 | 0 | `build` → `game` ×2 |
  | [The Legend of Zelda: Link's Awakening](#the-legend-of-zelda-links-awakening) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
@@ -169,7 +169,7 @@ index 2da2cd6a30fdeb6bfc17dc64403726b4e3605460..1b58ec60b750ea7700b53484d93f9e3b
  | [The Legend of Zelda: Tears of the Kingdom](#the-legend-of-zelda-tears-of-the-kingdom) | 0 | 0 | 9 | 0 | 0 | `game` |
  | [Xenoblade Chronicles 3](#xenoblade-chronicles-3) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
  | [Xenoblade Chronicles X: Definitive Edition](#xenoblade-chronicles-x-definitive-edition) | 6 | 0 | 1 | 1 | 0 | `game` ×2 |
-@@ -590,7 +590,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -601,7 +601,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
  - **function-matched** (`main` of builds without CUTS): movie update cap: 3 pictures a frame, the frame step's largest hold, in place of the limit (2), which also sizes the decoder pipeline: 1 function, 1 cut
  - **function-matched** (`main` of builds without CUTS): movie frame: the pictures the player has taken (its +0xc), not 1 more for each frame drawn: 2 functions, 2 cuts

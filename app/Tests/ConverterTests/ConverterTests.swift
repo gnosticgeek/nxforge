@@ -1870,6 +1870,40 @@ import Testing
         let five = (0..<5).map { CarouselRing.game(slot: $0, position: 0, slots: 5, count: 5) }
         #expect(Set(five).count == 5)
     }
+
+    @Test func filtersKeepTheirKeys() {
+        for f in [TheatreFilter.all, .favourites, .recent, .genre("Platformer")] { #expect(TheatreFilter(key: f.key) == f) }
+        #expect(TheatreFilter(key: nil) == .all)
+        #expect(TheatreFilter(key: "rubbish") == .all)
+        #expect(TheatreFilter.genre("Platformer").title == "Platformers")
+    }
+
+    @Test func recentlyPlayedIsTheLastThirtyDays() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func game(_ daysAgo: Double?) -> StageGame {
+            StageGame(id: "g", ref: GameRef(app: "/a.app"), name: "G", console: .switch1, last: daysAgo.map { now.addingTimeInterval(-$0 * 86400) })
+        }
+        #expect(TheatreFilter.isRecent(game(2), now: now))
+        #expect(!TheatreFilter.isRecent(game(31), now: now))
+        #expect(!TheatreFilter.isRecent(game(nil), now: now))
+    }
+
+    @Test func edgesStepAndStop() {
+        #expect(TheatreEdges.full.step(1) == .small)
+        #expect(TheatreEdges.large.step(1) == .large)
+        #expect(TheatreEdges.full.step(-1) == .full)
+        #expect(TheatreEdges.large.inset == 0.05)
+    }
+
+    @Test func theatreSettingsReadBackAndDefault() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreEdges == .full && old.theatreSaver == .five && old.theatreVolume == 100 && old.theatreLastGame == nil)
+        var s = Settings()
+        s.theatreEdges = .large; s.theatreSaver = .never; s.theatreVolume = 40; s.theatreLastGame = "x"; s.theatreFilter = "genre:RPG"; s.startIn = .theatre
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back.theatreEdges == .large && back.theatreSaver == .never && back.theatreVolume == 40)
+        #expect(back.theatreLastGame == "x" && TheatreFilter(key: back.theatreFilter) == .genre("RPG") && back.startIn == .theatre)
+    }
 }
 
 @Suite struct GameFolderCheatsFormat {

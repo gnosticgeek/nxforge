@@ -1,0 +1,50 @@
+# Horizon Chase 2 (Aquiris, Unreal Engine 4). Started from the provisional profile scripts/build_ipa_from_nsp.py wrote; memory values still the survey's guesses
+# SDK 14, NVN; the shaders are Unreal's shader code archives (shader_groups below). In bring-up: boots, menus and a race render on the Mac (README.md)
+
+# ---- Identity ----
+title_id	0100001019F6E000
+program_id	0100001019F6E000
+
+# ---- App ----
+name	Horizon Chase 2
+ipa	HorizonChase2.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v524288	1.6.9	main=e13f632fc2a66eebf39cb8e1a57fa417	subsdk0=75c83c09e25f9a4e60bd960815722e86	sdk=2587a39ac2547a780ec0e4b77e22afab
+package	v524288
+shader_versions	v524288
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	HorizonChase2/Content/Paks/HorizonChase2-Switch.pak
+zip_store	.bank:.nro:.pak:.metallib
+
+# ---- Memory ----
+# the NPDM declares 80 MB of system resource (virtual address memory) and main sets a heap: a 5 GB block with a large alias region; the heap check sizes the heap region from the heap the game asks for
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 80 MB of system resource
+sys_resource	0x5000000
+
+# ---- Shader split ----
+# the decoded shader code archives: the engine's global shaders and the game's material shaders
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	Horizon Chase 2 shaders
+
+# heap check: 2026-11-18, heap 0.01 GB
+
+# ---- Address region check ----
+# the game calls nvnDeviceSetDepthMode with near = 0 in the check boot: the pipeline bases made before it runs are made for that mode
+depth_mode	zero
+
+# address regions: 2026-11-18, in its first 15 s in nnMain the game's regions reach alias +60.06 GB, past the profile's 4.38 GB alias region, the iPhone layout: the request returning to main+0x1e59f3c takes 60.00 GB through nn::os::AllocateAddressRegion: a smaller one works only if its allocator places nothing by fixed offsets (docs/reference/memory.md, Virtual address memory and the alias region) (rewrite 3e7d9cc18eb5)
+
+# ---- Textures ----
+# Unreal's streamer fills textures from the CPU after the game first draws them, with no NVN flush (the road: 512x256 ASTC 6x6 in a 4 MB CPU-written pool, not a sparse one). Without these
+# they stayed GPU textures of zeros, which ASTC decodes as magenta: the road, bushes and signs in the menu scene and every race (README.md)
+tex_flush_upload	on
+tex_dirty_upload	on

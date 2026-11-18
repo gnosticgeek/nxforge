@@ -12,7 +12,7 @@ enum LibrarySort: String, Codable, CaseIterable { case name = "Name", recent = "
 /// What the window opens on: the front end's Home shelf or Library, or the converter's pages
 /// "Library" is kept as the saved value of Discover (it took the Library's place in 0.45)
 enum StartIn: String, Codable, CaseIterable {
-    case home = "Home", library = "Library", converter = "Converter"
+    case home = "Home", library = "Library", theatre = "Theatre", converter = "Converter"
     var title: String { self == .library ? "Discover" : rawValue }
 }
 /// --cleanup: what the script deletes from <id>_build after a successful build
@@ -102,6 +102,13 @@ struct Settings: Codable, Equatable {
     /// Theatre's theme, and what happens when a TV is plugged in (Theatre.swift)
     var theatreTheme: TheatreTheme = .carousel
     var theatreOnTV: TheatreOnTV = .ask
+    /// Theatre's picture inset for a TV that crops its edges, how long until the screensaver, the trailer's volume (0 to 100),
+    /// and where Theatre was left: the game in focus and the filter (TheatreFilter.key), so it reopens there
+    var theatreEdges: TheatreEdges = .full
+    var theatreSaver: TheatreSaver = .five
+    var theatreVolume = 100
+    var theatreLastGame: String?
+    var theatreFilter: String?
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -124,6 +131,8 @@ struct Settings: Codable, Equatable {
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
         case squareCovers = "square_covers"
         case theatreTheme = "theatre_theme", theatreOnTV = "theatre_on_tv"
+        case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
+        case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
     }
 
     init() {}
@@ -178,6 +187,11 @@ struct Settings: Codable, Equatable {
         squareCovers = (try? c.decodeIfPresent(Bool.self, forKey: .squareCovers)) ?? false
         theatreTheme = (try? c.decodeIfPresent(TheatreTheme.self, forKey: .theatreTheme)) ?? .carousel
         theatreOnTV = (try? c.decodeIfPresent(TheatreOnTV.self, forKey: .theatreOnTV)) ?? .ask
+        theatreEdges = (try? c.decodeIfPresent(TheatreEdges.self, forKey: .theatreEdges)) ?? .full
+        theatreSaver = (try? c.decodeIfPresent(TheatreSaver.self, forKey: .theatreSaver)) ?? .five
+        theatreVolume = min(max((try? c.decodeIfPresent(Int.self, forKey: .theatreVolume)) ?? 100, 0), 100)
+        theatreLastGame = try? c.decodeIfPresent(String.self, forKey: .theatreLastGame)
+        theatreFilter = try? c.decodeIfPresent(String.self, forKey: .theatreFilter)
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)
@@ -211,7 +225,10 @@ struct Settings: Codable, Equatable {
 
     func save() {
         // a snapshot that picks a game for Convert (NXC_CONVERT) leaves the real settings as they were
-        if ProcessInfo.processInfo.environment["NXC_CONVERT"] != nil { return }
+        let env = ProcessInfo.processInfo.environment
+        if env["NXC_CONVERT"] != nil { return }
+        // and one that sets Theatre's edges or volume
+        if env["NXC_SNAPSHOT"] != nil, env["NXC_EDGES"] != nil || env["NXC_VOLUME"] != nil { return }
         try? FileManager.default.createDirectory(at: Settings.supportDir, withIntermediateDirectories: true)
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]

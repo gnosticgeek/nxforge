@@ -3,8 +3,11 @@
 // connected (Settings: Ask, Always or Never). The window moves to the TV and goes full screen, the pointer hides, the Mac
 // stays awake, and leaving puts the window back where it was. Four themes show the same games: Carousel, a turning ring of the
 // real 3D boxes (TheatreCarousel), Cinema, wide art with rows under it like a TV app, Gallery, three covers on a quiet
-// ivory wall beside the game's name, and Trailer, the game's trailer over a strip of games, filling the screen when left alone. L and R switch them; the theme last
-// used is kept. A plays, Y opens the game's page, X Play options, − favourites, Menu the Theatre menu, B offers to leave.
+// ivory wall beside the game's name, and Trailer, the game's trailer over a strip of games, filling the screen when left alone. ZL and ZR switch
+// them, L and R filter the games (All, Favourites, Recently played, each genre). A plays (Continue for a game played before), Y opens the
+// game's page, X Play options, − favourites, Menu the Theatre menu, B offers to leave; on Trailer the right stick sets the volume and its
+// press mutes. Theatre reopens on the theme, filter and game it was left on, shows a game's details once the focus rests on it, takes its
+// colour from the game's art in every theme, insets the picture for a TV that crops its edges, and puts up a screensaver when left alone.
 import AppKit
 import GameController
 import SceneKit
@@ -40,17 +43,114 @@ enum TheatreTheme: String, Codable, CaseIterable {
 /// What NXForge does when a TV appears: offer Theatre, open it straight away, or leave it to you
 enum TheatreOnTV: String, Codable, CaseIterable { case ask = "Ask", always = "Always", never = "Never" }
 
+/// How far Theatre's picture is inset from the screen's edges, for a TV that crops them (overscan): the corners of the picture
+/// must show on the TV, so the clock, the counter and the button hints are never cut off
+enum TheatreEdges: String, Codable, CaseIterable {
+    case full = "Full", small = "Small", large = "Large"
+    var title: String {
+        switch self {
+        case .full: "Full"
+        case .small: "Inset 3 %"
+        case .large: "Inset 5 %"
+        }
+    }
+    /// of the width and of the height, on each side
+    var inset: CGFloat {
+        switch self {
+        case .full: 0
+        case .small: 0.03
+        case .large: 0.05
+        }
+    }
+    func step(_ d: Int) -> TheatreEdges {
+        let all = Self.allCases
+        let i = all.firstIndex(of: self) ?? 0
+        return all[min(max(i + d, 0), all.count - 1)]
+    }
+}
+
+/// How long Theatre waits, left alone, before its screensaver
+enum TheatreSaver: String, Codable, CaseIterable {
+    case five = "5 min", fifteen = "15 min", never = "Never"
+    var seconds: Double? {
+        switch self {
+        case .five: 300
+        case .fifteen: 900
+        case .never: nil
+        }
+    }
+}
+
+/// What L and R walk on Theatre: every game, the favourites, the ones played lately, or one genre
+enum TheatreFilter: Hashable {
+    case all, favourites, recent, genre(String)
+
+    var key: String {
+        switch self {
+        case .all: "all"
+        case .favourites: "favourites"
+        case .recent: "recent"
+        case .genre(let g): "genre:" + g
+        }
+    }
+
+    init(key: String?) {
+        switch key {
+        case "favourites": self = .favourites
+        case "recent": self = .recent
+        case let k? where k.hasPrefix("genre:"): self = .genre(String(k.dropFirst(6)))
+        default: self = .all
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .all: "All games"
+        case .favourites: "Favourites"
+        case .recent: "Recently played"
+        case .genre(let g): DiscoverState.plural(g)
+        }
+    }
+
+    /// Recently played: played in the last 30 days
+    static let recentDays = 30.0
+    static func isRecent(_ g: StageGame, now: Date = Date()) -> Bool {
+        guard let l = g.last else { return false }
+        return now.timeIntervalSince(l) < recentDays * 86400
+    }
+}
+
+/// One timing for a change of game on every theme, so the art, the trailer, the words and the room's colour fade together
+/// (StageBackdrop's own cross-fade is 0.55 s)
+enum TheatreMotion {
+    static let swap = 0.55
+    static var swapAnimation: Animation { .easeInOut(duration: swap) }
+}
+
+/// One of a game's details on Theatre: its genre, players, size, whether it is built, when it was played
+struct TheatreFact: Hashable {
+    let text: String
+    let symbol: String
+}
+
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case carousel, cinema, gallery, trailer, settings, leave
-    var title: String { theme?.rawValue ?? (self == .settings ? "Settings" : "Leave Theatre") }
+    case carousel, cinema, gallery, trailer, edges, settings, leave
+    var title: String {
+        switch self {
+        case .edges: "TV Edges"
+        case .settings: "Settings"
+        case .leave: "Leave Theatre"
+        default: theme?.rawValue ?? ""
+        }
+    }
     var theme: TheatreTheme? {
         switch self {
         case .carousel: .carousel
         case .cinema: .cinema
         case .gallery: .gallery
         case .trailer: .trailer
-        case .settings, .leave: nil
+        case .edges, .settings, .leave: nil
         }
     }
     static func row(_ t: TheatreTheme) -> TheatreMenuRow { allCases.first { $0.theme == t } ?? .carousel }
@@ -106,8 +206,12 @@ final class TheatreWatch {
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.check() }
         }
-        // a moment after the window is up, so a TV already plugged in at launch is offered too
-        Task { @MainActor [weak self] in try? await Task.sleep(for: .seconds(2)); self?.check() }
+        // a moment after the window is up, so a TV already plugged in at launch is offered too; Settings › Open on › Theatre opens it
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            if model.settings.startIn == .theatre, !model.theatre, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { model.enterTheatre() }
+            self?.check()
+        }
     }
 
     func check() {
@@ -147,7 +251,14 @@ extension AppModel {
         theatreMenu = nil
         theatreTheme = settings.theatreTheme
         theatreTouched = Date()
-        if theatreFocus == nil { theatreFocus = Self.lastPlayed(theatreGames())?.id ?? theatreGames().first?.id }
+        theatreSaver = false
+        // where Theatre was left: its filter, and the game in focus (else the one played last)
+        theatreFilter = TheatreFilter(key: settings.theatreFilter)
+        if !theatreFilters().contains(theatreFilter) { theatreFilter = .all }
+        if theatreFocus == nil {
+            let games = theatreGames()
+            theatreFocus = games.first { $0.id == settings.theatreLastGame }?.id ?? Self.lastPlayed(games)?.id ?? games.first?.id
+        }
         theatre = true
         theatreScreen = tv?.id
         theatreActivity = ProcessInfo.processInfo.beginActivity(options: [.idleDisplaySleepDisabled, .userInitiated], reason: "Theatre is on screen")
@@ -178,6 +289,8 @@ extension AppModel {
         theatre = false
         theatreMenu = nil
         theatreWatch = false
+        theatreSaver = false
+        rememberTheatreFocus()
         if let a = theatreActivity { ProcessInfo.processInfo.endActivity(a); theatreActivity = nil }
         guard let w = mainWindow else { return }
         let saved = theatreSavedFrame, made = theatreMadeFullScreen
@@ -191,19 +304,112 @@ extension AppModel {
         }
     }
 
-    /// The games on Theatre: the built ones (every game when none is built), favourites first, then as the front end orders them
+    /// The games on Theatre: the built ones (every game when none is built) in the filter, favourites first, then the ones played
+    /// lately (newest first), then as the front end orders them
     func theatreGames() -> [StageGame] {
         let games = stageGames()
         let built = games.filter { $0.app != nil }
-        let shelf = built.isEmpty ? games : built
-        return shelf.filter(\.favorite) + shelf.filter { !$0.favorite }
+        return theatreOrder(theatreFiltered(built.isEmpty ? games : built))
     }
 
-    /// Cinema's rows: Continue playing, Favourites, a row per genre, then the games not built yet
+    /// Favourites first, then the games played in the last 30 days (the newest first), then the rest in the order given;
+    /// Recently played is newest first throughout
+    func theatreOrder(_ games: [StageGame]) -> [StageGame] {
+        let now = Date()
+        let byLast: (StageGame, StageGame) -> Bool = { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }
+        if theatreFilter == .recent { return games.sorted(by: byLast) }
+        let favs = games.filter(\.favorite)
+        let recent = games.filter { !$0.favorite && TheatreFilter.isRecent($0, now: now) }.sorted(by: byLast)
+        let rest = games.filter { !$0.favorite && !TheatreFilter.isRecent($0, now: now) }
+        return favs + recent + rest
+    }
+
+    /// The games in the filter; when it holds none of these (a favourite unbuilt, say), all of them, so Theatre is never empty
+    func theatreFiltered(_ games: [StageGame]) -> [StageGame] {
+        let out: [StageGame]
+        switch theatreFilter {
+        case .all: return games
+        case .favourites: out = games.filter(\.favorite)
+        case .recent: out = games.filter { TheatreFilter.isRecent($0) }
+        case .genre(let g): out = games.filter { discover.genres(of: $0).contains(g) }
+        }
+        return out.isEmpty ? games : out
+    }
+
+    /// The stops L and R walk: All games, then Favourites and Recently played when there are any, then each genre your games are in
+    func theatreFilters() -> [TheatreFilter] {
+        let games = stageGames()
+        var out: [TheatreFilter] = [.all]
+        if games.contains(where: \.favorite) { out.append(.favourites) }
+        if games.contains(where: { TheatreFilter.isRecent($0) }) { out.append(.recent) }
+        out += discover.shelves(games).map { .genre($0) }
+        return out
+    }
+
+    func stepTheatreFilter(_ d: Int) {
+        let all = theatreFilters()
+        guard all.count > 1 else { return }
+        let i = all.firstIndex(of: theatreFilter) ?? 0
+        theatreFilter = all[(i + d + all.count) % all.count]
+        theatreRow = 0
+        theatreWatch = false
+        if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { settings.theatreFilter = theatreFilter.key }
+        // the game in focus stays when it is in the filter, else the filter's first
+        let games = theatreTheme == .trailer ? trailerGames() : theatreGames()
+        if !games.contains(where: { $0.id == theatreFocus }) { theatreFocus = games.first?.id }
+    }
+
+    /// The game in focus is kept, so Theatre reopens on it (Settings › Open on › Theatre, or the next time it opens)
+    func rememberTheatreFocus() {
+        guard let f = theatreFocus, f != settings.theatreLastGame, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
+        settings.theatreLastGame = f
+    }
+
+    /// The main button's word on Theatre: Continue for a built game played before (quick resume), else Play or the step it needs
+    func theatreAction(_ g: StageGame) -> String {
+        let st = status(g)
+        return st == .ready && g.last != nil ? "Continue" : st.action
+    }
+
+    /// What Theatre shows of a game once the focus rests on it: when it was played, its genre, players, size, and whether it is
+    /// built (or what it needs). Only what is known.
+    func theatreDetails(_ g: StageGame) -> [TheatreFact] {
+        var out: [TheatreFact] = []
+        if let l = g.last {
+            let f = RelativeDateTimeFormatter()
+            f.unitsStyle = .full
+            out.append(TheatreFact(text: "Played " + f.localizedString(for: l, relativeTo: Date()), symbol: "clock.arrow.circlepath"))
+        }
+        let info = StoreInfoStore.shared.info(g.coverKey)
+        if let genre = (info?.genres ?? []).first ?? discover.genres(of: g).first { out.append(TheatreFact(text: genre, symbol: "tag")) }
+        if let p = info?.players { out.append(TheatreFact(text: p, symbol: (info?.playersTo ?? 1) > 1 ? "person.2.fill" : "person.fill")) }
+        if let b = g.game?.bytes, b > 0 { out.append(TheatreFact(text: Disk.gb(b), symbol: "internaldrive")) }
+        let st = status(g)
+        out.append(st == .ready ? TheatreFact(text: "Built", symbol: "checkmark.seal.fill") : TheatreFact(text: st.text, symbol: st.symbol))
+        return out
+    }
+
+    /// The trailer's volume, in tens; turning it up unmutes
+    func stepTheatreVolume(_ d: Int) {
+        if d > 0, theatreMuted { theatreMuted = false } else { settings.theatreVolume = min(max(settings.theatreVolume + d, 0), 100) }
+        theatreVolumeTick += 1
+    }
+
+    /// The screensaver goes away (a button, a key or the pointer), and the TV may not sleep again while Theatre is up
+    func wakeTheatre() {
+        theatreSaver = false
+        theatreTouched = Date()
+        if theatre, theatreActivity == nil {
+            theatreActivity = ProcessInfo.processInfo.beginActivity(options: [.idleDisplaySleepDisabled, .userInitiated], reason: "Theatre is on screen")
+        }
+    }
+
+    /// Cinema's rows: Continue playing, Favourites, a row per genre, then the games not built yet; with a filter, its games
     func theatreRows() -> [TheatreRow] {
         let all = stageGames()
         // the games drive away (or nothing built yet): every game, so Theatre still has rows
         let built = all.contains { $0.app != nil } ? all.filter { $0.app != nil } : all
+        if theatreFilter != .all { return [TheatreRow(title: theatreFilter.title, games: theatreOrder(theatreFiltered(built)))] }
         var rows: [TheatreRow] = []
         let recent = built.filter { $0.last != nil }.sorted { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }
         if !recent.isEmpty { rows.append(TheatreRow(title: "Continue playing", games: Array(recent.prefix(12)))) }
@@ -231,11 +437,9 @@ extension AppModel {
         return rows.firstIndex { $0.games.contains { $0.id == theatreFocus } } ?? 0
     }
 
-    /// Trailer's strip: favourites first, then as the front end orders them (built, recently played, by name), built or not
-    func trailerGames() -> [StageGame] {
-        let all = stageGames()
-        return all.filter(\.favorite) + all.filter { !$0.favorite }
-    }
+    /// Trailer's strip: the games in the filter, built or not, favourites first, then the ones played lately, then as the front
+    /// end orders them (built, recently played, by name)
+    func trailerGames() -> [StageGame] { theatreOrder(theatreFiltered(stageGames())) }
 
     func setTheatreTheme(_ t: TheatreTheme) {
         theatreTheme = t
@@ -247,11 +451,21 @@ extension AppModel {
     func theatrePad(_ k: PadKey) {
         theatreTouched = Date()
         NSCursor.setHiddenUntilMouseMoves(true)
+        // the screensaver: any button wakes Theatre, and does nothing else
+        if theatreSaver { wakeTheatre(); return }
+        let covered = stageSettings || viewerOpen || launching != nil || playOptions != nil || gameDetail != nil || caseViewer != nil
+        // the trailer's sound, in Browse and in Watch alike: the right stick's press mutes, up and down set the volume
+        switch k {
+        case .r3: if theatreTheme == .trailer, !covered { theatreMuted.toggle(); theatreVolumeTick += 1 }; return
+        case .volUp, .volDown: if theatreTheme == .trailer, !covered, theatreMenu == nil { stepTheatreVolume(k == .volUp ? 10 : -10) }; return
+        default: break
+        }
         if let i = theatreMenu {
             let rows = TheatreMenuRow.allCases
             switch k {
             case .up: theatreMenu = max(i - 1, 0)
             case .down: theatreMenu = min(i + 1, rows.count - 1)
+            case .left, .right: if rows[i] == .edges { settings.theatreEdges = settings.theatreEdges.step(k == .left ? -1 : 1) }
             case .a: pickTheatreMenu(rows[i])
             case .b, .menu: theatreMenu = nil
             default: break
@@ -261,7 +475,7 @@ extension AppModel {
         // Trailer's Watch: any button brings Browse back, and does nothing else
         if theatreTheme == .trailer, theatreWatch { theatreWatch = false; return }
         // the game's page, Play options, the launch screen, Settings and the viewers work as on the front end
-        if stageSettings || viewerOpen || launching != nil || playOptions != nil || gameDetail != nil { stagePad(k); return }
+        if covered { stagePad(k); return }
         let focus: StageGame?
         switch theatreTheme {
         case .carousel, .gallery, .trailer:
@@ -292,14 +506,16 @@ extension AppModel {
         }
         switch k {
         case .a:
-            // plays it, or does the step that stops it from playing (docs/ux.md)
-            if let g = focus { fix(g) }
+            // plays it, or does the step that stops it from playing (docs/ux.md); the place is kept for next time
+            if let g = focus { theatreFocus = g.id; rememberTheatreFocus(); fix(g) }
         case .y: if let g = focus { caseFlipped = false; gameDetail = g.ref }
         case .x: if let g = focus, g.app != nil { openPlayOptions(g.ref) }
-        case .l, .r:
+        // L and R: the filter; ZL and ZR: the theme
+        case .l, .r: stepTheatreFilter(k == .l ? -1 : 1)
+        case .zl, .zr:
             let all = TheatreTheme.allCases
             let i = all.firstIndex(of: theatreTheme) ?? 0
-            setTheatreTheme(all[(i + (k == .l ? -1 : 1) + all.count) % all.count])
+            setTheatreTheme(all[(i + (k == .zl ? -1 : 1) + all.count) % all.count])
         case .menu: theatreMenu = TheatreMenuRow.row(theatreTheme).rawValue
         case .b: theatreMenu = TheatreMenuRow.leave.rawValue
         case .options: if let g = focus { toggleFavorite(g) }
@@ -311,6 +527,11 @@ extension AppModel {
         theatreMenu = nil
         switch r {
         case .carousel, .cinema, .gallery, .trailer: if let t = r.theme { setTheatreTheme(t) }
+        // A steps the edges round and keeps the menu up, so the corners stay in view
+        case .edges:
+            let all = TheatreEdges.allCases
+            settings.theatreEdges = all[((all.firstIndex(of: settings.theatreEdges) ?? 0) + 1) % all.count]
+            theatreMenu = r.rawValue
         case .settings: settingsFocus = StageSettingRow.theatreTheme.rawValue; stageSettings = true
         case .leave: leaveTheatre()
         }
@@ -321,6 +542,8 @@ extension AppModel {
         switch k {
         case .a: enterTheatre(on: theatreOffer)
         case .b: theatreOffer = nil
+        case .x: if let tv = theatreOffer { settings.theatreOnTV = .always; enterTheatre(on: tv) }
+        case .y: settings.theatreOnTV = .never; theatreOffer = nil
         default: break
         }
     }
@@ -345,20 +568,39 @@ struct TheatreView: View {
     @Bindable var model: AppModel
     @FocusState private var keys: Bool
     @Environment(\.accessibilityReduceMotion) private var still
+    /// the volume card is up (a moment after each change)
+    @State private var hud = false
 
     var body: some View {
         GeometryReader { geo in
-            let u = max(geo.size.height / 1080, 0.5)
+            // a TV that crops its edges: the whole picture inset, black round it (Settings › Theatre › TV edges)
+            let e = model.settings.theatreEdges.inset
+            let size = CGSize(width: geo.size.width * (1 - 2 * e), height: geo.size.height * (1 - 2 * e))
+            // a 1080th of the height, or of a 16:10 width on a narrower screen, so nothing runs off the sides
+            let u = max(min(size.height / 1080, size.width / 1728), 0.5)
             ZStack {
-                if let r = model.gameDetail, model.stageGames().contains(where: { $0.isRef(r) }) {
-                    // the game's page, as on the front end (B comes back here)
-                    StageView(model: model).transition(.opacity)
-                } else {
-                    stage.frame(width: geo.size.width, height: geo.size.height).clipped()
-                    overlays.frame(width: geo.size.width, height: geo.size.height)
+                Color.black
+                ZStack {
+                    if let r = model.gameDetail, model.stageGames().contains(where: { $0.isRef(r) }) {
+                        // the game's page, as on the front end (B comes back here)
+                        StageView(model: model).transition(.opacity)
+                    } else {
+                        if model.theatreSaver {
+                            TheatreScreensaver(model: model).frame(width: size.width, height: size.height).clipped().transition(.opacity)
+                        } else {
+                            stage.frame(width: size.width, height: size.height).clipped()
+                        }
+                        overlays.frame(width: size.width, height: size.height)
+                    }
+                    if hud { TheatreVolumeCard(volume: model.settings.theatreVolume, muted: model.theatreMuted).frame(width: size.width, height: size.height, alignment: .topTrailing).transition(.opacity) }
+                    // choosing the edges in the menu: the picture's four corners, to check they all show on the TV
+                    if model.theatreMenu == TheatreMenuRow.edges.rawValue { TheatreEdgeMarks().frame(width: size.width, height: size.height).allowsHitTesting(false) }
                 }
+                .frame(width: size.width, height: size.height)
+                .clipped()
+                .environment(\.tu, u)
             }
-            .environment(\.tu, u)
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
         .foregroundStyle(.white)
@@ -368,6 +610,9 @@ struct TheatreView: View {
         .animation(.easeInOut(duration: 0.25), value: model.gameDetail)
         .animation(.spring(duration: 0.35), value: model.playOptions?.id)
         .animation(.easeInOut(duration: 0.3), value: model.launching?.id)
+        .animation(.easeInOut(duration: 1.2), value: model.theatreSaver)
+        .animation(.easeInOut(duration: 0.3), value: hud)
+        .animation(.easeInOut(duration: 0.3), value: model.settings.theatreEdges)
         .focusable()
         .focused($keys)
         .focusEffectDisabled()
@@ -380,21 +625,63 @@ struct TheatreView: View {
         .onKeyPress(.return) { model.theatrePad(.a); return .handled }
         .onKeyPress(.space) { model.theatrePad(.y); return .handled }
         .onKeyPress(.escape) { model.theatrePad(.b); return .handled }
-        .onKeyPress(.tab) { model.theatrePad(.r); return .handled }
+        .onKeyPress(.tab) { model.theatrePad(.zr); return .handled }
         .onKeyPress(characters: CharacterSet(charactersIn: "oO")) { _ in model.theatrePad(.x); return .handled }
         .onKeyPress(characters: CharacterSet(charactersIn: "mM")) { _ in model.theatrePad(.menu); return .handled }
+        // [ and ] the filter (L, R), , and . the theme (ZL, ZR)
         .onKeyPress(characters: CharacterSet(charactersIn: "[")) { _ in model.theatrePad(.l); return .handled }
         .onKeyPress(characters: CharacterSet(charactersIn: "]")) { _ in model.theatrePad(.r); return .handled }
+        .onKeyPress(characters: CharacterSet(charactersIn: ",<")) { _ in model.theatrePad(.zl); return .handled }
+        .onKeyPress(characters: CharacterSet(charactersIn: ".>")) { _ in model.theatrePad(.zr); return .handled }
         .onKeyPress(characters: CharacterSet(charactersIn: "fF")) { _ in model.theatrePad(.options); return .handled }
-        .onKeyPress(characters: CharacterSet(charactersIn: "sS")) { _ in model.theatreMuted.toggle(); return .handled }
-        // the genres for Cinema's rows, and the art the games still lack
+        .onKeyPress(characters: CharacterSet(charactersIn: "sS")) { _ in model.theatrePad(.r3); return .handled }
+        .onKeyPress(characters: CharacterSet(charactersIn: "-_")) { _ in model.theatrePad(.volDown); return .handled }
+        .onKeyPress(characters: CharacterSet(charactersIn: "=+")) { _ in model.theatrePad(.volUp); return .handled }
+        // the genres for Cinema's rows and the filters, and the art the games still lack
         .task(id: model.stageGames().compactMap(\.titleID).joined(separator: ",")) { model.discover.load(model.stageGames().compactMap(\.titleID)) }
         .task(id: "theatre-covers") { model.fetchCovers(model.stageGames()) }
+        // the focus rests on a game for a moment: its details show, its store details are read, and it is kept for next time
+        .task(id: model.theatreFocus) {
+            let snap = ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil
+            model.theatreRested = snap
+            let games = model.stageGames()
+            if let g = games.first(where: { $0.id == model.theatreFocus }), model.settings.downloadStoreInfo {
+                StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name)
+            }
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            model.theatreRested = true
+            // kept only when you moved to it, not when the carousel turned by itself
+            if Date().timeIntervalSince(model.theatreTouched) < 4 { model.rememberTheatreFocus() }
+        }
+        // the volume card, for a moment after each change
+        .task(id: model.theatreVolumeTick) {
+            guard model.theatreVolumeTick > 0 else { return }
+            hud = true
+            try? await Task.sleep(for: .seconds(1.6))
+            if !Task.isCancelled { hud = false }
+        }
+        // left alone for the screensaver's time, the screensaver; an hour into it, the TV may sleep
+        .task(id: "saver") {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil, let wait = model.settings.theatreSaver.seconds else { continue }
+                let idle = Date().timeIntervalSince(model.theatreTouched)
+                if model.theatreSaver {
+                    if idle > wait + 3600, let a = model.theatreActivity { ProcessInfo.processInfo.endActivity(a); model.theatreActivity = nil }
+                    continue
+                }
+                guard idle > wait, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil, model.launching == nil,
+                      model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil else { continue }
+                model.theatreWatch = false
+                model.theatreSaver = true
+            }
+        }
         // Trailer: left alone for 6 s, the words fade and the trailer takes the room
         .task(id: "watch") {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
-                guard model.theatreTheme == .trailer, !model.theatreWatch, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
+                guard model.theatreTheme == .trailer, !model.theatreWatch, !model.theatreSaver, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
                       model.launching == nil, model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil, NSApp.isActive,
                       Date().timeIntervalSince(model.theatreTouched) > 6, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { continue }
                 model.theatreWatch = true
@@ -404,7 +691,7 @@ struct TheatreView: View {
         .task(id: "idle") {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard !still, model.theatreTheme == .carousel, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
+                guard !still, model.theatreTheme == .carousel, !model.theatreSaver, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
                       model.launching == nil, model.playOptions == nil, !model.viewerOpen, NSApp.isActive,
                       Date().timeIntervalSince(model.theatreTouched) > 12, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { continue }
                 let games = model.theatreGames()
@@ -443,9 +730,11 @@ struct TheatreView: View {
     }
 }
 
-/// The wordmark at the top left, the theme and the time at the top right
+/// The wordmark at the top left, the filter in the middle, the theme and the time at the top right
 struct TheatreTopBar: View {
     let theme: TheatreTheme
+    /// for the filter in the middle
+    var model: AppModel? = nil
     /// the words' colour: white on the dark themes, a warm near-black on Gallery's ivory wall
     var ink: Color = .white
     /// the theme's name in a capsule, or as plain words (Gallery)
@@ -473,7 +762,40 @@ struct TheatreTopBar: View {
             }
         }
         .padding(.horizontal, 96 * u).frame(height: 120 * u)
+        .overlay { if let model { TheatreFilterChip(model: model, ink: ink) } }
         .foregroundStyle(ink)
+    }
+}
+
+/// The filter L and R walk, between their buttons: "L  ‹ Favourites ›  R", with how many there are
+struct TheatreFilterChip: View {
+    let model: AppModel
+    var ink: Color = .white
+    @Environment(\.tu) private var u
+
+    var body: some View {
+        let all = model.theatreFilters()
+        if all.count > 1 {
+            let i = all.firstIndex(of: model.theatreFilter) ?? 0
+            HStack(spacing: 14 * u) {
+                TheatreHints(model: model, light: ink != .white).glyph("L")
+                VStack(spacing: 2 * u) {
+                    Text(model.theatreFilter.title).font(.system(size: 20 * u, weight: .semibold)).lineLimit(1)
+                    HStack(spacing: 5 * u) {
+                        ForEach(all.indices, id: \.self) { k in
+                            Circle().fill(ink.opacity(k == i ? 0.95 : 0.3)).frame(width: 5 * u, height: 5 * u)
+                        }
+                    }
+                }
+                .frame(minWidth: 180 * u)
+                TheatreHints(model: model, light: ink != .white).glyph("R")
+            }
+            .padding(.horizontal, 16 * u).padding(.vertical, 8 * u)
+            .background(ink.opacity(0.08), in: .capsule)
+            .animation(.easeInOut(duration: 0.25), value: model.theatreFilter)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Filter: \(model.theatreFilter.title), L and R change it")
+        }
     }
 }
 
@@ -483,21 +805,25 @@ struct TheatreHints: View {
     var focus: StageGame?
     /// on a light wall: dark words, and the button symbols turned dark (PadGlyph draws them light)
     var light = false
-    /// L and R for the theme (Gallery leaves theme switching to the menu)
+    /// ZL and ZR for the theme (Gallery leaves theme switching to the menu)
     var themes = true
+    /// L and R for the filter
+    var filters = true
     var back = "Leave"
     var size: CGFloat = 20
     @Environment(\.tu) private var u
 
     var body: some View {
-        HStack(spacing: 34 * u) {
+        // every action on Theatre has a button, so it is all drivable from the sofa without a keyboard
+        HStack(spacing: 30 * u) {
             if let g = focus {
-                // the same word as the main button: Play, or the step that stops it playing (docs/ux.md, Status words)
-                hint("A", model.status(g).action, filled: true)
+                // the same word as the main button: Continue, Play, or the step that stops it playing (docs/ux.md, Status words)
+                hint("A", model.theatreAction(g), filled: true)
                 hint("Y", "Details")
                 if g.app != nil { hint("X", "Options") }
             }
-            if themes { hint("L", "R", "Theme") }
+            if filters, model.theatreFilters().count > 1 { hint("L", "R", "Filter") }
+            if themes { hint("ZL", "ZR", "Theme") }
             hint("+", "Menu")
             hint("B", back)
         }
@@ -507,7 +833,7 @@ struct TheatreHints: View {
 
     /// a button's symbol, half as big again as on the front end (it is drawn at a fixed size, so scaled into its own frame)
     func glyph(_ k: String, filled: Bool = false) -> some View {
-        PadGlyph(text: k, filled: filled).colorInvert(light).scaleEffect(u * 1.4).frame(width: 30 * u * 1.4, height: 24 * u * 1.4)
+        PadGlyph(text: k, filled: filled, dark: light).fixedSize().scaleEffect(u * 1.4).frame(width: (k.count > 1 ? 38 : 30) * u * 1.4, height: 24 * u * 1.4)
     }
 
     func hint(_ k: String, _ text: String, filled: Bool = false) -> some View {
@@ -525,6 +851,8 @@ struct TheatreMenu: View {
     @Environment(\.tu) private var u
 
     var body: some View {
+        let games = model.theatreTheme == .trailer ? model.trailerGames() : model.theatreGames()
+        let tint = model.theatreFocused(games).map { CoverArt.tint($0) } ?? .clear
         ZStack {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { model.theatreMenu = nil }
             VStack(alignment: .leading, spacing: 8 * u) {
@@ -541,6 +869,13 @@ struct TheatreMenu: View {
                             }
                             Spacer()
                             if current { Image(systemName: "checkmark").font(.system(size: 22 * u, weight: .bold)) }
+                            if r == .edges {
+                                HStack(spacing: 10 * u) {
+                                    Image(systemName: "chevron.left").opacity(on ? 1 : 0)
+                                    Text(model.settings.theatreEdges.title).font(.system(size: 20 * u, weight: .semibold)).monospacedDigit()
+                                    Image(systemName: "chevron.right").opacity(on ? 1 : 0)
+                                }
+                            }
                         }
                         .padding(.horizontal, 24 * u).padding(.vertical, 16 * u)
                         .foregroundStyle(on ? Color.black : Color.white)
@@ -548,12 +883,14 @@ struct TheatreMenu: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    if r == .trailer { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.vertical, 8 * u) }
+                    if r == .trailer || r == .edges { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.vertical, 8 * u) }
                 }
             }
             .padding(40 * u)
             .frame(width: 620 * u)
             .background(StageLook.panel.opacity(0.85), in: .rect(cornerRadius: 34 * u))
+            // the room's colour, from the game in focus
+            .background(LinearGradient(colors: [tint.opacity(0.22), .clear], startPoint: .top, endPoint: .bottom), in: .rect(cornerRadius: 34 * u))
             .glassEffect(.regular, in: .rect(cornerRadius: 34 * u))
             .shadow(color: .black.opacity(0.6), radius: 60 * u, y: 30 * u)
         }
@@ -562,6 +899,7 @@ struct TheatreMenu: View {
     func icon(_ r: TheatreMenuRow) -> String {
         switch r {
         case .carousel, .cinema, .gallery, .trailer: r.theme?.symbol ?? ""
+        case .edges: "rectangle.dashed"
         case .settings: "gearshape"
         case .leave: "rectangle.portrait.and.arrow.right"
         }
@@ -570,6 +908,7 @@ struct TheatreMenu: View {
     func note(_ r: TheatreMenuRow) -> String? {
         switch r {
         case .carousel, .cinema, .gallery, .trailer: r.theme?.note
+        case .edges: "Can you see all four corners? ← → to inset the picture"
         case .settings: nil
         case .leave: "Back to the window on your Mac"
         }
@@ -597,8 +936,8 @@ struct TheatreOffer: View {
                 }
                 .padding(.top, 6)
                 HStack(spacing: 18) {
-                    Button("Always open it on a TV") { model.settings.theatreOnTV = .always; model.enterTheatre(on: tv) }
-                    Button("Never ask") { model.settings.theatreOnTV = .never; model.theatreOffer = nil }
+                    Button { model.settings.theatreOnTV = .always; model.enterTheatre(on: tv) } label: { HStack(spacing: 6) { PadGlyph(text: "X"); Text("Always open it on a TV") } }
+                    Button { model.settings.theatreOnTV = .never; model.theatreOffer = nil } label: { HStack(spacing: 6) { PadGlyph(text: "Y"); Text("Never ask") } }
                 }
                 .buttonStyle(.plain).font(.system(size: 13, weight: .medium)).foregroundStyle(StageLook.faint)
             }
@@ -640,12 +979,13 @@ struct CarouselTheme: View {
             LinearGradient(stops: [.init(color: .clear, location: 0.62), .init(color: .black.opacity(0.85), location: 0.9), .init(color: .black, location: 1)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
             VStack(spacing: 0) {
-                TheatreTopBar(theme: .carousel)
+                TheatreTopBar(theme: .carousel, model: model)
                 Spacer()
                 if let g = focus {
                     VStack(spacing: 16 * u) {
                         Text(g.name).font(.system(size: 66 * u, weight: .semibold, design: .serif)).lineLimit(1).minimumScaleFactor(0.5)
                         Text(Self.facts(g)).font(.system(size: 22 * u, weight: .regular)).tracking(1.2 * u).foregroundStyle(StageLook.soft)
+                        TheatreDetails(model: model, game: g, showSize: false)
                     }
                     .id(g.id).transition(.opacity)
                     .padding(.horizontal, 120 * u)
@@ -658,9 +998,9 @@ struct CarouselTheme: View {
                     Spacer()
                     TheatreHints(model: model, focus: focus)
                 }
-                .padding(.horizontal, 96 * u).padding(.top, 44 * u).padding(.bottom, 42 * u)
+                .padding(.horizontal, 96 * u).padding(.top, 36 * u).padding(.bottom, 42 * u)
             }
-            .animation(.easeInOut(duration: 0.35), value: focus?.id)
+            .animation(TheatreMotion.swapAnimation, value: focus?.id)
         }
     }
 
@@ -971,8 +1311,14 @@ struct CinemaTheme: View {
                            startPoint: .leading, endPoint: .trailing).ignoresSafeArea()
             LinearGradient(stops: [.init(color: .clear, location: 0.38), .init(color: StageLook.background.opacity(0.86), location: 0.68), .init(color: StageLook.background, location: 1)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            // the room's colour, from the game's art, glowing up from the foot under the words and the rows
+            if let g = focus {
+                RadialGradient(colors: [CoverArt.tint(g).opacity(0.34), CoverArt.tint(g).opacity(0.08), .clear], center: UnitPoint(x: 0.12, y: 1.05),
+                               startRadius: 0, endRadius: 1100 * u)
+                    .ignoresSafeArea().allowsHitTesting(false)
+            }
             VStack(alignment: .leading, spacing: 0) {
-                TheatreTopBar(theme: .cinema).frame(width: width)
+                TheatreTopBar(theme: .cinema, model: model).frame(width: width)
                 Spacer(minLength: 0)
                 if let g = focus { info(g, row: rows.indices.contains(r) ? rows[r].title : "").id(g.id).transition(.opacity) }
                 rowsView(rows, current: r, col: col)
@@ -982,7 +1328,7 @@ struct CinemaTheme: View {
             }
             .frame(width: width)
         }
-        .animation(.easeInOut(duration: 0.45), value: focus?.id)
+        .animation(TheatreMotion.swapAnimation, value: focus?.id)
         .onAppear { if !still { drift = true } }
     }
 
@@ -999,19 +1345,20 @@ struct CinemaTheme: View {
                 }
             }
             .font(.system(size: 23 * u)).foregroundStyle(StageLook.soft).padding(.top, 22 * u)
+            TheatreDetails(model: model, game: g, showSize: false).padding(.top, 16 * u)
             HStack(spacing: 18 * u) {
                 Button { model.theatrePad(.a) } label: {
-                    Label(model.status(g).action, systemImage: model.status(g).actionSymbol)
+                    Label(model.theatreAction(g), systemImage: model.status(g).actionSymbol)
                         .font(.system(size: 24 * u, weight: .semibold)).foregroundStyle(.black)
                         .padding(.horizontal, 34 * u).frame(height: 64 * u).background(.white, in: .rect(cornerRadius: 14 * u))
                 }
                 .buttonStyle(.plain)
                 Button { model.theatrePad(.y) } label: { ghost("Details") }.buttonStyle(.plain)
-                if g.app != nil { Button { model.theatrePad(.x) } label: { ghost("Play Options") }.buttonStyle(.plain) }
+                if g.app != nil { Button { model.theatrePad(.x) } label: { ghost("Play options") }.buttonStyle(.plain) }
             }
-            .padding(.top, 34 * u)
+            .padding(.top, 28 * u)
         }
-        .padding(.horizontal, 96 * u).padding(.bottom, 40 * u)
+        .padding(.horizontal, 96 * u).padding(.bottom, 34 * u)
     }
 
     func ghost(_ t: String) -> some View {
@@ -1034,6 +1381,7 @@ struct CinemaTheme: View {
                             let near = abs(k - (i == r ? col : 0)) < 7
                             CinemaCard(game: g, focused: i == r && k == col, near: near)
                                 .frame(width: cardW, height: cardW * 9 / 16)
+                                .help(TheatreDetails.line(model, g))
                                 .onTapGesture { model.theatreRow = i; model.theatreFocus = g.id; model.theatreTouched = Date() }
                         }
                     }
@@ -1084,7 +1432,7 @@ struct TrailerTheme: View {
             Color.black.ignoresSafeArea()
             if let g = focus {
                 // the full picture, raised by half the panel while browsing so its middle shows above it
-                TrailerScreen(model: model, game: g, watch: watch, muted: model.theatreMuted, clock: $clock)
+                TrailerScreen(model: model, game: g, watch: watch, muted: model.theatreMuted, volume: model.settings.theatreVolume, clock: $clock)
                     .id(g.id)
                     .frame(width: size.width, height: size.height)
                     .offset(y: watch ? 0 : -panel / 2)
@@ -1101,11 +1449,14 @@ struct TrailerTheme: View {
             if let g = focus {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    HStack {
+                    HStack(spacing: 30 * u) {
                         Text(g.name.uppercased()).font(.system(size: 17 * u, weight: .semibold)).tracking(5 * u).lineLimit(1)
                         Spacer()
-                        HStack(spacing: 10 * u) { Image(systemName: "arrow.up"); Text("Browse") }.font(.system(size: 18 * u, weight: .medium))
+                        HStack(spacing: 8 * u) { TheatreHints(model: model).glyph("R3"); Text(model.theatreMuted ? "Sound on" : "Mute") }
+                        HStack(spacing: 8 * u) { TheatreHints(model: model).glyph("RS"); Text("Volume") }
+                        HStack(spacing: 10 * u) { Image(systemName: "arrow.up"); Text("Any button: Browse") }
                     }
+                    .font(.system(size: 18 * u, weight: .medium))
                     .shadow(color: .black.opacity(0.7), radius: 8 * u)
                     .padding(.horizontal, 64 * u).padding(.bottom, 44 * u)
                 }
@@ -1114,7 +1465,7 @@ struct TrailerTheme: View {
             }
         }
         .animation(.easeInOut(duration: 0.9), value: watch)
-        .animation(.easeInOut(duration: 0.4), value: focus?.id)
+        .animation(TheatreMotion.swapAnimation, value: focus?.id)
         // the pointer moving brings Browse back (a still pointer, or a twitch, does not)
         .onContinuousHover { p in
             guard case .active(let at) = p else { return }
@@ -1142,14 +1493,15 @@ struct TrailerTheme: View {
                 }
             }
             .font(.system(size: 16 * u, weight: .semibold)).tracking(2.4 * u).monospacedDigit()
-            Button { model.theatreMuted.toggle() } label: {
+            Button { model.theatreMuted.toggle(); model.theatreVolumeTick += 1 } label: {
                 Image(systemName: model.theatreMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .font(.system(size: 18 * u, weight: .semibold)).frame(width: 40 * u, height: 40 * u).contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .help(model.theatreMuted ? "Sound on (S)" : "Mute (S)")
+            .help(model.theatreMuted ? "Sound on (S, or press the right stick)" : "Mute (S, or press the right stick)")
         }
         .padding(.horizontal, 64 * u).frame(height: 110 * u)
+        .overlay { TheatreFilterChip(model: model) }
         .shadow(color: .black.opacity(0.5), radius: 6 * u)
     }
 
@@ -1166,16 +1518,28 @@ struct TrailerTheme: View {
             }
             .padding(.top, 34 * u)
             Spacer(minLength: 0)
-            HStack(spacing: 34 * u) {
+            HStack(spacing: 28 * u) {
                 Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
-                HStack(spacing: 8 * u) { Image(systemName: "arrow.down"); Text("Watch trailer") }
+                HStack(spacing: 8 * u) { Image(systemName: "arrow.down"); Text("Watch") }
                 HStack(spacing: 6 * u) { Image(systemName: "arrow.left"); Image(systemName: "arrow.right"); Text("Browse") }
-                HStack(spacing: 8 * u) { TheatreHints(model: model).glyph("+"); Text("Menu") }
+                let hints = TheatreHints(model: model)
+                if model.theatreFilters().count > 1 { HStack(spacing: 6 * u) { hints.glyph("L"); hints.glyph("R"); Text("Filter") } }
+                HStack(spacing: 6 * u) { hints.glyph("ZL"); hints.glyph("ZR"); Text("Theme") }
+                HStack(spacing: 6 * u) { hints.glyph("R3"); Text(model.theatreMuted ? "Sound on" : "Mute") }
+                HStack(spacing: 6 * u) { hints.glyph("RS"); Text("Volume") }
+                HStack(spacing: 6 * u) { hints.glyph("+"); Text("Menu") }
+                HStack(spacing: 6 * u) { hints.glyph("B"); Text("Leave") }
             }
-            .font(.system(size: 18 * u, weight: .medium)).foregroundStyle(.white.opacity(0.85))
-            .padding(.horizontal, 64 * u).padding(.bottom, 30 * u)
+            .font(.system(size: 17 * u, weight: .medium)).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
+            .padding(.horizontal, 64 * u).padding(.bottom, 26 * u)
         }
-        .background(Self.panelColor)
+        .background {
+            // the room's colour, from the game's art, washed over the dark panel
+            ZStack {
+                Self.panelColor
+                if let g = focus { LinearGradient(colors: [CoverArt.tint(g).opacity(0.22), CoverArt.tint(g).opacity(0.05)], startPoint: .top, endPoint: .bottom) }
+            }
+        }
     }
 
     @ViewBuilder func info(_ g: StageGame?) -> some View {
@@ -1192,10 +1556,11 @@ struct TrailerTheme: View {
                         Text("·  \(Playtime.text(g.total)) played")
                     }
                 }
-                .font(.system(size: 19 * u)).foregroundStyle(.white.opacity(0.72)).padding(.top, 12 * u)
+                .font(.system(size: 19 * u)).foregroundStyle(.white.opacity(0.72)).padding(.top, 12 * u).lineLimit(1)
+                TheatreDetails(model: model, game: g, size: 15, status: false).padding(.top, 10 * u)
                 HStack(spacing: 18 * u) {
                     Button { model.theatrePad(.a) } label: {
-                        HStack(spacing: 10 * u) { TheatreHints(model: model).glyph("A", filled: true).colorInvert(); Text(st.action) }
+                        HStack(spacing: 10 * u) { TheatreHints(model: model).glyph("A", filled: true).colorInvert(); Text(model.theatreAction(g)) }
                             .font(.system(size: 21 * u, weight: .semibold)).foregroundStyle(.black)
                             .padding(.horizontal, 22 * u).frame(height: 54 * u)
                             .background(Self.cream, in: .rect(cornerRadius: 12 * u))
@@ -1209,7 +1574,7 @@ struct TrailerTheme: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.top, 26 * u)
+                .padding(.top, 18 * u)
             }
             .padding(.leading, 64 * u).padding(.trailing, 36 * u)
             .id(g.id).transition(.opacity)
@@ -1224,6 +1589,7 @@ struct TrailerTheme: View {
                 // only the cards near the focus draw their art
                 TrailerCard(game: g, focused: k == col, near: abs(k - col) < 8, width: cardW)
                     .onTapGesture { model.theatreFocus = g.id; model.theatreTouched = Date() }
+                    .help(TheatreDetails.line(model, g))
             }
         }
         .padding(.leading, 34 * u)
@@ -1270,6 +1636,8 @@ struct TrailerScreen: View {
     let game: StageGame
     let watch: Bool
     let muted: Bool
+    /// Settings' trailer volume, 0 to 100: all of it while watching, a quarter while browsing
+    var volume = 100
     @Binding var clock: TrailerClock?
     @State private var rested = false
     @State private var playing = false
@@ -1285,7 +1653,7 @@ struct TrailerScreen: View {
         let ids = (StoreInfoStore.shared.info(game.coverKey)?.trailers ?? []).compactMap(\.youtube)
         let id = ids.indices.contains(skip) ? ids[skip] : nil
         let shots = id == nil && watch ? StoreInfoStore.shared.shots(game.coverKey) : []
-        let on = rested && active && model.launching == nil && !model.viewerOpen && model.caseViewer == nil
+        let on = rested && active && model.launching == nil && !model.viewerOpen && model.caseViewer == nil && !model.theatreSaver
         GeometryReader { geo in
             ZStack {
                 CinemaArt(game: game)
@@ -1297,7 +1665,7 @@ struct TrailerScreen: View {
                         .id(shot % shots.count).transition(.opacity)
                 }
                 if let id, on {
-                    TrailerBackdropPlayer(id: id, start: 5, volume: muted ? 0 : watch ? 100 : 25,
+                    TrailerBackdropPlayer(id: id, start: 5, volume: muted ? 0 : watch ? volume : (volume + 3) / 4,
                                           // a second's wait: YouTube flashes its pause sign as it starts
                                           playing: { Task { try? await Task.sleep(for: .seconds(1)); playing = true } },
                                           failed: { playing = false; clock = nil; skip += 1 },
@@ -1382,22 +1750,29 @@ struct TrailerBackdropPlayer: NSViewRepresentable {
         #p{position:absolute;left:50%;top:50%;width:max(100vw,177.78vh);height:max(56.25vw,100vh);transform:translate(-50%,-50%) scale(1.12);pointer-events:none}
         </style></head><body><div id="p"></div><script>
         var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
-        var told = false, player = null, want = \(volume);
+        var told = false, player = null, want = \(volume), cur = 0, fading = null;
         function nocc() { try { player.unloadModule('captions'); player.unloadModule('cc'); player.setOption('captions', 'track', {}); } catch (x) {} }
-        function vol(n) { want = n; if (!player || !player.setVolume) return; if (n <= 0) { player.mute(); } else { player.unMute(); player.setVolume(n); } }
+        function put(n) { cur = n; if (!player || !player.setVolume) return; if (n <= 0) { player.mute(); } else { player.unMute(); player.setVolume(n); } }
+        // the sound glides to n over ms, never jumps: in as the picture fades in, out as the game changes, and between Browse and Watch
+        function fade(n, ms) {
+          if (!player || !player.setVolume) { want = n; return; }
+          clearInterval(fading); var from = cur, steps = Math.max(1, Math.round(ms / 40)), i = 0;
+          fading = setInterval(function () { i++; put(Math.round(from + (n - from) * i / steps)); if (i >= steps) clearInterval(fading); }, 40);
+        }
+        function vol(n) { want = n; if (told) fade(n, 450); }
         setInterval(function () {
-          if (told && player && player.getCurrentTime) { window.webkit.messageHandlers.nxf.postMessage('t ' + player.getCurrentTime() + ' ' + player.getDuration()); }
+          try { if (told && player && player.getCurrentTime) { window.webkit.messageHandlers.nxf.postMessage('t ' + player.getCurrentTime() + ' ' + player.getDuration()); } } catch (x) {}
         }, 1000);
         function onYouTubeIframeAPIReady() {
           player = new YT.Player('p', { host: 'https://www.youtube-nocookie.com', videoId: '\(id)',
             playerVars: { autoplay: 1, start: \(start), controls: 0, disablekb: 1, rel: 0, modestbranding: 1, iv_load_policy: 3,
                           playsinline: 1, fs: 0, cc_load_policy: 0 },
             events: {
-              onReady: function (e) { nocc(); vol(want); e.target.playVideo(); },
+              onReady: function (e) { nocc(); put(0); e.target.playVideo(); },
               onError: function (e) { window.webkit.messageHandlers.nxf.postMessage('error ' + e.data); },
               onStateChange: function (e) {
                 if (e.data === YT.PlayerState.PLAYING) { nocc(); }
-                if (e.data === YT.PlayerState.PLAYING && !told) { told = true; window.webkit.messageHandlers.nxf.postMessage('playing'); }
+                if (e.data === YT.PlayerState.PLAYING && !told) { told = true; fade(want, 1400); window.webkit.messageHandlers.nxf.postMessage('playing'); }
                 if (e.data === YT.PlayerState.ENDED) { e.target.seekTo(\(start)); e.target.playVideo(); }
               }
             } });
@@ -1421,10 +1796,14 @@ struct TrailerBackdropPlayer: NSViewRepresentable {
         }
     }
 
+    /// The sound fades out with the picture rather than stopping dead, then the page is emptied
     static func dismantleNSView(_ v: WKWebView, coordinator: Coordinator) {
         v.configuration.userContentController.removeScriptMessageHandler(forName: "nxf")
-        v.stopLoading()
-        v.loadHTMLString("", baseURL: nil)
+        v.evaluateJavaScript("fade(0, \(Int(TheatreMotion.swap * 1000)))")
+        DispatchQueue.main.asyncAfter(deadline: .now() + TheatreMotion.swap + 0.1) {
+            v.stopLoading()
+            v.loadHTMLString("", baseURL: nil)
+        }
     }
 }
 
@@ -1520,6 +1899,11 @@ struct GalleryTheme: View {
         let roomForSides = right - left >= (Self.focusW + 2 * (Self.sideW + Self.gap)) * u
         ZStack(alignment: .topLeading) {
             Self.ivory.ignoresSafeArea()
+            // the game's colour, the faintest wash on the wall behind the covers
+            if let g = focus {
+                RadialGradient(colors: [CoverArt.tint(g).opacity(0.13), .clear], center: UnitPoint(x: 0.68, y: 0.44), startRadius: 0, endRadius: 760 * u)
+                    .ignoresSafeArea().allowsHitTesting(false)
+            }
             covers(games, index: index, sides: roomForSides).frame(width: right - left, height: 640 * u).clipped()
                 .offset(x: left, y: 170 * u)
             if let g = focus {
@@ -1527,7 +1911,7 @@ struct GalleryTheme: View {
                     .id(g.id).transition(.opacity)
             }
             VStack(spacing: 0) {
-                TheatreTopBar(theme: .gallery, ink: Self.ink, pill: false).padding(.top, 20 * u).frame(width: width)
+                TheatreTopBar(theme: .gallery, model: model, ink: Self.ink, pill: false).padding(.top, 20 * u).frame(width: width)
                 Spacer(minLength: 0)
                 foot(games, index: index, focus: focus).frame(width: width)
             }
@@ -1535,6 +1919,7 @@ struct GalleryTheme: View {
         }
         .frame(width: width, height: height)
         .animation(still ? nil : .easeOut(duration: 0.22), value: focus?.id)
+        .animation(TheatreMotion.swapAnimation, value: focus.map { CoverArt.tint($0) })
     }
 
     /// The name, then one short fact a line (only what is known), the status when it cannot play, and the main button
@@ -1551,10 +1936,11 @@ struct GalleryTheme: View {
                 if st != .ready { Label(st.text, systemImage: st.symbol).foregroundStyle(Self.bronze) }
             }
             .font(.system(size: 27 * u)).foregroundStyle(Self.soft).padding(.top, 22 * u)
+            TheatreDetails(model: model, game: g, ink: Self.soft, size: 19, status: false).padding(.top, 18 * u)
             Button { model.theatrePad(.a) } label: {
                 HStack(spacing: 16 * u) {
                     PadGlyph(text: "A", filled: true).scaleEffect(u * 1.5).frame(width: 34 * u, height: 34 * u)
-                    Text(st.action).font(.system(size: 30 * u, weight: .semibold))
+                    Text(model.theatreAction(g)).font(.system(size: 30 * u, weight: .semibold))
                 }
                 .foregroundStyle(Self.ivory)
                 .padding(.horizontal, 30 * u).frame(minWidth: 200 * u, minHeight: 64 * u, alignment: .leading)
@@ -1589,6 +1975,7 @@ struct GalleryTheme: View {
                         .position(x: x, y: y)
                         .opacity(abs(d) > 1 ? 0 : 1)
                         .onTapGesture { model.theatreFocus = g.id; model.theatreTouched = Date() }
+                        .help(TheatreDetails.line(model, g))
                         .id(g.id)
                 }
             }
@@ -1608,7 +1995,7 @@ struct GalleryTheme: View {
             }
             .frame(height: 50 * u)
             Rectangle().fill(Self.ink.opacity(0.18)).frame(height: 1).padding(.top, 20 * u)
-            HStack { Spacer(); TheatreHints(model: model, focus: focus, light: true, themes: false, back: "Back", size: 26) }
+            HStack { Spacer(); TheatreHints(model: model, focus: focus, light: true, themes: false, back: "Back", size: 24) }
                 .frame(height: 50 * u).padding(.top, 15 * u)
         }
         .foregroundStyle(Self.ink)
@@ -1690,5 +2077,160 @@ struct GalleryCover: View {
             }
         }
         .overlay(RoundedRectangle(cornerRadius: 6 * u).strokeBorder(GalleryTheme.ink.opacity(0.10), lineWidth: 1))
+    }
+}
+
+// MARK: Details, screensaver, volume, edges
+
+/// A game's details once the focus has rested on it for a moment (AppModel.theatreDetails): when it was played, its genre,
+/// players, size and whether it is built, as quiet capsules that fade in, so moving quickly along the games stays calm
+struct TheatreDetails: View {
+    let model: AppModel
+    let game: StageGame
+    var ink: Color = .white
+    var size: CGFloat = 18
+    /// the built / needs-a-build capsule (left out where the theme already says it)
+    var status = true
+    /// the size capsule (left out where the facts line already has it)
+    var showSize = true
+    @Environment(\.tu) private var u
+
+    var body: some View {
+        let _ = StoreInfoStore.shared.revision
+        let facts = model.theatreDetails(game)
+            .filter { status || ($0.symbol != "checkmark.seal.fill" && $0.text != model.status(game).text) }
+            .filter { showSize || $0.symbol != "internaldrive" }
+        HStack(spacing: 10 * u) {
+            ForEach(facts, id: \.self) { f in
+                HStack(spacing: 7 * u) {
+                    Image(systemName: f.symbol).font(.system(size: size * 0.8 * u, weight: .semibold))
+                    Text(f.text).lineLimit(1)
+                }
+                .font(.system(size: size * u, weight: .medium))
+                .padding(.horizontal, 12 * u).frame(height: size * 1.8 * u)
+                .background(ink.opacity(0.10), in: .capsule)
+                .overlay(Capsule().strokeBorder(ink.opacity(0.14), lineWidth: 1))
+            }
+        }
+        .foregroundStyle(ink.opacity(0.9))
+        .fixedSize()
+        .opacity(model.theatreRested ? 1 : 0)
+        .animation(.easeInOut(duration: 0.35), value: model.theatreRested)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// the same, as one line for a pointer's tooltip
+    @MainActor static func line(_ model: AppModel, _ g: StageGame) -> String {
+        ([g.name] + model.theatreDetails(g).map(\.text)).joined(separator: " · ")
+    }
+}
+
+/// Theatre left alone (Settings › Theatre › Screensaver): the games' wide art in turn, a slow drift on each, dimmed, with a
+/// quiet clock and the game's name that move corner to corner so nothing stays in one place on the TV. Any button, a key or
+/// the pointer wakes it. No trailers play here: it is meant to be quiet, and an hour in the TV is let sleep.
+struct TheatreScreensaver: View {
+    let model: AppModel
+    @Environment(\.tu) private var u
+    @Environment(\.accessibilityReduceMotion) private var still
+    @State private var step = 0
+    @State private var drift = false
+    @State private var pointer: CGPoint?
+
+    var body: some View {
+        let _ = CoverStore.shared.revision
+        let games = model.theatreGames().filter { CoverStore.shared.hero($0.coverKey) != nil || CoverArt.wide($0) != nil }
+        let list = games.isEmpty ? model.theatreGames() : games
+        let g = list.isEmpty ? nil : list[step % list.count]
+        // the words' corner: bottom left, bottom right, top right, top left in turn
+        let corner: Alignment = [.bottomLeading, .bottomTrailing, .topTrailing, .topLeading][step % 4]
+        let lead = corner == .bottomLeading || corner == .topLeading
+        GeometryReader { geo in
+            ZStack {
+                Color.black
+                if let g, let art = CoverStore.shared.hero(g.coverKey) ?? CoverArt.wide(g) {
+                    Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                        .frame(width: geo.size.width, height: geo.size.height).clipped()
+                        .scaleEffect(drift ? 1.12 : 1.02, anchor: lead ? .topTrailing : .topLeading)
+                        .animation(still ? nil : .linear(duration: 14), value: drift)
+                        .id(g.id).transition(.opacity)
+                }
+                Color.black.opacity(0.42)
+                VStack(alignment: lead ? .leading : .trailing, spacing: 6 * u) {
+                    TimelineView(.everyMinute) { t in
+                        Text(t.date.formatted(date: .omitted, time: .shortened)).font(.system(size: 96 * u, weight: .thin)).monospacedDigit()
+                    }
+                    if let g { Text(g.name).font(.system(size: 24 * u, weight: .medium)).opacity(0.75).id(g.id).transition(.opacity) }
+                }
+                .opacity(0.62)
+                .padding(.horizontal, 110 * u).padding(.vertical, 90 * u)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: corner)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .animation(.easeInOut(duration: 2), value: step)
+        .contentShape(.rect)
+        .onTapGesture { model.wakeTheatre() }
+        .onContinuousHover { p in
+            guard case .active(let at) = p, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
+            if let o = pointer, hypot(at.x - o.x, at.y - o.y) > 12 { model.wakeTheatre() } else if pointer == nil { pointer = at }
+        }
+        .task {
+            // a new picture every 12 s, the drift starting again on each
+            while !Task.isCancelled {
+                drift = false
+                try? await Task.sleep(for: .milliseconds(60))
+                drift = true
+                try? await Task.sleep(for: .seconds(12))
+                guard !Task.isCancelled else { return }
+                step += 1
+            }
+        }
+    }
+}
+
+/// The trailer's volume for a moment after it changes: a speaker and ten steps, at the top right
+struct TheatreVolumeCard: View {
+    let volume: Int
+    let muted: Bool
+    @Environment(\.tu) private var u
+
+    var body: some View {
+        HStack(spacing: 14 * u) {
+            Image(systemName: muted || volume == 0 ? "speaker.slash.fill" : volume < 40 ? "speaker.wave.1.fill" : "speaker.wave.3.fill")
+                .font(.system(size: 22 * u, weight: .semibold)).frame(width: 34 * u)
+            HStack(spacing: 4 * u) {
+                ForEach(0..<10, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 2 * u).fill(.white.opacity(!muted && i < volume / 10 ? 0.95 : 0.22)).frame(width: 12 * u, height: 22 * u)
+                }
+            }
+            Text(muted ? "Muted" : "\(volume) %").font(.system(size: 18 * u, weight: .semibold)).monospacedDigit().frame(width: 76 * u, alignment: .trailing)
+        }
+        .padding(.horizontal, 20 * u).frame(height: 62 * u)
+        .background(StageLook.panel.opacity(0.8), in: .capsule)
+        .glassEffect(.regular, in: .capsule)
+        .padding(.top, 120 * u).padding(.trailing, 64 * u)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(muted ? "Muted" : "Volume \(volume) percent")
+    }
+}
+
+/// The picture's corners while TV Edges is chosen in the menu: if one is cut off on the TV, inset the picture
+struct TheatreEdgeMarks: View {
+    @Environment(\.tu) private var u
+
+    var body: some View {
+        let arm = 70 * u, w = 6 * u
+        let corners: [Alignment] = [.topLeading, .topTrailing, .bottomLeading, .bottomTrailing]
+        ZStack {
+            ForEach(0..<4, id: \.self) { i in
+                let a = corners[i]
+                ZStack(alignment: a) {
+                    Rectangle().fill(Color(red: 1, green: 0.81, blue: 0.43)).frame(width: arm, height: w)
+                    Rectangle().fill(Color(red: 1, green: 0.81, blue: 0.43)).frame(width: w, height: arm)
+                }
+                .frame(width: arm, height: arm, alignment: a)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: a)
+            }
+        }
     }
 }

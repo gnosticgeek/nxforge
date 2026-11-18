@@ -145,10 +145,10 @@ index 87ec991fb314eb3449607d32eb23c7859c49700b..9524c923799bc87e99e913888af944c2
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index 1b58ec60b750ea7700b53484d93f9e3b99935dc5..2e9bc9a7a53b8036d4f233de471c53c03ec7b260 100644
+index 7baff3f4dffe3644bc4989bab21b0531aaa715e7..b4e4b64ab15c7231ec6cdfa4e8e4f2ac94d45455 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
-@@ -81,7 +81,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -83,7 +83,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  | [Taiko Risshiden V DX](#taiko-risshiden-v-dx) | 1 | 0 | 0 | 2 | 0 | `game` |
  | [The Legend of Zelda: Breath of the Wild](#the-legend-of-zelda-breath-of-the-wild) | 7 | 0 | 43 | 0 | 0 | `build` → `game` ×2 |
  | [The Legend of Zelda: Link's Awakening](#the-legend-of-zelda-links-awakening) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
@@ -157,7 +157,7 @@ index 1b58ec60b750ea7700b53484d93f9e3b99935dc5..2e9bc9a7a53b8036d4f233de471c53c0
  | [The Legend of Zelda: Tears of the Kingdom](#the-legend-of-zelda-tears-of-the-kingdom) | 0 | 0 | 9 | 0 | 0 | `game` |
  | [Xenoblade Chronicles 3](#xenoblade-chronicles-3) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
  | [Xenoblade Chronicles X: Definitive Edition](#xenoblade-chronicles-x-definitive-edition) | 6 | 0 | 1 | 1 | 0 | `game` ×2 |
-@@ -586,11 +586,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -597,11 +597,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  - **`game`**, frame rate, at goal, checked: v131072 main: one function with this fingerprint, the site and its free registers read by disassembly (2026-11-08): frame ratio from the host's step. The game's own frame-ratio division, found by its function's fingerprint on any build that keeps the function
  - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
  - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen's edges and the scene at 16:9's proportions with more at the sides (2026-11-12): wide screen: the swap chain and frame buffer sizes and the scene cameras' aspect (DM_SCREEN_WIDE). The game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)
