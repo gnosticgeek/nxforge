@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.20.1 (2026-11-18)
+
+Free space from the drive the app is saved to. Ships in NXForge 0.46.1.
+
+- **"Available" is the target drive's free space**: with the app saved to an external drive, Ready to build showed the Mac's own free space (79 GB) because the shared Metal cache on the Mac had the least room to spare. The line now names the drive the app is saved to, with what the build needs there. The Mac's disk and the build folder's drive are still checked, and Not enough space still names whichever is short.
+
 ## 0.20.0 (2026-11-18)
 
 Ten Theatre improvements. Ships in NXForge 0.46.0.
