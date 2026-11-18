@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.45.5 (2026-11-18)
+
+- **Game page: swipe through Media, header art down to the line** (Converter 0.19.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a two-finger swipe moves along every trailer and screenshot in the Media row, and the game's wide art at the top of the page now reaches the line above Media. No game rebuild needed for this.
+
 ## 0.45.4 (2026-11-17)
 
 - **A frame rate you set for a game stays as you set it on battery** (Converter 0.19.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): with Settings › Launching › Battery preset on battery (on by default), a Play while the Mac is unplugged took the Battery preset for that run, and that lowered every one of its rows, a frame rate saved for the game included. Ocarina of Time played at 30 fps and 75 % render scale today for that reason. The preset now leaves alone any option saved for the game and only lowers the ones left on the game's default, and the note while the game starts names what it changed for the run. No game rebuild needed for this.

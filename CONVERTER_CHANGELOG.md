@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.4 (2026-11-18)
+
+Game page polish. Ships in NXForge 0.45.5.
+
+- **Swipe through Media**: the row under Media now holds every trailer and screenshot, three across; a two-finger swipe on the trackpad (or a scroll wheel) moves along it and settles on a tile's edge. Switching between Official media and Your captures starts again at the first tile.
+- **The header art reaches the line**: the game's wide art at the top of its page now runs all the way down to the line above Media at any window size (it stopped short of it, fading out above the line), softening into the line instead of fading out before it.
+
 ## 0.19.3 (2026-11-17)
 
 The Battery preset keeps the choices you saved for a game. Ships in NXForge 0.45.4.

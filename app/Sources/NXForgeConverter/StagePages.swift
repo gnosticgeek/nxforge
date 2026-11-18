@@ -5,11 +5,19 @@
 import AppKit
 import SwiftUI
 
+/// The game page's line under its headline, in window coordinates (GameKeyArt's banner ends on it)
+struct GameBannerBottom: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) { value = nextValue() ?? value }
+}
+
 struct StageGamePage: View {
     @Bindable var model: AppModel
     let game: StageGame
     /// More details under the media: the store's About
     @State private var aboutOpen = ProcessInfo.processInfo.environment["NXC_ABOUT"] != nil   // snapshot hook: opened
+    @State private var lineY: CGFloat?
+    @State private var scrollTop: CGFloat = 0
 
     var body: some View {
         let _ = model.revision
@@ -50,6 +58,7 @@ struct StageGamePage: View {
                         }
                         .padding(.top, 10)
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 16)
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("gamePage")).maxY } action: { lineY = $0 }
                         // Media across the page (three tiles), then the store's one-line pitch with More details, which opens About
                         GameMedia(model: model, game: g, width: inner).padding(.top, 22)
                         if let info {
@@ -81,12 +90,16 @@ struct StageGamePage: View {
                     .padding(.bottom, 4)
                     .frame(minHeight: geo.size.height - 48)
                     .animation(.easeOut(duration: 0.2), value: aboutOpen)   // Save, Playtime and Build sit at the foot of the window
+                    .coordinateSpace(.named("gamePage"))   // scrolls with the page, so the line's place in it stays put
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { scrollTop = $0 }
                 .scrollIndicators(.never)
                 // snapshot hook: NXC_SCROLL=1 opens the page scrolled to its end
                 .defaultScrollAnchor(ProcessInfo.processInfo.environment["NXC_SCROLL"] == nil ? .top : .bottom)
             }
         }
+        // where the line under the headline sits in the window, unscrolled: the key art behind the page reaches down to it
+        .preference(key: GameBannerBottom.self, value: lineY.map { scrollTop + $0 })
         .task(id: g.coverKey + (model.settings.downloadStoreInfo ? "1" : "0")) {
             if model.settings.downloadStoreInfo { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) }
         }

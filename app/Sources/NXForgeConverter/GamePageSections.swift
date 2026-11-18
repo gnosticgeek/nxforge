@@ -46,12 +46,19 @@ struct GameMedia: View {
                 }
             }
             if !items.isEmpty {
-                HStack(spacing: 16) {
-                    ForEach(0..<3, id: \.self) { i in
-                        if i < items.count { tile(items[i]) { open(items, at: i, current) } }
-                        else { Color.clear.frame(width: tileWidth, height: 1) }
+                // three tiles across, the rest a two-finger swipe (or a scroll wheel) away; each swipe settles on a tile's edge
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 16) {
+                        ForEach(items.indices, id: \.self) { i in tile(items[i]) { open(items, at: i, current) } }
                     }
+                    .scrollTargetLayout()
+                    .padding(.vertical, 20)   // room for the tiles' shadows, which the row would otherwise cut off
                 }
+                .scrollTargetBehavior(.viewAligned)
+                .scrollIndicators(.never)
+                .id(current)   // the other tab starts at its first tile
+                .frame(width: width)
+                .padding(.vertical, -20)
                 .padding(.top, 16)
             } else if captures != nil {
                 HStack(spacing: 12) {
