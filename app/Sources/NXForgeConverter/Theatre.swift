@@ -1298,7 +1298,8 @@ struct TrailerScreen: View {
                 }
                 if let id, on {
                     TrailerBackdropPlayer(id: id, start: 5, volume: muted ? 0 : watch ? 100 : 25,
-                                          playing: { playing = true },
+                                          // a second's wait: YouTube flashes its pause sign as it starts
+                                          playing: { Task { try? await Task.sleep(for: .seconds(1)); playing = true } },
                                           failed: { playing = false; clock = nil; skip += 1 },
                                           time: { at, length in if playing { clock = TrailerClock(at: at, length: length) } })
                         .id(id)
