@@ -2171,7 +2171,7 @@ struct TheatreScreensaver: View {
         .contentShape(.rect)
         .onTapGesture { model.wakeTheatre() }
         .onContinuousHover { p in
-            guard case .active(let at) = p else { return }
+            guard case .active(let at) = p, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
             if let o = pointer, hypot(at.x - o.x, at.y - o.y) > 12 { model.wakeTheatre() } else if pointer == nil { pointer = at }
         }
         .task {
