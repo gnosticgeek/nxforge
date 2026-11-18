@@ -431,11 +431,13 @@ final class PadLabels {
 struct PadGlyph: View {
     let text: String
     var filled = false
+    /// drawn for a light background (Theatre's Gallery wall): dark lines, and a dark fill when filled
+    var dark = false
 
     var body: some View {
         if let sym = PadLabels.shared.symbol(text, filled: filled) {
             Image(systemName: sym).font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(filled ? Color.white : StageLook.soft)
+                .foregroundStyle(dark ? GalleryTheme.ink : filled ? Color.white : StageLook.soft)
                 .frame(minWidth: 22, minHeight: 22)
                 .accessibilityLabel(text)
         } else {
@@ -446,9 +448,9 @@ struct PadGlyph: View {
     var letter: some View {
         Text(text).font(.system(size: 11, weight: .heavy))
             .padding(.horizontal, text.count > 1 ? 7 : 0).frame(minWidth: 22, minHeight: 22)
-            .foregroundStyle(filled ? Color.black : StageLook.soft)
-            .background(filled ? Color.white : Color.clear, in: .capsule)
-            .overlay(Capsule().strokeBorder(filled ? Color.clear : StageLook.soft, lineWidth: 1.5))
+            .foregroundStyle(filled ? (dark ? GalleryTheme.ivory : Color.black) : dark ? GalleryTheme.ink : StageLook.soft)
+            .background(filled ? (dark ? GalleryTheme.ink : Color.white) : Color.clear, in: .capsule)
+            .overlay(Capsule().strokeBorder(filled ? Color.clear : dark ? GalleryTheme.ink : StageLook.soft, lineWidth: 1.5))
     }
 }
 

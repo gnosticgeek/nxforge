@@ -833,7 +833,7 @@ struct TheatreHints: View {
 
     /// a button's symbol, half as big again as on the front end (it is drawn at a fixed size, so scaled into its own frame)
     func glyph(_ k: String, filled: Bool = false) -> some View {
-        PadGlyph(text: k, filled: filled).colorInvert(light).fixedSize().scaleEffect(u * 1.4).frame(width: (k.count > 1 ? 38 : 30) * u * 1.4, height: 24 * u * 1.4)
+        PadGlyph(text: k, filled: filled, dark: light).fixedSize().scaleEffect(u * 1.4).frame(width: (k.count > 1 ? 38 : 30) * u * 1.4, height: 24 * u * 1.4)
     }
 
     func hint(_ k: String, _ text: String, filled: Bool = false) -> some View {
@@ -985,7 +985,7 @@ struct CarouselTheme: View {
                     VStack(spacing: 16 * u) {
                         Text(g.name).font(.system(size: 66 * u, weight: .semibold, design: .serif)).lineLimit(1).minimumScaleFactor(0.5)
                         Text(Self.facts(g)).font(.system(size: 22 * u, weight: .regular)).tracking(1.2 * u).foregroundStyle(StageLook.soft)
-                        TheatreDetails(model: model, game: g)
+                        TheatreDetails(model: model, game: g, showSize: false)
                     }
                     .id(g.id).transition(.opacity)
                     .padding(.horizontal, 120 * u)
@@ -1345,7 +1345,7 @@ struct CinemaTheme: View {
                 }
             }
             .font(.system(size: 23 * u)).foregroundStyle(StageLook.soft).padding(.top, 22 * u)
-            TheatreDetails(model: model, game: g).padding(.top, 16 * u)
+            TheatreDetails(model: model, game: g, showSize: false).padding(.top, 16 * u)
             HStack(spacing: 18 * u) {
                 Button { model.theatrePad(.a) } label: {
                     Label(model.theatreAction(g), systemImage: model.status(g).actionSymbol)
@@ -2091,11 +2091,15 @@ struct TheatreDetails: View {
     var size: CGFloat = 18
     /// the built / needs-a-build capsule (left out where the theme already says it)
     var status = true
+    /// the size capsule (left out where the facts line already has it)
+    var showSize = true
     @Environment(\.tu) private var u
 
     var body: some View {
         let _ = StoreInfoStore.shared.revision
-        let facts = model.theatreDetails(game).filter { status || ($0.symbol != "checkmark.seal.fill" && $0.text != model.status(game).text) }
+        let facts = model.theatreDetails(game)
+            .filter { status || ($0.symbol != "checkmark.seal.fill" && $0.text != model.status(game).text) }
+            .filter { showSize || $0.symbol != "internaldrive" }
         HStack(spacing: 10 * u) {
             ForEach(facts, id: \.self) { f in
                 HStack(spacing: 7 * u) {
@@ -2133,6 +2137,7 @@ struct TheatreScreensaver: View {
     @State private var pointer: CGPoint?
 
     var body: some View {
+        let _ = CoverStore.shared.revision
         let games = model.theatreGames().filter { CoverStore.shared.hero($0.coverKey) != nil || CoverArt.wide($0) != nil }
         let list = games.isEmpty ? model.theatreGames() : games
         let g = list.isEmpty ? nil : list[step % list.count]
@@ -2142,8 +2147,9 @@ struct TheatreScreensaver: View {
         GeometryReader { geo in
             ZStack {
                 Color.black
-                if let g {
-                    CinemaArt(game: g)
+                if let g, let art = CoverStore.shared.hero(g.coverKey) ?? CoverArt.wide(g) {
+                    Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                        .frame(width: geo.size.width, height: geo.size.height).clipped()
                         .scaleEffect(drift ? 1.12 : 1.02, anchor: lead ? .topTrailing : .topLeading)
                         .animation(still ? nil : .linear(duration: 14), value: drift)
                         .id(g.id).transition(.opacity)
