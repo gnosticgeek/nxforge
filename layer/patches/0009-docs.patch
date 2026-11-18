@@ -5,7 +5,7 @@ Subject: docs: Engine docs for the changes above
 
 ---
  docs/agents/01-extract.md     |  2 +-
- docs/agents/game-patches.md   | 20 +++++++++++++-
+ docs/agents/game-patches.md   | 31 +++++++++++++++++++++-
  docs/agents/symptoms.md       | 18 +++++++++++++
  docs/development.md           | 48 ++++++++++++++++++++--------------
  docs/env_switches.tsv         |  2 ++
@@ -20,7 +20,7 @@ Subject: docs: Engine docs for the changes above
  docs/reference/shaders.md     | 34 ++++++++++++++++++++++++
  docs/reference/threads.md     |  1 +
  docs/settings.md              | 49 ++++++++++++++++++++++++++++++++---
- 16 files changed, 294 insertions(+), 32 deletions(-)
+ 16 files changed, 305 insertions(+), 32 deletions(-)
 
 diff --git a/docs/agents/01-extract.md b/docs/agents/01-extract.md
 index 06373c56b9e76a79e0861a62f6c8442782039158..91fec66bf2b556fe17ffa114d99de18116a9a8c0 100644
@@ -36,10 +36,10 @@ index 06373c56b9e76a79e0861a62f6c8442782039158..91fec66bf2b556fe17ffa114d99de181
    ghidra/proj           persistent Ghidra project (analysis takes ~35 min for a 28 MB main)
    run/                  boot.sh, logs, saves, screenshots
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index 7562916fbf68765ca4cee0261555c270f7800d11..7da63032624ecca717f8d64b85240b17850aa17c 100644
+index 7562916fbf68765ca4cee0261555c270f7800d11..02f6fb309941d8ba34edce43ba3e44208575210c 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
-@@ -21,7 +21,7 @@ A patch's binding is what its correctness is anchored to, from the loosest. A pa
+@@ -21,10 +21,11 @@ A patch's binding is what its correctness is anchored to, from the loosest. A pa
  
  ## Gaps
  
@@ -48,7 +48,11 @@ index 7562916fbf68765ca4cee0261555c270f7800d11..7da63032624ecca717f8d64b85240b17
  
  | Now → goal | Patch | Purpose | Status | Evidence | Games | Where | Why |
  |---|---|---|---|---|---|---|---|
-@@ -36,6 +36,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
++| `build` → `engine` | online subsystem: the fallback after the default service fails is Switch, not NULL | runtime | gap | checked: one build (1.6.9): the bytes at the site, and a boot on the Mac | 1 | [Horizon Chase 2](../../dm/games/0100001019F6E000/README.md) | Unreal's own fallback names an online subsystem this game does not ship; any Unreal game whose default service is EOS and that lacks NULL would need the same, so an engine_patches.py rule could hold it |
+ | `build` → `game` | frame limiter 30 → 60 fps and the 1/60 update step | frame rate | gap | judgement | 1 | [DARK SOULS: REMASTERED](../../dm/games/01004AB00A260000/README.md) | the game's own limiter constant and fixed step |
+ | `build` → `game` | frame limiter spin: its branch back cut | frame rate | gap | judgement | 1 | [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | the engine's own spin limiter; a function-matched rule could carry it over the game's updates |
+ | `build` → `game` | frame step floor 2 → 1 vsync, and its frame step | frame rate | gap | judgement | 1 | [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) | the game's own clock floor and step; MATCH_CUTS and MATCH_FRAME_STEP could carry the cut and the stub, both near the step's function (main+0x2e7750; one function not checked yet) |
+@@ -36,6 +37,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  | `build` → `game` | task ring push and pop barriers | race | gap | judgement | 1 | [Batman: Arkham Knight](../../dm/games/0100ACD0163D0000/README.md) | a data race in the game's own task ring |
  | `build` → `game` | UE3's GMalloc setup skipped, the host allocator in (hle_uemalloc.c) | address space | gap | judgement | 1 | [Batman: Arkham Knight](../../dm/games/0100ACD0163D0000/README.md) | UE3 inlines the allocator's constructor into the GMalloc setup and has its own vtable layout (25 slots, 32-bit sizes), so the Unreal 4/5 discovery does not apply |
  | `build` → `game` | unused 272-byte slot pool: 4,194,304 → 65,536 slots | address space | gap | judgement | 1 | [Mario + Rabbids® Sparks of Hope](../../dm/games/0100317013770000/README.md) | Sparks of Hope's own init (Kingdom Battle has none) |
@@ -56,7 +60,7 @@ index 7562916fbf68765ca4cee0261555c270f7800d11..7da63032624ecca717f8d64b85240b17
  | `build` → `sdk` | VammManager node area and alignment, SDK 4.4.0 (9de92bad) | address space | blocked: one game ships it | judgement | 1 | [sdk_patches.py](../../dm/tools/sdk_patches.py) | an older implementation no rule covers (its large regions aligned to 32 MB, not the rules' 2 MB); a rule once a second game ships it |
  | `build` → `engine` | Criterion's 60 fps mode, frame ticks and game step at fixed addresses | frame rate | blocked: one game on that engine here | judgement | 1 | [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | the studio's engine, which its other games ship |
  | `build` → `engine` | Frostbite's frame regulator at a fixed pointer | frame rate | blocked: one Frostbite game here | judgement | 1 | [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md) | engine code other Frostbite games ship (the simulation's own rate is already set by name) |
-@@ -50,6 +51,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -50,6 +52,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  | `build` → `game` | 60 fps frame step (112 sites) | frame rate | kept: 1.0.1 (2019) is the last update; a function match would serve no other build of this game | checked: nso_fnmap of its 112 sites into those four mains (2026-11-09) | 1 | [ASTRAL CHAIN](../../dm/games/01007300020FA000/README.md) | the game's own clock and timers (a community 60 fps mod on the host's frame step). PlatinumGames' other games do not share them: none of its 15 functions has an exact match in Bayonetta, Bayonetta 2, Bayonetta 3 or NieR:Automata |
  | `build` → `game` | 60 fps frame step and render scale (ksys::VFR) | frame rate | kept: 44 sites in 34 functions to fingerprint for an update that may not come (1.9.0, the Switch 2 Edition release); convert when a new build appears | checked: nso_fnmap of its 44 sites into those 13 mains (2026-11-09) | 1 | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | the game's own frame code; the frame-step state page is general. No engine sibling shares it: none of its 34 functions has an exact match in Tears of the Kingdom, SMO, MK8D, ACNH, Splatoon 2 / 3, Kirby, Mario Party, Ocarina, Smash, Metroid Dread or Origami King (only the widescreen stubs' sead::PerspectiveProjection functions recur) |
  | `build` → `game` | Hagi coroutine stack region 1 GB → 64 MB | memory | kept: 1.1.4 is the last update; a match over Hagi would serve no other build of this game | checked: the final build 1.1.4 (the only one the profile packs), 2026-11-04 | 1 | [Super Mario 3D All-Stars: Super Mario Sunshine](../../dm/games/010049900F546002/README.md) | a size inside Hagi's own code: nothing the host sees tells a 1 GB reservation it can shrink from one it cannot |
@@ -64,7 +68,12 @@ index 7562916fbf68765ca4cee0261555c270f7800d11..7da63032624ecca717f8d64b85240b17
  
  ## Summary
  
-@@ -68,6 +70,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -64,10 +67,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ | [FINAL FANTASY TACTICS - The Ivalice Chronicles](#final-fantasy-tactics---the-ivalice-chronicles) | 2 | 0 | 0 | 0 | 0 | `build` → `game` |
+ | [Fire Emblem: Three Houses](#fire-emblem-three-houses) | 7 | 0 | 0 | 0 | 0 | `build` → `game` |
+ | [Hades II](#hades-ii) | 0 | 0 | 1 | 0 | 0 | `game` |
++| [Horizon Chase 2](#horizon-chase-2) | 1 | 0 | 0 | 0 | 0 | `build` → `engine` |
+ | [Hyrule Warriors: Age of Calamity](#hyrule-warriors-age-of-calamity) | 0 | 0 | 10 | 0 | 0 | `game`, `build` → `game` |
  | [Luigi's Mansion 3](#luigis-mansion-3) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
  | [Mario + Rabbids® Sparks of Hope](#mario--rabbids-sparks-of-hope) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
  | [Mario Kart World](#mario-kart-world) | 0 | 0 | 1 | 0 | 0 | `game` |
@@ -72,7 +81,23 @@ index 7562916fbf68765ca4cee0261555c270f7800d11..7da63032624ecca717f8d64b85240b17
  | [Monster Hunter Rise](#monster-hunter-rise) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
  | [Need For Speed™ Hot Pursuit Remastered](#need-for-speed-hot-pursuit-remastered) | 1 | 0 | 0 | 0 | 5 | `build` → `game`, `build` → `engine` |
  | [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](#nierautomata-the-end-of-yorha-edition-010056b015fe8000) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
-@@ -362,6 +365,17 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -320,6 +325,15 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ 
+ - **anchored frame step** (`main` of builds without FRAME_STEP): render size from the host's render scale: the one function that calls `_ZN2nn2vi11CreateLayerEPPNS0_5LayerEPNS0_7DisplayE`, its sites checked in each build's code; on the reviewed builds `+0x190` in it
+ 
++### Horizon Chase 2
++
++[Horizon Chase 2](../../dm/games/0100001019F6E000/README.md), `0100001019F6E000`, [patches.py](../../dm/games/0100001019F6E000/patches.py).
++
++- **`build` → `engine`**, runtime, gap, checked: one build (1.6.9): the bytes at the site, and a boot on the Mac: online subsystem: the fallback after the default service fails is Switch, not NULL. Unreal's own fallback names an online subsystem this game does not ship; any Unreal game whose default service is EOS and that lacks NULL would need the same, so an engine_patches.py rule could hold it
++
++- **1.6.9 `main`** `e13f632f…` ([patches.py:9](../../dm/games/0100001019F6E000/patches.py#L9))
++  - cut `+0x1195798`: online subsystem: the fallback after the default service fails is Switch, not NULL (EOS is never loaded)
++
+ ### Hyrule Warriors: Age of Calamity
+ 
+ [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), `01002B00111A2000`, [patches.py](../../dm/games/01002B00111A2000/patches.py).
+@@ -362,6 +376,17 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  - **function-matched frame step** (`main` of builds without FRAME_STEP): frame interval from the host's step: a function of 0x290 bytes, `+0xa0` in it
  - **function-matched frame step** (`main` of builds without FRAME_STEP): frame interval from the host's step: a function of 0x28c bytes, `+0xa4` in it
  
@@ -90,7 +115,7 @@ index 7562916fbf68765ca4cee0261555c270f7800d11..7da63032624ecca717f8d64b85240b17
  ### Monster Hunter Rise
  
  [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), `0100B04011742000`.
-@@ -634,12 +648,16 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -634,12 +659,16 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  Cuts of Nintendo SDK `sdk` builds ([sdk_patches.py](../../dm/tools/sdk_patches.py)), applied to every game that ships the build. They fit the SDK's address-space layout into an iPhone's guest block. The games listed are those whose profile registers the build.
  
  - **`sdk`**, address space, at goal, checked: 20 registered builds rewritten byte-identical with the rules alone, 2026-10-29 and 2026-10-30; the 2 MB alignment on every sdk build on the drive, 2026-10-30: node area 1 GB → 62 MB and regions of 4 MB and more aligned to 2 MB, as SDK 20: the SDK-wide rules. One rule per reviewed implementation; every sdk build without CUTS gets them

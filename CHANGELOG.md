@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.46.4 (2026-11-18)
+
+- **Horizon Chase 2 boots and draws its roads** (a profile of its own, `dm/games/0100001019F6E000`): it crashed 0.8 s after starting, because its online service (Epic Online Services) is never loaded and Unreal's fallback names a service the game does not ship; one cut points the fallback at Unreal's Switch service, which plays offline. Its roads, bushes and signs were magenta: Unreal fills those textures from the CPU after the game first draws them, so the profile turns on `tex_dirty_upload`, which uploads them again once written. Menus, car select and a race render at the game's 30 fps on the Mac; not played through yet. A Horizon Chase 2 app built before needs a rebuild to get this.
+- A survey test from 0.46.2 fed fake NROs without an NRO header, which the new check skipped; it now builds real headers and checks that an AppleDouble file adds nothing.
+
 ## 0.46.3 (2026-11-18)
 
 - **Buttons never wrap, and a sweep of small UI refinements** (Converter 0.20.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Resume no longer breaks into "Resu / me" beside Play options, Quit game and Details; every large button keeps its label on one line, and a row too narrow for all of them turns the secondary ones into round icon buttons. Plus seven small fixes across Home, Play options, the launch screen, Theatre, Health and Updates. No game rebuild needed for this.
