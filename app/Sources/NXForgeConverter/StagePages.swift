@@ -58,7 +58,7 @@ struct StageGamePage: View {
                         }
                         .padding(.top, 10)
                         Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.top, 16)
-                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("gamePage")).minY } action: { lineY = $0 }
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("gamePage")).maxY } action: { lineY = $0 }
                         // Media across the page (three tiles), then the store's one-line pitch with More details, which opens About
                         GameMedia(model: model, game: g, width: inner).padding(.top, 22)
                         if let info {
