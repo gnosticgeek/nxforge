@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.45.7 (2026-11-18)
+
+- **Theatre: a Trailer test theme** (Converter 0.19.6, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Cinema's layout with the game in focus's trailer playing full screen behind it, from 5 seconds in, with sound. An experiment to see how video feels on Theatre. No game rebuild needed for this.
+
 ## 0.45.6 (2026-11-18)
 
 - **Game page polish** (Converter 0.19.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Media row fades at an edge with more beyond it and shows arrows on hover, the pitch and More details line up, no repeated "Drive offline" under the title, one separator in the store line, a smaller Trailer label, a fainter glow behind the box, a glass tab switch and the hint bar's line on the page's edges. No game rebuild needed for this.
