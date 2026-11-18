@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.45.8 (2026-11-18)
+
+- **Theatre's Trailer theme, Browse and Watch** (Converter 0.19.7, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the trailer plays across the top with the game and a strip of every game on a dark panel under it; left alone for 6 seconds (or ↓) the panel fades and the trailer fills the screen. Sound is low while browsing and full while watching, S mutes it. No game rebuild needed for this.
+
 ## 0.45.7 (2026-11-18)
 
 - **Theatre: a Trailer test theme** (Converter 0.19.6, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Cinema's layout with the game in focus's trailer playing full screen behind it, from 5 seconds in, with sound. An experiment to see how video feels on Theatre. No game rebuild needed for this.

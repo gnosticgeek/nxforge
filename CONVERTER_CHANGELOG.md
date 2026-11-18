@@ -4,6 +4,17 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.7 (2026-11-18)
+
+Theatre's Trailer theme rebuilt to Tom's Browse / Watch mock-up. Ships in NXForge 0.45.8.
+
+- **Browse**: the focused game's trailer plays across the top two thirds, with "TRAILER • 00:24 / 01:32" and a speaker button at the top right. A dark panel under it holds the game's name, publisher, console and status, the main button (Play or the step the game needs) and Details on the left, and a strip of every game (favourites first, built or not) on the right; ← → move along it. The words never sit on the video.
+- **Watch**: after 6 s with no input, or ↓, the panel and bar fade away and the trailer fills the screen, with only the game's name and ↑ Browse at the foot. Any button, or moving the pointer, brings Browse back, and that press does nothing else.
+- **Sound**: 25 % while browsing, full while watching; S or the speaker mutes it.
+- **No playable trailer**: the wide art drifts slowly, and Watch shows the store's screenshots in turn, a new one every 6 s.
+- The trailer fades in a second after it starts (past YouTube's pause sign), YouTube's captions are turned off, and the trailer time comes from YouTube's player.
+- Snapshot hooks: `NXC_THEATRE=trailer`, `NXC_WATCH=1` (sound is off while snapshotting).
+
 ## 0.19.6 (2026-11-18)
 
 A test of video on Theatre. Ships in NXForge 0.45.7.
