@@ -230,30 +230,7 @@ struct GameHeroColumn: View {
                     .shadow(color: .black.opacity(0.5), radius: 8)
                     .padding(.top, 6)
             }
-            HStack(spacing: 12) {
-                if g.app != nil {
-                    Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(playing ? "Resume" : "Play", systemImage: "play.fill").padding(.horizontal, 14) }
-                        .buttonStyle(StageButton(primary: true, height: 56, glow: tint))
-                    Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: { Label("Play options", systemImage: "slider.horizontal.3").padding(.horizontal, 4) }
-                        .buttonStyle(StageButton(height: 56, glass: true))
-                    if playing {
-                        Button { model.quitGame(app: g.app ?? "") } label: { Label("Quit game", systemImage: "xmark") }
-                            .buttonStyle(StageButton(height: 56, glass: true)).help("Quits the running game, as its own Quit does")
-                    }
-                } else {
-                    let st = model.status(g)
-                    Button { model.fix(g) } label: { Label(st.action, systemImage: st.actionSymbol).padding(.horizontal, 14) }
-                        .buttonStyle(StageButton(primary: true, height: 56, glow: tint)).disabled(st == .notBuilt && (model.run.running || model.batchRunning))
-                        .help(st.detail)
-                }
-                Button { model.toggleFavorite(g) } label: {
-                    Image(systemName: g.favorite ? "star.fill" : "star").font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(g.favorite ? Color(red: 1, green: 0.82, blue: 0.30) : Color.white).frame(width: 56, height: 56)
-                        .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
-                }
-                .buttonStyle(.plain).help(g.favorite ? "Remove from Favourites (F)" : "Add to Favourites (F)")
-                .accessibilityLabel(g.favorite ? "Remove from Favourites" : "Add to Favourites")
-            }
+            StageActions(model: model, game: g, playing: playing, tint: tint, height: 56, spacing: 12)
             .padding(.top, 20)
             if !list.isEmpty {
                 let parts = [PlayOptions.current(settings: list, values: values).rawValue] + PlayOptions.summary(settings: list, values: values).prefix(1).map(\.value)
@@ -388,8 +365,8 @@ struct PlayOptionsPanel: View {
             .frame(maxHeight: .infinity)
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    Button { model.playWithOptions(save: true) } label: { Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity) }
-                        .buttonStyle(StageButton(primary: true, height: 50, glow: .white))
+                    Button { model.playWithOptions(save: true) } label: { Label("Play", systemImage: "play.fill") }
+                        .buttonStyle(StageButton(primary: true, height: 50, glow: .white, fill: true))
                     Button("Play once, don't keep") { model.playWithOptions(save: false) }.buttonStyle(StageButton(height: 50))
                         .disabled(state.changed.isEmpty)
                         .help("Starts the game with these options for this run only. The options kept for the game stay as they were.")

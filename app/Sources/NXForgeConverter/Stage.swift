@@ -359,10 +359,15 @@ struct StageButton: ButtonStyle {
     var glow: Color? = nil
     /// real glass, for the few large buttons over the stage itself
     var glass = false
+    /// as wide as the row gives it (Play options' Play), still on one line
+    var fill = false
 
     func makeBody(configuration: Configuration) -> some View {
         let label = configuration.label
             .font(.system(size: primary ? 17 : 15, weight: primary ? .bold : .semibold))
+            // one line, as wide as its words: a narrow row drops to round buttons (StageActions) rather than wrap "Resu / me"
+            .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: fill ? .infinity : nil)
             .padding(.horizontal, primary ? 26 : 20).frame(height: height)
             .foregroundStyle(primary ? Color.black : Color.white)
         Group {
@@ -379,6 +384,86 @@ struct StageButton: ButtonStyle {
         .opacity(configuration.isPressed ? 0.85 : 1)
         .animation(.spring(duration: 0.2), value: configuration.isPressed)
         .contentShape(.capsule)
+    }
+}
+
+/// A game's actions under its name (the Home hero and the game's page): Play or Resume, Play options, Quit game while it runs,
+/// Details and the Favourites star. Every label stays on one line: where the full row does not fit, the secondary buttons
+/// become round icon buttons (Quit first, then Play options, then Details), each with its name as a tooltip, so the main
+/// action is never squeezed.
+struct StageActions: View {
+    let model: AppModel
+    let game: StageGame
+    let playing: Bool
+    let tint: Color
+    var height: CGFloat = 54
+    var spacing: CGFloat = 10
+    var showDetails = false
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row(compact: 0)
+            row(compact: 1)
+            row(compact: 2)
+            row(compact: 3)
+        }
+    }
+
+    /// compact 1: Quit game round; 2: Play options round as well; 3: Details round as well
+    @ViewBuilder func row(compact: Int) -> some View {
+        let g = game
+        HStack(spacing: spacing) {
+            if g.app != nil {
+                Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(playing ? "Resume" : "Play", systemImage: "play.fill").padding(.horizontal, compact >= 2 ? 2 : 8) }
+                    .buttonStyle(StageButton(primary: true, height: height, glow: tint))
+                if compact >= 2 {
+                    round("slider.horizontal.3", "Play options") { model.libraryFocus = g.id; model.openPlayOptions(g.ref) }
+                } else {
+                    Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: { Label("Play options", systemImage: "slider.horizontal.3") }
+                        .buttonStyle(StageButton(height: height, glass: true))
+                }
+                if playing {
+                    if compact >= 1 {
+                        round("xmark", "Quit game", help: "Quit game: quits the running game, as its own Quit does") { model.quitGame(app: g.app ?? "") }
+                    } else {
+                        Button { model.quitGame(app: g.app ?? "") } label: { Label("Quit game", systemImage: "xmark") }
+                            .buttonStyle(StageButton(height: height, glass: true)).help("Quits the running game, as its own Quit does")
+                    }
+                }
+            } else {
+                let st = model.status(g)
+                Button { model.fix(g) } label: { Label(st.action, systemImage: st.actionSymbol).padding(.horizontal, 8) }
+                    .buttonStyle(StageButton(primary: true, height: height, glow: tint)).disabled(st == .notBuilt && (model.run.running || model.batchRunning))
+                    .help(st.detail)
+            }
+            if showDetails {
+                if compact >= 3 {
+                    round("arrow.right", "Details", help: "The game's page (Y)") { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref }
+                } else {
+                    Button { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref } label: {
+                        HStack(spacing: 8) { Text("Details").lineLimit(1).fixedSize(); Image(systemName: "arrow.right").font(.system(size: 14, weight: .semibold)) }
+                            .font(.system(size: 16, weight: .semibold)).padding(.horizontal, 14).frame(height: height).contentShape(.rect)
+                    }
+                    .buttonStyle(.plain).help("The game's page (Y)")
+                }
+            }
+            Button { model.toggleFavorite(g) } label: {
+                Image(systemName: g.favorite ? "star.fill" : "star").font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(g.favorite ? Color(red: 1, green: 0.82, blue: 0.30) : Color.white).frame(width: height, height: height)
+                    .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
+            }
+            .buttonStyle(.plain).help(g.favorite ? "Remove from Favourites (F)" : "Add to Favourites (F)")
+            .accessibilityLabel(g.favorite ? "Remove from Favourites" : "Add to Favourites")
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    func round(_ symbol: String, _ label: String, help: String? = nil, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: symbol).font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: height, height: height)
+                .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
+        }
+        .buttonStyle(.plain).help(help ?? label).accessibilityLabel(label)
     }
 }
 
@@ -727,37 +812,7 @@ struct StageHero: View {
             }
             .font(.system(size: 15.5, weight: .medium)).foregroundStyle(StageLook.soft)
             .shadow(color: .black.opacity(0.5), radius: 8)
-            HStack(spacing: 10) {
-                if g.app != nil {
-                    Button { model.libraryFocus = g.id; model.playFromStage(g.ref) } label: { Label(playing ? "Resume" : "Play", systemImage: "play.fill").padding(.horizontal, 8) }
-                        .buttonStyle(StageButton(primary: true, height: 54, glow: tint))
-                    Button { model.libraryFocus = g.id; model.openPlayOptions(g.ref) } label: { Label("Play options", systemImage: "slider.horizontal.3") }
-                        .buttonStyle(StageButton(height: 54, glass: true))
-                    if playing {
-                        Button { model.quitGame(app: g.app ?? "") } label: { Label("Quit game", systemImage: "xmark") }
-                            .buttonStyle(StageButton(height: 54, glass: true)).help("Quits the running game, as its own Quit does")
-                    }
-                } else {
-                    let st = model.status(g)
-                    Button { model.fix(g) } label: { Label(st.action, systemImage: st.actionSymbol).padding(.horizontal, 8) }
-                        .buttonStyle(StageButton(primary: true, height: 54, glow: tint)).disabled(st == .notBuilt && (model.run.running || model.batchRunning))
-                        .help(st.detail)
-                }
-                if showDetails {
-                    Button { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref } label: {
-                        HStack(spacing: 8) { Text("Details"); Image(systemName: "arrow.right").font(.system(size: 14, weight: .semibold)) }
-                            .font(.system(size: 16, weight: .semibold)).padding(.horizontal, 14).frame(height: 54).contentShape(.rect)
-                    }
-                    .buttonStyle(.plain).help("The game's page (Y)")
-                }
-                Button { model.toggleFavorite(g) } label: {
-                    Image(systemName: g.favorite ? "star.fill" : "star").font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(g.favorite ? Color(red: 1, green: 0.82, blue: 0.30) : Color.white).frame(width: 54, height: 54)
-                        .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
-                }
-                .buttonStyle(.plain).help(g.favorite ? "Remove from Favourites (F)" : "Add to Favourites (F)")
-                .accessibilityLabel(g.favorite ? "Remove from Favourites" : "Add to Favourites")
-            }
+            StageActions(model: model, game: g, playing: playing, tint: tint, height: 54, spacing: 10, showDetails: showDetails)
             .padding(.top, 8)
             if !list.isEmpty {
                 let parts = [PlayOptions.current(settings: list, values: values).rawValue] + PlayOptions.summary(settings: list, values: values).map(\.value)
