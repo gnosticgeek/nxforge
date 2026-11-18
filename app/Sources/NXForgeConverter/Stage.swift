@@ -75,9 +75,10 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, theatreTheme, theatreOnTV, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, theatreTheme, theatreOnTV, theatreEdges, theatreSaver, startIn }
 
-enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options }
+/// zl and zr are the triggers, r3 a press of the right stick, volUp and volDown the right stick pushed up or down (Theatre's sound)
+enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options, zl, zr, r3, volUp, volDown }
 
 extension AppModel {
     /// Every game the front end knows, built ones first, then the most recently played, then by name.
@@ -222,7 +223,7 @@ extension AppModel {
             case .a: playWithOptions(save: true)
             case .x: playWithOptions(save: false)
             case .b, .menu: closePlayOptions()
-            case .options: break
+            default: break
             }
             return
         }
@@ -253,6 +254,7 @@ extension AppModel {
         case .r: if stageTab == .home { stageTab = .discover } else { discoverStep(1) }
         case .menu: settingsFocus = 0; stageSettings = true
         case .options: if let g = focus { libraryFocus = g.id; toggleFavorite(g) }
+        default: break
         }
     }
 
@@ -278,6 +280,10 @@ extension AppModel {
         case .theatreOnTV:
             let all = TheatreOnTV.allCases
             if let i = all.firstIndex(of: settings.theatreOnTV) { settings.theatreOnTV = all[(i + d + all.count) % all.count] }
+        case .theatreEdges: settings.theatreEdges = settings.theatreEdges.step(d)
+        case .theatreSaver:
+            let all = TheatreSaver.allCases
+            if let i = all.firstIndex(of: settings.theatreSaver) { settings.theatreSaver = all[(i + d + all.count) % all.count] }
         case .startIn:
             let all = StartIn.allCases
             if let i = all.firstIndex(of: settings.startIn) { settings.startIn = all[(i + d + all.count) % all.count] }
@@ -391,6 +397,8 @@ final class PadLabels {
         func put(_ k: PadKey, _ b: GCControllerButtonInput?) { if let n = b?.sfSymbolsName, NSImage(systemSymbolName: n, accessibilityDescription: nil) != nil { s[k] = n } }
         put(.a, p.buttonA); put(.b, p.buttonB); put(.x, p.buttonX); put(.y, p.buttonY)
         put(.l, p.leftShoulder); put(.r, p.rightShoulder); put(.menu, p.buttonMenu); put(.options, p.buttonOptions)
+        put(.zl, p.leftTrigger); put(.zr, p.rightTrigger); put(.r3, p.rightThumbstickButton)
+        if let n = p.rightThumbstick.sfSymbolsName, NSImage(systemSymbolName: n, accessibilityDescription: nil) != nil { s[.volUp] = n }
         if s != symbols { symbols = s }
     }
 
@@ -404,6 +412,10 @@ final class PadLabels {
         case "R": .r
         case "+": .menu
         case "−": .options
+        case "ZL": .zl
+        case "ZR": .zr
+        case "R3": .r3
+        case "RS": .volUp
         default: nil
         }
     }
@@ -419,11 +431,13 @@ final class PadLabels {
 struct PadGlyph: View {
     let text: String
     var filled = false
+    /// drawn for a light background (Theatre's Gallery wall): dark lines, and a dark fill when filled
+    var dark = false
 
     var body: some View {
         if let sym = PadLabels.shared.symbol(text, filled: filled) {
             Image(systemName: sym).font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(filled ? Color.white : StageLook.soft)
+                .foregroundStyle(dark ? GalleryTheme.ink : filled ? Color.white : StageLook.soft)
                 .frame(minWidth: 22, minHeight: 22)
                 .accessibilityLabel(text)
         } else {
@@ -434,9 +448,9 @@ struct PadGlyph: View {
     var letter: some View {
         Text(text).font(.system(size: 11, weight: .heavy))
             .padding(.horizontal, text.count > 1 ? 7 : 0).frame(minWidth: 22, minHeight: 22)
-            .foregroundStyle(filled ? Color.black : StageLook.soft)
-            .background(filled ? Color.white : Color.clear, in: .capsule)
-            .overlay(Capsule().strokeBorder(filled ? Color.clear : StageLook.soft, lineWidth: 1.5))
+            .foregroundStyle(filled ? (dark ? GalleryTheme.ivory : Color.black) : dark ? GalleryTheme.ink : StageLook.soft)
+            .background(filled ? (dark ? GalleryTheme.ink : Color.white) : Color.clear, in: .capsule)
+            .overlay(Capsule().strokeBorder(filled ? Color.clear : dark ? GalleryTheme.ink : StageLook.soft, lineWidth: 1.5))
     }
 }
 
@@ -1383,7 +1397,7 @@ struct StageSettings: View {
     static let titles: [Section: [String]] = [
         .launching: ["Play goes straight into the game", "Show Play options the first time", "Battery preset on battery", "Return here when a game quits", "Keep shaders on this Mac", "Show a recap when a game quits", "Rest while a game runs", "Controllers"],
         .artwork: ["Square covers", "Download box art", "Download wide art", "Download store details", "Keep media and cheats in each game's folder", "Artwork folder"],
-        .theatre: ["Theatre", "Theme", "When a TV is plugged in"],
+        .theatre: ["Theatre", "Theme", "When a TV is plugged in", "TV edges", "Screensaver"],
         .building: ["Keys file (prod.keys)"],
         .opens: ["Open on"],
     ]
@@ -1403,10 +1417,12 @@ struct StageSettings: View {
         "Keep media and cheats in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Its cheats go in a cheats folder beside that, one Markdown file per build, with the switches. Both are read back on a Mac that has none for the game yet, and a cheats file edited by hand is read back too.",
         "Artwork folder": "Your own covers and the downloaded art, kept on this Mac only.",
         "Theatre": "Your games full screen on a TV, for the sofa and a controller. Also ⇧⌘F. B leaves it.",
-        "Theme": "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Gallery shows three covers beside the game's name on a quiet wall. L and R switch them on Theatre.",
+        "Theme": "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Gallery shows three covers beside the game's name on a quiet wall; Trailer plays the game's trailer. ZL and ZR switch them on Theatre, L and R filter the games.",
         "When a TV is plugged in": "Ask offers Theatre when a controller is connected too; Always opens it straight away.",
+        "TV edges": "Some TVs crop the edges of the picture. If Theatre's clock or buttons are cut off, inset the picture; Theatre's menu shows the four corners while you choose.",
+        "Screensaver": "Left alone this long, Theatre cycles your games' art with a dim clock, and after an hour lets the TV sleep. Any button wakes it.",
         "Keys file (prod.keys)": "Chosen once, used for every build and rebuild.",
-        "Open on": "Where NXForge starts: Home, Discover or the Converter.",
+        "Open on": "Where NXForge starts: Home, Discover, Theatre (on the game and filter it was left on) or the Converter.",
     ]
 
     @ViewBuilder var sections: some View {
@@ -1449,6 +1465,14 @@ struct StageSettings: View {
                 Picker("", selection: $model.settings.theatreOnTV) { ForEach(TheatreOnTV.allCases, id: \.self) { Text($0.rawValue) } }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 240)
             }
+            row("TV edges", focus: .theatreEdges) {
+                Picker("", selection: $model.settings.theatreEdges) { ForEach(TheatreEdges.allCases, id: \.self) { Text($0.title) } }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 240)
+            }
+            row("Screensaver", focus: .theatreSaver) {
+                Picker("", selection: $model.settings.theatreSaver) { ForEach(TheatreSaver.allCases, id: \.self) { Text($0.rawValue) } }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 240)
+            }
         }
         group(.building) {
             row("Keys file (prod.keys)") {
@@ -1464,7 +1488,7 @@ struct StageSettings: View {
         group(.opens) {
             row("Open on", focus: .startIn) {
                 Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.title) } }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 280)
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 350)
             }
         }
         if !query.isEmpty && !Section.allCases.contains(where: anyShown) {

@@ -48,8 +48,9 @@ final class ControllerNav {
 
     static func buttons(_ p: GCExtendedGamepad) -> [GCControllerButtonInput] {
         [p.buttonA, p.buttonB, p.buttonX, p.buttonY, p.leftShoulder, p.rightShoulder, p.leftTrigger, p.rightTrigger, p.buttonMenu,
-         p.dpad.left, p.dpad.right, p.dpad.up, p.dpad.down, p.leftThumbstick.left, p.leftThumbstick.right, p.leftThumbstick.up, p.leftThumbstick.down]
-            + [p.buttonOptions].compactMap { $0 }
+         p.dpad.left, p.dpad.right, p.dpad.up, p.dpad.down, p.leftThumbstick.left, p.leftThumbstick.right, p.leftThumbstick.up, p.leftThumbstick.down,
+         p.rightThumbstick.up, p.rightThumbstick.down]
+            + [p.buttonOptions, p.rightThumbstickButton].compactMap { $0 }
     }
 
     /// A press that may act: false (and the button waits for its release) when it was held over from before or NXForge cannot take it now
@@ -149,6 +150,12 @@ final class ControllerNav {
         key(pad.buttonY, .y) { m in m.preview = m.preview == nil ? m.focusedGame() : nil }
         key(pad.leftShoulder, .l) { _ in }
         key(pad.rightShoulder, .r) { _ in }
+        // Theatre: the triggers switch the theme, the right stick's press mutes and up and down set the volume
+        key(pad.leftTrigger, .zl) { _ in }
+        key(pad.rightTrigger, .zr) { _ in }
+        if let r3 = pad.rightThumbstickButton { key(r3, .r3) { _ in } }
+        key(pad.rightThumbstick.up, .volUp, repeating: true) { _ in }
+        key(pad.rightThumbstick.down, .volDown, repeating: true) { _ in }
         key(pad.buttonMenu, .menu) { $0.enterTheatre() }
         // − (Options / View): Favourites on the front end
         if let o = pad.buttonOptions { key(o, .options) { _ in } }

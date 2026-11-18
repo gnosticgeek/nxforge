@@ -4,6 +4,22 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.20.0 (2026-11-18)
+
+Ten Theatre improvements. Ships in NXForge 0.46.0.
+
+- **Filters on L and R**: All games, Favourites, Recently played (the last 30 days) and each genre your games are in, shown in the middle of the top bar with a dot per filter. Cinema shows one row of the filter's games; a filter with none of the built games shows them all. **ZL and ZR now switch the theme** (keyboard: [ and ] filter, , and . or Tab the theme).
+- **Trailer sound on the controller**: press the right stick to mute, push it up or down for the volume in tens (keyboard S, − and =). A card at the top right shows the level; the volume is kept, a quarter of it while browsing and all of it while watching. Both work in Watch without leaving it.
+- **TV edges**: Settings › Theatre › TV edges (Full, Inset 3 %, Inset 5 %) and a TV Edges row in Theatre's menu, which draws the picture's four corners while it is chosen so you can see whether the TV crops them. Theatre's sizes now also follow the width on a screen narrower than 16:10.
+- **Continue**: the main button and the A hint say Continue for a built game you have played, and favourites then games played in the last 30 days (newest first) lead every theme.
+- **Button hints in every theme**: A, Y, X, L R Filter, ZL ZR Theme, + Menu and B along the foot, with the connected pad's own symbols; Trailer's panel adds R3 Mute and the right stick for Volume, and Watch shows them too. The TV offer's "Always" and "Never ask" have X and Y.
+- **Smoother changes of game**: one 0.55 s fade for art, caption, colour and trailer on every theme; a trailer's sound fades in as its picture does, glides between Browse and Watch levels, and fades out when you move on instead of stopping dead.
+- **Details on rest**: a moment after the focus rests on a game, capsules fade in with when it was last played, its genre, players, size and Built (or what it needs); the same line is the pointer's tooltip on cards and covers. The game's store details are read as it rests.
+- **Screensaver**: left alone 5 minutes (Settings › Theatre › Screensaver: 5 min, 15 min, Never), Theatre cycles the games' wide art with a slow drift and a dim clock and name that move corner to corner; any button, key or the pointer wakes it, and that press does nothing else. No trailers play in it, and after an hour the TV may sleep.
+- **Reopens where you left it**: the theme, the filter and the game in focus are kept (the game only when you moved to it or played it), and Settings › Open on has Theatre.
+- **The game's colour everywhere**: Cinema glows with it from the foot, Trailer's panel and Theatre's menu take a wash of it, and Gallery's ivory wall the faintest one behind the covers.
+- Snapshot hooks: `NXC_FILTER`, `NXC_EDGES`, `NXC_THEATREMENU=edges`, `NXC_SAVER=1`, `NXC_VOLUME`.
+
 ## 0.19.7 (2026-11-18)
 
 Theatre's Trailer theme rebuilt to Tom's Browse / Watch mock-up. Ships in NXForge 0.45.8.

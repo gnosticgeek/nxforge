@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.46.0 (2026-11-18)
+
+- **Theatre: ten improvements for the sofa** (Converter 0.20.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): L and R filter the games (All, Favourites, Recently played, each genre) and ZL and ZR switch the theme; the trailer's volume and mute are on the right stick; A says Continue for a game played before, with favourites and recent games first; every theme shows its controller buttons at the foot; a change of game fades art, trailer and sound together; a game's genre, players, size and build status appear once the focus rests on it; a screensaver after 5 minutes alone; Theatre reopens on the theme, filter and game it was left on (and Settings › Open on can start in it); the game's colour tints every theme; and TV Edges insets the picture for a TV that crops it. No game rebuild needed for this.
+
 ## 0.45.8 (2026-11-18)
 
 - **Theatre's Trailer theme, Browse and Watch** (Converter 0.19.7, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the trailer plays across the top with the game and a strip of every game on a dark panel under it; left alone for 6 seconds (or ↓) the panel fades and the trailer fills the screen. Sound is low while browsing and full while watching, S mutes it. No game rebuild needed for this.
