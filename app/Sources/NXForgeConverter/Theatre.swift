@@ -9,9 +9,10 @@ import AppKit
 import GameController
 import SceneKit
 import SwiftUI
+import WebKit
 
 enum TheatreTheme: String, Codable, CaseIterable {
-    case carousel = "Carousel", cinema = "Cinema", gallery = "Gallery"
+    case carousel = "Carousel", cinema = "Cinema", gallery = "Gallery", trailer = "Trailer"
 
     /// Shelf (0.19.0 only) became Gallery
     init(from decoder: Decoder) throws {
@@ -23,6 +24,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         case .carousel: "A turning ring of your boxes"
         case .cinema: "Big art, rows like a TV app"
         case .gallery: "Three covers on a quiet wall"
+        case .trailer: "Cinema with the trailer playing (test)"
         }
     }
     var symbol: String {
@@ -30,6 +32,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         case .carousel: "rotate.3d"
         case .cinema: "film"
         case .gallery: "photo.on.rectangle"
+        case .trailer: "play.rectangle"
         }
     }
 }
@@ -39,13 +42,14 @@ enum TheatreOnTV: String, Codable, CaseIterable { case ask = "Ask", always = "Al
 
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case carousel, cinema, gallery, settings, leave
+    case carousel, cinema, gallery, trailer, settings, leave
     var title: String { theme?.rawValue ?? (self == .settings ? "Settings" : "Leave Theatre") }
     var theme: TheatreTheme? {
         switch self {
         case .carousel: .carousel
         case .cinema: .cinema
         case .gallery: .gallery
+        case .trailer: .trailer
         case .settings, .leave: nil
         }
     }
@@ -258,7 +262,7 @@ extension AppModel {
                 theatreFocus = games[(i + (k == .left ? -1 : 1) + games.count) % games.count].id
                 return
             }
-        case .cinema:
+        case .cinema, .trailer:
             let rows = theatreRows()
             guard !rows.isEmpty else { focus = nil; break }
             let r = cinemaRow(rows)
@@ -295,7 +299,7 @@ extension AppModel {
     func pickTheatreMenu(_ r: TheatreMenuRow) {
         theatreMenu = nil
         switch r {
-        case .carousel, .cinema, .gallery: if let t = r.theme { setTheatreTheme(t) }
+        case .carousel, .cinema, .gallery, .trailer: if let t = r.theme { setTheatreTheme(t) }
         case .settings: settingsFocus = StageSettingRow.theatreTheme.rawValue; stageSettings = true
         case .leave: leaveTheatre()
         }
@@ -392,6 +396,7 @@ struct TheatreView: View {
         switch model.theatreTheme {
         case .carousel: CarouselTheme(model: model).transition(.opacity)
         case .cinema: CinemaTheme(model: model).transition(.opacity)
+        case .trailer: CinemaTheme(model: model, video: true).transition(.opacity)
         case .gallery: GalleryTheme(model: model).transition(.opacity)
         }
     }
@@ -521,7 +526,7 @@ struct TheatreMenu: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    if r == .gallery { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.vertical, 8 * u) }
+                    if r == .trailer { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.vertical, 8 * u) }
                 }
             }
             .padding(40 * u)
@@ -534,7 +539,7 @@ struct TheatreMenu: View {
 
     func icon(_ r: TheatreMenuRow) -> String {
         switch r {
-        case .carousel, .cinema, .gallery: r.theme?.symbol ?? ""
+        case .carousel, .cinema, .gallery, .trailer: r.theme?.symbol ?? ""
         case .settings: "gearshape"
         case .leave: "rectangle.portrait.and.arrow.right"
         }
@@ -542,7 +547,7 @@ struct TheatreMenu: View {
 
     func note(_ r: TheatreMenuRow) -> String? {
         switch r {
-        case .carousel, .cinema, .gallery: r.theme?.note
+        case .carousel, .cinema, .gallery, .trailer: r.theme?.note
         case .settings: nil
         case .leave: "Back to the window on your Mac"
         }
@@ -915,6 +920,8 @@ final class TheatreBox: @unchecked Sendable {
 /// it rows of games like a TV app: Continue playing, Favourites, each genre you have, and the games not built yet.
 struct CinemaTheme: View {
     @Bindable var model: AppModel
+    /// Trailer: the game's trailer plays behind the words, from 5 s in (TheatreTrailer)
+    var video = false
     @Environment(\.tu) private var u
     @Environment(\.accessibilityReduceMotion) private var still
     @State private var drift = false
@@ -937,6 +944,7 @@ struct CinemaTheme: View {
                     .animation(.easeInOut(duration: 28).repeatForever(autoreverses: true), value: drift)
                     .id(g.id).transition(.opacity)
                     .ignoresSafeArea()
+                if video { TheatreTrailer(model: model, game: g).id(g.id).ignoresSafeArea() }
             }
             // the art falls away to the left, under the words, and to the foot, under the rows
             LinearGradient(stops: [.init(color: StageLook.background.opacity(0.94), location: 0), .init(color: StageLook.background.opacity(0.72), location: 0.32),
@@ -945,7 +953,7 @@ struct CinemaTheme: View {
             LinearGradient(stops: [.init(color: .clear, location: 0.38), .init(color: StageLook.background.opacity(0.86), location: 0.68), .init(color: StageLook.background, location: 1)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
-                TheatreTopBar(theme: .cinema).frame(width: width)
+                TheatreTopBar(theme: video ? .trailer : .cinema).frame(width: width)
                 Spacer(minLength: 0)
                 if let g = focus { info(g, row: rows.indices.contains(r) ? rows[r].title : "").id(g.id).transition(.opacity) }
                 rowsView(rows, current: r, col: col)
@@ -1018,6 +1026,100 @@ struct CinemaTheme: View {
             }
         }
         .animation(.spring(duration: 0.45), value: r)
+    }
+}
+
+/// Trailer (a test): the focused game's first YouTube trailer plays full bleed behind Cinema's words, from 5 s in (past the
+/// logos most trailers open with), with sound, looping back to 5 s. It loads only once the focus has rested on a game for a
+/// moment, fades in over the art once YouTube says it is playing, and stops while a game runs, a viewer is open or NXForge is
+/// in the background. No trailer, or YouTube refuses the embed: the art stays.
+struct TheatreTrailer: View {
+    let model: AppModel
+    let game: StageGame
+    @State private var rested = false
+    @State private var playing = false
+    @State private var active = NSApp.isActive
+
+    var body: some View {
+        let _ = StoreInfoStore.shared.revision
+        let id = StoreInfoStore.shared.info(game.coverKey)?.trailers?.first { $0.youtube != nil }?.youtube
+        let on = rested && active && model.launching == nil && !model.viewerOpen && model.caseViewer == nil
+        ZStack {
+            if let id, on {
+                TrailerBackdropPlayer(id: id, start: 5) { playing = true }
+                    .opacity(playing ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeInOut(duration: 0.8), value: playing)
+        .onChange(of: on) { _, v in if !v { playing = false } }
+        .task {
+            if model.settings.downloadStoreInfo { StoreInfoStore.shared.load(key: game.coverKey, titleID: game.titleID, name: game.name) }
+            try? await Task.sleep(for: .seconds(1.2))
+            rested = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in active = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in active = false }
+    }
+}
+
+/// YouTube's player through its IFrame API, sized to cover the view (cropped like art, a touch larger so YouTube's title bar and
+/// logo fall off the edges), no controls, ads blocked as in YouTubePlayer. `playing` is called when the picture is moving.
+struct TrailerBackdropPlayer: NSViewRepresentable {
+    let id: String
+    let start: Int
+    let playing: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, WKScriptMessageHandler {
+        var playing: () -> Void = {}
+        func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+            if (m.body as? String) == "playing" { MainActor.assumeIsolated { playing() } }
+        }
+    }
+
+    func makeNSView(context: Context) -> WKWebView {
+        context.coordinator.playing = playing
+        let cfg = WKWebViewConfiguration()
+        cfg.mediaTypesRequiringUserActionForPlayback = []
+        cfg.websiteDataStore = .nonPersistent()
+        cfg.userContentController.add(context.coordinator, name: "nxf")
+        let v = WKWebView(frame: .zero, configuration: cfg)
+        v.setValue(false, forKey: "drawsBackground")
+        let html = """
+        <!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+        #p{position:absolute;left:50%;top:50%;width:max(100vw,177.78vh);height:max(56.25vw,100vh);transform:translate(-50%,-50%) scale(1.12);pointer-events:none}
+        </style></head><body><div id="p"></div><script>
+        var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+        var told = false;
+        function onYouTubeIframeAPIReady() {
+          new YT.Player('p', { host: 'https://www.youtube-nocookie.com', videoId: '\(id)',
+            playerVars: { autoplay: 1, start: \(start), controls: 0, disablekb: 1, rel: 0, modestbranding: 1, iv_load_policy: 3,
+                          playsinline: 1, fs: 0, cc_load_policy: 0 },
+            events: {
+              onReady: function (e) { e.target.setVolume(60); e.target.playVideo(); },
+              onStateChange: function (e) {
+                if (e.data === YT.PlayerState.PLAYING && !told) { told = true; window.webkit.messageHandlers.nxf.postMessage('playing'); }
+                if (e.data === YT.PlayerState.ENDED) { e.target.seekTo(\(start)); e.target.playVideo(); }
+              }
+            } });
+        }
+        </script></body></html>
+        """
+        VideoAds.rules { list in
+            if let list { v.configuration.userContentController.add(list) }
+            v.loadHTMLString(html, baseURL: URL(string: "https://github.com/gnosticgeek/nxforge"))
+        }
+        return v
+    }
+
+    func updateNSView(_ v: WKWebView, context: Context) { context.coordinator.playing = playing }
+
+    static func dismantleNSView(_ v: WKWebView, coordinator: Coordinator) {
+        v.configuration.userContentController.removeScriptMessageHandler(forName: "nxf")
+        v.stopLoading()
+        v.loadHTMLString("", baseURL: nil)
     }
 }
 
