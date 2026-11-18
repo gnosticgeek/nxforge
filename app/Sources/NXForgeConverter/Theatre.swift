@@ -1077,7 +1077,8 @@ struct TrailerBackdropPlayer: NSViewRepresentable {
     final class Coordinator: NSObject, WKScriptMessageHandler {
         var playing: () -> Void = {}
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
-            if (m.body as? String) == "playing" { MainActor.assumeIsolated { playing() } }
+            guard let b = m.body as? String else { return }
+            if b == "playing" { MainActor.assumeIsolated { playing() } } else { print("Theatre trailer: YouTube \(b)") }
         }
     }
 
@@ -1101,6 +1102,7 @@ struct TrailerBackdropPlayer: NSViewRepresentable {
                           playsinline: 1, fs: 0, cc_load_policy: 0 },
             events: {
               onReady: function (e) { e.target.setVolume(60); e.target.playVideo(); },
+              onError: function (e) { window.webkit.messageHandlers.nxf.postMessage('error ' + e.data); },
               onStateChange: function (e) {
                 if (e.data === YT.PlayerState.PLAYING && !told) { told = true; window.webkit.messageHandlers.nxf.postMessage('playing'); }
                 if (e.data === YT.PlayerState.ENDED) { e.target.seekTo(\(start)); e.target.playVideo(); }
