@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.19.6 (2026-11-18)
+
+A test of video on Theatre. Ships in NXForge 0.45.7.
+
+- **Trailer theme (test)**: a fourth Theatre theme (L/R or the Theatre menu) with Cinema's words and rows over the focused game's YouTube trailer, playing full bleed from 5 s in (past most trailers' opening logos), with sound at 60 %, looping back to 5 s. It starts once the focus rests on a game for about a second, fades in over the art once the picture moves, and stops while a game runs, a viewer is open or NXForge is in the background. A trailer whose owner only allows it on YouTube (Blazing Chrome's) is skipped for the game's next one; with none left the art stays. Snapshot hook `NXC_THEATRE=trailer` with `NXC_WAIT=<seconds>`.
+
 ## 0.19.5 (2026-11-18)
 
 Eight small touches to the game page. Ships in NXForge 0.45.6.
