@@ -140,6 +140,9 @@ struct ConverterApp: App {
             try? await Task.sleep(for: .seconds(2))
             model.enterTheatre(on: nil)
             model.theatreTheme = TheatreTheme(rawValue: (env["NXC_THEATRE"] ?? "").capitalized) ?? .carousel
+            // Trailer: NXC_WATCH=1 its Watch; sound off while snapshotting
+            model.theatreWatch = env["NXC_WATCH"] != nil
+            model.theatreMuted = true
             if let n = env["NXC_GAME"], let g = model.stageGames().first(where: { $0.name.localizedCaseInsensitiveContains(n) }) { model.theatreFocus = g.id }
             if env["NXC_THEATREMENU"] != nil { model.theatreMenu = TheatreMenuRow.leave.rawValue }
         }

@@ -152,6 +152,9 @@ final class AppModel {
     var theatreOffer: TVScreen?
     var theatreScreen: CGDirectDisplayID?
     var theatreTouched = Date()
+    /// Trailer: the trailer has the room (Watch), and its sound is off (S)
+    var theatreWatch = false
+    var theatreMuted = false
     /// the window's frame before Theatre moved it to the TV, whether Theatre put it in full screen, and the Mac kept awake
     @ObservationIgnored var theatreSavedFrame: NSRect?
     @ObservationIgnored var theatreMadeFullScreen = false
