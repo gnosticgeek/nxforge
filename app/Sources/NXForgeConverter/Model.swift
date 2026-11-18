@@ -155,6 +155,14 @@ final class AppModel {
     /// Trailer: the trailer has the room (Watch), and its sound is off (S)
     var theatreWatch = false
     var theatreMuted = false
+    /// the filter L and R walk (All, Favourites, Recently played, the genres)
+    var theatreFilter: TheatreFilter = .all
+    /// the focus has rested on a game for a moment: its details show (players, genre, size, built or not)
+    var theatreRested = false
+    /// the screensaver is up (Settings › Theatre › Screensaver)
+    var theatreSaver = false
+    /// counts volume and mute changes, so the volume card shows for a moment
+    var theatreVolumeTick = 0
     /// the window's frame before Theatre moved it to the TV, whether Theatre put it in full screen, and the Mac kept awake
     @ObservationIgnored var theatreSavedFrame: NSRect?
     @ObservationIgnored var theatreMadeFullScreen = false

@@ -144,7 +144,13 @@ struct ConverterApp: App {
             model.theatreWatch = env["NXC_WATCH"] != nil
             model.theatreMuted = true
             if let n = env["NXC_GAME"], let g = model.stageGames().first(where: { $0.name.localizedCaseInsensitiveContains(n) }) { model.theatreFocus = g.id }
-            if env["NXC_THEATREMENU"] != nil { model.theatreMenu = TheatreMenuRow.leave.rawValue }
+            // NXC_THEATREMENU=1 the menu on Leave, =edges on TV Edges (its corner marks); NXC_FILTER=favourites, recent or genre:<name>;
+            // NXC_EDGES=small or large; NXC_SAVER=1 the screensaver; NXC_VOLUME=<0-100> the volume card
+            if let m = env["NXC_THEATREMENU"] { model.theatreMenu = (m == "edges" ? TheatreMenuRow.edges : TheatreMenuRow.leave).rawValue }
+            if let f = env["NXC_FILTER"] { model.theatreFilter = TheatreFilter(key: f) }
+            if let e = env["NXC_EDGES"], let v = TheatreEdges(rawValue: e.capitalized) { model.settings.theatreEdges = v }
+            if env["NXC_SAVER"] != nil { model.theatreSaver = true }
+            if let v = env["NXC_VOLUME"].flatMap(Int.init) { model.theatreMuted = false; model.settings.theatreVolume = v; model.theatreVolumeTick += 1 }
         }
         if let n = env["NXC_OFFER"] { model.theatreOffer = TVScreen(id: 0, name: n) }
         if let st = env["NXC_STAGE"], st != "theatre" {
