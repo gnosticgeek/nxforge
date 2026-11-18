@@ -1032,21 +1032,25 @@ struct CinemaTheme: View {
 /// Trailer (a test): the focused game's first YouTube trailer plays full bleed behind Cinema's words, from 5 s in (past the
 /// logos most trailers open with), with sound, looping back to 5 s. It loads only once the focus has rested on a game for a
 /// moment, fades in over the art once YouTube says it is playing, and stops while a game runs, a viewer is open or NXForge is
-/// in the background. No trailer, or YouTube refuses the embed: the art stays.
+/// in the background. A trailer YouTube won't play outside YouTube is skipped for the next; none left: the art stays.
 struct TheatreTrailer: View {
     let model: AppModel
     let game: StageGame
     @State private var rested = false
     @State private var playing = false
+    @State private var skip = 0
     @State private var active = NSApp.isActive || ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil
 
     var body: some View {
         let _ = StoreInfoStore.shared.revision
-        let id = StoreInfoStore.shared.info(game.coverKey)?.trailers?.first { $0.youtube != nil }?.youtube
+        // the trailers in the page's order; one whose owner stops it playing outside YouTube is skipped
+        let ids = (StoreInfoStore.shared.info(game.coverKey)?.trailers ?? []).compactMap(\.youtube)
+        let id = ids.indices.contains(skip) ? ids[skip] : nil
         let on = rested && active && model.launching == nil && !model.viewerOpen && model.caseViewer == nil
         ZStack {
             if let id, on {
-                TrailerBackdropPlayer(id: id, start: 5) { playing = true }
+                TrailerBackdropPlayer(id: id, start: 5, playing: { playing = true }, failed: { playing = false; skip += 1 })
+                    .id(id)
                     .opacity(playing ? 1 : 0)
                     .allowsHitTesting(false)
             }
@@ -1071,19 +1075,25 @@ struct TrailerBackdropPlayer: NSViewRepresentable {
     let id: String
     let start: Int
     let playing: () -> Void
+    /// YouTube won't play it here (its owner allows it only on YouTube: error 101/150, or it is gone)
+    let failed: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator: NSObject, WKScriptMessageHandler {
         var playing: () -> Void = {}
+        var failed: () -> Void = {}
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
             guard let b = m.body as? String else { return }
-            if b == "playing" { MainActor.assumeIsolated { playing() } } else { print("Theatre trailer: YouTube \(b)") }
+            if b == "playing" { MainActor.assumeIsolated { playing() }; return }
+            print("Theatre trailer: YouTube \(b)")
+            MainActor.assumeIsolated { failed() }
         }
     }
 
     func makeNSView(context: Context) -> WKWebView {
         context.coordinator.playing = playing
+        context.coordinator.failed = failed
         let cfg = WKWebViewConfiguration()
         cfg.mediaTypesRequiringUserActionForPlayback = []
         cfg.websiteDataStore = .nonPersistent()
@@ -1118,7 +1128,10 @@ struct TrailerBackdropPlayer: NSViewRepresentable {
         return v
     }
 
-    func updateNSView(_ v: WKWebView, context: Context) { context.coordinator.playing = playing }
+    func updateNSView(_ v: WKWebView, context: Context) {
+        context.coordinator.playing = playing
+        context.coordinator.failed = failed
+    }
 
     static func dismantleNSView(_ v: WKWebView, coordinator: Coordinator) {
         v.configuration.userContentController.removeScriptMessageHandler(forName: "nxf")
