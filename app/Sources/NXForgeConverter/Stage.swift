@@ -1111,7 +1111,13 @@ struct StageHints: View {
             hint(["+"], "Settings")
         }
         .padding(.horizontal, 40).frame(height: 48)
-        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.horizontal, 24) }
+        .overlay(alignment: .top) {
+            // on a game's page the line sits on the page's own edges (StageGamePage's gutter), like the lines above it
+            GeometryReader { geo in
+                Rectangle().fill(.white.opacity(0.13)).frame(height: 1).padding(.horizontal, detail ? (geo.size.width > 1250 ? 56 : 40) : 24)
+            }
+            .frame(height: 1)
+        }
     }
 
     /// One hint; a click does what its button does (the first of a pair, as L in L R)

@@ -742,6 +742,8 @@ final class CaseSCNView: SCNView {
 struct GameCase: View {
     let game: StageGame
     var flipped = false
+    /// how strong the game's colour glows behind the box (the game page keeps it faint over the key art)
+    var glow: Double = 0.40
     /// where the floor is, down the view (CaseModelView's camera)
     static let floor = 0.722
 
@@ -755,7 +757,7 @@ struct GameCase: View {
             .background {
                 GeometryReader { geo in
                     let w = geo.size.width, h = geo.size.height
-                    Ellipse().fill(RadialGradient(colors: [tint.opacity(0.40), tint.opacity(0)], center: .center, startRadius: 0, endRadius: h * 0.55))
+                    Ellipse().fill(RadialGradient(colors: [tint.opacity(glow), tint.opacity(0)], center: .center, startRadius: 0, endRadius: h * 0.55))
                         .frame(width: h * 1.1, height: h * 0.95).position(x: w / 2, y: h * 0.38)
                     Ellipse().fill(.black.opacity(0.62)).frame(width: h * 0.50, height: h * 0.045).blur(radius: h * 0.028).position(x: w / 2, y: h * (Self.floor + 0.012))
                 }
