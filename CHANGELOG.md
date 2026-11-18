@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.46.2 (2026-11-18)
+
+- **Games on an exFAT or SMB drive no longer fail the survey with "no MOD0"** (engine patch 0039): macOS writes a hidden `._name.nro` file beside every file it copies to such a drive, and the survey read Horizon Chase 2's `._EOSSDK-Switch-Shipping.nro` as a code module. It now skips any file in the game's NRO folder that is not an NRO, as the rest of the survey already did. No game rebuild needed for games that built before.
+
 ## 0.46.1 (2026-11-18)
 
 - **Ready to build shows the target drive's free space** (Converter 0.20.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): saving the app to an external drive, the footer said how much was free on the Mac rather than on that drive. It now reads the drive the app goes to; every drive the build writes to is still checked. No game rebuild needed for this.
