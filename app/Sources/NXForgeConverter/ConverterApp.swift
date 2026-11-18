@@ -135,7 +135,7 @@ struct ConverterApp: App {
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.frontEnd = false; model.page = page }
         // NXC_STAGE=home, library, game, back, options, settings, launch, box, gallery or manual: the front end on that screen (game and the ones
         // after it: the first built game's)
-        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=carousel, cinema or gallery, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
+        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=carousel, cinema, gallery or trailer, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
         if env["NXC_STAGE"] == "theatre" {
             try? await Task.sleep(for: .seconds(2))
             model.enterTheatre(on: nil)
@@ -230,6 +230,8 @@ struct ConverterApp: App {
             if let g = env["NXC_GAME"].flatMap({ n in games.first { $0.name.localizedCaseInsensitiveContains(n) } }) ?? games.first(where: { $0.titleID != nil }) { model.cheatsFor = g.ref }
         default: break
         }
+        // NXC_WAIT=<seconds>: longer before the picture (a trailer starting on Theatre's Trailer theme)
+        if let w = env["NXC_WAIT"].flatMap(Double.init) { try? await Task.sleep(for: .seconds(w)) }
         try? await Task.sleep(for: .seconds(5))
         // NXC_CONFIRM=1 puts a delete confirmation over the window, to check how its buttons draw
         if env["NXC_CONFIRM"] != nil {

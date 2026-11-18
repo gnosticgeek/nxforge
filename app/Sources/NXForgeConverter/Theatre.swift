@@ -1038,7 +1038,7 @@ struct TheatreTrailer: View {
     let game: StageGame
     @State private var rested = false
     @State private var playing = false
-    @State private var active = NSApp.isActive
+    @State private var active = NSApp.isActive || ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil
 
     var body: some View {
         let _ = StoreInfoStore.shared.revision
@@ -1059,7 +1059,9 @@ struct TheatreTrailer: View {
             rested = true
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in active = true }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in active = false }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { active = false }
+        }
     }
 }
 
