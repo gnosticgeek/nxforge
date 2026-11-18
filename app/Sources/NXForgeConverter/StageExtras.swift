@@ -201,6 +201,8 @@ struct GameKeyArt: View {
     var coverFallback = true
     /// the game page's: a banner across the top right, as tall as the page's headline, fading to the left and into the line under it
     var banner = false
+    /// where the page's line under the headline sits in the window: the banner runs down to it
+    var bannerBottom: CGFloat? = nil
     @State private var shot: NSImage?
     @Environment(\.accessibilityReduceTransparency) private var solid
     @MainActor static var cache: [String: NSImage] = [:]
@@ -221,8 +223,9 @@ struct GameKeyArt: View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
             if let art, !solid, banner {
-                // as tall as the page's headline (StageGamePage: the top bar, then the box at 30% of the page)
-                let bh = 72 + min(max((h - 48) * 0.30, 230), 330) * 0.92
+                // down to the line under the page's headline (an estimate until the page has been laid out)
+                let top = geo.frame(in: .global).minY
+                let bh = max(bannerBottom.map { $0 - top } ?? 72 + min(max((h - 48) * 0.37, 250), 390) * 0.92, 200)
                 let bw = min(w * 0.58, max(w - 480, w * 0.45))
                 Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                     .frame(width: bw, height: bh).clipped()
@@ -230,7 +233,8 @@ struct GameKeyArt: View {
                     .opacity(sharp == nil ? 0.6 : 0.95)
                     .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.5), location: 0.2),
                                                  .init(color: .black, location: 0.38)], startPoint: .leading, endPoint: .trailing))
-                    .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.72), .init(color: .clear, location: 1)],
+                    // full strength most of the way, softening into the line rather than fading out above it
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.80), .init(color: .black.opacity(0.35), location: 1)],
                                          startPoint: .top, endPoint: .bottom))
                     .frame(width: w, height: h, alignment: .topTrailing)
                     .id(hero != nil ? "hero" : shot == nil ? "cover" : "shot").transition(.opacity)

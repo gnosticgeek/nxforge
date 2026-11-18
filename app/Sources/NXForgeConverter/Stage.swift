@@ -494,6 +494,8 @@ struct StageBackdrop: View {
 struct StageView: View {
     @Bindable var model: AppModel
     @FocusState private var keys: Bool
+    /// the game page's line under its headline, in the window: the key art's banner ends there
+    @State private var bannerBottom: CGFloat?
 
     var body: some View {
         let games = model.stageGames()
@@ -504,13 +506,14 @@ struct StageView: View {
         ZStack {
             StageBackdrop(tint: tint, art: focus.flatMap { CoverArt.ambient($0) }, artKey: focus?.id ?? "", strength: detail == nil ? 1 : 0.45)
             // the game's key art behind its page, and behind Home's headline for the game in focus
-            if let g = detail { GameKeyArt(game: g, banner: true).id(g.id).transition(.opacity) }
+            if let g = detail { GameKeyArt(game: g, banner: true, bannerBottom: bannerBottom).id(g.id).transition(.opacity) }
             else if model.stageTab == .home, let g = focus { GameKeyArt(game: g, coverFallback: false).id(g.id).transition(.opacity) }
             VStack(spacing: 0) {
                 if detail == nil { StageTopBar(model: model) }
                 Group {
                     if let g = detail {
                         StageGamePage(model: model, game: g)
+                            .onPreferenceChange(GameBannerBottom.self) { v in Task { @MainActor in bannerBottom = v } }
                     } else if games.isEmpty {
                         StageEmpty(model: model)
                     } else if model.stageTab == .home {
