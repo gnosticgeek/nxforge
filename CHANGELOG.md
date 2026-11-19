@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.47.0 (2026-11-19)
+
+- **Enhancements, apart from cheats** (Converter 0.21.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's own improvements (a steadier frame rate, a 60 fps patch, a fix, a mod set up for it) each as one Markdown file in the game's `enhancements/` folder, with a switch on the game's page and in Play options' new Enhancements tab. Settings, Atmosphère codes and mods are all possible, applied the moment a switch changes and taken back when it goes off. No game rebuild needed.
+- **A game library in the repository** (`library/<title ID>/`, [library/README.md](library/README.md)): enhancements and cheats as Markdown, one folder per game, that the app's Get from Library reads from GitHub. `scripts/library.py collect <games folder>` brings a game folder's own files in (switched off) for a commit; `scripts/library.py check` checks them, and the scripts job runs it.
+
 ## 0.46.4 (2026-11-18)
 
 - **Horizon Chase 2 boots and draws its roads** (a profile of its own, `dm/games/0100001019F6E000`): it crashed 0.8 s after starting, because its online service (Epic Online Services) is never loaded and Unreal's fallback names a service the game does not ship; one cut points the fallback at Unreal's Switch service, which plays offline. Its roads, bushes and signs were magenta: Unreal fills those textures from the CPU after the game first draws them, so the profile turns on `tex_dirty_upload`, which uploads them again once written. Menus, car select and a race render at the game's 30 fps on the Mac; not played through yet. A Horizon Chase 2 app built before needs a rebuild to get this.
