@@ -353,6 +353,9 @@ struct PlayOptionsPanel: View {
                 }
                 .padding(4).background(.white.opacity(0.08), in: .rect(cornerRadius: 12))
             }
+            if state.tab == .enhancements, let e = state.enhancements {
+                EnhancementsTab(state: e).frame(maxHeight: .infinity)
+            } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
@@ -366,6 +369,7 @@ struct PlayOptionsPanel: View {
                 .onChange(of: state.focus) { _, f in if rows.indices.contains(f) { proxy.scrollTo(rows[f].env) } }
             }
             .frame(maxHeight: .infinity)
+            }
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     Button { model.playWithOptions(save: true) } label: { Label("Play", systemImage: "play.fill") }

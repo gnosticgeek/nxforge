@@ -707,6 +707,7 @@ struct LibraryGameMenu: View {
         Button("Quick Look") { model.preview = GameRef(libraryID: g.id, app: build?.app) }
         if let b = build { Button("Play") { model.openApp(b.app) } }
         if g.titleID != nil { Button("Cheats…") { model.cheatsFor = GameRef(libraryID: g.id, app: build?.app) } }
+        if build != nil, g.titleID != nil { Button("Enhancements…") { model.enhancementsFor = GameRef(libraryID: g.id, app: build?.app) } }
         Divider()
         Button("Convert") { model.convertFromLibrary(g) }.disabled(model.run.running || model.batchRunning)
         Button(picked ? "Deselect" : "Select for Build Selected") { if picked { model.librarySelection.remove(g.id) } else { model.librarySelection.insert(g.id) } }

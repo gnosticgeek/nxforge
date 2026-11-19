@@ -20,7 +20,7 @@ enum PlayPreset: String, CaseIterable, Identifiable {
 }
 
 enum PlayTab: String, CaseIterable, Identifiable {
-    case general = "General", graphics = "Graphics", advanced = "Advanced"
+    case general = "General", graphics = "Graphics", advanced = "Advanced", enhancements = "Enhancements"
     var id: String { rawValue }
 }
 
@@ -182,11 +182,14 @@ final class PlayOptionsState: Identifiable {
         settings = LaunchSettings.load(app: app)
         saved = Dictionary(settings.map { ($0.env, LaunchSettings.value($0, app: app)) }, uniquingKeysWith: { a, _ in a })
         values = saved
+        enhancements = EnhancementsState(app: app)
         tab = .graphics
         if rows.isEmpty { tab = tabs.first ?? .general }
     }
 
-    var tabs: [PlayTab] { PlayTab.allCases.filter { !PlayOptions.rows($0, settings: settings, values: values).isEmpty } }
+    /// the game's enhancements, for the Enhancements tab (EnhancementsCard.swift); nil when the app does not say which game it is
+    let enhancements: EnhancementsState?
+    var tabs: [PlayTab] { PlayTab.allCases.filter { $0 == .enhancements ? enhancements != nil : !PlayOptions.rows($0, settings: settings, values: values).isEmpty } }
     var rows: [LaunchSetting] { PlayOptions.rows(tab, settings: settings, values: values) }
     var preset: PlayPreset { PlayOptions.current(settings: settings, values: values) }
     var changed: [String: String] { PlayOptions.difference(settings, from: saved, to: values) }
@@ -321,6 +324,7 @@ extension AppModel {
 
     /// Start the game: straight in, with `once` in its environment for this run only.
     func launch(_ ref: GameRef, app: String, name: String, settings list: [LaunchSetting], saved: [String: String], once: [String: String], note: String?, ownWindow: Bool = false) {
+        Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
         var shown = saved
         for (k, v) in once { shown[k] = v }
         let summary = ([PlayOptions.current(settings: list, values: shown).rawValue] + PlayOptions.summary(settings: list, values: shown).map(\.value)).joined(separator: " · ")

@@ -167,7 +167,7 @@ struct ConverterApp: App {
             // NXC_PLAYING=1: that game shows as running (Resume and Quit game), nothing is started
             if let g, env["NXC_PLAYING"] != nil, let a = g.app { model.playing[-1] = PlayingNow(key: a, name: g.name, app: a, start: Date()); model.libraryFocus = g.id }
             if let g, ["game", "back", "options"].contains(st) { model.gameDetail = g.ref; model.caseFlipped = st == "back" }
-            if let g, st == "options" { model.openPlayOptions(g.ref) }
+            if let g, st == "options" { model.openPlayOptions(g.ref); if let t = env["NXC_TAB"].flatMap({ t in PlayTab.allCases.first { $0.rawValue.lowercased() == t } }) { model.playOptions?.tab = t } }   // NXC_TAB=enhancements…
             if st == "settings" { model.stageSettings = true }
             if let g, st == "launch", let a = g.app { model.launching = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps") }
             // launchslow, launchfail: the launch screen taking longer, and after the game closed while starting
@@ -239,6 +239,11 @@ struct ConverterApp: App {
             try? await Task.sleep(for: .seconds(2))
             let games = model.stageGames()
             if let g = env["NXC_GAME"].flatMap({ n in games.first { $0.name.localizedCaseInsensitiveContains(n) } }) ?? games.first(where: { $0.titleID != nil }) { model.cheatsFor = g.ref }
+        // enhancements: the Enhancements sheet of NXC_GAME's built game
+        case "enhancements":
+            try? await Task.sleep(for: .seconds(2))
+            let games = model.stageGames()
+            if let g = env["NXC_GAME"].flatMap({ n in games.first { $0.name.localizedCaseInsensitiveContains(n) } }) ?? games.first(where: { $0.app != nil }) { model.enhancementsFor = g.ref }
         default: break
         }
         // NXC_WAIT=<seconds>: longer before the picture (a trailer starting on Theatre's Trailer theme)

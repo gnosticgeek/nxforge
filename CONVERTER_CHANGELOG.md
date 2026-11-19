@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.21.0 (2026-11-19)
+
+Enhancements: a game's own improvements, apart from its cheats. Ships in NXForge 0.47.0.
+
+- **An Enhancements card** on the game's page (also Enhancements… in the game's menu on Home and in the Library) and an **Enhancements tab in Play options**: the game's enhancements with a switch each, what each changes (Settings, Game code, Mod) and a line on what it does. One for another version of the game is marked and cannot be switched on.
+- **Each enhancement is one Markdown file** in the game's `enhancements/` folder, beside `cheats/` and `media/` (in Application Support when the app's folder has neither). The front matter names it, the title and the builds it is for and whether it is on; the blocks say what it does: ` ```env ` launch settings, ` ```dmnt ` an Atmosphère code (a 60 fps patch and the like), ` ```mods ` mods to switch on. **New…** makes a file to fill in and opens it.
+- **A switch applies at once, however the game is opened** (front end, Theatre, Finder): settings go in a block of the game's `env.txt` in Application Support, which the game reads first, codes go in its cheat file as master codes named "NXForge enhancement: …", and mods are switched on. Switching off takes them back. A launch from NXForge applies them again first, so a file edited by hand counts. The Cheats card, the cheats Markdown and Get Cheats leave the enhancements' codes out.
+- **Get from Library**: lists the game's enhancements in NXForge's library on GitHub (`library/<title ID>/enhancements/` in the repository) and adds the ones you pick, switched off.
+
 ## 0.20.2 (2026-11-18)
 
 Buttons that never wrap, and small refinements. Ships in NXForge 0.46.3.

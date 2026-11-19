@@ -1128,6 +1128,7 @@ struct StageGameMenu: View {
             Button("Add Manual…") { GameManual.pick(for: g) }
         }
         if g.titleID != nil { Button("Cheats…") { model.cheatsFor = g.ref } }
+        if g.app != nil, g.titleID != nil { Button("Enhancements…") { model.enhancementsFor = g.ref } }
         Button("Details") { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref }
         Button(g.favorite ? "Remove from Favourites" : "Add to Favourites") { model.toggleFavorite(g) }
         Divider()
