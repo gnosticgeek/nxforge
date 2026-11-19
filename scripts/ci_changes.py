@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 # Paths no engine job reads. Anything not listed (a new top-level folder, .gitattributes, the workflows) runs the engine jobs.
-NOT_ENGINE_DIRS = ('app/', 'docs/', 'tests/', '.github/ISSUE_TEMPLATE/')
+NOT_ENGINE_DIRS = ('app/', 'docs/', 'tests/', 'library/', '.github/ISSUE_TEMPLATE/')
 NOT_ENGINE_FILES = {'pyproject.toml', 'LICENSE', 'NOTICE', '.github/pull_request_template.md', '.github/upstream-watch.tsv'}
 CONVERTER_DIRS = ('app/', 'layer/')
 CONVERTER_FILES = {'CONVERTER_CHANGELOG.md', '.github/workflows/tests.yml'}

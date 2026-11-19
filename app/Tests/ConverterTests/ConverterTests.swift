@@ -1981,3 +1981,96 @@ import Testing
         #expect(d.on == ["P2 Lives unlimited"])
     }
 }
+
+@Suite struct EnhancementsFormat {
+    let md = """
+    ---
+    nxforge_enhancement: 1
+    name: "Steady 60 in full screen"
+    title_id: "010019401051C000"
+    builds: "2E90F0815B1F92A1"
+    on: false
+    source: "NXForge"
+    ---
+    # Steady 60 in full screen
+
+    Full screen as smooth as a window.
+    Second line of the summary.
+
+    More detail, not in the summary.
+
+    ```env
+    # a comment
+    DM_FULLSCREEN_STYLE=window
+    not a setting
+    ```
+
+    ```dmnt
+    04000000 00001000 D65F03C0
+    ```
+
+    ```mods
+    Sharper HUD
+    ```
+    """
+
+    @Test func readsAFile() throws {
+        let e = try #require(Enhancements.parse(md, file: "steady-60.md"))
+        #expect(e.name == "Steady 60 in full screen")
+        #expect(e.builds == ["2E90F0815B1F92A1"])
+        #expect(!e.on)
+        #expect(e.summary == "Full screen as smooth as a window. Second line of the summary.")
+        #expect(e.settings.map { "\($0.0)=\($0.1)" } == ["DM_FULLSCREEN_STYLE=window"])
+        #expect(e.patch == ["04000000 00001000 D65F03C0"])
+        #expect(e.mods == ["Sharper HUD"])
+        #expect(e.kinds == ["Settings", "Game code", "Mod"])
+        #expect(e.fits(build: "2e90f0815b1f92a1") && !e.fits(build: "0000000000000000") && e.fits(build: nil))
+        #expect(Enhancements.parse("# no front matter", file: "x.md") == nil)
+    }
+
+    @Test func switchesOnAndOff() throws {
+        let on = Enhancements.setOn(md, true)
+        #expect(try #require(Enhancements.parse(on, file: "a.md")).on)
+        #expect(on.components(separatedBy: "\n").filter { $0.hasPrefix("on:") } == ["on: true"])
+        let added = Enhancements.setOn("---\nname: \"X\"\n---\nbody", true)
+        #expect(try #require(Enhancements.parse(added, file: "a.md")).on)
+    }
+
+    @Test func envBlockKeepsThePlayersLines() {
+        let mine = "DM_LANG=en-GB\n"
+        let with = Enhancements.envText(mine, lines: ["DM_FULLSCREEN_STYLE=window"])
+        #expect(with == "\(Enhancements.envBegin)\nDM_FULLSCREEN_STYLE=window\n\(Enhancements.envEnd)\n\nDM_LANG=en-GB\n")
+        #expect(Enhancements.envText(with, lines: []) == mine)
+        #expect(Enhancements.envText(with, lines: ["A=1"]).components(separatedBy: Enhancements.envBegin).count == 2)
+        #expect(Enhancements.envText("", lines: []) == "")
+    }
+
+    @Test func codesAreMastersTheCheatsLeaveOut() throws {
+        var e = try #require(Enhancements.parse(md, file: "a.md")); e.on = true
+        let cheats = CheatFile.parse("[Inf. Coins]\n580C0000 00FFE2E8\n")
+        let all = Enhancements.withPatches(cheats, [e])
+        #expect(all.count == 2 && all[1].master && all[1].name == Enhancements.patchPrefix + e.name)
+        #expect(Enhancements.strip(CheatFile.parse(CheatFile.text(all))) == cheats)
+        e.on = false
+        #expect(Enhancements.withPatches(all, [e]) == cheats)
+    }
+
+    @Test func applyWritesEnvCodesAndTakesThemBack() throws {
+        let home = FileManager.default.temporaryDirectory.appending(path: "enh-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        var e = try #require(Enhancements.parse(md, file: "a.md")); e.on = true
+        e.builds = []
+        let tid = "010019401051C000"
+        #expect(Enhancements.apply([e], titleID: tid, app: nil, home: home) == nil)
+        let env = try String(contentsOfFile: GameExtras.support(titleID: tid, home: home) + "/env.txt", encoding: .utf8)
+        #expect(env.contains("DM_FULLSCREEN_STYLE=window"))
+        e.on = false
+        Enhancements.apply([e], titleID: tid, app: nil, home: home)
+        #expect(!FileManager.default.fileExists(atPath: GameExtras.support(titleID: tid, home: home) + "/env.txt"))
+    }
+
+    @Test func fileNamesAreSafe() {
+        #expect(Enhancements.fileName("Steady 60 in Full Screen!") == "steady-60-in-full-screen.md")
+        #expect(Enhancements.fileName("???") == "enhancement.md")
+    }
+}

@@ -139,6 +139,8 @@ final class AppModel {
     var preview: GameRef?
     /// the game whose Cheats sheet is open (the front end's game page, its ⋯ menu and the Library's game menu)
     var cheatsFor: GameRef?
+    /// the game whose Enhancements sheet is open (EnhancementsCard.swift)
+    var enhancementsFor: GameRef?
     /// the game the keyboard or a controller is on, in the Library (and the grid's columns, for up and down)
     var libraryFocus: String? { didSet { if libraryFocus != oldValue { rememberWindowState() } } }
     var libraryColumns = 1
@@ -524,6 +526,7 @@ final class AppModel {
 
     /// Open a built app, noting that its first (slow) launch is done.
     func openApp(_ app: String) {
+        Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
         // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
         let cfg = NSWorkspace.OpenConfiguration()
         if settings.straightPlay { cfg.arguments = ["--no-launcher"] }

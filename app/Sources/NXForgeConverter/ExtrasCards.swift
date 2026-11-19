@@ -136,7 +136,7 @@ struct CheatsCard: View {
 
     func load() {
         guard let build else { entries = []; on = []; return }
-        entries = CheatFile.load(dir: dir, build: build)
+        entries = Enhancements.strip(CheatFile.load(dir: dir, build: build))   // the enhancements' codes have their own card
         on = CheatFile.enabled(dir: dir, build: build)
     }
 

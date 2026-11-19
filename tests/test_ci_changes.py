@@ -17,6 +17,9 @@ class Jobs(unittest.TestCase):
         self.assertEqual(cc.jobs(['app/Sources/NXForgeConverter/Engine.swift', 'app/Sources/NXForgeConverter/Version.swift', 'CONVERTER_CHANGELOG.md', 'CHANGELOG.md']),
                          {'engine': False, 'converter': True})
 
+    def test_library(self):   # the per-game library (library/README.md) is data for the app, read from GitHub
+        self.assertEqual(cc.jobs(['library/010019401051C000/enhancements/steady-60.md']), {'engine': False, 'converter': False})
+
     def test_scripts_and_docs(self):
         self.assertEqual(cc.jobs(['scripts/nxforge.py', 'tests/test_nxforge_cli.py', 'docs/automation.md', 'README.md']), {'engine': False, 'converter': False})
 
