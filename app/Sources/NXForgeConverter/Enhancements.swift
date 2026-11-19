@@ -183,6 +183,7 @@ enum Enhancements {
             keep.append(l)
         }
         while keep.last?.isEmpty == true { keep.removeLast() }
+        while keep.first?.isEmpty == true { keep.removeFirst() }   // the gap NXForge left after its block
         var out = keep
         if !lines.isEmpty {
             // the launcher keeps the first value it reads for a variable: NXForge's block goes first, so a switched-on
