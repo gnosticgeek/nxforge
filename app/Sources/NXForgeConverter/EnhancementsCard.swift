@@ -131,6 +131,8 @@ struct EnhancementRow: View {
 /// The library's results and the card's buttons, shared by the card and the Play options tab
 struct EnhancementsActions: View {
     @Bindable var state: EnhancementsState
+    /// in Play options, over the front end's dark stage: its own buttons
+    var stage = false
 
     var body: some View {
         if state.library != nil, !state.fresh.isEmpty {
@@ -143,18 +145,30 @@ struct EnhancementsActions: View {
                         if !e.summary.isEmpty { Text(e.summary).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                     }
                     Spacer()
-                    Button("Add") { state.install(item) }
+                    if stage { Button("Add") { state.install(item) }.buttonStyle(StageButton(height: 34)) }
+                    else { Button("Add") { state.install(item) } }
                 }
             }
         }
-        HStack(spacing: 8) {
+        HStack(spacing: 8) { buttons }
+            .modifier(StageButtons(on: stage))
+        if let n = state.note { Text(n).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+    }
+
+    @ViewBuilder var buttons: some View {
             Button { state.lookUp() } label: { Label(state.looking ? "Looking…" : "Get from Library", systemImage: "books.vertical") }
                 .disabled(state.looking).help("Lists this game's enhancements in NXForge's library on GitHub. Nothing is added until you choose.")
             Button { state.newFile() } label: { Label("New…", systemImage: "plus") }.help("Makes a new enhancement file in the game's folder and opens it.")
             Button { state.showFolder() } label: { Label("Show Folder", systemImage: "folder") }
-            Spacer()
-            if let n = state.note { Text(n).font(.callout).foregroundStyle(.secondary).lineLimit(2) }
-        }
+            Spacer(minLength: 0)
+    }
+}
+
+/// The front end's button look for the actions in Play options; the system's elsewhere
+private struct StageButtons: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on { content.buttonStyle(StageButton(height: 36)) } else { content }
     }
 }
 
@@ -212,11 +226,12 @@ struct EnhancementsTab: View {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(state.list) { e in
                     EnhancementRow(e: e, build: state.build) { state.set(e, $0) }
-                        .padding(.vertical, 6).padding(.horizontal, 10)
+                        .tint(.green).padding(.vertical, 6).padding(.horizontal, 10)
                 }
-                Text("Each enhancement is a file in the game's enhancements folder. Switches take effect at once, whichever way the game is opened.")
+                Text("Each enhancement is a file in the game's enhancements folder. Switches apply at the next launch, whichever way the game is opened.")
                     .font(.system(size: 12)).foregroundStyle(StageLook.faint)
-                EnhancementsActions(state: state)
+                if state.list.isEmpty { Text("No enhancements for this game yet. Get from Library looks in NXForge's collection.").font(.system(size: 13)).foregroundStyle(StageLook.soft) }
+                EnhancementsActions(state: state, stage: true)
             }
         }
         .scrollIndicators(.never)
