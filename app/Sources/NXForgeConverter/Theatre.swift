@@ -907,8 +907,8 @@ struct TheatreHints: View {
     var themes = true
     /// L and R for the filter
     var filters = true
-    /// L3 for the shuffle
-    var shuffle = true
+    /// L3 for the shuffle (off on the themes' feet, which are full: it is in the Theatre menu and on the shuffle's card)
+    var shuffle = false
     var back = "Leave"
     var size: CGFloat = 20
     @Environment(\.tu) private var u

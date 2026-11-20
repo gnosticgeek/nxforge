@@ -727,9 +727,11 @@ struct TheatreLightsDown: View {
                 .opacity(min(dim * 1.4, 1))
             }
             // the light pours out and fills the room
+            let d = max(max(size.width, size.height) * 2.6 * bloom, 1)
             Circle()
-                .fill(RadialGradient(colors: [Color(red: 1, green: 0.98, blue: 0.94), tint.opacity(0.85), tint.opacity(0)], center: .center, startRadius: 0, endRadius: 0.5))
-                .frame(width: max(size.width, size.height) * 2.6 * bloom, height: max(size.width, size.height) * 2.6 * bloom)
+                .fill(RadialGradient(stops: [.init(color: Color(red: 1, green: 0.98, blue: 0.94), location: 0), .init(color: Color(red: 1, green: 0.98, blue: 0.94), location: 0.3),
+                                             .init(color: tint.opacity(0.85), location: 0.62), .init(color: tint.opacity(0), location: 1)], center: .center, startRadius: 0, endRadius: d / 2))
+                .frame(width: d, height: d)
                 .opacity(still ? 0 : bloom)
         }
         .frame(width: size.width, height: size.height)
