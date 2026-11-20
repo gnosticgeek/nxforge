@@ -123,7 +123,8 @@ struct LibraryPage: View {
                                 if grid {
                                     let min: CGFloat = CGFloat(model.settings.libraryCoverSize)
                                     LazyVGrid(columns: [GridItem(.adaptive(minimum: min, maximum: min * 1.4), spacing: 18)], alignment: .leading, spacing: 20) {
-                                        ForEach(sec.games) { g in GameTile(model: model, game: g, build: model.build(of: g, in: builds)).id(g.id) }
+                                        ForEach(sec.games) { g in GameTile(model: model, game: g, build: model.build(of: g, in: builds),
+                                                                                    focus: model.libraryFocus == g.id, picked: model.librarySelection.contains(g.id)).id(g.id) }
                                     }
                                     .onGeometryChange(for: Int.self) { Int(($0.size.width + 18) / (min + 18)) } action: { model.libraryColumns = max($0, 1) }
                                 } else {
@@ -762,14 +763,16 @@ struct GameTile: View {
     let model: AppModel
     let game: LibraryGame
     let build: LibraryBuild?
+    /// the tile's own focus and tick, from the grid: a tile that looked them up in the model would redraw, with every other tile,
+    /// each time the focus moved
+    var focus = false
+    var picked = false
     var big = false
     @State private var hover = false
 
     var body: some View {
         let g = game
         let tint = IconColor.of(g.icon)
-        let focus = model.libraryFocus == g.id
-        let picked = model.librarySelection.contains(g.id)
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 LinearGradient(colors: [tint.opacity(0.85), tint.opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -824,7 +827,6 @@ struct GameTile: View {
         .onTapGesture(count: 2) { model.openGame(GameRef(libraryID: g.id, app: build?.app)) }
         .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
         .contextMenu { LibraryGameMenu(model: model, game: g, build: build) }
-        .accessibilityAction { model.openGame(GameRef(libraryID: g.id, app: build?.app)) }
         .help(g.path.tildePath)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(tileLabel)

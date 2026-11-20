@@ -42,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return .terminateLater
         }
     }
+    /// A settings change made just before quitting is still waiting to be saved (AppModel.scheduleSettingsSave)
+    func applicationWillTerminate(_ n: Notification) {
+        MainActor.assumeIsolated { AppModel.shared?.saveSettingsNow() }
+    }
     /// The Dock icon's menu: recently played games with Play and Rebuild, and the build running now (idea 9)
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         MainActor.assumeIsolated { AppModel.shared?.dockMenu() }
