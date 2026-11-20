@@ -12,10 +12,10 @@ Concept from DieGomezR/nx-hub (MIT); written for NXForge's sidebar.
  1 file changed, 1 insertion(+)
 
 diff --git a/docs/settings.md b/docs/settings.md
-index e02f334c9e5b1c27b2857837a9ade35e66b49cc8..06308fdc76f90367fb5ba117b8e48f3ef0f4edf5 100644
+index b4d52c7b992b1eef4493570ff0d364580846ab16..39cd4347ff1f55def3a4c1f72bc0769077d95504 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -313,6 +313,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
+@@ -312,6 +312,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
  | Record frame times (from the next launch) | – | FPS › Record frame times | `DM_FRAME_TIMES` (a `DM_NVN_TSV` wins) | `DMQuickSettings.frameTimes.<game>` |
  | Volume and mute | – | the slider and speaker at the top | – | `DMQuickSettings.volume.<game>`, `DMQuickSettings.muted.<game>` |
  | Pause the game, quieter sound while the sidebar is open | – | General | – | `DMQuickSettings.pauseOpen.<game>` (unset: on), `DMQuickSettings.duckOpen.<game>` |

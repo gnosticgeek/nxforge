@@ -17,10 +17,10 @@ the child host (macOS privacy checks refuse an exec'ed process's opens there).
  3 files changed, 24 insertions(+)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 55e4e7b16178aa8eeffd49d2b3491c922ed9854a..5aeb91e527828c99e1dc38915b7ae1a61e889849 100644
+index df4f8a44f8baf9de6c7e55f6c16afcd751a901f4..9664f2357795c066124653df21f73057de61126f 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
-@@ -335,6 +335,23 @@ int main(int argc, char **argv) {
+@@ -357,6 +357,23 @@ int main(int argc, char **argv) {
      unlink(restart); setenv("DM_LAUNCHER_RESTART", restart, 1);
      char slotreq[PATH_MAX]; snprintf(slotreq, sizeof slotreq, "%s/slot-load-requested", sup);   // quick-save slots (nxforge/launcher_slots.inc)
      unlink(slotreq); setenv("DM_LAUNCHER_SLOT_LOAD", slotreq, 1);
@@ -45,10 +45,10 @@ index 55e4e7b16178aa8eeffd49d2b3491c922ed9854a..5aeb91e527828c99e1dc38915b7ae1a6
      for (;;) {
          int err = posix_spawn(&g_child, host, NULL, NULL, host_argv, environ);
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index d15e7535e2fc7fd28226b36c8e6b3e93debc08fa..2156578b668289f7960e8349edeef80a7e388c09 100755
+index 4f94ed9f4ae8ee1b093fc92fd552c68239d00733..fa27ed4e656c0b5177ee355a9fb02f78aaa9151b 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
-@@ -128,6 +128,9 @@ def info_plist(a, minos, icon):
+@@ -130,6 +130,9 @@ def info_plist(a, minos, icon):
           'NSBluetoothAlwaysUsageDescription': 'Connect Switch 2 Joy-Con and Pro Controllers over Bluetooth.',
           'LSApplicationCategoryType': a.category or 'public.app-category.games', 'LSSupportsGameMode': False, 'DMTitleID': a.title_id.upper(), 'DMRomfsMarker': a.marker or '', 'DMLanguage': a.lang or 'en-US', 'DMSaveSyncChoice': 1}
      if icon: p['CFBundleIconFile'] = 'AppIcon'
@@ -59,7 +59,7 @@ index d15e7535e2fc7fd28226b36c8e6b3e93debc08fa..2156578b668289f7960e8349edeef80a
          listed = json.loads(Path(a.settings).read_text(encoding='utf-8'))['settings']
          p['DMSettings'] = settings_rules(listed)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 1929f7070c4883b3479c9c0ca650dc71dbffbcdc..7e853c3841307a3fbe672cfec80bbace470fbf69 100644
+index 75bbfaf5adc9abe5a05000752677a6c92b8dfb6d..12a4d71fb6ca46069a710d6e6de1c083dc45904e 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -7,6 +7,7 @@ DM_ANISO	diagnostic	`0`, `2`, `4`, `8` or `16`: anisotropic filtering of at leas
@@ -69,8 +69,8 @@ index 1929f7070c4883b3479c9c0ca650dc71dbffbcdc..7e853c3841307a3fbe672cfec80bbace
 +DM_APP_GAME_MODE	switch	`1` when packing (`pack_app.py`): the app asks for Game Mode (`LSSupportsGameMode`, `GCSupportsGameMode`) and its launcher hands its process to the host (`DMLaunchExec` 1, see `DM_LAUNCH_EXEC`)
  DM_APP_VERSION	switch	Overrides the IPA's version in `build_ipa.sh`; by default it is the packed game's display version from its control data (the update's when one is packed)
  DM_AUDIO	switch	`1` plays audio through Core Audio, `0` uses the silent sink; real output is the default on iOS, the silent sink on the Mac (the Mac launcher sets `1`)
- DM_AUDIO_DUMP	diagnostic	`=<file>` writes every PCM block the game appends as is (16-bit, 48 kHz, channel count as in the OpenAudioOut log), to judge whether a sound played
-@@ -116,6 +117,8 @@ DM_KEYS	switch	Scripted input: `<seconds or f<frame>>:<key>[+key][~hold or ~f<fr
+ DM_AUDIO_CAPTURE	test	`=<file>`: `tests/t_audio_live.c` records the output device's input (a loopback device such as BlackHole) there as 32-bit float samples, for `dm/tools/audio_channel_check.py`
+@@ -124,6 +125,8 @@ DM_KEYS	switch	Scripted input: `<seconds or f<frame>>:<key>[+key][~hold or ~f<fr
  DM_LANG	player	Game language as a language code (default `en-US`; the iOS app sets the one the IPA was packed with)
  DM_LAUNCHER	switch	`0` skips the iOS settings screen or the Mac settings window and starts the game at once, with the saved choices (on the Mac also `--no-launcher`)
  DM_LAUNCHER_RESTART	diagnostic	Set by the Mac launcher (dm/mac/launcher.c): the file Quick settings › Restart game writes before quitting, so the launcher starts the game again
@@ -79,7 +79,7 @@ index 1929f7070c4883b3479c9c0ca650dc71dbffbcdc..7e853c3841307a3fbe672cfec80bbace
  DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once; `oe::ExecuteProgram` sets it for the program it starts; a relaunch removes it
  DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz Mac screens; by default the link counts only the refreshes nearest a steady 1/60 s clock
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
-@@ -410,6 +413,7 @@ DM_SHARED_FONT	path	One font file served for every shared-font type except the N
+@@ -434,6 +437,7 @@ DM_SHARED_FONT	path	One font file served for every shared-font type except the N
  DM_SHARED_FONT_EXT	path	Font file served for shared-font type 5, the Nintendo extension with the button icons (default `$DM_FONT_DIR/nintendo_ext.ttf`, made by `make_shared_fonts.py`)
  DM_SHOW_FPS	player	`1` shows the frame-rate counter on the iPhone (frames put on screen per second, top left); at IPA build it sets `DMShowFPS` in `Info.plist`, which `Documents/env.txt` overrides
  DM_SIX_DELAY	switch	`=0` (the default), `=auto` or `=<ms>` (up to 40): `DM_IMU_DELAY`'s playout delay for the six-axis states (`GetSixAxisSensorStates`) instead of the IMU samples. None by default: a Switch 1 game reads the newest state each frame (aiming, steering), so a delay only adds latency. Also through `DM_CTL`'s `env`

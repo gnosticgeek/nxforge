@@ -18,10 +18,10 @@ takes that frame as a stall and does not pay its lateness back. DM_NVN_PAUSE_WAR
  7 files changed, 102 insertions(+), 5 deletions(-)
 
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 18a5ae53d9c04e812d4434b1d52522253484b499..272801006cad2e8eb13d59e47d875e84bdfcfed7 100644
+index 4de5c3d4a047ea177484cb5a055c6e5b419828db..40c040f8b4f5bc20c89551a61ef51c96876779ba 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -1887,6 +1887,7 @@ static int link_wait(const win_t *o, uint64_t timeout_ns);
+@@ -1945,6 +1945,7 @@ static int link_wait(const win_t *o, uint64_t timeout_ns);
  __attribute__((weak)) void dm_main_yield_stats(uint64_t *n, uint64_t *ns) { *n = 0; *ns = 0; }   // The host's hle_thread.c provides the ground truth; 0 in graphics unit tests
  __attribute__((weak)) uint32_t dm_guest_work_qos(unsigned *count) { if (count) *count = 0; return QOS_CLASS_UNSPECIFIED; }
  int mtl_probe_ramp_on(void);   // nvn_mtl.m: DM_FSTEP_PROBE_RAMP (default on; ab with DM_AB)
@@ -29,7 +29,7 @@ index 18a5ae53d9c04e812d4434b1d52522253484b499..272801006cad2e8eb13d59e47d875e84
  __attribute__((weak)) void dm_yield_top(char *out, size_t n) { if (n) snprintf(out, n, "-"); }   // hle_thread.c: the threads that yielded most since the last call; none in graphics unit tests
  __attribute__((weak)) void dm_thread_cpu(char *out, size_t n, double secs) { (void)secs; if (n) snprintf(out, n, "-"); }   // hle_thread.c: guest-thread CPU by Switch priority band since the last call
  void mtl_res_stats(char *out, size_t n);
-@@ -2553,6 +2554,7 @@ static void fstep_tick(const win_t *o, int c) {
+@@ -2617,6 +2618,7 @@ static void fstep_tick(const win_t *o, int c) {
      // A probe's grace lasts while its frames keep getting cheaper (nvn_fstep.h FSTEP_RAMP): macOS raises the GPU clock for the shorter deadline over seconds, not the iPhone's 30 frames
      // (Breath of the Wild on an M5 Pro: the probe's 33 frames took the clock 338 → 432 MHz and its GPU time 24.8 → 18.5 ms, then it failed at 22 ms frames; hold 1 needed about 560 MHz)
      g_fs.ramp = mtl_probe_ramp_on();
@@ -81,10 +81,10 @@ index 0480d7bf869b774a4294f5b5189fa843844cc8e3..853cb3a1799761fdfd305453f11515d7
      if (late) { s->late++; s->late_run = grace || sgrace ? 0 : s->late_run + 1; s->fit_run = 0; } else s->late_run = 0;
      // The cost of the frames on time (a hitch is not what the scene costs): at kmin, and at the longer hold
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 3bbbb8749c3c8c97fab28e81e5e15fbcaf7b5119..2535e36e1d9e3b661e55c48a04f02c62150de738 100644
+index 2c398bc2db2a1058690db44e5f6cd1f7181cb285..c9cb634e63932420570f6bbfa47686f166051915 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -16335,6 +16335,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }
+@@ -18100,6 +18100,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }
  // DM_FSTEP_PROBE_RAMP=1 (default) / 0 / ab: a frame-step probe's grace is renewed while its frames keep getting cheaper (nvn_fstep.h FSTEP_RAMP), the time macOS's GPU clock takes to rise for the shorter deadline
  static int probe_ramp_mode(void) { static int m = -1; if (m < 0) m = sw_mode("DM_FSTEP_PROBE_RAMP", 1); return m; }
  int mtl_probe_ramp_on(void) { return sw_on(probe_ramp_mode()); }
@@ -135,7 +135,7 @@ index 3bbbb8749c3c8c97fab28e81e5e15fbcaf7b5119..2535e36e1d9e3b661e55c48a04f02c62
  // Whether a segment may end here, the pass aside: pass_split_try ends a pass only when the commit after it will be made
  static int sub_cut_ready(void) {
      int n = cut_draws();
-@@ -17839,6 +17883,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -19660,6 +19704,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      if (atomic_load(&g_gpu_lost)) return 0;   // the display command buffer would be ignored too: take no drawable from the screen the front end is about to close
      CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
      if (!layer) return 0;
@@ -168,10 +168,10 @@ index 46b18e3d7c92c7a99f1ef72a7b03347914ddf16f..2c8f13d4ac7a2a0aeca00dad4b451151
      printf("== %d checks, %d failed ==\n", checks, fail);
      return fail != 0;
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index f0e312ed76cf93911033a2d2592d861690453825..acce07f618dde085cd9ca5c9c010ae352ef90f11 100644
+index d1e23fcb4fa46192dfbe633f0a24f0f831a5300a..e20d8fd1bd0dad00395a272da905fcc167465dba 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
-@@ -586,6 +586,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+@@ -643,6 +643,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
  - on a Mac, 20 or 30 fps for 10–40 s after a new area loads, then a steady 60 again, with nothing compiling or uploading in between; the log shows `frame step: hold 1 → 2` and `hold 2 → 3 vsyncs … (3 late frames` within a few presents of each other at the load, long-frame lines of exactly 50 ms with `GPU` 22–44 ms and no new pipelines or uploads, and much later `hold 3 → 1 vsyncs … (probe, GPU 6.24× its time at hold 1` followed by `the probe held`. → [Single frames over the fit keep a longer hold](../reference/frame-rate.md#single-frames-over-the-fit-keep-a-longer-hold)
  - on a Mac whose GPU clock barely follows the hold, a scene that costs a little under a vsync stays at 30 fps for good once a heavier moment or a load steps it up, though it held 60 before and would hold it again: `frame step: hold 1 → 2` and then no `hold 2 → 1` line, few or no probes, and the `held 1 / 2 / 3 vsyncs` counts all at 2. GPU time is the same at either hold, about 0.86–1.0 vsyncs (14.5–16.7 ms). Ocarina of Time on an M4 Pro at full resolution, GPU p50 15.0 ms: 48.1 fps, holding 2 vsyncs much of the time; its castle town market at a mean of 0.86 vsyncs: 30 fps for the rest of the scene after its load. → [A scene that fits hold 1 kept at 30 fps by the fit's margin](../reference/frame-rate.md#a-scene-that-fits-hold-1-kept-at-30-fps-by-the-fits-margin)
  - after every pause (the game out of focus, then back), fullscreen switch or covered window, a game that held 60 fps plays at 20 and then 30 fps for about a second; the log shows `frame step: hold 1 → 3 vsyncs at present … (3 late frames; cost 3.00, GPU 0.89; …)` right after `oe focus state → 1` or `front end: window visible`, then a trial to 2 and a probe back to 1 that holds. → [A pause or a window switch steps the hold up](../reference/frame-rate.md#a-pause-or-a-window-switch-steps-the-hold-up)
@@ -180,7 +180,7 @@ index f0e312ed76cf93911033a2d2592d861690453825..acce07f618dde085cd9ca5c9c010ae35
  - a fixed-step game runs at double speed (or slow motion at 30) after `DM_FPS_TARGET` is set, in `Documents/env.txt` or the launcher, on a build its profile's frame step stubs and limiter rows do not know. → [A present cap applies only with a frame step or an engine limit the host writes](../reference/frame-rate.md#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)
  - a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick. → [A present interval that is the game's only limit, in display mode](../reference/frame-rate.md#a-present-interval-that-is-the-games-only-limit-in-display-mode)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c1172856755379c316c6 100644
+index 0150f9baa1aba9af5302ea0016f2c4135c4fcbce..19aec9ce875b9ccff80206ab7b26ae068559ba2e 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -3,6 +3,7 @@ DM_AB	diagnostic	`=<frames>` splits the run into phases of that many frames and
@@ -191,7 +191,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_AOC_DIR	path	Folder of add-on content: one numbered subfolder per DLC index holding that DLC's RomFS, reported by `aoc` and mounted read-only; the app, the Mac launcher and the NSP script set it when the build has DLC
  DM_AOC_OWNED	switch	`0` reports no add-on content even when `DM_AOC_DIR` has some, for runs without the DLC
  DM_APP_DM	path	Set by the iOS app of a game of several programs: the running program's `dm/p<N>` folder, where the settings screen finds its `launcher.json`
-@@ -25,6 +26,8 @@ DM_COPY_ROMFS	switch	`NO` keeps the game files out of the app, in the Xcode buil
+@@ -30,6 +31,8 @@ DM_COPY_ROMFS	switch	`NO` keeps the game files out of the app, in the Xcode buil
  DM_CRASH_PEEK	diagnostic	`="sp+0x248*,x22-0x20"` adds 0x100 bytes at each address to the crash report: `sp` or a register plus or minus an offset, a trailing `*` reading the pointer stored there first
  DM_CTL	diagnostic	`=<file>` (Mac): the host polls the file every 100 ms and runs each appended line: button presses, `shot`, `passdump`, `texdump`, `env KEY=VALUE`, `peek`, `memdump`, `drag` and more
  DM_CTRL_PROMPT_TEXT	switch	The texts of the controller applet's prompt (a game wants more players than have joined; `ctrl_prompt.h`) in the player's language, one per line: the title, the hint, the count, the done and the cancel button, with `{min}`, `{max}` and `{joined}` replaced by the numbers; a front end sets it ([Starting a game](frontends.md#starting-a-game)), an empty or missing line keeps the English text
@@ -199,8 +199,8 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
 +DM_CV_LATE	diagnostic	`=0` hands out AV1 movie pictures in decode order, one each time the game takes one, instead of by the movie's clock with late pictures skipped (`hle_codec_video.c`)
  DM_DBG	diagnostic	When set, prints the guest's `svcOutputDebugString` text to stderr as `[guest]` lines
  DM_DBG_AU_FRAMES	diagnostic	`=<frames>` asks the Mac's Core Audio output for that many frames per callback instead of about 5 ms (1024 reproduces the iOS default that caused crackling)
- DM_DETCLOCK	switch	`=<step ns>`: from the first present on, the guest clock advances a fixed step per present instead of following the wall clock, and the random source becomes a fixed-seed stream (replay and test runs)
-@@ -46,17 +49,20 @@ DM_FORCE_STRICT	diagnostic	`=1` makes the loader fail on forced-hook entries no
+ DM_DETCLOCK	switch	`=<step ns>`: from the first present on, the guest clock advances a fixed step per present, and the random source uses a fixed seed (replay and test runs). Relative thread sleeps and synchronization timeouts use host time
+@@ -51,17 +54,20 @@ DM_FORCE_STRICT	diagnostic	`=1` makes the loader fail on forced-hook entries no
  DM_FPS	switch	`30` or `60` pins the frame rate the display link and frame pacing aim for; otherwise it follows the game's present interval (60, or 30 when the game asks for 30)
  DM_FPS_HOLD	player	`on` / `off` overrides the profile's `fps_hold`: whether late frames may raise the hold above the frame cap's vsyncs (on by default)
  DM_FPS_TARGET	player	Frame-rate cap: `30` or `60`, `120` for a game whose profile has `fps_max 120` (60 otherwise), or `0` for the game's own limit; overrides the profile's `fps_target`
@@ -221,7 +221,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_GFX_FIXTURE_OUT	test	`=<dir>`: graphics tests write their raw result textures and buffers there
  DM_GFX_SCALE	diagnostic	The graphics scale tier `oe::GetCurrentGraphicsScale` answers: `0` (default, both modes), or `1` or `2`, the reduced tiers at which a Switch 2 game renders smaller
  DM_GLSLC_CAPTURE	path	`=<dir>` saves every GLSLC output the game compiles at run time; `shader_split.py` reads it (default `<version dir>/glslc_capture`)
-@@ -107,6 +113,7 @@ DM_KBD_PLAYER	switch	`own` makes the Mac keyboard player 1 on its own, with cont
+@@ -115,6 +121,7 @@ DM_KBD_PLAYER	switch	`own` makes the Mac keyboard player 1 on its own, with cont
  DM_KEYS	switch	Scripted input: `<seconds or f<frame>>:<key>[+key][~hold or ~f<frames>][*count/interval],…` presses buttons, sticks, touches and `Shake` at those times; `=@<file>` reads the steps from the file
  DM_LANG	player	Game language as a language code (default `en-US`; the iOS app sets the one the IPA was packed with)
  DM_LAUNCHER	switch	`0` skips the iOS settings screen or the Mac settings window and starts the game at once, with the saved choices (on the Mac also `--no-launcher`)
@@ -229,7 +229,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once; `oe::ExecuteProgram` sets it for the program it starts; a relaunch removes it
  DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz Mac screens; by default the link counts only the refreshes nearest a steady 1/60 s clock
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
-@@ -180,6 +187,8 @@ DM_NVN_GEO_MESH_RUN	switch	`0` dispatches every mesh geometry draw on its own; b
+@@ -197,6 +204,8 @@ DM_NVN_GEO_MESH_RUN	switch	`0` dispatches every mesh geometry draw on its own; b
  DM_NVN_GPUPROF	diagnostic	`=<f>`, `<f1>-<f2>` or `every:<n>`: logs the GPU start and duration of every encoder of those frames (`[gpuprof]` lines from Metal 4 counter heap timestamps)
  DM_NVN_GPU_STORAGE	switch	`0` stops what the GPU writes into a texture in storage the CPU can read (a GPU texture, or one uploaded from its storage) from being written into that storage on the GPU (on by default; `gsb_target`, `gsb_store`), to measure it
  DM_NVN_GPU_TS	switch	`segment_submit_gaps`, `segment_gaps` or `submission`: what timestamp reports record instead of the default `segment` (the GPU start / end of the segment holding each report, without the GPU's idle time between the submission's command buffers, nor its wait between submissions for the host's translation of one the game had submitted already): segment times with the wait between submissions (the earlier default), segment times with both idle times, or one time for the whole submission
@@ -238,7 +238,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_NVN_HILITE	diagnostic	`=<fragment shader key>,…`: those draws use a solid colour instead (magenta, green, cyan, yellow, blue, white in order), to tell wrong geometry from wrong shading
  DM_NVN_INDLOG	diagnostic	`=<n>`: the first n indirect draws (and those of pass-dumped frames) log their arguments at encode and as the GPU left them once the submission completed, with the first indices
  DM_NVN_IXCLOG	diagnostic	`=<n>` logs the first n indirect draw and dispatch conversions (record to arguments) once the GPU has run them
-@@ -190,6 +199,7 @@ DM_NVN_LOG	diagnostic	`=1` logs the creation of NVN objects
+@@ -207,6 +216,7 @@ DM_NVN_LOG	diagnostic	`=1` logs the creation of NVN objects
  DM_NVN_MAGSCAN	diagnostic	`=<fs key>[:every[:phase]]`: device self-check that reads each pass's colour attachments every `every` frames (default 30) and logs `[mag]` lines for solid magenta 16×16 blocks or non-finite pixels
  DM_NVN_MDX_PRESCAN	switch	`0` copies an indirect-count multi-draw's records at its own first draw, which splits a render pass an earlier draw opened; by default the draw that opens a pass copies those of the multi-draws after it first (ab with DM_AB)
  DM_NVN_MFX_DIRECT	switch	`0` copies the game's colour into MetalFX's RGBA16F input (DM_UPSCALER=metalfx) unless it is RGBA16F; by default an input that is the whole rectangle MetalFX reads is taken in its own format (ab with DM_AB)
@@ -246,7 +246,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_NVN_PARTIAL_UPLOAD	switch	`0` reads a texture whole from its storage at every re-upload; by default a re-upload reads only the images (a layer's level) with a page written since the last upload and copies the others from the texture it replaces
  DM_NVN_PASSDUMP	diagnostic	`=<f>`, `<f1>-<f2>` or `every:<n>`: logs every render pass of those frames (attachments, clears, shader keys, bindings, draw state, presents, and the host function and line that ended each pass) for the `tbdr_*.py` tools
  DM_NVN_PASSDUMP_ALL	diagnostic	`=1` makes `DM_NVN_PASSDUMP` record every draw and binding change, not only the first per pass and stage, including copies and inline uniform updates
-@@ -197,16 +207,20 @@ DM_NVN_PASSGPU	diagnostic	`=<file>` writes the GPU time of each render and compu
+@@ -214,16 +224,20 @@ DM_NVN_PASSGPU	diagnostic	`=<file>` writes the GPU time of each render and compu
  DM_NVN_PASSGPU_SERIAL	diagnostic	`=1` makes each encoder on the main command buffer wait until all earlier work has finished, so `DM_NVN_PASSGPU` times read each pass's exclusive time (totals read high)
  DM_NVN_PASS_SPLIT	switch	`=<draws>` (default 256, `0` off): a render pass is ended and its segment committed after this many draws while the GPU has no segment left, so the GPU starts a long pass (a G-buffer) before it is all translated; its attachments are stored and loaded again
  DM_NVN_PASS_SPLIT_MAX	switch	`=<n>` (default 2, `0` no limit): the most splits of one render pass (`DM_NVN_PASS_SPLIT`), as each stores and loads its attachments
@@ -267,7 +267,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_NVN_REUPLOADS	diagnostic	`=1` logs the first 400 re-uploads of textures taken from their storage: shape, size, how much was read from guest memory and how many images were copied from the texture it replaces, the frame and the submission, the pages written since the upload and where the first lies, and the GPU copies into it since then
  DM_NVN_ROP_ROUND	switch	`0` leaves float colours going into 8-bit, 16-bit and RGB10A2 normalized targets to Apple's conversion (the exact product rounded to nearest); by default a pixel shader rounds them as NVIDIA's colour unit does (the float32 product rounded to nearest even) where blending is off, MIN or MAX, or a logic operation
  DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover the whole target, as before; by default a draw pass that loads what it keeps stops at the far corner of its scissor when that is at most half the target
-@@ -284,13 +298,21 @@ DM_PIXEL_ART	player	`off` (the default where nothing sets it), `sharp`, `smooth`
+@@ -305,14 +319,22 @@ DM_PIXEL_ART	player	`off` (the default where nothing sets it), `sharp`, `smooth`
  DM_PIXEL_GRID	player	`auto` (the default), `off` or `<width>x<height>` (`320x180`; Mac only): the art's own pixel grid for `DM_PIXEL_ART`. `auto` finds it from where the colour changes in the picture (a scale of 2 to 16 picture texels per art pixel, uneven ones included, and a whole-texel offset for art with a border); `off` never takes the art back to its own grid (sharp scaling of the picture only); a size fixes it for a game the finder misses
  DM_PREEMPT	switch	`0` / `1` overrides the profile's `core_preempt`: also check already-runnable higher-priority peers on the caller's core after every thread SVC
  DM_PRELOAD	diagnostic	Set: on the Mac, runs the host's early background loading (`dm_host_preload_start`) as the iOS app does, to exercise that path
@@ -282,6 +282,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_PRESENT_HZ	switch	`=<N>`: the frequency of presentation pacing (default 60); `0` means no frame limit and is for performance profiling only
 +DM_PRESENT_INTERP	player	`off` (the default), `on` or `auto` (Mac only): frame interpolation to 120 fps. On a 120 Hz display link each 60 fps frame gets an in-between picture made from the game's last two frames (block motion search on a quarter-size picture), and the real frame follows on the next refresh, about 8 ms later; `auto` turns it on only where the screen runs at 120 Hz or more. Experimental: fast edges and the HUD can wobble. The settings window (Performance › 120 fps frame interpolation) and the Quick settings sidebar (FPS › Frame interpolation) choose it per game; set here, it wins and is not saved
  DM_PRESENT_INTERVAL	switch	`display` presents one frame per display-link tick whatever interval the game sets; `game` follows the game's present interval (default: the profile's `present_interval`)
+ DM_PRESENT_LATCH	switch	`1` / `0`: whether the display-link callback that woke the game's acquire waits for that acquire's present and shows it on the same tick (the late latch, entered through a drain once the game's presents have come early after their wake for 2 s; only on the 60 Hz link); default on on the Mac, off on iOS
  DM_PRESENT_LATENCY	switch	`=1` or `2`: overrides the display link's preferred frame latency for every screen and window mode; larger positive values use 2 (default 2 in variable-refresh fullscreen, 1 otherwise)
  DM_PRESENT_LINK	switch	Present pacing: `0` acquires the drawable itself, `1` (the default) presents on a 60 Hz display link, `2` uses a 120 Hz display link with a frame every other tick. Unset, a 60 fps game in fullscreen on a variable-refresh screen that keeps its variable mode (no fixed-rate mode, or `DM_SCREEN_MATCH=0`) at a multiple of 120 Hz takes the 120 Hz link of `2`; a value set here holds in every window and screen mode
 +DM_PRESENT_SCALE	diagnostic	`fit`, `stretch` or `integer`: how big the game picture is drawn in the window or screen: Fit keeps the game's shape with black bars, Stretch fills it, Integer (Pixel-perfect) uses the largest whole-number scale (on the Mac the Quick settings sidebar picks it per game; this wins and is not saved)
@@ -289,7 +290,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_PRESENT_SCREEN	switch	`0` turns off the acquire's wait for the screen of `DM_PRESENT_DEPTH` (`ab` with `DM_AB`); default on
  DM_PRESENT_SNAP	player	`=<n>`: present snapshots, a ring of n host textures (2 to 4; `1` = 2) the presents are copied to so the game's swapchain texture is free at once; `0` off (default: the profile's `present_snap`)
  DM_PRESENT_UPSCALE	player	`metalfx` scales a picture smaller than its rectangle on the screen through MetalFX's spatial scaler; `off` (the default) scales it bilinearly
-@@ -372,6 +394,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+@@ -396,6 +418,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
  DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
  DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
  DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz), and a variable-refresh screen to a fixed-rate mode at a multiple (ProMotion 120 → 60 Hz at 60 and 30 fps)
@@ -297,7 +298,7 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
  DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
  DM_SHAKE_G	switch	`=<G>`: on iOS, the acceleration beyond gravity above which a flick of the phone shakes the controller's six-axis sensor (default 1.5)
-@@ -404,6 +427,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
+@@ -428,6 +451,7 @@ DM_TEST_FS_FAIL	diagnostic	`=write:<n>[:<errno>]` makes the nth save write fail
  DM_TEST_FS_FAILAT	diagnostic	`=<point>[:<count>][,…]` makes steps of the save transaction (`mountclone`, `reclone`, `guestname`, `renameback`) fail with ENOSPC
  DM_TEST_GEOMETRY	test	Path of the native `t_geometry` executable; `test_dmsh_geometry.py` runs its native geometry emitter checks only when it is set
  DM_TEST_GEOMETRY_PRIMITIVE_ID	test	Path to the native t_geometry_primitive_id replay executable used by test_dmsh_geometry.py with DMSH_TEST_GPU=1.
@@ -306,10 +307,10 @@ index 33d9f2a2233a9ecd450ffb83ca626f5001e71c04..4bc26ea48a66b5bb9be7c11728567553
  DM_TEST_KEYRACE	diagnostic	`=<n>` creates up to n (at most 512) pthread keys on a thread of its own while the host starts up
  DM_TEST_KILL_AT	diagnostic	`=write:<n>` exits the process (`_exit(9)`) at the nth save write, imitating a kill mid-write
 diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
-index 4ccc0dfeec2e324b6a37bf9c53650756122441d9..49ccb7da49a80c042a272400624d7116e22e869c 100644
+index a9cd9265fb6199c425e827b281671c2fc81a77a4..9bc6af32d178cac3f0f4758704064e5b34010998 100644
 --- a/docs/reference/frame-rate.md
 +++ b/docs/reference/frame-rate.md
-@@ -135,10 +135,17 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
+@@ -136,10 +136,17 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
  - **Symptom:** after every pause (the game out of focus, then back), fullscreen switch or covered window, a game that held 60 fps plays at 20 and then 30 fps for about a second; the log shows `frame step: hold 1 → 3 vsyncs at present … (3 late frames; cost 3.00, GPU 0.89; …)` right after `oe focus state → 1` or `front end: window visible`, then a trial to 2 and a probe back to 1 that holds.
  - **Cause:** `nvn_fstep_next` took the frames after the stall as the scene's cost. The frame that spans the stall is as long as the stall, and the next few are late for the host's reasons: the GPU clock fell while nothing was drawn (the first frame back took 26–42 ms of GPU time after pauses of 1.2–5.8 s and 67 ms after one of 35 s, where the scene takes 15), and the display link is finding its ticks again (acquire and fence waits of 30–160 ms). Three of them in a row stepped up to their cost, 3 vsyncs. After a fullscreen switch the display link's silence (200–570 ms, [Present thread rescues a silent display link](#present-thread-rescues-a-silent-display-link)) did the same (`hold 2 → 3 … cost 6.41, GPU 1.12`).
  - **Fix:** a frame shown for `FSTEP_STALL` (8) vsyncs or more, 133 ms, is a stall: more than twice the longest hold, so no step up would have made it fit. It does not count toward a step up, and neither do the `FSTEP_GRACE` (30) frames after it, as after a probe; a stall inside that grace starts it again. A scene that really is heavier after the stall (a load into a heavy area) steps up 33 frames after it instead of 3. Long frames below a stall (three of 83 ms in a row) step up as before. The 30-second line counts them (`… failed trials), N stalls`).

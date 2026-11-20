@@ -5,18 +5,18 @@ Subject: host-video: Video decoding fixes (VP9 late free, AV1 movies)
 
 ---
  dm/host/hle_codec_video.c     | 100 +++++++++++++++++++++++++++++++---
- dm/host/tests/Makefile        |   6 +-
+ dm/host/tests/Makefile        |   5 +-
  dm/host/tests/t_codec_video.c |  67 ++++++++++++++++++++++-
- 3 files changed, 163 insertions(+), 10 deletions(-)
+ 3 files changed, 162 insertions(+), 10 deletions(-)
 
 diff --git a/dm/host/hle_codec_video.c b/dm/host/hle_codec_video.c
-index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb491cef28 100644
+index d205195501b3c1718ac2df4952fb1c8d7d7db316..728bac508343a70f449b4e635e773df279e13149 100644
 --- a/dm/host/hle_codec_video.c
 +++ b/dm/host/hle_codec_video.c
-@@ -49,11 +49,15 @@ typedef struct {
-     uint32_t magic, id; pthread_mutex_t mu; vpx_codec_ctx_t vpx; int vpx_ok; void *event; uint64_t submits, pictures;
+@@ -51,11 +51,15 @@ typedef struct {
      int codec; uint16_t w, h; mavc *avc; uint8_t *csd; size_t csd_n;   // H.264: VideoToolbox and the parameter sets Initialize gave
      mav1 *av1;   // AV1: VideoToolbox, or dav1d where the chip has no AV1 decoder (hle_movie_av1.c)
+     movie_vt_control vt;
 -    struct { cv_pool *pool; uint32_t pidx; int reg, filled; uint32_t gen, filled_gen; uint16_t w, h; int64_t ts; uint8_t eos; } buf[CV_BUFS];
 +    struct { cv_pool *pool; uint32_t pidx; int reg, filled; uint32_t gen, filled_gen; uint16_t w, h; int64_t ts; uint8_t eos, early; } buf[CV_BUFS];   // early: its first handle (generation 0, the "free" one) signalled a sync point event (cv_dec_props)
      uint32_t fifo[8], fhead, fcount;          // acquirable indices
@@ -30,7 +30,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
      // The decoder's thread (cv_worker). The codec state above (vpx, avc, av1) is its own from Initialize to Finalize: it decodes outside mu
      pthread_t th; pthread_cond_t work;         // work: a packet was queued, room for pictures came back, a Stop / Flush or Finalize came
      int quit, busy, reopen;                    // busy: the thread decodes a packet; reopen: a Stop / Flush came, so it makes a new codec state before its next packet
-@@ -111,6 +115,51 @@ static void pool_native_write(cv_pool *p, uint32_t i, const vpx_image_t *im) {
+@@ -113,6 +117,51 @@ static void pool_native_write(cv_pool *p, uint32_t i, const vpx_image_t *im) {
      for (uint32_t y = 0; y < p->h; y++) memcpy(dst + (size_t)y * stride, tmp + (size_t)y * p->w * 4, (size_t)p->w * 4);
      free(tmp);
  }
@@ -82,7 +82,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
  static int cv_pending(const cv_dec *d) { return d->nheld + (int)d->qcount + d->busy; }   // what the decoder holds for the client: packets not yet decoded and pictures no released buffer has taken (decoder lock held)
  // Pictures and end of stream into the released buffers, in order (decoder lock held). decoded: the decoder's thread calls, with the pictures of the packet it has just decoded:
  // a buffer they go into was waiting for them
-@@ -119,17 +168,18 @@ static void fill(cv_dec *d, int decoded) {
+@@ -121,17 +170,18 @@ static void fill(cv_dec *d, int decoded) {
      while (d->pcount && (d->nheld || d->eos_pending)) {
          uint32_t i = d->pend[d->phead]; d->phead = (d->phead + 1) % CV_BUFS; d->pcount--;
          typeof(d->buf[0]) *b = &d->buf[i];
@@ -103,7 +103,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
          b->filled = 1; b->filled_gen = b->gen;
          spt_fire(d, i);
      }
-@@ -331,7 +381,7 @@ static Result cv_dec_fin(void *t) {
+@@ -334,7 +384,7 @@ static Result cv_dec_fin(void *t) {
  static Result cv_dec_reg(void *t, uint32_t i, void *pool, uint32_t pidx) {
      cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) { LOG("[RED] nn::codec::Register…DecoderBuffer index %u", i); return CV_R(2004); }
      dm_host_mutex_lock(&d->mu);
@@ -112,7 +112,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
      if (d->fcount < 8) { d->fifo[(d->fhead + d->fcount) % 8] = i; d->fcount++; } else LOG("[RED] nn::codec: acquirable queue full at register %u", i);
      pthread_mutex_unlock(&d->mu);
      return 0;
-@@ -345,7 +395,7 @@ static void cv_drop_index(uint32_t *q, uint32_t *head, uint32_t *count, uint32_t
+@@ -348,7 +398,7 @@ static void cv_drop_index(uint32_t *q, uint32_t *head, uint32_t *count, uint32_t
  static Result cv_dec_unreg(void *t, uint32_t i) {   // the buffer leaves the decoder: no longer acquirable, filled or waited for
      cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) return CV_R(2004);
      dm_host_mutex_lock(&d->mu);
@@ -121,16 +121,16 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
      cv_drop_index(d->fifo, &d->fhead, &d->fcount, 8, i); cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);
      pthread_mutex_unlock(&d->mu);
      return 0;
-@@ -359,7 +409,7 @@ static Result cv_dec_reset(void *t, int stop) {
+@@ -362,7 +412,7 @@ static Result cv_dec_reset(void *t, int stop) {
      for (uint32_t k = 0; k < d->qcount; k++) free(d->q[(d->qhead + k) % CV_HOLD].data);
      d->qhead = d->qcount = 0;
      for (int i = 0; i < d->nheld; i++) vpx_img_free(d->held[i]);
 -    d->nheld = 0; d->eos_pending = 0;
 +    d->nheld = 0; d->eos_pending = 0; d->clk_on = 0;
      d->epoch++; d->reopen = 1;
+     movie_vt_cancel(&d->vt);
      cv_stat_sum(d);
-     pthread_cond_signal(&d->work);   // it may have waited for room
-@@ -372,6 +422,7 @@ static Result cv_dec_reset(void *t, int stop) {
+@@ -376,6 +426,7 @@ static Result cv_dec_reset(void *t, int stop) {
  static Result cv_dec_start(void *t) {
      cv_dec *d = cv_of(t); if (!d) return CV_R(2004);
      dm_host_mutex_lock(&d->mu);
@@ -138,7 +138,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
      if (d->event && cv_pending(d) < CV_READY) hle_signal_system_event(d->event);
      pthread_mutex_unlock(&d->mu);
      return 0;
-@@ -492,7 +543,9 @@ static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t s
+@@ -497,7 +548,9 @@ static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t s
      dm_host_mutex_lock(&d->mu);
      uint8_t *copy = NULL;
      if (cv_pending(d) >= CV_HOLD || (size && !(copy = malloc((size_t)size)))) {
@@ -149,7 +149,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
          if (d->event) hle_clear_system_event(d->event);
          pthread_mutex_unlock(&d->mu); return CV_BUSY;
      }
-@@ -517,7 +570,8 @@ static Result cv_dec_acq(uint32_t *idx, cv_sync *sync, void *t) {
+@@ -522,7 +575,8 @@ static Result cv_dec_acq(uint32_t *idx, cv_sync *sync, void *t) {
  static void cv_dec_rel(void *t, uint32_t i, cv_sync sync) {
      (void)sync; cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS || !d->buf[i].reg) { LOG("[RED] nn::codec::Release…DecoderOutputBuffer index %u", i); return; }
      dm_host_mutex_lock(&d->mu);
@@ -159,7 +159,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
      if (d->pcount < CV_BUFS) { d->pend[(d->phead + d->pcount) % CV_BUFS] = i; d->pcount++; }
      if (d->fcount < 8) { d->fifo[(d->fhead + d->fcount) % 8] = i; d->fcount++; } else LOG("[RED] nn::codec: acquirable queue full at release %u", i);
      int before = cv_pending(d);
-@@ -528,6 +582,29 @@ static Result cv_dec_props(uint16_t *w, uint16_t *h, uint16_t *cw, uint16_t *ch,
+@@ -533,6 +587,29 @@ static Result cv_dec_props(uint16_t *w, uint16_t *h, uint16_t *cw, uint16_t *ch,
      cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) return CV_R(2004);
      dm_host_mutex_lock(&d->mu);
      int ok = d->buf[i].filled;
@@ -189,7 +189,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
      if (ok) { *w = *cw = d->buf[i].w; *h = *ch = d->buf[i].h; *ts = d->buf[i].ts; *eos = d->buf[i].eos != 0; }
      pthread_mutex_unlock(&d->mu);
      return ok ? 0 : CV_NONE;
-@@ -667,6 +744,12 @@ static bool sync_reached(const cv_sync *s) {
+@@ -672,6 +749,12 @@ static bool sync_reached(const cv_sync *s) {
      pthread_mutex_unlock(&g_cv_mu);
      return r;
  }
@@ -202,7 +202,7 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
  HLE_FORCE("_ZN2nn2gs17TryWaitNativeSyncERKNS0_16NativeSyncHandleE", "decoder sync handles are the host's (hle_codec_video.c)", bool, h_gs_trywait, const cv_sync *s) {
      return sync_reached(s);
  }
-@@ -683,6 +766,7 @@ HLE_FORCE("_ZN2nn6syncpt3sdk21RequestSyncPointEventEPNS1_18SyncPointEventTypeERK
+@@ -688,6 +771,7 @@ HLE_FORCE("_ZN2nn6syncpt3sdk21RequestSyncPointEventEPNS1_18SyncPointEventTypeERK
      spt_unarm(e); hle_clear_system_event(e);
      SPT(e)->want = *s; SPT(e)->armed = 1;
      pthread_mutex_lock(&g_spt_mu); int k = 0; while (k < 64 && g_spt[k]) k++; if (k < 64) g_spt[k] = e; pthread_mutex_unlock(&g_spt_mu);
@@ -211,41 +211,41 @@ index f8f9cac2eefc5a70838881671396109684646d38..35e2044174948e1e277e26eb8bce21fb
      if (sync_reached(s)) { spt_unarm(e); hle_signal_system_event(e); }
      return 0;
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 2efeb41a4d57c1271ddc8910fba2f152ef4937a4..2bc98509d8585142138008ddd249815517c7a9f3 100644
+index 120cda483d487804eb04a4392593bf582473b662..5910033eb158c31e0d581152db7585b6edc94f47 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
-@@ -12,12 +12,14 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
+@@ -12,13 +12,14 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
  GINC = $(if $(strip $(GAME)),-I../gen/$(GAME) -I../../games/$(GAME),$(error GAME is not set: make GAME=<base game title ID>: $(shell python3 ../../games/game.py list | awk -F'\t' '{printf "%s (%s)  ", $$1, $$3}')))
  $(B)/t_fs $(B)/t_fs_case $(B)/t_fs_commit_list $(B)/t_fs_commit_list_tsan: ../romfs_image.h
  GAME_H = ../gen/$(GAME)/game_profile.h
--run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture $(B)/t_oe $(B)/t_fs $(B)/t_fs_commit_list $(B)/t_thread_leak $(B)/t_fs_case $(B)/t_audio $(B)/t_output_stream $(B)/t_audio_spsc $(B)/t_swkbd $(B)/t_altstack $(B)/t_condvar $(B)/t_condvar_old $(B)/t_pollwait $(B)/t_clockwait $(B)/t_pause $(B)/t_pause_stress $(B)/t_pctl $(B)/t_sf $(B)/t_audren_sv $(B)/t_time $(B)/t_shared_font $(B)/t_vorbis $(B)/t_vorbis_divides $(B)/t_hid $(B)/t_haptics $(B)/t_haptics_apple $(B)/t_cheats $(B)/t_pad_hid $(B)/t_switch2
-+run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture $(B)/t_oe $(B)/t_vi_display $(B)/t_fs $(B)/t_fs_commit_list $(B)/t_thread_leak $(B)/t_fs_case $(B)/t_audio $(B)/t_output_stream $(B)/t_audio_spsc $(B)/t_swkbd $(B)/t_altstack $(B)/t_condvar $(B)/t_condvar_old $(B)/t_pollwait $(B)/t_clockwait $(B)/t_pause $(B)/t_pause_stress $(B)/t_pctl $(B)/t_sf $(B)/t_audren_sv $(B)/t_time $(B)/t_shared_font $(B)/t_vorbis $(B)/t_vorbis_divides $(B)/t_hid $(B)/t_haptics $(B)/t_haptics_apple $(B)/t_cheats $(B)/t_pad_hid $(B)/t_switch2
+-run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture $(B)/t_oe $(B)/t_friends $(B)/t_fs $(B)/t_fs_commit_list $(B)/t_thread_leak $(B)/t_fs_case $(B)/t_audio $(B)/t_output_stream $(B)/t_audio_spsc $(B)/t_swkbd $(B)/t_altstack $(B)/t_condvar $(B)/t_condvar_old $(B)/t_pollwait $(B)/t_clockwait $(B)/t_pause $(B)/t_pause_stress $(B)/t_pctl $(B)/t_sf $(B)/t_audren_sv $(B)/t_time $(B)/t_shared_font $(B)/t_vorbis $(B)/t_vorbis_divides $(B)/t_hid $(B)/t_haptics $(B)/t_haptics_apple $(B)/t_cheats $(B)/t_pad_hid $(B)/t_switch2
++run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture $(B)/t_oe $(B)/t_friends $(B)/t_vi_display $(B)/t_fs $(B)/t_fs_commit_list $(B)/t_thread_leak $(B)/t_fs_case $(B)/t_audio $(B)/t_output_stream $(B)/t_audio_spsc $(B)/t_swkbd $(B)/t_altstack $(B)/t_condvar $(B)/t_condvar_old $(B)/t_pollwait $(B)/t_clockwait $(B)/t_pause $(B)/t_pause_stress $(B)/t_pctl $(B)/t_sf $(B)/t_audren_sv $(B)/t_time $(B)/t_shared_font $(B)/t_vorbis $(B)/t_vorbis_divides $(B)/t_hid $(B)/t_haptics $(B)/t_haptics_apple $(B)/t_cheats $(B)/t_pad_hid $(B)/t_switch2
  	$(B)/t_language
  	$(B)/t_heap_size
  	$(B)/t_touch
  	$(B)/t_gesture
  	$(B)/t_oe $(QUIET)
-+	$(B)/t_net_eventfd $(QUIET)
+ 	$(B)/t_friends
 +	$(B)/t_vi_display
  	$(B)/t_fs $(QUIET)
  	$(B)/t_fs_mutation $(QUIET)
  	TMPDIR="$(abspath $(B))" $(B)/t_fs_commit_list
-@@ -296,6 +298,8 @@ $(B)/t_time: t_time.c ../hle_time.c ../hle.h ../dm.h $(GAME_H) | $(B)
- 	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_time.c
- $(B)/t_oe: t_oe.c ../hle_oe.c ../hle.h ../dm.h $(GAME_H) | $(B)
+@@ -330,6 +331,8 @@ $(B)/t_oe: t_oe.c ../hle_oe.c ../hle.h ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_oe.c
+ $(B)/t_friends: t_friends.c ../hle_friends.c ../hle.h ../dm.h $(GAME_H) | $(B)
+ 	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_friends.c
 +$(B)/t_vi_display: t_vi_display.c t_vi_display_front.c ../../gfx/hle_vi.c ../hle.h ../dm.h $(GAME_H) | $(B)
 +	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_vi_display.c t_vi_display_front.c
  $(B)/t_condvar: t_condvar.c t_condvar_stub.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wno-unused-function -DDM_TEST_HOOKS -I.. $(GINC) -o $@ t_condvar.c t_condvar_stub.c ../hle_thread.c
  $(B)/t_condvar_old: t_condvar.c t_condvar_stub.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)
 diff --git a/dm/host/tests/t_codec_video.c b/dm/host/tests/t_codec_video.c
-index 7ec52463fbc1c1d7f9b38b7f373895bac30da9c2..110871449225ae2447c9035c0e0b2eff619f1e14 100644
+index 65c144e0892e77ff97e3c767239d9596fe928100..3f95845d51e9ceb468123a187ac2d0e815e5bd9f 100644
 --- a/dm/host/tests/t_codec_video.c
 +++ b/dm/host/tests/t_codec_video.c
-@@ -13,7 +13,12 @@
- #include <assert.h>
- #include <unistd.h>
+@@ -50,7 +50,12 @@ static OSStatus vt_test_create(CFAllocatorRef allocator, CMVideoFormatDescriptio
+     return vt_create_status;
+ }
  
 -uint64_t now_ns(void) { return 1; }
 +static uint64_t g_test_wall = 1, g_test_frames, g_test_focus_in; static int g_test_focus = 1;
@@ -257,17 +257,17 @@ index 7ec52463fbc1c1d7f9b38b7f373895bac30da9c2..110871449225ae2447c9035c0e0b2eff
  __thread _Atomic int dm_host_work;   // hle_thread.c
  void dm_host_helper_qos(qos_class_t q) { (void)q; }   // hle_thread.c: the decoder's thread keeps the default class in the unit test
  static struct { void *ev; int bound, set; pthread_t by; } g_ev[16];   // by: the thread that signalled it last
-@@ -59,6 +64,9 @@ static const uint8_t vp9[] = {
-     0xff,0xff,0xff,0xf2,0x2a,0xc0,0x00,
- };
- 
+@@ -232,6 +237,9 @@ static void vt_worker_lifecycle(bool test_av1) {
+     }
+     puts("VideoToolbox workers: callback invalidation, inactive session refusal, resume, Flush, Stop and Finalize");
+ }
 +static double g_test_now;
 +static double test_clock(void) { return g_test_now; }
 +
  int main(void) {
-     _Alignas(16) static uint8_t dec[0x400], pool[3][0x40], spt[0x80], mem[16 * 16 * 4];
-     uint64_t size, align, id; uint32_t idx; cv_sync sync; uint16_t w, h, cw, ch; int64_t ts; bool eos;
-@@ -178,6 +186,31 @@ int main(void) {
+     bool test_av1 = vt_av1_available();
+     if (!test_av1) puts("VideoToolbox lifecycle: hardware AV1 unavailable; AV1 lifecycle cases skipped");
+@@ -357,6 +365,31 @@ int main(void) {
      for (int i = 0; i < 6; i++) assert(!h_cv_vp9submit(&id, dec, vp9, sizeof vp9, 7000 + i, false));
      assert(!h_cv_vp9fin(dec) && !cv_of(dec) && !g_ev[ev_slot(ev)].bound);
      for (int i = 0; i < 3; i += 2) { h_cv_poolfin(pool[i]); assert(!pool_of(pool[i])); }
@@ -299,7 +299,7 @@ index 7ec52463fbc1c1d7f9b38b7f373895bac30da9c2..110871449225ae2447c9035c0e0b2eff
      // VP8 (libvpx) and H.264 (VideoToolbox) take the same protocol: one released buffer, one key frame, its picture read back red
      {   _Alignas(16) static uint8_t d8[0x400], p8[0x40], m8[16 * 16 * 4];
          assert(!h_cv_poolsize(&size, &align, &pref, 1) && !h_cv_pool(p8, m8, size, &pref, 1, 0));
-@@ -305,6 +338,38 @@ int main(void) {
+@@ -484,6 +517,38 @@ int main(void) {
          assert(!(k[BLANK_MAX] = dm_native_image_blank(32, 32)));   // full
          for (int i = 0; i < BLANK_MAX; i++) dm_native_image_blank_free(k[i]);
      }

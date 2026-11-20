@@ -17,10 +17,10 @@ From brad-n/TVPort 8609a1cb by Brad Norman (MIT), on upstream's frame step rule:
  7 files changed, 70 insertions(+), 3 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 5aa3a072379a3a28b1e6fc1432196b5a16e63075..f30261e31791d61f1d69b67dbfaddaf1982f76e7 100644
+index 436a373f5a5fc3c8a4aefdc0da1d5ec4e9293215..dcc5ed53a0b7e9ac37b5c21836f0c6ec7245d3de 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
-@@ -111,6 +111,10 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+@@ -124,6 +124,10 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
  - The game reads the scale when it sets its views' sizes, at start and when the level changes, not every frame. The setting takes effect at start, as the launcher sets it; written into the running game (`DM_CTL`) it has no effect until the level changes. The 3840x2160 output is set at start too.
  - Measured on an M5 Max (40-core GPU, 64 GB, 2026-11-12, docked, a window, [`bench.tsv`](bench.tsv) `kokiri-deck` from the deck save, two runs of each): the main passes at 1920x1080 with 1.0, 2560x1440 with 1.333, 2880x1620 with 1.5 and 3840x2160 with 2.0 (pass dumps in play). 1.0: 56.7 and 60.0 fps, GPU p50 13.41 and 13.85 ms; 1.333: 60.0 fps both, 13.90 and 13.88 ms; 2.0: 60.0 and 59.0 fps, 14.54 and 14.71 ms. So native 3840x2160 costs about 0.7 ms of GPU time a frame over 2560x1440 here, and the game holds 60 fps; the frame's cost on Apple GPUs hardly depends on its resolution ([Frame rate](#frame-rate)). Not measured: a slower Mac, handheld (the output stubs scale the handheld size too; not run), the iPhone.
  
@@ -116,10 +116,10 @@ index 80a673377f648792e773cab8f46e4dc0a7f916c7..7a87b3e346d57c64f624610e513cf2ed
  
  # A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index e66b18700d562978975a02179b881196de352e78..decdffcc2b9410322db9e7365604d909c988de2f 100644
+index 6031b3c2b48a3e92617f4322f7a038add3268c35..d14cdd967147e5983074d9b231ad4ea24ca79cff 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -40,6 +40,7 @@ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and
+@@ -42,6 +42,7 @@ DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
  DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
  DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
  DM_SCREEN_WIDE	choice	0=16:9 (Switch),16x10=16:10?platform:mac,auto=Auto (match the screen)?platform:mac	0|auto	fixups:SCREEN_WIDE	Game	Aspect ratio	Fills a 16:10 or ultrawide screen instead of showing bars: Auto matches the screen the game opens on. 16:10 shows a little less at the sides, wider screens more.
@@ -128,10 +128,10 @@ index e66b18700d562978975a02179b881196de352e78..decdffcc2b9410322db9e7365604d909
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index 87ec991fb314eb3449607d32eb23c7859c49700b..9524c923799bc87e99e913888af944c230eac6a8 100644
+index 380a7080e6842314e8f84e6fb89dcd2740b37abe..04a309d14a7086fae126a47dc1197e80f92b2868 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
-@@ -358,6 +358,12 @@ void dm_fps_state_apply(void) {
+@@ -394,6 +394,12 @@ void dm_fps_state_apply(void) {
      memcpy(dm_fps_state + 0x40, &dyn, sizeof dyn);
      // A full model heap (Ocarina of Time's patches.py heap_retry): DM_HEAP_RETRY=0 writes 1 at +0x17c, and the game's allocations that found their heap full stay as shipped
      { const char *hr = getenv("DM_HEAP_RETRY"); if (hr && !strcmp(hr, "0")) { uint32_t off = 1; memcpy(dm_fps_state + 0x17c, &off, 4); LOG("%s: full model heap retry off (DM_HEAP_RETRY=0)", g_fps_mod); } }
@@ -145,10 +145,10 @@ index 87ec991fb314eb3449607d32eb23c7859c49700b..9524c923799bc87e99e913888af944c2
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index 7baff3f4dffe3644bc4989bab21b0531aaa715e7..b4e4b64ab15c7231ec6cdfa4e8e4f2ac94d45455 100644
+index 4c8bdc2da58c9c41ae9b23105605e56bb47663bf..541c5b35b63471b71c0353bf5c29d93069230fae 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
-@@ -83,7 +83,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -86,7 +86,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  | [Taiko Risshiden V DX](#taiko-risshiden-v-dx) | 1 | 0 | 0 | 2 | 0 | `game` |
  | [The Legend of Zelda: Breath of the Wild](#the-legend-of-zelda-breath-of-the-wild) | 7 | 0 | 43 | 0 | 0 | `build` → `game` ×2 |
  | [The Legend of Zelda: Link's Awakening](#the-legend-of-zelda-links-awakening) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
@@ -157,7 +157,7 @@ index 7baff3f4dffe3644bc4989bab21b0531aaa715e7..b4e4b64ab15c7231ec6cdfa4e8e4f2ac
  | [The Legend of Zelda: Tears of the Kingdom](#the-legend-of-zelda-tears-of-the-kingdom) | 0 | 0 | 9 | 0 | 0 | `game` |
  | [Xenoblade Chronicles 3](#xenoblade-chronicles-3) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
  | [Xenoblade Chronicles X: Definitive Edition](#xenoblade-chronicles-x-definitive-edition) | 6 | 0 | 1 | 1 | 0 | `game` ×2 |
-@@ -597,11 +597,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -624,11 +624,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  - **`game`**, frame rate, at goal, checked: v131072 main: one function with this fingerprint, the site and its free registers read by disassembly (2026-11-08): frame ratio from the host's step. The game's own frame-ratio division, found by its function's fingerprint on any build that keeps the function
  - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
  - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen's edges and the scene at 16:9's proportions with more at the sides (2026-11-12): wide screen: the swap chain and frame buffer sizes and the scene cameras' aspect (DM_SCREEN_WIDE). The game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)
@@ -172,10 +172,10 @@ index 7baff3f4dffe3644bc4989bab21b0531aaa715e7..b4e4b64ab15c7231ec6cdfa4e8e4f2ac
  ### The Legend of Zelda: Tears of the Kingdom
  
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index d67bc121efcf2900f1cc71ee013d1856b434e17b..9257eb69762ceac7f7ed94d70c90f5fd114abfa3 100644
+index 12a4d71fb6ca46069a710d6e6de1c083dc45904e..6ab75b5f147abc9e53918a1eb63455c961c7cab6 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -45,6 +45,7 @@ DM_EXFAT_DIR	test	`=<folder on an exFAT volume>`: `test_shader_cache.py` (`Renum
+@@ -50,6 +50,7 @@ DM_EXFAT_DIR	test	`=<folder on an exFAT volume>`: `test_shader_cache.py` (`Renum
  DM_FD_LOG	diagnostic	`=<seconds>` logs, every that many seconds, the number and kinds of file descriptors the process has open
  DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
  DM_FOCUS_KEEP	switch	`1` keeps the game in focus while its Mac window is up, whichever app is active (minimizing still counts); `scripts/regress.py` sets it, so another app taking the key window during a run does not pause a game that stops out of focus
@@ -184,7 +184,7 @@ index d67bc121efcf2900f1cc71ee013d1856b434e17b..9257eb69762ceac7f7ed94d70c90f5fd
  DM_FORCE_STRICT	diagnostic	`=1` makes the loader fail on forced-hook entries no module references, instead of only noting them (for checking a mistyped list)
  DM_FPS	switch	`30` or `60` pins the frame rate the display link and frame pacing aim for; otherwise it follows the game's present interval (60, or 30 when the game asks for 30)
 diff --git a/docs/settings.md b/docs/settings.md
-index 7188a42d6d87cc83c7e5af3496975bfbffc1c473..482300559aff3b403cd3a7358cd5074cebee09c7 100644
+index 6068131ec2c478b4120b37f60be81d0298d75d6d..1faf7c6d338931f3e4e79f99559926c8b0897ca2 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -94,6 +94,10 @@ Games whose profile supports it (Breath of the Wild, Animal Crossing: New Horizo
