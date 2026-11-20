@@ -297,7 +297,7 @@ final class AppModel {
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
                 self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
-                self?.rescanIfFolderChanged()   // games filed into the games folder while NXForge was in the back
+                if self?.settings.folderCheck != .manual { self?.rescanIfFolderChanged() }   // games filed into the games folder while NXForge was in the back
                 if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { self?.backUpDataIfDue() }
                 guard let self, self.fixPending, !self.checking else { return }
                 self.fixPending = false

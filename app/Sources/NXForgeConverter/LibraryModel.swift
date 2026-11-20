@@ -110,16 +110,18 @@ extension AppModel {
         }
     }
 
-    /// how often the games folder is looked at for new games, in front or not
-    static let folderCheckEvery: Double = 600
-
-    /// Looks at the games folder every 10 minutes, and each time NXForge comes to the front.
+    /// Looks at the games folder as often as Settings › Library says (every 10 minutes unless changed), in front or not.
+    /// Coming to the front looks too (Model.swift), unless it is set to Manual.
     func watchGamesFolder() {
         guard ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
         Task { @MainActor [weak self] in
+            var last = Date()
             while true {
-                try? await Task.sleep(for: .seconds(Self.folderCheckEvery))
+                // a short tick, so a change of the setting takes hold within a minute
+                try? await Task.sleep(for: .seconds(30))
                 guard let self else { return }
+                guard let every = self.settings.folderCheck.seconds, Date().timeIntervalSince(last) >= every else { continue }
+                last = Date()
                 self.rescanIfFolderChanged()
             }
         }

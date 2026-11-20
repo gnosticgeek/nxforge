@@ -2236,4 +2236,13 @@ import Testing
         #expect(!StageSettings.matches("keys folder", "Keys file (prod.keys)"))
         #expect(StageSettings.matches("  ", "anything"))
     }
+
+    @Test func theFolderCheckIsKeptAndOldSettingsGetTenMinutes() throws {
+        var s = Settings()
+        #expect(s.folderCheck == .ten)
+        s.folderCheck = .manual
+        #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).folderCheck == .manual)
+        #expect(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)).folderCheck == .ten)
+        #expect(FolderCheck.manual.seconds == nil && FolderCheck.hour.seconds == 3600)
+    }
 }

@@ -294,6 +294,7 @@ extension AppModel {
         case .firstPlayOptions: flip(&settings.firstPlayOptions)
         case .batteryPreset: flip(&settings.batteryPreset)
         case .localShaders: flip(&settings.localShaders)
+        case .folderCheck: cycle(&settings.folderCheck)
         case .squareCovers: flip(&settings.squareCovers)
         case .groupByConsole: flip(&settings.libraryGroupByConsole)
         case .downloadCovers: flip(&settings.downloadCovers)

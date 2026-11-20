@@ -46,7 +46,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 enum StageSettingRow: Int, CaseIterable {
     case startIn, returnToLibrary, sessionRecap, lightWhilePlaying
     case straightPlay, firstPlayOptions, batteryPreset, localShaders
-    case squareCovers, groupByConsole
+    case folderCheck, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
     case theatreTheme, theatreOnTV, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreMusic, theatreTimeOfDay
     case cloudSaves, snapshotAfterPlay, saveBackupPush
@@ -57,7 +57,7 @@ enum StageSettingRow: Int, CaseIterable {
         switch self {
         case .startIn, .returnToLibrary, .sessionRecap, .lightWhilePlaying: .general
         case .straightPlay, .firstPlayOptions, .batteryPreset, .localShaders: .playing
-        case .squareCovers, .groupByConsole: .library
+        case .folderCheck, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
         case .theatreTheme, .theatreOnTV, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreMusic, .theatreTimeOfDay: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
@@ -395,10 +395,13 @@ struct StageSettings: View {
 
     var library: [SettingsGroup] {
         let folder: [SettingsRowSpec] = [
-            row("Games folder", "Searched, with every folder inside it, for your games. NXForge looks again each time it comes to the front and once a minute while it is in front; Refresh scans it now.") {
+            row("Games folder", "Searched, with every folder inside it, for your games. Refresh scans it now, as the top bar's button does.") {
                 path(model.settings.gamesRoot?.tildePath, none: "Not chosen", width: 200)
                 button(model.settings.gamesRoot == nil ? "Choose…" : "Change…") { model.chooseGamesRoot() }.disabled(model.libraryScanning)
                 button(model.libraryScanning ? "Refreshing…" : "Refresh") { model.scanLibrary() }.disabled(model.libraryScanning || model.settings.gamesRoot == nil)
+            },
+            row("Look for new games", "How often NXForge looks at the games folder, in front or not, and scans when a game was added or removed. It also looks each time it comes to the front. Manual leaves it to Refresh.", .folderCheck) {
+                segmented($model.settings.folderCheck, FolderCheck.allCases, width: 290) { $0.rawValue }
             },
         ]
         let look: [SettingsRowSpec] = [
