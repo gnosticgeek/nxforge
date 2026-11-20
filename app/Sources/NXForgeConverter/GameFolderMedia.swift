@@ -87,6 +87,8 @@ enum GameFolderMedia {
         add("title", it.title)
         add("title_id", it.titleID)
         add("console", it.console)
+        // NXForge's genres for it: its file's in the game library (library/<title ID>/game.md), else the store's
+        list("genres", Genres.shown(titleID: it.titleID, store: it.store?.genres ?? []), 0)
         add("version", it.version)
         if let u = it.newestUpdate { num("update_version", Int(clamping: u)) }
         add("publisher", it.publisher ?? it.store?.publisher)
@@ -168,10 +170,11 @@ enum GameFolderMedia {
         if let t = it.titleID { facts.append(("Title ID", "`\(t)`")) }
         facts.append(("Console", it.console))
         if let v = it.version { facts.append(("Version", v)) }
+        let genres = Genres.shown(titleID: it.titleID, store: it.store?.genres ?? [])
+        if !genres.isEmpty { facts.append(("Genres", genres.joined(separator: ", "))) }
         if let p = it.publisher ?? it.store?.publisher { facts.append(("Publisher", p)) }
         if let s = it.store {
             if let r = s.released { facts.append(("Released", r)) }
-            if !s.genres.isEmpty { facts.append(("Genres", s.genres.joined(separator: ", "))) }
             if let p = s.players { facts.append(("Players", p)) }
             if let r = s.rating { facts.append(("Age rating", r)) }
             if let z = s.size { facts.append(("Size", z)) }

@@ -268,7 +268,7 @@ struct GameHeroColumn: View {
     /// "Action, Adventure  ·  1 player  ·  PEGI 7  ·  227 MB": the store's genres, players, rating and size, with the same dots as the line above
     var storeLine: String {
         guard let info else { return "" }
-        let genres = info.genres.prefix(2).joined(separator: ", ")
+        let genres = Genres.shown(titleID: game.titleID, store: info.genres).prefix(2).joined(separator: ", ")
         let size = info.size.map { $0.replacingOccurrences(of: ".0 ", with: " ") }
         return [genres.isEmpty ? nil : genres, info.players, info.rating, size].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "  ·  ")
     }

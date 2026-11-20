@@ -6,11 +6,50 @@ so each can be shared, reviewed and switched on its own.
 ```
 library/
   010019401051C000/            Mario Strikers: Battle League
+    game.md                    its title and genres
     enhancements/
       steady-60-full-screen.md
     cheats/
       2E90F0815B1F92A1.md      the cheats for one build, in the same format as a game folder's cheats/<build ID>.md
 ```
+
+## Genres
+
+Each game's genres are in `library/<title ID>/game.md`. The app bundles these files and uses them for Discover, Theatre and the game
+page; a game without one falls back to the genres on its Nintendo store page.
+
+```markdown
+---
+nxforge_game: 1
+title: "Cuphead"
+title_id: "0100A5C00D162000"
+genres:
+  - "Run and gun"
+  - "Action"
+---
+```
+
+List the most fitting genre first. A sub-genre counts under its genre too, so `Golf` alone puts a game under Sports and Golf. The
+genres and their sub-genres (`Genres.tree` in `app/Sources/NXForgeConverter/Genres.swift`):
+
+| Genre | Sub-genres |
+|---|---|
+| Action | |
+| Run and gun | |
+| Beat 'em up | |
+| Platformer | 2D platformer, 3D platformer, Metroidvania |
+| Adventure | |
+| RPG | Action RPG, Turn-based RPG |
+| Shooter | Shoot 'em up, First-person shooter |
+| Fighting | Platform fighter |
+| Racing | Kart racing, Arcade racing |
+| Sports | Football, Golf, Baseball, Tennis, Basketball, Multi-sport |
+| Puzzle, Strategy, Party | |
+| Music | Rhythm |
+| Arcade | Retro collection |
+| Simulation, Board game, Lifestyle | |
+
+`scripts/library.py check` refuses a genre not in that list.
 
 ## Enhancements
 

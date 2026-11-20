@@ -381,7 +381,7 @@ extension AppModel {
             out.append(TheatreFact(text: "Played " + f.localizedString(for: l, relativeTo: Date()), symbol: "clock.arrow.circlepath"))
         }
         let info = StoreInfoStore.shared.info(g.coverKey)
-        if let genre = (info?.genres ?? []).first ?? discover.genres(of: g).first { out.append(TheatreFact(text: genre, symbol: "tag")) }
+        if let genre = Genres.shown(titleID: g.titleID, store: info?.genres ?? []).first ?? discover.genres(of: g).first { out.append(TheatreFact(text: genre, symbol: "tag")) }
         if let p = info?.players { out.append(TheatreFact(text: p, symbol: (info?.playersTo ?? 1) > 1 ? "person.2.fill" : "person.fill")) }
         if let b = g.game?.bytes, b > 0 { out.append(TheatreFact(text: Disk.gb(b), symbol: "internaldrive")) }
         let st = status(g)

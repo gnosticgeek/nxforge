@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.47.3 (2026-11-20)
+
+- **Run and gun, Beat 'em up, and sub-genres on Discover** (Converter 0.21.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): NXForge has its own genre list now, with sub-genres under some genres (Sports › Football, Golf, Baseball; Platformer › 2D, 3D, Metroidvania; Shooter › Shoot 'em up, First-person shooter; Racing › Kart, Arcade; and more). Discover lists the genres, and choosing one with sub-genres opens them under it. Each game's genres come from its own Markdown file in the game library, `library/<title ID>/game.md` (bundled in the app), else from Nintendo's store as before; 83 games have one so far. No game rebuild needed.
+
 ## 0.47.2 (2026-11-20)
 
 - **Saves in the top bar, with Cloud saves for every game** (Converter 0.21.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Saves page moves out of the converter's pages to the top bar, beside Home and Discover. One switch at its top syncs every game's save through one folder (iCloud Drive › NXForge Saves unless you choose another), using the engine's own Cloud saves; each game's row says where it syncs, what the cloud copy is and how many quick-save slots it has. No game rebuild needed for this.

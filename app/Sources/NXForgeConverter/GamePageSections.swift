@@ -267,8 +267,9 @@ struct GameAbout: View {
 
     /// The facts the store gives, in the mock-up's order; with extra, the ones More details adds
     func rows(extra: Bool) -> [(String, String)] {
+        let genres = Genres.shown(titleID: game.titleID, store: info.genres)
         var r: [(String, String?)] = [("Publisher", info.publisher), ("Released", Self.date(info.released)), ("Players", players),
-                                      ("Rating", info.rating), ("Size", info.size), ("Genres", info.genres.isEmpty ? nil : info.genres.prefix(3).joined(separator: " · "))]
+                                      ("Rating", info.rating), ("Size", info.size), ("Genres", genres.isEmpty ? nil : genres.prefix(3).joined(separator: " · "))]
         if extra { r += [("Play modes", info.modes.isEmpty ? nil : info.modes.joined(separator: " · ")), ("Languages", StoreInfo.languageList(info.languages))] }
         return r.compactMap { k, v in v.map { (k, $0) } }
     }
