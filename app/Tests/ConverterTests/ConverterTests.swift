@@ -1127,12 +1127,40 @@ import Testing
         #expect(m.console == "Switch 2" && m.title == "Mario Kart World")
         // the shortest title's genres win (a Switch 2 Edition shares the ID); no store page or no genre = Other
         let map = DiscoverSource.genreMap(page.items)
-        #expect(DiscoverSource.genres(of: "0100a3d008c5c000", in: map) == ["Adventure", "RPG"])
-        #expect(DiscoverSource.genres(of: "0100000000010000", in: map) == [DiscoverSource.other])
-        #expect(DiscoverSource.genres(of: nil, in: map) == [DiscoverSource.other])
+        #expect(DiscoverSource.genres(of: "0100a3d008c5c000", in: map, book: [:]) == ["Adventure", "RPG"])
+        #expect(DiscoverSource.genres(of: "0100000000010000", in: map, book: [:]) == [DiscoverSource.other])
+        #expect(DiscoverSource.genres(of: nil, in: map, book: [:]) == [DiscoverSource.other])
         #expect(DiscoverSource.order(["Other", "RPG", "Education", "Action"]) == ["Action", "RPG", "Education", "Other"])
         #expect(DiscoverSource.byIDs(["0100A3D008C5C000", "bad"])!.absoluteString.contains("0100a3d008c5c000"))
         #expect(DiscoverState.plural("Platformer") == "Platformers")
+    }
+
+    @Test func genresAndSubGenres() {
+        // a sub-genre counts under its genre; the store's names come into ours; order follows the tree, unknown ones after
+        #expect(Genres.expand(["Golf", "Party"]) == ["Sports", "Golf", "Party"])
+        #expect(Genres.expand(["First-Person Shooter", "Action", "Education"]) == ["Action", "Shooter", "First-person shooter", "Education"])
+        #expect(Genres.expand(["Run and gun"]) == ["Run and gun"])
+        // the library's genres win over the store's
+        let map = ["0100A5C00D162000": ["Action", "Arcade", "Platformer", "Shooter"], "0100779004172000": ["Adventure", "Golf", "RPG", "Sports"]]
+        let book = ["0100A5C00D162000": ["Run and gun", "Action"]]
+        #expect(DiscoverSource.genres(of: "0100a5c00d162000", in: map, book: book) == ["Action", "Run and gun"])
+        #expect(DiscoverSource.genres(of: "0100779004172000", in: map, book: book) == ["Adventure", "RPG", "Sports", "Golf"])
+        // Discover lists the genres; a genre's sub-genres only those with a game
+        let found: Set<String> = ["Sports", "Golf", "Football", "Run and gun", "Other"]
+        #expect(DiscoverSource.order(found) == ["Run and gun", "Sports", "Other"])
+        #expect(DiscoverSource.subs(of: "Sports", found) == ["Football", "Golf"])
+        #expect(Genres.plural("Beat 'em up") == "Beat 'em ups" && Genres.plural("Turn-based RPG") == "Turn-based RPGs" && Genres.plural("Golf") == "Golf")
+        // a library file
+        let e = Genres.entry("---\nnxforge_game: 1\ntitle: \"Cuphead\"\ntitle_id: \"0100a5c00d162000\"\ngenres:\n  - \"Run and gun\"\n  - \"Action\"\n---\n# Cuphead\n")
+        #expect(e == Genres.Entry(titleID: "0100A5C00D162000", title: "Cuphead", genres: ["Run and gun", "Action"]))
+        #expect(Genres.entry("---\ntitle_id: \"0100A5C00D162000\"\n---\n") == nil)
+        // every file in the repository's library reads, with genres NXForge knows
+        let lib = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "../../../library").standardized
+        let all = Genres.read(library: lib)
+        #expect(all.count >= 80)
+        let known = Set(Genres.tree.flatMap { [$0.genre] + $0.subs })
+        #expect(all.values.allSatisfy { $0.allSatisfy(known.contains) })
+        #expect(all["0100FE701475A000"] == ["Beat 'em up"])
     }
 
     @Test func squareArtLookup() {

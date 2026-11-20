@@ -3,7 +3,8 @@
 
   library.py collect GAMES_FOLDER [--library DIR]   copy each game folder's enhancements/*.md and cheats/*.md into the library,
                                                     by the title ID in each file, switched off; prints what it added or changed
-  library.py check [--library DIR]                  check every file: front matter, title ID folder, at least one block
+  library.py check [--library DIR]                  check every file: front matter, title ID folder, at least one block;
+                                                    each game.md's genres are NXForge's (app/.../Genres.swift)
 """
 from __future__ import annotations
 
@@ -76,8 +77,46 @@ def collect(games: Path, library: Path) -> list[str]:
     return done
 
 
+def known_genres() -> set[str]:
+    """Every genre and sub-genre in Genres.tree, read from the app's source."""
+    src = (REPO / 'app/Sources/NXForgeConverter/Genres.swift').read_text(encoding='utf-8')
+    tree = src.split('static let tree', 1)[1].split('\n    ]', 1)[0]
+    return {m.replace("\\'", "'") for m in re.findall(r'"((?:[^"\\]|\\.)*)"', tree)}
+
+
+def genres(text: str) -> list[str]:
+    """The genres: list of a game.md's front matter."""
+    out, inside = [], False
+    for line in text.split('\n')[1:]:
+        if line.strip() == '---':
+            break
+        if line.startswith('genres:'):
+            inside = True
+        elif inside and line.strip().startswith('- '):
+            v = line.strip()[2:].strip()
+            out.append(v[1:-1] if len(v) >= 2 and v[0] == v[-1] == '"' else v)
+        elif inside and line.strip():
+            inside = False
+    return out
+
+
 def check(library: Path) -> list[str]:
     bad = []
+    known = known_genres()
+    for f in sorted(library.glob('*/game.md')):
+        rel = f.relative_to(library)
+        text = f.read_text(encoding='utf-8')
+        fm = front_matter(text)
+        if fm is None or 'nxforge_game' not in fm:
+            bad.append(f'{rel}: no nxforge_game front matter')
+        elif fm.get('title_id', '').upper() != rel.parts[0].upper():
+            bad.append(f'{rel}: title_id {fm.get("title_id")!r} is not the folder\'s')
+        g = genres(text)
+        if not g:
+            bad.append(f'{rel}: no genres')
+        for x in g:
+            if x not in known:
+                bad.append(f'{rel}: {x!r} is not one of NXForge\'s genres (Genres.swift)')
     for f in sorted(library.glob('*/*/*.md')):
         rel = f.relative_to(library)
         tid, folder = rel.parts[0], rel.parts[1]
