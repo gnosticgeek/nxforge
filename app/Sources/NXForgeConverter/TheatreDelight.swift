@@ -525,7 +525,8 @@ struct TheatreMomentCard: View {
         let tint = g.map { CoverArt.tint($0) } ?? .white
         ZStack(alignment: .top) {
             if moment.spotlight, let x = beamX { beam(x: x, tint: tint) }
-            if let g { card(g, tint: tint).padding(.top, 128 * u) }
+            // over the top bar for its moment, clear of the covers below it
+            if let g { card(g, tint: tint).padding(.top, 16 * u) }
         }
         .frame(width: width, height: height, alignment: .top)
         .opacity(shown ? 1 : 0)
