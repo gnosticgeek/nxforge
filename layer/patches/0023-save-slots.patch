@@ -44,7 +44,7 @@ index 19524bbdb9b5e443d48bd28edde92af51814ae71..df4f8a44f8baf9de6c7e55f6c16afcd7
          restart_choices();
      }
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 589a1e43a88e0ab08a3fd9ceaf74d61cb2e77d01..4f0210e7bf830a3c25388fde3b319360b0502d0d 100755
+index b82104f74a636ef7b8eded25697ffa63f9a40b05..4f94ed9f4ae8ee1b093fc92fd552c68239d00733 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
 @@ -423,7 +423,7 @@ def pack(a):

@@ -7,7 +7,7 @@ Subject: packing: Packing: converter support in build_ipa_from_nsp,
 ---
  dm/ios/tools/build_ipa.sh                |   4 +-
  dm/ios/tools/gen_build.py                |   2 +-
- dm/mac/pack_app.py                       |  39 +-
+ dm/mac/pack_app.py                       |  42 ++-
  dm/tools/nso_syms.py                     |   1 +
  dm/tools/romfs_image.py                  |   8 +-
  dm/tools/sdk_patches.py                  |  10 +
@@ -22,7 +22,7 @@ Subject: packing: Packing: converter support in build_ipa_from_nsp,
  dm/tools/tests/test_romfs_image.py       |  15 +
  scripts/build_ipa_from_nsp.py            | 454 ++++++++++++++++++++---
  scripts/pack_dump.py                     |  11 +-
- 17 files changed, 760 insertions(+), 85 deletions(-)
+ 17 files changed, 763 insertions(+), 85 deletions(-)
  create mode 100644 dm/tools/tests/test_nsp_dlc_folder.py
 
 diff --git a/dm/ios/tools/build_ipa.sh b/dm/ios/tools/build_ipa.sh
@@ -61,7 +61,7 @@ index f1e7db48e58ae6a813fe3eb5a562364d7902905b..2ff043a5b3d5650957e02d0095228959
  if mac_only: print('gen_build: not in the iOS SDK, left out of the link: ' + ' '.join(mac_only), file=sys.stderr)
  print('DM_FRAMEWORKS = ' + ' '.join(f'-framework {f}' for f in fws if f not in mac_only))
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 134682b95af5d553319d82f8634cdd68be634e55..589a1e43a88e0ab08a3fd9ceaf74d61cb2e77d01 100755
+index 134682b95af5d553319d82f8634cdd68be634e55..b82104f74a636ef7b8eded25697ffa63f9a40b05 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
 @@ -92,7 +92,7 @@ def min_os(host):   # the host's deployment target (LC_BUILD_VERSION minos): the
@@ -110,7 +110,7 @@ index 134682b95af5d553319d82f8634cdd68be634e55..589a1e43a88e0ab08a3fd9ceaf74d61c
      out = Path(a.out).resolve()
      if out.suffix != '.app': raise SystemExit(f'the output must end in .app: {out}')
      key_file, set_aside = out.with_name(out.name + '.key'), out.with_name(out.name + '.key.replaced')
-@@ -422,20 +429,25 @@ def pack(a):
+@@ -422,20 +429,28 @@ def pack(a):
              rows = inventory(Path(p))
              return [['.', *as_packed([p, *rows[0][1:]], last.get(p), moved)[1:]]] if Path(p).is_file() and len(rows) == 1 else rows
          romfs_rows = tree(a.romfs)
@@ -123,7 +123,9 @@ index 134682b95af5d553319d82f8634cdd68be634e55..589a1e43a88e0ab08a3fd9ceaf74d61c
          key = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 -        if out.is_dir() and isinstance(previous, dict) and previous.get('inputs') == key and isinstance(previous.get('app'), list):
 +        same = out.is_dir() and isinstance(previous, dict) and previous.get('inputs') == key and isinstance(previous.get('app'), list)
++        now = None
 +        if same:
++            assert isinstance(previous, dict)
              now = inventory(out)
              rows = lambda inv: {r[0]: r[1:] for r in inv if isinstance(r, list) and r and isinstance(r[0], str)}
 -            if previous['app'] == now or (len(rows(previous['app'])) == len(previous['app']) and as_recorded(rows(previous['app']), rows(now), out, previous.get('seals'))):
@@ -136,6 +138,7 @@ index 134682b95af5d553319d82f8634cdd68be634e55..589a1e43a88e0ab08a3fd9ceaf74d61c
 +            print(f'app: {out}, ' + ('would be reused' if same else 'would be packed again'), flush=True)
 +            return 0 if same else 3
 +        if same:
++            assert isinstance(previous, dict)
 +            if previous['app'] != now or any(last[k].get('ctime') != v for k, v in moved.items()):   # change times macOS moved (see Data bundles, as_packed), the bytes as packed: recorded, so that the next pack reads none of them again
 +                with contextlib.suppress(OSError): write_key(key_file, dict(previous, app=now, sources={k: dict(v, ctime=moved[k]) if k in moved else v for k, v in last.items()}))
 +            print(f'app: {out}, reused (inputs unchanged)', flush=True)
@@ -143,7 +146,7 @@ index 134682b95af5d553319d82f8634cdd68be634e55..589a1e43a88e0ab08a3fd9ceaf74d61c
      except BaseException:
          aside(); key_file.unlink(missing_ok=True)
          raise
-@@ -475,7 +487,7 @@ def pack(a):
+@@ -475,7 +490,7 @@ def pack(a):
          data[name] = hashlib.sha256(json.dumps(common + [name, top, inputs], sort_keys=True).encode()).hexdigest()
          if data_reused(old_app, previous, name, data[name], b): step(f'{label} (reused, signed)')
          else:
@@ -152,7 +155,7 @@ index 134682b95af5d553319d82f8634cdd68be634e55..589a1e43a88e0ab08a3fd9ceaf74d61c
              fill(b / 'Contents/Resources' / top); fresh.append(b)
          link.parent.mkdir(parents=True, exist_ok=True); link.symlink_to(os.path.relpath(b / 'Contents/Resources' / top, link.parent))
      image = msls[0] if is_chain_library(msl) and len(msls) == 1 and msls[0].suffix == '.img' else None   # an NVN game's library as one file: the app's is another file, cut from it
-@@ -565,8 +577,9 @@ def parse(argv):
+@@ -565,8 +580,9 @@ def parse(argv):
      ap.add_argument('--version'); ap.add_argument('--bundle-id'); ap.add_argument('--category'); ap.add_argument('--lang'); ap.add_argument('--marker', help='the profile\'s romfs_marker')
      ap.add_argument('--icon', help='the game icon (icon.jpg from the control data)')
      ap.add_argument('--sign', default='-', help='codesign identity (default: - = ad-hoc)')

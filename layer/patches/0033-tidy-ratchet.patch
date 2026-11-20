@@ -8,7 +8,8 @@ Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
  dm/gfx/nvn/nvn_mtl.m              | 5 ++---
  dm/gfx/tests/t_lazy_clear_order.m | 2 ++
  dm/tools/lint_c_baseline.tsv      | 4 ++--
- 3 files changed, 6 insertions(+), 5 deletions(-)
+ scripts/build_ipa_from_nsp.py     | 5 ++---
+ 4 files changed, 8 insertions(+), 8 deletions(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
 index 329c9b51c4440304d6f2b306faf25bb27383dbb5..92ef620b59baedbe3af35e7c30a315e712253bec 100644
@@ -69,3 +70,19 @@ index 24893170491048b0bc85f7044712ad2264af16d5..4e5d91ee59a5bcf8d464b736e049ef4a
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
  dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index 59ada0ab20b3bd3c3711999a49f2ca04dd8b3374..0e23f77dadee0ed531c3177febb026a30189e8af 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -1952,9 +1952,8 @@ def boot_mac(host, patched, henv, rd, log, secs, done=lambda: False, *, group=Fa
+     t0 = time.time()
+     with open(log, 'w') as f, contextlib.ExitStack() as stack:
+         args = [str(host), str(patched)]
+-        options = dict(env=henv, cwd=rd, stdout=f, stderr=subprocess.STDOUT)
+-        run_group = stack.enter_context(proc_group.Group(args, **options)) if group else None
+-        p = run_group.p if run_group else subprocess.Popen(args, **options)
++        run_group = stack.enter_context(proc_group.Group(args, env=henv, cwd=rd, stdout=f, stderr=subprocess.STDOUT)) if group else None
++        p = run_group.p if run_group else subprocess.Popen(args, env=henv, cwd=rd, stdout=f, stderr=subprocess.STDOUT)
+         try:
+             while not done() and p.poll() is None and time.time() - t0 < secs: time.sleep(0.25)
+         finally:

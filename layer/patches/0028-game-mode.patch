@@ -45,7 +45,7 @@ index df4f8a44f8baf9de6c7e55f6c16afcd751a901f4..9664f2357795c066124653df21f73057
      for (;;) {
          int err = posix_spawn(&g_child, host, NULL, NULL, host_argv, environ);
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 4f0210e7bf830a3c25388fde3b319360b0502d0d..fd4b927eff8dcd8eb7aa28078b9ac451c1181858 100755
+index 4f94ed9f4ae8ee1b093fc92fd552c68239d00733..fa27ed4e656c0b5177ee355a9fb02f78aaa9151b 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
 @@ -130,6 +130,9 @@ def info_plist(a, minos, icon):
