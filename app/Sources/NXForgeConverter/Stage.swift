@@ -1556,7 +1556,19 @@ struct StageSettings: View {
                     .pickerStyle(.segmented).labelsHidden().frame(width: 240)
             }
             toggle("Sounds", $model.settings.theatreSounds, row: .theatreSounds)
-            toggle("Game music (music.m4a or .mp3 in its media folder)", $model.settings.theatreMusic, row: .theatreMusic)
+            toggle("Music (a folder's, and a game's own)", $model.settings.theatreMusic, row: .theatreMusic)
+            row("Music folder (MP3 or Opus)") {
+                HStack(spacing: 8) {
+                    if let f = model.settings.theatreMusicFolder {
+                        Text(f.tildePath).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1).truncationMode(.middle).frame(maxWidth: 200, alignment: .trailing)
+                        Button("Clear") { model.settings.theatreMusicFolder = nil }.buttonStyle(StageButton(height: 32))
+                    }
+                    Button(model.settings.theatreMusicFolder == nil ? "Choose…" : "Change…") {
+                        if let f = model.choose(folder: true, start: model.settings.theatreMusicFolder) { model.settings.theatreMusicFolder = f }
+                    }
+                    .buttonStyle(StageButton(height: 32))
+                }
+            }
             toggle("Light follows the time of day", $model.settings.theatreTimeOfDay, row: .theatreTimeOfDay)
         }
         group(.building) {

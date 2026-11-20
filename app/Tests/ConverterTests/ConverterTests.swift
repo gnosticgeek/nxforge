@@ -1995,13 +1995,41 @@ import Testing
         #expect(abs(s.first!) < 0.05 && abs(s.last!) < 0.05)
     }
 
+    @Test func galleryAndShelfBecomeTheFan() throws {
+        for (saved, theme) in [("Gallery", TheatreTheme.fan), ("Shelf", .fan), ("Fan", .fan), ("Cinema", .cinema), ("rubbish", .carousel)] {
+            #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
+        }
+        #expect(!TheatreTheme.allCases.map(\.rawValue).contains("Gallery"))
+    }
+
+    @Test func fanDrawsTheBoxesNearTheFront() {
+        #expect(FanLayout.shown(index: 0, count: 0) == nil)
+        #expect(FanLayout.shown(index: 0, count: 30) == 0...8)
+        #expect(FanLayout.shown(index: 15, count: 30) == 7...23)
+        #expect(FanLayout.shown(index: 2, count: 3) == 0...2)
+        #expect(FanLayout.angle(-2) == -15 && FanLayout.angle(0) == 0)
+        #expect(FanLayout.light(0) == 1 && FanLayout.light(3) < FanLayout.light(1))
+        #expect(FanLayout.opacity(FanLayout.reach) == 0 && FanLayout.opacity(1) == 1)
+    }
+
+    @Test func musicFolderFindsMP3AndOpusInsideIt() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxf-music-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir.appending(path: "Album"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for f in ["a.mp3", "Album/b.opus", "Album/c.OPUS", "cover.jpg", ".hidden.mp3", "notes.txt"] {
+            try Data([0]).write(to: dir.appending(path: f))
+        }
+        let names = Set(TheatreMusic.tracks(in: dir).map(\.lastPathComponent))
+        #expect(names == ["a.mp3", "b.opus", "c.OPUS"])
+    }
+
     @Test func delightSettingsDefaultOnAndReadBack() throws {
         let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
         #expect(old.theatreSounds && old.theatreMusic && old.theatreTimeOfDay && old.theatreSeen == nil)
         var s = Settings()
-        s.theatreSounds = false; s.theatreMusic = false; s.theatreTimeOfDay = false; s.theatreSeen = ["a", "b"]
+        s.theatreSounds = false; s.theatreMusic = false; s.theatreTimeOfDay = false; s.theatreSeen = ["a", "b"]; s.theatreMusicFolder = "/Music/Theatre"
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
-        #expect(!back.theatreSounds && !back.theatreMusic && !back.theatreTimeOfDay && back.theatreSeen == ["a", "b"])
+        #expect(!back.theatreSounds && !back.theatreMusic && !back.theatreTimeOfDay && back.theatreSeen == ["a", "b"] && back.theatreMusicFolder == "/Music/Theatre")
     }
 }
 

@@ -2,10 +2,11 @@
 // the Theatre button in the top bar, Settings › Theatre) and NXForge offers it when a TV is plugged in while a controller is
 // connected (Settings: Ask, Always or Never). The window moves to the TV and goes full screen, the pointer hides, the Mac
 // stays awake, and leaving puts the window back where it was. Four themes show the same games: Carousel, a turning ring of the
-// real 3D boxes (TheatreCarousel), Cinema, wide art with rows under it like a TV app, Gallery, three covers on a quiet
-// ivory wall beside the game's name, and Trailer, the game's trailer over a strip of games, filling the screen when left alone. ZL and ZR switch
+// real 3D boxes (TheatreCarousel), Fan, the boxes fanned out like a hand of cards that scrolls sideways (TheatreFan.swift),
+// Cinema, wide art with rows under it like a TV app, and Trailer, the game's trailer over a strip of games, filling the screen
+// when left alone. ZL and ZR switch
 // them, L and R filter the games (All, Favourites, Recently played, each genre). A plays (Continue for a game played before), Y opens the
-// game's page, X Play options, − favourites, Menu the Theatre menu, B offers to leave; on Trailer the right stick sets the volume and its
+// game's page, X Play options, − favourites, Menu the Theatre menu, B offers to leave; the right stick turns the box in front and its
 // press mutes. Theatre reopens on the theme, filter and game it was left on, shows a game's details once the focus rests on it, takes its
 // colour from the game's art in every theme, insets the picture for a TV that crops its edges, and puts up a screensaver when left alone.
 import AppKit
@@ -15,18 +16,18 @@ import SwiftUI
 import WebKit
 
 enum TheatreTheme: String, Codable, CaseIterable {
-    case carousel = "Carousel", cinema = "Cinema", gallery = "Gallery", trailer = "Trailer"
+    case carousel = "Carousel", fan = "Fan", cinema = "Cinema", trailer = "Trailer"
 
-    /// Shelf (0.19.0 only) became Gallery
+    /// Shelf (0.19.0 only) became Gallery, and Gallery (to 0.48) became Fan: the covers side by side
     init(from decoder: Decoder) throws {
         let s = try decoder.singleValueContainer().decode(String.self)
-        self = TheatreTheme(rawValue: s) ?? (s == "Shelf" ? .gallery : .carousel)
+        self = TheatreTheme(rawValue: s) ?? (s == "Shelf" || s == "Gallery" ? .fan : .carousel)
     }
     var note: String {
         switch self {
         case .carousel: "A turning ring of your boxes"
         case .cinema: "Big art, rows like a TV app"
-        case .gallery: "Three covers on a quiet wall"
+        case .fan: "Your boxes fanned out, scrolling sideways"
         case .trailer: "The trailer fills the room"
         }
     }
@@ -34,7 +35,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         switch self {
         case .carousel: "rotate.3d"
         case .cinema: "film"
-        case .gallery: "photo.on.rectangle"
+        case .fan: "rectangle.stack"
         case .trailer: "play.rectangle"
         }
     }
@@ -135,7 +136,7 @@ struct TheatreFact: Hashable {
 
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case carousel, cinema, gallery, trailer, shuffle, edges, settings, leave
+    case carousel, fan, cinema, trailer, shuffle, edges, settings, leave
     var title: String {
         switch self {
         case .shuffle: "What Should I Play?"
@@ -149,7 +150,7 @@ enum TheatreMenuRow: Int, CaseIterable {
         switch self {
         case .carousel: .carousel
         case .cinema: .cinema
-        case .gallery: .gallery
+        case .fan: .fan
         case .trailer: .trailer
         case .shuffle, .edges, .settings, .leave: nil
         }
@@ -298,7 +299,7 @@ extension AppModel {
         theatreMoment = nil
         theatreSpinning = false
         theatreCurtain = nil
-        TheatreMusic.shared.play(nil, volume: 0)
+        TheatreMusic.shared.stop()
         rememberTheatreFocus()
         if let a = theatreActivity { ProcessInfo.processInfo.endActivity(a); theatreActivity = nil }
         guard let w = mainWindow else { return }
@@ -467,7 +468,8 @@ extension AppModel {
         // a moment's card goes at any button, which then does what it does (A plays the game the card is about)
         if theatreMoment != nil, k != .r3, k != .volUp, k != .volDown { theatreMoment = nil }
         let covered = stageSettings || viewerOpen || launching != nil || playOptions != nil || gameDetail != nil || caseViewer != nil
-        // Theatre's sound (the trailer, the game's music, the clicks): the right stick's press mutes, up and down set the volume
+        // Theatre's sound (the trailer, the game's music, the clicks): the right stick's press mutes; - and = set the volume (the
+        // stick itself only turns the box in front, so pushing it never changes the volume)
         switch k {
         case .r3: if !covered { theatreMuted.toggle(); theatreVolumeTick += 1 }; return
         case .volUp, .volDown: if !covered, theatreMenu == nil { stepTheatreVolume(k == .volUp ? 10 : -10) }; return
@@ -491,14 +493,14 @@ extension AppModel {
         if covered { stagePad(k); return }
         let focus: StageGame?
         switch theatreTheme {
-        case .carousel, .gallery, .trailer:
+        case .carousel, .fan, .trailer:
             let games = theatreTheme == .trailer ? trailerGames() : theatreGames()
             focus = theatreFocused(games)
             if k == .down, theatreTheme == .trailer { theatreWatch = true; return }
             if (k == .left || k == .right), !games.isEmpty {
                 let i = games.firstIndex { $0.id == focus?.id } ?? 0
                 theatreFocus = games[(i + (k == .left ? -1 : 1) + games.count) % games.count].id
-                if games.count > 1 { theatreCue(theatreTheme == .carousel ? .turn : .step) }
+                if games.count > 1 { theatreCue(theatreTheme == .carousel || theatreTheme == .fan ? .turn : .step) }
                 return
             }
         case .cinema:
@@ -544,7 +546,7 @@ extension AppModel {
     func pickTheatreMenu(_ r: TheatreMenuRow) {
         theatreMenu = nil
         switch r {
-        case .carousel, .cinema, .gallery, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
+        case .carousel, .fan, .cinema, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
         case .shuffle: shuffleTheatre()
         // A steps the edges round and keeps the menu up, so the corners stay in view
         case .edges:
@@ -718,17 +720,18 @@ struct TheatreView: View {
         // the focused game's music, once the focus rests on it (not on Trailer, which has its own sound)
         .task(id: musicKey) {
             let volume = model.theatreMuted ? 0 : Float(model.settings.theatreVolume) / 100 * 0.3
-            guard let id = musicGame, let g = model.stageGames().first(where: { $0.id == id }) else { TheatreMusic.shared.play(nil, volume: 0); return }
-            let url = await TheatreMusic.find(g, model: model)
+            let folder = musicOn ? model.settings.theatreMusicFolder : nil
+            var url: URL?
+            if let id = musicGame, let g = model.stageGames().first(where: { $0.id == id }) { url = await TheatreMusic.find(g, model: model) }
             guard !Task.isCancelled else { return }
-            TheatreMusic.shared.play(url, volume: volume)
+            await TheatreMusic.shared.set(game: url, folder: folder, volume: volume)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in active = true }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { active = false }
         }
         .onDisappear {
-            TheatreMusic.shared.play(nil, volume: 0)
+            TheatreMusic.shared.stop()
             TheatreSound.shared.rest()
         }
         // the volume card, for a moment after each change
@@ -779,21 +782,26 @@ struct TheatreView: View {
     }
 
     /// The game whose music plays: the one in focus once it has rested there, while Theatre is in front and quiet
+    /// Music may play: Theatre in front and quiet (not on Trailer, which has the trailer's sound, nor while a game starts or runs)
+    var musicOn: Bool {
+        model.settings.theatreMusic && model.theatreTheme != .trailer && active && model.launching == nil && model.theatreCurtain == nil
+            && !model.viewerOpen && model.playing.isEmpty && ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil
+    }
+
+    /// The game whose own music may play: the one in focus, once it has rested there
     var musicGame: String? {
-        guard model.settings.theatreMusic, model.theatreTheme != .trailer, model.theatreRested, active, !model.theatreSpinning, !model.theatreSaver,
-              model.launching == nil, model.theatreCurtain == nil, !model.viewerOpen, model.playing.isEmpty,
-              ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return nil }
+        guard musicOn, model.theatreRested, !model.theatreSpinning, !model.theatreSaver else { return nil }
         return model.theatreFocus
     }
 
-    var musicKey: String { "\(musicGame ?? "-")|\(model.theatreMuted)|\(model.settings.theatreVolume)" }
+    var musicKey: String { "\(musicOn)|\(musicGame ?? "-")|\(model.settings.theatreMusicFolder ?? "")|\(model.theatreMuted)|\(model.settings.theatreVolume)" }
 
     @ViewBuilder var stage: some View {
         switch model.theatreTheme {
         case .carousel: CarouselTheme(model: model).transition(.opacity)
         case .cinema: CinemaTheme(model: model).transition(.opacity)
         case .trailer: TrailerTheme(model: model).transition(.opacity)
-        case .gallery: GalleryTheme(model: model).transition(.opacity)
+        case .fan: FanTheme(model: model).transition(.opacity)
         }
     }
 
@@ -824,9 +832,9 @@ struct TheatreTopBar: View {
     let theme: TheatreTheme
     /// for the filter in the middle
     var model: AppModel? = nil
-    /// the words' colour: white on the dark themes, a warm near-black on Gallery's ivory wall
+    /// the words' colour (white on Theatre's dark themes)
     var ink: Color = .white
-    /// the theme's name in a capsule, or as plain words (Gallery)
+    /// the theme's name in a capsule, or as plain words
     var pill = true
     @Environment(\.tu) private var u
 
@@ -903,7 +911,7 @@ struct TheatreHints: View {
     var focus: StageGame?
     /// on a light wall: dark words, and the button symbols turned dark (PadGlyph draws them light)
     var light = false
-    /// ZL and ZR for the theme (Gallery leaves theme switching to the menu)
+    /// ZL and ZR for the theme
     var themes = true
     /// L and R for the filter
     var filters = true
@@ -999,7 +1007,7 @@ struct TheatreMenu: View {
 
     func icon(_ r: TheatreMenuRow) -> String {
         switch r {
-        case .carousel, .cinema, .gallery, .trailer: r.theme?.symbol ?? ""
+        case .carousel, .fan, .cinema, .trailer: r.theme?.symbol ?? ""
         case .shuffle: "dice"
         case .edges: "rectangle.dashed"
         case .settings: "gearshape"
@@ -1009,7 +1017,7 @@ struct TheatreMenu: View {
 
     func note(_ r: TheatreMenuRow) -> String? {
         switch r {
-        case .carousel, .cinema, .gallery, .trailer: r.theme?.note
+        case .carousel, .fan, .cinema, .trailer: r.theme?.note
         case .shuffle: "Spin the shelf and land on a game (L3)"
         case .edges: "Can you see all four corners? ← → to inset the picture"
         case .settings: nil
@@ -1581,7 +1589,6 @@ struct TrailerTheme: View {
                         Text(g.name.uppercased()).font(.system(size: 17 * u, weight: .semibold)).tracking(5 * u).lineLimit(1)
                         Spacer()
                         HStack(spacing: 8 * u) { TheatreHints(model: model).glyph("R3"); Text(model.theatreMuted ? "Sound on" : "Mute") }
-                        HStack(spacing: 8 * u) { TheatreHints(model: model).glyph("RS"); Text("Volume") }
                         HStack(spacing: 10 * u) { Image(systemName: "arrow.up"); Text("Any button: Browse") }
                     }
                     .font(.system(size: 18 * u, weight: .medium))
@@ -1654,7 +1661,6 @@ struct TrailerTheme: View {
                 if model.theatreFilters().count > 1 { HStack(spacing: 6 * u) { hints.glyph("L"); hints.glyph("R"); Text("Filter") } }
                 HStack(spacing: 6 * u) { hints.glyph("ZL"); hints.glyph("ZR"); Text("Theme") }
                 HStack(spacing: 6 * u) { hints.glyph("R3"); Text(model.theatreMuted ? "Sound on" : "Mute") }
-                HStack(spacing: 6 * u) { hints.glyph("RS"); Text("Volume") }
                 HStack(spacing: 6 * u) { hints.glyph("+"); Text("Menu") }
                 HStack(spacing: 6 * u) { hints.glyph("B"); Text("Leave") }
             }
@@ -1999,219 +2005,22 @@ extension View {
     }
 }
 
-// MARK: Gallery
+// MARK: Gallery's colours
 
-/// Three covers on a quiet ivory wall: the game in focus in the middle with a fine bronze outline and a marker under it, one
-/// neighbour either side, and its name, platform and time played on the left with the main button. Nothing moves on its own;
-/// a step slides the covers in about 0.2 s (a fade with Reduce Motion). A game with no cover shows its icon on a plain card
-/// with its name, never a made-up box. Laid out on a 1920 x 1080 canvas (u is a 1080th of the height), so a TV of another
-/// shape keeps the proportions: a narrow screen drops the neighbours before any text shrinks.
-struct GalleryTheme: View {
-    @Bindable var model: AppModel
-    @Environment(\.tu) private var u
-    @Environment(\.accessibilityReduceMotion) private var still
-
+/// The colours of the Gallery theme (0.45 to 0.48), kept for the button symbols drawn dark on a light background (PadGlyph)
+enum GalleryTheme {
     static let ivory = Color(red: 0xF3 / 255, green: 0xEE / 255, blue: 0xE5 / 255)
     static let ink = Color(red: 0x29 / 255, green: 0x25 / 255, blue: 0x1F / 255)
-    static let soft = Color(red: 0x65 / 255, green: 0x5C / 255, blue: 0x51 / 255)
-    static let bronze = Color(red: 0x93 / 255, green: 0x61 / 255, blue: 0x3F / 255)
-
-    // the covers, in 1080ths: width and centre height of the one in focus and of its neighbours, and the clear gap between
-    static let focusW: CGFloat = 312, focusMidY: CGFloat = 462
-    static let sideW: CGFloat = 245, sideMidY: CGFloat = 483
-    static let gap: CGFloat = 44
-
-    var body: some View {
-        GeometryReader { geo in content(width: geo.size.width, height: geo.size.height) }
-    }
-
-    @ViewBuilder func content(width: CGFloat, height: CGFloat) -> some View {
-        let games = model.theatreGames()
-        let focus = model.theatreFocused(games)
-        let index = games.firstIndex { $0.id == focus?.id } ?? 0
-        // the covers' own region, right of the words: x 740 to the right safe edge
-        let left = 740 * u, right = width - 96 * u
-        let roomForSides = right - left >= (Self.focusW + 2 * (Self.sideW + Self.gap)) * u
-        ZStack(alignment: .topLeading) {
-            Self.ivory.ignoresSafeArea()
-            // the game's colour, the faintest wash on the wall behind the covers
-            if let g = focus {
-                RadialGradient(colors: [CoverArt.tint(g).opacity(0.13), .clear], center: UnitPoint(x: 0.68, y: 0.44), startRadius: 0, endRadius: 760 * u)
-                    .ignoresSafeArea().allowsHitTesting(false)
-            }
-            covers(games, index: index, sides: roomForSides).frame(width: right - left, height: 640 * u).clipped()
-                .offset(x: left, y: 170 * u)
-            if let g = focus {
-                info(g).frame(width: 554 * u, alignment: .leading).offset(x: 96 * u, y: 250 * u)
-                    .id(g.id).transition(.opacity)
-            }
-            VStack(spacing: 0) {
-                TheatreTopBar(theme: .gallery, model: model, ink: Self.ink, pill: false).padding(.top, 20 * u).frame(width: width)
-                Spacer(minLength: 0)
-                foot(games, index: index, focus: focus).frame(width: width)
-            }
-            .frame(width: width, height: height)
-        }
-        .frame(width: width, height: height)
-        .animation(still ? nil : .easeOut(duration: 0.22), value: focus?.id)
-        .animation(TheatreMotion.swapAnimation, value: focus.map { CoverArt.tint($0) })
-    }
-
-    /// The name, then one short fact a line (only what is known), the status when it cannot play, and the main button
-    func info(_ g: StageGame) -> some View {
-        let st = model.status(g)
-        return VStack(alignment: .leading, spacing: 0) {
-            Rectangle().fill(Self.bronze).frame(width: 52 * u, height: 4 * u)
-            Text(g.name).font(.system(size: 78 * u, weight: .medium, design: .serif)).tracking(-1 * u)
-                .lineLimit(3).minimumScaleFactor(0.72).fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(Self.ink).padding(.top, 26 * u)
-            VStack(alignment: .leading, spacing: 12 * u) {
-                Text(g.console.rawValue)
-                if g.total > 0 { Text("\(Playtime.text(g.total)) played") }
-                if st != .ready { Label(st.text, systemImage: st.symbol).foregroundStyle(Self.bronze) }
-            }
-            .font(.system(size: 27 * u)).foregroundStyle(Self.soft).padding(.top, 22 * u)
-            TheatreDetails(model: model, game: g, ink: Self.soft, size: 19, status: false).padding(.top, 18 * u)
-            Button { model.theatrePad(.a) } label: {
-                HStack(spacing: 16 * u) {
-                    PadGlyph(text: "A", filled: true).scaleEffect(u * 1.5).frame(width: 34 * u, height: 34 * u)
-                    Text(model.theatreAction(g)).font(.system(size: 30 * u, weight: .semibold))
-                }
-                .foregroundStyle(Self.ivory)
-                .padding(.horizontal, 30 * u).frame(minWidth: 200 * u, minHeight: 64 * u, alignment: .leading)
-                .background(Self.ink, in: .rect(cornerRadius: 12 * u))
-            }
-            .buttonStyle(.plain).padding(.top, 34 * u)
-        }
-    }
-
-    /// The cover in focus in the middle of the region and one either side; one more either side waits just out of sight so
-    /// a step slides it in. A short library shows only the covers it has, with no empty places.
-    func covers(_ games: [StageGame], index: Int, sides: Bool) -> some View {
-        let n = games.count
-        var places: [Int] = []
-        if n > 0 {
-            places = [0]
-            if sides && n > 1 { places.append(1) }
-            if sides && n > 2 { places.insert(-1, at: 0) }
-            if sides && n > 3 { places.append(2) }
-            if sides && n > 4 { places.insert(-2, at: 0) }
-        }
-        return GeometryReader { geo in
-            let mid = geo.size.width / 2
-            ZStack(alignment: .topLeading) {
-                ForEach(places, id: \.self) { d in
-                    let g = games[((index + d) % n + n) % n]
-                    let w = (d == 0 ? Self.focusW : Self.sideW) * u
-                    let step = (Self.focusW / 2 + Self.gap + Self.sideW / 2) * u
-                    let x = d == 0 ? mid : mid + CGFloat(d.signum()) * (step + CGFloat(abs(d) - 1) * (Self.sideW + Self.gap) * u)
-                    let y = ((d == 0 ? Self.focusMidY : Self.sideMidY) - 170) * u
-                    GalleryCover(game: g, focused: d == 0, width: w)
-                        .position(x: x, y: y)
-                        .opacity(abs(d) > 1 ? 0 : 1)
-                        .onTapGesture { model.theatreFocus = g.id; model.theatreTouched = Date() }
-                        .help(TheatreDetails.line(model, g))
-                        .id(g.id)
-                }
-            }
-        }
-    }
-
-    func foot(_ games: [StageGame], index: Int, focus: StageGame?) -> some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center) {
-                Rectangle().fill(Self.bronze).frame(width: 4 * u, height: 34 * u)
-                Text("Your collection").font(.system(size: 32 * u, weight: .medium)).padding(.leading, 18 * u)
-                Spacer()
-                if !games.isEmpty {
-                    (Text(String(format: "%02d", index + 1)).foregroundStyle(Self.bronze) + Text(" / " + String(format: "%02d", games.count)))
-                        .font(.system(size: 36 * u, design: .serif)).monospacedDigit()
-                }
-            }
-            .frame(height: 50 * u)
-            Rectangle().fill(Self.ink.opacity(0.18)).frame(height: 1).padding(.top, 20 * u)
-            HStack { Spacer(); TheatreHints(model: model, focus: focus, light: true, themes: false, back: "Back", size: 24) }
-                .frame(height: 50 * u).padding(.top, 15 * u)
-        }
-        .foregroundStyle(Self.ink)
-        // the collection line about y 900, the buttons about y 975
-        .padding(.horizontal, 96 * u).padding(.bottom, 80 * u)
-    }
 }
 
-/// One cover in the Gallery: the real front at its own proportions, or the icon on a plain card with the name. The one in
-/// focus lifts a little and has a fine bronze outline with a gap of the wall's colour, and a marker and "Selected" under it.
-struct GalleryCover: View {
-    /// the square art read once a game (only the few covers on screen ask)
+/// A game's square store art, read once a game (Trailer's strip falls back to it)
+enum GalleryCover {
     @MainActor static var squares: [String: NSImage?] = [:]
     @MainActor static func square(_ key: String) -> NSImage? {
         if let s = squares[key] { return s }
         let img = CoverStore.file(key + "-square").flatMap { NSImage(contentsOf: $0) }
         squares[key] = .some(img)
         return img
-    }
-
-    let game: StageGame
-    let focused: Bool
-    let width: CGFloat
-    @Environment(\.tu) private var u
-
-    var body: some View {
-        let _ = CoverStore.shared.revision
-        let art = CoverStore.shared.image(game.coverKey, .front)
-        let ratio = art.map { $0.size.width > 0 && $0.size.height > 0 ? $0.size.width / $0.size.height : CoverSource.aspect } ?? CoverSource.aspect
-        let h = width / ratio
-        let corner = 6 * u
-        VStack(spacing: 0) {
-            ZStack {
-                if let art {
-                    Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-                } else {
-                    fallback(h: h)
-                }
-            }
-            .frame(width: width, height: h)
-            .clipShape(RoundedRectangle(cornerRadius: corner))
-            .shadow(color: GalleryTheme.ink.opacity(focused ? 0.16 : 0.10), radius: (focused ? 16 : 10) * u, y: (focused ? 12 : 7) * u)
-            .overlay {
-                if focused {
-                    RoundedRectangle(cornerRadius: corner + 8 * u).strokeBorder(GalleryTheme.bronze, lineWidth: 2.5 * u).padding(-8.5 * u)
-                }
-            }
-            .offset(y: focused ? -6 * u : 0)
-        }
-        .frame(width: width, height: h)
-        .overlay(alignment: .bottom) {
-            if focused {
-                VStack(spacing: 10 * u) {
-                    Rectangle().fill(GalleryTheme.bronze).frame(width: 40 * u, height: 3 * u)
-                    Text("Selected").font(.system(size: 24 * u, design: .serif)).foregroundStyle(GalleryTheme.ink)
-                }
-                .fixedSize().offset(y: 64 * u)
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(game.name + (focused ? ", selected" : ""))
-    }
-
-    /// No cover: the store's square art for the game, else its icon, sharp and no bigger than it has pixels for (a Retina point
-    /// is two pixels), on a matte card with the game's name. Never a made-up box.
-    func fallback(h: CGFloat) -> some View {
-        let art = Self.square(game.coverKey) ?? CoverArt.icon(game)
-        let px = art.map { img in img.representations.map { CGFloat($0.pixelsWide) }.max() ?? img.size.width } ?? 0
-        let side = min(width * 0.8, max(px / 2, 1))
-        return ZStack {
-            Color(red: 0.91, green: 0.88, blue: 0.83)
-            VStack(spacing: 18 * u) {
-                if let art {
-                    Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-                        .frame(width: side, height: side).clipShape(RoundedRectangle(cornerRadius: side * 0.08))
-                }
-                Text(game.name).font(.system(size: width * 0.075, weight: .medium, design: .serif)).multilineTextAlignment(.center)
-                    .foregroundStyle(GalleryTheme.ink).lineLimit(3).padding(.horizontal, width * 0.1)
-            }
-        }
-        .overlay(RoundedRectangle(cornerRadius: 6 * u).strokeBorder(GalleryTheme.ink.opacity(0.10), lineWidth: 1))
     }
 }
 
