@@ -462,7 +462,7 @@ struct StageSettings: View {
                 Slider(value: volume, in: 0...100, step: 10).frame(width: 190).tint(.white).accessibilityLabel("Theatre volume")
                 Text("\(model.settings.theatreVolume) %").font(.system(size: 12.5, weight: .medium)).monospacedDigit().foregroundStyle(StageLook.soft).frame(width: 46, alignment: .trailing)
             },
-            toggle("Sounds", "A soft tick for each step, a gentle breeze as the Carousel or Fan turns and a thunk on launch.", $model.settings.theatreSounds, .theatreSounds),
+            toggle("Sounds", "A soft tick for each step, a quiet tick as the Carousel or Fan turns and a thunk on launch.", $model.settings.theatreSounds, .theatreSounds),
             toggle("Music", "Plays your music folder in the background (not in Trailer); a game with its own music.m4a or .mp3 in its media folder plays that while it is in focus.", $model.settings.theatreMusic, .theatreMusic),
             row("Music folder", "MP3 or Opus files (and M4A, FLAC, WAV), shuffled through in turn.") {
                 path(model.settings.theatreMusicFolder?.tildePath, none: "None chosen", width: 220)

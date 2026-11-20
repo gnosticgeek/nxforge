@@ -251,7 +251,7 @@ extension AppModel {
 
 // MARK: Sound
 
-/// Theatre's sounds, made here rather than shipped as files: a soft click for a step, a whoosh as the carousel turns, a low thunk
+/// Theatre's sounds, made here rather than shipped as files: a soft click for a step, a quiet tick as the games turn, a low thunk
 /// on launch, a chime for a moment. Quiet, through one small engine that rests when Theatre closes.
 @MainActor
 final class TheatreSound {
@@ -316,8 +316,8 @@ enum TheatreSynth {
     static func gain(_ c: TheatreSound.Cue) -> Float {
         switch c {
         case .step: 0.22
-        case .turn: 0.42
-        case .theme: 0.36
+        case .turn: 0.22
+        case .theme: 0.22
         case .open: 0.22
         case .launch: 0.75
         case .chime: 0.30
@@ -331,9 +331,9 @@ enum TheatreSynth {
         case .step: tok(880, length: 0.09)
         case .spin: tok(1320, length: 0.06)
         case .open: tok(660, length: 0.12)
-        // a soft breath of air, low and rounded (0.48.2: the first whoosh was too bright and sharp), with a wooden tok under it
-        case .turn: mix(breeze(0.62, low: 140, high: 620), tok(587, length: 0.1), 0.35)
-        case .theme: breeze(0.8, low: 110, high: 480)
+        // only quiet ticks as the games turn (0.48.5: Tom wanted no whoosh or breeze at all)
+        case .turn: tok(587, length: 0.1)
+        case .theme: tok(494, length: 0.12)
         case .launch: thunk()
         case .chime: bells([1046.5, 1318.5, 1568.0, 2093.0], gap: 0.075, ring: 0.55)
         case .land: bells([783.99, 1174.66], gap: 0.1, ring: 0.7)
@@ -357,45 +357,6 @@ enum TheatreSynth {
             let v = (sin(2 * .pi * hz * t) + 0.3 * sin(2 * .pi * hz * 2.01 * t) * exp(-t / 0.008)) * exp(-t / 0.022)
             return Float(v * 0.7 * fadeIn(t, 0.002) * fadeOut(t, length, 0.02))
         }
-    }
-
-    /// air drifting past, mellow: noise through two gentle low-pass filters whose opening rises and falls, swelling in slowly
-    /// and fading out longer still
-    static func breeze(_ length: Double, low: Double, high: Double) -> [Float] {
-        var noise = Noise()
-        var a = 0.0, b = 0.0, c = 0.0
-        let n = Int(length * rate)
-        var out = [Float](repeating: 0, count: n)
-        for i in 0..<n {
-            let t = Double(i) / rate, p = t / length
-            let fc = low + (high - low) * sin(.pi * min(p * 1.3, 1))
-            let k = 1 - exp(-2 * .pi * fc / rate), kh = 1 - exp(-2 * .pi * 60 / rate)
-            a += k * (noise.next() - a)
-            b += k * (a - b)
-            c += kh * (b - c)   // the rumble under 60 Hz taken out
-            // in over the first 35 %, out over the rest
-            let env = p < 0.35 ? pow(sin(.pi / 2 * p / 0.35), 2) : pow(cos(.pi / 2 * (p - 0.35) / 0.65), 2)
-            out[i] = Float(tanh((b - c) * env * 3.5))
-        }
-        return out
-    }
-
-    /// air going past: noise through a band that opens and closes, swelling and falling away
-    static func whoosh(_ length: Double, low: Double, high: Double) -> [Float] {
-        var noise = Noise()
-        var a = 0.0, b = 0.0
-        let n = Int(length * rate)
-        var out = [Float](repeating: 0, count: n)
-        for i in 0..<n {
-            let t = Double(i) / rate, p = t / length
-            let fc = low + (high - low) * sin(.pi * p)
-            let k1 = 1 - exp(-2 * .pi * fc / rate), k2 = 1 - exp(-2 * .pi * fc / 5 / rate)
-            let x = noise.next()
-            a += k1 * (x - a)
-            b += k2 * (x - b)
-            out[i] = Float((a - b) * pow(sin(.pi * p), 2) * 1.6)
-        }
-        return out
     }
 
     /// a box closing: a low tone falling away, with a soft knock at its start
@@ -425,10 +386,6 @@ enum TheatreSynth {
             }
             return Float(v * 0.32 * fadeOut(t, length, 0.1))
         }
-    }
-
-    static func mix(_ a: [Float], _ b: [Float], _ bGain: Float) -> [Float] {
-        (0..<max(a.count, b.count)).map { i in (i < a.count ? a[i] : 0) + (i < b.count ? b[i] * bGain : 0) }
     }
 
     static func fadeIn(_ t: Double, _ d: Double) -> Double { min(t / d, 1) }

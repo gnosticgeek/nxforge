@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.5 (2026-11-20)
+
+Shipped in NXForge 0.48.5.
+
+- **Theatre's whoosh removed**: the turn and the theme switch are quiet wooden ticks (587 Hz and 494 Hz) at the step's level; the breeze and whoosh synths are gone.
+
 ## 0.22.4 (2026-11-20)
 
 Shipped in NXForge 0.48.4.
