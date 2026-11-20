@@ -893,7 +893,7 @@ def main(argv=None):
     p.add_argument('--rebuild', help='the existing app to replace (moved to app-backups/ first)')
     p.add_argument('--out', help='where the app goes (default: the settings, else beside the game files)')
     p.add_argument('--keys', help='prod.keys (default: the one saved in NXForge Settings, else the game folder\'s)')
-    p.add_argument('--cleanup', choices=('off', 'unused', 'all'), help='after the build (default: the settings)')
+    p.add_argument('--cleanup', choices=('off', 'unused', 'shaders', 'all'), help='after the build (default: the settings)')
     p.add_argument('--sign', help='codesign identity (default: the settings, else ad-hoc)')
     p.add_argument('--background', action='store_true', help='start it detached and print the job')
     p.add_argument('--events', action='store_true', help=argparse.SUPPRESS)   # one JSON event per line, then a result event (background jobs)

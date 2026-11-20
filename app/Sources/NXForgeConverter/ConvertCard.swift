@@ -364,11 +364,13 @@ struct ConvertCard: View {
         if optionsOpen {
             VStack(alignment: .leading, spacing: 14) {
                 // the same choice as Settings › After a build: on deletes <id>_build once the app is built and signed
-                Toggle(isOn: Binding(get: { model.settings.cleanup == .all }, set: { model.settings.cleanup = $0 ? .all : .off })) {
+                Toggle(isOn: Binding(get: { model.settings.cleanup.cleansUp }, set: { model.settings.cleanup = $0 ? .shaders : .off })) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Clean up build files")
                         Text(model.settings.cleanup == .all
                              ? "Frees the space once the app is ready. A rebuild then starts over (about 30 to 50 minutes) and needs the game files again."
+                             : model.settings.cleanup == .shaders
+                             ? "Frees the game-file copies once the app is ready and keeps the shader work, so a rebuild skips the shader steps while they are unchanged. It needs the game files again."
                              : "Kept, so a rebuild reuses its finished steps.")
                             .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
@@ -423,7 +425,7 @@ struct ConvertCard: View {
 
     /// "Clean up build files: On · Reuses finished steps · Engine update available"
     var optionsSummary: String {
-        var parts = ["Clean up build files: \(model.settings.cleanup == .all ? "On" : "Off")"]
+        var parts = ["Clean up build files: \(model.settings.cleanup == .all ? "On" : model.settings.cleanup == .shaders ? "On, shader work kept" : "Off")"]
         parts.append(model.buildCache == nil ? "Every step runs (no build folder kept)" : scratch ? "Rebuild from scratch: On" : "Rebuild from scratch: Off")
         if model.updatesAvailable { parts.append("Engine update available") }
         return parts.joined(separator: "  ·  ")

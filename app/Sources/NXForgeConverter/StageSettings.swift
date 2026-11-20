@@ -524,7 +524,7 @@ struct StageSettings: View {
                                 .onChange(of: model.settings.notify) { _, on in if on { model.requestNotifications() } }), small: true),
             toggle("Open the app after building", "The new app opens by itself when its build completes.", $model.settings.openAfterBuild, .openAfterBuild),
             toggle("Keep previous app builds", "A rebuild moves the app it replaces to app-backups; off moves it to the Trash.", $model.settings.keepBackups, .keepBackups),
-            row("Build folder after a build", s.cleanup == .all ? "Deletes the build folders, keeping the logs in ~/Library/Logs/NXForge; the next build starts over (about 30 min)." : "Remove unused files clears old versions' extracted files; Remove build cache frees the most, and the next build starts over.") {
+            row("Build folder after a build", s.cleanup == .all ? "Deletes the build folders, keeping the logs in ~/Library/Logs/NXForge; the next build starts over (about 30 min)." : s.cleanup == .shaders ? "Deletes the build's copies of the game files and keeps the shader work beside the game, so a rebuild skips the shader steps while they are unchanged." : "Remove unused files clears old versions' extracted files; Remove build cache frees the most, and the next build starts over.") {
                 Picker("", selection: $model.settings.cleanup) { ForEach(Cleanup.allCases, id: \.self) { Text($0.label) } }.labelsHidden().fixedSize()
             },
         ]

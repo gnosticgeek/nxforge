@@ -41,7 +41,7 @@ TOOLS = [
     ('nxforge_build', "Build or rebuild a game's Mac app in the background, as the converter does; returns a job id for nxforge_job. plan true is the dry run that lists the stages that will be reused or redone.",
      obj({'game_dir': {'type': 'string', 'description': "the game's folder (NSPs, or a Switch 2 dump)"}, 'plan': {'type': 'boolean'},
           'rebuild': {'type': 'string', 'description': 'the existing app to replace (moved to app-backups/ first)'}, 'out': {'type': 'string'}, 'keys': {'type': 'string'},
-          'cleanup': {'type': 'string', 'enum': ['off', 'unused', 'all']}}, ['game_dir']), False),
+          'cleanup': {'type': 'string', 'enum': ['off', 'unused', 'shaders', 'all']}}, ['game_dir']), False),
     ('nxforge_jobs', 'Background builds started through this interface, newest first.', obj(), True),
     ('nxforge_job', 'One background build: running or not, current stage, progress, result and the last log lines.', obj({'id': {'type': 'string'}, 'tail': {'type': 'integer'}}, ['id']), True),
     ('nxforge_stop_job', 'Stop a background build (as the converter\'s Stop button).', obj({'id': {'type': 'string'}}, ['id']), False),

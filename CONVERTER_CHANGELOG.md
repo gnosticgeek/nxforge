@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.8 (2026-11-20)
+
+Shipped in NXForge 0.48.8.
+
+- **Keep shader work only**: a fourth choice for Settings › Building › "Build folder after a build". It deletes the build's copies of the game files once the app is ready and keeps the shader work beside the game, so a rebuild skips the shader steps while they are unchanged (`--cleanup shaders`). The Convert page's "Clean up build files" switch now turns this on rather than "Remove build cache"; a saved "Remove build cache" stays as it is until changed.
+
 ## 0.22.7 (2026-11-20)
 
 Shipped in NXForge 0.48.7.
