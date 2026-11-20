@@ -4,6 +4,7 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 ## 0.48.2 (2026-11-20)
 
+- **Refresh in the top bar, every 10 minutes, and new games fetch their own art** (Converter 0.22.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a round Refresh button sits beside Full Screen on every page; NXForge looks at the games folder every 10 minutes whether or not it is in front (and when it comes to the front); a game that appears gets its covers, wide art and store details (description, screenshots, trailers, genres) straight away, with a banner naming it. No game rebuild needed.
 - **Beat 'em up and Run and gun pick up new games** (Converter 0.22.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): genre files for the 18 games added since 0.47.3 (Streets of Rage 4, Scott Pilgrim EX, Marvel Cosmic Invasion, Rita's Rewind, Asterix & Obelix Slap Them All, Double Dragon Gaiden, Fight'N Rage, The Ninja Warriors Once Again, Iron Meat, Neon Inferno, Enchanted Portals and more), and a game without a file now also gets the sub-genres its store description names ("beat 'em up", "run and gun", "shoot 'em up", "Metroidvania"...), since Nintendo's store has no category for them. No game rebuild needed.
 
 ## 0.48.1 (2026-11-20)
