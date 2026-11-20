@@ -1097,7 +1097,7 @@ struct TheatreCarousel: NSViewRepresentable {
         private var spin = 0.0
         private var last = 0.0
         var still = false
-        static let spacing = 1.55
+        static let spacing = 1.7
         /// how far the boxes beside the front one turn back towards you (0 none, 1 all the way)
         static let toward = 0.45
 
@@ -1110,10 +1110,10 @@ struct TheatreCarousel: NSViewRepresentable {
             scene.rootNode.addChildNode(ring)
             // a dark floor that reflects the boxes, fading out with distance
             let floor = SCNFloor()
-            floor.reflectivity = 0.2
+            floor.reflectivity = 0.18
             floor.reflectionFalloffStart = 0
-            // the reflection fades out about half way down the box, before the caption
-            floor.reflectionFalloffEnd = 1.0
+            // the reflection fades out a third of the way down the box, before the caption
+            floor.reflectionFalloffEnd = 0.6
             floor.reflectionResolutionScaleFactor = 0.6
             let m = SCNMaterial()
             m.diffuse.contents = NSColor(white: 0.02, alpha: 1)
@@ -1167,7 +1167,7 @@ struct TheatreCarousel: NSViewRepresentable {
             cam.position = SCNVector3(x: 0, y: 1.35, z: CGFloat(r + 8.4))
             // looking a little lower than the boxes' middle lifts the ring up the screen, so the floor and the reflection sit
             // above the caption rather than under its words
-            cam.look(at: SCNVector3(x: 0, y: -0.62, z: CGFloat(r - 1.0)))
+            cam.look(at: SCNVector3(x: 0, y: -0.74, z: CGFloat(r - 1.0)))
             scene.rootNode.addChildNode(cam)
             camera = cam
         }
@@ -1863,10 +1863,15 @@ struct CinemaCard: View {
     var body: some View {
         let _ = CoverStore.shared.revision
         ZStack(alignment: .bottomLeading) {
+            // the art fills the card's own size and no more: as a plain layer of the ZStack it made the card as big as the
+            // art, so the cards ran into each other with no gap and lost their round corners
             CoverArt.tint(game).opacity(0.5)
-            if near, let art = CoverStore.shared.hero(game.coverKey) ?? CoverArt.wide(game) {
-                Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
-            }
+                .overlay {
+                    if near, let art = CoverStore.shared.hero(game.coverKey) ?? CoverArt.wide(game) {
+                        Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                    }
+                }
+                .clipped()
             LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: UnitPoint(x: 0.5, y: 0.45), endPoint: .bottom)
             VStack(alignment: .leading, spacing: 8 * u) {
                 Text(game.name).font(.system(size: 19 * u, weight: .semibold)).lineLimit(1)
