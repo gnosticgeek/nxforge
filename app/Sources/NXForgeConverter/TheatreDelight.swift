@@ -36,7 +36,7 @@ struct TheatreMoment: Equatable, Identifiable {
     }
 
     /// a light falls on the game from above
-    var spotlight: Bool { kind != .welcome }
+    var spotlight: Bool { if case .welcome = kind { false } else { true } }
 }
 
 /// The lights going down on a launch: which game, and when it began (`frozen`: a moment of it held still, for a snapshot)
@@ -408,7 +408,7 @@ enum TheatreSynth {
         var s: UInt64 = 0x2545F4914F6CDD1D
         mutating func next() -> Double {
             s = s &* 6364136223846793005 &+ 1442695040888963407
-            return Double(Int64(bitPattern: s >> 11 << 11)) / Double(Int64.max)
+            return Double(Int64(bitPattern: (s >> 11) << 11)) / Double(Int64.max)
         }
     }
 }
@@ -421,8 +421,8 @@ enum TheatreSynth {
 @MainActor
 final class TheatreMusic {
     static let shared = TheatreMusic()
-    static let names = ["music", "theme", "soundtrack"]
-    static let kinds = ["m4a", "mp3", "aac", "wav", "aif", "aiff", "caf", "flac"]
+    nonisolated static let names = ["music", "theme", "soundtrack"]
+    nonisolated static let kinds = ["m4a", "mp3", "aac", "wav", "aif", "aiff", "caf", "flac"]
     static var ownFolder: URL { Settings.supportDir.appending(path: "Theatre Music") }
 
     private var player: AVAudioPlayer?
