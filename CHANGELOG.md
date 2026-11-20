@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.7 (2026-11-20)
+
+- **A smoother app, from a SwiftUI review** (Converter 0.22.7, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a long build's log no longer gets slower as it grows, game icons are no longer read from disk on every redraw, dragging the cover-size or volume slider no longer writes the settings file at every step, and moving the Library's focus redraws only the tiles that changed. VoiceOver gets names for seven icon-only buttons and an action on the Home tiles. No game rebuild needed.
+
 ## 0.48.5 (2026-11-20)
 
 - **No more whoosh in Theatre** (Converter 0.22.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): turning the Carousel or the Fan, and switching theme, now makes only a quiet tick like a step; the breeze sound is gone. No game rebuild needed.
