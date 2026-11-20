@@ -708,7 +708,11 @@ struct StageTopBar: View {
                 ForEach(StageTab.allCases, id: \.self) { t in
                     tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
                 }
-                tab("Converter", on: !model.frontEnd) { if model.frontEnd { model.showConverter() } }
+                tab("Saves", on: !model.frontEnd && model.page == .saves) { model.showConverter(); model.page = .saves }
+                    .help("Every game's saves, and Cloud saves for all of them")
+                tab("Converter", on: !model.frontEnd && model.page != .saves) {
+                    if model.frontEnd || model.page == .saves { model.showConverter(); if model.page == .saves { model.page = model.converterPage } }
+                }
                     .help("Convert, Game Files, Builds, Storage, Toolchain and Updates")
             }
             .padding(4)
@@ -746,7 +750,7 @@ struct StageTopBar: View {
         .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
         // under the converter's bar, a hairline between it and the page's own tabs
         .overlay(alignment: .bottom) {
-            if !model.frontEnd { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
+            if !model.frontEnd && model.page != .saves { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
         }
     }
 

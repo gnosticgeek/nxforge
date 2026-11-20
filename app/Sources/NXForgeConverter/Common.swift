@@ -84,7 +84,7 @@ struct ConverterRoot: View {
             StageBackdrop(tint: g.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75), art: g.flatMap { CoverArt.ambient($0) }, artKey: g?.id ?? "", strength: 0.55)
             VStack(spacing: 0) {
                 StageTopBar(model: model)
-                ConverterNav(model: model)
+                if model.page != .saves { ConverterNav(model: model) }
                 Group {
                     if let r = model.gameDetail, model.page == .library || model.page == .builds {
                         GamePage(model: model, ref: r, wide: width > 860)
@@ -148,7 +148,7 @@ struct ConverterNav: View {
 
     var pages: some View {
         HStack(spacing: 4) {
-            ForEach(Page.allCases) { p in
+            ForEach(Page.allCases.filter { $0 != .saves }) { p in   // Saves is in the top bar
                 let on = model.page == p
                 let count = p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : p == .health ? model.healthBadge : 0
                 Button { if on { model.gameDetail = nil } else { model.page = p } } label: {

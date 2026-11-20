@@ -2074,3 +2074,45 @@ import Testing
         #expect(Enhancements.fileName("???") == "enhancement.md")
     }
 }
+
+@Suite struct CloudSavesFolder {
+    @Test func eachGameHasItsOwnFileInTheFolder() {
+        #expect(CloudSaves.file(folder: "/x/Saves", titleID: "0100000000010000") == "/x/Saves/0100000000010000/save.dmsync")
+        #expect(CloudSaves.file(folder: "/x/Saves/", titleID: "0400486024dec000") == "/x/Saves/0400486024DEC000/save.dmsync")
+        // the game's own folder chosen (save_sync.c cloud_path): not given a second title ID
+        #expect(CloudSaves.file(folder: "/x/Saves/0100000000010000", titleID: "0100000000010000") == "/x/Saves/0100000000010000/save.dmsync")
+    }
+
+    @Test func readsTheCloudCopysHeader() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cloud-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let tid = "0100000000010000", hash = String(repeating: "ab", count: 16)
+        try FileManager.default.createDirectory(atPath: "\(dir)/\(tid)", withIntermediateDirectories: true)
+        #expect(CloudSaves.copy(folder: dir, titleID: tid, save: dir + "/save").state == .none)
+        var h = Data("DMSYNC1\n".utf8)
+        h += Data([1, 0, 0, 0, 2, 0, 0, 0]) + Data(hash.utf8)
+        var secs = Int64(1_763_600_000).littleEndian
+        h += Data(bytes: &secs, count: 8)
+        h += Data(tid.utf8) + Data(count: 24 - tid.count)
+        h += Data("Tom's iPhone".utf8) + Data(count: 64 - 12)
+        try h.write(to: URL(fileURLWithPath: "\(dir)/\(tid)/save.dmsync"))
+        var c = CloudSaves.copy(folder: dir, titleID: tid, save: dir + "/save")
+        #expect(c.state == .present && c.device == "Tom's iPhone" && c.saved == Date(timeIntervalSince1970: 1_763_600_000))
+        #expect(!c.matchesThisMac)
+        try "# save sync\nbase\t\(hash)\n".write(toFile: dir + "/save.sync", atomically: true, encoding: .utf8)
+        c = CloudSaves.copy(folder: dir, titleID: tid, save: dir + "/save")
+        #expect(c.matchesThisMac)
+    }
+
+    @Test func showsICloudPathsAsTheFinderDoes() {
+        #expect(CloudSaves.shown(CloudSaves.drive + "/NXForge Saves") == "iCloud Drive › NXForge Saves")
+        #expect(CloudSaves.shown(NSHomeDirectory() + "/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Saves") == "iCloud Drive › Obsidian › Vault › Saves")
+    }
+
+    @Test func settingsKeepTheSwitchAndFolder() throws {
+        var s = Settings()
+        s.cloudSavesAll = true; s.cloudSavesFolder = "/x/Saves"
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back.cloudSavesAll && back.cloudSavesFolder == "/x/Saves")
+    }
+}

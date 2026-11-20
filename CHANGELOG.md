@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.47.1 (2026-11-20)
+
+- **Saves in the top bar, with Cloud saves for every game** (Converter 0.21.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Saves page moves out of the converter's pages to the top bar, beside Home and Discover. One switch at its top syncs every game's save through one folder (iCloud Drive › NXForge Saves unless you choose another), using the engine's own Cloud saves; each game's row says where it syncs, what the cloud copy is and how many quick-save slots it has. No game rebuild needed for this.
+
 ## 0.47.0 (2026-11-19)
 
 - **Enhancements, apart from cheats** (Converter 0.21.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's own improvements (a steadier frame rate, a 60 fps patch, a fix, a mod set up for it) each as one Markdown file in the game's `enhancements/` folder, with a switch on the game's page and in Play options' new Enhancements tab. Settings, Atmosphère codes and mods are all possible, applied the moment a switch changes and taken back when it goes off. No game rebuild needed.
