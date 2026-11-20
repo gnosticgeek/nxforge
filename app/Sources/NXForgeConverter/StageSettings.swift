@@ -74,6 +74,8 @@ struct SettingsRowSpec: Identifiable {
     var focus: StageSettingRow? = nil
     let control: AnyView
     var below: AnyView? = nil
+    /// a switch: it stays beside its name on a narrow panel, where wider controls go under theirs
+    var small = false
     var id: String { title }
 }
 
@@ -91,6 +93,7 @@ struct StageSettings: View {
     // NXC_FIND: the snapshot hook starts the find field with that text
     @State private var query = ProcessInfo.processInfo.environment["NXC_FIND"] ?? ""
     @State private var contentHeight: CGFloat = 640
+    @State private var contentWidth: CGFloat = 700
     @State private var offset: CGFloat = 0
     @State private var viewport: CGFloat = 0
     @State private var position = ScrollPosition(edge: .top)
@@ -113,7 +116,7 @@ struct StageSettings: View {
                         VStack(alignment: .leading, spacing: 16) { content }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 28).padding(.top, 6).padding(.bottom, 26)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+                            .onGeometryChange(for: CGSize.self) { $0.size } action: { contentHeight = $0.height; contentWidth = $0.width }
                     }
                     .scrollPosition($position)
                     .scrollIndicators(.visible)
@@ -278,16 +281,21 @@ struct StageSettings: View {
     func rowView(_ r: SettingsRowSpec) -> some View {
         // the row a controller is on is lit (only while one is connected: the pointer needs no mark)
         let lit = r.focus != nil && r.focus?.rawValue == model.settingsFocus && !GCController.controllers().isEmpty
+        // a small window: paths, pickers and buttons go under the row's words, which keep the full width
+        let stacked = !r.small && contentWidth < 640
+        let words = VStack(alignment: .leading, spacing: 2) {
+            Text(r.title).font(.system(size: 14.5, weight: .semibold))
+            if !r.note.isEmpty {
+                Text(r.note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(r.title).font(.system(size: 14.5, weight: .semibold))
-                    if !r.note.isEmpty {
-                        Text(r.note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                r.control
+            if stacked {
+                words
+                r.control.frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 8)
+            } else {
+                HStack(spacing: 16) { words; r.control }
             }
             if let b = r.below { b.padding(.top, 8) }
         }
@@ -320,7 +328,7 @@ struct StageSettings: View {
 
     func toggle(_ title: String, _ note: String, _ on: Binding<Bool>, _ focus: StageSettingRow? = nil, disabled: Bool = false) -> SettingsRowSpec {
         SettingsRowSpec(title: title, note: note, focus: focus,
-                        control: AnyView(Toggle(title, isOn: on).toggleStyle(.switch).labelsHidden().tint(.green).disabled(disabled)))
+                        control: AnyView(Toggle(title, isOn: on).toggleStyle(.switch).labelsHidden().tint(.green).disabled(disabled)), small: true)
     }
 
     func row<C: View>(_ title: String, _ note: String, _ focus: StageSettingRow? = nil, @ViewBuilder _ control: () -> C) -> SettingsRowSpec {
@@ -466,7 +474,7 @@ struct StageSettings: View {
         let cloud: [SettingsRowSpec] = [
             SettingsRowSpec(title: "Cloud saves for every game", note: "Each game brings its save in when it starts and sends it after every save, so another Mac or the iPhone app can carry on.", focus: .cloudSaves,
                             control: AnyView(Toggle("Cloud saves for every game", isOn: Binding(get: { model.settings.cloudSavesAll }, set: { model.setCloudSavesForAll($0) }))
-                                .toggleStyle(.switch).labelsHidden().tint(.green))),
+                                .toggleStyle(.switch).labelsHidden().tint(.green)), small: true),
             row("Cloud saves folder", "Every game's save goes here, each in a folder named after its title ID. A folder in iCloud Drive syncs with your other devices.") {
                 path(s.cloudSavesFolder.map { CloudSaves.shown($0) }, none: "Chosen when it is turned on")
                 button(s.cloudSavesFolder == nil ? "Choose…" : "Change…") { model.chooseCloudSavesFolder() }
@@ -506,7 +514,7 @@ struct StageSettings: View {
         let after: [SettingsRowSpec] = [
             SettingsRowSpec(title: "Notify when a build finishes", note: "A notification when the build is complete, or has stopped.", focus: .notify,
                             control: AnyView(Toggle("Notify when a build finishes", isOn: $model.settings.notify).toggleStyle(.switch).labelsHidden().tint(.green)
-                                .onChange(of: model.settings.notify) { _, on in if on { model.requestNotifications() } })),
+                                .onChange(of: model.settings.notify) { _, on in if on { model.requestNotifications() } }), small: true),
             toggle("Open the app after building", "The new app opens by itself when its build completes.", $model.settings.openAfterBuild, .openAfterBuild),
             toggle("Keep previous app builds", "A rebuild moves the app it replaces to app-backups; off moves it to the Trash.", $model.settings.keepBackups, .keepBackups),
             row("Build folder after a build", s.cleanup == .all ? "Deletes the build folders, keeping the logs in ~/Library/Logs/NXForge; the next build starts over (about 30 min)." : "Remove unused files clears old versions' extracted files; Remove build cache frees the most, and the next build starts over.") {
