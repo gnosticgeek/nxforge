@@ -464,8 +464,9 @@ final class TheatreMusic: NSObject, AVAudioPlayerDelegate {
     /// the game's own track, looped
     private var gamePlayer: AVAudioPlayer?
     private var gameURL: URL?
-    /// the music folder's: its tracks in a shuffled order, the one playing, and the folder they came from
-    private var folderPlayer: AVAudioPlayer?
+    /// the music folder's: its tracks in a shuffled order, the one playing, and the folder they came from. An AVPlayer, since
+    /// AVAudioPlayer opens an Ogg Opus file but will not play it
+    private var folderPlayer: FolderTrack?
     private var folder: String?
     private var tracks: [URL] = []
     private var next = 0
@@ -528,14 +529,11 @@ final class TheatreMusic: NSObject, AVAudioPlayerDelegate {
         folderVolume = volume
         if gamePlayer != nil || folder == nil {
             if let p = folderPlayer, p.isPlaying {
-                p.setVolume(0, fadeDuration: 1.2)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) { [weak self] in
-                    MainActor.assumeIsolated { if self?.gamePlayer != nil, self?.folderPlayer === p { p.pause() } }
-                }
+                p.fade(to: 0, over: 1.2) { [weak self] in if self?.gamePlayer != nil, self?.folderPlayer === p { p.pause() } }
             }
         } else if let p = folderPlayer {
             if !p.isPlaying { p.play() }
-            p.setVolume(volume, fadeDuration: 1.8)
+            p.fade(to: volume, over: 1.8)
         } else {
             playNextTrack(fadeIn: true)
         }
@@ -547,25 +545,28 @@ final class TheatreMusic: NSObject, AVAudioPlayerDelegate {
 
     private func playNextTrack(fadeIn: Bool) {
         guard folder != nil, !tracks.isEmpty else { return }
-        // a file that will not play (an Opus file this Mac cannot read, a broken file) is passed over
-        for _ in 0..<min(tracks.count, 20) {
-            let u = tracks[next % tracks.count]
-            next += 1
-            if next >= tracks.count { next = 0; tracks.shuffle() }
-            guard let p = try? AVAudioPlayer(contentsOf: u) else { continue }
-            p.delegate = self
-            p.volume = fadeIn ? 0 : folderVolume
-            guard p.play() else { continue }
-            if fadeIn { p.setVolume(folderVolume, fadeDuration: 1.8) }
-            folderPlayer = p
-            return
+        let u = tracks[next % tracks.count]
+        next += 1
+        if next >= tracks.count { next = 0; tracks.shuffle() }
+        let p = FolderTrack(u, volume: fadeIn ? 0 : folderVolume)
+        // at its end, or when it will not play (a broken file), the next one
+        p.onEnd = { [weak self, weak p] failed in
+            guard let self, let p, self.folderPlayer === p else { return }
+            self.folderPlayer = nil
+            self.skips = failed ? self.skips + 1 : 0
+            if self.gamePlayer == nil, self.skips < 20 { self.playNextTrack(fadeIn: failed && fadeIn) }
         }
+        folderPlayer = p
+        p.play()
+        if fadeIn { p.fade(to: folderVolume, over: 1.8) }
     }
+    private var skips = 0
 
     private func stopFolder() {
-        if let p = folderPlayer { fadeAway(p) }
+        if let p = folderPlayer { p.onEnd = nil; p.fade(to: 0, over: 1.2) { p.stop() } }
         folderPlayer = nil
         tracks = []
+        skips = 0
     }
 
     private func fadeAway(_ p: AVAudioPlayer) {
@@ -580,14 +581,67 @@ final class TheatreMusic: NSObject, AVAudioPlayerDelegate {
         }
     }
 
-    /// a track ended: the next, straight away
-    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        let id = ObjectIdentifier(player)
-        Task { @MainActor in
-            guard let p = self.folderPlayer, ObjectIdentifier(p) == id else { return }
-            self.folderPlayer = nil
-            if self.gamePlayer == nil { self.playNextTrack(fadeIn: false) }
+}
+
+/// One track from the music folder, on an AVPlayer: its volume eased in steps, and `onEnd` called once when it finishes
+/// (false) or cannot play (true)
+@MainActor
+final class FolderTrack {
+    let player: AVPlayer
+    var onEnd: ((Bool) -> Void)?
+    private var observers: [NSObjectProtocol] = []
+    private var status: NSKeyValueObservation?
+    private var fading: Task<Void, Never>?
+    private var ended = false
+
+    init(_ url: URL, volume: Float) {
+        let item = AVPlayerItem(url: url)
+        player = AVPlayer(playerItem: item)
+        player.volume = volume
+        player.actionAtItemEnd = .pause
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finish(false) }
+        })
+        observers.append(center.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finish(true) }
+        })
+        status = item.observe(\.status) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            Task { @MainActor in self?.finish(true) }
         }
+    }
+
+    var isPlaying: Bool { player.rate != 0 }
+    func play() { player.play() }
+    func pause() { player.pause() }
+    func stop() { fading?.cancel(); player.pause(); player.replaceCurrentItem(with: nil); clear() }
+
+    /// eases the volume to `target` in 20 steps, then runs `then`
+    func fade(to target: Float, over seconds: Double, then: (@MainActor () -> Void)? = nil) {
+        fading?.cancel()
+        let start = player.volume
+        fading = Task { @MainActor [weak self] in
+            for i in 1...20 {
+                try? await Task.sleep(for: .seconds(seconds / 20))
+                guard let self, !Task.isCancelled else { return }
+                self.player.volume = start + (target - start) * Float(i) / 20
+            }
+            then?()
+        }
+    }
+
+    private func finish(_ failed: Bool) {
+        guard !ended else { return }
+        ended = true
+        clear()
+        onEnd?(failed)
+    }
+
+    private func clear() {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers = []
+        status = nil
     }
 }
 
