@@ -2,6 +2,19 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.4 (2026-11-20)
+
+- **Theatre's Fan, gentler sounds and a music folder** (Converter 0.22.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Gallery theme is gone and a new Fan theme takes its place: the boxes fanned out like a hand of cards, the one in front upright, lifted and lit, the rest leaning away into shadow, scrolling sideways as you move. The Carousel's whoosh is now a soft breeze and the clicks are soft wooden ticks. The right stick no longer changes the volume (it fought with turning the box). Settings › Theatre › Music folder points Theatre at a folder of MP3 or Opus files (M4A, FLAC and WAV too), played shuffled in the background on every theme but Trailer. No game rebuild needed.
+
+## 0.48.3 (2026-11-20)
+
+- **One Settings panel, wider and in sections** (Converter 0.22.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Settings is a wide panel with its sections down the left (General, Playing, Library, Artwork, Theatre, Saves, Building, Updates, Storage) instead of one narrow scrolling column, and the converter's options, which had a Settings window of their own, are in it, so ⌘, and the top bar's button open the same place. It also gains what was only reachable elsewhere (cloud saves, snapshots and the Git backup, updates, storage, the games folder's path, Theatre's volume) and one new choice, how often NXForge looks for new games. No game rebuild needed.
+
+## 0.48.2 (2026-11-20)
+
+- **Refresh in the top bar, every 10 minutes, and new games fetch their own art** (Converter 0.22.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a round Refresh button sits beside Full Screen on every page; NXForge looks at the games folder every 10 minutes whether or not it is in front (and when it comes to the front); a game that appears gets its covers, wide art and store details (description, screenshots, trailers, genres) straight away, with a banner naming it. No game rebuild needed.
+- **Beat 'em up and Run and gun pick up new games** (Converter 0.22.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): genre files for the 18 games added since 0.47.3 (Streets of Rage 4, Scott Pilgrim EX, Marvel Cosmic Invasion, Rita's Rewind, Asterix & Obelix Slap Them All, Double Dragon Gaiden, Fight'N Rage, The Ninja Warriors Once Again, Iron Meat, Neon Inferno, Enchanted Portals and more), and a game without a file now also gets the sub-genres its store description names ("beat 'em up", "run and gun", "shoot 'em up", "Metroidvania"...), since Nintendo's store has no category for them. No game rebuild needed.
+
 ## 0.48.1 (2026-11-20)
 
 - **Refresh the library** (Converter 0.22.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Refresh button on Discover's title row (and View › Refresh Library, ⌥⌘R) scans the games folder again, and NXForge now notices new or removed games there by itself, when it comes to the front and once a minute while it is in front, so a game filed by a download watcher shows up without a restart. No game rebuild needed.

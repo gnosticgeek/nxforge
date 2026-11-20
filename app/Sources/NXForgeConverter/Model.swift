@@ -98,6 +98,8 @@ final class AppModel {
     var detailsTask: Task<Void, Never>?
     /// a look at the games folder for new games is under way (rescanIfFolderChanged)
     @ObservationIgnored var folderCheckRunning = false
+    /// games a scan found that the one before did not have, waiting for their names to be read (lookUpNewGames)
+    @ObservationIgnored var newGameIDs = Set<String>()
     var mountObserver: NSObjectProtocol?
     var selectedBuild: String? { didSet { if selectedBuild != oldValue { rememberWindowState() } } }
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
@@ -194,7 +196,10 @@ final class AppModel {
     var keysStatus: KeysStatus = .notSet
     var keysSuggestion: String?
     /// the Settings row a controller is on (StageSettingRow)
-    var settingsFocus = 0
+    /// (the panel's section follows it, so a pad moving down the rows turns the pages)
+    var settingsFocus = 0 { didSet { if let r = StageSettingRow(rawValue: settingsFocus) { settingsSection = r.section } } }
+    /// the Settings section the panel shows; it stays where it was left
+    var settingsSection: SettingsSection = .general
     var stageSearch = ""
     /// what each built game needs a look at (GameAttention), by StageGame id, read off the main thread
     var attention: [String: [GameAttention]] = [:]
@@ -292,7 +297,7 @@ final class AppModel {
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
                 self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
-                self?.rescanIfFolderChanged()   // games filed into the games folder while NXForge was in the back
+                if self?.settings.folderCheck != .manual { self?.rescanIfFolderChanged() }   // games filed into the games folder while NXForge was in the back
                 if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { self?.backUpDataIfDue() }
                 guard let self, self.fixPending, !self.checking else { return }
                 self.fixPending = false

@@ -4,6 +4,37 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.4 (2026-11-20)
+
+Shipped in NXForge 0.48.4.
+
+- **Fan replaces Gallery in Theatre**: the boxes fanned out round a point below the screen, the focused one upright in the middle, lifted out by 46 px, scaled up and lit; neighbours turn 7.5° each and darken with distance, eight either side are drawn. Left and right swing the fan, a click brings a box to the middle, the right stick turns the box in front. A saved Gallery (or the older Shelf) theme opens as Fan.
+- **Mellower sounds**: the turn is a low-passed breeze with a soft tick under it and the theme switch a slower breeze; steps, spins and opens are short rounded ticks; every sound is soft-limited and quieter.
+- **The right stick no longer sets the volume**: up and down fought with turning the box; the volume stays in Settings and on - and =.
+- **Music folder**: Settings › Theatre › Music folder chooses a folder; its MP3, Opus, M4A, AAC, FLAC, WAV and AIFF files (subfolders too, up to 3000) play shuffled, one after another, in the background while Theatre is open, except on Trailer, while a game plays or a box is opening. A game with its own music still takes over while it is in focus, and the folder carries on where it paused. Files macOS cannot play are skipped.
+
+## 0.22.3 (2026-11-20)
+
+One Settings panel, wider and in sections. Ships in NXForge 0.48.3.
+
+- **Settings is a wide panel with its sections down the left**: General, Playing, Library, Artwork, Theatre, Saves, Building, Updates and Storage. The chosen section's rows fill the right side, in cards by what they are about, so a section is read without scrolling on most windows and the notes run in one or two lines instead of three. It was one narrow column (640 pt) that scrolled through everything; it is now up to 1020 pt wide and narrows with the window. The app's version is at the foot of the list.
+- **Everything is in it.** The converter's options had a Settings window of their own (⌘,, or Converter Settings… at the foot of the panel): notifications, opening the app after a build, keeping previous builds, what a build leaves in its build folder, where new apps are saved, the signing identity, reusing finished steps and log detail are the Building section now, beside the keys file. ⌘, opens the panel, and that window is gone.
+- **Options that were only elsewhere**: Saves has Cloud saves for every game and its folder (the Saves page's switch), a snapshot after every session, the snapshot folder and the Git backup; Updates has the version, What's New, Check Now and Update automatically; Storage has Manage Storage, What NXForge Keeps, Health and Restore Defaults; Library shows the games folder's path with Change and Refresh, and Group Game Files by console; Theatre has a Volume slider (the right stick's setting).
+- **New: Look for new games** (Library): how often the games folder is looked at, every minute, every 10 minutes (as before), hourly, or Manual, which leaves it to Refresh.
+- **Find a setting** (⌘F) looks through every section at once and shows the matches under their sections' names; a section's name finds its rows ("theatre").
+- **A controller** walks the rows with up and down, turning to the next section at the end of one, and L and R step through the sections; every new switch and choice can be changed from the pad.
+- Snapshot hook: `NXC_SETTINGS=<section>` with `NXC_STAGE=settings`.
+
+## 0.22.2 (2026-11-20)
+
+New games look themselves up, and find their sub-genres. Ships in NXForge 0.48.2.
+
+- **Refresh is in the top bar** (a round arrow beside Full Screen, turning while it scans), on Home and Discover alike, instead of on Discover's title row. ⌥⌘R and Go to Anything's Refresh Library still work.
+- **The games folder is looked at every 10 minutes**, in front or not, and each time NXForge comes to the front (it was every minute, only while in front).
+- **A new game fetches its art and details at once**: when a scan finds games the last one did not have, their front, back and square covers, wide art and store details (publisher, release date, description, screenshots, trailers) are fetched as soon as their names are read, as the Artwork settings allow, rather than when each is first shown or opened, and their genres follow. A banner names the games added.
+- **Genre files for 18 more games** in the library (10 beat 'em ups, 3 more run and guns, and the rest), so they show under Beat 'em up, Run and gun and the other sub-genres.
+- **A game with no file in the library reads its sub-genres from its store description** as well as the store's categories: "beat 'em up", "run and gun", "shoot 'em up", "Metroidvania", "kart racing", "first-person shooter" (Genres.hints). Nintendo's store has no Beat 'em up or Run and gun category, so before this a new game only ever reached Action or Fighting.
+
 ## 0.22.1 (2026-11-20)
 
 Refresh the library. Ships in NXForge 0.48.1.

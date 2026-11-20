@@ -52,6 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 }
 
+/// Settings… in the app menu opens the panel in the main window (and the window, if it was closed while a build ran)
+struct SettingsCommands: Commands {
+    let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { openWindow(id: "main"); model.openSettings() }.keyboardShortcut(",")
+        }
+    }
+}
+
 struct ConverterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var model = AppModel()
@@ -75,6 +87,8 @@ struct ConverterApp: App {
                     ])
                 }
             }
+            // Settings… (⌘,): the one Settings panel, over whatever the window shows (StageSettings.swift)
+            SettingsCommands(model: model)
             CommandGroup(replacing: .newItem) {
                 Button("Choose Game Folder…") {
                     if let d = model.chooseGame(start: model.settings.gameDir) { model.openDropped([d.url]) }
@@ -123,10 +137,6 @@ struct ConverterApp: App {
                     .disabled(model.settings.libraryLayout == .grid && model.settings.libraryCoverSize <= Settings.coverSizes.lowerBound)
                 Toggle("Group Library by Console", isOn: Binding(get: { model.settings.libraryGroupByConsole }, set: { model.settings.libraryGroupByConsole = $0 }))
             }
-        }
-        // Settings… (⌘,) in the app menu
-        SwiftUI.Settings {
-            SettingsPage(model: model)
         }
     }
 
@@ -183,7 +193,8 @@ struct ConverterApp: App {
             if let g, env["NXC_PLAYING"] != nil, let a = g.app { model.playing[-1] = PlayingNow(key: a, name: g.name, app: a, start: Date()); model.libraryFocus = g.id }
             if let g, ["game", "back", "options"].contains(st) { model.gameDetail = g.ref; model.caseFlipped = st == "back" }
             if let g, st == "options" { model.openPlayOptions(g.ref); if let t = env["NXC_TAB"].flatMap({ t in PlayTab.allCases.first { $0.rawValue.lowercased() == t } }) { model.playOptions?.tab = t } }   // NXC_TAB=enhancements…
-            if st == "settings" { model.stageSettings = true }
+            // NXC_SETTINGS=<section>: Settings on that section (general, playing, library, artwork, theatre, saves, building, updates, storage)
+            if st == "settings" { model.openSettings(env["NXC_SETTINGS"].flatMap { n in SettingsSection.allCases.first { $0.rawValue.lowercased() == n.lowercased() } }) }
             if let g, st == "launch", let a = g.app { model.launching = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps") }
             // launchslow, launchfail: the launch screen taking longer, and after the game closed while starting
             if let g, st == "launchslow" || st == "launchfail", let a = g.app {

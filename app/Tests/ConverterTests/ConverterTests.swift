@@ -1150,6 +1150,12 @@ import Testing
         #expect(DiscoverSource.order(found) == ["Run and gun", "Sports", "Other"])
         #expect(DiscoverSource.subs(of: "Sports", found) == ["Football", "Golf"])
         #expect(Genres.plural("Beat 'em up") == "Beat 'em ups" && Genres.plural("Turn-based RPG") == "Turn-based RPGs" && Genres.plural("Golf") == "Golf")
+        // words in the store's description name the sub-genres it has no category for
+        #expect(Genres.hints("The classic beat 'em up series returns, at 60 fps!") == ["Beat 'em up"])
+        #expect(Genres.hints("A run-and-gun shoot-'em-up Metroidvania") == ["Run and gun", "Shoot 'em up", "Metroidvania"])
+        #expect(Genres.hints("A cosy farming game").isEmpty && Genres.hints(nil).isEmpty)
+        let sor = DiscoverSource.parse(Data(#"{"response":{"numFound":1,"docs":[{"application_id_s":"01001f5010dfa000","title":"Streets of Rage 4","pretty_game_categories_txt":["Action","Arcade"],"excerpt":"A beat ’em up classic."}]}}"#.utf8))
+        #expect(sor.items.first?.genres == ["Action", "Arcade", "Beat 'em up"])
         // a library file
         let e = Genres.entry("---\nnxforge_game: 1\ntitle: \"Cuphead\"\ntitle_id: \"0100a5c00d162000\"\ngenres:\n  - \"Run and gun\"\n  - \"Action\"\n---\n# Cuphead\n")
         #expect(e == Genres.Entry(titleID: "0100A5C00D162000", title: "Cuphead", genres: ["Run and gun", "Action"]))
@@ -2241,5 +2247,30 @@ import Testing
         s.cloudSavesAll = true; s.cloudSavesFolder = "/x/Saves"
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
         #expect(back.cloudSavesAll && back.cloudSavesFolder == "/x/Saves")
+    }
+}
+
+@Suite struct SettingsPanel {
+    /// a controller walks the rows in enum order, so each section's rows must be together and the sections in the list's order
+    @Test func padRowsFollowTheSectionsInOrder() {
+        let order = StageSettingRow.allCases.map { SettingsSection.allCases.firstIndex(of: $0.section)! }
+        #expect(order == order.sorted())
+    }
+
+    @Test func findMatchesTheStartsOfWords() {
+        #expect(StageSettings.matches("art", "Download box art"))
+        #expect(!StageSettings.matches("art", "Where NXForge starts"))
+        #expect(StageSettings.matches("theatre vol", "Volume Of everything Theatre plays"))
+        #expect(!StageSettings.matches("keys folder", "Keys file (prod.keys)"))
+        #expect(StageSettings.matches("  ", "anything"))
+    }
+
+    @Test func theFolderCheckIsKeptAndOldSettingsGetTenMinutes() throws {
+        var s = Settings()
+        #expect(s.folderCheck == .ten)
+        s.folderCheck = .manual
+        #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).folderCheck == .manual)
+        #expect(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)).folderCheck == .ten)
+        #expect(FolderCheck.manual.seconds == nil && FolderCheck.hour.seconds == 3600)
     }
 }
