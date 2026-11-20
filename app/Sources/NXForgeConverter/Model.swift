@@ -47,12 +47,26 @@ final class AppModel {
     var settings = Settings.load() {
         didSet {
             guard settings != oldValue else { return }
-            settings.save()
+            scheduleSettingsSave()
             if settings.appearance != oldValue.appearance { applyAppearance() }
             if let g = settings.gameDir, g != oldValue.gameDir { settings.recentSources = RecentSources.adding(g, to: settings.recentSources) }
             if settings.saveSnapshotsFolder != oldValue.saveSnapshotsFolder { SaveSnapshots.customRoot = settings.saveSnapshotsFolder }
             if settings.outDir != oldValue.outDir { Disk.outDir = settings.outDir; measure() }   // the app's drive is checked for room too
         }
+    }
+    /// settings.json is written half a second after the last change, not on every step of a slider drag (saveSettingsNow at quit)
+    @ObservationIgnored private var settingsSave: Task<Void, Never>?
+    private func scheduleSettingsSave() {
+        settingsSave?.cancel()
+        settingsSave = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.saveSettingsNow()
+        }
+    }
+    func saveSettingsNow() {
+        settingsSave?.cancel(); settingsSave = nil
+        settings.save()
     }
     var checks: [Check]?
     var env: ToolEnv?

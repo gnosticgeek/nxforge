@@ -4,6 +4,17 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.7 (2026-11-20)
+
+Shipped in NXForge 0.48.7.
+
+- **Build log in batches**: the script's plain output lines join the log about ten times a second instead of one main-thread hop and redraw per line, and the log view reads each line's level once per redraw (one pass for the shown lines and the tabs' counts, not three).
+- **Icons kept while unchanged** (IconImage): game icons are decoded once per file version, not on every redraw of a tile or header.
+- **Settings saved after a pause**: settings.json is written half a second after the last change (and at quit), not on every step of a slider drag.
+- **Library tiles get their own focus and tick**, so moving the focus redraws two tiles, not all of them.
+- **VoiceOver**: names for the mods list's and the cleanup list's icon-only buttons; the Home rows' tiles have an activate action (play, or open the game page).
+- **Modern API**: `@Entry` for Theatre's unit; a plain binding for Group Library by Console; `import Combine` where a timer publisher is kept.
+
 ## 0.22.5 (2026-11-20)
 
 Shipped in NXForge 0.48.5.

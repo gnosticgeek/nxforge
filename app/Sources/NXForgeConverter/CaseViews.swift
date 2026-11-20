@@ -174,7 +174,7 @@ enum CoverArt {
     }
 
     static func icon(_ g: StageGame) -> NSImage? {
-        if let i = g.icon, let img = NSImage(contentsOfFile: i) { return img }
+        if let i = g.icon, let img = IconImage.load(i) { return img }
         // an app built without an icon has the system's blank one: no picture is better than that
         if let a = g.app, let b = Bundle(path: a), let name = b.object(forInfoDictionaryKey: "CFBundleIconFile") as? String,
            let file = b.path(forResource: name, ofType: name.hasSuffix(".icns") ? nil : "icns"),
