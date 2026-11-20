@@ -90,6 +90,35 @@ extension AppModel {
         }
     }
 
+    /// Scans again when the games folder holds folders or game files the last scan did not see, or has lost some: a game filed
+    /// there by a download watcher or by hand shows up without a press of Refresh. One listing of the folder itself, off the main
+    /// thread; a folder that does not answer is left alone (the mount watcher scans once it is back).
+    func rescanIfFolderChanged() {
+        guard let root = settings.gamesRoot, !libraryScanning, folderCheckRunning == false else { return }
+        let known = library?.root == root ? library?.top : nil
+        folderCheckRunning = true
+        Task.detached(priority: .utility) {
+            let now = GameLibrary.topEntries(root: root)
+            await MainActor.run {
+                self.folderCheckRunning = false
+                guard let now, now != known, self.settings.gamesRoot == root else { return }
+                self.scanLibrary()
+            }
+        }
+    }
+
+    /// Looks at the games folder every minute while NXForge is the app in front, and each time it comes to the front.
+    func watchGamesFolder() {
+        guard ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
+        Task { @MainActor [weak self] in
+            while true {
+                try? await Task.sleep(for: .seconds(60))
+                guard let self else { return }
+                if NSApp.isActive { self.rescanIfFolderChanged() }
+            }
+        }
+    }
+
     func scanIfStale() {
         guard let root = settings.gamesRoot, !libraryScanning else { return }
         if library?.root != root || (library.map { Date().timeIntervalSince($0.scanned) > 24 * 3600 } ?? true) { scanLibrary() }

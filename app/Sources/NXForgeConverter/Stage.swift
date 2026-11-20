@@ -995,6 +995,21 @@ struct StageLibrary: View {
                         .accessibilityAddTraits(model.stageFilter == f ? .isSelected : [])
                     }
                 }
+                // scan the games folder again: games filed there since the last scan show up
+                Button { model.scanLibrary() } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
+                            .symbolEffect(.rotate, options: .repeat(.continuous), isActive: model.libraryScanning)
+                        Text(model.libraryScanning ? "Refreshing…" : "Refresh").font(.system(size: 13, weight: .semibold))
+                    }
+                    .padding(.horizontal, 14).frame(height: 32)
+                    .background(StageLook.card, in: .capsule).overlay(Capsule().strokeBorder(StageLook.edge, lineWidth: 1))
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.libraryScanning || model.settings.gamesRoot == nil)
+                .help(model.libraryScanning ? "Looking through \(model.settings.gamesRoot?.tildePath ?? "the games folder")…" : "Scan the games folder again for new games")
+                .accessibilityLabel("Refresh Library")
                 // boxes or square art (Settings › Square covers)
                 Button { withAnimation(.spring(duration: 0.3)) { model.settings.squareCovers.toggle() } } label: {
                     Image(systemName: model.settings.squareCovers ? "rectangle.portrait" : "square").font(.system(size: 14, weight: .semibold))
