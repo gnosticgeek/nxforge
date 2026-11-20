@@ -81,7 +81,7 @@ index 0480d7bf869b774a4294f5b5189fa843844cc8e3..853cb3a1799761fdfd305453f11515d7
      if (late) { s->late++; s->late_run = grace || sgrace ? 0 : s->late_run + 1; s->fit_run = 0; } else s->late_run = 0;
      // The cost of the frames on time (a hitch is not what the scene costs): at kmin, and at the longer hold
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index ad0f90844b6ea83bd3acbf6d65716793f6af9012..07f808c85e7a62c6315ddb7242092196301b78d6 100644
+index 2c398bc2db2a1058690db44e5f6cd1f7181cb285..c9cb634e63932420570f6bbfa47686f166051915 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -18100,6 +18100,50 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }

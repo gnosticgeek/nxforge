@@ -12,7 +12,7 @@ Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
  4 files changed, 8 insertions(+), 8 deletions(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 329c9b51c4440304d6f2b306faf25bb27383dbb5..92ef620b59baedbe3af35e7c30a315e712253bec 100644
+index 8f65f6339f59d822b41c7c807a966346fdcb717b..703e6fe0dea7d75b4fdb66265fe4ae087f9950bc 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -7470,7 +7470,7 @@ static int progpf_first(NSString *pc) {

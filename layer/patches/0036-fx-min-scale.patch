@@ -9,7 +9,7 @@ Subject: fx-min-scale: MetalFX only where it enlarges the picture by 1.4x or
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 5e785b5d4e1ba296ed32e50087ddc5a747e28282..a109b756461261485aa3d7354deb1176bb126d5b 100644
+index 75d11f9b7b3f0c462cb4ac6318dc312c9a3df7ae..63dd9aa68544bf047cb4938e4732f33badb3dae4 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -19368,9 +19368,10 @@ static id<MTLTexture> aa_encode(fx_state *fx, id<MTL4CommandBuffer> cb, id<MTLTe

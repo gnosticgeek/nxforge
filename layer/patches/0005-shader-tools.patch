@@ -7,6 +7,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
 ---
  dm/gfx/nvn/dmsh_chain.h                       |   2 +-
  dm/gfx/tests/test_dmsh_ampere_mem.py          |   2 +-
+ dm/gfx/tests/test_dmsh_logic.py               |   1 +
  dm/gfx/tools/c1_guard.py                      |  22 ++--
  dm/gfx/tools/cb_extent.py                     |  10 +-
  dm/gfx/tools/dmsh_build.py                    |  80 ++++++++++---
@@ -22,7 +23,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/tools/tests/test_pso_offline.py            |  54 ++++++++-
  dm/tools/tests/test_shader_pch.py             |  16 ++-
  dm/tools/tests/test_shader_toolchain_cache.py |  64 +++++++++-
- 17 files changed, 595 insertions(+), 91 deletions(-)
+ 18 files changed, 596 insertions(+), 91 deletions(-)
 
 diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
 index ee50428d969a1fb39951b628a4f74a592e4dbdfc..e684fd403bdb76d12782c0944b46fe3ea29a4187 100644
@@ -46,6 +47,18 @@ index 44708af5e2d1751f473bbb907ca7575519301f5d..977cad94b9b9f49a40daf2f06b343f0a
  
      def test_a_byte_goes_through_its_word_atomically(self):   # neighbouring threads write neighbouring bytes; the shader build makes the helper's loop one byte store (test_dmsh_shared_store.py)
          self.assertIn('atomic_compare_exchange', self.msl(self.INDEX))
+diff --git a/dm/gfx/tests/test_dmsh_logic.py b/dm/gfx/tests/test_dmsh_logic.py
+index 5ab28c0f50da902bab4eed4e9c746b9003ec58f0..8dbce3ee05d142782dfe293309639c73a78cbad7 100644
+--- a/dm/gfx/tests/test_dmsh_logic.py
++++ b/dm/gfx/tests/test_dmsh_logic.py
+@@ -124,6 +124,7 @@ def fixture(out):   # Actual build reflection and libraries, starting at the syn
+     ns = dict(globals(), loc={key: ('synthetic', 0)}, pc_of={key: []}, out=str(out), w=str(work), CHAIN=dmsh_chain.version(),
+               IOSOUT=None, TARGETS={'mac'}, BF_WANT=set(), DUAL_WANT=set(), SIDE_STATS=collections.Counter(), BF_STATS=collections.Counter(),
+               SPIRV_CROSS='synthetic-msl', XC=[], clone=shutil.copyfile,
++              spawn=lambda *a, **kw: subprocess.CompletedProcess(a, 0),   # NXForge: dmsh_build runs its tools through spawn (dmsh_mtlcache.run)
+               subprocess=types.SimpleNamespace(run=lambda *a, **kw: subprocess.CompletedProcess(a, 0), CalledProcessError=subprocess.CalledProcessError),
+               MTL=types.SimpleNamespace(compile=compile_msl, compile_split=compile_split, with_compiler=lambda target, refl: refl))
+     tree = ast.parse((pathlib.Path(dmsh_entry.__file__).parent / 'dmsh_build.py').read_text())
 diff --git a/dm/gfx/tools/c1_guard.py b/dm/gfx/tools/c1_guard.py
 index 9e01c7d14377493d930f062455e4af442bba7288..fc44bfb6bb566f804746b1fb486a3cedfefd6751 100755
 --- a/dm/gfx/tools/c1_guard.py

@@ -18,7 +18,7 @@ Check: make -C dm/gfx/tests GAME=<id> check_t_rt_lossy (Mac).
  create mode 100644 dm/gfx/tests/t_rt_lossy.m
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index dbc94bc591287573b3cdd391c8ba94cb2a5d386e..329c9b51c4440304d6f2b306faf25bb27383dbb5 100644
+index 752ba7030950dd64b6c3b0d6d7a5464c1659877e..8f65f6339f59d822b41c7c807a966346fdcb717b 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3575,6 +3575,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *

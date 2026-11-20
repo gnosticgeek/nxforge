@@ -88,7 +88,7 @@ index 2f17c5f73556e5d00cf690b33163ccf3064ba575..8a3327a7b2ec3a1fce9614850aab8c28
  static int pro_property(IOHIDDeviceRef hid, CFStringRef key) {
      CFTypeRef v = IOHIDDeviceGetProperty(hid, key); int n = 0;
 diff --git a/dm/host/tests/t_motion_pro.c b/dm/host/tests/t_motion_pro.c
-index 87001b221d952738659d50a028ac2bc45fd25216..85b34de5601cd35044879f38aa4a30dcfd25130f 100644
+index 87001b221d952738659d50a028ac2bc45fd25216..b76e5bd811d48e59d4ff74ecdcc93e0d0553357f 100644
 --- a/dm/host/tests/t_motion_pro.c
 +++ b/dm/host/tests/t_motion_pro.c
 @@ -29,6 +29,14 @@ int main(void) {
@@ -96,13 +96,13 @@ index 87001b221d952738659d50a028ac2bc45fd25216..85b34de5601cd35044879f38aa4a30dc
      for (int k = 0; k < 3; k++) word(r, k, 5, 20);
      r[1]++; assert(pro_motion_decode(&s, r, 49, t + 430000000, out) == 3 && out[2].rot[2] > 0);   // slow turn is not learned as bias
 +    // The zero at rest: a second of stillness with a constant offset on the gyro (x +5, y -8, z +10 counts) is taken off; a turn after reads minus that zero
-+    pro_motion z = {0}; uint8_t q[64] = {0x30}; uint64_t tz = 2000000000;
-+    for (int k = 0; k < 3; k++) { word(q, k, 0, 0); word(q, k, 1, 0); word(q, k, 2, 4096); word(q, k, 3, 5); word(q, k, 4, -8); word(q, k, 5, 10); }
-+    for (int n = 0; n < PRO_BIAS_SAMPLES / 3 + 1; n++) { q[1]++; tz += 15000000; assert(pro_motion_decode(&z, q, 49, tz, out) == 3); }
++    pro_motion z = {0}; uint8_t qb[64] = {0x30}; uint64_t tz = 2000000000;
++    for (int k = 0; k < 3; k++) { word(qb, k, 0, 0); word(qb, k, 1, 0); word(qb, k, 2, 4096); word(qb, k, 3, 5); word(qb, k, 4, -8); word(qb, k, 5, 10); }
++    for (int n = 0; n < PRO_BIAS_SAMPLES / 3 + 1; n++) { qb[1]++; tz += 15000000; assert(pro_motion_decode(&z, qb, 49, tz, out) == 3); }
 +    assert(z.bias_set && fabsf(out[2].rot[0]) < 1e-5f && fabsf(out[2].rot[1]) < 1e-5f && fabsf(out[2].rot[2]) < 1e-5f);
 +    assert(fabsf(z.bias[1] - 5 * .070f * (float)M_PI / 180) < 1e-5f);   // y: raw x (+5) -> Switch y
-+    for (int k = 0; k < 3; k++) word(q, k, 5, 510);   // a turn of 35 deg/s about z, the zero's 0.7 taken off
-+    q[1]++; tz += 15000000; assert(pro_motion_decode(&z, q, 49, tz, out) == 3 && fabsf(out[2].rot[2] - 500 * .070f * (float)M_PI / 180) < 1e-4f && z.still == 0);
++    for (int k = 0; k < 3; k++) word(qb, k, 5, 510);   // a turn of 35 deg/s about z, the zero's 0.7 taken off
++    qb[1]++; tz += 15000000; assert(pro_motion_decode(&z, qb, 49, tz, out) == 3 && fabsf(out[2].rot[2] - 500 * .070f * (float)M_PI / 180) < 1e-4f && z.still == 0);
      assert(pro_motion_player(1, 1, 2) == 2);
      assert(pro_motion_player(1, 1, -1) == -1 && pro_motion_player(0, 1, 0) == -1);
      assert(pro_motion_player(2, 1, 0) == -1 && pro_motion_player(1, 2, 0) == -1);

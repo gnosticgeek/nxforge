@@ -645,7 +645,7 @@ index 892a334574aebda38cb2adbae136bd08eb286ecc..69661a7ed7320c01702d8af68cd87ecc
  void dm_movie_active(int active);   // iOS movie decoder recovery waits for activation
  void guest_clock_freeze_for(int reason, int on);   // Freeze by reason (1 background, 2 system keyboard); see hle_os.c
 diff --git a/dm/host/hle_audio.c b/dm/host/hle_audio.c
-index d704ee64c310587ff515471b36ab97d6d2a4b880..31d3a0c62e913d4321845a1255662712d17a4abd 100644
+index d704ee64c310587ff515471b36ab97d6d2a4b880..9566db2f1d61bdfe3dabf2ff1b3d156e97eeb364 100644
 --- a/dm/host/hle_audio.c
 +++ b/dm/host/hle_audio.c
 @@ -4,6 +4,7 @@
@@ -673,11 +673,11 @@ index d704ee64c310587ff515471b36ab97d6d2a4b880..31d3a0c62e913d4321845a1255662712
          memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize);
      } else {
          pull_device(a, bl->mBuffers[0].mData, bl->mBuffers[0].mDataByteSize);
-+        { int16_t *pcm = bl->mBuffers[0].mData; uint32_t n = bl->mBuffers[0].mDataByteSize / (2u * device_channels(a));   // NXForge: the capture tap and the host volume
++        { int16_t *pcm = bl->mBuffers[0].mData; uint32_t n = bl->mBuffers[0].mDataByteSize / (2u * a->dev_ch);   // NXForge: the capture tap and the host volume
 +          void (*tap)(void *, const int16_t *, uint32_t, int) = atomic_load(&g_tap_fn);
-+          if (tap) { int want = -1; if (atomic_compare_exchange_strong(&g_tap_id, &want, a->id) || want == a->id) tap(atomic_load(&g_tap_ctx), pcm, n, device_channels(a)); }
++          if (tap) { int want = -1; if (atomic_compare_exchange_strong(&g_tap_id, &want, a->id) || want == a->id) tap(atomic_load(&g_tap_ctx), pcm, n, a->dev_ch); }
 +          uint32_t vb = atomic_load_explicit(&g_host_vol, memory_order_relaxed);
-+          if (vb != 0x3f800000u) { float v; memcpy(&v, &vb, 4); for (uint32_t i = 0; i < n * (uint32_t)device_channels(a); i++) pcm[i] = (int16_t)(pcm[i] * v); } }
++          if (vb != 0x3f800000u) { float v; memcpy(&v, &vb, 4); for (uint32_t i = 0; i < n * (uint32_t)a->dev_ch; i++) pcm[i] = (int16_t)(pcm[i] * v); } }
          if (a->mute) memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize);
      }
      return noErr;

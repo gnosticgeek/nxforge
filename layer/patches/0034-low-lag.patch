@@ -65,7 +65,7 @@ index 2162a390a7212d088ea542ff8673f96d1fb550c8..283047ae4949ecc8d35a530b5b02f324
      dm_fps_lock_tick();   // after the frame step: at 120 fps the target follows the hold just decided
      static uint64_t prev_in, prev_out, prev_pass, prev_draw;
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 92ef620b59baedbe3af35e7c30a315e712253bec..5e785b5d4e1ba296ed32e50087ddc5a747e28282 100644
+index 703e6fe0dea7d75b4fdb66265fe4ae087f9950bc..75d11f9b7b3f0c462cb4ac6318dc312c9a3df7ae 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -188,6 +188,7 @@ static void ext_retire(NSArray *textures);
@@ -88,7 +88,7 @@ index 92ef620b59baedbe3af35e7c30a315e712253bec..5e785b5d4e1ba296ed32e50087ddc5a7
      if (!dr) return 0;
      int alloc_i = (int)(ticket % 3);
      if (g_present_alloc_fence[alloc_i]) {
-@@ -20133,6 +20135,7 @@ static void *link_main(void *arg) {   // Display link thread: started when switc
+@@ -20134,6 +20136,7 @@ static void *link_main(void *arg) {   // Display link thread: started when switc
      g_link_started = 0;
      return NULL;
  }
@@ -96,7 +96,7 @@ index 92ef620b59baedbe3af35e7c30a315e712253bec..5e785b5d4e1ba296ed32e50087ddc5a7
  static void link_sync(void) {   // Called every frame by the game's present thread: aligns the display link object's state to g_dm_present_link and the power-saving mode (can change at run time)
      static int applied;
      pthread_mutex_lock(&g_pq_mu);
-@@ -20156,6 +20159,7 @@ static void link_sync(void) {   // Called every frame by the game's present thre
+@@ -20157,6 +20160,7 @@ static void link_sync(void) {   // Called every frame by the game's present thre
      static int vrr_was; int vrr = want == 1 && link_vrr_120();   // variable-refresh fullscreen that kept its mode: the 120 Hz link paces the 60 (link_vrr_120)
      if (vrr != vrr_was) { vrr_was = vrr; MLOG("display link: %s (frame %llu)", vrr ? "120 Hz in fullscreen on a variable-refresh screen, a frame every other tick (DM_PRESENT_LINK=1 keeps 60 Hz)" : "60 Hz again (window, fixed-rate screen or another frame rate)", (unsigned long long)atomic_load(&g_cur_frame)); }
      if (vrr) want = 2;
