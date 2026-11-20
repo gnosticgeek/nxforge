@@ -280,7 +280,6 @@ struct PaletteItem: Identifiable {
 
 struct CommandPalette: View {
     @Bindable var model: AppModel
-    @Environment(\.openSettings) private var openSettings
     @State private var query = ""
     @State private var selected = 0
     @FocusState private var fieldFocused: Bool
@@ -317,8 +316,7 @@ struct CommandPalette: View {
         if m.converterUpdate != nil {
             out.append(PaletteItem(id: "act-update", title: "Update NXForge…", detail: "Action", symbol: "arrow.down.circle") { m.updateConverter() })
         }
-        let open = openSettings
-        out.append(PaletteItem(id: "act-settings", title: "Settings…", detail: "Action", symbol: "gearshape") { open() })
+        out.append(PaletteItem(id: "act-settings", title: "Settings…", detail: "Action", symbol: "gearshape") { m.openSettings() })
         return out
     }
 

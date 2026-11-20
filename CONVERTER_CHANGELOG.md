@@ -4,6 +4,18 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.3 (2026-11-20)
+
+One Settings panel, wider and in sections. Ships in NXForge 0.48.3.
+
+- **Settings is a wide panel with its sections down the left**: General, Playing, Library, Artwork, Theatre, Saves, Building, Updates and Storage. The chosen section's rows fill the right side, in cards by what they are about, so a section is read without scrolling on most windows and the notes run in one or two lines instead of three. It was one narrow column (640 pt) that scrolled through everything; it is now up to 1020 pt wide and narrows with the window. The app's version is at the foot of the list.
+- **Everything is in it.** The converter's options had a Settings window of their own (⌘,, or Converter Settings… at the foot of the panel): notifications, opening the app after a build, keeping previous builds, what a build leaves in its build folder, where new apps are saved, the signing identity, reusing finished steps and log detail are the Building section now, beside the keys file. ⌘, opens the panel, and that window is gone.
+- **Options that were only elsewhere**: Saves has Cloud saves for every game and its folder (the Saves page's switch), a snapshot after every session, the snapshot folder and the Git backup; Updates has the version, What's New, Check Now and Update automatically; Storage has Manage Storage, What NXForge Keeps, Health and Restore Defaults; Library shows the games folder's path with Change and Refresh, and Group Game Files by console; Theatre has a Volume slider (the right stick's setting).
+- **New: Look for new games** (Library): how often the games folder is looked at, every minute, every 10 minutes (as before), hourly, or Manual, which leaves it to Refresh.
+- **Find a setting** (⌘F) looks through every section at once and shows the matches under their sections' names; a section's name finds its rows ("theatre").
+- **A controller** walks the rows with up and down, turning to the next section at the end of one, and L and R step through the sections; every new switch and choice can be changed from the pad.
+- Snapshot hook: `NXC_SETTINGS=<section>` with `NXC_STAGE=settings`.
+
 ## 0.22.2 (2026-11-20)
 
 New games look themselves up, and find their sub-genres. Ships in NXForge 0.48.2.

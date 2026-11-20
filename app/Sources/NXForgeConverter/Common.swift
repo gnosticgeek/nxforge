@@ -7,7 +7,6 @@ let helpURL = URL(string: "https://github.com/gnosticgeek/nxforge/blob/main/app/
 /// The window: the front end (Stage.swift), or the converter's pages behind its Converter tab.
 struct RootView: View {
     @Bindable var model: AppModel
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,9 +18,9 @@ struct RootView: View {
             if let tv = model.theatreOffer, !model.theatre, !model.standby { TheatreOffer(model: model, tv: tv).transition(.opacity) }
             if model.stageSettings {
                 Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { model.stageSettings = false }
-                StageSettings(model: model, openConverterSettings: { openSettings() })
-                    // never taller than the window: the rows scroll inside it
-                    .padding(.top, 44).padding(.bottom, 28)
+                StageSettings(model: model)
+                    // never taller or wider than the window: the rows scroll inside it
+                    .padding(.top, 44).padding(.bottom, 28).padding(.horizontal, 24)
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .foregroundStyle(.white)
                     .onExitCommand { model.stageSettings = false }

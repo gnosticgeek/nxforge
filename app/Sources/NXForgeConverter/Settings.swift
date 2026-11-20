@@ -15,6 +15,18 @@ enum StartIn: String, Codable, CaseIterable {
     case home = "Home", library = "Library", theatre = "Theatre", converter = "Converter"
     var title: String { self == .library ? "Discover" : rawValue }
 }
+/// How often the games folder is looked at for new games (LibraryModel.watchGamesFolder); manual: only Refresh scans
+enum FolderCheck: String, Codable, CaseIterable {
+    case minute = "1 min", ten = "10 min", hour = "1 hour", manual = "Manual"
+    var seconds: Double? {
+        switch self {
+        case .minute: 60
+        case .ten: 600
+        case .hour: 3600
+        case .manual: nil
+        }
+    }
+}
 /// --cleanup: what the script deletes from <id>_build after a successful build
 enum Cleanup: String, Codable, CaseIterable {
     case off, unused, all
@@ -34,6 +46,8 @@ struct Settings: Codable, Equatable {
     var defaultKeys: String?
     /// the Library page's root: every game under it is listed (a drive or a share, such as /Volumes/Gaming/roms/switch)
     var gamesRoot: String?
+    /// how often the games folder is looked at for new games, in front or not, and whether coming to the front looks too
+    var folderCheck: FolderCheck = .ten
     var appearance: Appearance = .system
     var notify = true
     var openAfterBuild = false
@@ -126,7 +140,7 @@ struct Settings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
-        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root"
+        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root", folderCheck = "folder_check"
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
@@ -160,6 +174,7 @@ struct Settings: Codable, Equatable {
         outDir = try c.decodeIfPresent(String.self, forKey: .outDir)
         defaultKeys = try c.decodeIfPresent(String.self, forKey: .defaultKeys)
         gamesRoot = try c.decodeIfPresent(String.self, forKey: .gamesRoot)
+        folderCheck = (try? c.decodeIfPresent(FolderCheck.self, forKey: .folderCheck)) ?? .ten
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? .system
         notify = (try? c.decodeIfPresent(Bool.self, forKey: .notify)) ?? true
         openAfterBuild = (try? c.decodeIfPresent(Bool.self, forKey: .openAfterBuild)) ?? false

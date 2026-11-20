@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.3 (2026-11-20)
+
+- **One Settings panel, wider and in sections** (Converter 0.22.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Settings is a wide panel with its sections down the left (General, Playing, Library, Artwork, Theatre, Saves, Building, Updates, Storage) instead of one narrow scrolling column, and the converter's options, which had a Settings window of their own, are in it, so ⌘, and the top bar's button open the same place. It also gains what was only reachable elsewhere (cloud saves, snapshots and the Git backup, updates, storage, the games folder's path, Theatre's volume) and one new choice, how often NXForge looks for new games. No game rebuild needed.
+
 ## 0.48.2 (2026-11-20)
 
 - **Refresh in the top bar, every 10 minutes, and new games fetch their own art** (Converter 0.22.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a round Refresh button sits beside Full Screen on every page; NXForge looks at the games folder every 10 minutes whether or not it is in front (and when it comes to the front); a game that appears gets its covers, wide art and store details (description, screenshots, trailers, genres) straight away, with a banner naming it. No game rebuild needed.
