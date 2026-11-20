@@ -52,7 +52,7 @@ A launch goes **preparing** (shaders copied to this Mac first) → **opening** �
 - Button hints show the symbol printed on the connected pad's button (✕ on a PlayStation pad), from the system's own symbol names, never a letter assumed from position. Without a controller the hints keep their letters.
 - A button already held when NXForge comes to the front (pressed to quit a game, say) does nothing until it is let go.
 - The pad does nothing while a sheet, an alert or a text field has the keyboard.
-- On Theatre every action has a button and its hint is on screen: L and R filter, ZL and ZR switch the theme, the right stick sets the volume of what Theatre plays and its press mutes, L3 shuffles. A press that wakes the screensaver or brings Trailer back from Watch does nothing else; a press while a moment's card is up puts the card away and does what it always does.
+- On Theatre every action has a button and its hint is on screen: L and R filter, ZL and ZR switch the theme, the right stick turns the box in front (the volume is in Settings, and on - and =) and its press mutes, L3 shuffles. A press that wakes the screensaver or brings Trailer back from Watch does nothing else; a press while a moment's card is up puts the card away and does what it always does.
 
 ## Home
 

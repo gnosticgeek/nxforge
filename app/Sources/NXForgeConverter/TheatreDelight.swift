@@ -160,7 +160,7 @@ extension AppModel {
             let r = cinemaRow(rows)
             return (rows[r].games, r)
         case .trailer: return (trailerGames(), nil)
-        case .carousel, .gallery: return (theatreGames(), nil)
+        case .carousel, .fan: return (theatreGames(), nil)
         }
     }
 
@@ -315,10 +315,10 @@ enum TheatreSynth {
 
     static func gain(_ c: TheatreSound.Cue) -> Float {
         switch c {
-        case .step: 0.30
-        case .turn: 0.34
-        case .theme: 0.30
-        case .open: 0.26
+        case .step: 0.22
+        case .turn: 0.42
+        case .theme: 0.36
+        case .open: 0.22
         case .launch: 0.75
         case .chime: 0.30
         case .spin: 0.22
@@ -328,11 +328,12 @@ enum TheatreSynth {
 
     static func samples(_ c: TheatreSound.Cue) -> [Float] {
         switch c {
-        case .step: click(2300, length: 0.05)
-        case .spin: click(3100, length: 0.035)
-        case .open: click(1500, length: 0.07)
-        case .turn: mix(click(2300, length: 0.05), whoosh(0.30, low: 500, high: 2600), 0.75)
-        case .theme: whoosh(0.42, low: 300, high: 1800)
+        case .step: tok(880, length: 0.09)
+        case .spin: tok(1320, length: 0.06)
+        case .open: tok(660, length: 0.12)
+        // a soft breath of air, low and rounded (0.48.2: the first whoosh was too bright and sharp), with a wooden tok under it
+        case .turn: mix(breeze(0.62, low: 140, high: 620), tok(587, length: 0.1), 0.35)
+        case .theme: breeze(0.8, low: 110, high: 480)
         case .launch: thunk()
         case .chime: bells([1046.5, 1318.5, 1568.0, 2093.0], gap: 0.075, ring: 0.55)
         case .land: bells([783.99, 1174.66], gap: 0.1, ring: 0.7)
@@ -347,6 +348,36 @@ enum TheatreSynth {
             let v = sin(2 * .pi * hz * t) * exp(-t / 0.0045) * 0.8 + noise.next() * exp(-t / 0.0012) * 0.35
             return Float(v * fadeIn(t, 0.0008))
         }
+    }
+
+    /// a soft wooden tick: a low sine that dies away fast, no noise in it
+    static func tok(_ hz: Double, length: Double) -> [Float] {
+        (0..<Int(length * rate)).map { i in
+            let t = Double(i) / rate
+            let v = (sin(2 * .pi * hz * t) + 0.3 * sin(2 * .pi * hz * 2.01 * t) * exp(-t / 0.008)) * exp(-t / 0.022)
+            return Float(v * 0.7 * fadeIn(t, 0.002) * fadeOut(t, length, 0.02))
+        }
+    }
+
+    /// air drifting past, mellow: noise through two gentle low-pass filters whose opening rises and falls, swelling in slowly
+    /// and fading out longer still
+    static func breeze(_ length: Double, low: Double, high: Double) -> [Float] {
+        var noise = Noise()
+        var a = 0.0, b = 0.0, c = 0.0
+        let n = Int(length * rate)
+        var out = [Float](repeating: 0, count: n)
+        for i in 0..<n {
+            let t = Double(i) / rate, p = t / length
+            let fc = low + (high - low) * sin(.pi * min(p * 1.3, 1))
+            let k = 1 - exp(-2 * .pi * fc / rate), kh = 1 - exp(-2 * .pi * 60 / rate)
+            a += k * (noise.next() - a)
+            b += k * (a - b)
+            c += kh * (b - c)   // the rumble under 60 Hz taken out
+            // in over the first 35 %, out over the rest
+            let env = p < 0.35 ? pow(sin(.pi / 2 * p / 0.35), 2) : pow(cos(.pi / 2 * (p - 0.35) / 0.65), 2)
+            out[i] = Float(tanh((b - c) * env * 3.5))
+        }
+        return out
     }
 
     /// air going past: noise through a band that opens and closes, swelling and falling away
@@ -415,18 +446,31 @@ enum TheatreSynth {
 
 // MARK: Music
 
-/// The focused game's music, looped quietly once the focus rests on it: `music`, `theme` or `soundtrack` (.m4a, .mp3, .aac, .wav,
-/// .aiff, .caf or .flac) in the game's media folder, else a file named by its title ID or its name in NXForge's Theatre Music
-/// folder. It fades in, and fades out as the focus moves on.
+/// Theatre's music, on every theme but Trailer (which has the trailer's sound). Two sources:
+/// - Settings › Theatre › Music folder: the MP3, Opus (and M4A, AAC, WAV, AIFF, FLAC, CAF) files in a folder and the folders in
+///   it, in a shuffled order, one after another, quietly in the background.
+/// - A game's own music, once the focus rests on it: `music`, `theme` or `soundtrack` in the game's media folder, else a file
+///   named by its title ID or its name in NXForge's Theatre Music folder. It fades in over the background music, which pauses
+///   and carries on where it was when the focus moves to a game without music of its own.
 @MainActor
-final class TheatreMusic {
+final class TheatreMusic: NSObject, AVAudioPlayerDelegate {
     static let shared = TheatreMusic()
     nonisolated static let names = ["music", "theme", "soundtrack"]
     nonisolated static let kinds = ["m4a", "mp3", "aac", "wav", "aif", "aiff", "caf", "flac"]
+    /// what a music folder may hold
+    nonisolated static let folderKinds = Set(["mp3", "opus", "m4a", "aac", "wav", "aif", "aiff", "flac", "caf"])
     static var ownFolder: URL { Settings.supportDir.appending(path: "Theatre Music") }
 
-    private var player: AVAudioPlayer?
-    private var url: URL?
+    /// the game's own track, looped
+    private var gamePlayer: AVAudioPlayer?
+    private var gameURL: URL?
+    /// the music folder's: its tracks in a shuffled order, the one playing, and the folder they came from. An AVPlayer, since
+    /// AVAudioPlayer opens an Ogg Opus file but will not play it
+    private var folderPlayer: FolderTrack?
+    private var folder: String?
+    private var tracks: [URL] = []
+    private var next = 0
+    private var folderVolume: Float = 0
     private var leaving: [AVAudioPlayer] = []
 
     /// The files that would be the game's music, in the order looked for (tested)
@@ -445,31 +489,159 @@ final class TheatreMusic {
         return await Task.detached(priority: .utility) { list.first { FileManager.default.isReadableFile(atPath: $0.path) } }.value
     }
 
-    /// Plays `u` looped at `volume` (0 to 1), the one before fading out; nil fades out
-    func play(_ u: URL?, volume: Float) {
-        if u == url {
-            player?.setVolume(volume, fadeDuration: 0.5)
-            return
+    /// The tracks in a music folder and the folders in it (no hidden files, at most 3000), in no order (tested)
+    nonisolated static func tracks(in folder: URL) -> [URL] {
+        guard let e = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
+        var out: [URL] = []
+        for case let u as URL in e where folderKinds.contains(u.pathExtension.lowercased()) {
+            out.append(u)
+            if out.count >= 3000 { break }
         }
-        if let old = player {
-            old.setVolume(0, fadeDuration: 1.2)
-            leaving.append(old)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { [weak self] in
-                MainActor.assumeIsolated {
-                    old.stop()
-                    self?.leaving.removeAll { $0 === old }
-                }
+        return out
+    }
+
+    /// What plays: the game's track when it has one, else the music folder's; nothing when both are nil. `volume` 0 to 1.
+    func set(game: URL?, folder f: String?, volume: Float) async {
+        // the folder's list, read again when the folder changes
+        if f != folder {
+            folder = f
+            stopFolder()
+            if let f {
+                let found = await Task.detached(priority: .utility) { Self.tracks(in: URL(fileURLWithPath: f)) }.value
+                guard folder == f else { return }
+                tracks = found.shuffled()
+                next = 0
             }
         }
-        player = nil
-        url = u
-        guard let u, let p = try? AVAudioPlayer(contentsOf: u) else { return }
-        p.numberOfLoops = -1
-        p.volume = 0
-        p.prepareToPlay()
+        if game != gameURL {
+            if let old = gamePlayer { fadeAway(old) }
+            gamePlayer = nil
+            gameURL = game
+            if let game, let p = try? AVAudioPlayer(contentsOf: game) {
+                p.numberOfLoops = -1
+                p.volume = 0
+                p.play()
+                gamePlayer = p
+            }
+        }
+        gamePlayer?.setVolume(volume, fadeDuration: 1.8)
+        // the folder's music pauses under the game's own and carries on after it
+        folderVolume = volume
+        if gamePlayer != nil || folder == nil {
+            if let p = folderPlayer, p.isPlaying {
+                p.fade(to: 0, over: 1.2) { [weak self] in if self?.gamePlayer != nil, self?.folderPlayer === p { p.pause() } }
+            }
+        } else if let p = folderPlayer {
+            if !p.isPlaying { p.play() }
+            p.fade(to: volume, over: 1.8)
+        } else {
+            playNextTrack(fadeIn: true)
+        }
+    }
+
+    func stop() {
+        Task { await set(game: nil, folder: nil, volume: 0) }
+    }
+
+    private func playNextTrack(fadeIn: Bool) {
+        guard folder != nil, !tracks.isEmpty else { return }
+        let u = tracks[next % tracks.count]
+        next += 1
+        if next >= tracks.count { next = 0; tracks.shuffle() }
+        let p = FolderTrack(u, volume: fadeIn ? 0 : folderVolume)
+        // at its end, or when it will not play (a broken file), the next one
+        p.onEnd = { [weak self, weak p] failed in
+            guard let self, let p, self.folderPlayer === p else { return }
+            self.folderPlayer = nil
+            self.skips = failed ? self.skips + 1 : 0
+            if self.gamePlayer == nil, self.skips < 20 { self.playNextTrack(fadeIn: failed && fadeIn) }
+        }
+        folderPlayer = p
         p.play()
-        p.setVolume(volume, fadeDuration: 1.8)
-        player = p
+        if fadeIn { p.fade(to: folderVolume, over: 1.8) }
+    }
+    private var skips = 0
+
+    private func stopFolder() {
+        if let p = folderPlayer { p.onEnd = nil; p.fade(to: 0, over: 1.2) { p.stop() } }
+        folderPlayer = nil
+        tracks = []
+        skips = 0
+    }
+
+    private func fadeAway(_ p: AVAudioPlayer) {
+        p.delegate = nil
+        p.setVolume(0, fadeDuration: 1.2)
+        leaving.append(p)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { [weak self] in
+            MainActor.assumeIsolated {
+                p.stop()
+                self?.leaving.removeAll { $0 === p }
+            }
+        }
+    }
+
+}
+
+/// One track from the music folder, on an AVPlayer: its volume eased in steps, and `onEnd` called once when it finishes
+/// (false) or cannot play (true)
+@MainActor
+final class FolderTrack {
+    let player: AVPlayer
+    var onEnd: ((Bool) -> Void)?
+    private var observers: [NSObjectProtocol] = []
+    private var status: NSKeyValueObservation?
+    private var fading: Task<Void, Never>?
+    private var ended = false
+
+    init(_ url: URL, volume: Float) {
+        let item = AVPlayerItem(url: url)
+        player = AVPlayer(playerItem: item)
+        player.volume = volume
+        player.actionAtItemEnd = .pause
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finish(false) }
+        })
+        observers.append(center.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finish(true) }
+        })
+        status = item.observe(\.status) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            Task { @MainActor in self?.finish(true) }
+        }
+    }
+
+    var isPlaying: Bool { player.rate != 0 }
+    func play() { player.play() }
+    func pause() { player.pause() }
+    func stop() { fading?.cancel(); player.pause(); player.replaceCurrentItem(with: nil); clear() }
+
+    /// eases the volume to `target` in 20 steps, then runs `then`
+    func fade(to target: Float, over seconds: Double, then: (@MainActor () -> Void)? = nil) {
+        fading?.cancel()
+        let start = player.volume
+        fading = Task { @MainActor [weak self] in
+            for i in 1...20 {
+                try? await Task.sleep(for: .seconds(seconds / 20))
+                guard let self, !Task.isCancelled else { return }
+                self.player.volume = start + (target - start) * Float(i) / 20
+            }
+            then?()
+        }
+    }
+
+    private func finish(_ failed: Bool) {
+        guard !ended else { return }
+        ended = true
+        clear()
+        onEnd?(failed)
+    }
+
+    private func clear() {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers = []
+        status = nil
     }
 }
 
@@ -511,7 +683,7 @@ struct TheatreDaylightWash: View {
 }
 
 /// The card for a moment, under the top bar: what happened, the game, and what A does; with a light falling on the game where
-/// the theme has one place for it (the Carousel's front box, the Gallery's middle cover)
+/// the theme has one place for it (the box in front on the Carousel and the Fan)
 struct TheatreMomentCard: View {
     let model: AppModel
     let moment: TheatreMoment
@@ -537,13 +709,13 @@ struct TheatreMomentCard: View {
     var beamX: CGFloat? {
         switch model.theatreTheme {
         case .carousel: width / 2
-        case .gallery: (740 * u + width - 96 * u) / 2
+        case .fan: width / 2
         case .cinema, .trailer: nil
         }
     }
 
     func beam(x: CGFloat, tint: Color) -> some View {
-        let top = 60 * u, spread = 260 * u, floor = height * (model.theatreTheme == .gallery ? 0.62 : 0.68)
+        let top = 60 * u, spread = 260 * u, floor = height * 0.68
         return ZStack {
             Path { p in
                 p.move(to: CGPoint(x: x - 40 * u, y: 0))

@@ -133,6 +133,8 @@ struct Settings: Codable, Equatable {
     var theatreMusic = true
     var theatreTimeOfDay = true
     var theatreSeen: [String]?
+    /// a folder of MP3 or Opus files Theatre plays in the background (TheatreMusic)
+    var theatreMusicFolder: String?
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -158,7 +160,7 @@ struct Settings: Codable, Equatable {
         case theatreTheme = "theatre_theme", theatreOnTV = "theatre_on_tv"
         case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
-        case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen"
+        case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
     }
 
     init() {}
@@ -225,6 +227,7 @@ struct Settings: Codable, Equatable {
         theatreMusic = (try? c.decodeIfPresent(Bool.self, forKey: .theatreMusic)) ?? true
         theatreTimeOfDay = (try? c.decodeIfPresent(Bool.self, forKey: .theatreTimeOfDay)) ?? true
         theatreSeen = try? c.decodeIfPresent([String].self, forKey: .theatreSeen)
+        theatreMusicFolder = try? c.decodeIfPresent(String.self, forKey: .theatreMusicFolder)
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

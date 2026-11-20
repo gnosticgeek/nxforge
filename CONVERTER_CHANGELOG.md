@@ -4,6 +4,15 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.4 (2026-11-20)
+
+Shipped in NXForge 0.48.4.
+
+- **Fan replaces Gallery in Theatre**: the boxes fanned out round a point below the screen, the focused one upright in the middle, lifted out by 46 px, scaled up and lit; neighbours turn 7.5° each and darken with distance, eight either side are drawn. Left and right swing the fan, a click brings a box to the middle, the right stick turns the box in front. A saved Gallery (or the older Shelf) theme opens as Fan.
+- **Mellower sounds**: the turn is a low-passed breeze with a soft tick under it and the theme switch a slower breeze; steps, spins and opens are short rounded ticks; every sound is soft-limited and quieter.
+- **The right stick no longer sets the volume**: up and down fought with turning the box; the volume stays in Settings and on - and =.
+- **Music folder**: Settings › Theatre › Music folder chooses a folder; its MP3, Opus, M4A, AAC, FLAC, WAV and AIFF files (subfolders too, up to 3000) play shuffled, one after another, in the background while Theatre is open, except on Trailer, while a game plays or a box is opening. A game with its own music still takes over while it is in focus, and the folder carries on where it paused. Files macOS cannot play are skipped.
+
 ## 0.22.3 (2026-11-20)
 
 One Settings panel, wider and in sections. Ships in NXForge 0.48.3.

@@ -462,8 +462,15 @@ struct StageSettings: View {
                 Slider(value: volume, in: 0...100, step: 10).frame(width: 190).tint(.white).accessibilityLabel("Theatre volume")
                 Text("\(model.settings.theatreVolume) %").font(.system(size: 12.5, weight: .medium)).monospacedDigit().foregroundStyle(StageLook.soft).frame(width: 46, alignment: .trailing)
             },
-            toggle("Sounds", "A soft click for each step, a whoosh as the Carousel turns and a thunk on launch.", $model.settings.theatreSounds, .theatreSounds),
-            toggle("Game music", "The game in focus plays its music, quietly looped: a music.m4a or music.mp3 in its media folder.", $model.settings.theatreMusic, .theatreMusic),
+            toggle("Sounds", "A soft tick for each step, a gentle breeze as the Carousel or Fan turns and a thunk on launch.", $model.settings.theatreSounds, .theatreSounds),
+            toggle("Music", "Plays your music folder in the background (not in Trailer); a game with its own music.m4a or .mp3 in its media folder plays that while it is in focus.", $model.settings.theatreMusic, .theatreMusic),
+            row("Music folder", "MP3 or Opus files (and M4A, FLAC, WAV), shuffled through in turn.") {
+                path(model.settings.theatreMusicFolder?.tildePath, none: "None chosen", width: 220)
+                if model.settings.theatreMusicFolder != nil { button("Clear") { model.settings.theatreMusicFolder = nil } }
+                button(model.settings.theatreMusicFolder == nil ? "Choose…" : "Change…") {
+                    if let f = model.choose(folder: true, start: model.settings.theatreMusicFolder) { model.settings.theatreMusicFolder = f }
+                }
+            },
             toggle("Light follows the time of day", "A cooler, brighter room in the morning, a warm evening, and a dimmer one after 10 pm.", $model.settings.theatreTimeOfDay, .theatreTimeOfDay),
         ]
         return [SettingsGroup(rows: screen), SettingsGroup(caption: "Sound and light", rows: sound)]
