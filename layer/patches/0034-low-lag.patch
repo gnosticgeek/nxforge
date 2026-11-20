@@ -105,7 +105,7 @@ index 703e6fe0dea7d75b4fdb66265fe4ae087f9950bc..75d11f9b7b3f0c462cb4ac6318dc312c
      // while its thread starts (after link_main read the rate) is not lost
      static int hz_was; int hz = front_screen_max_fps(); CAMetalDisplayLink *lk = g_link;
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 1b00190ab9132e38a7873c98351757a2ab425512..db98fa6e7b79d0107f341bf30760866f43c137a0 100644
+index 69334329a8cfaa24bd859b1f680ea5e8380efb13..0657d044ef3d1e6501eed2bc5973816bfd9b19b7 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
 @@ -165,6 +165,8 @@ t_counter_clock: t_counter_clock.m ../../host/hle_os.c ../../host/dm.h $(MTL_T_D

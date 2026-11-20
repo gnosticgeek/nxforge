@@ -56,10 +56,10 @@ index 752ba7030950dd64b6c3b0d6d7a5464c1659877e..8f65f6339f59d822b41c7c807a966346
          if (!mt) { RED_ONCE(2, "failed to create MTLTexture %ux%u format %#x target %d", t->d.width, t->d.height, t->d.format, t->d.target); return NULL; }
      }
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 14fa439bba0488defbca5a7d15e0e490dac2477a..1b00190ab9132e38a7873c98351757a2ab425512 100644
+index b886f7fbf3b38eaae311db1abdb57f4dc15a879b..69334329a8cfaa24bd859b1f680ea5e8380efb13 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
-@@ -963,3 +963,10 @@ check_t_sparse_pool_cache: RUN_ENV = MTL_DEBUG_LAYER=1
+@@ -960,3 +960,10 @@ check_t_sparse_pool_cache: RUN_ENV = MTL_DEBUG_LAYER=1
  t_sparse_copy: t_sparse_copy.m $(MTL_T_DEP)
  	clang $(CFLAGS) -fobjc-arc -o $@ t_sparse_copy.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
  check_t_sparse_copy: RUN_ENV = MTL_DEBUG_LAYER=1

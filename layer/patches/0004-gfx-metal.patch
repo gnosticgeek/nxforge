@@ -15,7 +15,7 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/nvn/nvn_mtl.m              | 998 +++++++++++++++++++++++++++---
  dm/gfx/nvn/nvn_owner.h            |   2 +
  dm/gfx/nvn/nvn_owner.m            |   2 +
- dm/gfx/tests/Makefile             |  40 +-
+ dm/gfx/tests/Makefile             |  37 +-
  dm/gfx/tests/t_compute_loops.m    |  10 +-
  dm/gfx/tests/t_cpu_tex.m          |  34 +-
  dm/gfx/tests/t_dispatch_barrier.m |  10 +-
@@ -28,7 +28,7 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/tests/t_tg_spill.m         |   2 +-
  dm/gfx/tests/t_upscaler_mfx.m     |   2 +-
  dm/gfx/tests/t_view_swizzle.m     |   2 +-
- 23 files changed, 1325 insertions(+), 142 deletions(-)
+ 23 files changed, 1322 insertions(+), 142 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index 298ce8cf6acfdadae2716a35274bf21c8e396cdd..9aefa0fbb8a66e26ab5d8d191c5dc0ddd166146a 100644
@@ -2215,7 +2215,7 @@ index 974823085a43b60195107e18478f4db02d418065..549b8e24be773fa4350b11c09ac8576b
  // to them (an object rebuilt over the same storage with the same description must keep finding it: SMBW's transient render targets) or a lookup found them in the last ALIAS_IDLE submissions
  // (Breath of the Wild finalizes its transient render targets before it submits and makes them again the next frame: targets sharing storage would evict each other every frame). On NVN
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 357e8ea0f9d2d2f96fe9946a084e2716c3ac3294..14fa439bba0488defbca5a7d15e0e490dac2477a 100644
+index 357e8ea0f9d2d2f96fe9946a084e2716c3ac3294..b886f7fbf3b38eaae311db1abdb57f4dc15a879b 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
 @@ -13,7 +13,7 @@ GAME_H = ../../host/gen/$(GAME)/game_profile.h
@@ -2294,16 +2294,6 @@ index 357e8ea0f9d2d2f96fe9946a084e2716c3ac3294..14fa439bba0488defbca5a7d15e0e490
  .PHONY: check_t_upscaler_mfx
  # (MetalFX's Metal 4 scaler stops under Metal validation on a barrier-stage setting of its own that has no public API, "_outputTextureBarrierStages not set": its run is without it)
  check_t_upscaler_mfx: t_upscaler_mfx
-@@ -725,6 +760,9 @@ check_t_descriptor_pools: RUN_ENV = MTL_DEBUG_LAYER=1
- t_image_usage: t_image_usage.m $(MTL_T_DEP)
- 	clang $(CFLAGS) -fobjc-arc -o $@ t_image_usage.m $(MTL_T_SRC) $(FW)
- check_t_image_usage: RUN_ENV = MTL_DEBUG_LAYER=1
-+t_image_srgb: t_image_srgb.m $(MTL_T_DEP)
-+	clang $(CFLAGS) -fobjc-arc -o $@ t_image_srgb.m $(MTL_T_SRC) $(FW)
-+check_t_image_srgb: RUN_ENV = MTL_DEBUG_LAYER=1
- t_image_type: t_image_type.m $(MTL_T_DEP)
- 	clang $(CFLAGS) -fobjc-arc -o $@ t_image_type.m $(MTL_T_SRC) $(FW)
- check_t_image_type: RUN_ENV = MTL_DEBUG_LAYER=1
 diff --git a/dm/gfx/tests/t_compute_loops.m b/dm/gfx/tests/t_compute_loops.m
 index c1ae331c98f82648341aa303d97e4e09f3832e2d..07e3efad87248b0f0dabfb032acf61b01936f877 100644
 --- a/dm/gfx/tests/t_compute_loops.m
