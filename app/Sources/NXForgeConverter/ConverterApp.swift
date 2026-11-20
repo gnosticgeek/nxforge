@@ -135,7 +135,7 @@ struct ConverterApp: App {
                     .disabled(model.settings.libraryLayout == .grid && model.settings.libraryCoverSize >= Settings.coverSizes.upperBound)
                 Button("Smaller Covers") { model.page = .library; model.resizeCovers(by: -30) }.keyboardShortcut("-")
                     .disabled(model.settings.libraryLayout == .grid && model.settings.libraryCoverSize <= Settings.coverSizes.lowerBound)
-                Toggle("Group Library by Console", isOn: Binding(get: { model.settings.libraryGroupByConsole }, set: { model.settings.libraryGroupByConsole = $0 }))
+                Toggle("Group Library by Console", isOn: $model.settings.libraryGroupByConsole)
             }
         }
     }

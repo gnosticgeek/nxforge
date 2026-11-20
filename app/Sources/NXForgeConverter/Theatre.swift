@@ -577,12 +577,8 @@ struct TheatreRow: Identifiable {
 }
 
 /// Sizes on Theatre are for a 1080-line picture, scaled to the window: a 4K TV at full resolution gets the same layout, twice the size
-private struct TheatreUnit: EnvironmentKey { static let defaultValue: CGFloat = 1 }
 extension EnvironmentValues {
-    var tu: CGFloat {
-        get { self[TheatreUnit.self] }
-        set { self[TheatreUnit.self] = newValue }
-    }
+    @Entry var tu: CGFloat = 1
 }
 
 struct TheatreView: View {

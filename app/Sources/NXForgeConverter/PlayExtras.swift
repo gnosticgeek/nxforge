@@ -428,7 +428,7 @@ struct LeftoversSheet: View {
                             }
                             Spacer(minLength: 8)
                             Text(measuring && i.bytes == 0 ? "…" : ByteCountFormatter.string(fromByteCount: i.bytes, countStyle: .file)).monospacedDigit().foregroundStyle(.secondary)
-                            Button { reveal(i.path) } label: { Image(systemName: "folder") }.buttonStyle(.borderless).help("Show in Finder")
+                            Button("Show in Finder", systemImage: "folder") { reveal(i.path) }.labelStyle(.iconOnly).buttonStyle(.borderless).help("Show in Finder")
                         }
                         .padding(.vertical, 8)
                         Divider()

@@ -773,7 +773,7 @@ struct GameTile: View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 LinearGradient(colors: [tint.opacity(0.85), tint.opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                if let i = g.icon, let img = NSImage(contentsOfFile: i) {
+                if let i = g.icon, let img = IconImage.load(i) {
                     Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
                 } else {
                     Image(systemName: g.kind == .nup ? "shippingbox" : "gamecontroller").font(.system(size: 44)).foregroundStyle(.white.opacity(0.8))
@@ -824,6 +824,7 @@ struct GameTile: View {
         .onTapGesture(count: 2) { model.openGame(GameRef(libraryID: g.id, app: build?.app)) }
         .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
         .contextMenu { LibraryGameMenu(model: model, game: g, build: build) }
+        .accessibilityAction { model.openGame(GameRef(libraryID: g.id, app: build?.app)) }
         .help(g.path.tildePath)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(tileLabel)

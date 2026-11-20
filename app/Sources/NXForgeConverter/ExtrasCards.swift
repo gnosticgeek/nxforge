@@ -292,8 +292,8 @@ struct ModsCard: View {
             .toggleStyle(.switch).controlSize(.small)
             if m.hasCode { Pill(text: "Code patches not loaded", color: .orange).help("This mod also carries patches to the game's program (exefs). NXForge loads a mod's game files only, so that part does nothing.") }
             Spacer(minLength: 0)
-            Button { move(i, -1) } label: { Image(systemName: "chevron.up") }.buttonStyle(.borderless).disabled(i == 0).help("Load earlier (wins over the mods below)")
-            Button { move(i, 1) } label: { Image(systemName: "chevron.down") }.buttonStyle(.borderless).disabled(i == mods.count - 1).help("Load later")
+            Button("Load Earlier", systemImage: "chevron.up") { move(i, -1) }.labelStyle(.iconOnly).buttonStyle(.borderless).disabled(i == 0).help("Load earlier (wins over the mods below)")
+            Button("Load Later", systemImage: "chevron.down") { move(i, 1) }.labelStyle(.iconOnly).buttonStyle(.borderless).disabled(i == mods.count - 1).help("Load later")
             Menu {
                 Button("Show in Finder") { reveal(dir + "/" + m.name) }
                 if let n = Mods.note(dir: dir, name: m.name), let u = URL(string: n.split(separator: "\n").first.map(String.init) ?? ""), u.scheme == "https" {
@@ -301,7 +301,7 @@ struct ModsCard: View {
                 }
                 Divider()
                 Button("Remove…", role: .destructive) { removing = m }
-            } label: { Image(systemName: "ellipsis.circle") }
+            } label: { Label("More", systemImage: "ellipsis.circle").labelStyle(.iconOnly) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         }
     }
@@ -440,9 +440,9 @@ struct GameBananaSheet: View {
                     LazyVStack(spacing: 8) { ForEach(mods) { row($0) } }
                 }
                 HStack {
-                    Button { page -= 1; Task { await loadMods() } } label: { Image(systemName: "chevron.left") }.buttonStyle(.stage).disabled(page <= 1)
+                    Button { page -= 1; Task { await loadMods() } } label: { Label("Previous Page", systemImage: "chevron.left").labelStyle(.iconOnly) }.buttonStyle(.stage).disabled(page <= 1)
                     Text("Page \(page) of \(max(1, (total + 14) / 15))").foregroundStyle(.secondary).monospacedDigit()
-                    Button { page += 1; Task { await loadMods() } } label: { Image(systemName: "chevron.right") }.buttonStyle(.stage).disabled(page * 15 >= total)
+                    Button { page += 1; Task { await loadMods() } } label: { Label("Next Page", systemImage: "chevron.right").labelStyle(.iconOnly) }.buttonStyle(.stage).disabled(page * 15 >= total)
                     Spacer()
                     if let message { Text(message).font(.callout).foregroundStyle(.secondary).lineLimit(2) }
                 }
@@ -475,7 +475,7 @@ struct GameBananaSheet: View {
                     .filter { !$0.isEmpty }.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
-            Button { if let u = URL(string: m.page) { NSWorkspace.shared.open(u) } } label: { Image(systemName: "safari") }.buttonStyle(.stage).help("Open the mod's page")
+            Button { if let u = URL(string: m.page) { NSWorkspace.shared.open(u) } } label: { Label("Open the Mod's Page", systemImage: "safari").labelStyle(.iconOnly) }.buttonStyle(.stage).help("Open the mod's page")
             if working == m.id { ProgressView().controlSize(.small).frame(width: 80) }
             else {
                 Button(has ? "Installed" : "Install") { choose(m) }.buttonStyle(.stagePrimary).disabled(has || working != nil).frame(width: 80)

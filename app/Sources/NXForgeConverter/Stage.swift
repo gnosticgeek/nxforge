@@ -999,6 +999,7 @@ struct StageHome: View {
                                 .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
                                 .contextMenu { StageGameMenu(model: model, game: g) }
                                 .accessibilityElement(children: .combine).accessibilityLabel(g.app == nil ? "\(g.name), \(model.status(g).text)" : g.name).accessibilityAddTraits(.isButton)
+                                .accessibilityAction { model.libraryFocus = g.id; model.playFromStage(g.ref) }
                             }
                         }
                         .padding(.horizontal, 56).padding(.top, 20).frame(height: shelf + 20, alignment: .top)
@@ -1096,6 +1097,7 @@ struct StageLibrary: View {
                                 .simultaneousGesture(TapGesture().onEnded { model.libraryFocus = g.id })
                                 .contextMenu { StageGameMenu(model: model, game: g) }
                                 .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
+                                .accessibilityAction { model.libraryFocus = g.id; model.caseFlipped = false; model.gameDetail = g.ref }
                             }
                         }
                         .padding(.horizontal, side).padding(.top, 22).padding(.bottom, 30)

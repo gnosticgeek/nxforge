@@ -314,7 +314,7 @@ struct GameIcon: View {
 
     var body: some View {
         Group {
-            if let url, let img = NSImage(contentsOf: url) {
+            if let url, let img = IconImage.load(url.path) {
                 Image(nsImage: img).resizable().interpolation(.high)
             } else {
                 ZStack { Color.gray.opacity(0.25); Image(systemName: "gamecontroller").font(.system(size: size * 0.35)).foregroundStyle(.secondary) }
