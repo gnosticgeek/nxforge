@@ -723,17 +723,39 @@ struct StageTopBar: View {
             .glassEffect(.regular, in: .capsule)
             .animation(.spring(duration: 0.32), value: model.stageTab)
             .layoutPriority(1)
+            // the right side; where it is too narrow for every label, Theatre and the controller show as icons only
+            ViewThatFits(in: .horizontal) {
+                right(compact: false)
+                right(compact: true)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
+        // under the converter's bar, a hairline between it and the page's own tabs
+        .overlay(alignment: .bottom) {
+            if !model.frontEnd && model.page != .saves { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
+        }
+    }
+
+    func right(compact: Bool) -> some View {
             HStack(spacing: 14) {
             Spacer(minLength: 0)
             // Theatre: full screen for a TV (⇧⌘F)
             Button { model.enterTheatre() } label: {
-                Label("Theatre", systemImage: "tv").font(.callout.weight(.semibold)).padding(.horizontal, 12).frame(height: 36).contentShape(.capsule)
+                Group {
+                    if compact { Image(systemName: "tv").font(.system(size: 14, weight: .semibold)).frame(width: 36, height: 36) }
+                    else { Label("Theatre", systemImage: "tv").font(.callout.weight(.semibold)).lineLimit(1).fixedSize().padding(.horizontal, 12).frame(height: 36) }
+                }
+                .contentShape(.capsule)
             }
             .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .capsule)
-            .help("Theatre: your games full screen on a TV, driven by a controller (⇧⌘F)")
+            .help("Theatre: your games full screen on a TV, driven by a controller (⇧⌘F)").accessibilityLabel("Theatre")
             if let pad = GCController.controllers().first?.vendorName {
-                Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).foregroundStyle(StageLook.soft)
-                    .padding(.horizontal, 12).frame(height: 36).glassEffect(.regular, in: .capsule)
+                Group {
+                    if compact { Image(systemName: "gamecontroller").font(.system(size: 14, weight: .medium)).frame(width: 36, height: 36) }
+                    else { Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).lineLimit(1).fixedSize().padding(.horizontal, 12).frame(height: 36) }
+                }
+                .foregroundStyle(StageLook.soft).glassEffect(.regular, in: .capsule).help(pad)
             }
             if let s = search {
                 HStack(spacing: 8) {
@@ -750,13 +772,6 @@ struct StageTopBar: View {
             round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
             round("slider.horizontal.3", "Settings") { model.stageSettings = true }
             }
-            .frame(maxWidth: .infinity)
-        }
-        .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
-        // under the converter's bar, a hairline between it and the page's own tabs
-        .overlay(alignment: .bottom) {
-            if !model.frontEnd && model.page != .saves { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
-        }
     }
 
     /// Refresh: scans the games folder again now (NXForge also looks every 10 minutes and when it comes to the front); new games
