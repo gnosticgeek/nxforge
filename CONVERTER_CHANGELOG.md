@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.21.3 (2026-11-20)
+
+Genres of NXForge's own, with sub-genres. Ships in NXForge 0.47.3.
+
+- **New genres: Run and gun and Beat 'em up** (Cuphead, Contra, Valfaris, The Mummy Demastered, Blazing Chrome, Huntdown...; the Turtles games).
+- **Sub-genres on Discover**: a genre with sub-genres shows a chevron, and choosing it opens them under it with their own counts (Sports › Football, Golf, Baseball, Multi-sport; Platformer › 2D platformer, 3D platformer, Metroidvania; Shooter › Shoot 'em up, First-person shooter; Racing › Kart racing, Arcade racing; RPG › Action RPG, Turn-based RPG; Fighting › Platform fighter; Music › Rhythm; Arcade › Retro collection). A game in a sub-genre counts under its genre too. L and R walk into the open genre's sub-genres. Theatre's filters and rows stay on the genres.
+- **Each game's genres come from its own file** in the game library (`library/<title ID>/game.md`, front matter `nxforge_game`, `title_id`, `genres`), bundled into the app; a game without one falls back to the store's genres, put into NXForge's names. The game page, Theatre and each game folder's `media/game.md` (a new top-level `genres:`) show the same genres.
+
 ## 0.21.2 (2026-11-20)
 
 A save manager for the whole library. Ships in NXForge 0.47.2.
