@@ -71,7 +71,10 @@ extension AppModel {
                 self.libraryMessage = r.stopped
                 if r.stopped == nil || !r.games.isEmpty { GameLibrary.saveCache(out) }
                 self.librarySelection = self.librarySelection.filter { id in out.games.contains { $0.id == id } }
+                // games that were not there before: their art and store details are looked up once their names are read
+                if let before { self.newGameIDs.formUnion(Set(out.games.map(\.id)).subtracting(before.games.map(\.id))) }
                 self.readLibraryDetails()
+                if self.libraryDetails == nil { self.lookUpNewGames() }
             }
         }
     }
@@ -107,16 +110,37 @@ extension AppModel {
         }
     }
 
-    /// Looks at the games folder every minute while NXForge is the app in front, and each time it comes to the front.
+    /// how often the games folder is looked at for new games, in front or not
+    static let folderCheckEvery: Double = 600
+
+    /// Looks at the games folder every 10 minutes, and each time NXForge comes to the front.
     func watchGamesFolder() {
         guard ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
         Task { @MainActor [weak self] in
             while true {
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: .seconds(Self.folderCheckEvery))
                 guard let self else { return }
-                if NSApp.isActive { self.rescanIfFolderChanged() }
+                self.rescanIfFolderChanged()
             }
         }
+    }
+
+    /// The games a scan found that were not there before: their covers, wide art and square art are fetched and their store
+    /// details (publisher, release date, description, screenshots, trailers) read now, as the settings allow, rather than when
+    /// each is first shown or opened; their genres follow (Discover reads them again for the new title IDs). A banner names them.
+    func lookUpNewGames() {
+        guard !newGameIDs.isEmpty, !libraryScanning, libraryDetails == nil else { return }
+        let ids = newGameIDs
+        newGameIDs = []
+        let games = stageGames().filter { $0.game.map { ids.contains($0.id) } ?? false }
+        guard !games.isEmpty else { return }
+        fetchCovers(games)
+        if settings.downloadStoreInfo { for g in games { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) } }
+        discover.load(stageGames().compactMap(\.titleID))
+        let names = games.map(\.name)
+        showBanner(games.count == 1 ? "\(names[0]) added" : "\(games.count) games added",
+                   detail: games.count == 1 ? "Its artwork and details are on their way" : names.prefix(4).joined(separator: ", ") + (names.count > 4 ? "…" : ""),
+                   symbol: "sparkles")
     }
 
     func scanIfStale() {
@@ -171,6 +195,7 @@ extension AppModel {
                     self.library = l
                     GameLibrary.saveCache(l)
                 }
+                self.lookUpNewGames()
             }
         }
     }
