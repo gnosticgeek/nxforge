@@ -57,6 +57,10 @@ struct Settings: Codable, Equatable {
     var saveSnapshotsFolder: String?
     /// a checked snapshot of the save each time a game quits, when it changed
     var snapshotAfterPlay = true
+    /// the Saves page's switch: every built game syncs its save through cloudSavesFolder (CloudSaves)
+    var cloudSavesAll = false
+    /// where every game's save goes with the switch on (kept while it is off, so turning it on again goes back there)
+    var cloudSavesFolder: String?
     /// each network volume's address to mount it again ("Gaming" → smb://nas/Gaming), learned while it was mounted
     var remounts: [String: String] = [:]
     /// Updates: update the engine and the converter without asking (at launch, and on an hourly check)
@@ -121,6 +125,7 @@ struct Settings: Codable, Equatable {
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
         case saveSnapshotsFolder = "save_snapshots_folder", snapshotAfterPlay = "snapshot_after_play"
+        case cloudSavesAll = "cloud_saves_all", cloudSavesFolder = "cloud_saves_folder"
         case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
         case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
@@ -162,6 +167,8 @@ struct Settings: Codable, Equatable {
         saveBackupPush = (try? c.decodeIfPresent(Bool.self, forKey: .saveBackupPush)) ?? false
         saveSnapshotsFolder = try? c.decodeIfPresent(String.self, forKey: .saveSnapshotsFolder)
         snapshotAfterPlay = (try? c.decodeIfPresent(Bool.self, forKey: .snapshotAfterPlay)) ?? true
+        cloudSavesAll = (try? c.decodeIfPresent(Bool.self, forKey: .cloudSavesAll)) ?? false
+        cloudSavesFolder = try? c.decodeIfPresent(String.self, forKey: .cloudSavesFolder)
         remounts = (try? c.decodeIfPresent([String: String].self, forKey: .remounts)) ?? [:]
         autoUpdate = (try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)) ?? false
         skippedUpdate = try? c.decodeIfPresent(String.self, forKey: .skippedUpdate)

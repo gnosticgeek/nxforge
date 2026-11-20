@@ -41,7 +41,9 @@ enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2
 
 @MainActor @Observable
 final class AppModel {
-    var page: Page = .convert { didSet { if page != oldValue { rememberWindowState() } } }
+    var page: Page = .convert { didSet { if page != oldValue { if page != .saves { converterPage = page }; rememberWindowState() } } }
+    /// the converter page last open, where the top bar's Converter goes back to from Saves
+    var converterPage: Page = .convert
     var settings = Settings.load() {
         didSet {
             guard settings != oldValue else { return }
@@ -258,6 +260,7 @@ final class AppModel {
             guard !self.run.running, let r = self.run.result else { return }
             self.refreshGame()
             self.revision += 1
+            self.syncCloudSavesIfOn()   // a new game joins the Saves page's cloud folder
             self.buildEnded(r)
         }
         applyAppearance()
@@ -269,6 +272,7 @@ final class AppModel {
         trackPlay()
         watchActive()
         watchLaunch()
+        syncCloudSavesIfOn()
         frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
         stageTab = settings.startIn == .library ? .discover : .home
         restoreBatchQueue()
@@ -527,6 +531,7 @@ final class AppModel {
     /// Open a built app, noting that its first (slow) launch is done.
     func openApp(_ app: String) {
         Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
+        applyCloudSaves(app: app)
         // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
         let cfg = NSWorkspace.OpenConfiguration()
         if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
