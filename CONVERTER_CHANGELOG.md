@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.2 (2026-11-20)
+
+New games look themselves up, and find their sub-genres. Ships in NXForge 0.48.2.
+
+- **Refresh is in the top bar** (a round arrow beside Full Screen, turning while it scans), on Home and Discover alike, instead of on Discover's title row. ⌥⌘R and Go to Anything's Refresh Library still work.
+- **The games folder is looked at every 10 minutes**, in front or not, and each time NXForge comes to the front (it was every minute, only while in front).
+- **A new game fetches its art and details at once**: when a scan finds games the last one did not have, their front, back and square covers, wide art and store details (publisher, release date, description, screenshots, trailers) are fetched as soon as their names are read, as the Artwork settings allow, rather than when each is first shown or opened, and their genres follow. A banner names the games added.
+- **Genre files for 18 more games** in the library (10 beat 'em ups, 3 more run and guns, and the rest), so they show under Beat 'em up, Run and gun and the other sub-genres.
+- **A game with no file in the library reads its sub-genres from its store description** as well as the store's categories: "beat 'em up", "run and gun", "shoot 'em up", "Metroidvania", "kart racing", "first-person shooter" (Genres.hints). Nintendo's store has no Beat 'em up or Run and gun category, so before this a new game only ever reached Action or Fighting.
+
 ## 0.22.1 (2026-11-20)
 
 Refresh the library. Ships in NXForge 0.48.1.

@@ -723,17 +723,39 @@ struct StageTopBar: View {
             .glassEffect(.regular, in: .capsule)
             .animation(.spring(duration: 0.32), value: model.stageTab)
             .layoutPriority(1)
+            // the right side; where it is too narrow for every label, Theatre and the controller show as icons only
+            ViewThatFits(in: .horizontal) {
+                right(compact: false)
+                right(compact: true)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
+        // under the converter's bar, a hairline between it and the page's own tabs
+        .overlay(alignment: .bottom) {
+            if !model.frontEnd && model.page != .saves { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
+        }
+    }
+
+    func right(compact: Bool) -> some View {
             HStack(spacing: 14) {
             Spacer(minLength: 0)
             // Theatre: full screen for a TV (⇧⌘F)
             Button { model.enterTheatre() } label: {
-                Label("Theatre", systemImage: "tv").font(.callout.weight(.semibold)).padding(.horizontal, 12).frame(height: 36).contentShape(.capsule)
+                Group {
+                    if compact { Image(systemName: "tv").font(.system(size: 14, weight: .semibold)).frame(width: 36, height: 36) }
+                    else { Label("Theatre", systemImage: "tv").font(.callout.weight(.semibold)).lineLimit(1).fixedSize().padding(.horizontal, 12).frame(height: 36) }
+                }
+                .contentShape(.capsule)
             }
             .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .capsule)
-            .help("Theatre: your games full screen on a TV, driven by a controller (⇧⌘F)")
+            .help("Theatre: your games full screen on a TV, driven by a controller (⇧⌘F)").accessibilityLabel("Theatre")
             if let pad = GCController.controllers().first?.vendorName {
-                Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).foregroundStyle(StageLook.soft)
-                    .padding(.horizontal, 12).frame(height: 36).glassEffect(.regular, in: .capsule)
+                Group {
+                    if compact { Image(systemName: "gamecontroller").font(.system(size: 14, weight: .medium)).frame(width: 36, height: 36) }
+                    else { Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).lineLimit(1).fixedSize().padding(.horizontal, 12).frame(height: 36) }
+                }
+                .foregroundStyle(StageLook.soft).glassEffect(.regular, in: .capsule).help(pad)
             }
             if let s = search {
                 HStack(spacing: 8) {
@@ -746,16 +768,26 @@ struct StageTopBar: View {
                 }
                 .padding(.horizontal, 14).frame(height: 36).glassEffect(.regular, in: .capsule)
             }
+            refresh
             round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
             round("slider.horizontal.3", "Settings") { model.stageSettings = true }
             }
-            .frame(maxWidth: .infinity)
+    }
+
+    /// Refresh: scans the games folder again now (NXForge also looks every 10 minutes and when it comes to the front); new games
+    /// get their art and details. The arrow turns while it scans.
+    var refresh: some View {
+        Button { model.scanLibrary() } label: {
+            Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .semibold))
+                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: model.libraryScanning)
+                .frame(width: 36, height: 36)
+                .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
         }
-        .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
-        // under the converter's bar, a hairline between it and the page's own tabs
-        .overlay(alignment: .bottom) {
-            if !model.frontEnd && model.page != .saves { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
-        }
+        .buttonStyle(.plain)
+        .disabled(model.libraryScanning || model.settings.gamesRoot == nil)
+        .help(model.libraryScanning ? "Looking through \(model.settings.gamesRoot?.tildePath ?? "the games folder")…"
+              : "Refresh the library: look for new games now (also every 10 minutes), and fetch their artwork and details (⌥⌘R)")
+        .accessibilityLabel(model.libraryScanning ? "Refreshing Library" : "Refresh Library")
     }
 
     /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
@@ -972,21 +1004,6 @@ struct StageLibrary: View {
                     Text(title).font(.system(size: 32, weight: .heavy)).tracking(-0.6).lineLimit(1)
                     Text("\(games.count) game\(games.count == 1 ? "" : "s")").foregroundStyle(StageLook.soft).monospacedDigit()
                     Spacer(minLength: 8)
-                    // scan the games folder again: games filed there since the last scan show up
-                    Button { model.scanLibrary() } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
-                                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: model.libraryScanning)
-                            Text(model.libraryScanning ? "Refreshing…" : "Refresh").font(.system(size: 13, weight: .semibold))
-                        }
-                        .padding(.horizontal, 14).frame(height: 32)
-                        .background(StageLook.card, in: .capsule).overlay(Capsule().strokeBorder(StageLook.edge, lineWidth: 1))
-                        .contentShape(.capsule)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(model.libraryScanning || model.settings.gamesRoot == nil)
-                    .help(model.libraryScanning ? "Looking through \(model.settings.gamesRoot?.tildePath ?? "the games folder")…" : "Scan the games folder again for new games")
-                    .accessibilityLabel("Refresh Library")
                 }
             }
             .padding(.horizontal, side).padding(.top, 6)
