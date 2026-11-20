@@ -2,6 +2,63 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.8 (2026-11-20)
+
+- **Rebuilds keep their shader work** (Converter 0.22.8, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); layer patch build-speed): a new clean-up choice, `--cleanup shaders` ("Keep shader work only" in Settings › Building, and what the Convert page's "Clean up build files" switch now turns on), deletes the build's copies of the game files as "Remove build cache" does but keeps `shader.noindex/` and `pso/` in the build folder: the per-shader cache, the libraries and the pipeline archive's batches. The next build extracts the game again and skips the shader and archive steps while they are unchanged; after an engine update that changes the shader tools only the changed shaders are redone. Measured on Mario Strikers (3,230 shaders, M4 Pro): a rebuild after the clean-up took 55 s against 237 s from nothing, and the kept work is about 1 GB beside a 3.2 GB app. "Remove build cache" still deletes everything.
+- **Compiler scratch files leave a slow game drive** (layer patch build-speed): when the build folder is not on an APFS volume (an exFAT game drive), the shader compiles' temporary files and the pipeline compiler's library copies go to `~/Library/Caches/NXForge/scratch/<title ID>`, removed when the build ends (`NXFORGE_SCRATCH=off` keeps them in the build folder, `NXFORGE_SCRATCH=<folder>` names another place). An exFAT drive creates and removes a small file about ten times slower than the startup disk. Mario Strikers on an exFAT NVMe drive: Mac shaders 1:47 to 1:27, Pipeline archive 1:01 to 0:51 (one run each). Caches and outputs stay in the build folder.
+- **Archive batches several at a time, off by default** (`pso_offline.py --base-jobs N`, `DM_PSO_BASE_JOBS`): measured and not turned on, because one `metal-tt` already fills an M4 Pro's cores (two at a time: 0:52 against 0:46 to 0:51 for one).
+
+## 0.48.7 (2026-11-20)
+
+- **A smoother app, from a SwiftUI review** (Converter 0.22.7, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a long build's log no longer gets slower as it grows, game icons are no longer read from disk on every redraw, dragging the cover-size or volume slider no longer writes the settings file at every step, and moving the Library's focus redraws only the tiles that changed. VoiceOver gets names for seven icon-only buttons and an action on the Home tiles. No game rebuild needed.
+
+## 0.48.5 (2026-11-20)
+
+- **No more whoosh in Theatre** (Converter 0.22.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): turning the Carousel or the Fan, and switching theme, now makes only a quiet tick like a step; the breeze sound is gone. No game rebuild needed.
+
+## 0.48.4 (2026-11-20)
+
+- **Theatre's Fan, gentler sounds and a music folder** (Converter 0.22.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Gallery theme is gone and a new Fan theme takes its place: the boxes fanned out like a hand of cards, the one in front upright, lifted and lit, the rest leaning away into shadow, scrolling sideways as you move. The Carousel's whoosh is now a soft breeze and the clicks are soft wooden ticks. The right stick no longer changes the volume (it fought with turning the box). Settings › Theatre › Music folder points Theatre at a folder of MP3 or Opus files (M4A, FLAC and WAV too), played shuffled in the background on every theme but Trailer. No game rebuild needed.
+
+## 0.48.3 (2026-11-20)
+
+- **One Settings panel, wider and in sections** (Converter 0.22.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Settings is a wide panel with its sections down the left (General, Playing, Library, Artwork, Theatre, Saves, Building, Updates, Storage) instead of one narrow scrolling column, and the converter's options, which had a Settings window of their own, are in it, so ⌘, and the top bar's button open the same place. It also gains what was only reachable elsewhere (cloud saves, snapshots and the Git backup, updates, storage, the games folder's path, Theatre's volume) and one new choice, how often NXForge looks for new games. No game rebuild needed.
+
+## 0.48.2 (2026-11-20)
+
+- **Refresh in the top bar, every 10 minutes, and new games fetch their own art** (Converter 0.22.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a round Refresh button sits beside Full Screen on every page; NXForge looks at the games folder every 10 minutes whether or not it is in front (and when it comes to the front); a game that appears gets its covers, wide art and store details (description, screenshots, trailers, genres) straight away, with a banner naming it. No game rebuild needed.
+- **Beat 'em up and Run and gun pick up new games** (Converter 0.22.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): genre files for the 18 games added since 0.47.3 (Streets of Rage 4, Scott Pilgrim EX, Marvel Cosmic Invasion, Rita's Rewind, Asterix & Obelix Slap Them All, Double Dragon Gaiden, Fight'N Rage, The Ninja Warriors Once Again, Iron Meat, Neon Inferno, Enchanted Portals and more), and a game without a file now also gets the sub-genres its store description names ("beat 'em up", "run and gun", "shoot 'em up", "Metroidvania"...), since Nintendo's store has no category for them. No game rebuild needed.
+
+## 0.48.1 (2026-11-20)
+
+- **Refresh the library** (Converter 0.22.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a Refresh button on Discover's title row (and View › Refresh Library, ⌥⌘R) scans the games folder again, and NXForge now notices new or removed games there by itself, when it comes to the front and once a minute while it is in front, so a game filed by a download watcher shows up without a restart. No game rebuild needed.
+
+## 0.48.0 (2026-11-20)
+
+- **The engine moves to the newest nxnative** (upstream `c43a1f7a`, 240 commits past the last pin `3ce43e2a`): upstream's fixes since 16 Nov come in, among them Ocarina of Time's refreshed shader map (#3010) and its microphone through upstream's own Mac capture (#1822, with `DM_MIC`, `DM_MIC_DEVICE` and `DM_MIC_GAIN`), Mario Kart World's refreshed v0 shader map, frames held by display-link ticks (#1045) and the late latch, Xbox-style triggers that count above 25% (#2504), DualShock 4 motion over Bluetooth (#2087), Polish and Thai (#1508), VideoToolbox sessions that recover when macOS invalidates them (#2877), vibration devices valid before a controller connects (#2859), saved Mac app inputs reused safely (#2820), prewarm pipelines in the bundle, compute loop containment, many shader translation fixes, and new or refreshed game profiles (Resident Evil, SNES Classics, Metro 2033 Redux, Cozy Land, Pikmin 4, FINAL FANTASY XII and more). Every game needs a full rebuild: the shader chain is now `01af75714169`.
+- **NXForge's microphone patch is dropped** (layer patch upstream-pr-1662): upstream's own capture replaces it under the same setting, so the Microphone switch keeps working. The remaining 38 layer patches are carried over unchanged in purpose; the ones upstream overlapped were merged by hand (Metal backend, frame interpolation on upstream's new display-link hold, the Pro Controller gyro zero on upstream's model table, the button map with upstream's trigger threshold).
+
+## 0.47.4 (2026-11-20)
+
+- **Theatre's small delights** (Converter 0.22.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the lights go down when a game starts (the room dims, the box flies forward and opens, and its light fills the screen as the game comes up); soft clicks and whooshes as the games turn and a thunk on launch; the focused game's own music, quietly looped, when its media folder has a `music.m4a` or `music.mp3`; a welcome back on the game you played last ("Day 3 in Ocarina of Time, 8 h played"); light that follows the time of day; confetti when a game finishes building and a spotlight on a game Theatre has not shown before; and "What should I play?" (L3, or the Theatre menu), which whirls through your games and lands on one. No game rebuild needed.
+
+## 0.47.3 (2026-11-20)
+
+- **Run and gun, Beat 'em up, and sub-genres on Discover** (Converter 0.21.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): NXForge has its own genre list now, with sub-genres under some genres (Sports › Football, Golf, Baseball; Platformer › 2D, 3D, Metroidvania; Shooter › Shoot 'em up, First-person shooter; Racing › Kart, Arcade; and more). Discover lists the genres, and choosing one with sub-genres opens them under it. Each game's genres come from its own Markdown file in the game library, `library/<title ID>/game.md` (bundled in the app), else from Nintendo's store as before; 83 games have one so far. No game rebuild needed.
+
+## 0.47.2 (2026-11-20)
+
+- **Saves in the top bar, with Cloud saves for every game** (Converter 0.21.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Saves page moves out of the converter's pages to the top bar, beside Home and Discover. One switch at its top syncs every game's save through one folder (iCloud Drive › NXForge Saves unless you choose another), using the engine's own Cloud saves; each game's row says where it syncs, what the cloud copy is and how many quick-save slots it has. No game rebuild needed for this.
+
+## 0.47.1 (2026-11-20)
+
+- **Theatre's themes refined, the Carousel most** (Converter 0.21.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Carousel shows two boxes either side of the one in front, turned towards you and lit by how near the front they are, with a pool of light under the front box and its name clear of the reflection; Cinema's cards keep their gaps and round corners; a long filter list reads "3 of 17" instead of a row of dots. No game rebuild needed.
+
+## 0.47.0 (2026-11-19)
+
+- **Enhancements, apart from cheats** (Converter 0.21.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's own improvements (a steadier frame rate, a 60 fps patch, a fix, a mod set up for it) each as one Markdown file in the game's `enhancements/` folder, with a switch on the game's page and in Play options' new Enhancements tab. Settings, Atmosphère codes and mods are all possible, applied the moment a switch changes and taken back when it goes off. No game rebuild needed.
+- **A game library in the repository** (`library/<title ID>/`, [library/README.md](library/README.md)): enhancements and cheats as Markdown, one folder per game, that the app's Get from Library reads from GitHub. `scripts/library.py collect <games folder>` brings a game folder's own files in (switched off) for a commit; `scripts/library.py check` checks them, and the scripts job runs it.
+
 ## 0.46.4 (2026-11-18)
 
 - **Horizon Chase 2 boots and draws its roads** (a profile of its own, `dm/games/0100001019F6E000`): it crashed 0.8 s after starting, because its online service (Epic Online Services) is never loaded and Unreal's fallback names a service the game does not ship; one cut points the fallback at Unreal's Switch service, which plays offline. Its roads, bushes and signs were magenta: Unreal fills those textures from the CPU after the game first draws them, so the profile turns on `tex_dirty_upload`, which uploads them again once written. Menus, car select and a race render at the game's 30 fps on the Mac; not played through yet. A Horizon Chase 2 app built before needs a rebuild to get this.

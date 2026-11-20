@@ -1,7 +1,8 @@
 // Discover: your games, all of them or by genre. Only the games in your games folder (and apps built from files outside it) are
-// here: the genres come from each game's page on Nintendo's European store, looked up by title ID through the store's own search
-// service (searching.nintendo-europe.com, as for the wide art in Covers.swift); only the title IDs go out. A game the store does
-// not list goes under Other. Owned or Built, the console filters and Favourites work as they do everywhere on the stage.
+// here: a game's genres are its file's in NXForge's game library (library/<title ID>/game.md, Genres.swift), else its page's on
+// Nintendo's European store, looked up by title ID through the store's own search service (searching.nintendo-europe.com, as for
+// the wide art in Covers.swift); only the title IDs go out. A game in neither goes under Other. Genres with sub-genres (Sports ›
+// Football, Golf) open under the genre when it is chosen. Owned or Built, the console filters and Favourites work as they do everywhere on the stage.
 // Everything works from a controller: the arrows walk the grid, A plays, Y opens the game's page, L and R step through All games
 // and the genres, B goes back Home.
 import AppKit
@@ -28,10 +29,9 @@ enum DiscoverBrowse: Hashable { case all, genre(String) }
 
 /// The store's search, apart from the network (tested)
 enum DiscoverSource {
-    static let fields = "fs_id,application_id_s,title,url,pretty_game_categories_txt,players_from,players_to,playable_on_txt,system_names_txt"
-    /// the store's genres that are kinds of game, in the order shown; any other genre one of your games has comes after them
-    static let genres = ["Action", "Adventure", "Platformer", "RPG", "Racing", "Puzzle", "Strategy", "Sports", "Fighting", "Shooter", "Party",
-                         "Simulation", "Arcade", "Music", "Board game", "Lifestyle"]
+    static let fields = "fs_id,application_id_s,title,url,pretty_game_categories_txt,players_from,players_to,playable_on_txt,system_names_txt,excerpt"
+    /// the genres, in the order shown (Genres.tree); any other genre one of your games has comes after them
+    static let genres = Genres.top
     /// where a game the store does not list (or lists with no genre) goes
     static let other = "Other"
 
@@ -53,7 +53,9 @@ enum DiscoverSource {
             let id = (d["fs_id"] as? String) ?? (d["fs_id"] as? Int).map(String.init) ?? s("url") ?? t
             var item = DiscoverItem(id: id, title: t.trimmingCharacters(in: .whitespaces))
             item.titleID = s("application_id_s")?.uppercased()
-            item.genres = d["pretty_game_categories_txt"] as? [String] ?? []
+            // the store's categories, and the sub-genres it has none for that its description names (Genres.hints)
+            let cats = d["pretty_game_categories_txt"] as? [String] ?? []
+            item.genres = cats + Genres.hints(s("excerpt")).filter { !cats.contains($0) }
             item.playersFrom = d["players_from"] as? Int
             item.playersTo = d["players_to"] as? Int
             item.console = on.contains { $0 == "BEE" || $0.contains("Switch 2") } && !on.contains("HAC") ? "Switch 2" : "Switch"
@@ -73,16 +75,22 @@ enum DiscoverSource {
         return out
     }
 
-    /// A game's genres: the store's for its title ID, else Other
-    static func genres(of titleID: String?, in map: [String: [String]]) -> [String] {
-        let g = titleID.flatMap { map[$0.uppercased()] } ?? []
+    /// A game's genres with their sub-genres: the library's for its title ID, else the store's, else Other
+    static func genres(of titleID: String?, in map: [String: [String]], book: [String: [String]] = Genres.book) -> [String] {
+        let id = titleID?.uppercased()
+        let listed = id.flatMap { book[$0] } ?? id.flatMap { map[$0] } ?? []
+        let g = Genres.expand(listed)
         return g.isEmpty ? [other] : g
     }
 
-    /// The genres to list, in order: the usual ones first, then any others, Other last; only ones that have a game
+    /// The genres to list (not the sub-genres), in order: the usual ones first, then any others, Other last; only ones that have a game
     static func order(_ found: Set<String>) -> [String] {
-        genres.filter(found.contains) + found.subtracting(genres + [other]).sorted() + (found.contains(other) ? [other] : [])
+        let top = found.filter { !Genres.isSub($0) }
+        return genres.filter(top.contains) + top.subtracting(genres + [other]).sorted() + (top.contains(other) ? [other] : [])
     }
+
+    /// A genre's sub-genres that have a game, in order
+    static func subs(of g: String, _ found: Set<String>) -> [String] { Genres.subs(of: g).filter(found.contains) }
 }
 
 /// Where Discover is, and the genres of your games
@@ -106,22 +114,23 @@ final class DiscoverState {
     }
 
     /// "Platformer" → "Platformers" for the heading; RPG and the like stay as they are
-    nonisolated static func plural(_ g: String) -> String {
-        switch g {
-        case "Platformer", "Shooter", "Board game": g + "s"
-        case "Puzzle": "Puzzles"
-        case "RPG": "RPGs"
-        default: g
-        }
-    }
+    nonisolated static func plural(_ g: String) -> String { Genres.plural(g) }
+
+    /// the genre on screen's genre: itself, or the one a sub-genre is under
+    var openGenre: String? { genre.map { Genres.parent[$0] ?? $0 } }
 
     func genres(of g: StageGame) -> [String] { DiscoverSource.genres(of: g.titleID, in: genreMap) }
 
-    /// the genres your games are in, in the order listed
+    /// the genres your games are in, in the order listed (not the sub-genres)
     func shelves(_ games: [StageGame]) -> [String] { DiscoverSource.order(Set(games.flatMap { genres(of: $0) })) }
 
-    /// the stops L and R walk: All games, then the genres
-    func stops(_ games: [StageGame]) -> [DiscoverBrowse] { [.all] + shelves(games).map { .genre($0) } }
+    /// a genre's sub-genres that your games are in
+    func subs(of g: String, _ games: [StageGame]) -> [String] { DiscoverSource.subs(of: g, Set(games.flatMap { genres(of: $0) })) }
+
+    /// the stops L and R walk: All games, then the genres, with the open genre's sub-genres after it
+    func stops(_ games: [StageGame]) -> [DiscoverBrowse] {
+        [.all] + shelves(games).flatMap { g in [DiscoverBrowse.genre(g)] + (g == openGenre ? subs(of: g, games).map { .genre($0) } : []) }
+    }
 
     /// The games under the genre on screen
     func inBrowse(_ games: [StageGame]) -> [StageGame] {
@@ -177,7 +186,7 @@ struct DiscoverView: View {
             sidebar(pool).frame(width: 214)
             Rectangle().fill(.white.opacity(0.10)).frame(width: 1).padding(.vertical, 8)
             StageLibrary(model: model, all: state.inBrowse(games), games: shown, focus: focus, title: state.title,
-                         eyebrow: state.genre != nil ? "Discover / Genres" : "Discover", side: 30)
+                         eyebrow: eyebrow, side: 30)
         }
         .task(id: games.compactMap(\.titleID).joined(separator: ",")) { state.load(games.compactMap(\.titleID)) }
     }
@@ -194,7 +203,13 @@ struct DiscoverView: View {
                 }
                 .padding(.leading, 14).padding(.bottom, 6)
                 ForEach(state.shelves(games), id: \.self) { g in
-                    item(DiscoverState.plural(g), .genre(g), count: pool.filter { state.genres(of: $0).contains(g) }.count)
+                    let subs = state.subs(of: g, games)
+                    item(DiscoverState.plural(g), .genre(g), count: pool.filter { state.genres(of: $0).contains(g) }.count, more: subs.isEmpty ? nil : g == state.openGenre)
+                    if g == state.openGenre {
+                        ForEach(subs, id: \.self) { s in
+                            item(DiscoverState.plural(s), .genre(s), count: pool.filter { state.genres(of: $0).contains(s) }.count, sub: true)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 20)
@@ -202,16 +217,27 @@ struct DiscoverView: View {
         .scrollIndicators(.never)
     }
 
-    func item(_ title: String, _ b: DiscoverBrowse, symbol: String? = nil, count: Int) -> some View {
+    /// "Discover / Genres", or "Discover / Sports" over a sub-genre
+    var eyebrow: String {
+        guard let g = state.genre else { return "Discover" }
+        return "Discover / " + (Genres.parent[g].map(DiscoverState.plural) ?? "Genres")
+    }
+
+    /// A row of the sidebar. `more`: the genre has sub-genres (true while they show under it); `sub`: a sub-genre, set in under its genre
+    func item(_ title: String, _ b: DiscoverBrowse, symbol: String? = nil, count: Int, more: Bool? = nil, sub: Bool = false) -> some View {
         let on = state.browse == b
-        return Button { state.browse = b; model.libraryFocus = nil } label: {
+        return Button { withAnimation(.spring(duration: 0.28)) { state.browse = b }; model.libraryFocus = nil } label: {
             HStack(spacing: 10) {
                 if let symbol { Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).frame(width: 18) }
-                Text(title).font(.system(size: 15, weight: on ? .bold : .medium)).lineLimit(1)
+                Text(title).font(.system(size: sub ? 14 : 15, weight: on ? .bold : .medium)).lineLimit(1)
+                if let more {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).rotationEffect(.degrees(more ? 90 : 0))
+                        .foregroundStyle(StageLook.faint)
+                }
                 Spacer(minLength: 0)
                 Text("\(count)").font(.system(size: 12, weight: .bold).monospacedDigit()).foregroundStyle(on ? Color.white.opacity(0.8) : StageLook.faint)
             }
-            .padding(.horizontal, 14).frame(height: 38)
+            .padding(.leading, sub ? 30 : 14).padding(.trailing, 14).frame(height: sub ? 34 : 38)
             .foregroundStyle(on ? Color.white : count == 0 ? StageLook.faint : Color(white: 0.88))
             .background {
                 if on {

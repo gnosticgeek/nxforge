@@ -41,16 +41,32 @@ enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2
 
 @MainActor @Observable
 final class AppModel {
-    var page: Page = .convert { didSet { if page != oldValue { rememberWindowState() } } }
+    var page: Page = .convert { didSet { if page != oldValue { if page != .saves { converterPage = page }; rememberWindowState() } } }
+    /// the converter page last open, where the top bar's Converter goes back to from Saves
+    var converterPage: Page = .convert
     var settings = Settings.load() {
         didSet {
             guard settings != oldValue else { return }
-            settings.save()
+            scheduleSettingsSave()
             if settings.appearance != oldValue.appearance { applyAppearance() }
             if let g = settings.gameDir, g != oldValue.gameDir { settings.recentSources = RecentSources.adding(g, to: settings.recentSources) }
             if settings.saveSnapshotsFolder != oldValue.saveSnapshotsFolder { SaveSnapshots.customRoot = settings.saveSnapshotsFolder }
             if settings.outDir != oldValue.outDir { Disk.outDir = settings.outDir; measure() }   // the app's drive is checked for room too
         }
+    }
+    /// settings.json is written half a second after the last change, not on every step of a slider drag (saveSettingsNow at quit)
+    @ObservationIgnored private var settingsSave: Task<Void, Never>?
+    private func scheduleSettingsSave() {
+        settingsSave?.cancel()
+        settingsSave = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.saveSettingsNow()
+        }
+    }
+    func saveSettingsNow() {
+        settingsSave?.cancel(); settingsSave = nil
+        settings.save()
     }
     var checks: [Check]?
     var env: ToolEnv?
@@ -94,6 +110,10 @@ final class AppModel {
     var batchMessage: String?
     var libraryTask: Task<Void, Never>?
     var detailsTask: Task<Void, Never>?
+    /// a look at the games folder for new games is under way (rescanIfFolderChanged)
+    @ObservationIgnored var folderCheckRunning = false
+    /// games a scan found that the one before did not have, waiting for their names to be read (lookUpNewGames)
+    @ObservationIgnored var newGameIDs = Set<String>()
     var mountObserver: NSObjectProtocol?
     var selectedBuild: String? { didSet { if selectedBuild != oldValue { rememberWindowState() } } }
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
@@ -139,6 +159,8 @@ final class AppModel {
     var preview: GameRef?
     /// the game whose Cheats sheet is open (the front end's game page, its ⋯ menu and the Library's game menu)
     var cheatsFor: GameRef?
+    /// the game whose Enhancements sheet is open (EnhancementsCard.swift)
+    var enhancementsFor: GameRef?
     /// the game the keyboard or a controller is on, in the Library (and the grid's columns, for up and down)
     var libraryFocus: String? { didSet { if libraryFocus != oldValue { rememberWindowState() } } }
     var libraryColumns = 1
@@ -163,6 +185,12 @@ final class AppModel {
     var theatreSaver = false
     /// counts volume and mute changes, so the volume card shows for a moment
     var theatreVolumeTick = 0
+    /// Theatre's moments (TheatreDelight.swift): the card up now (welcome back, a new arrival, a game just built, the shuffle's
+    /// pick), confetti (counts bursts), the shuffle spinning, and the lights going down on a launch
+    var theatreMoment: TheatreMoment?
+    var theatreConfetti = 0
+    var theatreSpinning = false
+    var theatreCurtain: TheatreCurtain?
     /// the window's frame before Theatre moved it to the TV, whether Theatre put it in full screen, and the Mac kept awake
     @ObservationIgnored var theatreSavedFrame: NSRect?
     @ObservationIgnored var theatreMadeFullScreen = false
@@ -182,7 +210,10 @@ final class AppModel {
     var keysStatus: KeysStatus = .notSet
     var keysSuggestion: String?
     /// the Settings row a controller is on (StageSettingRow)
-    var settingsFocus = 0
+    /// (the panel's section follows it, so a pad moving down the rows turns the pages)
+    var settingsFocus = 0 { didSet { if let r = StageSettingRow(rawValue: settingsFocus) { settingsSection = r.section } } }
+    /// the Settings section the panel shows; it stays where it was left
+    var settingsSection: SettingsSection = .general
     var stageSearch = ""
     /// what each built game needs a look at (GameAttention), by StageGame id, read off the main thread
     var attention: [String: [GameAttention]] = [:]
@@ -256,6 +287,7 @@ final class AppModel {
             guard !self.run.running, let r = self.run.result else { return }
             self.refreshGame()
             self.revision += 1
+            self.syncCloudSavesIfOn()   // a new game joins the Saves page's cloud folder
             self.buildEnded(r)
         }
         applyAppearance()
@@ -264,9 +296,11 @@ final class AppModel {
         Task.detached(priority: .utility) { LocalShaders.removeOrphans() }
         recheck()
         watchMounts()
+        watchGamesFolder()
         trackPlay()
         watchActive()
         watchLaunch()
+        syncCloudSavesIfOn()
         frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
         stageTab = settings.startIn == .library ? .discover : .home
         restoreBatchQueue()
@@ -277,6 +311,7 @@ final class AppModel {
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
                 self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
+                if self?.settings.folderCheck != .manual { self?.rescanIfFolderChanged() }   // games filed into the games folder while NXForge was in the back
                 if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { self?.backUpDataIfDue() }
                 guard let self, self.fixPending, !self.checking else { return }
                 self.fixPending = false
@@ -524,6 +559,8 @@ final class AppModel {
 
     /// Open a built app, noting that its first (slow) launch is done.
     func openApp(_ app: String) {
+        Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
+        applyCloudSaves(app: app)
         // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
         let cfg = NSWorkspace.OpenConfiguration()
         if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
@@ -722,6 +759,8 @@ final class AppModel {
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
         if case .success = r { GameFolderMediaSync.shared.schedule(self, delay: 1) }
+        // Theatre up: confetti, and the game in focus with a card saying it is ready (TheatreDelight.swift)
+        if case .success = r { theatreBuilt(app: run.app) }
         if settings.openAfterBuild, batchCurrent == nil, case .success = r, let app = run.app { openApp(app) }
         if batchCurrent != nil {
             if case .success = r { finishConvert() }

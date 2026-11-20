@@ -159,7 +159,9 @@ enum GameFolderCheats {
             let folderText = try? String(contentsOf: md, encoding: .utf8)
             let engineDate = fm.fileExists(atPath: txt) ? [date(txt), date(en)].compactMap { $0 }.max() ?? .distantPast : nil
             let kept = folderText.map(parse)
-            let entries = CheatFile.load(dir: engineDir, build: build)
+            // the enhancements' codes (Enhancements.swift) stay in the engine's file only
+            let all = CheatFile.load(dir: engineDir, build: build)
+            let entries = Enhancements.strip(all), patches = all.filter { !entries.contains($0) }
             let written = engineDate == nil ? nil
                 : document(info, build: build, entries: entries, on: CheatFile.enabled(dir: engineDir, build: build), notes: kept?.notes ?? [:])
             switch direction(folderText: folderText, folderDate: date(md.path), engine: engineDate, written: written) {
@@ -175,7 +177,7 @@ enum GameFolderCheats {
                 guard let d = kept, d.build == nil || d.build == build else { continue }
                 do {
                     try fm.createDirectory(atPath: engineDir, withIntermediateDirectories: true)
-                    let text = CheatFile.text(d.entries)
+                    let text = CheatFile.text(Enhancements.strip(d.entries) + patches)
                     if (try? String(contentsOfFile: txt, encoding: .utf8)) != text {
                         // the engine's file as it was, once per change from the folder
                         if fm.fileExists(atPath: txt) { try? fm.removeItem(atPath: txt + ".before-markdown"); try? fm.copyItem(atPath: txt, toPath: txt + ".before-markdown") }

@@ -15,10 +15,24 @@ enum StartIn: String, Codable, CaseIterable {
     case home = "Home", library = "Library", theatre = "Theatre", converter = "Converter"
     var title: String { self == .library ? "Discover" : rawValue }
 }
+/// How often the games folder is looked at for new games (LibraryModel.watchGamesFolder); manual: only Refresh scans
+enum FolderCheck: String, Codable, CaseIterable {
+    case minute = "1 min", ten = "10 min", hour = "1 hour", manual = "Manual"
+    var seconds: Double? {
+        switch self {
+        case .minute: 60
+        case .ten: 600
+        case .hour: 3600
+        case .manual: nil
+        }
+    }
+}
 /// --cleanup: what the script deletes from <id>_build after a successful build
 enum Cleanup: String, Codable, CaseIterable {
-    case off, unused, all
-    var label: String { switch self { case .off: "Keep everything"; case .unused: "Remove unused files"; case .all: "Remove build cache" } }
+    case off, unused, shaders, all
+    var label: String { switch self { case .off: "Keep everything"; case .unused: "Remove unused files"; case .shaders: "Keep shader work only"; case .all: "Remove build cache" } }
+    /// Whether the build deletes its copies of the game files (the big part of a build folder) once the app is ready.
+    var cleansUp: Bool { self == .shaders || self == .all }
 }
 
 struct Settings: Codable, Equatable {
@@ -34,6 +48,8 @@ struct Settings: Codable, Equatable {
     var defaultKeys: String?
     /// the Library page's root: every game under it is listed (a drive or a share, such as /Volumes/Gaming/roms/switch)
     var gamesRoot: String?
+    /// how often the games folder is looked at for new games, in front or not, and whether coming to the front looks too
+    var folderCheck: FolderCheck = .ten
     var appearance: Appearance = .system
     var notify = true
     var openAfterBuild = false
@@ -57,6 +73,10 @@ struct Settings: Codable, Equatable {
     var saveSnapshotsFolder: String?
     /// a checked snapshot of the save each time a game quits, when it changed
     var snapshotAfterPlay = true
+    /// the Saves page's switch: every built game syncs its save through cloudSavesFolder (CloudSaves)
+    var cloudSavesAll = false
+    /// where every game's save goes with the switch on (kept while it is off, so turning it on again goes back there)
+    var cloudSavesFolder: String?
     /// each network volume's address to mount it again ("Gaming" → smb://nas/Gaming), learned while it was mounted
     var remounts: [String: String] = [:]
     /// Updates: update the engine and the converter without asking (at launch, and on an hourly check)
@@ -109,6 +129,14 @@ struct Settings: Codable, Equatable {
     var theatreVolume = 100
     var theatreLastGame: String?
     var theatreFilter: String?
+    /// Theatre's sounds (clicks as the games turn, a thunk on launch), the focused game's music (a file in its media folder),
+    /// its light following the time of day, and the games it has shown (nil until it first opens: none is a new arrival then)
+    var theatreSounds = true
+    var theatreMusic = true
+    var theatreTimeOfDay = true
+    var theatreSeen: [String]?
+    /// a folder of MP3 or Opus files Theatre plays in the background (TheatreMusic)
+    var theatreMusicFolder: String?
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -116,11 +144,12 @@ struct Settings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
-        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root"
+        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root", folderCheck = "folder_check"
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
         case saveSnapshotsFolder = "save_snapshots_folder", snapshotAfterPlay = "snapshot_after_play"
+        case cloudSavesAll = "cloud_saves_all", cloudSavesFolder = "cloud_saves_folder"
         case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
         case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
@@ -133,6 +162,7 @@ struct Settings: Codable, Equatable {
         case theatreTheme = "theatre_theme", theatreOnTV = "theatre_on_tv"
         case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
+        case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
     }
 
     init() {}
@@ -148,6 +178,7 @@ struct Settings: Codable, Equatable {
         outDir = try c.decodeIfPresent(String.self, forKey: .outDir)
         defaultKeys = try c.decodeIfPresent(String.self, forKey: .defaultKeys)
         gamesRoot = try c.decodeIfPresent(String.self, forKey: .gamesRoot)
+        folderCheck = (try? c.decodeIfPresent(FolderCheck.self, forKey: .folderCheck)) ?? .ten
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? .system
         notify = (try? c.decodeIfPresent(Bool.self, forKey: .notify)) ?? true
         openAfterBuild = (try? c.decodeIfPresent(Bool.self, forKey: .openAfterBuild)) ?? false
@@ -162,6 +193,8 @@ struct Settings: Codable, Equatable {
         saveBackupPush = (try? c.decodeIfPresent(Bool.self, forKey: .saveBackupPush)) ?? false
         saveSnapshotsFolder = try? c.decodeIfPresent(String.self, forKey: .saveSnapshotsFolder)
         snapshotAfterPlay = (try? c.decodeIfPresent(Bool.self, forKey: .snapshotAfterPlay)) ?? true
+        cloudSavesAll = (try? c.decodeIfPresent(Bool.self, forKey: .cloudSavesAll)) ?? false
+        cloudSavesFolder = try? c.decodeIfPresent(String.self, forKey: .cloudSavesFolder)
         remounts = (try? c.decodeIfPresent([String: String].self, forKey: .remounts)) ?? [:]
         autoUpdate = (try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)) ?? false
         skippedUpdate = try? c.decodeIfPresent(String.self, forKey: .skippedUpdate)
@@ -192,6 +225,11 @@ struct Settings: Codable, Equatable {
         theatreVolume = min(max((try? c.decodeIfPresent(Int.self, forKey: .theatreVolume)) ?? 100, 0), 100)
         theatreLastGame = try? c.decodeIfPresent(String.self, forKey: .theatreLastGame)
         theatreFilter = try? c.decodeIfPresent(String.self, forKey: .theatreFilter)
+        theatreSounds = (try? c.decodeIfPresent(Bool.self, forKey: .theatreSounds)) ?? true
+        theatreMusic = (try? c.decodeIfPresent(Bool.self, forKey: .theatreMusic)) ?? true
+        theatreTimeOfDay = (try? c.decodeIfPresent(Bool.self, forKey: .theatreTimeOfDay)) ?? true
+        theatreSeen = try? c.decodeIfPresent([String].self, forKey: .theatreSeen)
+        theatreMusicFolder = try? c.decodeIfPresent(String.self, forKey: .theatreMusicFolder)
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

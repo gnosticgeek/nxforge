@@ -71,7 +71,10 @@ extension AppModel {
                 self.libraryMessage = r.stopped
                 if r.stopped == nil || !r.games.isEmpty { GameLibrary.saveCache(out) }
                 self.librarySelection = self.librarySelection.filter { id in out.games.contains { $0.id == id } }
+                // games that were not there before: their art and store details are looked up once their names are read
+                if let before { self.newGameIDs.formUnion(Set(out.games.map(\.id)).subtracting(before.games.map(\.id))) }
                 self.readLibraryDetails()
+                if self.libraryDetails == nil { self.lookUpNewGames() }
             }
         }
     }
@@ -88,6 +91,58 @@ extension AppModel {
                 Task { try? await Task.sleep(for: .seconds(3)); self.scanLibrary() }
             }
         }
+    }
+
+    /// Scans again when the games folder holds folders or game files the last scan did not see, or has lost some: a game filed
+    /// there by a download watcher or by hand shows up without a press of Refresh. One listing of the folder itself, off the main
+    /// thread; a folder that does not answer is left alone (the mount watcher scans once it is back).
+    func rescanIfFolderChanged() {
+        guard let root = settings.gamesRoot, !libraryScanning, folderCheckRunning == false else { return }
+        let known = library?.root == root ? library?.top : nil
+        folderCheckRunning = true
+        Task.detached(priority: .utility) {
+            let now = GameLibrary.topEntries(root: root)
+            await MainActor.run {
+                self.folderCheckRunning = false
+                guard let now, now != known, self.settings.gamesRoot == root else { return }
+                self.scanLibrary()
+            }
+        }
+    }
+
+    /// Looks at the games folder as often as Settings › Library says (every 10 minutes unless changed), in front or not.
+    /// Coming to the front looks too (Model.swift), unless it is set to Manual.
+    func watchGamesFolder() {
+        guard ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
+        Task { @MainActor [weak self] in
+            var last = Date()
+            while true {
+                // a short tick, so a change of the setting takes hold within a minute
+                try? await Task.sleep(for: .seconds(30))
+                guard let self else { return }
+                guard let every = self.settings.folderCheck.seconds, Date().timeIntervalSince(last) >= every else { continue }
+                last = Date()
+                self.rescanIfFolderChanged()
+            }
+        }
+    }
+
+    /// The games a scan found that were not there before: their covers, wide art and square art are fetched and their store
+    /// details (publisher, release date, description, screenshots, trailers) read now, as the settings allow, rather than when
+    /// each is first shown or opened; their genres follow (Discover reads them again for the new title IDs). A banner names them.
+    func lookUpNewGames() {
+        guard !newGameIDs.isEmpty, !libraryScanning, libraryDetails == nil else { return }
+        let ids = newGameIDs
+        newGameIDs = []
+        let games = stageGames().filter { $0.game.map { ids.contains($0.id) } ?? false }
+        guard !games.isEmpty else { return }
+        fetchCovers(games)
+        if settings.downloadStoreInfo { for g in games { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) } }
+        discover.load(stageGames().compactMap(\.titleID))
+        let names = games.map(\.name)
+        showBanner(games.count == 1 ? "\(names[0]) added" : "\(games.count) games added",
+                   detail: games.count == 1 ? "Its artwork and details are on their way" : names.prefix(4).joined(separator: ", ") + (names.count > 4 ? "…" : ""),
+                   symbol: "sparkles")
     }
 
     func scanIfStale() {
@@ -142,6 +197,7 @@ extension AppModel {
                     self.library = l
                     GameLibrary.saveCache(l)
                 }
+                self.lookUpNewGames()
             }
         }
     }

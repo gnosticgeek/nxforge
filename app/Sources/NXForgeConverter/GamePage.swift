@@ -91,6 +91,7 @@ struct GamePage: View {
                         CheatsCard(model: model, app: b.app, titleID: tid, name: name)
                         ModsCard(model: model, app: b.app, titleID: tid, name: name)
                     }
+                    EnhancementsCard(model: model, app: b.app)
                 } else if let tid {
                     // not built yet: its cheats can be fetched and switched on now, for the version its files hold
                     CheatsCard(model: model, app: nil, titleID: tid, name: name, version: g?.versionNumber)

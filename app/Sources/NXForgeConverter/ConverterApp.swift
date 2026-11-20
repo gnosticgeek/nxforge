@@ -42,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return .terminateLater
         }
     }
+    /// A settings change made just before quitting is still waiting to be saved (AppModel.scheduleSettingsSave)
+    func applicationWillTerminate(_ n: Notification) {
+        MainActor.assumeIsolated { AppModel.shared?.saveSettingsNow() }
+    }
     /// The Dock icon's menu: recently played games with Play and Rebuild, and the build running now (idea 9)
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         MainActor.assumeIsolated { AppModel.shared?.dockMenu() }
@@ -49,6 +53,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// A game folder dropped on the Dock icon (Info.plist lists folders as a document type)
     func application(_ app: NSApplication, open urls: [URL]) {
         MainActor.assumeIsolated { AppModel.shared?.openDropped(urls) }
+    }
+}
+
+/// Settings… in the app menu opens the panel in the main window (and the window, if it was closed while a build ran)
+struct SettingsCommands: Commands {
+    let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { openWindow(id: "main"); model.openSettings() }.keyboardShortcut(",")
+        }
     }
 }
 
@@ -75,6 +91,8 @@ struct ConverterApp: App {
                     ])
                 }
             }
+            // Settings… (⌘,): the one Settings panel, over whatever the window shows (StageSettings.swift)
+            SettingsCommands(model: model)
             CommandGroup(replacing: .newItem) {
                 Button("Choose Game Folder…") {
                     if let d = model.chooseGame(start: model.settings.gameDir) { model.openDropped([d.url]) }
@@ -114,17 +132,15 @@ struct ConverterApp: App {
                 Button("Go to Anything…") { model.commandPalette = true }.keyboardShortcut("k")
                 Button(model.theatre ? "Leave Theatre" : "Theatre") { model.toggleTheatre() }.keyboardShortcut("f", modifiers: [.command, .shift])
                 Button("Back") { model.goBack() }.keyboardShortcut("[").disabled(model.gameDetail == nil)
+                Button("Refresh Library") { model.scanLibrary() }.keyboardShortcut("r", modifiers: [.command, .option])
+                    .disabled(model.libraryScanning || model.settings.gamesRoot == nil)
                 Divider()
                 Button("Bigger Covers") { model.page = .library; model.resizeCovers(by: 30) }.keyboardShortcut("+")
                     .disabled(model.settings.libraryLayout == .grid && model.settings.libraryCoverSize >= Settings.coverSizes.upperBound)
                 Button("Smaller Covers") { model.page = .library; model.resizeCovers(by: -30) }.keyboardShortcut("-")
                     .disabled(model.settings.libraryLayout == .grid && model.settings.libraryCoverSize <= Settings.coverSizes.lowerBound)
-                Toggle("Group Library by Console", isOn: Binding(get: { model.settings.libraryGroupByConsole }, set: { model.settings.libraryGroupByConsole = $0 }))
+                Toggle("Group Library by Console", isOn: $model.settings.libraryGroupByConsole)
             }
-        }
-        // Settings… (⌘,) in the app menu
-        SwiftUI.Settings {
-            SettingsPage(model: model)
         }
     }
 
@@ -151,6 +167,19 @@ struct ConverterApp: App {
             if let e = env["NXC_EDGES"], let v = TheatreEdges(rawValue: e.capitalized) { model.settings.theatreEdges = v }
             if env["NXC_SAVER"] != nil { model.theatreSaver = true }
             if let v = env["NXC_VOLUME"].flatMap(Int.init) { model.theatreMuted = false; model.settings.theatreVolume = v; model.theatreVolumeTick += 1 }
+            // NXC_MOMENT=welcome, arrival, built or shuffle: that card on the game in focus (built: with NXC_CONFETTI=<s into the burst>);
+            // NXC_CURTAIN=<s into it>: the lights going down on a launch of it, held still; NXC_DAYLIGHT=morning, day, evening or night
+            if let m = env["NXC_MOMENT"], let id = model.theatreFocus, let g = model.stageGames().first(where: { $0.id == id }) {
+                let kind: TheatreMoment.Kind = switch m {
+                case "arrival": .newArrival
+                case "built": .built
+                case "shuffle": .shuffle
+                default: .welcome(day: AppModel.playDay(model.playRecord(app: g.app, titleID: g.titleID)), total: g.total, last: g.last ?? Date().addingTimeInterval(-86400))
+                }
+                model.theatreMoment = TheatreMoment(kind: kind, game: id)
+            }
+            if env["NXC_CONFETTI"] != nil { model.theatreConfetti = 1 }
+            if let t = env["NXC_CURTAIN"].flatMap(Double.init), let id = model.theatreFocus { model.theatreCurtain = TheatreCurtain(game: id, frozen: t) }
         }
         if let n = env["NXC_OFFER"] { model.theatreOffer = TVScreen(id: 0, name: n) }
         if let st = env["NXC_STAGE"], st != "theatre" {
@@ -167,8 +196,9 @@ struct ConverterApp: App {
             // NXC_PLAYING=1: that game shows as running (Resume and Quit game), nothing is started
             if let g, env["NXC_PLAYING"] != nil, let a = g.app { model.playing[-1] = PlayingNow(key: a, name: g.name, app: a, start: Date()); model.libraryFocus = g.id }
             if let g, ["game", "back", "options"].contains(st) { model.gameDetail = g.ref; model.caseFlipped = st == "back" }
-            if let g, st == "options" { model.openPlayOptions(g.ref) }
-            if st == "settings" { model.stageSettings = true }
+            if let g, st == "options" { model.openPlayOptions(g.ref); if let t = env["NXC_TAB"].flatMap({ t in PlayTab.allCases.first { $0.rawValue.lowercased() == t } }) { model.playOptions?.tab = t } }   // NXC_TAB=enhancements…
+            // NXC_SETTINGS=<section>: Settings on that section (general, playing, library, artwork, theatre, saves, building, updates, storage)
+            if st == "settings" { model.openSettings(env["NXC_SETTINGS"].flatMap { n in SettingsSection.allCases.first { $0.rawValue.lowercased() == n.lowercased() } }) }
             if let g, st == "launch", let a = g.app { model.launching = Launching(ref: g.ref, app: a, name: g.name, note: nil, summary: "Quality · 60 fps") }
             // launchslow, launchfail: the launch screen taking longer, and after the game closed while starting
             if let g, st == "launchslow" || st == "launchfail", let a = g.app {
@@ -239,6 +269,11 @@ struct ConverterApp: App {
             try? await Task.sleep(for: .seconds(2))
             let games = model.stageGames()
             if let g = env["NXC_GAME"].flatMap({ n in games.first { $0.name.localizedCaseInsensitiveContains(n) } }) ?? games.first(where: { $0.titleID != nil }) { model.cheatsFor = g.ref }
+        // enhancements: the Enhancements sheet of NXC_GAME's built game
+        case "enhancements":
+            try? await Task.sleep(for: .seconds(2))
+            let games = model.stageGames()
+            if let g = env["NXC_GAME"].flatMap({ n in games.first { $0.name.localizedCaseInsensitiveContains(n) } }) ?? games.first(where: { $0.app != nil }) { model.enhancementsFor = g.ref }
         default: break
         }
         // NXC_WAIT=<seconds>: longer before the picture (a trailer starting on Theatre's Trailer theme)

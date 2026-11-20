@@ -82,6 +82,9 @@ struct LibraryScan: Codable {
     /// set when the scan ended early: the share stopped answering, or it was stopped
     var stopped: String?
     var folders = 0
+    /// what the games folder itself held when it was scanned (its folders and game files, sorted): when a look at the folder
+    /// finds something else there (a game filed by a download watcher, a folder renamed or removed), the library scans again
+    var top: [String]?
 }
 
 enum GameLibrary {
@@ -145,7 +148,12 @@ enum GameLibrary {
         var nups: [(url: URL, bytes: Int64)] = []
         var apps: [String] = []
         var names: Set<String> = []
+        /// the folders and game files in it by name, sorted: what a rescan check compares
+        var top: [String] { (dirs.map { $0.lastPathComponent + "/" } + apps.map { $0.lastComponent + "/" } + packages.map(\.url.lastPathComponent) + nups.map(\.url.lastPathComponent)).sorted() }
     }
+
+    /// The games folder's own entries, as `LibraryScan.top` keeps them; nil when it does not answer in time.
+    static func topEntries(root: String, timeout: Double = 5) -> [String]? { list(root.url, timeout: timeout)?.top }
 
     /// One folder's listing, or nil when it took longer than the time limit or failed.
     static func list(_ dir: URL, timeout: Double) -> Listing? {
@@ -261,6 +269,7 @@ enum GameLibrary {
             }
             silent = 0
             result.folders += 1
+            if dir.path == root { result.top = l.top }
             // a dump is a folder of its own: one beside game packages is something extracted from them
             if dir.path != root && !parentHasPackages.contains(dir.deletingLastPathComponent().path) && isDump(dir, l) {
                 let tid = titleTag(dir.lastPathComponent).map { String(format: "%016llX", GameFiles.appOf($0)) }

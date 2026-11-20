@@ -20,10 +20,10 @@ Origin: v0lumehi's commit 41d7c5eb in widmonstertony/nxnative (MIT), forwarded u
  create mode 100644 dm/host/tests/t_stick_deadzone.c
 
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 74fbb73b851b5602786f8397a8b1d3890a6e0c99..693f7ae618bc9ec3b53b1838d3010dbef5fe8b1e 100644
+index 0d765bcab099b324d323bd8e022893becd039a5e..f64f9b5f9b6609c46863a0de7c05f84e14e8ecdb 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -32,6 +32,8 @@ DM_TOUCH_HAPTICS	toggle	-	1	platform:ios	Controls	Touch feedback
+@@ -33,6 +33,8 @@ DM_TOUCH_HAPTICS	toggle	-	1	platform:ios	Controls	Touch feedback
  DM_RUMBLE	toggle	-	1	always	Controls	Game rumble		level=basic
  DM_RUMBLE_GAIN	range	0:3:0.1	1.0	always	Controls	Rumble strength		needs=DM_RUMBLE=1
  DM_RUMBLE_MIN	range	0:0.9:0.05	0	always	Controls	Rumble cutoff
@@ -31,9 +31,9 @@ index 74fbb73b851b5602786f8397a8b1d3890a6e0c99..693f7ae618bc9ec3b53b1838d3010dbe
 +DM_STICK_DEADZONE_R	choice	0=Off,5=5%,8=8%,10=10%,12=12%,15=15%,20=20%,25=25%,30=30%	0	always	Controls	Right stick deadzone
  DM_PAD_PRESS_TO_JOIN	toggle	-	0	always	Controls	Press a button to join
  DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
- DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
+ DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone. macOS asks for access when you launch with this enabled.	level=basic
 diff --git a/dm/host/hle_hid.c b/dm/host/hle_hid.c
-index 8d10b6b5a6018c0846a06e24460fbf43e8c09f88..91885d14c8cb2b1d4a49edb9462f0497aaa08cf3 100644
+index 1e42b74277b6d8c18925b4f4c3b19c232d64b24e..13477036e93d6b63e758b257d6043f462c5bdd3f 100644
 --- a/dm/host/hle_hid.c
 +++ b/dm/host/hle_hid.c
 @@ -8,6 +8,7 @@
@@ -95,19 +95,19 @@ index 0000000000000000000000000000000000000000..36fa9e797fa94166fc165dd605c490cf
 +    *y = (int32_t)lrintf(fmaxf(-1, fminf(1, fy * scale)) * DM_STICK_MAX);
 +}
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 2bc98509d8585142138008ddd249815517c7a9f3..fd071b1722b8095777a5c052eed46f612ced52e3 100644
+index 5910033eb158c31e0d581152db7585b6edc94f47..5574c2148bffbcd13f78b1f6d8b67ae9def27ba8 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
-@@ -87,6 +87,9 @@ run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_siz
- 	TMPDIR="$(abspath $(B))" $(B)/t_cheats $(QUIET)
+@@ -90,6 +90,9 @@ run: $(B)/t_mii $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_siz
  	$(B)/t_nro
  	$(B)/t_symbols
+ 	$(B)/t_server_environment
 +run: $(B)/t_stick_deadzone
 +$(B)/t_stick_deadzone: t_stick_deadzone.c ../stick_deadzone.h ../dm_input.h | $(B)
 +	$(CLANG) -O1 -Wall -Werror -o $@ t_stick_deadzone.c
  run: $(B)/t_nro
  run: $(B)/t_sync_wait
- $(B)/t_sync_wait: t_sync_wait.c t_condvar_stub.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)
+ $(B)/t_sync_wait: t_sync_wait.c t_condvar_stub.c ../hle_thread.c ../hle_os.c ../hle.h ../dm.h $(GAME_H) | $(B)
 diff --git a/dm/host/tests/t_stick_deadzone.c b/dm/host/tests/t_stick_deadzone.c
 new file mode 100644
 index 0000000000000000000000000000000000000000..d9ac75c2b4809ebca2dcbacbbf9dd17e1054f7a2
@@ -167,10 +167,10 @@ index 0000000000000000000000000000000000000000..d9ac75c2b4809ebca2dcbacbbf9dd17e
 +    return 0;
 +}
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 921cb1b813c82e061d9ff2f346aef3e22240b242..e4591cb0c69b6f174bf1492ba4b21798ae669387 100644
+index 14befbb150fdaaaddc18dbff5fab83ff3a3b12e8..8250b85d7576ef45383837c232e52e2cc3d66603 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -412,6 +412,8 @@ DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log on
+@@ -436,6 +436,8 @@ DM_SLOWFRAME	diagnostic	`=1` writes the per-frame timing breakdown to the log on
  DM_SPIN	switch	`0` makes the rewriter's spin gate return at once, so guest poll loops spin with no sleep; the gate stays (on by default)
  DM_SPIN_LIST	diagnostic	`=1` makes `patch_nso.py` print every guest poll loop it found and sends through a spin gate
  DM_SPIN_POLL	switch	`=<µs>`: how long a spin-gate wait polls before it sleeps with the yield back-off (default 2000; `0` yields on every pass)
@@ -180,10 +180,10 @@ index 921cb1b813c82e061d9ff2f346aef3e22240b242..e4591cb0c69b6f174bf1492ba4b21798
  DM_SW2	player	`=1` turns on Switch 2 controllers over Bluetooth LE (Joy-Con 2, Pro Controller 2): the settings window's Switch 2 controllers. Off, no Bluetooth client is created and macOS asks nothing. The host also stays off when the app's Info.plist has no NSBluetoothAlwaysUsageDescription, without which macOS ends the process at the first Bluetooth scan
  DM_SW2_GYRO_DPS	diagnostic	`=<degrees per second per count>` is the Switch 2 controllers' gyro scale (default 0.0607, measured on a left and a right Joy-Con 2; the Switch family's nominal 0.070 turned a 90 degree tilt into 104)
 diff --git a/docs/settings.md b/docs/settings.md
-index 51b1859242a87d4d0b85ff7033608daba51855b5..8ee683ec6a02b2ece364c4f554a71555d77824ca 100644
+index 82a966dd37a255f96ee80eb37964cf29ba24cfea..f5d3416b81929ae2186538ee9f44d7f1d923325b 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -270,6 +270,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
+@@ -273,6 +273,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
  | Display mode | General › Game | – (⌃⌘F while playing) | `DM_FULLSCREEN` | `launcher.DM_FULLSCREEN` |
  | Upscaling (MetalFX) | Graphics › Resolution › Upscaling | Graphics › MetalFX upscaling | `DM_PRESENT_UPSCALE` | `launcher.DM_PRESENT_UPSCALE`, shared by both; MetalFX, the Mac default, is not stored |
  | Game rumble, Rumble strength, Rumble cutoff | General › Controls | – | `DM_RUMBLE`, `DM_RUMBLE_GAIN`, `DM_RUMBLE_MIN` | `launcher.<variable>` |
@@ -191,7 +191,7 @@ index 51b1859242a87d4d0b85ff7033608daba51855b5..8ee683ec6a02b2ece364c4f554a71555
  | Performance rows (Frame buffering, Metal 4 pipelines, …) | Advanced › Pipelines, Display | – | as in [Settings in a file](#settings-in-a-file) | `launcher.<variable>` |
  | Cloud saves folder | General › Cloud saves | – | `DM_SAVE_SYNC` | `cloudSaves.folder` |
  | Picture filter and its strength (Quick settings and the Graphics menu offer off and CRT; the environment also takes the engine's other filters) | – | Graphics › CRT filter, Strength | `DM_PRESENT_FILTER`, `DM_PRESENT_FILTER_STRENGTH` | `DMPresentFilter.mode.<game>`, `DMPresentFilter.strength.<game>` |
-@@ -324,6 +325,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+@@ -327,6 +328,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
  | Game rumble | `DM_RUMBLE` | `1`, `0` |
  | Rumble strength | `DM_RUMBLE_GAIN` | `0` to `3` |
  | Rumble cutoff | `DM_RUMBLE_MIN` | `0` to `0.9` |

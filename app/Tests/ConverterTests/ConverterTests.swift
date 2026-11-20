@@ -1127,12 +1127,46 @@ import Testing
         #expect(m.console == "Switch 2" && m.title == "Mario Kart World")
         // the shortest title's genres win (a Switch 2 Edition shares the ID); no store page or no genre = Other
         let map = DiscoverSource.genreMap(page.items)
-        #expect(DiscoverSource.genres(of: "0100a3d008c5c000", in: map) == ["Adventure", "RPG"])
-        #expect(DiscoverSource.genres(of: "0100000000010000", in: map) == [DiscoverSource.other])
-        #expect(DiscoverSource.genres(of: nil, in: map) == [DiscoverSource.other])
+        #expect(DiscoverSource.genres(of: "0100a3d008c5c000", in: map, book: [:]) == ["Adventure", "RPG"])
+        #expect(DiscoverSource.genres(of: "0100000000010000", in: map, book: [:]) == [DiscoverSource.other])
+        #expect(DiscoverSource.genres(of: nil, in: map, book: [:]) == [DiscoverSource.other])
         #expect(DiscoverSource.order(["Other", "RPG", "Education", "Action"]) == ["Action", "RPG", "Education", "Other"])
         #expect(DiscoverSource.byIDs(["0100A3D008C5C000", "bad"])!.absoluteString.contains("0100a3d008c5c000"))
         #expect(DiscoverState.plural("Platformer") == "Platformers")
+    }
+
+    @Test func genresAndSubGenres() {
+        // a sub-genre counts under its genre; the store's names come into ours; order follows the tree, unknown ones after
+        #expect(Genres.expand(["Golf", "Party"]) == ["Sports", "Golf", "Party"])
+        #expect(Genres.expand(["First-Person Shooter", "Action", "Education"]) == ["Action", "Shooter", "First-person shooter", "Education"])
+        #expect(Genres.expand(["Run and gun"]) == ["Run and gun"])
+        // the library's genres win over the store's
+        let map = ["0100A5C00D162000": ["Action", "Arcade", "Platformer", "Shooter"], "0100779004172000": ["Adventure", "Golf", "RPG", "Sports"]]
+        let book = ["0100A5C00D162000": ["Run and gun", "Action"]]
+        #expect(DiscoverSource.genres(of: "0100a5c00d162000", in: map, book: book) == ["Action", "Run and gun"])
+        #expect(DiscoverSource.genres(of: "0100779004172000", in: map, book: book) == ["Adventure", "RPG", "Sports", "Golf"])
+        // Discover lists the genres; a genre's sub-genres only those with a game
+        let found: Set<String> = ["Sports", "Golf", "Football", "Run and gun", "Other"]
+        #expect(DiscoverSource.order(found) == ["Run and gun", "Sports", "Other"])
+        #expect(DiscoverSource.subs(of: "Sports", found) == ["Football", "Golf"])
+        #expect(Genres.plural("Beat 'em up") == "Beat 'em ups" && Genres.plural("Turn-based RPG") == "Turn-based RPGs" && Genres.plural("Golf") == "Golf")
+        // words in the store's description name the sub-genres it has no category for
+        #expect(Genres.hints("The classic beat 'em up series returns, at 60 fps!") == ["Beat 'em up"])
+        #expect(Genres.hints("A run-and-gun shoot-'em-up Metroidvania") == ["Run and gun", "Shoot 'em up", "Metroidvania"])
+        #expect(Genres.hints("A cosy farming game").isEmpty && Genres.hints(nil).isEmpty)
+        let sor = DiscoverSource.parse(Data(#"{"response":{"numFound":1,"docs":[{"application_id_s":"01001f5010dfa000","title":"Streets of Rage 4","pretty_game_categories_txt":["Action","Arcade"],"excerpt":"A beat ’em up classic."}]}}"#.utf8))
+        #expect(sor.items.first?.genres == ["Action", "Arcade", "Beat 'em up"])
+        // a library file
+        let e = Genres.entry("---\nnxforge_game: 1\ntitle: \"Cuphead\"\ntitle_id: \"0100a5c00d162000\"\ngenres:\n  - \"Run and gun\"\n  - \"Action\"\n---\n# Cuphead\n")
+        #expect(e == Genres.Entry(titleID: "0100A5C00D162000", title: "Cuphead", genres: ["Run and gun", "Action"]))
+        #expect(Genres.entry("---\ntitle_id: \"0100A5C00D162000\"\n---\n") == nil)
+        // every file in the repository's library reads, with genres NXForge knows
+        let lib = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "../../../library").standardized
+        let all = Genres.read(library: lib)
+        #expect(all.count >= 80)
+        let known = Set(Genres.tree.flatMap { [$0.genre] + $0.subs })
+        #expect(all.values.allSatisfy { $0.allSatisfy(known.contains) })
+        #expect(all["0100FE701475A000"] == ["Beat 'em up"])
     }
 
     @Test func squareArtLookup() {
@@ -1865,10 +1899,12 @@ import Testing
         #expect(CarouselRing.game(slot: (front + slots - 2) % slots, position: 21, slots: slots, count: 20) == 19)
         // backwards past zero
         #expect(CarouselRing.game(slot: ((-1 % slots) + slots) % slots, position: -1, slots: slots, count: 20) == 19)
-        // fewer games than places: the ring is that small
-        #expect(CarouselRing.slots(for: 5) == 5)
-        let five = (0..<5).map { CarouselRing.game(slot: $0, position: 0, slots: 5, count: 5) }
+        // a short list still makes a full ring of 12, so two boxes show either side; the five in sight are five games
+        #expect(CarouselRing.slots(for: 5) == 12)
+        let five = (-2...2).map { CarouselRing.game(slot: ($0 + 12) % 12, position: 0, slots: 12, count: 5) }
         #expect(Set(five).count == 5)
+        // fewer than five games: the ring is that small, so no game shows twice
+        #expect(CarouselRing.slots(for: 3) == 3)
     }
 
     @Test func filtersKeepTheirKeys() {
@@ -1903,6 +1939,103 @@ import Testing
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
         #expect(back.theatreEdges == .large && back.theatreSaver == .never && back.theatreVolume == 40)
         #expect(back.theatreLastGame == "x" && TheatreFilter(key: back.theatreFilter) == .genre("RPG") && back.startIn == .theatre)
+    }
+}
+
+@Suite struct TheatreDelights {
+    @Test(arguments: [(0, 5, 10), (3, 2, 10), (0, 1, 2), (7, 7 - 1, 40), (39, 0, 40), (5, 120, 200)])
+    func shuffleLandsOnTheGameGoingForwards(_ from: Int, _ to: Int, _ n: Int) {
+        let path = AppModel.shufflePath(from: from, to: to, count: n)
+        #expect(path.last == to)
+        #expect(path.count >= 16 && path.count <= 40)
+        // every step forwards, the last 18 one game at a time
+        var at = from
+        for (i, k) in path.enumerated() {
+            let d = ((k - at) % n + n) % n
+            #expect(d >= 1)
+            if i >= path.count - 18 { #expect(d == 1) }
+            at = k
+        }
+    }
+
+    @Test func shuffleSlowsDown() {
+        let waits = (0..<20).map { AppModel.shuffleWait(step: $0, of: 20) }
+        #expect(waits == waits.sorted())
+        #expect(waits.first! < 0.06 && waits.last! > 0.4)
+    }
+
+    @Test func dayOfPlayCountsDaysNotSessions() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func at(_ daysAgo: Double, _ h: Double = 0) -> PlaySession { PlaySession(start: now.addingTimeInterval(-daysAgo * 86400 + h * 3600), seconds: 600) }
+        var r = PlayRecord(name: "G", app: "/g.app", sessions: [at(3), at(3, 1), at(1)])
+        #expect(AppModel.playDay(r, now: now, calendar: cal) == 3)   // two days played, today the third
+        r.sessions.append(at(0))
+        #expect(AppModel.playDay(r, now: now, calendar: cal) == 3)   // today already counted
+        #expect(AppModel.playDay(nil, now: now, calendar: cal) == 1)
+    }
+
+    @Test(arguments: [(6, TheatreDaylight.morning), (10, .morning), (11, .day), (16, .day), (17, .evening), (21, .evening), (22, .night), (2, .night), (5, .morning)])
+    func daylightByTheHour(_ h: Int, _ d: TheatreDaylight) {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let date = cal.date(from: DateComponents(year: 2026, month: 11, day: 20, hour: h, minute: 30))!
+        #expect(TheatreDaylight.at(date, calendar: cal) == d)
+    }
+
+    @Test func musicIsLookedForInTheMediaFolderFirst() {
+        let media = URL(fileURLWithPath: "/g/media"), own = URL(fileURLWithPath: "/own")
+        let list = TheatreMusic.candidates(media: media, own: own, titleID: "0100ABC", name: "Game")
+        #expect(list.first?.path == "/g/media/music.m4a")
+        #expect(list.contains { $0.path == "/g/media/theme.mp3" })
+        #expect(list.firstIndex { $0.path == "/own/0100ABC.mp3" }! < list.firstIndex { $0.path == "/own/Game.mp3" }!)
+        #expect(TheatreMusic.candidates(media: nil, own: own, titleID: nil, name: "Game").allSatisfy { $0.path.hasPrefix("/own/Game.") })
+    }
+
+    @Test(arguments: TheatreSound.Cue.allCases)
+    func soundsAreShortAndNeverClip(_ c: TheatreSound.Cue) {
+        let s = TheatreSynth.samples(c)
+        #expect(!s.isEmpty && Double(s.count) / TheatreSynth.rate < 2.5)
+        #expect(s.allSatisfy { $0.isFinite && abs($0) <= 1 })
+        #expect(abs(s.first!) < 0.05 && abs(s.last!) < 0.05)
+    }
+
+    @Test func galleryAndShelfBecomeTheFan() throws {
+        for (saved, theme) in [("Gallery", TheatreTheme.fan), ("Shelf", .fan), ("Fan", .fan), ("Cinema", .cinema), ("rubbish", .carousel)] {
+            #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
+        }
+        #expect(!TheatreTheme.allCases.map(\.rawValue).contains("Gallery"))
+    }
+
+    @Test func fanDrawsTheBoxesNearTheFront() {
+        #expect(FanLayout.shown(index: 0, count: 0) == nil)
+        #expect(FanLayout.shown(index: 0, count: 30) == 0...8)
+        #expect(FanLayout.shown(index: 15, count: 30) == 7...23)
+        #expect(FanLayout.shown(index: 2, count: 3) == 0...2)
+        #expect(FanLayout.angle(-2) == -15 && FanLayout.angle(0) == 0)
+        #expect(FanLayout.light(0) == 1 && FanLayout.light(3) < FanLayout.light(1))
+        #expect(FanLayout.opacity(FanLayout.reach) == 0 && FanLayout.opacity(1) == 1)
+    }
+
+    @Test func musicFolderFindsMP3AndOpusInsideIt() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxf-music-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir.appending(path: "Album"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for f in ["a.mp3", "Album/b.opus", "Album/c.OPUS", "cover.jpg", ".hidden.mp3", "notes.txt"] {
+            try Data([0]).write(to: dir.appending(path: f))
+        }
+        let names = Set(TheatreMusic.tracks(in: dir).map(\.lastPathComponent))
+        #expect(names == ["a.mp3", "b.opus", "c.OPUS"])
+    }
+
+    @Test func delightSettingsDefaultOnAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreSounds && old.theatreMusic && old.theatreTimeOfDay && old.theatreSeen == nil)
+        var s = Settings()
+        s.theatreSounds = false; s.theatreMusic = false; s.theatreTimeOfDay = false; s.theatreSeen = ["a", "b"]; s.theatreMusicFolder = "/Music/Theatre"
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(!back.theatreSounds && !back.theatreMusic && !back.theatreTimeOfDay && back.theatreSeen == ["a", "b"] && back.theatreMusicFolder == "/Music/Theatre")
     }
 }
 
@@ -1979,5 +2112,165 @@ import Testing
         #expect(CheatFile.load(dir: engine, build: "318F9F225A532857").count == 5)
         d = GameFolderCheats.parse(try String(contentsOf: md, encoding: .utf8))
         #expect(d.on == ["P2 Lives unlimited"])
+    }
+}
+
+@Suite struct EnhancementsFormat {
+    let md = """
+    ---
+    nxforge_enhancement: 1
+    name: "Steady 60 in full screen"
+    title_id: "010019401051C000"
+    builds: "2E90F0815B1F92A1"
+    on: false
+    source: "NXForge"
+    ---
+    # Steady 60 in full screen
+
+    Full screen as smooth as a window.
+    Second line of the summary.
+
+    More detail, not in the summary.
+
+    ```env
+    # a comment
+    DM_FULLSCREEN_STYLE=window
+    not a setting
+    ```
+
+    ```dmnt
+    04000000 00001000 D65F03C0
+    ```
+
+    ```mods
+    Sharper HUD
+    ```
+    """
+
+    @Test func readsAFile() throws {
+        let e = try #require(Enhancements.parse(md, file: "steady-60.md"))
+        #expect(e.name == "Steady 60 in full screen")
+        #expect(e.builds == ["2E90F0815B1F92A1"])
+        #expect(!e.on)
+        #expect(e.summary == "Full screen as smooth as a window. Second line of the summary.")
+        #expect(e.settings.map { "\($0.0)=\($0.1)" } == ["DM_FULLSCREEN_STYLE=window"])
+        #expect(e.patch == ["04000000 00001000 D65F03C0"])
+        #expect(e.mods == ["Sharper HUD"])
+        #expect(e.kinds == ["Settings", "Game code", "Mod"])
+        #expect(e.fits(build: "2e90f0815b1f92a1") && !e.fits(build: "0000000000000000") && e.fits(build: nil))
+        #expect(Enhancements.parse("# no front matter", file: "x.md") == nil)
+    }
+
+    @Test func switchesOnAndOff() throws {
+        let on = Enhancements.setOn(md, true)
+        #expect(try #require(Enhancements.parse(on, file: "a.md")).on)
+        #expect(on.components(separatedBy: "\n").filter { $0.hasPrefix("on:") } == ["on: true"])
+        let added = Enhancements.setOn("---\nname: \"X\"\n---\nbody", true)
+        #expect(try #require(Enhancements.parse(added, file: "a.md")).on)
+    }
+
+    @Test func envBlockKeepsThePlayersLines() {
+        let mine = "DM_LANG=en-GB\n"
+        let with = Enhancements.envText(mine, lines: ["DM_FULLSCREEN_STYLE=window"])
+        #expect(with == "\(Enhancements.envBegin)\nDM_FULLSCREEN_STYLE=window\n\(Enhancements.envEnd)\n\nDM_LANG=en-GB\n")
+        #expect(Enhancements.envText(with, lines: []) == mine)
+        #expect(Enhancements.envText(with, lines: ["A=1"]).components(separatedBy: Enhancements.envBegin).count == 2)
+        #expect(Enhancements.envText("", lines: []) == "")
+    }
+
+    @Test func codesAreMastersTheCheatsLeaveOut() throws {
+        var e = try #require(Enhancements.parse(md, file: "a.md")); e.on = true
+        let cheats = CheatFile.parse("[Inf. Coins]\n580C0000 00FFE2E8\n")
+        let all = Enhancements.withPatches(cheats, [e])
+        #expect(all.count == 2 && all[1].master && all[1].name == Enhancements.patchPrefix + e.name)
+        #expect(Enhancements.strip(CheatFile.parse(CheatFile.text(all))) == cheats)
+        e.on = false
+        #expect(Enhancements.withPatches(all, [e]) == cheats)
+    }
+
+    @Test func applyWritesEnvCodesAndTakesThemBack() throws {
+        let home = FileManager.default.temporaryDirectory.appending(path: "enh-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        var e = try #require(Enhancements.parse(md, file: "a.md")); e.on = true
+        e.builds = []
+        let tid = "010019401051C000"
+        #expect(Enhancements.apply([e], titleID: tid, app: nil, home: home) == nil)
+        let env = try String(contentsOfFile: GameExtras.support(titleID: tid, home: home) + "/env.txt", encoding: .utf8)
+        #expect(env.contains("DM_FULLSCREEN_STYLE=window"))
+        e.on = false
+        Enhancements.apply([e], titleID: tid, app: nil, home: home)
+        #expect(!FileManager.default.fileExists(atPath: GameExtras.support(titleID: tid, home: home) + "/env.txt"))
+    }
+
+    @Test func fileNamesAreSafe() {
+        #expect(Enhancements.fileName("Steady 60 in Full Screen!") == "steady-60-in-full-screen.md")
+        #expect(Enhancements.fileName("???") == "enhancement.md")
+    }
+}
+
+@Suite struct CloudSavesFolder {
+    @Test func eachGameHasItsOwnFileInTheFolder() {
+        #expect(CloudSaves.file(folder: "/x/Saves", titleID: "0100000000010000") == "/x/Saves/0100000000010000/save.dmsync")
+        #expect(CloudSaves.file(folder: "/x/Saves/", titleID: "0400486024dec000") == "/x/Saves/0400486024DEC000/save.dmsync")
+        // the game's own folder chosen (save_sync.c cloud_path): not given a second title ID
+        #expect(CloudSaves.file(folder: "/x/Saves/0100000000010000", titleID: "0100000000010000") == "/x/Saves/0100000000010000/save.dmsync")
+    }
+
+    @Test func readsTheCloudCopysHeader() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cloud-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let tid = "0100000000010000", hash = String(repeating: "ab", count: 16)
+        try FileManager.default.createDirectory(atPath: "\(dir)/\(tid)", withIntermediateDirectories: true)
+        #expect(CloudSaves.copy(folder: dir, titleID: tid, save: dir + "/save").state == .none)
+        var h = Data("DMSYNC1\n".utf8)
+        h += Data([1, 0, 0, 0, 2, 0, 0, 0]) + Data(hash.utf8)
+        var secs = Int64(1_763_600_000).littleEndian
+        h += Data(bytes: &secs, count: 8)
+        h += Data(tid.utf8) + Data(count: 24 - tid.count)
+        h += Data("Tom's iPhone".utf8) + Data(count: 64 - 12)
+        try h.write(to: URL(fileURLWithPath: "\(dir)/\(tid)/save.dmsync"))
+        var c = CloudSaves.copy(folder: dir, titleID: tid, save: dir + "/save")
+        #expect(c.state == .present && c.device == "Tom's iPhone" && c.saved == Date(timeIntervalSince1970: 1_763_600_000))
+        #expect(!c.matchesThisMac)
+        try "# save sync\nbase\t\(hash)\n".write(toFile: dir + "/save.sync", atomically: true, encoding: .utf8)
+        c = CloudSaves.copy(folder: dir, titleID: tid, save: dir + "/save")
+        #expect(c.matchesThisMac)
+    }
+
+    @Test func showsICloudPathsAsTheFinderDoes() {
+        #expect(CloudSaves.shown(CloudSaves.drive + "/NXForge Saves") == "iCloud Drive › NXForge Saves")
+        #expect(CloudSaves.shown(NSHomeDirectory() + "/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Saves") == "iCloud Drive › Obsidian › Vault › Saves")
+    }
+
+    @Test func settingsKeepTheSwitchAndFolder() throws {
+        var s = Settings()
+        s.cloudSavesAll = true; s.cloudSavesFolder = "/x/Saves"
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back.cloudSavesAll && back.cloudSavesFolder == "/x/Saves")
+    }
+}
+
+@Suite struct SettingsPanel {
+    /// a controller walks the rows in enum order, so each section's rows must be together and the sections in the list's order
+    @Test func padRowsFollowTheSectionsInOrder() {
+        let order = StageSettingRow.allCases.map { SettingsSection.allCases.firstIndex(of: $0.section)! }
+        #expect(order == order.sorted())
+    }
+
+    @Test func findMatchesTheStartsOfWords() {
+        #expect(StageSettings.matches("art", "Download box art"))
+        #expect(!StageSettings.matches("art", "Where NXForge starts"))
+        #expect(StageSettings.matches("theatre vol", "Volume Of everything Theatre plays"))
+        #expect(!StageSettings.matches("keys folder", "Keys file (prod.keys)"))
+        #expect(StageSettings.matches("  ", "anything"))
+    }
+
+    @Test func theFolderCheckIsKeptAndOldSettingsGetTenMinutes() throws {
+        var s = Settings()
+        #expect(s.folderCheck == .ten)
+        s.folderCheck = .manual
+        #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).folderCheck == .manual)
+        #expect(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)).folderCheck == .ten)
+        #expect(FolderCheck.manual.seconds == nil && FolderCheck.hour.seconds == 3600)
     }
 }

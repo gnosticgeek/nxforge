@@ -4,6 +4,115 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.8 (2026-11-20)
+
+Shipped in NXForge 0.48.8.
+
+- **Keep shader work only**: a fourth choice for Settings › Building › "Build folder after a build". It deletes the build's copies of the game files once the app is ready and keeps the shader work beside the game, so a rebuild skips the shader steps while they are unchanged (`--cleanup shaders`). The Convert page's "Clean up build files" switch now turns this on rather than "Remove build cache"; a saved "Remove build cache" stays as it is until changed.
+
+## 0.22.7 (2026-11-20)
+
+Shipped in NXForge 0.48.7.
+
+- **Build log in batches**: the script's plain output lines join the log about ten times a second instead of one main-thread hop and redraw per line, and the log view reads each line's level once per redraw (one pass for the shown lines and the tabs' counts, not three).
+- **Icons kept while unchanged** (IconImage): game icons are decoded once per file version, not on every redraw of a tile or header.
+- **Settings saved after a pause**: settings.json is written half a second after the last change (and at quit), not on every step of a slider drag.
+- **Library tiles get their own focus and tick**, so moving the focus redraws two tiles, not all of them.
+- **VoiceOver**: names for the mods list's and the cleanup list's icon-only buttons; the Home rows' tiles have an activate action (play, or open the game page).
+- **Modern API**: `@Entry` for Theatre's unit; a plain binding for Group Library by Console; `import Combine` where a timer publisher is kept.
+
+## 0.22.5 (2026-11-20)
+
+Shipped in NXForge 0.48.5.
+
+- **Theatre's whoosh removed**: the turn and the theme switch are quiet wooden ticks (587 Hz and 494 Hz) at the step's level; the breeze and whoosh synths are gone.
+
+## 0.22.4 (2026-11-20)
+
+Shipped in NXForge 0.48.4.
+
+- **Fan replaces Gallery in Theatre**: the boxes fanned out round a point below the screen, the focused one upright in the middle, lifted out by 46 px, scaled up and lit; neighbours turn 7.5° each and darken with distance, eight either side are drawn. Left and right swing the fan, a click brings a box to the middle, the right stick turns the box in front. A saved Gallery (or the older Shelf) theme opens as Fan.
+- **Mellower sounds**: the turn is a low-passed breeze with a soft tick under it and the theme switch a slower breeze; steps, spins and opens are short rounded ticks; every sound is soft-limited and quieter.
+- **The right stick no longer sets the volume**: up and down fought with turning the box; the volume stays in Settings and on - and =.
+- **Music folder**: Settings › Theatre › Music folder chooses a folder; its MP3, Opus, M4A, AAC, FLAC, WAV and AIFF files (subfolders too, up to 3000) play shuffled, one after another, in the background while Theatre is open, except on Trailer, while a game plays or a box is opening. A game with its own music still takes over while it is in focus, and the folder carries on where it paused. Files macOS cannot play are skipped.
+
+## 0.22.3 (2026-11-20)
+
+One Settings panel, wider and in sections. Ships in NXForge 0.48.3.
+
+- **Settings is a wide panel with its sections down the left**: General, Playing, Library, Artwork, Theatre, Saves, Building, Updates and Storage. The chosen section's rows fill the right side, in cards by what they are about, so a section is read without scrolling on most windows and the notes run in one or two lines instead of three. It was one narrow column (640 pt) that scrolled through everything; it is now up to 1020 pt wide and narrows with the window. The app's version is at the foot of the list.
+- **Everything is in it.** The converter's options had a Settings window of their own (⌘,, or Converter Settings… at the foot of the panel): notifications, opening the app after a build, keeping previous builds, what a build leaves in its build folder, where new apps are saved, the signing identity, reusing finished steps and log detail are the Building section now, beside the keys file. ⌘, opens the panel, and that window is gone.
+- **Options that were only elsewhere**: Saves has Cloud saves for every game and its folder (the Saves page's switch), a snapshot after every session, the snapshot folder and the Git backup; Updates has the version, What's New, Check Now and Update automatically; Storage has Manage Storage, What NXForge Keeps, Health and Restore Defaults; Library shows the games folder's path with Change and Refresh, and Group Game Files by console; Theatre has a Volume slider (the right stick's setting).
+- **New: Look for new games** (Library): how often the games folder is looked at, every minute, every 10 minutes (as before), hourly, or Manual, which leaves it to Refresh.
+- **Find a setting** (⌘F) looks through every section at once and shows the matches under their sections' names; a section's name finds its rows ("theatre").
+- **A controller** walks the rows with up and down, turning to the next section at the end of one, and L and R step through the sections; every new switch and choice can be changed from the pad.
+- Snapshot hook: `NXC_SETTINGS=<section>` with `NXC_STAGE=settings`.
+
+## 0.22.2 (2026-11-20)
+
+New games look themselves up, and find their sub-genres. Ships in NXForge 0.48.2.
+
+- **Refresh is in the top bar** (a round arrow beside Full Screen, turning while it scans), on Home and Discover alike, instead of on Discover's title row. ⌥⌘R and Go to Anything's Refresh Library still work.
+- **The games folder is looked at every 10 minutes**, in front or not, and each time NXForge comes to the front (it was every minute, only while in front).
+- **A new game fetches its art and details at once**: when a scan finds games the last one did not have, their front, back and square covers, wide art and store details (publisher, release date, description, screenshots, trailers) are fetched as soon as their names are read, as the Artwork settings allow, rather than when each is first shown or opened, and their genres follow. A banner names the games added.
+- **Genre files for 18 more games** in the library (10 beat 'em ups, 3 more run and guns, and the rest), so they show under Beat 'em up, Run and gun and the other sub-genres.
+- **A game with no file in the library reads its sub-genres from its store description** as well as the store's categories: "beat 'em up", "run and gun", "shoot 'em up", "Metroidvania", "kart racing", "first-person shooter" (Genres.hints). Nintendo's store has no Beat 'em up or Run and gun category, so before this a new game only ever reached Action or Fighting.
+
+## 0.22.1 (2026-11-20)
+
+Refresh the library. Ships in NXForge 0.48.1.
+
+- **Refresh** on Discover's title row scans the games folder again (the arrow spins while it scans); also View › Refresh Library (⌥⌘R) and Refresh Library in Go to Anything (⌘K).
+- **New games show up by themselves**: the scan keeps what the games folder itself holds (`top` in library.json), and NXForge looks at the folder each time it comes to the front and once a minute while it is in front, scanning again when a folder or game file was added or removed. Before, the library scanned only on a mount, when its list was a day old, or from Settings' Scan Again, so games filed by the Switch Downloads Watcher stayed hidden.
+
+## 0.22.0 (2026-11-20)
+
+Theatre's small delights, on every theme. Ships in NXForge 0.47.4.
+
+- **Lights down on launch**: starting a game from Theatre dims the room, flies the game's box forward and opens its front like a door; the light inside fills the screen, and the launch screen comes up under it, so the game comes out of its box. Reduce Motion keeps only the dimming.
+- **Sound**: a soft click for each step, a whoosh as the Carousel turns, a swish between themes, a low thunk on launch and a chime for a moment, all made by the app (no sound files) and quiet. The right stick's press (or S) now mutes on every theme, and up and down set the volume of everything Theatre plays. Settings › Theatre › Sounds turns them off.
+- **The game's music**: once the focus rests on a game, its music fades in, looped and quiet, and fades out as you move on. Put `music`, `theme` or `soundtrack` (.m4a, .mp3, .aac, .wav, .aiff, .caf or .flac) in the game's `media/` folder, or a file named by its title ID or its name in `~/Library/Application Support/NXForge Converter/Theatre Music/`. Not on Trailer, which has the trailer's sound; never while a game runs. Settings › Theatre › Game music.
+- **Welcome back**: Theatre opens on the game you played last (in the last 30 days) with a card: "Good evening · Welcome back, Day 3 in Ocarina of Time, 8 h 25 min played · last played yesterday", and A to Continue.
+- **Time of day**: a cooler, brighter room in the morning, the stage as it is in the afternoon, a warm evening, and a dimmer, cosy room after 10 pm, with the sun or moon by the clock. Settings › Theatre › Light follows the time of day.
+- **Shelf moments**: confetti, the game in focus and a "Ready to play" card when a game finishes building while Theatre is up; a spotlight and a "New arrival" card on a built game Theatre has not shown before (the first time Theatre opens, every game counts as seen).
+- **What should I play?** L3 (the left stick's press), ? on the keyboard, or the Theatre menu's new row: the games whirl past with ticks, slow down and land on one (a built one when there are any), with a card to play it or spin again. B stops it.
+- Snapshot hooks: `NXC_MOMENT=welcome|arrival|built|shuffle`, `NXC_CONFETTI=<s>`, `NXC_CURTAIN=<s>`, `NXC_DAYLIGHT=morning|day|evening|night`.
+
+## 0.21.3 (2026-11-20)
+
+Genres of NXForge's own, with sub-genres. Ships in NXForge 0.47.3.
+
+- **New genres: Run and gun and Beat 'em up** (Cuphead, Contra, Valfaris, The Mummy Demastered, Blazing Chrome, Huntdown...; the Turtles games).
+- **Sub-genres on Discover**: a genre with sub-genres shows a chevron, and choosing it opens them under it with their own counts (Sports › Football, Golf, Baseball, Multi-sport; Platformer › 2D platformer, 3D platformer, Metroidvania; Shooter › Shoot 'em up, First-person shooter; Racing › Kart racing, Arcade racing; RPG › Action RPG, Turn-based RPG; Fighting › Platform fighter; Music › Rhythm; Arcade › Retro collection). A game in a sub-genre counts under its genre too. L and R walk into the open genre's sub-genres. Theatre's filters and rows stay on the genres.
+- **Each game's genres come from its own file** in the game library (`library/<title ID>/game.md`, front matter `nxforge_game`, `title_id`, `genres`), bundled into the app; a game without one falls back to the store's genres, put into NXForge's names. The game page, Theatre and each game folder's `media/game.md` (a new top-level `genres:`) show the same genres.
+
+## 0.21.2 (2026-11-20)
+
+A save manager for the whole library. Ships in NXForge 0.47.2.
+
+- **Saves is in the top bar** (Home, Discover, Saves, Converter), no longer one of the converter's pages; Converter goes back to the page it was on.
+- **Cloud saves for every game**: one switch at the top of Saves gives every built game the same sync folder, written into each game's `cloudSaves.folder` (the key its settings window's Cloud saves shows), so the engine brings the save in at each start and sends it after each save. The location is iCloud Drive › NXForge Saves unless you choose another (any folder, a NAS or another app's iCloud folder); with the switch first turned on, a folder a game already used is offered instead. A game built later, or one opened from NXForge, joins in. Off turns every game's Cloud saves off; the copies stay in the folder. Games with a folder of their own are named under the switch.
+- **Each game's row** now shows where it syncs (iCloud, a folder, or "Sends at next start" before its first sync), when the cloud copy was saved and on which device (read from the copy's header, nothing downloaded), and its quick-save slots, beside the snapshots it had.
+
+## 0.21.1 (2026-11-20)
+
+Theatre's themes refined, the Carousel most. Ships in NXForge 0.47.1.
+
+- **Carousel shows five boxes, not three**: five games or more always make a ring of at least 12 places, so two boxes stand either side of the one in front (a short list made a small ring, with one box either side turned almost edge on). The boxes beside the front one turn part of the way back towards you, so their covers read, and are lit by how near the front they are rather than all falling into the same muddy shade. The ring is spread a little wider.
+- **The box in front stands in a pool of light**, warmed by the game's colour, and the room's sides fall into shadow. The ring sits higher on the screen and its reflection fades out sooner, so the game's name is no longer written over the reflection.
+- **Cinema's cards keep their size**: the art filled each card past its edges, so the cards ran into each other with no gap and lost their round corners. The cards beside the one in focus are a shade darker.
+- **The filter between L and R** shows "3 of 17" rather than a row of 17 dots when there are many genres.
+- The game counter reads "07 / 08" on Carousel, as on Gallery, and Gallery says "12 min played" rather than "12 min time played".
+
+## 0.21.0 (2026-11-19)
+
+Enhancements: a game's own improvements, apart from its cheats. Ships in NXForge 0.47.0.
+
+- **An Enhancements card** on the game's page (also Enhancements… in the game's menu on Home and in the Library) and an **Enhancements tab in Play options**: the game's enhancements with a switch each, what each changes (Settings, Game code, Mod) and a line on what it does. One for another version of the game is marked and cannot be switched on.
+- **Each enhancement is one Markdown file** in the game's `enhancements/` folder, beside `cheats/` and `media/` (in Application Support when the app's folder has neither). The front matter names it, the title and the builds it is for and whether it is on; the blocks say what it does: ` ```env ` launch settings, ` ```dmnt ` an Atmosphère code (a 60 fps patch and the like), ` ```mods ` mods to switch on. **New…** makes a file to fill in and opens it.
+- **A switch applies at once, however the game is opened** (front end, Theatre, Finder): settings go in a block of the game's `env.txt` in Application Support, which the game reads first, codes go in its cheat file as master codes named "NXForge enhancement: …", and mods are switched on. Switching off takes them back. A launch from NXForge applies them again first, so a file edited by hand counts. The Cheats card, the cheats Markdown and Get Cheats leave the enhancements' codes out.
+- **Get from Library**: lists the game's enhancements in NXForge's library on GitHub (`library/<title ID>/enhancements/` in the repository) and adds the ones you pick, switched off.
+
 ## 0.20.2 (2026-11-18)
 
 Buttons that never wrap, and small refinements. Ships in NXForge 0.46.3.

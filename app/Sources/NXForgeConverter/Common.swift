@@ -7,7 +7,6 @@ let helpURL = URL(string: "https://github.com/gnosticgeek/nxforge/blob/main/app/
 /// The window: the front end (Stage.swift), or the converter's pages behind its Converter tab.
 struct RootView: View {
     @Bindable var model: AppModel
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,9 +18,9 @@ struct RootView: View {
             if let tv = model.theatreOffer, !model.theatre, !model.standby { TheatreOffer(model: model, tv: tv).transition(.opacity) }
             if model.stageSettings {
                 Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { model.stageSettings = false }
-                StageSettings(model: model, openConverterSettings: { openSettings() })
-                    // never taller than the window: the rows scroll inside it
-                    .padding(.top, 44).padding(.bottom, 28)
+                StageSettings(model: model)
+                    // never taller or wider than the window: the rows scroll inside it
+                    .padding(.top, 44).padding(.bottom, 28).padding(.horizontal, 24)
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .foregroundStyle(.white)
                     .onExitCommand { model.stageSettings = false }
@@ -59,6 +58,7 @@ struct RootView: View {
         .sheet(item: $model.updateOffer) { UpdateOfferSheet(model: model, offer: $0) }
         .sheet(item: $model.preview) { PreviewSheet(model: model, ref: $0) }
         .sheet(item: $model.cheatsFor) { CheatsSheet(model: model, ref: $0) }
+        .sheet(item: $model.enhancementsFor) { EnhancementsSheet(model: model, ref: $0) }
         .sheet(isPresented: $model.commandPalette) { CommandPalette(model: model) }
         .task { ControllerNav.shared.start(model); TheatreWatch.shared.start(model) }
     }
@@ -83,7 +83,7 @@ struct ConverterRoot: View {
             StageBackdrop(tint: g.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75), art: g.flatMap { CoverArt.ambient($0) }, artKey: g?.id ?? "", strength: 0.55)
             VStack(spacing: 0) {
                 StageTopBar(model: model)
-                ConverterNav(model: model)
+                if model.page != .saves { ConverterNav(model: model) }
                 Group {
                     if let r = model.gameDetail, model.page == .library || model.page == .builds {
                         GamePage(model: model, ref: r, wide: width > 860)
@@ -147,7 +147,7 @@ struct ConverterNav: View {
 
     var pages: some View {
         HStack(spacing: 4) {
-            ForEach(Page.allCases) { p in
+            ForEach(Page.allCases.filter { $0 != .saves }) { p in   // Saves is in the top bar
                 let on = model.page == p
                 let count = p == .updates ? (model.engineUpdate == nil ? 0 : 1) + (model.converterUpdate == nil ? 0 : 1) : p == .health ? model.healthBadge : 0
                 Button { if on { model.gameDetail = nil } else { model.page = p } } label: {
@@ -314,7 +314,7 @@ struct GameIcon: View {
 
     var body: some View {
         Group {
-            if let url, let img = NSImage(contentsOf: url) {
+            if let url, let img = IconImage.load(url.path) {
                 Image(nsImage: img).resizable().interpolation(.high)
             } else {
                 ZStack { Color.gray.opacity(0.25); Image(systemName: "gamecontroller").font(.system(size: size * 0.35)).foregroundStyle(.secondary) }

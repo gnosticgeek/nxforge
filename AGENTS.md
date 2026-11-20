@@ -9,5 +9,6 @@ NXForge is the NXForge Converter (`app/`) and a Mac player layer (the in-game Qu
 - New player features go in layer files (`dm/host/nxforge/`, `dm/gfx/nvn/nxforge/`, `quick_settings_mac.swift`, `capture_mac.m`) with a one-line hook in a patch, not into an nxnative function. NXForge's red lines use `NXF_RED_ONCE`.
 - NXForge's own scripts are in `scripts/` (`nxforge.py`, `layer.py`, `release_check.py`, `perf_release.py`, `source_info.py`, `smoke_mac.sh`) with tests in `tests/`; the converter's are in `app/Tests` (`swift test --package-path app`).
 - App changes follow [docs/ux.md](docs/ux.md) (selecting and playing, status words, launch states, repairs, controllers, writing).
+- For SwiftUI work in `app/` (and `quick_settings_mac.swift`), use the `swiftui-pro` skill in `.claude/skills/swiftui-pro/` (Paul Hudson's SwiftUI Pro, MIT). The app is macOS 26, so skip its iOS-only rules (iPhone Duo, fold, `keyboardType`, launch screen); docs/ux.md wins where they differ.
 - Releases: one release branch and one PR per release (UPSTREAM.md, Versions); the sidebar and the converter have versions of their own, bumped with their changelogs when their files change.
 - Commit only when asked, as yourself, never as seedds. Game files, keys and anything extracted from them never go into this repository.

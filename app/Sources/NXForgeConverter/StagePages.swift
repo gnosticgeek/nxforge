@@ -268,7 +268,7 @@ struct GameHeroColumn: View {
     /// "Action, Adventure  ·  1 player  ·  PEGI 7  ·  227 MB": the store's genres, players, rating and size, with the same dots as the line above
     var storeLine: String {
         guard let info else { return "" }
-        let genres = info.genres.prefix(2).joined(separator: ", ")
+        let genres = Genres.shown(titleID: game.titleID, store: info.genres).prefix(2).joined(separator: ", ")
         let size = info.size.map { $0.replacingOccurrences(of: ".0 ", with: " ") }
         return [genres.isEmpty ? nil : genres, info.players, info.rating, size].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "  ·  ")
     }
@@ -353,6 +353,9 @@ struct PlayOptionsPanel: View {
                 }
                 .padding(4).background(.white.opacity(0.08), in: .rect(cornerRadius: 12))
             }
+            if state.tab == .enhancements, let e = state.enhancements {
+                EnhancementsTab(state: e).frame(maxHeight: .infinity)
+            } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
@@ -366,6 +369,7 @@ struct PlayOptionsPanel: View {
                 .onChange(of: state.focus) { _, f in if rows.indices.contains(f) { proxy.scrollTo(rows[f].env) } }
             }
             .frame(maxHeight: .infinity)
+            }
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     Button { model.playWithOptions(save: true) } label: { Label("Play", systemImage: "play.fill") }

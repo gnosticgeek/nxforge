@@ -27,6 +27,11 @@ fi
 cp "$icon" "$app/Contents/Resources/AppIcon.icns"
 # What's New reads the changelog the app was built with (ConverterUpdate.bundledChangelog), not the engine checkout's, which can be on another branch
 cp "$here/../CONVERTER_CHANGELOG.md" "$app/Contents/Resources/"
+# each game's genres (Genres.swift): every library/<title ID>/game.md
+for f in "$here"/../library/*/game.md; do
+  [ -f "$f" ] || continue
+  d="$app/Contents/Resources/library/$(basename "$(dirname "$f")")"; mkdir -p "$d"; cp "$f" "$d/"
+done
 # the app's version is the Converter's own (CONVERTER_VERSION in Version.swift, tags converter-vX.Y.Z); the build
 # number is the NXForge release it was built from (git describe on the v* tags only: v0.1.1 → 0.1.1, v0.1.1-3-g… → 0.1.1)
 version="$(sed -nE 's/^let CONVERTER_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' "$here/Sources/NXForgeConverter/Version.swift")"

@@ -154,8 +154,8 @@ final class ControllerNav {
         key(pad.leftTrigger, .zl) { _ in }
         key(pad.rightTrigger, .zr) { _ in }
         if let r3 = pad.rightThumbstickButton { key(r3, .r3) { _ in } }
-        key(pad.rightThumbstick.up, .volUp, repeating: true) { _ in }
-        key(pad.rightThumbstick.down, .volDown, repeating: true) { _ in }
+        // Theatre: the left stick's press spins for a game to play
+        if let l3 = pad.leftThumbstickButton { key(l3, .l3) { _ in } }
         key(pad.buttonMenu, .menu) { $0.enterTheatre() }
         // − (Options / View): Favourites on the front end
         if let o = pad.buttonOptions { key(o, .options) { _ in } }
@@ -278,7 +278,6 @@ struct PaletteItem: Identifiable {
 
 struct CommandPalette: View {
     @Bindable var model: AppModel
-    @Environment(\.openSettings) private var openSettings
     @State private var query = ""
     @State private var selected = 0
     @FocusState private var fieldFocused: Bool
@@ -306,7 +305,7 @@ struct CommandPalette: View {
                 out.append(PaletteItem(id: "build-\(b.app)", title: name, detail: "Built app", symbol: "macwindow", icon: b.app) { m.showConverter(); m.page = .builds; m.openGame(GameRef(libraryID: nil, app: b.app)) })
             }
         }
-        out.append(PaletteItem(id: "act-scan", title: "Scan Library Again", detail: "Action", symbol: "arrow.clockwise") { m.showConverter(); m.page = .library; m.scanLibrary() })
+        out.append(PaletteItem(id: "act-scan", title: "Refresh Library", detail: "Action", symbol: "arrow.clockwise") { m.showConverter(); m.page = .library; m.scanLibrary() })
         out.append(PaletteItem(id: "act-ipa", title: "Build iPhone and iPad IPA…", detail: "Action", symbol: "iphone") { m.buildIPA() })
         out.append(PaletteItem(id: "act-theatre", title: m.theatre ? "Leave Theatre" : "Theatre", detail: "Action", symbol: "tv") { m.toggleTheatre() })
         out.append(PaletteItem(id: "act-check", title: "Check the Toolchain Again", detail: "Action", symbol: "checkmark.seal") { m.showConverter(); m.page = .toolchain; m.recheck() })
@@ -315,8 +314,7 @@ struct CommandPalette: View {
         if m.converterUpdate != nil {
             out.append(PaletteItem(id: "act-update", title: "Update NXForge…", detail: "Action", symbol: "arrow.down.circle") { m.updateConverter() })
         }
-        let open = openSettings
-        out.append(PaletteItem(id: "act-settings", title: "Settings…", detail: "Action", symbol: "gearshape") { open() })
+        out.append(PaletteItem(id: "act-settings", title: "Settings…", detail: "Action", symbol: "gearshape") { m.openSettings() })
         return out
     }
 

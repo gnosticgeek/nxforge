@@ -1,6 +1,7 @@
 // Around a play session (0.12.0): NXForge steps aside while a game runs (its window shows a plain card and lets go of its artwork,
 // so the game has the memory), each session's memory and frame rate are kept with its playtime, a recap card shows when a game
 // quits, a controller tester, and the list of what NXForge keeps on this Mac, for removing it.
+import Combine
 import AppKit
 import CoreHaptics
 import Darwin
@@ -428,7 +429,7 @@ struct LeftoversSheet: View {
                             }
                             Spacer(minLength: 8)
                             Text(measuring && i.bytes == 0 ? "…" : ByteCountFormatter.string(fromByteCount: i.bytes, countStyle: .file)).monospacedDigit().foregroundStyle(.secondary)
-                            Button { reveal(i.path) } label: { Image(systemName: "folder") }.buttonStyle(.borderless).help("Show in Finder")
+                            Button("Show in Finder", systemImage: "folder") { reveal(i.path) }.labelStyle(.iconOnly).buttonStyle(.borderless).help("Show in Finder")
                         }
                         .padding(.vertical, 8)
                         Divider()

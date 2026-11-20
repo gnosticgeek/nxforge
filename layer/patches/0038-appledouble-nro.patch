@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 18 Nov 2026 18:22:23 +0000
+Subject: appledouble-nro: the survey skips the macOS ._name.nro files beside a
+ game's NROs on an exFAT or SMB drive (Horizon Chase 2: no MOD0)
+
+---
+ dm/games/profile_guess.py            |  4 +++-
+ dm/tools/tests/test_profile_guess.py | 10 +++++++++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/dm/games/profile_guess.py b/dm/games/profile_guess.py
+index 3bd5778f22ed2734c79309c834ebb707965524ca..0b723f12f3a26e4f4a40a8448572ee86939d88b7 100644
+--- a/dm/games/profile_guess.py
++++ b/dm/games/profile_guess.py
+@@ -239,7 +239,9 @@ def nro_modules(exefs, nros, modules, hooks=None):
+     A symbol a loaded module or another NRO defines, or the host supplies, needs nothing; NVIDIA's GPU drivers stay out as in guess()"""
+     want, have = set(), set()
+     for p in nros.values():
+-        for s, defined, bind in nso_syms.dynsyms(Path(p).read_bytes()):
++        b = Path(p).read_bytes()
++        if b[0x10:0x14] != b'NRO0': continue   # not an NRO, as in romfs_nro_imports: macOS writes an AppleDouble ._name.nro beside each file it copies to an exFAT or SMB drive (Horizon Chase 2)
++        for s, defined, bind in nso_syms.dynsyms(b):
+             if not defined: want.add(s)
+             elif bind in (1, 2): have.add(s)
+     return modules_supplying(exefs, want - have, modules, hooks)
+diff --git a/dm/tools/tests/test_profile_guess.py b/dm/tools/tests/test_profile_guess.py
+index e04f5ce6770261795bda5fb56b7b28f07ed25031..911d8d75c449b6789df355e0a9c6a317f3c3bfca 100644
+--- a/dm/tools/tests/test_profile_guess.py
++++ b/dm/tools/tests/test_profile_guess.py
+@@ -254,10 +254,18 @@ class ModulesLeftOut(unittest.TestCase):
+         self.module('subsdk2', exports=['m'], comp=b'NintendoSDK_movie-20_5_29')
+         self.module('subsdk3', exports=['n'], comp=b'NintendoSDK_movie-20_5_29')
+         for name, syms in (('a.nro', [('m', False, 1), ('n', False, 1)]), ('b.nro', [('n', True, 1)])):
+-            self.syms[name] = (name.encode(), syms); (self.dir / name).write_bytes(name.encode())
++            img = bytes(0x10) + b'NRO0' + name.encode()
++            self.syms[name] = (img, syms); (self.dir / name).write_bytes(img)
+         nros = {n: self.dir / n for n in ('a.nro', 'b.nro')}
+         self.assertEqual(pg.nro_modules(self.dir, nros, ['main', 'sdk'], hooks=set()), {'subsdk2': 'NintendoSDK_movie'})
+ 
++    def test_nro_modules_skips_what_is_not_an_nro(self):   # Horizon Chase 2 on an exFAT drive: macOS's AppleDouble ._a.nro beside a.nro
++        self.module('main'); self.module('sdk')
++        self.module('subsdk2', exports=['m'], comp=b'NintendoSDK_movie-20_5_29')
++        img = b'\0\x05\x16\x07' + bytes(0x20)
++        self.syms['._a.nro'] = (img, [('m', False, 1)]); (self.dir / '._a.nro').write_bytes(img)
++        self.assertEqual(pg.nro_modules(self.dir, {'._a.nro': self.dir / '._a.nro'}, ['main', 'sdk'], hooks=set()), {})
++
+ 
+ class Switch2(unittest.TestCase):
+     FACTS = {'mods': {'main': {'imports': {pg.HEAP_API}, 'bss': 0, 'far': False}}, 'romfs': {'root': set(), 'exts': {}}, 'sysres': 0}

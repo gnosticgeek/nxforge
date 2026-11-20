@@ -123,8 +123,28 @@ final class BuildRun {
     private var activity: NSObjectProtocol?
     /// called on the main thread after each change (the command line prints from it)
     var onChange: (() -> Void)?
+    /// the script's plain output lines not yet in `log`: they join it about ten times a second, not one main-thread hop (and one
+    /// redraw of the log) per line, which made a long shader build's log slower the longer it got
+    nonisolated private let pending = PendingLines()
+
+    /// A plain output line, from the build's threads.
+    nonisolated func queue(_ line: String) {
+        guard pending.add(line) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { MainActor.assumeIsolated { self.flushLog() } }
+    }
+
+    /// The waiting lines into `log`. Everything on the main thread that reads the log or adds to it after the script said something
+    /// calls this first, so lines stay in the order the script printed them.
+    func flushLog() {
+        let lines = pending.take()
+        guard !lines.isEmpty else { return }
+        log += lines
+        lastActivity = Date()
+        onChange?()
+    }
 
     func start(_ job: Job, expected: [String: Double] = [:]) {
+        _ = pending.take()
         running = true; stage = Stage(); done = []; log = []; app = nil; ipa = nil; backup = nil; result = nil; planning = job.plan; plan = []; stopNote = nil; logFile = nil
         startedAt = Date(); stageStartedAt = nil; lastActivity = Date(); self.expected = job.plan ? [:] : expected
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "Building a Mac app")
@@ -132,6 +152,7 @@ final class BuildRun {
             let r = Self.perform(job, run: self)
             DispatchQueue.main.async {
                 guard let self else { return }
+                self.flushLog()
                 if let a = self.activity { ProcessInfo.processInfo.endActivity(a); self.activity = nil }
                 self.running = false
                 self.process = nil
@@ -167,7 +188,7 @@ final class BuildRun {
         // (performance cores) when the window is in the background; without this a hidden converter's build can drift onto the efficiency cores
         let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "Building a game app")
         defer { ProcessInfo.processInfo.endActivity(activity) }
-        let say: (String) -> Void = { m in DispatchQueue.main.async { r.log.append(m); r.onChange?() } }
+        let say: (String) -> Void = { m in DispatchQueue.main.async { r.flushLog(); r.log.append(m); r.onChange?() } }
         do {
             let lock = try FolderLock(job.folder)
             defer { lock.release() }
@@ -209,7 +230,8 @@ final class BuildRun {
             do {
                 let app = try build(job, repo: repo, run: r)
                 let (steps, shaders, stages, seconds) = DispatchQueue.main.sync {
-                    (r.done.filter(\.ok).count, r.done.first { $0.name.hasPrefix("Mac shaders") }.flatMap(shaderCount),
+                    r.flushLog()
+                    return (r.done.filter(\.ok).count, r.done.first { $0.name.hasPrefix("Mac shaders") }.flatMap(shaderCount),
                      r.done.map { StageRecord(name: $0.name, seconds: $0.seconds, reused: $0.reused, ok: $0.ok) },
                      r.startedAt.map { Int(Date().timeIntervalSince($0)) })
                 }
@@ -254,7 +276,7 @@ final class BuildRun {
         try? fm.createDirectory(atPath: logs, withIntermediateDirectories: true)
         let stamp = Engine.now().replacingOccurrences(of: ":", with: "").replacingOccurrences(of: " ", with: "-")
         let path = "\(logs)/converter-\(stamp).log"
-        let text = DispatchQueue.main.sync { (r.done.map(\.line) + [""] + r.log).joined(separator: "\n") + "\n" }
+        let text = DispatchQueue.main.sync { r.flushLog(); return (r.done.map(\.line) + [""] + r.log).joined(separator: "\n") + "\n" }
         guard (try? text.write(toFile: path, atomically: true, encoding: .utf8)) != nil else { return nil }
         DispatchQueue.main.async { r.logFile = path }
         return path
@@ -379,7 +401,7 @@ final class BuildRun {
         let errDone = DispatchSemaphore(value: 0)
         var errLines: [String] = []
         Thread.detachNewThread {
-            for l in Lines(err.fileHandleForReading) { errLines.append(l); DispatchQueue.main.async { r.log.append(l); r.lastActivity = Date() } }
+            for l in Lines(err.fileHandleForReading) { errLines.append(l); r.queue(l) }
             errDone.signal()
         }
         var appPath: String?, plan: String?
@@ -394,7 +416,7 @@ final class BuildRun {
         case 130: throw ConverterError("stopped")
         default:
             // the script's own last red line, which names the failed step and its log
-            let red = DispatchQueue.main.sync { r.log.last { $0.contains("[RED]") } } ?? errLines.last
+            let red = DispatchQueue.main.sync { r.flushLog(); return r.log.last { $0.contains("[RED]") } } ?? errLines.last
             throw ConverterError(red ?? "the script exited with \(p.terminationStatus)")
         }
         if job.plan { return plan ?? "the script printed no plan" }
@@ -413,7 +435,7 @@ final class BuildRun {
     /// One stdout line of the script; returns the app's path from its "done: <path>.app (…)" message.
     nonisolated private static func event(_ line: String, run r: BuildRun, ext: String = ".app") -> String? {
         guard let v = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], let ev = v["ev"] as? String else {
-            DispatchQueue.main.async { r.log.append(line); r.lastActivity = Date(); r.onChange?() }
+            r.queue(line)
             return nil
         }
         let str = { (k: String) in v[k] as? String ?? "" }
@@ -423,6 +445,7 @@ final class BuildRun {
             app = String(msg[i.upperBound..<j.upperBound])
         }
         DispatchQueue.main.async {
+            r.flushLog()
             r.lastActivity = Date()
             switch ev {
             case "stage":
@@ -525,5 +548,25 @@ struct Lines: Sequence, IteratorProtocol {
             let chunk = handle.availableData
             if chunk.isEmpty { eof = true } else { buffer.append(chunk) }
         }
+    }
+}
+
+/// Lines handed from the build's threads to the main thread in batches (BuildRun.queue).
+final class PendingLines: @unchecked Sendable {   // @unchecked: every access to `lines` holds `lock`
+    private var lines: [String] = []
+    private let lock = NSLock()
+
+    /// Adds a line; true when it is the first one waiting (the caller then schedules the flush).
+    func add(_ line: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        lines.append(line)
+        return lines.count == 1
+    }
+
+    func take() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        let all = lines
+        lines = []
+        return all
     }
 }

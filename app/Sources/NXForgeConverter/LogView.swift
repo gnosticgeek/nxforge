@@ -35,12 +35,14 @@ struct LogView: View {
     @State private var follow = true
 
     var body: some View {
-        let shown = visible
+        // one pass over the log per redraw: each line's level is read once, for the shown lines and the tabs' counts alike
+        let scan = scanned
+        let shown = scan.shown
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 // All / Warnings / Errors as tabs with their counts
                 HStack(spacing: 2) {
-                    ForEach(LogFilter.allCases, id: \.self) { f in tab(f) }
+                    ForEach(LogFilter.allCases, id: \.self) { f in tab(f, count: scan.count(f)) }
                 }
                 .padding(3)
                 .background(.white.opacity(0.08), in: .capsule)
@@ -64,8 +66,7 @@ struct LogView: View {
             ScrollViewReader { proxy in
                 ScrollView([.vertical]) {
                     LazyVStack(alignment: .leading, spacing: 1) {
-                        ForEach(shown, id: \.offset) { i, line in
-                            let level = LogLevel(line)
+                        ForEach(shown, id: \.offset) { i, line, level in
                             Text(line.isEmpty ? " " : line)
                                 .font(.caption.monospaced())
                                 .foregroundStyle(level == .info ? Color.primary.opacity(0.8) : level.color)
@@ -93,29 +94,38 @@ struct LogView: View {
         }
     }
 
-    /// The lines the filter and search leave, with their line numbers (the scroll position's ids).
-    var visible: [(offset: Int, element: String)] {
-        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        return lines.enumerated().filter { _, l in
-            let level = LogLevel(l)
-            switch filter {
-            case .all: break
-            case .warnings: if level == .info { return false }
-            case .errors: if level != .error { return false }
-            }
-            return q.isEmpty || l.lowercased().contains(q)
-        }.map { (offset: $0.offset, element: $0.element) }
-    }
+    /// The lines the filter and search leave, with their line numbers (the scroll position's ids) and levels, and how many
+    /// warnings and errors the whole log has.
+    struct Scan {
+        var shown: [(offset: Int, line: String, level: LogLevel)] = []
+        var total = 0, warnings = 0, errors = 0
 
-    func count(_ f: LogFilter) -> Int {
-        switch f {
-        case .all: lines.count
-        case .warnings: lines.filter { LogLevel($0) != .info }.count
-        case .errors: lines.filter { LogLevel($0) == .error }.count
+        func count(_ f: LogFilter) -> Int {
+            switch f {
+            case .all: total
+            case .warnings: warnings + errors
+            case .errors: errors
+            }
         }
     }
 
-    func tab(_ f: LogFilter) -> some View {
+    var scanned: Scan {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        var s = Scan(total: lines.count)
+        for (i, l) in lines.enumerated() {
+            let level = LogLevel(l)
+            if level == .error { s.errors += 1 } else if level == .warning { s.warnings += 1 }
+            switch filter {
+            case .all: break
+            case .warnings: if level == .info { continue }
+            case .errors: if level != .error { continue }
+            }
+            if q.isEmpty || l.lowercased().contains(q) { s.shown.append((i, l, level)) }
+        }
+        return s
+    }
+
+    func tab(_ f: LogFilter, count: Int) -> some View {
         let on = filter == f
         let (symbol, tint): (String, Color) = switch f {
         case .all: ("list.bullet.circle.fill", StageLook.soft)
@@ -123,7 +133,7 @@ struct LogView: View {
         case .errors: ("xmark.circle.fill", .red)
         }
         return Button { filter = f } label: {
-            Label { Text("\(f.rawValue) (\(count(f)))") } icon: { Image(systemName: symbol).foregroundStyle(on ? Color.black : tint) }
+            Label { Text("\(f.rawValue) (\(count))") } icon: { Image(systemName: symbol).foregroundStyle(on ? Color.black : tint) }
                 .fontWeight(.medium)
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .foregroundStyle(on ? Color.black : Color.primary)
