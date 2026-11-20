@@ -1,6 +1,5 @@
 """NXForge: pso_offline.py --base-jobs (batches of bases compiled several at a time) and --scratch (metal-tt's temporary files and library copies in a folder of their own).
 The archive and the batches kept for the next run are the same as a sequential run's. No game files, no Metal tools (test_pso_offline.py's fake compiler)."""
-import os
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -29,10 +28,8 @@ class BaseJobs(BuildCase):
     def test_scratch_takes_the_temporary_files(self):
         scratch = self.t / 'scratch'
         seen = []
-        real = po.subprocess.run
-        observed = None
         bases = [('v_bp', f'vertex{i}', 'f_b', 'main0') for i in range(3)]
-        runner, observed = self.batched_runner()
+        runner, _ = self.batched_runner()
         def spy(cmd, **kw):
             if 'metal-tt' in [str(c) for c in cmd] and '-o' in [str(c) for c in cmd]: seen.append(kw.get('env', {}).get('TMPDIR'))
             return runner(cmd, **kw)
@@ -43,7 +40,6 @@ class BaseJobs(BuildCase):
         self.assertEqual(len(set(seen)), 2)   # one folder per batch
         self.assertFalse(list(self.work.rglob('libraries')))
         self.assertTrue(list(self.out.glob('*.mtl4a')))
-        po.SCRATCH = None
 
 
 if __name__ == '__main__':
