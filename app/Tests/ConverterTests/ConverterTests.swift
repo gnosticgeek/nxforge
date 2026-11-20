@@ -2215,3 +2215,19 @@ import Testing
         #expect(back.cloudSavesAll && back.cloudSavesFolder == "/x/Saves")
     }
 }
+
+@Suite struct SettingsPanel {
+    /// a controller walks the rows in enum order, so each section's rows must be together and the sections in the list's order
+    @Test func padRowsFollowTheSectionsInOrder() {
+        let order = StageSettingRow.allCases.map { SettingsSection.allCases.firstIndex(of: $0.section)! }
+        #expect(order == order.sorted())
+    }
+
+    @Test func findMatchesTheStartsOfWords() {
+        #expect(StageSettings.matches("art", "Download box art"))
+        #expect(!StageSettings.matches("art", "Where NXForge starts"))
+        #expect(StageSettings.matches("theatre vol", "Volume Of everything Theatre plays"))
+        #expect(!StageSettings.matches("keys folder", "Keys file (prod.keys)"))
+        #expect(StageSettings.matches("  ", "anything"))
+    }
+}

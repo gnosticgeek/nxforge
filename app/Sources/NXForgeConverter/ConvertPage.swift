@@ -283,7 +283,7 @@ struct BuildFailure: View {
                         Button { model.page = p } label: { Label("Open \(p.rawValue)", systemImage: p.symbol) }.buttonStyle(.stage)
                     }
                     if d.code == .signing {
-                        SettingsLink { Label("Open Settings", systemImage: "gearshape") }.buttonStyle(.stage)
+                        Button { model.openSettings(.building) } label: { Label("Open Settings", systemImage: "gearshape") }.buttonStyle(.stage)
                     }
                     if d.code != .stopped {
                         Button {

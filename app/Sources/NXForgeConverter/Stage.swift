@@ -75,7 +75,7 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, theatreTheme, theatreOnTV, theatreEdges, theatreSaver, theatreSounds, theatreMusic, theatreTimeOfDay, startIn }
+// StageSettingRow (a Settings row a controller can stand on) is in StageSettings.swift
 
 /// zl and zr are the triggers, r3 a press of the right stick, volUp and volDown the right stick pushed up or down (Theatre's sound)
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options, zl, zr, r3, l3, volUp, volDown }
@@ -199,13 +199,19 @@ extension AppModel {
             return
         }
         if stageSettings {
+            let rows = StageSettingRow.allCases
+            // a section with no row for the pad (Storage): only L, R and B do anything
+            let row = StageSettingRow(rawValue: settingsFocus).flatMap { $0.section == settingsSection ? $0 : nil }
             switch k {
             case .b, .menu: stageSettings = false
-            case .up: settingsFocus = max(settingsFocus - 1, 0)
-            case .down: settingsFocus = min(settingsFocus + 1, StageSettingRow.allCases.count - 1)
-            case .a: stepSetting(StageSettingRow.allCases[settingsFocus], by: 1, toggle: true)
-            case .left: stepSetting(StageSettingRow.allCases[settingsFocus], by: -1)
-            case .right: stepSetting(StageSettingRow.allCases[settingsFocus], by: 1)
+            case .l: stepSettingsSection(-1)
+            case .r: stepSettingsSection(1)
+            // opened with the pointer on another section than the pad's row: the pad starts on this section's first row
+            case .up: if row != nil { settingsFocus = max(settingsFocus - 1, 0) } else if let f = rows.first(where: { $0.section == settingsSection }) { settingsFocus = f.rawValue }
+            case .down: if row != nil { settingsFocus = min(settingsFocus + 1, rows.count - 1) } else if let f = rows.first(where: { $0.section == settingsSection }) { settingsFocus = f.rawValue }
+            case .a: if let row { stepSetting(row, by: 1, toggle: true) }
+            case .left: if let row { stepSetting(row, by: -1) }
+            case .right: if let row { stepSetting(row, by: 1) }
             default: break
             }
             return
@@ -258,38 +264,63 @@ extension AppModel {
         }
     }
 
+    /// L and R in Settings: the section before or after, with the pad on its first row
+    func stepSettingsSection(_ d: Int) {
+        let all = SettingsSection.allCases
+        guard let i = all.firstIndex(of: settingsSection) else { return }
+        let s = all[(i + d + all.count) % all.count]
+        if let first = StageSettingRow.allCases.first(where: { $0.section == s }) { settingsFocus = first.rawValue } else { settingsSection = s }
+    }
+
+    /// Settings from anywhere in the app (⌘, the top bar's button, a build that needs a signing identity): on a section when one is named
+    func openSettings(_ section: SettingsSection? = nil) {
+        if let section { settingsSection = section }
+        stageSettings = true
+    }
+
     /// A Settings row from a controller: left and right change it, A flips a switch
     func stepSetting(_ row: StageSettingRow, by d: Int, toggle: Bool = false) {
         func flip(_ v: inout Bool) { v = toggle ? !v : d > 0 }
+        func cycle<T: CaseIterable & Equatable>(_ v: inout T) where T.AllCases == [T] {
+            let all = T.allCases
+            if let i = all.firstIndex(of: v) { v = all[(i + d + all.count) % all.count] }
+        }
         switch row {
+        case .startIn: cycle(&settings.startIn)
+        case .returnToLibrary: flip(&settings.returnToLibrary)
+        case .sessionRecap: flip(&settings.sessionRecap)
+        case .lightWhilePlaying: flip(&settings.lightWhilePlaying)
         case .straightPlay: flip(&settings.straightPlay)
         case .firstPlayOptions: flip(&settings.firstPlayOptions)
         case .batteryPreset: flip(&settings.batteryPreset)
-        case .returnToLibrary: flip(&settings.returnToLibrary)
         case .localShaders: flip(&settings.localShaders)
-        case .sessionRecap: flip(&settings.sessionRecap)
-        case .lightWhilePlaying: flip(&settings.lightWhilePlaying)
         case .squareCovers: flip(&settings.squareCovers)
+        case .groupByConsole: flip(&settings.libraryGroupByConsole)
         case .downloadCovers: flip(&settings.downloadCovers)
         case .downloadHeroes: flip(&settings.downloadHeroes)
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
         case .mediaInGameFolder: flip(&settings.mediaInGameFolder)
-        case .theatreTheme:
-            let all = TheatreTheme.allCases
-            if let i = all.firstIndex(of: settings.theatreTheme) { settings.theatreTheme = all[(i + d + all.count) % all.count]; theatreTheme = settings.theatreTheme }
-        case .theatreOnTV:
-            let all = TheatreOnTV.allCases
-            if let i = all.firstIndex(of: settings.theatreOnTV) { settings.theatreOnTV = all[(i + d + all.count) % all.count] }
+        case .theatreTheme: cycle(&settings.theatreTheme); theatreTheme = settings.theatreTheme
+        case .theatreOnTV: cycle(&settings.theatreOnTV)
         case .theatreEdges: settings.theatreEdges = settings.theatreEdges.step(d)
-        case .theatreSaver:
-            let all = TheatreSaver.allCases
-            if let i = all.firstIndex(of: settings.theatreSaver) { settings.theatreSaver = all[(i + d + all.count) % all.count] }
+        case .theatreSaver: cycle(&settings.theatreSaver)
+        case .theatreVolume: if !toggle { settings.theatreVolume = min(max(settings.theatreVolume + d * 10, 0), 100); theatreVolumeTick += 1 }
         case .theatreSounds: flip(&settings.theatreSounds)
         case .theatreMusic: flip(&settings.theatreMusic)
         case .theatreTimeOfDay: flip(&settings.theatreTimeOfDay)
-        case .startIn:
-            let all = StartIn.allCases
-            if let i = all.firstIndex(of: settings.startIn) { settings.startIn = all[(i + d + all.count) % all.count] }
+        case .cloudSaves:
+            var on = settings.cloudSavesAll
+            flip(&on)
+            if on != settings.cloudSavesAll { setCloudSavesForAll(on) }
+        case .snapshotAfterPlay: flip(&settings.snapshotAfterPlay)
+        case .saveBackupPush: if settings.saveBackupRepo != nil { flip(&settings.saveBackupPush) }
+        case .notify:
+            flip(&settings.notify)
+            if settings.notify { requestNotifications() }
+        case .openAfterBuild: flip(&settings.openAfterBuild)
+        case .reuseCache: flip(&settings.reuseCache)
+        case .keepBackups: flip(&settings.keepBackups)
+        case .autoUpdate: flip(&settings.autoUpdate)
         }
     }
 
@@ -747,7 +778,7 @@ struct StageTopBar: View {
                 .padding(.horizontal, 14).frame(height: 36).glassEffect(.regular, in: .capsule)
             }
             round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
-            round("slider.horizontal.3", "Settings") { model.stageSettings = true }
+            round("slider.horizontal.3", "Settings") { model.openSettings() }
             }
             .frame(maxWidth: .infinity)
         }
@@ -1232,7 +1263,7 @@ struct StageHints: View {
         let fix = focus.map { model.status($0).action } ?? "Build"
         // the A hint says what the main button says
         let play = focus.flatMap(\.app).map { model.isPlaying(app: $0) } == true ? "Resume" : "Play"
-        if model.stageSettings { return [(["A"], "Change"), (["B"], "Close")] }
+        if model.stageSettings { return [(["A"], "Change"), (["L", "R"], "Section"), (["B"], "Close")] }
         if model.playOptions != nil { return [(["A"], "Play"), (["X"], "Play once"), (["Y"], "Next preset"), (["L", "R"], "Switch tab"), (["B"], "Done")] }
         if detail { return (built ? [(["A"], play), (["X"], "Play options")] : [(["A"], fix)]) + [(["Y"], "View box"), (["B"], "Back")] }
         var h: [([String], String)] = built ? [(["A"], play), (["X"], "Play options")] : [(["A"], fix)]
@@ -1344,317 +1375,5 @@ struct LaunchScreen: View {
             .padding(.top, 4)
         }
         .accessibilityElement(children: .contain)
-    }
-}
-
-/// The front end's own settings: a panel no taller than the window, with its title, a find field and the section jumps
-/// pinned at the top, the folder buttons pinned at the foot, and the rows scrolling between them.
-struct StageSettings: View {
-    @Bindable var model: AppModel
-    let openConverterSettings: () -> Void
-    @Environment(\.accessibilityReduceTransparency) private var solid
-
-    enum Section: String, CaseIterable, Identifiable {
-        case launching = "Launching", artwork = "Artwork", theatre = "Theatre", building = "Building", opens = "When NXForge Opens"
-        var id: String { rawValue }
-        var short: String { self == .opens ? "On Open" : rawValue }
-    }
-
-    // NXC_FIND: the snapshot hook starts the find field with that text
-    @State private var query = ProcessInfo.processInfo.environment["NXC_FIND"] ?? ""
-    @State private var contentHeight: CGFloat = 640
-    @State private var offset: CGFloat = 0
-    @State private var viewport: CGFloat = 0
-    @State private var tops: [Section: CGFloat] = [:]
-    @State private var position = ScrollPosition(edge: .top)
-    @FocusState private var findFocused: Bool
-    @FocusState private var scrollFocused: Bool
-
-    /// the section at the top of the scroll, lit in the jump row
-    var current: Section {
-        // scrolled to the end, the last section that shows is lit even though it never reaches the top
-        if !moreBelow && moreAbove { return Section.allCases.last { (tops[$0] ?? .infinity) < offset + viewport - 40 } ?? .opens }
-        return Section.allCases.last { (tops[$0] ?? .infinity) <= offset + 24 } ?? .launching
-    }
-    var moreAbove: Bool { offset > 2 }
-    var moreBelow: Bool { offset + viewport < contentHeight - 2 }
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            VStack(spacing: 0) {
-                header(proxy)
-                Rectangle().fill(.white.opacity(moreAbove ? 0.12 : 0)).frame(height: 1)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) { sections }
-                        .coordinateSpace(.named("settingsContent"))
-                        .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 18)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
-                }
-                .scrollPosition($position)
-                .scrollIndicators(.visible)
-                .scrollBounceBehavior(.basedOnSize)
-                .frame(maxHeight: contentHeight)
-                .onScrollGeometryChange(for: [CGFloat].self) { [$0.contentOffset.y, $0.containerSize.height] } action: { _, v in
-                    offset = v[0]; viewport = v[1]
-                }
-                // the keyboard: arrows, page up and down, space, home and end
-                .focusable().focusEffectDisabled().focused($scrollFocused)
-                .onKeyPress(keys: [.upArrow, .downArrow, .pageUp, .pageDown, .space, .home, .end]) { press in
-                    scroll(press); return .handled
-                }
-                // a controller's row stays in view
-                .onChange(of: model.settingsFocus) { _, f in
-                    if let r = StageSettingRow(rawValue: f) { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(AnyHashable(r), anchor: .center) } }
-                }
-                Rectangle().fill(.white.opacity(moreBelow ? 0.12 : 0)).frame(height: 1)
-                footer
-            }
-        }
-        .frame(width: 640)
-        .background(StageLook.panel.opacity(solid ? 1 : 0.80), in: .rect(cornerRadius: 28))
-        .glassEffect(.regular, in: .rect(cornerRadius: 28))
-        .shadow(color: .black.opacity(0.55), radius: 50, y: 24)
-        .onAppear { scrollFocused = true }
-        // ⌘F finds a setting
-        .background { Button("") { findFocused = true }.keyboardShortcut("f").hidden() }
-    }
-
-    func header(_ proxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                Text("Settings").font(.system(size: 26, weight: .heavy)).tracking(-0.5)
-                Spacer()
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .semibold)).foregroundStyle(StageLook.faint)
-                    TextField("Find a setting", text: $query).textFieldStyle(.plain).font(.system(size: 13.5)).focused($findFocused)
-                        .onSubmit { scrollFocused = true }
-                        .onExitCommand { if query.isEmpty { model.stageSettings = false } else { query = "" } }
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
-                            .buttonStyle(.plain).accessibilityLabel("Clear")
-                    }
-                }
-                .padding(.horizontal, 12).frame(width: 210, height: 32)
-                .background(StageLook.card, in: .capsule).overlay(Capsule().strokeBorder(StageLook.edge, lineWidth: 1))
-                Button { model.stageSettings = false } label: {
-                    Text("Done").font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
-                        .padding(.horizontal, 16).frame(height: 32).background(.white, in: .capsule).contentShape(.capsule)
-                }
-                .buttonStyle(.plain)
-            }
-            if query.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(Section.allCases) { s in
-                        let on = s == current
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(s, anchor: .top) }
-                        } label: {
-                            Text(s.short).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(on ? Color.black : StageLook.soft)
-                                .padding(.horizontal, 12).frame(height: 26)
-                                .background(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.white.opacity(0.08)), in: .capsule)
-                                .contentShape(.capsule)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(on ? .isSelected : [])
-                    }
-                    Spacer()
-                }
-                .animation(.easeOut(duration: 0.15), value: current)
-            }
-        }
-        .padding(.horizontal, 28).padding(.top, 26).padding(.bottom, 14)
-    }
-
-    var footer: some View {
-        HStack(spacing: 10) {
-            Button("Games Folder…") { model.chooseGamesRoot() }.buttonStyle(StageButton(height: 36))
-            Button("Scan Again") { model.scanLibrary() }.buttonStyle(StageButton(height: 36)).disabled(model.libraryScanning)
-            Spacer()
-            Button("Converter Settings…") { openConverterSettings() }.buttonStyle(StageButton(height: 36))
-        }
-        .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 22)
-    }
-
-    /// every row's title, by section, and the note under it: the find field looks in both
-    static let titles: [Section: [String]] = [
-        .launching: ["Play goes straight into the game", "Show Play options the first time", "Battery preset on battery", "Return here when a game quits", "Keep shaders on this Mac", "Show a recap when a game quits", "Rest while a game runs", "Controllers"],
-        .artwork: ["Square covers", "Download box art", "Download wide art", "Download store details", "Keep media and cheats in each game's folder", "Artwork folder"],
-        .theatre: ["Theatre", "Theme", "When a TV is plugged in", "TV edges", "Screensaver"],
-        .building: ["Keys file (prod.keys)"],
-        .opens: ["Open on"],
-    ]
-    static let notes: [String: String] = [
-        "Play goes straight into the game": "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.",
-        "Show Play options the first time": "A game you have not played yet opens its options once before it starts.",
-        "Battery preset on battery": "Unplugged, a run takes the Battery preset (lowest frame rate, 75 % render scale) for the options still on the game's default. A choice you saved for a game, such as its frame rate, is kept.",
-        "Return here when a game quits": "NXForge comes back to the front, ready for the next game. The game's sidebar also has Library, which quits to this game's page.",
-        "Keep shaders on this Mac": "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.",
-        "Show a recap when a game quits": "How long you played this time and in total, with the game's peak memory.",
-        "Rest while a game runs": "Behind a running game, NXForge shows a plain card and lets go of its artwork, so the game has the memory.",
-        "Controllers": "See every button, stick and trigger as a game reads it, and try the rumble.",
-        "Square covers": "Shows each game's square shop art instead of its box on Home and in Discover: smaller, so more fit in a row. The same as Discover's square button.",
-        "Download box art": "Front and back covers from GameTDB, matched by the game's name; a download-only game gets a box made from its square art on Nintendo Life. Only a cover's ID or the game's name is sent.",
-        "Download wide art": "The header art from each game's page on Nintendo Life, else the banner from Nintendo's European store, behind its page and Home. Found by name or title ID; only those are sent.",
-        "Download store details": "A game's description, details and official screenshots from its store page, fetched when you open the game's page.",
-        "Keep media and cheats in each game's folder": "A built game's covers, wide art, screenshots and manual go in a media folder beside its app, with game.md listing its details, links and build. Its cheats go in a cheats folder beside that, one Markdown file per build, with the switches. Both are read back on a Mac that has none for the game yet, and a cheats file edited by hand is read back too.",
-        "Artwork folder": "Your own covers and the downloaded art, kept on this Mac only.",
-        "Theatre": "Your games full screen on a TV, for the sofa and a controller. Also ⇧⌘F. B leaves it.",
-        "Theme": "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Gallery shows three covers beside the game's name on a quiet wall; Trailer plays the game's trailer. ZL and ZR switch them on Theatre, L and R filter the games.",
-        "When a TV is plugged in": "Ask offers Theatre when a controller is connected too; Always opens it straight away.",
-        "TV edges": "Some TVs crop the edges of the picture. If Theatre's clock or buttons are cut off, inset the picture; Theatre's menu shows the four corners while you choose.",
-        "Screensaver": "Left alone this long, Theatre cycles your games' art with a dim clock, and after an hour lets the TV sleep. Any button wakes it.",
-        "Keys file (prod.keys)": "Chosen once, used for every build and rebuild.",
-        "Open on": "Where NXForge starts: Home, Discover, Theatre (on the game and filter it was left on) or the Converter.",
-    ]
-
-    @ViewBuilder var sections: some View {
-        group(.launching) {
-            toggle("Play goes straight into the game", $model.settings.straightPlay, row: .straightPlay)
-            toggle("Show Play options the first time", $model.settings.firstPlayOptions, row: .firstPlayOptions)
-            toggle("Battery preset on battery", $model.settings.batteryPreset, row: .batteryPreset)
-            toggle("Return here when a game quits", $model.settings.returnToLibrary, row: .returnToLibrary)
-            toggle("Keep shaders on this Mac", $model.settings.localShaders, row: .localShaders)
-            toggle("Show a recap when a game quits", $model.settings.sessionRecap, row: .sessionRecap)
-            toggle("Rest while a game runs", $model.settings.lightWhilePlaying, row: .lightWhilePlaying)
-            row("Controllers") {
-                Button("Test…") { model.stageSettings = false; model.showControllerTest = true }.buttonStyle(StageButton(height: 32))
-            }
-        }
-        group(.artwork) {
-            toggle("Square covers", $model.settings.squareCovers, row: .squareCovers)
-            toggle("Download box art", $model.settings.downloadCovers, row: .downloadCovers)
-            toggle("Download wide art", $model.settings.downloadHeroes, row: .downloadHeroes)
-            toggle("Download store details", $model.settings.downloadStoreInfo, row: .downloadStoreInfo)
-            toggle("Keep media and cheats in each game's folder", $model.settings.mediaInGameFolder, row: .mediaInGameFolder)
-            row("Artwork folder") {
-                HStack(spacing: 8) {
-                    Button("Look Again") { CoverStore.shared.lookAgain(); StoreInfoStore.shared.lookAgain(); model.fetchCovers(model.stageGames()) }.buttonStyle(StageButton(height: 32))
-                    Button("Show") { try? FileManager.default.createDirectory(at: CoverStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(CoverStore.dir) }.buttonStyle(StageButton(height: 32))
-                }
-            }
-        }
-        group(.theatre) {
-            row("Theatre") {
-                Button(model.theatre ? "Leave" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }.buttonStyle(StageButton(height: 32))
-            }
-            row("Theme", focus: .theatreTheme) {
-                Picker("", selection: Binding(get: { model.settings.theatreTheme }, set: { model.settings.theatreTheme = $0; model.theatreTheme = $0 })) {
-                    ForEach(TheatreTheme.allCases, id: \.self) { Text($0.rawValue) }
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 290)
-            }
-            row("When a TV is plugged in", focus: .theatreOnTV) {
-                Picker("", selection: $model.settings.theatreOnTV) { ForEach(TheatreOnTV.allCases, id: \.self) { Text($0.rawValue) } }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 240)
-            }
-            row("TV edges", focus: .theatreEdges) {
-                Picker("", selection: $model.settings.theatreEdges) { ForEach(TheatreEdges.allCases, id: \.self) { Text($0.title) } }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 240)
-            }
-            row("Screensaver", focus: .theatreSaver) {
-                Picker("", selection: $model.settings.theatreSaver) { ForEach(TheatreSaver.allCases, id: \.self) { Text($0.rawValue) } }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 240)
-            }
-            toggle("Sounds", $model.settings.theatreSounds, row: .theatreSounds)
-            toggle("Game music (music.m4a or .mp3 in its media folder)", $model.settings.theatreMusic, row: .theatreMusic)
-            toggle("Light follows the time of day", $model.settings.theatreTimeOfDay, row: .theatreTimeOfDay)
-        }
-        group(.building) {
-            row("Keys file (prod.keys)") {
-                HStack(spacing: 8) {
-                    if let k = model.settings.defaultKeys {
-                        Text(k.tildePath).font(.system(size: 12.5)).foregroundStyle(StageLook.soft).lineLimit(1).truncationMode(.middle).frame(maxWidth: 210, alignment: .trailing)
-                    }
-                    Button(model.settings.defaultKeys == nil ? "Choose…" : "Change…") { model.chooseSavedKeys() }.buttonStyle(StageButton(height: 32))
-                }
-            }
-            if query.isEmpty { KeysStatusRow(model: model, dark: true).padding(.bottom, 11) }
-        }
-        group(.opens) {
-            row("Open on", focus: .startIn) {
-                Picker("", selection: $model.settings.startIn) { ForEach(StartIn.allCases, id: \.self) { Text($0.title) } }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 350)
-            }
-        }
-        if !query.isEmpty && !Section.allCases.contains(where: anyShown) {
-            Text("No setting matches “\(query)”.").font(.system(size: 14, weight: .medium)).foregroundStyle(StageLook.faint)
-                .frame(maxWidth: .infinity).padding(.vertical, 30)
-        }
-    }
-
-    /// a row is shown when the find field is empty, or every word typed starts a word of its title or note
-    /// ("art" finds box art and the artwork folder, not "starts")
-    func matches(_ text: String) -> Bool {
-        let typed = query.lowercased().split(separator: " ")
-        if typed.isEmpty { return true }
-        let words = text.lowercased().split { !$0.isLetter && !$0.isNumber }
-        return typed.allSatisfy { t in words.contains { $0.hasPrefix(t) } }
-    }
-    func shown(_ title: String) -> Bool { matches(title + " " + (Self.notes[title] ?? "")) }
-    func anyShown(_ s: Section) -> Bool { Self.titles[s, default: []].contains(where: shown) }
-
-    /// The keyboard over the scroll: a line, a page, or an end at a time
-    func scroll(_ press: KeyPress) {
-        let page = max(viewport - 60, 80)
-        let top = max(contentHeight - viewport, 0)
-        var y = offset
-        switch press.key {
-        case .upArrow: y -= 48
-        case .downArrow: y += 48
-        case .pageUp: y -= page
-        case .pageDown: y += page
-        case .space: y += press.modifiers.contains(.shift) ? -page : page
-        case .home: y = 0
-        case .end: y = top
-        default: return
-        }
-        withAnimation(.easeOut(duration: 0.18)) { position.scrollTo(y: min(max(y, 0), top)) }
-    }
-
-    func group<C: View>(_ section: Section, @ViewBuilder _ content: () -> C) -> some View {
-        Group {
-            if query.isEmpty || anyShown(section) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(section.rawValue.uppercased()).font(.system(size: 11, weight: .bold)).fontWidth(.expanded).kerning(1.6).foregroundStyle(StageLook.soft)
-                    VStack(spacing: 0) { content() }
-                        .padding(.horizontal, 18)
-                        // the line under the last row of a card is covered by the card's own edge
-                        .padding(.bottom, -1).clipped()
-                        .background(StageLook.card, in: .rect(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(StageLook.edge, lineWidth: 1))
-                }
-                .id(section)
-                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("settingsContent")).minY } action: { tops[section] = $0 }
-            }
-        }
-    }
-
-    @ViewBuilder
-    func row<C: View>(_ title: String, focus: StageSettingRow? = nil, @ViewBuilder _ control: () -> C) -> some View {
-        // the row a controller is on is lit (only while one is connected: the pointer needs no mark)
-        let lit = focus != nil && focus?.rawValue == model.settingsFocus && !GCController.controllers().isEmpty
-        let note = Self.notes[title] ?? ""
-        if shown(title) {
-            VStack(spacing: 0) {
-                HStack(spacing: 14) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.system(size: 15, weight: .semibold))
-                        if !note.isEmpty { Text(note).font(.system(size: 12.5)).foregroundStyle(StageLook.faint).fixedSize(horizontal: false, vertical: true) }
-                    }
-                    Spacer(minLength: 8)
-                    control()
-                }
-                .padding(.vertical, 11)
-                .padding(.horizontal, 8)
-                .background(lit ? Color.white.opacity(0.10) : Color.clear, in: .rect(cornerRadius: 10))
-                .padding(.horizontal, -8)
-                Rectangle().fill(.white.opacity(0.10)).frame(height: 1)
-            }
-            .id(focus.map { AnyHashable($0) } ?? AnyHashable(title))
-        }
-    }
-
-    func toggle(_ title: String, _ on: Binding<Bool>, row focus: StageSettingRow? = nil) -> some View {
-        row(title, focus: focus) { Toggle(title, isOn: on).toggleStyle(.switch).labelsHidden().tint(.green) }
     }
 }
