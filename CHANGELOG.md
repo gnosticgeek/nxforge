@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.47.1 (2026-11-20)
+
+- **Theatre's themes refined, the Carousel most** (Converter 0.21.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Carousel shows two boxes either side of the one in front, turned towards you and lit by how near the front they are, with a pool of light under the front box and its name clear of the reflection; Cinema's cards keep their gaps and round corners; a long filter list reads "3 of 17" instead of a row of dots. No game rebuild needed.
+
 ## 0.47.0 (2026-11-19)
 
 - **Enhancements, apart from cheats** (Converter 0.21.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's own improvements (a steadier frame rate, a 60 fps patch, a fix, a mod set up for it) each as one Markdown file in the game's `enhancements/` folder, with a switch on the game's page and in Play options' new Enhancements tab. Settings, Atmosphère codes and mods are all possible, applied the moment a switch changes and taken back when it goes off. No game rebuild needed.

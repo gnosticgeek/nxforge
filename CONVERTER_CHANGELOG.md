@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.21.1 (2026-11-20)
+
+Theatre's themes refined, the Carousel most. Ships in NXForge 0.47.1.
+
+- **Carousel shows five boxes, not three**: five games or more always make a ring of at least 12 places, so two boxes stand either side of the one in front (a short list made a small ring, with one box either side turned almost edge on). The boxes beside the front one turn part of the way back towards you, so their covers read, and are lit by how near the front they are rather than all falling into the same muddy shade. The ring is spread a little wider.
+- **The box in front stands in a pool of light**, warmed by the game's colour, and the room's sides fall into shadow. The ring sits higher on the screen and its reflection fades out sooner, so the game's name is no longer written over the reflection.
+- **Cinema's cards keep their size**: the art filled each card past its edges, so the cards ran into each other with no gap and lost their round corners. The cards beside the one in focus are a shade darker.
+- **The filter between L and R** shows "3 of 17" rather than a row of 17 dots when there are many genres.
+- The game counter reads "07 / 08" on Carousel, as on Gallery, and Gallery says "12 min played" rather than "12 min time played".
+
 ## 0.21.0 (2026-11-19)
 
 Enhancements: a game's own improvements, apart from its cheats. Ships in NXForge 0.47.0.
