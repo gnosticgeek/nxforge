@@ -58,7 +58,7 @@ enum Genres {
         case "Puzzle": return "Puzzles"
         case "Board game": return "Board games"
         case "Retro collection": return "Retro collections"
-        case "Run and gun": return "Run and guns"
+        case "Run and gun": return g
         default: break
         }
         if g.hasSuffix("RPG") { return g + "s" }
