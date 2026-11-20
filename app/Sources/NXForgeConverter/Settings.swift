@@ -29,8 +29,10 @@ enum FolderCheck: String, Codable, CaseIterable {
 }
 /// --cleanup: what the script deletes from <id>_build after a successful build
 enum Cleanup: String, Codable, CaseIterable {
-    case off, unused, all
-    var label: String { switch self { case .off: "Keep everything"; case .unused: "Remove unused files"; case .all: "Remove build cache" } }
+    case off, unused, shaders, all
+    var label: String { switch self { case .off: "Keep everything"; case .unused: "Remove unused files"; case .shaders: "Keep shader work only"; case .all: "Remove build cache" } }
+    /// Whether the build deletes its copies of the game files (the big part of a build folder) once the app is ready.
+    var cleansUp: Bool { self == .shaders || self == .all }
 }
 
 struct Settings: Codable, Equatable {

@@ -42,6 +42,18 @@ class Cleanup(unittest.TestCase):
         self.assertTrue((self.work / 'run/save').is_dir())
         self.assertTrue(all(f.exists() for f in self.outside))
 
+    def test_shaders_keeps_the_shader_work(self):   # NXForge: --cleanup shaders = 'all' but the shader work, which the next build reuses
+        work = self.tmp / 'Y_build'
+        for d in ('extract/v0/RomFS', 'patched_v0', 'app/data', 'tools', 'font', 'tmp.noindex', 'logs', 'profile/Y', 'run/save', 'shader.noindex/cache', 'pso/mac-work/batches.applegpu_g16s/00001', 'pso/mac'):
+            (work / d).mkdir(parents=True)
+        for f in ('patched_v0.key', 'font.key', 'shader.noindex/pkg.key', 'shader.noindex/cache/cas-0123456789ab.db', 'pso/mac/applegpu_g16s.mtl4a', '._pso', '._shader.noindex', '._extract'):
+            (work / f).touch()
+        nsp.cleanup('shaders', work, ['v0'], 'v0', None, everything=True)
+        self.assertEqual(sorted(p.name for p in work.iterdir()), ['._pso', '._shader.noindex', 'logs', 'profile', 'pso', 'run', 'shader.noindex'])
+        self.assertTrue((work / 'shader.noindex/cache/cas-0123456789ab.db').is_file())
+        self.assertTrue((work / 'pso/mac-work/batches.applegpu_g16s/00001').is_dir())
+        self.assertTrue(all(f.exists() for f in self.outside))
+
     def test_provisional_survey_is_kept(self):
         nsp.cleanup('unused', self.work, ['v0'], 'v0', None)
         self.assertTrue(self.survey.is_dir())
