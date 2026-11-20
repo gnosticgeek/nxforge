@@ -75,10 +75,10 @@ enum StageLook {
 }
 
 /// The front end's Settings rows a controller steps through, in their order on screen
-enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, theatreTheme, theatreOnTV, theatreEdges, theatreSaver, startIn }
+enum StageSettingRow: Int, CaseIterable { case straightPlay, firstPlayOptions, batteryPreset, returnToLibrary, localShaders, sessionRecap, lightWhilePlaying, squareCovers, downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder, theatreTheme, theatreOnTV, theatreEdges, theatreSaver, theatreSounds, theatreMusic, theatreTimeOfDay, startIn }
 
 /// zl and zr are the triggers, r3 a press of the right stick, volUp and volDown the right stick pushed up or down (Theatre's sound)
-enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options, zl, zr, r3, volUp, volDown }
+enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options, zl, zr, r3, l3, volUp, volDown }
 
 extension AppModel {
     /// Every game the front end knows, built ones first, then the most recently played, then by name.
@@ -284,6 +284,9 @@ extension AppModel {
         case .theatreSaver:
             let all = TheatreSaver.allCases
             if let i = all.firstIndex(of: settings.theatreSaver) { settings.theatreSaver = all[(i + d + all.count) % all.count] }
+        case .theatreSounds: flip(&settings.theatreSounds)
+        case .theatreMusic: flip(&settings.theatreMusic)
+        case .theatreTimeOfDay: flip(&settings.theatreTimeOfDay)
         case .startIn:
             let all = StartIn.allCases
             if let i = all.firstIndex(of: settings.startIn) { settings.startIn = all[(i + d + all.count) % all.count] }
@@ -482,7 +485,7 @@ final class PadLabels {
         func put(_ k: PadKey, _ b: GCControllerButtonInput?) { if let n = b?.sfSymbolsName, NSImage(systemSymbolName: n, accessibilityDescription: nil) != nil { s[k] = n } }
         put(.a, p.buttonA); put(.b, p.buttonB); put(.x, p.buttonX); put(.y, p.buttonY)
         put(.l, p.leftShoulder); put(.r, p.rightShoulder); put(.menu, p.buttonMenu); put(.options, p.buttonOptions)
-        put(.zl, p.leftTrigger); put(.zr, p.rightTrigger); put(.r3, p.rightThumbstickButton)
+        put(.zl, p.leftTrigger); put(.zr, p.rightTrigger); put(.r3, p.rightThumbstickButton); put(.l3, p.leftThumbstickButton)
         if let n = p.rightThumbstick.sfSymbolsName, NSImage(systemSymbolName: n, accessibilityDescription: nil) != nil { s[.volUp] = n }
         if s != symbols { symbols = s }
     }
@@ -500,6 +503,7 @@ final class PadLabels {
         case "ZL": .zl
         case "ZR": .zr
         case "R3": .r3
+        case "L3": .l3
         case "RS": .volUp
         default: nil
         }
@@ -708,7 +712,11 @@ struct StageTopBar: View {
                 ForEach(StageTab.allCases, id: \.self) { t in
                     tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
                 }
-                tab("Converter", on: !model.frontEnd) { if model.frontEnd { model.showConverter() } }
+                tab("Saves", on: !model.frontEnd && model.page == .saves) { model.showConverter(); model.page = .saves }
+                    .help("Every game's saves, and Cloud saves for all of them")
+                tab("Converter", on: !model.frontEnd && model.page != .saves) {
+                    if model.frontEnd || model.page == .saves { model.showConverter(); if model.page == .saves { model.page = model.converterPage } }
+                }
                     .help("Convert, Game Files, Builds, Storage, Toolchain and Updates")
             }
             .padding(4)
@@ -746,7 +754,7 @@ struct StageTopBar: View {
         .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
         // under the converter's bar, a hairline between it and the page's own tabs
         .overlay(alignment: .bottom) {
-            if !model.frontEnd { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
+            if !model.frontEnd && model.page != .saves { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
         }
     }
 
@@ -1531,6 +1539,9 @@ struct StageSettings: View {
                 Picker("", selection: $model.settings.theatreSaver) { ForEach(TheatreSaver.allCases, id: \.self) { Text($0.rawValue) } }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 240)
             }
+            toggle("Sounds", $model.settings.theatreSounds, row: .theatreSounds)
+            toggle("Game music (music.m4a or .mp3 in its media folder)", $model.settings.theatreMusic, row: .theatreMusic)
+            toggle("Light follows the time of day", $model.settings.theatreTimeOfDay, row: .theatreTimeOfDay)
         }
         group(.building) {
             row("Keys file (prod.keys)") {

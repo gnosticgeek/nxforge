@@ -41,7 +41,9 @@ enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2
 
 @MainActor @Observable
 final class AppModel {
-    var page: Page = .convert { didSet { if page != oldValue { rememberWindowState() } } }
+    var page: Page = .convert { didSet { if page != oldValue { if page != .saves { converterPage = page }; rememberWindowState() } } }
+    /// the converter page last open, where the top bar's Converter goes back to from Saves
+    var converterPage: Page = .convert
     var settings = Settings.load() {
         didSet {
             guard settings != oldValue else { return }
@@ -165,6 +167,12 @@ final class AppModel {
     var theatreSaver = false
     /// counts volume and mute changes, so the volume card shows for a moment
     var theatreVolumeTick = 0
+    /// Theatre's moments (TheatreDelight.swift): the card up now (welcome back, a new arrival, a game just built, the shuffle's
+    /// pick), confetti (counts bursts), the shuffle spinning, and the lights going down on a launch
+    var theatreMoment: TheatreMoment?
+    var theatreConfetti = 0
+    var theatreSpinning = false
+    var theatreCurtain: TheatreCurtain?
     /// the window's frame before Theatre moved it to the TV, whether Theatre put it in full screen, and the Mac kept awake
     @ObservationIgnored var theatreSavedFrame: NSRect?
     @ObservationIgnored var theatreMadeFullScreen = false
@@ -258,6 +266,7 @@ final class AppModel {
             guard !self.run.running, let r = self.run.result else { return }
             self.refreshGame()
             self.revision += 1
+            self.syncCloudSavesIfOn()   // a new game joins the Saves page's cloud folder
             self.buildEnded(r)
         }
         applyAppearance()
@@ -269,6 +278,7 @@ final class AppModel {
         trackPlay()
         watchActive()
         watchLaunch()
+        syncCloudSavesIfOn()
         frontEnd = settings.startIn != .converter && ProcessInfo.processInfo.environment["NXC_PAGE"] == nil
         stageTab = settings.startIn == .library ? .discover : .home
         restoreBatchQueue()
@@ -527,6 +537,7 @@ final class AppModel {
     /// Open a built app, noting that its first (slow) launch is done.
     func openApp(_ app: String) {
         Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
+        applyCloudSaves(app: app)
         // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
         let cfg = NSWorkspace.OpenConfiguration()
         if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
@@ -725,6 +736,8 @@ final class AppModel {
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
         if case .success = r { GameFolderMediaSync.shared.schedule(self, delay: 1) }
+        // Theatre up: confetti, and the game in focus with a card saying it is ready (TheatreDelight.swift)
+        if case .success = r { theatreBuilt(app: run.app) }
         if settings.openAfterBuild, batchCurrent == nil, case .success = r, let app = run.app { openApp(app) }
         if batchCurrent != nil {
             if case .success = r { finishConvert() }

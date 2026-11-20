@@ -151,6 +151,19 @@ struct ConverterApp: App {
             if let e = env["NXC_EDGES"], let v = TheatreEdges(rawValue: e.capitalized) { model.settings.theatreEdges = v }
             if env["NXC_SAVER"] != nil { model.theatreSaver = true }
             if let v = env["NXC_VOLUME"].flatMap(Int.init) { model.theatreMuted = false; model.settings.theatreVolume = v; model.theatreVolumeTick += 1 }
+            // NXC_MOMENT=welcome, arrival, built or shuffle: that card on the game in focus (built: with NXC_CONFETTI=<s into the burst>);
+            // NXC_CURTAIN=<s into it>: the lights going down on a launch of it, held still; NXC_DAYLIGHT=morning, day, evening or night
+            if let m = env["NXC_MOMENT"], let id = model.theatreFocus, let g = model.stageGames().first(where: { $0.id == id }) {
+                let kind: TheatreMoment.Kind = switch m {
+                case "arrival": .newArrival
+                case "built": .built
+                case "shuffle": .shuffle
+                default: .welcome(day: AppModel.playDay(model.playRecord(app: g.app, titleID: g.titleID)), total: g.total, last: g.last ?? Date().addingTimeInterval(-86400))
+                }
+                model.theatreMoment = TheatreMoment(kind: kind, game: id)
+            }
+            if env["NXC_CONFETTI"] != nil { model.theatreConfetti = 1 }
+            if let t = env["NXC_CURTAIN"].flatMap(Double.init), let id = model.theatreFocus { model.theatreCurtain = TheatreCurtain(game: id, frozen: t) }
         }
         if let n = env["NXC_OFFER"] { model.theatreOffer = TVScreen(id: 0, name: n) }
         if let st = env["NXC_STAGE"], st != "theatre" {

@@ -4,6 +4,35 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.0 (2026-11-20)
+
+Theatre's small delights, on every theme. Ships in NXForge 0.47.4.
+
+- **Lights down on launch**: starting a game from Theatre dims the room, flies the game's box forward and opens its front like a door; the light inside fills the screen, and the launch screen comes up under it, so the game comes out of its box. Reduce Motion keeps only the dimming.
+- **Sound**: a soft click for each step, a whoosh as the Carousel turns, a swish between themes, a low thunk on launch and a chime for a moment, all made by the app (no sound files) and quiet. The right stick's press (or S) now mutes on every theme, and up and down set the volume of everything Theatre plays. Settings › Theatre › Sounds turns them off.
+- **The game's music**: once the focus rests on a game, its music fades in, looped and quiet, and fades out as you move on. Put `music`, `theme` or `soundtrack` (.m4a, .mp3, .aac, .wav, .aiff, .caf or .flac) in the game's `media/` folder, or a file named by its title ID or its name in `~/Library/Application Support/NXForge Converter/Theatre Music/`. Not on Trailer, which has the trailer's sound; never while a game runs. Settings › Theatre › Game music.
+- **Welcome back**: Theatre opens on the game you played last (in the last 30 days) with a card: "Good evening · Welcome back, Day 3 in Ocarina of Time, 8 h 25 min played · last played yesterday", and A to Continue.
+- **Time of day**: a cooler, brighter room in the morning, the stage as it is in the afternoon, a warm evening, and a dimmer, cosy room after 10 pm, with the sun or moon by the clock. Settings › Theatre › Light follows the time of day.
+- **Shelf moments**: confetti, the game in focus and a "Ready to play" card when a game finishes building while Theatre is up; a spotlight and a "New arrival" card on a built game Theatre has not shown before (the first time Theatre opens, every game counts as seen).
+- **What should I play?** L3 (the left stick's press), ? on the keyboard, or the Theatre menu's new row: the games whirl past with ticks, slow down and land on one (a built one when there are any), with a card to play it or spin again. B stops it.
+- Snapshot hooks: `NXC_MOMENT=welcome|arrival|built|shuffle`, `NXC_CONFETTI=<s>`, `NXC_CURTAIN=<s>`, `NXC_DAYLIGHT=morning|day|evening|night`.
+
+## 0.21.3 (2026-11-20)
+
+Genres of NXForge's own, with sub-genres. Ships in NXForge 0.47.3.
+
+- **New genres: Run and gun and Beat 'em up** (Cuphead, Contra, Valfaris, The Mummy Demastered, Blazing Chrome, Huntdown...; the Turtles games).
+- **Sub-genres on Discover**: a genre with sub-genres shows a chevron, and choosing it opens them under it with their own counts (Sports › Football, Golf, Baseball, Multi-sport; Platformer › 2D platformer, 3D platformer, Metroidvania; Shooter › Shoot 'em up, First-person shooter; Racing › Kart racing, Arcade racing; RPG › Action RPG, Turn-based RPG; Fighting › Platform fighter; Music › Rhythm; Arcade › Retro collection). A game in a sub-genre counts under its genre too. L and R walk into the open genre's sub-genres. Theatre's filters and rows stay on the genres.
+- **Each game's genres come from its own file** in the game library (`library/<title ID>/game.md`, front matter `nxforge_game`, `title_id`, `genres`), bundled into the app; a game without one falls back to the store's genres, put into NXForge's names. The game page, Theatre and each game folder's `media/game.md` (a new top-level `genres:`) show the same genres.
+
+## 0.21.2 (2026-11-20)
+
+A save manager for the whole library. Ships in NXForge 0.47.2.
+
+- **Saves is in the top bar** (Home, Discover, Saves, Converter), no longer one of the converter's pages; Converter goes back to the page it was on.
+- **Cloud saves for every game**: one switch at the top of Saves gives every built game the same sync folder, written into each game's `cloudSaves.folder` (the key its settings window's Cloud saves shows), so the engine brings the save in at each start and sends it after each save. The location is iCloud Drive › NXForge Saves unless you choose another (any folder, a NAS or another app's iCloud folder); with the switch first turned on, a folder a game already used is offered instead. A game built later, or one opened from NXForge, joins in. Off turns every game's Cloud saves off; the copies stay in the folder. Games with a folder of their own are named under the switch.
+- **Each game's row** now shows where it syncs (iCloud, a folder, or "Sends at next start" before its first sync), when the cloud copy was saved and on which device (read from the copy's header, nothing downloaded), and its quick-save slots, beside the snapshots it had.
+
 ## 0.21.1 (2026-11-20)
 
 Theatre's themes refined, the Carousel most. Ships in NXForge 0.47.1.

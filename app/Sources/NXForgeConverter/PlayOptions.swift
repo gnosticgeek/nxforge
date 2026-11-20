@@ -325,6 +325,7 @@ extension AppModel {
     /// Start the game: straight in, with `once` in its environment for this run only.
     func launch(_ ref: GameRef, app: String, name: String, settings list: [LaunchSetting], saved: [String: String], once: [String: String], note: String?, ownWindow: Bool = false) {
         Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
+        applyCloudSaves(app: app)
         var shown = saved
         for (k, v) in once { shown[k] = v }
         let summary = ([PlayOptions.current(settings: list, values: shown).rawValue] + PlayOptions.summary(settings: list, values: shown).map(\.value)).joined(separator: " · ")
