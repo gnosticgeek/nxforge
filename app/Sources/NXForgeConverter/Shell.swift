@@ -154,6 +154,8 @@ final class ControllerNav {
         key(pad.leftTrigger, .zl) { _ in }
         key(pad.rightTrigger, .zr) { _ in }
         if let r3 = pad.rightThumbstickButton { key(r3, .r3) { _ in } }
+        // Theatre: the left stick's press spins for a game to play
+        if let l3 = pad.leftThumbstickButton { key(l3, .l3) { _ in } }
         key(pad.rightThumbstick.up, .volUp, repeating: true) { _ in }
         key(pad.rightThumbstick.down, .volDown, repeating: true) { _ in }
         key(pad.buttonMenu, .menu) { $0.enterTheatre() }

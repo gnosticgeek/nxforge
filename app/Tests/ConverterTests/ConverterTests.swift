@@ -1908,6 +1908,75 @@ import Testing
     }
 }
 
+@Suite struct TheatreDelights {
+    @Test(arguments: [(0, 5, 10), (3, 2, 10), (0, 1, 2), (7, 7 - 1, 40), (39, 0, 40), (5, 120, 200)])
+    func shuffleLandsOnTheGameGoingForwards(_ from: Int, _ to: Int, _ n: Int) {
+        let path = AppModel.shufflePath(from: from, to: to, count: n)
+        #expect(path.last == to)
+        #expect(path.count >= 16 && path.count <= 40)
+        // every step forwards, the last 18 one game at a time
+        var at = from
+        for (i, k) in path.enumerated() {
+            let d = ((k - at) % n + n) % n
+            #expect(d >= 1)
+            if i >= path.count - 18 { #expect(d == 1) }
+            at = k
+        }
+    }
+
+    @Test func shuffleSlowsDown() {
+        let waits = (0..<20).map { AppModel.shuffleWait(step: $0, of: 20) }
+        #expect(waits == waits.sorted())
+        #expect(waits.first! < 0.06 && waits.last! > 0.4)
+    }
+
+    @Test func dayOfPlayCountsDaysNotSessions() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func at(_ daysAgo: Double, _ h: Double = 0) -> PlaySession { PlaySession(start: now.addingTimeInterval(-daysAgo * 86400 + h * 3600), seconds: 600) }
+        var r = PlayRecord(name: "G", app: "/g.app", sessions: [at(3), at(3, 1), at(1)])
+        #expect(AppModel.playDay(r, now: now, calendar: cal) == 3)   // two days played, today the third
+        r.sessions.append(at(0))
+        #expect(AppModel.playDay(r, now: now, calendar: cal) == 3)   // today already counted
+        #expect(AppModel.playDay(nil, now: now, calendar: cal) == 1)
+    }
+
+    @Test(arguments: [(6, TheatreDaylight.morning), (10, .morning), (11, .day), (16, .day), (17, .evening), (21, .evening), (22, .night), (2, .night), (5, .morning)])
+    func daylightByTheHour(_ h: Int, _ d: TheatreDaylight) {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let date = cal.date(from: DateComponents(year: 2026, month: 11, day: 20, hour: h, minute: 30))!
+        #expect(TheatreDaylight.at(date, calendar: cal) == d)
+    }
+
+    @Test func musicIsLookedForInTheMediaFolderFirst() {
+        let media = URL(fileURLWithPath: "/g/media"), own = URL(fileURLWithPath: "/own")
+        let list = TheatreMusic.candidates(media: media, own: own, titleID: "0100ABC", name: "Game")
+        #expect(list.first?.path == "/g/media/music.m4a")
+        #expect(list.contains { $0.path == "/g/media/theme.mp3" })
+        #expect(list.firstIndex { $0.path == "/own/0100ABC.mp3" }! < list.firstIndex { $0.path == "/own/Game.mp3" }!)
+        #expect(TheatreMusic.candidates(media: nil, own: own, titleID: nil, name: "Game").allSatisfy { $0.path.hasPrefix("/own/Game.") })
+    }
+
+    @Test(arguments: TheatreSound.Cue.allCases)
+    func soundsAreShortAndNeverClip(_ c: TheatreSound.Cue) {
+        let s = TheatreSynth.samples(c)
+        #expect(!s.isEmpty && Double(s.count) / TheatreSynth.rate < 2.5)
+        #expect(s.allSatisfy { $0.isFinite && abs($0) <= 1 })
+        #expect(abs(s.first!) < 0.05 && abs(s.last!) < 0.05)
+    }
+
+    @Test func delightSettingsDefaultOnAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreSounds && old.theatreMusic && old.theatreTimeOfDay && old.theatreSeen == nil)
+        var s = Settings()
+        s.theatreSounds = false; s.theatreMusic = false; s.theatreTimeOfDay = false; s.theatreSeen = ["a", "b"]
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(!back.theatreSounds && !back.theatreMusic && !back.theatreTimeOfDay && back.theatreSeen == ["a", "b"])
+    }
+}
+
 @Suite struct GameFolderCheatsFormat {
     let info = GameFolderCheats.Info(title: "Blazing Chrome", titleID: "0100C2700C252000", version: "1.0.3")
     let txt = "580F0000 01234567\n[P1 Lives unlimited]\n580F0000 0241BCE8\n780F1000 000012BC\n\n[P2 Lives unlimited]\n580F0000 0241CD08\n\n{Always}\n04000000 00001000 D65F03C0\n\n[P2 Lives unlimited]\n580F0000 00000001\n"
