@@ -1865,10 +1865,12 @@ import Testing
         #expect(CarouselRing.game(slot: (front + slots - 2) % slots, position: 21, slots: slots, count: 20) == 19)
         // backwards past zero
         #expect(CarouselRing.game(slot: ((-1 % slots) + slots) % slots, position: -1, slots: slots, count: 20) == 19)
-        // fewer games than places: the ring is that small
-        #expect(CarouselRing.slots(for: 5) == 5)
-        let five = (0..<5).map { CarouselRing.game(slot: $0, position: 0, slots: 5, count: 5) }
+        // a short list still makes a full ring of 12, so two boxes show either side; the five in sight are five games
+        #expect(CarouselRing.slots(for: 5) == 12)
+        let five = (-2...2).map { CarouselRing.game(slot: ($0 + 12) % 12, position: 0, slots: 12, count: 5) }
         #expect(Set(five).count == 5)
+        // fewer than five games: the ring is that small, so no game shows twice
+        #expect(CarouselRing.slots(for: 3) == 3)
     }
 
     @Test func filtersKeepTheirKeys() {
