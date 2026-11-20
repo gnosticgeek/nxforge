@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.2 (2026-11-20)
+
+- **Beat 'em up and Run and gun pick up new games** (Converter 0.22.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): genre files for the 18 games added since 0.47.3 (Streets of Rage 4, Scott Pilgrim EX, Marvel Cosmic Invasion, Rita's Rewind, Asterix & Obelix Slap Them All, Double Dragon Gaiden, Fight'N Rage, The Ninja Warriors Once Again, Iron Meat, Neon Inferno, Enchanted Portals and more), and a game without a file now also gets the sub-genres its store description names ("beat 'em up", "run and gun", "shoot 'em up", "Metroidvania"...), since Nintendo's store has no category for them. No game rebuild needed.
+
 ## 0.47.4 (2026-11-20)
 
 - **Theatre's small delights** (Converter 0.22.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the lights go down when a game starts (the room dims, the box flies forward and opens, and its light fills the screen as the game comes up); soft clicks and whooshes as the games turn and a thunk on launch; the focused game's own music, quietly looped, when its media folder has a `music.m4a` or `music.mp3`; a welcome back on the game you played last ("Day 3 in Ocarina of Time, 8 h played"); light that follows the time of day; confetti when a game finishes building and a spotlight on a game Theatre has not shown before; and "What should I play?" (L3, or the Theatre menu), which whirls through your games and lands on one. No game rebuild needed.

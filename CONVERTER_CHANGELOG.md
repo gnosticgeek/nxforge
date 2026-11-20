@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.2 (2026-11-20)
+
+New games find their sub-genres. Ships in NXForge 0.48.2.
+
+- **Genre files for 18 more games** in the library (10 beat 'em ups, 3 more run and guns, and the rest), so they show under Beat 'em up, Run and gun and the other sub-genres.
+- **A game with no file in the library reads its sub-genres from its store description** as well as the store's categories: "beat 'em up", "run and gun", "shoot 'em up", "Metroidvania", "kart racing", "first-person shooter" (Genres.hints). Nintendo's store has no Beat 'em up or Run and gun category, so before this a new game only ever reached Action or Fighting.
+
 ## 0.22.0 (2026-11-20)
 
 Theatre's small delights, on every theme. Ships in NXForge 0.47.4.
