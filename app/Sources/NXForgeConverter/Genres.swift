@@ -39,6 +39,27 @@ enum Genres {
         "Role-Playing": "RPG", "Role-playing": "RPG", "Board Game": "Board game", "Fitness": "Lifestyle", "Training": "Lifestyle",
     ]
 
+    /// Sub-genres the store has no category for, read from words in a game's store description ("a classic beat 'em up"), for a
+    /// game with no file in the library
+    static let hintWords: [(String, [String])] = [
+        ("Beat 'em up", ["beat 'em up", "beat-'em-up", "beat em up", "beat 'em-up", "beat ’em up", "beat-’em-up"]),
+        ("Run and gun", ["run and gun", "run-and-gun", "run 'n' gun", "run ’n’ gun", "run 'n gun", "run-n-gun"]),
+        ("Shoot 'em up", ["shoot 'em up", "shoot-'em-up", "shoot ’em up", "shoot-’em-up", "shmup", "bullet hell"]),
+        ("Metroidvania", ["metroidvania"]),
+        ("Kart racing", ["kart racer", "kart racing"]),
+        ("First-person shooter", ["first-person shooter", "first person shooter"]),
+        ("Retro collection", ["collection of classic", "classic arcade games", "retro collection"]),
+    ]
+
+    /// The sub-genres a store description names
+    static func hints(_ text: String?) -> [String] {
+        guard let t = text?.lowercased(), !t.isEmpty else { return [] }
+        let words = Set(t.split { !$0.isLetter }.map(String.init))
+        return hintWords.filter { _, keys in
+            keys.contains { k in k.contains(" ") || k.contains("-") || k.contains("'") || k.contains("’") ? t.contains(k) : words.contains(k) }
+        }.map(\.0)
+    }
+
     /// A game's genres as listed (the library's, or the store's in our names), with the genre of each sub-genre added, in the order
     /// of the tree; names outside the tree are kept after them
     static func expand(_ listed: [String]) -> [String] {

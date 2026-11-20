@@ -29,7 +29,7 @@ enum DiscoverBrowse: Hashable { case all, genre(String) }
 
 /// The store's search, apart from the network (tested)
 enum DiscoverSource {
-    static let fields = "fs_id,application_id_s,title,url,pretty_game_categories_txt,players_from,players_to,playable_on_txt,system_names_txt"
+    static let fields = "fs_id,application_id_s,title,url,pretty_game_categories_txt,players_from,players_to,playable_on_txt,system_names_txt,excerpt"
     /// the genres, in the order shown (Genres.tree); any other genre one of your games has comes after them
     static let genres = Genres.top
     /// where a game the store does not list (or lists with no genre) goes
@@ -53,7 +53,9 @@ enum DiscoverSource {
             let id = (d["fs_id"] as? String) ?? (d["fs_id"] as? Int).map(String.init) ?? s("url") ?? t
             var item = DiscoverItem(id: id, title: t.trimmingCharacters(in: .whitespaces))
             item.titleID = s("application_id_s")?.uppercased()
-            item.genres = d["pretty_game_categories_txt"] as? [String] ?? []
+            // the store's categories, and the sub-genres it has none for that its description names (Genres.hints)
+            let cats = d["pretty_game_categories_txt"] as? [String] ?? []
+            item.genres = cats + Genres.hints(s("excerpt")).filter { !cats.contains($0) }
             item.playersFrom = d["players_from"] as? Int
             item.playersTo = d["players_to"] as? Int
             item.console = on.contains { $0 == "BEE" || $0.contains("Switch 2") } && !on.contains("HAC") ? "Switch 2" : "Switch"
