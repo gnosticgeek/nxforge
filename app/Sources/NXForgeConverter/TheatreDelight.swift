@@ -377,7 +377,7 @@ enum TheatreSynth {
             phase += 2 * .pi * hz / rate
             lp += 0.08 * (noise.next() - lp)
             let v = sin(phase) * exp(-t / 0.16) * 0.85 + lp * exp(-t / 0.025) * 1.4
-            return Float(v * fadeIn(t, 0.002) * fadeOut(t, 0.62, 0.08))
+            return Float(tanh(v * fadeIn(t, 0.002) * fadeOut(t, 0.62, 0.08)))   // soft-limited: never clips
         }
     }
 
