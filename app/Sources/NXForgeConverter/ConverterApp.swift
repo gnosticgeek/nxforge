@@ -114,6 +114,8 @@ struct ConverterApp: App {
                 Button("Go to Anything…") { model.commandPalette = true }.keyboardShortcut("k")
                 Button(model.theatre ? "Leave Theatre" : "Theatre") { model.toggleTheatre() }.keyboardShortcut("f", modifiers: [.command, .shift])
                 Button("Back") { model.goBack() }.keyboardShortcut("[").disabled(model.gameDetail == nil)
+                Button("Refresh Library") { model.scanLibrary() }.keyboardShortcut("r", modifiers: [.command, .option])
+                    .disabled(model.libraryScanning || model.settings.gamesRoot == nil)
                 Divider()
                 Button("Bigger Covers") { model.page = .library; model.resizeCovers(by: 30) }.keyboardShortcut("+")
                     .disabled(model.settings.libraryLayout == .grid && model.settings.libraryCoverSize >= Settings.coverSizes.upperBound)

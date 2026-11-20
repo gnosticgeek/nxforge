@@ -6,9 +6,8 @@ Subject: host-threads: Host threads and sync fixes
 ---
  dm/host/hle_jit.c         | 6 +++---
  dm/host/hle_sdk16.c       | 3 +++
- dm/host/hle_thread.c      | 3 +++
  dm/host/tests/t_condvar.c | 6 +++---
- 4 files changed, 12 insertions(+), 6 deletions(-)
+ 3 files changed, 9 insertions(+), 6 deletions(-)
 
 diff --git a/dm/host/hle_jit.c b/dm/host/hle_jit.c
 index fcfb4b2193800d90dc05ee75f43db1d33739b2f0..654b87b848fc2c7e58ed485bd31ca039b4dd7187 100644
@@ -49,7 +48,7 @@ index fcfb4b2193800d90dc05ee75f43db1d33739b2f0..654b87b848fc2c7e58ed485bd31ca039
              q += k; if (*q == ',') q++;
          }
 diff --git a/dm/host/hle_sdk16.c b/dm/host/hle_sdk16.c
-index 31c9267f6ebd1304280b7475e4fb491333f5ce81..7429b1ec2cee78d6799c84cddfc7a4a7e84bb167 100644
+index 96abc5aabc8d0d5145945926ce940dd776761118..67e81d198e706c7d17a6604024cd692f6f2e68ed 100644
 --- a/dm/host/hle_sdk16.c
 +++ b/dm/host/hle_sdk16.c
 @@ -343,7 +343,10 @@ HLE_FORCE("_ZN2nn4diag6detail7PutImplERKNS0_11LogMetaDataEPKcm", "game log → h
@@ -63,32 +62,18 @@ index 31c9267f6ebd1304280b7475e4fb491333f5ce81..7429b1ec2cee78d6799c84cddfc7a4a7
      die("game aborted");
  }
  HLE_FORCE("_ZN2nn4diag6detail9AbortImplEv", "game aborted", void, h_diag_Abort0, void) { diag_abort(0, dm_bigstack_caller(__builtin_return_address(0))); }
-diff --git a/dm/host/hle_thread.c b/dm/host/hle_thread.c
-index 264bae4be22c3d299c1a75ccb0f70fbb1e0d4c9a..e5c3350cf92d095a83ceec9405fbaed0d3a07477 100644
---- a/dm/host/hle_thread.c
-+++ b/dm/host/hle_thread.c
-@@ -1046,6 +1046,9 @@ static void sleep_precise(uint64_t dl) {
- }
- // A guest thread sleeps ns nanoseconds the way SleepThread does: on the guest clock under the deterministic clock, else on time (sleep_precise). Also for host hooks that stand for a
- // call which blocks on hardware (hle_net.c: Poll / Select with nothing to wait on)
-+// The calling guest thread blocks in the host (an HLE call waiting on a host condition variable, e.g. oe::PopNotificationMessage): on Horizon it waits in the kernel and leaves its core,
-+// so same-core handoffs (dm_yield_to_core_peers) must not count it as runnable. Mina the Hollower's NxMessagePump (priority 44, core 0) blocks in PopNotificationMessage for good; counted as
-+// runnable it held every lower-priority core-0 thread in its handoff after each wake (its audio decoder, which unlocks a heap mutex the game thread waits on), and the game never left a black screen
- void dm_guest_sleep_ns(int64_t ns) {
-     if (ns <= 0) return;
-     if (dm_detclock_enabled()) {
 diff --git a/dm/host/tests/t_condvar.c b/dm/host/tests/t_condvar.c
-index 8b23e066e8b460513c179abba17c1c24deea6362..c08c71dbeacba5304e46ac55791a80a27ddfbbd6 100644
+index 90a06e712a2eb55464fec80d097d5586541f9d06..95bd93c2c0077feca91c423eca588947933ed229 100644
 --- a/dm/host/tests/t_condvar.c
 +++ b/dm/host/tests/t_condvar.c
 @@ -28,9 +28,9 @@ static void *reader(void *a) {
      uint32_t z = 0; while (!atomic_compare_exchange_strong(&g_mutex, &z, g_rtag)) { z = 0; sched_yield(); }   // grab the lock in user mode
      state_set(1);
      // (here R changes the condition: for example decrementing the reader count to 0)
--    if (atomic_load(&g_key)) { state_set(2); uint64_t r[8] = {(uint64_t)&g_key, 1}; svc_thread(0x1D, r); }   // Signal fast path: key 0 sends no svc
+-    if (atomic_load(&g_key)) { state_set(2); uint64_t r[31] = {(uint64_t)&g_key, 1}; svc_thread(0x1D, r); }   // Signal fast path: key 0 sends no svc
 +    if (atomic_load(&g_key)) { state_set(2); uint64_t r[32] = {(uint64_t)&g_key, 1}; svc_thread(0x1D, r); }   // Signal fast path: key 0 sends no svc
      uint32_t v = g_rtag;
--    if (!atomic_compare_exchange_strong(&g_mutex, &v, 0)) { uint64_t r[8] = {(uint64_t)&g_mutex}; svc_thread(0x1B, r); }      // waiter bit set => ArbitrateUnlock
+-    if (!atomic_compare_exchange_strong(&g_mutex, &v, 0)) { uint64_t r[31] = {(uint64_t)&g_mutex}; svc_thread(0x1B, r); }      // waiter bit set => ArbitrateUnlock
 +    if (!atomic_compare_exchange_strong(&g_mutex, &v, 0)) { uint64_t r[32] = {(uint64_t)&g_mutex}; svc_thread(0x1B, r); }      // waiter bit set => ArbitrateUnlock
      state_set(3);
      return NULL;
@@ -97,7 +82,7 @@ index 8b23e066e8b460513c179abba17c1c24deea6362..c08c71dbeacba5304e46ac55791a80a2
      g_wtag = svc_thread_main_init();
      uint32_t z = 0; atomic_compare_exchange_strong(&g_mutex, &z, g_wtag);                 // W holds the lock
      dm_test_cv_after_release = hook;
--    uint64_t r[8] = {(uint64_t)&g_mutex, (uint64_t)&g_key, g_wtag, (uint64_t)-1};
+-    uint64_t r[31] = {(uint64_t)&g_mutex, (uint64_t)&g_key, g_wtag, (uint64_t)-1};
 +    uint64_t r[32] = {(uint64_t)&g_mutex, (uint64_t)&g_key, g_wtag, (uint64_t)-1};
      svc_thread(0x1C, r);
      pthread_mutex_lock(&g_m); g_wret = (int64_t)r[0]; g_wlock_after = atomic_load(&g_mutex); g_wdone = 1; pthread_cond_broadcast(&g_c); pthread_mutex_unlock(&g_m);

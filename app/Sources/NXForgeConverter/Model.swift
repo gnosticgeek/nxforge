@@ -96,6 +96,8 @@ final class AppModel {
     var batchMessage: String?
     var libraryTask: Task<Void, Never>?
     var detailsTask: Task<Void, Never>?
+    /// a look at the games folder for new games is under way (rescanIfFolderChanged)
+    @ObservationIgnored var folderCheckRunning = false
     var mountObserver: NSObjectProtocol?
     var selectedBuild: String? { didSet { if selectedBuild != oldValue { rememberWindowState() } } }
     /// Rebuild all: the apps still to rebuild after the one running, and why it stopped, if it did
@@ -275,6 +277,7 @@ final class AppModel {
         Task.detached(priority: .utility) { LocalShaders.removeOrphans() }
         recheck()
         watchMounts()
+        watchGamesFolder()
         trackPlay()
         watchActive()
         watchLaunch()
@@ -289,6 +292,7 @@ final class AppModel {
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
                 self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
+                self?.rescanIfFolderChanged()   // games filed into the games folder while NXForge was in the back
                 if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { self?.backUpDataIfDue() }
                 guard let self, self.fixPending, !self.checking else { return }
                 self.fixPending = false
