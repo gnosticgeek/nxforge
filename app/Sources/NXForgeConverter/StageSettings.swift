@@ -138,7 +138,7 @@ struct StageSettings: View {
                 }
             }
         }
-        .frame(maxWidth: 1020, maxHeight: 700)
+        .frame(maxWidth: 1020, maxHeight: 760)
         .background(StageLook.panel.opacity(solid ? 1 : 0.80))
         .clipShape(.rect(cornerRadius: 28))
         .glassEffect(.regular, in: .rect(cornerRadius: 28))
@@ -335,7 +335,9 @@ struct StageSettings: View {
     /// a chosen folder or file beside its button; `none` in its place while nothing is chosen
     func path(_ p: String?, none: String, width: CGFloat = 250) -> some View {
         Text(p ?? none).font(.system(size: 12.5)).foregroundStyle(p == nil ? StageLook.faint : StageLook.soft)
-            .lineLimit(1).truncationMode(.middle).frame(maxWidth: width, alignment: .trailing).help(p ?? "")
+            .lineLimit(1).truncationMode(.middle).frame(maxWidth: width, alignment: .trailing)
+            // as wide as its words, up to `width`: the note beside it keeps the rest of the row
+            .fixedSize(horizontal: true, vertical: false).help(p ?? "")
     }
 
     func button(_ title: String, _ action: @escaping () -> Void) -> some View {
