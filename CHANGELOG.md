@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.5 (2026-11-20)
+
+- **No more whoosh in Theatre** (Converter 0.22.5, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): turning the Carousel or the Fan, and switching theme, now makes only a quiet tick like a step; the breeze sound is gone. No game rebuild needed.
+
 ## 0.48.4 (2026-11-20)
 
 - **Theatre's Fan, gentler sounds and a music folder** (Converter 0.22.4, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Gallery theme is gone and a new Fan theme takes its place: the boxes fanned out like a hand of cards, the one in front upright, lifted and lit, the rest leaning away into shadow, scrolling sideways as you move. The Carousel's whoosh is now a soft breeze and the clicks are soft wooden ticks. The right stick no longer changes the volume (it fought with turning the box). Settings › Theatre › Music folder points Theatre at a folder of MP3 or Opus files (M4A, FLAC and WAV too), played shuffled in the background on every theme but Trailer. No game rebuild needed.

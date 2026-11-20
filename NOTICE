@@ -24,6 +24,10 @@ dm/host/front_mac.m (v0lumehi), and the converter's DropFiles.swift,
 FrameTimes.swift and the build-input check in Engine.swift, which follow
 NX2Apple's Swift code of the same names.
 
+The agent skill in .claude/skills/swiftui-pro is SwiftUI Pro by Paul Hudson
+(https://github.com/twostraws/swiftui-agent-skill, MIT License, Copyright (c)
+2026 Paul Hudson), copied unchanged with its LICENSE.
+
 Third-party code shipped in dm/third_party (including the Ryujinx shader
 translator, libvpx, stb_vorbis, the Vulkan headers and NVIDIA FLIP) keeps its
 own license; see dm/third_party/README.md for the list. Other projects the
