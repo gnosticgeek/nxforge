@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.47.4 (2026-11-20)
+
+- **Theatre's small delights** (Converter 0.22.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the lights go down when a game starts (the room dims, the box flies forward and opens, and its light fills the screen as the game comes up); soft clicks and whooshes as the games turn and a thunk on launch; the focused game's own music, quietly looped, when its media folder has a `music.m4a` or `music.mp3`; a welcome back on the game you played last ("Day 3 in Ocarina of Time, 8 h played"); light that follows the time of day; confetti when a game finishes building and a spotlight on a game Theatre has not shown before; and "What should I play?" (L3, or the Theatre menu), which whirls through your games and lands on one. No game rebuild needed.
+
 ## 0.47.3 (2026-11-20)
 
 - **Run and gun, Beat 'em up, and sub-genres on Discover** (Converter 0.21.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): NXForge has its own genre list now, with sub-genres under some genres (Sports › Football, Golf, Baseball; Platformer › 2D, 3D, Metroidvania; Shooter › Shoot 'em up, First-person shooter; Racing › Kart, Arcade; and more). Discover lists the genres, and choosing one with sub-genres opens them under it. Each game's genres come from its own Markdown file in the game library, `library/<title ID>/game.md` (bundled in the app), else from Nintendo's store as before; 83 games have one so far. No game rebuild needed.

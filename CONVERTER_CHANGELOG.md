@@ -4,6 +4,19 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.0 (2026-11-20)
+
+Theatre's small delights, on every theme. Ships in NXForge 0.47.4.
+
+- **Lights down on launch**: starting a game from Theatre dims the room, flies the game's box forward and opens its front like a door; the light inside fills the screen, and the launch screen comes up under it, so the game comes out of its box. Reduce Motion keeps only the dimming.
+- **Sound**: a soft click for each step, a whoosh as the Carousel turns, a swish between themes, a low thunk on launch and a chime for a moment, all made by the app (no sound files) and quiet. The right stick's press (or S) now mutes on every theme, and up and down set the volume of everything Theatre plays. Settings › Theatre › Sounds turns them off.
+- **The game's music**: once the focus rests on a game, its music fades in, looped and quiet, and fades out as you move on. Put `music`, `theme` or `soundtrack` (.m4a, .mp3, .aac, .wav, .aiff, .caf or .flac) in the game's `media/` folder, or a file named by its title ID or its name in `~/Library/Application Support/NXForge Converter/Theatre Music/`. Not on Trailer, which has the trailer's sound; never while a game runs. Settings › Theatre › Game music.
+- **Welcome back**: Theatre opens on the game you played last (in the last 30 days) with a card: "Good evening · Welcome back, Day 3 in Ocarina of Time, 8 h 25 min played · last played yesterday", and A to Continue.
+- **Time of day**: a cooler, brighter room in the morning, the stage as it is in the afternoon, a warm evening, and a dimmer, cosy room after 10 pm, with the sun or moon by the clock. Settings › Theatre › Light follows the time of day.
+- **Shelf moments**: confetti, the game in focus and a "Ready to play" card when a game finishes building while Theatre is up; a spotlight and a "New arrival" card on a built game Theatre has not shown before (the first time Theatre opens, every game counts as seen).
+- **What should I play?** L3 (the left stick's press), ? on the keyboard, or the Theatre menu's new row: the games whirl past with ticks, slow down and land on one (a built one when there are any), with a card to play it or spin again. B stops it.
+- Snapshot hooks: `NXC_MOMENT=welcome|arrival|built|shuffle`, `NXC_CONFETTI=<s>`, `NXC_CURTAIN=<s>`, `NXC_DAYLIGHT=morning|day|evening|night`.
+
 ## 0.21.3 (2026-11-20)
 
 Genres of NXForge's own, with sub-genres. Ships in NXForge 0.47.3.
