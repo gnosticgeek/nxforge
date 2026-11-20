@@ -2,7 +2,7 @@
 // GPL-3.0, this is written fresh). The top says how much is kept and where, with the after-session switch and the snapshot folder;
 // each game's row says when it last saved, on which Mac its newest snapshot was made, and how many snapshots it has. Opening a row
 // shows the game's Save snapshots card (BuildsPage.swift), with Restore, Undo Restore, import, export and Git backup.
-// Converter 0.22.0: the page is in the top bar, beside Home and Discover, with Cloud saves for every game at the top (CloudSaves.swift),
+// Converter 0.21.2: the page is in the top bar, beside Home and Discover, with Cloud saves for every game at the top (CloudSaves.swift),
 // and each row says where the game's save syncs, what the cloud folder holds and how many quick-save slots it has.
 import AppKit
 import SwiftUI

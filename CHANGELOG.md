@@ -2,9 +2,13 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.47.2 (2026-11-20)
+
+- **Saves in the top bar, with Cloud saves for every game** (Converter 0.21.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Saves page moves out of the converter's pages to the top bar, beside Home and Discover. One switch at its top syncs every game's save through one folder (iCloud Drive › NXForge Saves unless you choose another), using the engine's own Cloud saves; each game's row says where it syncs, what the cloud copy is and how many quick-save slots it has. No game rebuild needed for this.
+
 ## 0.47.1 (2026-11-20)
 
-- **Saves in the top bar, with Cloud saves for every game** (Converter 0.21.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Saves page moves out of the converter's pages to the top bar, beside Home and Discover. One switch at its top syncs every game's save through one folder (iCloud Drive › NXForge Saves unless you choose another), using the engine's own Cloud saves; each game's row says where it syncs, what the cloud copy is and how many quick-save slots it has. No game rebuild needed for this.
+- **Theatre's themes refined, the Carousel most** (Converter 0.21.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Carousel shows two boxes either side of the one in front, turned towards you and lit by how near the front they are, with a pool of light under the front box and its name clear of the reflection; Cinema's cards keep their gaps and round corners; a long filter list reads "3 of 17" instead of a row of dots. No game rebuild needed.
 
 ## 0.47.0 (2026-11-19)
 

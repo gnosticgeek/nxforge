@@ -1,4 +1,4 @@
-// Cloud saves for every game (Converter 0.22.0): one switch on the Saves page gives the whole library one sync folder, iCloud Drive or
+// Cloud saves for every game (Converter 0.21.2): one switch on the Saves page gives the whole library one sync folder, iCloud Drive or
 // any folder. It is the engine's own Cloud saves (dm/host/save_sync.c), set the way docs/frontends.md "The cloud saves folder" says a
 // front end may: the folder's path in each built app's cloudSaves.folder, which the launcher passes on as DM_SAVE_SYNC at every start.
 // Each game keeps its own <folder>/<title ID>/save.dmsync there, so one folder serves them all. The switch is written again into every
