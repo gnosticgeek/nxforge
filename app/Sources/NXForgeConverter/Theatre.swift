@@ -781,10 +781,15 @@ struct TheatreFilterChip: View {
                 TheatreHints(model: model, light: ink != .white).glyph("L")
                 VStack(spacing: 2 * u) {
                     Text(model.theatreFilter.title).font(.system(size: 20 * u, weight: .semibold)).lineLimit(1)
-                    HStack(spacing: 5 * u) {
-                        ForEach(all.indices, id: \.self) { k in
-                            Circle().fill(ink.opacity(k == i ? 0.95 : 0.3)).frame(width: 5 * u, height: 5 * u)
+                    // a dot a filter while there are few; with many genres a row of dots is only noise, so "3 of 17"
+                    if all.count <= 8 {
+                        HStack(spacing: 5 * u) {
+                            ForEach(all.indices, id: \.self) { k in
+                                Circle().fill(ink.opacity(k == i ? 0.95 : 0.3)).frame(width: 5 * u, height: 5 * u)
+                            }
                         }
+                    } else {
+                        Text("\(i + 1) of \(all.count)").font(.system(size: 13 * u, weight: .medium)).monospacedDigit().opacity(0.55)
                     }
                 }
                 .frame(minWidth: 180 * u)
@@ -973,26 +978,40 @@ struct CarouselTheme: View {
             // the room darkens smoothly down to the floor, which is all but clear, so there is no line where the floor ends
             LinearGradient(stops: [.init(color: .clear, location: 0.04), .init(color: .black.opacity(0.42), location: 0.24), .init(color: .black.opacity(0.62), location: 0.6)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
+            // a pool of light on the floor where the box in front stands, warmed by the game's colour
+            GeometryReader { geo in
+                Ellipse()
+                    .fill(RadialGradient(colors: [Color.white.opacity(0.16), (focus.map { CoverArt.tint($0) } ?? .white).opacity(0.10), .clear],
+                                         center: .center, startRadius: 0, endRadius: 420 * u))
+                    .frame(width: 840 * u, height: 190 * u)
+                    .blur(radius: 18 * u)
+                    .position(x: geo.size.width / 2, y: geo.size.height * 0.655)
+            }
+            .ignoresSafeArea().allowsHitTesting(false)
             TheatreCarousel(games: games, focus: index, revision: CoverStore.shared.revision)
                 .ignoresSafeArea()
+            // the room's sides fall into shadow, so the eye goes to the middle
+            RadialGradient(colors: [.clear, .black.opacity(0.5)], center: UnitPoint(x: 0.5, y: 0.45), startRadius: 520 * u, endRadius: 1250 * u)
+                .ignoresSafeArea().allowsHitTesting(false)
             // the foot of the room darkens under the caption
-            LinearGradient(stops: [.init(color: .clear, location: 0.62), .init(color: .black.opacity(0.85), location: 0.9), .init(color: .black, location: 1)],
+            LinearGradient(stops: [.init(color: .clear, location: 0.66), .init(color: .black.opacity(0.85), location: 0.9), .init(color: .black, location: 1)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
             VStack(spacing: 0) {
                 TheatreTopBar(theme: .carousel, model: model)
                 Spacer()
                 if let g = focus {
-                    VStack(spacing: 16 * u) {
-                        Text(g.name).font(.system(size: 66 * u, weight: .semibold, design: .serif)).lineLimit(1).minimumScaleFactor(0.5)
+                    VStack(spacing: 14 * u) {
+                        Text(g.name).font(.system(size: 64 * u, weight: .semibold, design: .serif)).lineLimit(1).minimumScaleFactor(0.5)
+                            .shadow(color: .black.opacity(0.6), radius: 18 * u, y: 4 * u)
                         Text(Self.facts(g)).font(.system(size: 22 * u, weight: .regular)).tracking(1.2 * u).foregroundStyle(StageLook.soft)
-                        TheatreDetails(model: model, game: g, showSize: false)
+                        TheatreDetails(model: model, game: g, showSize: false).padding(.top, 2 * u)
                     }
                     .id(g.id).transition(.opacity)
                     .padding(.horizontal, 120 * u)
                 }
                 HStack(alignment: .bottom) {
                     if !games.isEmpty {
-                        (Text(String(format: "%02d", index + 1)).foregroundStyle(.white).fontWeight(.semibold) + Text("  /  \(games.count)   GAMES").foregroundStyle(StageLook.faint))
+                        (Text(String(format: "%02d", index + 1)).foregroundStyle(.white).fontWeight(.semibold) + Text("  /  " + String(format: "%02d", games.count) + "   GAMES").foregroundStyle(StageLook.faint))
                             .font(.system(size: 19 * u)).tracking(3 * u).monospacedDigit()
                     }
                     Spacer()
@@ -1015,9 +1034,11 @@ struct CarouselTheme: View {
 }
 
 /// Which game each of the ring's places shows: the ring has `slots` places and turns one place a step, so the places out of
-/// sight behind take the next games along as it turns, and any number of games goes round a ring of 16.
+/// sight behind take the next games along as it turns, and any number of games goes round a ring of 12 to 16. Five games or
+/// more always make a full ring of at least 12, so two boxes show either side of the one in front (a ring of 8 showed one
+/// either side, turned almost edge on); fewer than five make a ring that small, so no game shows twice.
 enum CarouselRing {
-    static func slots(for count: Int) -> Int { min(max(count, 1), 16) }
+    static func slots(for count: Int) -> Int { count < 5 ? max(count, 1) : min(max(count, 12), 16) }
 
     /// the game in place `slot` with the ring at step `position` (the place in front is position mod slots): the game that many
     /// places along from the one in front, either way round, wrapping at the ends of the list
@@ -1077,6 +1098,8 @@ struct TheatreCarousel: NSViewRepresentable {
         private var last = 0.0
         var still = false
         static let spacing = 1.55
+        /// how far the boxes beside the front one turn back towards you (0 none, 1 all the way)
+        static let toward = 0.45
 
         var radius: Double { max(Double(slots) * Self.spacing / (2 * .pi), 1.6) }
 
@@ -1087,9 +1110,10 @@ struct TheatreCarousel: NSViewRepresentable {
             scene.rootNode.addChildNode(ring)
             // a dark floor that reflects the boxes, fading out with distance
             let floor = SCNFloor()
-            floor.reflectivity = 0.22
+            floor.reflectivity = 0.2
             floor.reflectionFalloffStart = 0
-            floor.reflectionFalloffEnd = 1.6
+            // the reflection fades out about half way down the box, before the caption
+            floor.reflectionFalloffEnd = 1.0
             floor.reflectionResolutionScaleFactor = 0.6
             let m = SCNMaterial()
             m.diffuse.contents = NSColor(white: 0.02, alpha: 1)
@@ -1141,7 +1165,9 @@ struct TheatreCarousel: NSViewRepresentable {
             cam.camera?.zNear = 0.1
             cam.camera?.zFar = 100
             cam.position = SCNVector3(x: 0, y: 1.35, z: CGFloat(r + 8.4))
-            cam.look(at: SCNVector3(x: 0, y: -0.42, z: CGFloat(r - 1.0)))
+            // looking a little lower than the boxes' middle lifts the ring up the screen, so the floor and the reflection sit
+            // above the caption rather than under its words
+            cam.look(at: SCNVector3(x: 0, y: -0.62, z: CGFloat(r - 1.0)))
             scene.rootNode.addChildNode(cam)
             camera = cam
         }
@@ -1187,11 +1213,15 @@ struct TheatreCarousel: NSViewRepresentable {
                 b.glow += (b.lit - b.glow) * (still ? 1 : min(1, 6 * dt))
                 let out = r + 0.75 * b.glow
                 b.node.position = SCNVector3(x: CGFloat(out * sin(b.place)), y: CGFloat(0.06 * b.glow), z: CGFloat(out * cos(b.place)))
-                b.node.eulerAngles = SCNVector3(x: 0, y: CGFloat(b.place + (s == front ? spin : 0) * b.glow), z: 0)
-                b.dim(0.38 + 0.62 * b.glow)
+                // where the box is round the ring as you see it (0 in front), so the ones beside it turn part of the way back
+                // towards you and their covers read, rather than facing straight out from the ring
+                let rel = atan2(sin(b.place + angle), cos(b.place + angle))
+                b.node.eulerAngles = SCNVector3(x: 0, y: CGFloat(b.place - Self.toward * rel + (s == front ? spin : 0) * b.glow), z: 0)
+                // lit by how near the front it is: the ones beside it clearly, the next ones less, the box in front fully
+                let facing = cos(rel)
+                b.dim(0.22 + 0.36 * max(facing, 0) + 0.42 * b.glow)
                 // the boxes round the back fade away, so the far side of the ring is not a row of dark slabs
-                let facing = cos(b.place + angle)
-                b.node.opacity = CGFloat(min(max((facing + 0.25) / 0.55, 0), 1))
+                b.node.opacity = CGFloat(min(max((facing - 0.05) / 0.4, 0), 1))
             }
         }
     }
@@ -1848,6 +1878,8 @@ struct CinemaCard: View {
             .padding(.horizontal, 18 * u).padding(.bottom, 14 * u)
         }
         .opacity(game.app == nil ? 0.55 : 1)
+        // the cards beside the focus a shade darker, so the one in focus stands out without a heavier outline
+        .brightness(focused ? 0 : -0.07)
         .clipShape(.rect(cornerRadius: 16 * u))
         .overlay(RoundedRectangle(cornerRadius: 16 * u).strokeBorder(.white, lineWidth: focused ? 4 * u : 0))
         .shadow(color: .black.opacity(focused ? 0.7 : 0.5), radius: (focused ? 34 : 18) * u, y: (focused ? 26 : 14) * u)
@@ -1932,7 +1964,7 @@ struct GalleryTheme: View {
                 .foregroundStyle(Self.ink).padding(.top, 26 * u)
             VStack(alignment: .leading, spacing: 12 * u) {
                 Text(g.console.rawValue)
-                if g.total > 0 { Text("\(Playtime.text(g.total)) time played") }
+                if g.total > 0 { Text("\(Playtime.text(g.total)) played") }
                 if st != .ready { Label(st.text, systemImage: st.symbol).foregroundStyle(Self.bronze) }
             }
             .font(.system(size: 27 * u)).foregroundStyle(Self.soft).padding(.top, 22 * u)
