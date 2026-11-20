@@ -18,10 +18,10 @@ Check: make -C dm/gfx/tests GAME=<id> check_t_rt_lossy (Mac).
  create mode 100644 dm/gfx/tests/t_rt_lossy.m
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 84b205db44f58c2d7cad3f3aa2981fcf73b5bec3..692351a196d6505079dd030fa65175b54985c902 100644
+index dbc94bc591287573b3cdd391c8ba94cb2a5d386e..329c9b51c4440304d6f2b306faf25bb27383dbb5 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -3463,6 +3463,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
+@@ -3575,6 +3575,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
      *w = l < 32 ? MAX(t->d.width >> l, 1u) : 1u; *h = l < 32 ? MAX(H >> l, 1u) : 1u;
      if (z) *z = l < 32 ? MAX(Z >> l, 1u) : 1u;
  }
@@ -46,20 +46,20 @@ index 84b205db44f58c2d7cad3f3aa2981fcf73b5bec3..692351a196d6505079dd030fa65175b5
  // In-place upgrade: when the original texture was not created with PixelFormatView (off by default, to keep Apple GPU lossless compression) but a different-format view is needed, create a new one with the original spec + PixelFormatView, copy over every slice × level, and replace the registration.
  // Count: across the 4 screens character select / camp / wilderness / combat, 17473 textures needed a different-format view 0 times, so this is a fallback and does not rely on predicting which textures need it
  // The same upgrade adds render-target usage for a whole-level clear (clear_tex) of a texture made without it: Monster Hunter Rise clears a 32x80 packaged one
-@@ -5398,7 +5416,7 @@ static id<MTLTexture> tex_mtl_(const tex_t *ct, int *in_storage) {
-         tu = (t->d.flags & NVN_TEXTURE_FLAGS_COMPRESSIBLE) && rh_fits(t, d.usage);   // a render target another one may draw over (tu_pass)
-         mt = image_texture(t, d);
+@@ -5799,7 +5817,7 @@ static void *tex_mtl_resolve(const tex_t *ct, int *in_storage, id<MTLTexture> __
+         mt = pair_texture(t, d);   // (neither filled: their storage is shared)
+         if (!mt) mt = image_texture(t, d);
          if (!mt) mt = pool_heap_texture(t, d);
 -        if (!mt) { mt = rh_texture(t, d); if (!mt) mt = [g_dev newTextureWithDescriptor:d];
 +        if (!mt) { rt_lossy_apply(d); mt = rh_texture(t, d); if (!mt) mt = [g_dev newTextureWithDescriptor:d];   // NXForge: rt_lossy_apply, DM_NVN_RT_LOSSY
-             if (mt) { res_add(mt); if (!tex_init_fill(t, mt)) tex_zero_fill(mt); } }
-         if (!mt) { RED_ONCE(2, "failed to create MTLTexture %ux%u format %#x target %d", t->d.width, t->d.height, t->d.format, t->d.target); return nil; }
+             if (mt) { res_add(mt); if (!bcp_up_fill(t, mt) && !tex_init_fill(t, mt)) tex_zero_fill(mt); } }   // a side of a compressed-alias pair takes the other side's bytes (bcp_up_fill)
+         if (!mt) { RED_ONCE(2, "failed to create MTLTexture %ux%u format %#x target %d", t->d.width, t->d.height, t->d.format, t->d.target); return NULL; }
      }
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 84f6633927634dfdb018bafd56ad9409ea7aaa83..8e2c143e4f9ddfdc00b161c8559305d91aa33529 100644
+index 14fa439bba0488defbca5a7d15e0e490dac2477a..1b00190ab9132e38a7873c98351757a2ab425512 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
-@@ -809,3 +809,10 @@ check_t_sparse_pool_cache: RUN_ENV = MTL_DEBUG_LAYER=1
+@@ -963,3 +963,10 @@ check_t_sparse_pool_cache: RUN_ENV = MTL_DEBUG_LAYER=1
  t_sparse_copy: t_sparse_copy.m $(MTL_T_DEP)
  	clang $(CFLAGS) -fobjc-arc -o $@ t_sparse_copy.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
  check_t_sparse_copy: RUN_ENV = MTL_DEBUG_LAYER=1
@@ -166,10 +166,10 @@ index 0000000000000000000000000000000000000000..a7992e0c139babb5aae8b7349b87f885
 +    printf("%d checks, %d failures\n", checks, failed); return failed != 0;
 +} }
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 34e3b6a134bddc721bcb0a11751c06edd7e3136f..1929f7070c4883b3479c9c0ca650dc71dbffbcdc 100644
+index 9c7db9b2ddda949ab2520629d028fb9452014d2a..75bbfaf5adc9abe5a05000752677a6c92b8dfb6d 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -231,6 +231,7 @@ DM_NVN_ROP_ROUND	switch	`0` leaves float colours going into 8-bit, 16-bit and RG
+@@ -248,6 +248,7 @@ DM_NVN_ROP_ROUND	switch	`0` leaves float colours going into 8-bit, 16-bit and RG
  DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover the whole target, as before; by default a draw pass that loads what it keeps stops at the far corner of its scissor when that is at most half the target
  DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render targets, as before; by default SetRenderTargets naming the open pass's targets continues the pass
  DM_NVN_RT_DEAD	switch	`0` keeps every shared render target of a GPU-only pool while a texture object names it, as before; by default one another target drew over and that has not been used for 3 s is released once a second, and made again at its next use (`ab` alternates it with the `DM_AB` phases)

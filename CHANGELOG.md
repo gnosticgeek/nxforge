@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.0 (2026-11-20)
+
+- **The engine moves to the newest nxnative** (upstream `c43a1f7a`, 240 commits past the last pin `3ce43e2a`): upstream's fixes since 16 Nov come in, among them Ocarina of Time's refreshed shader map (#3010) and its microphone through upstream's own Mac capture (#1822, with `DM_MIC`, `DM_MIC_DEVICE` and `DM_MIC_GAIN`), Mario Kart World's refreshed v0 shader map, frames held by display-link ticks (#1045) and the late latch, Xbox-style triggers that count above 25% (#2504), DualShock 4 motion over Bluetooth (#2087), Polish and Thai (#1508), VideoToolbox sessions that recover when macOS invalidates them (#2877), vibration devices valid before a controller connects (#2859), saved Mac app inputs reused safely (#2820), prewarm pipelines in the bundle, compute loop containment, many shader translation fixes, and new or refreshed game profiles (Resident Evil, SNES Classics, Metro 2033 Redux, Cozy Land, Pikmin 4, FINAL FANTASY XII and more). Every game needs a full rebuild: the shader chain is now `01af75714169`.
+- **NXForge's microphone patch is dropped** (layer patch upstream-pr-1662): upstream's own capture replaces it under the same setting, so the Microphone switch keeps working. The remaining 38 layer patches are carried over unchanged in purpose; the ones upstream overlapped were merged by hand (Metal backend, frame interpolation on upstream's new display-link hold, the Pro Controller gyro zero on upstream's model table, the button map with upstream's trigger threshold).
+
 ## 0.47.0 (2026-11-19)
 
 - **Enhancements, apart from cheats** (Converter 0.21.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a game's own improvements (a steadier frame rate, a 60 fps patch, a fix, a mod set up for it) each as one Markdown file in the game's `enhancements/` folder, with a switch on the game's page and in Play options' new Enhancements tab. Settings, Atmosphère codes and mods are all possible, applied the moment a switch changes and taken back when it goes off. No game rebuild needed.

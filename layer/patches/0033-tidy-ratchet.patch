@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
+ findings in upstream's code silenced on their lines, three counts lowered
+
+---
+ dm/gfx/nvn/nvn_mtl.m              | 5 ++---
+ dm/gfx/tests/t_lazy_clear_order.m | 2 ++
+ dm/tools/lint_c_baseline.tsv      | 4 ++--
+ 3 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 329c9b51c4440304d6f2b306faf25bb27383dbb5..92ef620b59baedbe3af35e7c30a315e712253bec 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -7470,7 +7470,7 @@ static int progpf_first(NSString *pc) {
+ }
+ static NvShader *shader_get(NSString *pc, int stage) {
+     if (!g_shcache) g_shcache = [NSMutableDictionary dictionary];
+-    NvShader *o = g_shcache[pc];
++    NvShader *o = g_shcache[pc];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream bee218d9's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+     if (o) return o;
+     uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
+     if (!o) return nil;
+@@ -19581,10 +19581,9 @@ static int up_mfx_encode(NvShader *cs) {
+     for (int i = 0; i < cs->rf.nb; i++) { int k = cs->rf.b[i].kind; if (k == NVN_RB_TEX && ti < 0) ti = i; else if (k == NVN_RB_IMG && oi < 0) oi = i; else if (k == NVN_RB_TEX || k == NVN_RB_IMG) return 0; }
+     if (ti < 0 || oi < 0) { static int once; if (!once++) MLOG("[RED] upscaler %s: not one texture and one image; the shader draws", cs->key); return 0; }
+     int tin = (int)(bound_tex(5, cs->rf.b[ti].reg) & 0xfffff), tout = cs->rf.b[oi].reg < 32 ? (int)(bound_img(5, cs->rf.b[oi].reg) & 0xfffff) : 0;
+-    tex_t dout = {0}; id<MTLTexture> in, out;
++    id<MTLTexture> in, out;   // NXForge (host_warnings): upstream's unused copy of the output's texture dropped
+     os_unfair_lock_lock(&g_rmu);
+     int ok = tin > 0 && tin < g_ntreg && g_treg[tin].ok && tout > 0 && tout < g_ntreg && g_treg[tout].ok;
+-    if (ok) dout = g_treg[tout].t;
+     in = ok ? tex_by_id(tin) : nil;
+     // The sampled view can be read-only (channel swizzle) even when the image backing is writable.
+     // Use the shader's image binding so its level and slice survive without replacing the backing with a sampled view.
+diff --git a/dm/gfx/tests/t_lazy_clear_order.m b/dm/gfx/tests/t_lazy_clear_order.m
+index c18efff9c16965e0ebd00c04f4e5674c97ed3740..4025816c7993c2ce7ad9e1b41e8331a3759630b7 100644
+--- a/dm/gfx/tests/t_lazy_clear_order.m
++++ b/dm/gfx/tests/t_lazy_clear_order.m
+@@ -13,6 +13,7 @@ static int checks, failed;
+ static uint8_t ops[1024]; static size_t nops;
+ static void *op(uint32_t code, size_t size) { op_hdr h = {code, (uint32_t)(sizeof h + size)}; memcpy(ops + nops, &h, sizeof h); void *a = ops + nops + sizeof h; memset(a, 0, size); nops += h.size; return a; }
+ 
++// NOLINTBEGIN(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): the test's Metal objects are checked by CHECK before use; LLVM 23.1.4's analyzer flags upstream's call
+ int main(void) { @autoreleasepool {
+     mtl_init();
+     id<MTLCommandQueue> queue = [g_dev newCommandQueue];
+@@ -77,3 +78,4 @@ int main(void) { @autoreleasepool {
+     printf("lazy clear order: %d checks, %d failed\n", checks, failed);
+     return failed != 0;
+ } }
++// NOLINTEND(clang-analyzer-nullability.NullablePassedToNonnull)
+diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
+index 24893170491048b0bc85f7044712ad2264af16d5..4e5d91ee59a5bcf8d464b736e049ef4aef505815 100644
+--- a/dm/tools/lint_c_baseline.tsv
++++ b/dm/tools/lint_c_baseline.tsv
+@@ -23,10 +23,10 @@ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
+ dm/gfx/nvn/nvn_mtl.m	bugprone-misplaced-widening-cast	1
+ dm/gfx/nvn/nvn_mtl.m	bugprone-signed-char-misuse	1
+ dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
+-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	3
++dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	4
+-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	14
++dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	13
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
+ dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1

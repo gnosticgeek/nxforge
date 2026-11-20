@@ -27,10 +27,10 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
  create mode 100644 dm/tools/tests/test_nsp_registered_update.py
 
 diff --git a/dm/games/0400C3F00006E000/README.md b/dm/games/0400C3F00006E000/README.md
-index 11787ab2422b1932546c72a6bc552904211b730e..2866629c89c4fce61a5b878b4041ac0f992d9c61 100644
+index 063cc8708724de6dce7b71b17cc72fabec689ca3..48e82f15e087d8b215b1be8d33e313af564acffc 100644
 --- a/dm/games/0400C3F00006E000/README.md
 +++ b/dm/games/0400C3F00006E000/README.md
-@@ -104,7 +104,7 @@ The work folder `0400C3F00006E000-work` beside the dump has `rewrite.sh`, `rebui
+@@ -120,7 +120,7 @@ The work folder `0400C3F00006E000-work` beside the dump has `rewrite.sh`, `rebui
  
  ## 1.8.0
  
@@ -58,10 +58,10 @@ index 10f143d53ee49bfef2e5bd9927a9029c18dd9056..94b8ed38c480b4ad48c75d9865ac105d
  modules	main subsdk0 subsdk1 sdk
  romfs_marker	Movie/StaffRoll_00.webm
 diff --git a/dm/games/README.md b/dm/games/README.md
-index 44c4ba5d0628eca6f3cb07c3d98381d67c29e1f8..80b3e58c4d58c970fb4d9ab263b1bc3db92e7683 100644
+index 9bf1ba491106f3cd49ef613b731417bec9a57efa..08c68663845a96bb2e328097da39208a9b45157a 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -124,7 +124,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -133,7 +133,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | [Luigi's Mansion 3](0100DCA0064A6000/README.md) | `0100DCA0064A6000` | 1.4.0 | 7.3.2 | Next Level Games' engine | NVN |
  | [Mario & Luigi: Brothership](01006D0017F7A000/README.md) | `01006D0017F7A000` | 1.0.0 | 12.3.2 | Unreal Engine 4.27.2, Wwise | NVN |
  | [Mario Golf: Super Rush](0100C9C00E25C000/README.md) | `0100C9C00E25C000` | 4.0.0 | 11.4.0 | Camelot's engine, NintendoWare | NVN |
@@ -139,10 +139,10 @@ index 0000000000000000000000000000000000000000..d1a5b2cdb67d3bea72002416788925ea
 +if __name__ == '__main__':
 +    unittest.main()
 diff --git a/docs/reference/packing.md b/docs/reference/packing.md
-index 06799570209d1e8fbbdc42f4b1ab3c46ae1f6a65..210f9c54821ea830ee7be9e16fec29395411724a 100644
+index e9ed958f3ada707a7e91b585ca65ca3ea3c23410..cd444c2828032ff1867161fdc1696e081fb22e3d 100644
 --- a/docs/reference/packing.md
 +++ b/docs/reference/packing.md
-@@ -17,6 +17,13 @@
+@@ -32,6 +32,13 @@
  - **Not known from the file:** whether the update is the whole game. The flag does not promise it (the spec says such an update needs a matching base elsewhere), and an update holding only changed files would pack and then fail at boot, after a full shader build. The scripts print that the update is taken as the whole game. Measured: both NUPs at hand have an update RomFS that holds every path of its base (Age of Imprisonment: 2,065 base files, 2,153 in the update, none missing; Yoshi and the Mysterious Book: 147 and 147, none missing).
  - **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md). Reproduced with its base dump repackaged by the reference tool as a standalone-update fixture; this checks packaging, not the reported 1.8.0's contents or gameplay. Synthetic tests cover both entry points, both forms of no base, multiple versions, control data, DLC and incomplete updates.
  
@@ -157,10 +157,10 @@ index 06799570209d1e8fbbdc42f4b1ab3c46ae1f6a65..210f9c54821ea830ee7be9e16fec2939
  
  - **Symptom:** `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder ([issue #1265](https://github.com/seedds/nxnative/issues/1265)). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`.
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index a5ced24cd3ae4b6ea34c561add40d08bf9f0088d..04bdfd15a426ed4794b2c23ea481911365c09c84 100755
+index 71659a8469544de018e51083b9877ac48ccb7c51..59ada0ab20b3bd3c3711999a49f2ca04dd8b3374 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3519,7 +3519,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
+@@ -3534,7 +3534,9 @@ def report_profile_status(g, reg, pkg_ver, derived, provisional, artifact='IPA',
          known = {(m, b) for row in reg.builds().values() for m, b in row.items() if m != 'display'}
          other = [m for m, b in g.builds()[pkg_ver].items() if m != 'display' and (m, b) not in known]
          registered_builds = ", ".join(f'{v} {b["display"]}' for v, b in reg.builds().items())

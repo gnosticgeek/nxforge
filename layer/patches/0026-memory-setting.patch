@@ -20,20 +20,20 @@ Performance for NVN games.
  5 files changed, 28 insertions(+), 4 deletions(-)
 
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 693f7ae618bc9ec3b53b1838d3010dbef5fe8b1e..85fb4e914b5abcc32490925da67e835a5ee12a5e 100644
+index f64f9b5f9b6609c46863a0de7c05f84e14e8ecdb..6031b3c2b48a3e92617f4322f7a038add3268c35 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -44,4 +44,5 @@ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines
+@@ -47,4 +47,5 @@ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
  DM_NVN_ENC_THREAD	toggle	-	1|DM_GAME_ENC_THREAD	gfxapi:nvn	Performance	Encode thread
  DM_FPS_HOLD	toggle	on/off	DM_GAME_FPS_HOLD	DM_GAME_FPS_TARGET!=0	Performance	Hold frames when late
 +DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
  DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 42aa99a0ef373c93ba7a99de7b94c80e684ac553..84b205db44f58c2d7cad3f3aa2981fcf73b5bec3 100644
+index 4107ccff236a772d03f1d1a19cf02b6e843f7731..dbc94bc591287573b3cdd391c8ba94cb2a5d386e 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -575,6 +575,23 @@ static void res_check(id r, const char *what, int reg) {
+@@ -609,6 +609,23 @@ static void res_check(id r, const char *what, int reg) {
          MLOG("[RED] missing residency #%d: %s slot %d %s %p (parent chain %d deep) allocated %lu B storage mode %lu%s", nbad, what, reg, is_tex ? "texture" : "buffer", (__bridge void *)a, hops, (unsigned long)a.allocatedSize, (unsigned long)a.storageMode,
               t ? [NSString stringWithFormat:@" format %lu %lux%lu type %lu usage %#lx", (unsigned long)t.pixelFormat, (unsigned long)t.width, (unsigned long)t.height, (unsigned long)t.textureType, (unsigned long)t.usage].UTF8String : ""); }
  }
@@ -57,7 +57,7 @@ index 42aa99a0ef373c93ba7a99de7b94c80e684ac553..84b205db44f58c2d7cad3f3aa2981fcf
  // GPU memory guard. GPU memory is wired, and the driver refuses to wire past Metal's working set (recommendedMaxWorkingSetSize: IOGPUScheduler freeToWireMemory fails there). The submit thread
  // then waits in the kernel, where nothing can kill the process: GitHub issue #1326 ended with a Mac frozen until the power button, PR #1319's 8 GB Mac with WindowServer's watchdog. So every commit
  // of the residency set looks first, at the larger of what the commit would leave (the set's allocatedSize, which counts only what was committed, and what was added since) and the device's
-@@ -902,7 +919,7 @@ static void guard_init(void) {
+@@ -937,7 +954,7 @@ static void guard_init(void) {
      { const char *d = getenv("DM_NVN_GUARD_DEVICE"); g_guard_dev = d && atoi(d); }
      const char *e = getenv("DM_NVN_RES_LIMIT_MB"); uint64_t ws = g_dev.recommendedMaxWorkingSetSize, lim = e ? strtoull(e, NULL, 0) << 20 : 0;
      if (!g_res) return;
@@ -66,7 +66,7 @@ index 42aa99a0ef373c93ba7a99de7b94c80e684ac553..84b205db44f58c2d7cad3f3aa2981fcf
  #if TARGET_OS_IPHONE
          if (!lim) g_guard.stop = g_guard.wall = UINT64_MAX;
  #endif
-@@ -7499,7 +7516,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
+@@ -7992,7 +8009,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
  enum { SEEN_REARM = 60, SEEN_CAP_DIV = 4 };
  static uint32_t g_seen_at[POOL_SEEN_WORDS * 32]; static uint64_t g_seen_rearm, g_seen_kept, g_seen_dropped;
  static int seen_keep(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_SEEN_KEEP"); v = e ? MAX(atoi(e), 0) : 600; } return v; }
@@ -75,7 +75,7 @@ index 42aa99a0ef373c93ba7a99de7b94c80e684ac553..84b205db44f58c2d7cad3f3aa2981fcf
  static int pool_seen_stale(int id_) {   // caller holds g_rmu
      if (!seen_keep() || g_seen_kb_all <= seen_cap_kb() || id_ < 0 || id_ >= (int)(POOL_SEEN_WORDS * 32) || !pool_seen(id_)) return 0;
      return (uint32_t)atomic_load(&g_cur_frame) - g_seen_at[id_] > (uint32_t)seen_keep();
-@@ -11727,7 +11744,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
+@@ -12512,7 +12529,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
  static uint64_t g_walk_frame = ~0ull, g_walk_spent, g_walk_sub = ~0ull; static double g_walk_ms; static int g_walk_over;
  static uint64_t pool_tex_size(const tex_t *t) { return t->L.size ? t->L.size : 1; }
  static int pool_size_cmp(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }
@@ -98,10 +98,10 @@ index 0069eca826718305095ffe09f426e13bb157f017..09a96a6babfdafda8447a18b3a1eb311
  
  def build(gid, api, platform=None):
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index e4591cb0c69b6f174bf1492ba4b21798ae669387..34e3b6a134bddc721bcb0a11751c06edd7e3136f 100644
+index 8250b85d7576ef45383837c232e52e2cc3d66603..9c7db9b2ddda949ab2520629d028fb9452014d2a 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -121,6 +121,7 @@ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz M
+@@ -129,6 +129,7 @@ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz M
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
  DM_LONGFRAME	diagnostic	`0` turns off the long-frame log (on by default), a line for a frame over 20 ms or with GPU time over 16.7 ms that is clearly above recent frames
  DM_MEASURE_LOCK	path	`=<file>`: `scripts/regress.py`'s default `--lock`, the measuring lock `scripts/bench.py --lock` shares: held only while a game runs, and the harness's shader builds pause while another process holds it
@@ -110,10 +110,10 @@ index e4591cb0c69b6f174bf1492ba4b21798ae669387..34e3b6a134bddc721bcb0a11751c06ed
  DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second writes every VM region of 1 MiB or more to `<tsv>.regions`
  DM_MEM_CAP_GB	switch	`=<GB>`: the memory watchdog exits when resident memory exceeds that many GB (default 24 on the Mac, none on iOS; `0` turns it off)
 diff --git a/docs/settings.md b/docs/settings.md
-index 8ee683ec6a02b2ece364c4f554a71555d77824ca..ea321dbf437a79d186e60198791c1bd9d0387493 100644
+index f5d3416b81929ae2186538ee9f44d7f1d923325b..6068131ec2c478b4120b37f60be81d0298d75d6d 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -216,6 +216,10 @@ flowchart LR
+@@ -219,6 +219,10 @@ flowchart LR
  - **Off:** the game keeps aiming at 60; a late frame is shown one refresh later and the next one goes on as usual, so heavy scenes look less even but stay closer to 60 on average.
  - **When to change it:** turn it off if the game often falls to 30 fps although it is only slightly late.
  
@@ -123,8 +123,8 @@ index 8ee683ec6a02b2ece364c4f554a71555d77824ca..ea321dbf437a79d186e60198791c1bd9
 +
  ### Performance HUD
  
- Apple's performance overlay over the game: frame rate, frame and GPU times, memory. Useful to see what a setting changes; leave it off for play.
-@@ -334,6 +338,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+ Apple's performance overlay shows frame rate, frame and GPU times, and memory. It helps compare settings. Leave it off for play. On iPhone and iPad, switch it on, press **Play** to save the choice, then quit and reopen the app. The saved choice enables the HUD at launch. Switching it off before **Play** hides it for that session and saves the off choice.
+@@ -337,6 +341,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
  | Pipeline prebuild | `DM_PSO_PREBUILD` | `1`, `0` |
  | Encode thread | `DM_NVN_ENC_THREAD` | `1`, `0` |
  | Hold frames when late | `DM_FPS_HOLD` | `on`, `off` |
