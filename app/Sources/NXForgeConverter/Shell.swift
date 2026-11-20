@@ -308,7 +308,7 @@ struct CommandPalette: View {
                 out.append(PaletteItem(id: "build-\(b.app)", title: name, detail: "Built app", symbol: "macwindow", icon: b.app) { m.showConverter(); m.page = .builds; m.openGame(GameRef(libraryID: nil, app: b.app)) })
             }
         }
-        out.append(PaletteItem(id: "act-scan", title: "Scan Library Again", detail: "Action", symbol: "arrow.clockwise") { m.showConverter(); m.page = .library; m.scanLibrary() })
+        out.append(PaletteItem(id: "act-scan", title: "Refresh Library", detail: "Action", symbol: "arrow.clockwise") { m.showConverter(); m.page = .library; m.scanLibrary() })
         out.append(PaletteItem(id: "act-ipa", title: "Build iPhone and iPad IPA…", detail: "Action", symbol: "iphone") { m.buildIPA() })
         out.append(PaletteItem(id: "act-theatre", title: m.theatre ? "Leave Theatre" : "Theatre", detail: "Action", symbol: "tv") { m.toggleTheatre() })
         out.append(PaletteItem(id: "act-check", title: "Check the Toolchain Again", detail: "Action", symbol: "checkmark.seal") { m.showConverter(); m.page = .toolchain; m.recheck() })

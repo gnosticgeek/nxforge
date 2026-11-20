@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.1 (2026-11-20)
+
+Refresh the library. Ships in NXForge 0.48.1.
+
+- **Refresh** on Discover's title row scans the games folder again (the arrow spins while it scans); also View › Refresh Library (⌥⌘R) and Refresh Library in Go to Anything (⌘K).
+- **New games show up by themselves**: the scan keeps what the games folder itself holds (`top` in library.json), and NXForge looks at the folder each time it comes to the front and once a minute while it is in front, scanning again when a folder or game file was added or removed. Before, the library scanned only on a mount, when its list was a day old, or from Settings' Scan Again, so games filed by the Switch Downloads Watcher stayed hidden.
+
 ## 0.22.0 (2026-11-20)
 
 Theatre's small delights, on every theme. Ships in NXForge 0.47.4.
