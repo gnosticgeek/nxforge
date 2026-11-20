@@ -124,7 +124,7 @@ extension AppModel {
     }
 
     /// The day of play a game is on: the days it was played, and today, if it has not been played yet today
-    static func playDay(_ r: PlayRecord?, now: Date = Date(), calendar: Calendar = .current) -> Int {
+    nonisolated static func playDay(_ r: PlayRecord?, now: Date = Date(), calendar: Calendar = .current) -> Int {
         let days = Set((r?.sessions ?? []).map { calendar.startOfDay(for: $0.start) })
         return days.count + (days.contains(calendar.startOfDay(for: now)) ? 0 : 1)
     }
@@ -206,7 +206,7 @@ extension AppModel {
 
     /// The places the shuffle steps through, ending on `target`: at least 16 steps, always forwards, one game a step for the last
     /// 18 and bigger jumps before them, so a long list still spins in about four seconds
-    static func shufflePath(from cur: Int, to target: Int, count n: Int) -> [Int] {
+    nonisolated static func shufflePath(from cur: Int, to target: Int, count n: Int) -> [Int] {
         guard n > 1 else { return [target] }
         var total = ((target - cur) % n + n) % n
         while total < 16 { total += n }
@@ -221,7 +221,7 @@ extension AppModel {
     }
 
     /// The pause after each of the shuffle's steps: quick at first, slowing to a stop
-    static func shuffleWait(step i: Int, of count: Int) -> Double {
+    nonisolated static func shuffleWait(step i: Int, of count: Int) -> Double {
         let p = count > 1 ? Double(i) / Double(count - 1) : 1
         return 0.035 + 0.38 * pow(p, 2.6)
     }
