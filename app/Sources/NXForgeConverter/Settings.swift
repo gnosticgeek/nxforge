@@ -113,6 +113,12 @@ struct Settings: Codable, Equatable {
     var theatreVolume = 100
     var theatreLastGame: String?
     var theatreFilter: String?
+    /// Theatre's sounds (clicks as the games turn, a thunk on launch), the focused game's music (a file in its media folder),
+    /// its light following the time of day, and the games it has shown (nil until it first opens: none is a new arrival then)
+    var theatreSounds = true
+    var theatreMusic = true
+    var theatreTimeOfDay = true
+    var theatreSeen: [String]?
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
 
@@ -138,6 +144,7 @@ struct Settings: Codable, Equatable {
         case theatreTheme = "theatre_theme", theatreOnTV = "theatre_on_tv"
         case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
+        case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen"
     }
 
     init() {}
@@ -199,6 +206,10 @@ struct Settings: Codable, Equatable {
         theatreVolume = min(max((try? c.decodeIfPresent(Int.self, forKey: .theatreVolume)) ?? 100, 0), 100)
         theatreLastGame = try? c.decodeIfPresent(String.self, forKey: .theatreLastGame)
         theatreFilter = try? c.decodeIfPresent(String.self, forKey: .theatreFilter)
+        theatreSounds = (try? c.decodeIfPresent(Bool.self, forKey: .theatreSounds)) ?? true
+        theatreMusic = (try? c.decodeIfPresent(Bool.self, forKey: .theatreMusic)) ?? true
+        theatreTimeOfDay = (try? c.decodeIfPresent(Bool.self, forKey: .theatreTimeOfDay)) ?? true
+        theatreSeen = try? c.decodeIfPresent([String].self, forKey: .theatreSeen)
     }
 
     /// NXC_SUPPORT_DIR points the settings and build records elsewhere (for testing beside a running copy)

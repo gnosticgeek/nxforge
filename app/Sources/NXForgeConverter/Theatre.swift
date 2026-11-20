@@ -135,9 +135,10 @@ struct TheatreFact: Hashable {
 
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case carousel, cinema, gallery, trailer, edges, settings, leave
+    case carousel, cinema, gallery, trailer, shuffle, edges, settings, leave
     var title: String {
         switch self {
+        case .shuffle: "What Should I Play?"
         case .edges: "TV Edges"
         case .settings: "Settings"
         case .leave: "Leave Theatre"
@@ -150,7 +151,7 @@ enum TheatreMenuRow: Int, CaseIterable {
         case .cinema: .cinema
         case .gallery: .gallery
         case .trailer: .trailer
-        case .edges, .settings, .leave: nil
+        case .shuffle, .edges, .settings, .leave: nil
         }
     }
     static func row(_ t: TheatreTheme) -> TheatreMenuRow { allCases.first { $0.theme == t } ?? .carousel }
@@ -259,7 +260,11 @@ extension AppModel {
             let games = theatreGames()
             theatreFocus = games.first { $0.id == settings.theatreLastGame }?.id ?? Self.lastPlayed(games)?.id ?? games.first?.id
         }
+        theatreSpinning = false
+        theatreCurtain = nil
         theatre = true
+        // a new arrival's spotlight, else welcome back on the game played last (TheatreDelight.swift)
+        theatreOpeningMoment()
         theatreScreen = tv?.id
         theatreActivity = ProcessInfo.processInfo.beginActivity(options: [.idleDisplaySleepDisabled, .userInitiated], reason: "Theatre is on screen")
         guard ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil, let w = mainWindow else { return }
@@ -290,6 +295,10 @@ extension AppModel {
         theatreMenu = nil
         theatreWatch = false
         theatreSaver = false
+        theatreMoment = nil
+        theatreSpinning = false
+        theatreCurtain = nil
+        TheatreMusic.shared.play(nil, volume: 0)
         rememberTheatreFocus()
         if let a = theatreActivity { ProcessInfo.processInfo.endActivity(a); theatreActivity = nil }
         guard let w = mainWindow else { return }
@@ -453,18 +462,22 @@ extension AppModel {
         NSCursor.setHiddenUntilMouseMoves(true)
         // the screensaver: any button wakes Theatre, and does nothing else
         if theatreSaver { wakeTheatre(); return }
+        // the shuffle spinning: B stops it where it is, the rest wait for it to land
+        if theatreSpinning { if k == .b { theatreSpinning = false }; return }
+        // a moment's card goes at any button, which then does what it does (A plays the game the card is about)
+        if theatreMoment != nil, k != .r3, k != .volUp, k != .volDown { theatreMoment = nil }
         let covered = stageSettings || viewerOpen || launching != nil || playOptions != nil || gameDetail != nil || caseViewer != nil
-        // the trailer's sound, in Browse and in Watch alike: the right stick's press mutes, up and down set the volume
+        // Theatre's sound (the trailer, the game's music, the clicks): the right stick's press mutes, up and down set the volume
         switch k {
-        case .r3: if theatreTheme == .trailer, !covered { theatreMuted.toggle(); theatreVolumeTick += 1 }; return
-        case .volUp, .volDown: if theatreTheme == .trailer, !covered, theatreMenu == nil { stepTheatreVolume(k == .volUp ? 10 : -10) }; return
+        case .r3: if !covered { theatreMuted.toggle(); theatreVolumeTick += 1 }; return
+        case .volUp, .volDown: if !covered, theatreMenu == nil { stepTheatreVolume(k == .volUp ? 10 : -10) }; return
         default: break
         }
         if let i = theatreMenu {
             let rows = TheatreMenuRow.allCases
             switch k {
-            case .up: theatreMenu = max(i - 1, 0)
-            case .down: theatreMenu = min(i + 1, rows.count - 1)
+            case .up: if i > 0 { theatreCue(.step) }; theatreMenu = max(i - 1, 0)
+            case .down: if i < rows.count - 1 { theatreCue(.step) }; theatreMenu = min(i + 1, rows.count - 1)
             case .left, .right: if rows[i] == .edges { settings.theatreEdges = settings.theatreEdges.step(k == .left ? -1 : 1) }
             case .a: pickTheatreMenu(rows[i])
             case .b, .menu: theatreMenu = nil
@@ -485,6 +498,7 @@ extension AppModel {
             if (k == .left || k == .right), !games.isEmpty {
                 let i = games.firstIndex { $0.id == focus?.id } ?? 0
                 theatreFocus = games[(i + (k == .left ? -1 : 1) + games.count) % games.count].id
+                if games.count > 1 { theatreCue(theatreTheme == .carousel ? .turn : .step) }
                 return
             }
         case .cinema:
@@ -494,10 +508,11 @@ extension AppModel {
             let list = rows[r].games
             let c = list.firstIndex { $0.id == theatreFocus } ?? 0
             switch k {
-            case .left: theatreFocus = list[max(c - 1, 0)].id; theatreRow = r; return
-            case .right: theatreFocus = list[min(c + 1, list.count - 1)].id; theatreRow = r; return
+            case .left: if c > 0 { theatreCue(.step) }; theatreFocus = list[max(c - 1, 0)].id; theatreRow = r; return
+            case .right: if c < list.count - 1 { theatreCue(.step) }; theatreFocus = list[min(c + 1, list.count - 1)].id; theatreRow = r; return
             case .up, .down:
                 let nr = min(max(r + (k == .up ? -1 : 1), 0), rows.count - 1)
+                if nr != r { theatreCue(.step) }
                 theatreRow = nr
                 theatreFocus = rows[nr].games[min(c, rows[nr].games.count - 1)].id
                 return
@@ -511,14 +526,17 @@ extension AppModel {
         case .y: if let g = focus { caseFlipped = false; gameDetail = g.ref }
         case .x: if let g = focus, g.app != nil { openPlayOptions(g.ref) }
         // L and R: the filter; ZL and ZR: the theme
-        case .l, .r: stepTheatreFilter(k == .l ? -1 : 1)
+        case .l, .r: stepTheatreFilter(k == .l ? -1 : 1); theatreCue(.step)
         case .zl, .zr:
             let all = TheatreTheme.allCases
             let i = all.firstIndex(of: theatreTheme) ?? 0
             setTheatreTheme(all[(i + (k == .zl ? -1 : 1) + all.count) % all.count])
-        case .menu: theatreMenu = TheatreMenuRow.row(theatreTheme).rawValue
-        case .b: theatreMenu = TheatreMenuRow.leave.rawValue
-        case .options: if let g = focus { toggleFavorite(g) }
+            theatreCue(.theme)
+        case .menu: theatreMenu = TheatreMenuRow.row(theatreTheme).rawValue; theatreCue(.open)
+        case .b: theatreMenu = TheatreMenuRow.leave.rawValue; theatreCue(.open)
+        case .options: if let g = focus { toggleFavorite(g); theatreCue(.step) }
+        // the left stick's press: what should I play?
+        case .l3: shuffleTheatre()
         default: break
         }
     }
@@ -526,7 +544,8 @@ extension AppModel {
     func pickTheatreMenu(_ r: TheatreMenuRow) {
         theatreMenu = nil
         switch r {
-        case .carousel, .cinema, .gallery, .trailer: if let t = r.theme { setTheatreTheme(t) }
+        case .carousel, .cinema, .gallery, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
+        case .shuffle: shuffleTheatre()
         // A steps the edges round and keeps the menu up, so the corners stay in view
         case .edges:
             let all = TheatreEdges.allCases
@@ -570,6 +589,10 @@ struct TheatreView: View {
     @Environment(\.accessibilityReduceMotion) private var still
     /// the volume card is up (a moment after each change)
     @State private var hud = false
+    /// the launch screen may show under the lights going down (it waits until the box's light fills the room)
+    @State private var revealed = true
+    /// NXForge is the active app (the game's music stops while a game is in front)
+    @State private var active = NSApp.isActive || ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil
 
     var body: some View {
         GeometryReader { geo in
@@ -590,7 +613,18 @@ struct TheatreView: View {
                         } else {
                             stage.frame(width: size.width, height: size.height).clipped()
                         }
+                        // the room's light by the time of day (Settings › Theatre)
+                        if model.settings.theatreTimeOfDay { TheatreDaylightWash().frame(width: size.width, height: size.height) }
+                        if let m = model.theatreMoment, !model.theatreSaver, model.theatreMenu == nil, model.launching == nil {
+                            TheatreMomentCard(model: model, moment: m, width: size.width, height: size.height).id(m.id).transition(.opacity)
+                        }
+                        if model.theatreConfetti > 0 {
+                            let tint = model.stageGames().first { $0.id == model.theatreMoment?.game }.map { CoverArt.tint($0) } ?? Color(red: 1, green: 0.8, blue: 0.4)
+                            TheatreConfetti(tint: tint, frozen: ProcessInfo.processInfo.environment["NXC_CONFETTI"].flatMap(Double.init))
+                                .id(model.theatreConfetti).frame(width: size.width, height: size.height)
+                        }
                         overlays.frame(width: size.width, height: size.height)
+                        if let c = model.theatreCurtain { TheatreLightsDown(model: model, curtain: c).id(c.id).frame(width: size.width, height: size.height) }
                     }
                     if hud { TheatreVolumeCard(volume: model.settings.theatreVolume, muted: model.theatreMuted).frame(width: size.width, height: size.height, alignment: .topTrailing).transition(.opacity) }
                     // choosing the edges in the menu: the picture's four corners, to check they all show on the TV
@@ -637,6 +671,8 @@ struct TheatreView: View {
         .onKeyPress(characters: CharacterSet(charactersIn: "sS")) { _ in model.theatrePad(.r3); return .handled }
         .onKeyPress(characters: CharacterSet(charactersIn: "-_")) { _ in model.theatrePad(.volDown); return .handled }
         .onKeyPress(characters: CharacterSet(charactersIn: "=+")) { _ in model.theatrePad(.volUp); return .handled }
+        // ? the shuffle (L3)
+        .onKeyPress(characters: CharacterSet(charactersIn: "?/")) { _ in model.theatrePad(.l3); return .handled }
         // the genres for Cinema's rows and the filters, and the art the games still lack
         .task(id: model.stageGames().compactMap(\.titleID).joined(separator: ",")) { model.discover.load(model.stageGames().compactMap(\.titleID)) }
         .task(id: "theatre-covers") { model.fetchCovers(model.stageGames()) }
@@ -653,6 +689,47 @@ struct TheatreView: View {
             model.theatreRested = true
             // kept only when you moved to it, not when the carousel turned by itself
             if Date().timeIntervalSince(model.theatreTouched) < 4 { model.rememberTheatreFocus() }
+        }
+        // a moment's card, for its time
+        .task(id: model.theatreMoment?.id) {
+            guard let m = model.theatreMoment, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
+            try? await Task.sleep(for: .seconds(m.seconds))
+            if !Task.isCancelled, model.theatreMoment?.id == m.id { model.theatreMoment = nil }
+        }
+        // confetti clears itself after its burst
+        .task(id: model.theatreConfetti) {
+            guard model.theatreConfetti > 0, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
+            try? await Task.sleep(for: .seconds(TheatreConfetti.length + 0.2))
+            if !Task.isCancelled { model.theatreConfetti = 0 }
+        }
+        // the lights go down as a game starts from Theatre, and the launch screen comes up under the box's light
+        .onChange(of: model.launching?.id) { old, new in
+            if old == nil, new != nil, let l = model.launching { model.theatreLightsDown(l) }
+        }
+        .task(id: model.theatreCurtain?.id) {
+            guard let c = model.theatreCurtain else { revealed = true; return }
+            revealed = false
+            if c.frozen != nil { return }
+            try? await Task.sleep(for: .seconds(TheatreCurtain.reveal))
+            revealed = true
+            try? await Task.sleep(for: .seconds(TheatreCurtain.length - TheatreCurtain.reveal))
+            if model.theatreCurtain?.id == c.id { model.theatreCurtain = nil }
+        }
+        // the focused game's music, once the focus rests on it (not on Trailer, which has its own sound)
+        .task(id: musicKey) {
+            let volume = model.theatreMuted ? 0 : Float(model.settings.theatreVolume) / 100 * 0.3
+            guard let id = musicGame, let g = model.stageGames().first(where: { $0.id == id }) else { TheatreMusic.shared.play(nil, volume: 0); return }
+            let url = await TheatreMusic.find(g, model: model)
+            guard !Task.isCancelled else { return }
+            TheatreMusic.shared.play(url, volume: volume)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in active = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { active = false }
+        }
+        .onDisappear {
+            TheatreMusic.shared.play(nil, volume: 0)
+            TheatreSound.shared.rest()
         }
         // the volume card, for a moment after each change
         .task(id: model.theatreVolumeTick) {
@@ -701,6 +778,16 @@ struct TheatreView: View {
         }
     }
 
+    /// The game whose music plays: the one in focus once it has rested there, while Theatre is in front and quiet
+    var musicGame: String? {
+        guard model.settings.theatreMusic, model.theatreTheme != .trailer, model.theatreRested, active, !model.theatreSpinning, !model.theatreSaver,
+              model.launching == nil, model.theatreCurtain == nil, !model.viewerOpen, model.playing.isEmpty,
+              ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return nil }
+        return model.theatreFocus
+    }
+
+    var musicKey: String { "\(musicGame ?? "-")|\(model.theatreMuted)|\(model.settings.theatreVolume)" }
+
     @ViewBuilder var stage: some View {
         switch model.theatreTheme {
         case .carousel: CarouselTheme(model: model).transition(.opacity)
@@ -724,7 +811,9 @@ struct TheatreView: View {
         if let s = model.caseViewer { CaseViewer(model: model, state: s).id(s.game.id).transition(.opacity) }
         if let g = model.gallery { GalleryViewer(model: model, state: g).id(g.id).transition(.opacity) }
         if let m = model.manual { ManualViewer(model: model, state: m).id(m.id).transition(.opacity) }
-        if let l = model.launching { LaunchScreen(model: model, launch: l, game: games.first { $0.isRef(l.ref) }).transition(.opacity) }
+        if let l = model.launching, revealed || model.theatreCurtain == nil || l.failure != nil {
+            LaunchScreen(model: model, launch: l, game: games.first { $0.isRef(l.ref) }).transition(.opacity)
+        }
         if model.viewerOpen { ViewerKeys(model: model) }
         if let i = model.theatreMenu { TheatreMenu(model: model, focus: i).transition(.opacity.combined(with: .scale(scale: 0.97))) }
     }
@@ -757,8 +846,12 @@ struct TheatreTopBar: View {
                 Text(theme.rawValue).font(.system(size: 26 * u, weight: .medium))
             }
             TimelineView(.everyMinute) { t in
-                Text(t.date.formatted(date: .omitted, time: .shortened)).font(.system(size: 24 * u, weight: .medium)).monospacedDigit()
-                    .padding(.leading, 22 * u).opacity(0.88)
+                HStack(spacing: 10 * u) {
+                    // the time of day the room's light follows
+                    if model?.settings.theatreTimeOfDay == true { Image(systemName: TheatreDaylight.now.symbol).font(.system(size: 20 * u, weight: .semibold)).symbolRenderingMode(.hierarchical) }
+                    Text(t.date.formatted(date: .omitted, time: .shortened)).font(.system(size: 24 * u, weight: .medium)).monospacedDigit()
+                }
+                .padding(.leading, 22 * u).opacity(0.88)
             }
         }
         .padding(.horizontal, 96 * u).frame(height: 120 * u)
@@ -814,6 +907,8 @@ struct TheatreHints: View {
     var themes = true
     /// L and R for the filter
     var filters = true
+    /// L3 for the shuffle (off on the themes' feet, which are full: it is in the Theatre menu and on the shuffle's card)
+    var shuffle = false
     var back = "Leave"
     var size: CGFloat = 20
     @Environment(\.tu) private var u
@@ -828,6 +923,7 @@ struct TheatreHints: View {
                 if g.app != nil { hint("X", "Options") }
             }
             if filters, model.theatreFilters().count > 1 { hint("L", "R", "Filter") }
+            if shuffle { hint("L3", "Shuffle") }
             if themes { hint("ZL", "ZR", "Theme") }
             hint("+", "Menu")
             hint("B", back)
@@ -904,6 +1000,7 @@ struct TheatreMenu: View {
     func icon(_ r: TheatreMenuRow) -> String {
         switch r {
         case .carousel, .cinema, .gallery, .trailer: r.theme?.symbol ?? ""
+        case .shuffle: "dice"
         case .edges: "rectangle.dashed"
         case .settings: "gearshape"
         case .leave: "rectangle.portrait.and.arrow.right"
@@ -913,6 +1010,7 @@ struct TheatreMenu: View {
     func note(_ r: TheatreMenuRow) -> String? {
         switch r {
         case .carousel, .cinema, .gallery, .trailer: r.theme?.note
+        case .shuffle: "Spin the shelf and land on a game (L3)"
         case .edges: "Can you see all four corners? ← → to inset the picture"
         case .settings: nil
         case .leave: "Back to the window on your Mac"
