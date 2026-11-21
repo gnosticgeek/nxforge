@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.13 (2026-11-21)
+
+Shipped in NXForge 0.48.13.
+
+- **A failed build keeps its reason.** The Convert page shows a failed build's diagnosis and log only while the app stays open; once it quit (an update, a restart) the game went back to "Not built yet" with nothing to say a build had stopped, or why. Each game folder's last failed build is now kept in `failed-builds.json` (Application Support) until a build of it succeeds: Home, Theatre, the game page and Game Files show **Build failed**, with the reason, when it happened and what to do in the status line and the button's help, and the button says Build Again. A Stop you asked for is not kept. Code: `BuildFailures.swift`, `GameStatus.swift`.
+- **The profile's shader list check has its own diagnosis.** "The split shader tables differ from game profile ..." was read as "A shader step failed" with the advice to build again without the cache, which stops the same way. It now says the engine's list of the game's shaders does not match the game files, usually an out-of-date profile, and points to Updates.
+
 ## 0.22.12 (2026-11-21)
 
 Shipped in NXForge 0.48.12.
