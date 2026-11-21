@@ -35,15 +35,16 @@ enum GameLink {
         guard !q.isEmpty else { return nil }
         if let g = games.first(where: { titleID($0).map { fold($0) == q } ?? false }) { return g }
         let words = query.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { fold(String($0)) }.filter { !$0.isEmpty }
-        let tests: [(G) -> Bool] = [
-            { fold(name($0)) == q },
-            { fold(name($0)).hasPrefix(q) },
-            { fold(name($0)).contains(q) },
-            { g in let n = fold(name(g)); return !words.isEmpty && words.allSatisfy { n.contains($0) } },
+        let names = games.map { fold(name($0)) }
+        let tests: [(String) -> Bool] = [
+            { $0 == q },
+            { $0.hasPrefix(q) },
+            { $0.contains(q) },
+            { n in !words.isEmpty && words.allSatisfy { n.contains($0) } },
         ]
         for t in tests {
-            let hits = games.filter(t)
-            if let g = hits.first(where: built) ?? hits.first { return g }
+            let hits = games.indices.filter { t(names[$0]) }
+            if let i = hits.first(where: { built(games[$0]) }) ?? hits.first { return games[i] }
         }
         return nil
     }
@@ -112,9 +113,8 @@ extension AppModel {
             if let last = g.last { a.lastUsedDate = last }
             return CSSearchableItem(uniqueIdentifier: g.id, domainIdentifier: GameLink.spotlightDomain, attributeSet: a)
         }
-        let index = CSSearchableIndex.default()
-        index.deleteSearchableItems(withDomainIdentifiers: [GameLink.spotlightDomain]) { _ in
-            index.indexSearchableItems(items) { e in
+        CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [GameLink.spotlightDomain]) { _ in
+            CSSearchableIndex.default().indexSearchableItems(items) { e in
                 if let e { FileHandle.standardError.write(Data("Spotlight: \(e.localizedDescription)\n".utf8)) }
             }
         }
