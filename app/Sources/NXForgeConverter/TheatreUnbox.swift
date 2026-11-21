@@ -544,7 +544,8 @@ struct TheatreUnboxView: View {
             TimelineView(.animation(paused: unbox.frozen)) { ctx in
                 let s = state(now: ctx.date)
                 ZStack {
-                    Color.black.opacity(0.88 * s.room)
+                    // a click anywhere is A: open it, then play
+                    Color.black.opacity(0.88 * s.room).contentShape(.rect).onTapGesture { model.theatrePad(.a) }
                     LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black.opacity(0.9 * s.room), location: 0.82)], startPoint: .top, endPoint: .bottom)
                     RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
                     TheatreCaseScene(game: g, state: s, booklet: manual, u: u)

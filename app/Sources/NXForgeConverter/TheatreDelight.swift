@@ -915,7 +915,7 @@ struct TheatreLightsDown: View {
         let tint = CoverArt.tint(game)
         let out = Self.ease((t - CaseSceneState.reveal) / (CaseSceneState.length - CaseSceneState.reveal - 0.05))
         ZStack {
-            Color.black.opacity((curtain.fromConsole ? 0.86 : 0.80 + 0.12 * s.away) * s.room)
+            Color.black.opacity((curtain.fromConsole ? 0.88 : 0.88 + 0.06 * s.away) * s.room)
             RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
             TheatreCaseScene(game: game, state: s, booklet: GameManual.find(game) != nil, u: u)
         }
