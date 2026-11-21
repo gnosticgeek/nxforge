@@ -9,7 +9,7 @@ struct ShutterTopBar: View {
     var body: some View {
         let hints = TheatreHints(model: model)
         HStack {
-            Text("NXFORGE").font(.system(size: 28 * u, weight: .heavy)).tracking(8 * u)
+            TheatreConsoleMark(model: model, ink: ShutterLook.ink)
             Spacer()
             HStack(spacing: 18 * u) {
                 Text("Shutter").font(.system(size: 26 * u, weight: .medium)).opacity(0.9)

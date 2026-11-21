@@ -48,7 +48,7 @@ enum StageSettingRow: Int, CaseIterable {
     case straightPlay, firstPlayOptions, batteryPreset, localShaders
     case folderCheck, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
-    case theatreTheme, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreMusic, theatreTimeOfDay
+    case theatreTheme, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch
     case cloudSaves, snapshotAfterPlay, saveBackupPush
     case notify, openAfterBuild, keepBackups, reuseCache
     case autoUpdate
@@ -59,7 +59,7 @@ enum StageSettingRow: Int, CaseIterable {
         case .straightPlay, .firstPlayOptions, .batteryPreset, .localShaders: .playing
         case .folderCheck, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
-        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreMusic, .theatreTimeOfDay: .theatre
+        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
         case .notify, .openAfterBuild, .keepBackups, .reuseCache: .building
         case .autoUpdate: .updates
@@ -471,7 +471,8 @@ struct StageSettings: View {
                 Slider(value: volume, in: 0...100, step: 10).frame(width: 190).tint(.white).accessibilityLabel("Theatre volume")
                 Text("\(model.settings.theatreVolume) %").font(.system(size: 12.5, weight: .medium)).monospacedDigit().foregroundStyle(StageLook.soft).frame(width: 46, alignment: .trailing)
             },
-            toggle("Sounds", "A soft tick for each step, a quiet tick as the Showcase turns and a thunk on launch.", $model.settings.theatreSounds, .theatreSounds),
+            toggle("Sounds", "A soft tick for each step, a quiet tick as the Showcase turns, a snap as a case opens and a click as a card goes home.", $model.settings.theatreSounds, .theatreSounds),
+            toggle("Rumble", "The controller gives a small knock as a case snaps open and a firmer one as a game card clicks into the console. Only on controllers that can rumble on a Mac.", $model.settings.theatreRumble, .theatreRumble),
             toggle("Music", "Plays your music folder in the background (not in Trailer); a game with its own music.m4a or .mp3 in its media folder plays that while it is in focus.", $model.settings.theatreMusic, .theatreMusic),
             row("Music folder", "MP3 or Opus files (and M4A, FLAC, WAV), shuffled through in turn.") {
                 path(model.settings.theatreMusicFolder?.tildePath, none: "None chosen", width: 220)
@@ -481,6 +482,9 @@ struct StageSettings: View {
                 }
             },
             toggle("Light follows the time of day", "A cooler, brighter room in the morning, a warm evening, and a dimmer one after 10 pm.", $model.settings.theatreTimeOfDay, .theatreTimeOfDay),
+            row("When a game starts", "Game card: its case opens and the card drops into the console under the screen. Lights down: the box opens and its light fills the room.", .theatreLaunch) {
+                segmented($model.settings.theatreLaunch, TheatreLaunch.allCases, width: 240) { $0.rawValue }
+            },
         ]
         return [SettingsGroup(rows: screen), SettingsGroup(caption: "Sound and light", rows: sound)]
     }

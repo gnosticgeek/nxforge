@@ -13,6 +13,10 @@ Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELO
 - **Hold to compare**: hold the Graphics page's Compare button, C, or a controller's left face button to see the game full size with the default graphics; let go for yours.
 - **The FPS counter stays in sight**: in a right-hand corner it moves beside the open sidebar instead of under it. Space and the arrow keys now type in the sidebar's search fields (the cheats' search too) instead of moving the selection.
 
+## 0.50.0 (2026-11-21)
+
+- **Theatre: the case in your hand, and the card into the console** (Converter 0.24.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Y lifts the game in focus out of the theme as its case, the right stick turns it, A opens it (the game card in its clip, the booklet in the lid when the game has a manual) and A again takes the card to a console under the screen, which starts the game. Starting a game from any theme now plays the same thing by itself: the case opens, the card drops into the console with a click and its light fills the room (Settings › Theatre › When a game starts keeps Lights down as the other choice). The controller gives a small knock as a case snaps open and a card clicks home, with sounds to match. Theatre's wordmark is now that console, with the card of the game played last in its slot, and the Theatre menu's first row continues it. Y's old job, Details, is Y again with the case in the hand. No game rebuild needed.
+
 ## 0.49.0 (2026-11-21)
 
 Ten things for the player, in the app (Converter 0.23.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)) and in the game (Sidebar 0.8.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)). The in-game ones need each game app's host rebuilt (a full rebuild is not needed; "Update" on the game does it).
