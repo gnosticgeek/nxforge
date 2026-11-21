@@ -12,7 +12,7 @@ Subject: disk-room: the shared Metal cache and the scratch folder make way on
  4 files changed, 67 insertions(+), 4 deletions(-)
 
 diff --git a/dm/gfx/tools/dmsh_mtlcache.py b/dm/gfx/tools/dmsh_mtlcache.py
-index 75204e168a59e51a01009e3e0e24ee1df33c4ced..3c4c193d6cf7aecc76d88befdddea1fe36ce1cae 100644
+index 75204e168a59e51a01009e3e0e24ee1df33c4ced..06a6dce5335ee96663ada151e1df6db5b159bd08 100644
 --- a/dm/gfx/tools/dmsh_mtlcache.py
 +++ b/dm/gfx/tools/dmsh_mtlcache.py
 @@ -22,6 +22,22 @@ LEGACY = os.path.expanduser('~/Library/Caches/NXForge/metallib')   # the shared
@@ -46,10 +46,10 @@ index 75204e168a59e51a01009e3e0e24ee1df33c4ced..3c4c193d6cf7aecc76d88befdddea1fe
 +        (the entries it used are the newest, so none of them goes). A startup disk with less than ROOMY_GB free lowers the limit by the shortfall (spare_limit). Returns the line to print"""
          with self.lock: mine = sum(self.used.values())
 -        limit_gb = max(limit_gb, mine / 2**30)
+         assert isinstance(self.store, shader_cache.Store), 'prune runs in the process that opened the cache'
 +        set_gb = limit_gb
 +        limit_gb = max(spare_limit(limit_gb, free_gb(os.path.dirname(self.store.path))), mine / 2**30)
 +        low = f'; the disk is short of space, so the limit is {limit_gb:g} GB this time, not {set_gb:g}' if limit_gb < set_gb else ''
-         assert isinstance(self.store, shader_cache.Store), 'prune runs in the process that opened the cache'
          n, total, gone = self.store.prune_oldest('metallib/', int(limit_gb * 2**30))
 -        return f'Metal cache: {n - gone:,} libraries, {total / 2**30:.1f} GB in {self.store.path}' + (f' ({gone:,} unused the longest removed, limit {limit_gb:g} GB, DMSH_MTLCACHE_GB)' if gone else '')
 +        return f'Metal cache: {n - gone:,} libraries, {total / 2**30:.1f} GB in {self.store.path}' + (f' ({gone:,} unused the longest removed, limit {limit_gb:g} GB, DMSH_MTLCACHE_GB{low})' if gone else '')
