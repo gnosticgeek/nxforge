@@ -4,6 +4,7 @@
 // B (the bottom one), + or Home close the sidebar, L / R turn the page; a held direction repeats. quick_settings_mac.swift dm_qs_nav keeps the selection
 enum { NAV_UP = 1, NAV_DOWN, NAV_LEFT, NAV_RIGHT, NAV_OK, NAV_BACK, NAV_PREV, NAV_NEXT };
 static uint32_t g_nav_prev; static NSTimer *g_nav_rep;
+static void nxf_bs_touch(void);
 static int g_peek;   // a peek is held (front_mac_quick_settings.inc qs_peek): the sidebar faded, the picture whole
 static void qs_peek(int on);
 // The sidebar's button legend shows this controller's own glyphs (its elements' SF Symbols: an Xbox pad's B where a Nintendo pad has A) for the buttons pad_nav reads
@@ -46,6 +47,7 @@ static BOOL assign_pad(GCExtendedGamepad *g, GCControllerElement *el) {   // a c
     return YES;
 }
 static void pad_event(GCExtendedGamepad *g, GCControllerElement *el) {
+    nxf_bs_touch();   // front_mac_battery.inc: someone is playing
     if (assign_pad(g, el)) return;
     if (g_menu_open) { pad_nav(g); return; }
     // The controller opens the sidebar: Home, or − and + pressed together (a game sees those two for a moment)

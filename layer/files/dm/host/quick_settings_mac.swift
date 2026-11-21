@@ -9,6 +9,7 @@
 // from what this launch runs, and the footer counts and names those. General: pause while open, quieter while open, a save backup (the Converter's save snapshots, same format),
 // the settings file (front_mac_settings_file.inc: the settings as text beside the game) and my defaults for every game
 import AppKit
+import IOKit.ps
 import AVFoundation
 import GameController
 import SwiftUI
@@ -135,7 +136,7 @@ private func presetValue(_ p: Preset, _ s: LaunchRow) -> String {
 // Every setting the sidebar or the settings window keeps for this game is in the user defaults under these prefixes (the page shown is not a setting)
 private let sessionPrefixes = ["DMQuickSettings.", "DMPresentFilter.", "launcher.", "nxforge.mirror."]
 private let sessionNames = ["fps": "FPS counter", "fpsPos": "Counter corner", "fpsMs": "Milliseconds", "frameTimes": "Record frame times", "mods": "Mods", "modOrder": "Mod load order",
-                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
+                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "batterySaver": "Save battery", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
                             "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size", "border": "Around the picture",
                             "keys": "Keyboard controls", "keyNames": "Keyboard controls", "pad": "Controller buttons", "padNames": "Controller buttons", "captureDir": "Capture folder",
                             "mode": "CRT filter", "strength": "CRT strength", "scanline": "Line size", "DM_PRESENT_UPSCALE": "MetalFX upscaling"]
@@ -160,7 +161,7 @@ private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods =
 enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
     case undoSession, preset(Int)
-    case pauseOpen, duckOpen, keepLibrary, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
+    case pauseOpen, duckOpen, keepLibrary, batterySaver, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
     case fullscreen, scale, border, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
@@ -171,7 +172,7 @@ enum Nav: Hashable {
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .batterySaver, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
@@ -341,6 +342,25 @@ private func ago(_ d: Date) -> String { d.formatted(.relative(presentation: .nam
 private var slotBusy = false
 private var slotArmed: (slot: Int, at: Date)?
 /// The Save Slots menu and its shortcuts (front_mac_quick_settings.inc): save now, a toast when done. Main thread
+// The Mac's battery for the General page's Save battery row: its charge, whether the Mac runs on it, and macOS's own estimate of the time left (0 while it still works that out)
+enum BatteryNow {
+    static func read() -> (percent: Int, onBattery: Bool, minutes: Int)? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(), let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for src in list {
+            guard let d = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue() as? [String: Any], d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
+                  let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
+            let on = d[kIOPSPowerSourceStateKey] as? String == kIOPSBatteryPowerValue, left = d[kIOPSTimeToEmptyKey] as? Int ?? 0
+            return (cur * 100 / max, on, on && left > 0 ? left : 0)
+        }
+        return nil
+    }
+    static func line(_ b: (percent: Int, onBattery: Bool, minutes: Int)) -> String {
+        if !b.onBattery { return "Plugged in now, at \(b.percent) %" }
+        if b.minutes <= 0 { return "On the battery now, at \(b.percent) %" }
+        let h = b.minutes / 60, m = b.minutes % 60
+        return "On the battery now, at \(b.percent) %: about \(h > 0 ? "\(h) h \(m) min" : "\(m) min") left at this rate"
+    }
+}
 // Laptop-safe play (nxforge/front_mac_sleep.inc): before the Mac sleeps or its battery runs out, a snapshot of the committed save, unless the newest snapshot is already newer than
 // everything in the save. The Converter lists it as "Before the Mac slept" and prunes it with its other automatic snapshots
 @_cdecl("dm_qs_safety_copy")
@@ -440,6 +460,8 @@ final class QuickSettings: ObservableObject {
     @Published var fullscreen = false
     @Published var pauseOpen = true   // pause the game while the sidebar is up
     @Published var duckOpen = false   // quieter sound while it is up
+    @Published var batterySaver = true   // on the battery, a game nobody is playing pauses (nxforge/front_mac_battery.inc)
+    @Published var battery: (percent: Int, onBattery: Bool, minutes: Int)? = nil   // nil: a Mac without a battery
     @Published var keepLibrary = true // Library pauses and keeps the game (front_qs_suspend) instead of ending it
     @Published var paused = false
     @Published var lastBackup: Date?
@@ -502,6 +524,7 @@ final class QuickSettings: ObservableObject {
         recording = front_qs_recording() != 0
         pauseOpen = d.object(forKey: optKey("pauseOpen")) == nil ? true : d.bool(forKey: optKey("pauseOpen")); duckOpen = d.bool(forKey: optKey("duckOpen"))
         keepLibrary = d.object(forKey: optKey("keepLibrary")) == nil ? true : d.bool(forKey: optKey("keepLibrary"))
+        batterySaver = d.object(forKey: optKey("batterySaver")) == nil ? true : d.bool(forKey: optKey("batterySaver")); battery = BatteryNow.read()
         paused = front_qs_paused() != 0; fullscreen = front_qs_fullscreen() != 0
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
@@ -705,6 +728,7 @@ final class QuickSettings: ObservableObject {
     // Sound: the volume and mute are saved, and front_mac.m sets the game's gain from them (quieter while the sidebar is up when that is on)
     func setVolume(_ v: Double) { volume = v; muted = false; UserDefaults.standard.set(v, forKey: optKey("volume")); UserDefaults.standard.set(false, forKey: optKey("muted")); front_qs_volume_apply() }
     func setMuted(_ on: Bool) { muted = on; UserDefaults.standard.set(on, forKey: optKey("muted")); front_qs_volume_apply() }
+    func setBatterySaver(_ on: Bool) { batterySaver = on; UserDefaults.standard.set(on, forKey: optKey("batterySaver")) }
     func setKeepLibrary(_ on: Bool) { keepLibrary = on; UserDefaults.standard.set(on, forKey: optKey("keepLibrary")) }
     func setDuck(_ on: Bool) { duckOpen = on; UserDefaults.standard.set(on, forKey: optKey("duckOpen")); front_qs_volume_apply() }
     func setPauseOpen(_ on: Bool) { pauseOpen = on; front_qs_pause_set(on ? 1 : 0); paused = front_qs_paused() != 0 }
@@ -912,7 +936,7 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + [[Nav.backup, Nav.backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + [[Nav.backup, Nav.backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
         case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
@@ -964,6 +988,7 @@ final class QuickSettings: ObservableObject {
         case .pauseOpen: setPauseOpen(d > 0)
         case .duckOpen: setDuck(d > 0)
         case .keepLibrary: setKeepLibrary(d > 0)
+        case .batterySaver: setBatterySaver(d > 0)
         case .fullscreen: if (d > 0) != fullscreen { toggleFullscreen() }
         case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
         case .border: setBorder(min(max(border + d, 0), borderNames.count - 1))
@@ -997,6 +1022,7 @@ final class QuickSettings: ObservableObject {
         case .pauseOpen: setPauseOpen(!pauseOpen)
         case .duckOpen: setDuck(!duckOpen)
         case .keepLibrary: setKeepLibrary(!keepLibrary)
+        case .batterySaver: setBatterySaver(!batterySaver)
         case .undoSession: undoSession()
         case .preset(let i): if let p = Preset(rawValue: i) { choosePreset(p) }
         case .backup: backup()
@@ -1312,6 +1338,14 @@ struct QuickSettingsView: View {
                     Toggle("Library keeps the game", isOn: Binding(get: { m.keepLibrary }, set: { m.setKeepLibrary($0) })).toggleStyle(.switch).labelsHidden()
                 }.nav(m, .keepLibrary)
                 note(m.keepLibrary ? "Library pauses the game and keeps it, so Resume in NXForge picks up where you left off. It still uses its memory" : "Library ends the game, as Quit does")
+            }
+            if let b = m.battery {
+                subhead("On the battery").padding(.top, 6)
+                Row(title: "Save battery", changed: !m.batterySaver) {
+                    Toggle("Save battery", isOn: Binding(get: { m.batterySaver }, set: { m.setBatterySaver($0) })).toggleStyle(.switch).labelsHidden()
+                }.nav(m, .batterySaver)
+                note((m.batterySaver ? "Unplugged, the game pauses while another app is in front, and after ten minutes without a button" : "The game keeps running when you leave it, plugged in or not")
+                     + ". " + BatteryNow.line(b))
             }
             subhead("Save").padding(.top, 6)
             HStack(spacing: 10) {

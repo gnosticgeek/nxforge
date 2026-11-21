@@ -31,6 +31,7 @@ static const sf_entry g_sf[] = {
     {"volume", "volume", 0, SF_PERCENT, NULL, 0, 1, "100"},
     {"muted", "muted", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"pause_while_open", "pauseOpen", 0, SF_BOOL, NULL, 0, 1, "on"},
+    {"save_battery", "batterySaver", 0, SF_BOOL, NULL, 0, 1, "on"},
     {"quieter_while_open", "duckOpen", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"fps_counter", "fps", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"fps_corner", "fpsPos", 0, SF_PICK, sf_corner, 4, 1, "top-left"},
