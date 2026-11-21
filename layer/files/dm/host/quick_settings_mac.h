@@ -97,3 +97,6 @@ void dm_qs_peek_glyph(const char *symbol);
 void front_qs_settings_reapply(void);
 // A setting the present pass shows changed (filter, HDR, MetalFX, …): while the game is paused under the sidebar, it draws its picture again for a moment so the change shows. Main thread
 void front_qs_live_changed(void);
+// Laptop-safe play (nxforge/front_mac_sleep.inc): a save snapshot "Before the Mac slept" when the game saved since the newest snapshot. 1 made, 0 nothing new, -1 no save yet or the
+// copy failed. Waits for the copy (a save is small). Main thread
+int dm_qs_safety_copy(void);

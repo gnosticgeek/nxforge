@@ -339,6 +339,22 @@ private func ago(_ d: Date) -> String { d.formatted(.relative(presentation: .nam
 private var slotBusy = false
 private var slotArmed: (slot: Int, at: Date)?
 /// The Save Slots menu and its shortcuts (front_mac_quick_settings.inc): save now, a toast when done. Main thread
+// Laptop-safe play (nxforge/front_mac_sleep.inc): before the Mac sleeps or its battery runs out, a snapshot of the committed save, unless the newest snapshot is already newer than
+// everything in the save. The Converter lists it as "Before the Mac slept" and prunes it with its other automatic snapshots
+@_cdecl("dm_qs_safety_copy")
+public func dm_qs_safety_copy() -> Int32 {
+    guard let save = SaveBackup.save else { return -1 }
+    let fm = FileManager.default; var newest: Date?
+    for root in [save, save + "_device"] {
+        guard let walk = fm.enumerator(atPath: root) else { continue }
+        for case let rel as String in walk {
+            if let d = (try? fm.attributesOfItem(atPath: "\(root)/\(rel)"))?[.modificationDate] as? Date, newest.map({ d > $0 }) ?? true { newest = d }
+        }
+    }
+    guard let newest else { return -1 }
+    if let last = SaveBackup.latest(), last >= newest { return 0 }
+    do { _ = try SaveBackup.make(reason: "beforeSleep"); return 1 } catch { return -1 }
+}
 @_cdecl("dm_qs_slot_save")
 public func dm_qs_slot_save(_ n: Int32) {
     let n = Int(n)
