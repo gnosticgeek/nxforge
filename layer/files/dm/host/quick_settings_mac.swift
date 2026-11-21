@@ -136,7 +136,7 @@ private func presetValue(_ p: Preset, _ s: LaunchRow) -> String {
 // Every setting the sidebar or the settings window keeps for this game is in the user defaults under these prefixes (the page shown is not a setting)
 private let sessionPrefixes = ["DMQuickSettings.", "DMPresentFilter.", "launcher.", "nxforge.mirror."]
 private let sessionNames = ["fps": "FPS counter", "fpsPos": "Counter corner", "fpsMs": "Milliseconds", "frameTimes": "Record frame times", "mods": "Mods", "modOrder": "Mod load order",
-                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "batterySaver": "Save battery", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
+                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "replay": "Instant replay", "batterySaver": "Save battery", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
                             "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size", "border": "Around the picture",
                             "keys": "Keyboard controls", "keyNames": "Keyboard controls", "pad": "Controller buttons", "padNames": "Controller buttons", "captureDir": "Capture folder",
                             "mode": "CRT filter", "strength": "CRT strength", "scanline": "Line size", "DM_PRESENT_UPSCALE": "MetalFX upscaling"]
@@ -159,7 +159,7 @@ private let pages: [(tab: String, title: String, icon: String)] = [("General", "
 private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods = 4, pCheats = 5, pControls = 6
 // What the controller and keyboard selection can be on (dm_qs_nav)
 enum Nav: Hashable {
-    case shot, record, fpsQuick, volume, mute, tab(Int)
+    case shot, record, fpsQuick, volume, mute, tab(Int), replay, replaySave
     case undoSession, preset(Int)
     case pauseOpen, duckOpen, keepLibrary, batterySaver, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
     case fullscreen, scale, border, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
@@ -172,7 +172,7 @@ enum Nav: Hashable {
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .batterySaver, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .batterySaver, .replay, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
@@ -442,6 +442,7 @@ final class QuickSettings: ObservableObject {
     @Published var volume = 1.0
     @Published var muted = false
     @Published var recording = false
+    @Published var replay = false   // Instant replay: the last 30 s are kept in memory (capture_mac.m)
     @Published var shotDir = ""
     @Published var upscale = false   // MetalFX where the picture is shown larger than the game renders it
     @Published var aa = 0            // the present's anti-aliasing (DM_PAA_*)
@@ -522,7 +523,7 @@ final class QuickSettings: ObservableObject {
         if let e = env["DM_FRAME_TIMES"] { frameTimes = (Int(e) ?? 0) != 0 } else { frameTimes = d.bool(forKey: optKey("frameTimes")) }
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
         volume = d.object(forKey: optKey("volume")) == nil ? 1 : d.double(forKey: optKey("volume")); muted = d.bool(forKey: optKey("muted"))
-        recording = front_qs_recording() != 0
+        recording = front_qs_recording() != 0; replay = front_qs_replay() != 0
         pauseOpen = d.object(forKey: optKey("pauseOpen")) == nil ? true : d.bool(forKey: optKey("pauseOpen")); duckOpen = d.bool(forKey: optKey("duckOpen"))
         keepLibrary = d.object(forKey: optKey("keepLibrary")) == nil ? true : d.bool(forKey: optKey("keepLibrary"))
         batterySaver = d.object(forKey: optKey("batterySaver")) == nil ? true : d.bool(forKey: optKey("batterySaver")); battery = BatteryNow.read(); readPlayers()
@@ -806,6 +807,7 @@ final class QuickSettings: ObservableObject {
     func openCapture() { if let p = picked { NSWorkspace.shared.open(URL(fileURLWithPath: p)) } }
     func revealCapture() { if let p = picked { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) } }
     func record() { front_qs_record(); recording = front_qs_recording() != 0 }
+    func setReplay(_ on: Bool) { front_qs_replay_set(on ? 1 : 0); replay = front_qs_replay() != 0 }
     func assign(_ i: Int, pad: Bool) { front_qs_assign(Int32(i), pad ? 1 : 0); assigning = Int(front_qs_assigning()) }
     /// Who plays (front_mac_players.inc): each player with a controller, by its name; canMove false for Joy-Cons, which keep the player they joined as
     struct Player: Identifiable { let slot: Int; let name: String; let canMove: Bool; var id: Int { slot } }
@@ -957,7 +959,7 @@ final class QuickSettings: ObservableObject {
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
-            return (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
+            return [[Nav.replay]] + (replay ? [[Nav.replaySave]] : []) + (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
                 + [[.showFolder, .changeFolder]] + (customDir ? [[.defaultFolder]] : [])
         case pMods: return mods.map { [.mod($0), .modUp($0), .modDown($0)] } + [[.modsOpen, .modsRefresh]]
         case pCheats:
@@ -1004,6 +1006,7 @@ final class QuickSettings: ObservableObject {
         case .pauseOpen: setPauseOpen(d > 0)
         case .duckOpen: setDuck(d > 0)
         case .keepLibrary: setKeepLibrary(d > 0)
+        case .replay: setReplay(d > 0)
         case .batterySaver: setBatterySaver(d > 0)
         case .fullscreen: if (d > 0) != fullscreen { toggleFullscreen() }
         case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
@@ -1032,6 +1035,8 @@ final class QuickSettings: ObservableObject {
         switch n {
         case .shot: front_qs_screenshot()
         case .record: record()
+        case .replay: setReplay(!replay)
+        case .replaySave: front_qs_replay_save()
         case .fps, .fpsQuick: setFps(!fps)
         case .mute, .volume: setMuted(!muted)
         case .tab(let i): setPage(i); sel = firstOnPage
@@ -1569,6 +1574,16 @@ struct QuickSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Screenshot and Record are at the top of this menu. The picture is saved as you see it, filter included.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            subhead("Instant replay")
+            Row(title: "Instant replay", changed: m.replay) {
+                Toggle("Instant replay", isOn: Binding(get: { m.replay }, set: { m.setReplay($0) })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .replay)
+            if m.replay {
+                Button { front_qs_replay_save() } label: { Label("Save the last 30 seconds", systemImage: "gobackward.30").frame(maxWidth: .infinity) }
+                    .modifier(GlassButton(prominent: false)).controlSize(.large).help("Shift-Command-L, or hold a controller's Capture button").nav(m, .replaySave)
+            }
+            note(m.replay ? "The last 30 seconds are always kept, with sound. Shift-Command-L or a controller's Capture button held saves them; this uses a little of the Mac's power all the time"
+                 : "Keeps the last 30 seconds of play ready to save after something worth keeping happened. A controller's Capture button takes a screenshot; held, it saves the replay")
             subhead("Recent")
             if m.captures.isEmpty { Text("Nothing yet: your screenshots and recordings show here.").font(.callout).foregroundStyle(.tertiary) }
             else {
@@ -1594,7 +1609,7 @@ struct QuickSettingsView: View {
                 Button { m.defaultCaptureFolder() } label: { Label("Use the game folder again", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: false)).controlSize(.large).nav(m, .defaultFolder)
             }
-            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording, Shift-Command-L saves the last 30 seconds.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
     private func captureTile(_ c: CaptureFile) -> some View {

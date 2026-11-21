@@ -41,6 +41,7 @@ static const sf_entry g_sf[] = {
     {"mods_on", "mods", 0, SF_LIST, NULL, 0, 0, ""},
     {"mod_order", "modOrder", 0, SF_LIST, NULL, 0, 0, ""},
     {"capture_folder", "captureDir", 0, SF_TEXT, NULL, 0, 0, ""},
+    {"instant_replay", "replay", 0, SF_BOOL, NULL, 0, 1, "off"},
 };
 enum { SF_N = sizeof g_sf / sizeof g_sf[0] };
 static const char *const sf_action[] = {"a", "b", "x", "y", "left_stick_press", "right_stick_press", "l", "r", "zl", "zr", "plus", "minus", "dpad_left", "dpad_up", "dpad_right",

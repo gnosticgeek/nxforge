@@ -112,6 +112,18 @@ void front_qs_record(void) {
     if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
 }
 int front_qs_recording(void) { return capture_recording(); }
+// Instant replay (capture_mac.m): the sidebar's switch (saved per game, off unless turned on) and Save the last 30 seconds (the Capture menu's ⇧⌘L, or a controller's
+// Capture button held: front_mac_pad_nav.inc)
+int front_qs_replay(void) { return capture_replay_on(); }
+void front_qs_replay_set(int on) {
+    [NSUserDefaults.standardUserDefaults setBool:on != 0 forKey:opt_key(@"replay")];
+    if (capture_replay_set(on) != (on != 0)) toast(@"Instant replay could not start");
+}
+void front_qs_replay_save(void) {
+    if (!capture_replay_on()) { toast(@"Instant replay is off: turn it on in the sidebar's Capture page"); return; }
+    toast(@"Saving the last 30 seconds…");
+    capture_replay_save(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Replay saved to " stringByAppendingString:where(path)] : err); if (path) dm_qs_captures_changed(); });
+}
 // Restart game (Quick settings, for the settings that apply at the next launch): the app's launcher (dm/mac/launcher.c) names a file in DM_LAUNCHER_RESTART; the host makes it
 // and quits as ⌘Q does, and the launcher, finding the file, starts the host again with the same environment. A bare dmhost has no launcher and no restart
 int front_qs_can_restart(void) { const char *e = getenv("DM_LAUNCHER_RESTART"); return e && *e; }
@@ -336,6 +348,7 @@ void front_qs_defaults_use(void) {
 }
 - (void)screenshot:(id)sender { (void)sender; front_qs_screenshot(); }
 - (void)record:(id)sender { (void)sender; front_qs_record(); if (g_menu_open) dm_qs_refresh(); }
+- (void)replaySave:(id)sender { (void)sender; front_qs_replay_save(); }
 - (void)slotSave:(NSMenuItem *)it { dm_qs_slot_save((int)it.tag); }
 - (void)slotLoad:(NSMenuItem *)it { dm_qs_slot_load((int)it.tag); }
 - (void)menuIn:(NSMenu *)bar {
@@ -352,7 +365,8 @@ void front_qs_defaults_use(void) {
     NSMenu *cm = [[NSMenu alloc] initWithTitle:@"Capture"];   // ⇧⌘S and ⇧⌘R: ⌘ shortcuts never reach the game
     [[bar addItemWithTitle:@"Capture" action:nil keyEquivalent:@""] setSubmenu:cm];
     NSMenuItem *sh = [cm addItemWithTitle:@"Take Screenshot" action:@selector(screenshot:) keyEquivalent:@"s"], *rc = [cm addItemWithTitle:@"Start Recording" action:@selector(record:) keyEquivalent:@"r"];
-    for (NSMenuItem *x in @[sh, rc]) { x.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; x.target = self; }
+    NSMenuItem *rp = [cm addItemWithTitle:@"Save the Last 30 Seconds" action:@selector(replaySave:) keyEquivalent:@"l"];   // Instant replay; says so when it is off
+    for (NSMenuItem *x in @[sh, rc, rp]) { x.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; x.target = self; }
     // Quick-save slots (quick_settings_mac.swift SaveSlots): ⌘1–⌘3 save the game's save into a slot, ⌥⌘1–⌥⌘3 load one (pressed twice; the game restarts)
     NSMenu *sm = [[NSMenu alloc] initWithTitle:@"Save Slots"];
     [[bar addItemWithTitle:@"Save Slots" action:nil keyEquivalent:@""] setSubmenu:sm];
@@ -389,6 +403,7 @@ static void settings_apply(int start) {
     // but only the launch environment and env.txt fix it (env_fixed): a Restart game, which starts with the same environment, keeps a change the sidebar made
     if (!env_fixed("DM_PRESENT_UPSCALE")) { NSString *u = [d stringForKey:@"launcher.DM_PRESENT_UPSCALE"]; mtl_present_upscale_set(u ? [u isEqualToString:@"metalfx"] : 1); }
     if (!env_fixed("DM_PRESENT_AA")) mtl_present_aa_set([d objectForKey:opt_key(@"aa")] ? (int)[d integerForKey:opt_key(@"aa")] : DM_PAA_OFF);
+    if (capture_replay_on() != [d boolForKey:opt_key(@"replay")]) capture_replay_set([d boolForKey:opt_key(@"replay")]);   // Instant replay: off unless saved on
     // EDR highlights: off unless this game's saved choice says on; strength 50 % unless saved (present_edr.inc)
     if (!env_fixed("DM_PRESENT_EDR")) mtl_present_edr_set([d boolForKey:opt_key(@"edr")]);
     if (!env_fixed("DM_PRESENT_EDR_STRENGTH")) mtl_present_edr_strength_set([d objectForKey:opt_key(@"edrStrength")] ? (int)lround([d doubleForKey:opt_key(@"edrStrength")] * 100) : 50);

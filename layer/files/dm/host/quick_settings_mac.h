@@ -36,6 +36,10 @@ void dm_qs_input(int pad, const char *ok, const char *back, const char *prev, co
 void front_qs_screenshot(void);
 void front_qs_record(void);
 int front_qs_recording(void);
+// Instant replay (capture_mac.m): whether it is on, the switch (saved for this game), and saving the last 30 seconds to the Recordings folder (a toast says where)
+int front_qs_replay(void);
+void front_qs_replay_set(int on);
+void front_qs_replay_save(void);
 // Restart game: whether this launch can (the app's launcher started it), and doing it (the host quits as ⌘Q does and the launcher starts it again). Main thread
 int front_qs_can_restart(void);
 void front_qs_restart(void);

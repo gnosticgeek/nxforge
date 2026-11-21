@@ -46,8 +46,23 @@ static BOOL assign_pad(GCExtendedGamepad *g, GCControllerElement *el) {   // a c
     assign_save(@"pad", @"padNames", g_assign, name, el.localizedName ?: name, NO);
     return YES;
 }
+// A controller's Capture button, as on the Switch: a press takes a screenshot, held for half a second it saves the last 30 seconds (Instant replay). Its handler is set at
+// the controller's first input (the host gave the button no function; pad_keep_system_buttons keeps it out of macOS's hands)
+void front_qs_screenshot(void); void front_qs_replay_save(void);
+static void pad_capture_button(GCController *c) {
+    GCControllerButtonInput *b = c.physicalInputProfile.buttons[GCInputButtonShare];
+    if (!b || b.pressedChangedHandler) return;
+    b.pressedChangedHandler = ^(GCControllerButtonInput *btn, float v, BOOL down) {
+        (void)btn; (void)v; static double t0; static int held;
+        if (down) {
+            t0 = CACurrentMediaTime(); held = 0; double mine = t0;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (t0 == mine && !held) { held = 1; front_qs_replay_save(); } });
+        } else { if (!held && t0 > 0) front_qs_screenshot(); t0 = 0; }
+    };
+}
 static void pad_event(GCExtendedGamepad *g, GCControllerElement *el) {
     nxf_bs_touch();   // front_mac_battery.inc: someone is playing
+    pad_capture_button(g.controller);
     if (assign_pad(g, el)) return;
     if (g_menu_open) { pad_nav(g); return; }
     // The controller opens the sidebar: Home, or − and + pressed together (a game sees those two for a moment)
