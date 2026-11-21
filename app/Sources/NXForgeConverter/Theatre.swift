@@ -163,9 +163,10 @@ struct TheatreFact: Hashable {
 
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case showcase, cinema, shutter, trailer, shuffle, edges, settings, leave
+    case resume, showcase, cinema, shutter, trailer, shuffle, edges, settings, leave
     var title: String {
         switch self {
+        case .resume: "Continue"
         case .shuffle: "What Should I Play?"
         case .edges: "TV Edges"
         case .settings: "Settings"
@@ -179,7 +180,7 @@ enum TheatreMenuRow: Int, CaseIterable {
         case .cinema: .cinema
         case .shutter: .shutter
         case .trailer: .trailer
-        case .shuffle, .edges, .settings, .leave: nil
+        case .resume, .shuffle, .edges, .settings, .leave: nil
         }
     }
     static func row(_ t: TheatreTheme) -> TheatreMenuRow { allCases.first { $0.theme == t } ?? .showcase }
@@ -290,6 +291,7 @@ extension AppModel {
         }
         theatreSpinning = false
         theatreCurtain = nil
+        theatreUnbox = nil
         theatre = true
         // a new arrival's spotlight, else welcome back on the game played last (TheatreDelight.swift)
         theatreOpeningMoment()
@@ -326,6 +328,8 @@ extension AppModel {
         theatreMoment = nil
         theatreSpinning = false
         theatreCurtain = nil
+        theatreUnbox = nil
+        TheatreRumble.shared.rest()
         TheatreMusic.shared.stop()
         rememberTheatreFocus()
         if let a = theatreActivity { ProcessInfo.processInfo.endActivity(a); theatreActivity = nil }
@@ -495,6 +499,8 @@ extension AppModel {
         // a moment's card goes at any button, which then does what it does (A plays the game the card is about)
         if theatreMoment != nil, k != .r3, k != .volUp, k != .volDown { theatreMoment = nil }
         let covered = stageSettings || viewerOpen || launching != nil || playOptions != nil || gameDetail != nil || caseViewer != nil
+        // the case in the hand: its own buttons (the booklet and the game's page opened from it work as on the front end)
+        if theatreUnbox != nil, !covered, theatreMenu == nil, k != .r3, k != .volUp, k != .volDown { unboxPad(k); return }
         // Theatre's sound (the trailer, the game's music, the clicks): the right stick's press mutes; - and = set the volume (the
         // stick itself only turns the box in front, so pushing it never changes the volume)
         switch k {
@@ -502,11 +508,12 @@ extension AppModel {
         case .volUp, .volDown: if !covered, theatreMenu == nil { stepTheatreVolume(k == .volUp ? 10 : -10) }; return
         default: break
         }
-        if let i = theatreMenu {
-            let rows = TheatreMenuRow.allCases
+        if let row = theatreMenu {
+            let rows = theatreMenuRows()
+            let i = rows.firstIndex { $0.rawValue == row } ?? 0
             switch k {
-            case .up: if i > 0 { theatreCue(.step) }; theatreMenu = max(i - 1, 0)
-            case .down: if i < rows.count - 1 { theatreCue(.step) }; theatreMenu = min(i + 1, rows.count - 1)
+            case .up: if i > 0 { theatreCue(.step) }; theatreMenu = rows[max(i - 1, 0)].rawValue
+            case .down: if i < rows.count - 1 { theatreCue(.step) }; theatreMenu = rows[min(i + 1, rows.count - 1)].rawValue
             case .left, .right:
                 if rows[i] == .edges { settings.theatreEdges = settings.theatreEdges.step(k == .left ? -1 : 1) }
                 // left and right on Showcase's row choose its layout, and pick the theme too
@@ -557,7 +564,8 @@ extension AppModel {
         case .a:
             // plays it, or does the step that stops it from playing (docs/ux.md); the place is kept for next time
             if let g = focus { theatreFocus = g.id; rememberTheatreFocus(); fix(g) }
-        case .y: if let g = focus { caseFlipped = false; gameDetail = g.ref }
+        // the case comes up into the hand (its page is Y again from there)
+        case .y: if let g = focus { pickUpCase(g) }
         case .x: if let g = focus, g.app != nil { openPlayOptions(g.ref) }
         // L and R: the filter; ZL and ZR: the theme
         case .l, .r: stepTheatreFilter(k == .l ? -1 : 1); theatreCue(.step)
@@ -575,9 +583,15 @@ extension AppModel {
         }
     }
 
+    /// The menu's rows: Continue only when a game's card is in the console
+    func theatreMenuRows() -> [TheatreMenuRow] {
+        TheatreMenuRow.allCases.filter { $0 != .resume || consoleGame() != nil }
+    }
+
     func pickTheatreMenu(_ r: TheatreMenuRow) {
         theatreMenu = nil
         switch r {
+        case .resume: theatreUnbox = nil; continueFromConsole()
         case .showcase, .cinema, .shutter, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
         case .shuffle: shuffleTheatre()
         // A steps the edges round and keeps the menu up, so the corners stay in view
@@ -734,15 +748,15 @@ struct TheatreView: View {
         }
         // the lights go down as a game starts from Theatre, and the launch screen comes up under the box's light
         .onChange(of: model.launching?.id) { old, new in
-            if old == nil, new != nil, let l = model.launching { model.theatreLightsDown(l) }
+            if old == nil, new != nil, let l = model.launching, model.theatreCurtain == nil { model.theatreLightsDown(l) }
         }
         .task(id: model.theatreCurtain?.id) {
             guard let c = model.theatreCurtain else { revealed = true; return }
             revealed = false
             if c.frozen != nil { return }
-            try? await Task.sleep(for: .seconds(TheatreCurtain.reveal))
+            try? await Task.sleep(for: .seconds(c.reveal))
             revealed = true
-            try? await Task.sleep(for: .seconds(TheatreCurtain.length - TheatreCurtain.reveal))
+            try? await Task.sleep(for: .seconds(c.length - c.reveal))
             if model.theatreCurtain?.id == c.id { model.theatreCurtain = nil }
         }
         // the focused game's music, once the focus rests on it (not on Trailer, which has its own sound)
@@ -780,7 +794,7 @@ struct TheatreView: View {
                     continue
                 }
                 guard idle > wait, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil, model.launching == nil,
-                      model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil else { continue }
+                      model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil, model.theatreUnbox == nil else { continue }
                 model.theatreWatch = false
                 model.theatreSaver = true
             }
@@ -790,7 +804,7 @@ struct TheatreView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
                 guard model.theatreTheme == .trailer, !model.theatreWatch, !model.theatreSaver, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
-                      model.launching == nil, model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil, NSApp.isActive,
+                      model.launching == nil, model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil, model.theatreUnbox == nil, NSApp.isActive,
                       Date().timeIntervalSince(model.theatreTouched) > 6, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { continue }
                 model.theatreWatch = true
             }
@@ -800,7 +814,7 @@ struct TheatreView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard !still, model.theatreTheme == .showcase, model.showcaseLayout == .carousel, !model.theatreSaver, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
-                      model.launching == nil, model.playOptions == nil, !model.viewerOpen, NSApp.isActive,
+                      model.launching == nil, model.playOptions == nil, !model.viewerOpen, model.theatreUnbox == nil, NSApp.isActive,
                       Date().timeIntervalSince(model.theatreTouched) > 12, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { continue }
                 let games = model.theatreGames()
                 guard games.count > 1, let i = games.firstIndex(where: { $0.id == model.theatreFocused(games)?.id }) else { continue }
@@ -844,6 +858,7 @@ struct TheatreView: View {
             .padding(24)
             .transition(.move(edge: .trailing).combined(with: .opacity))
         }
+        if let b = model.theatreUnbox, model.theatreCurtain == nil { TheatreUnboxView(model: model, unbox: b).id(b.id) }
         if let s = model.caseViewer { CaseViewer(model: model, state: s).id(s.game.id).transition(.opacity) }
         if let g = model.gallery { GalleryViewer(model: model, state: g).id(g.id).transition(.opacity) }
         if let m = model.manual { ManualViewer(model: model, state: m).id(m.id).transition(.opacity) }
@@ -874,11 +889,15 @@ struct TheatreTopBar: View {
 
     var body: some View {
         HStack {
-            HStack(spacing: 0) {
-                Text("NX").font(.system(size: 22 * u, weight: .heavy))
-                Text("FORGE").font(.system(size: 22 * u, weight: .light))
+            if let model {
+                TheatreConsoleMark(model: model, ink: ink)
+            } else {
+                HStack(spacing: 0) {
+                    Text("NX").font(.system(size: 22 * u, weight: .heavy))
+                    Text("FORGE").font(.system(size: 22 * u, weight: .light))
+                }
+                .tracking(7 * u).opacity(0.9)
             }
-            .tracking(7 * u).opacity(0.9)
             Spacer()
             if pill {
                 Text(title.uppercased()).font(.system(size: 16 * u, weight: .semibold)).tracking(2.4 * u)
@@ -961,7 +980,7 @@ struct TheatreHints: View {
             if let g = focus {
                 // the same word as the main button: Continue, Play, or the step that stops it playing (docs/ux.md, Status words)
                 hint("A", model.theatreAction(g), filled: true)
-                hint("Y", "Details")
+                hint("Y", "Pick up")
                 if g.app != nil { hint("X", "Options") }
             }
             if filters, model.theatreFilters().count > 1 { hint("L", "R", "Filter") }
@@ -1000,14 +1019,14 @@ struct TheatreMenu: View {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { model.theatreMenu = nil }
             VStack(alignment: .leading, spacing: 8 * u) {
                 Text("Theatre").font(.system(size: 40 * u, weight: .bold)).padding(.bottom, 14 * u)
-                ForEach(TheatreMenuRow.allCases, id: \.self) { r in
+                ForEach(model.theatreMenuRows(), id: \.self) { r in
                     let on = r.rawValue == focus
                     let current = r.theme == model.theatreTheme
                     Button { model.pickTheatreMenu(r) } label: {
                         HStack(spacing: 18 * u) {
                             Image(systemName: icon(r)).font(.system(size: 24 * u, weight: .semibold)).frame(width: 34 * u)
                             VStack(alignment: .leading, spacing: 3 * u) {
-                                Text(r.title).font(.system(size: 26 * u, weight: .semibold))
+                                Text(r == .resume ? "Continue \(model.consoleGame()?.name ?? "")" : r.title).font(.system(size: 26 * u, weight: .semibold)).lineLimit(1)
                                 if let n = note(r) { Text(n).font(.system(size: 17 * u)).foregroundStyle(on ? Color.black.opacity(0.6) : StageLook.faint) }
                             }
                             Spacer()
@@ -1026,7 +1045,7 @@ struct TheatreMenu: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    if r == .trailer || r == .edges { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.vertical, 8 * u) }
+                    if r == .resume || r == .trailer || r == .edges { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.vertical, 8 * u) }
                 }
             }
             .padding(40 * u)
@@ -1041,6 +1060,7 @@ struct TheatreMenu: View {
 
     func icon(_ r: TheatreMenuRow) -> String {
         switch r {
+        case .resume: "play.fill"
         case .showcase: model.showcaseLayout.symbol
         case .cinema, .shutter, .trailer: r.theme?.symbol ?? ""
         case .shuffle: "dice"
@@ -1052,6 +1072,7 @@ struct TheatreMenu: View {
 
     func note(_ r: TheatreMenuRow) -> String? {
         switch r {
+        case .resume: "Its card is still in the console"
         case .showcase: "Your boxes as a carousel or a fan: ← → here, ↑ ↓ on Theatre"
         case .cinema, .shutter, .trailer: r.theme?.note
         case .shuffle: "Spin the shelf and land on a game (L3)"
@@ -1525,7 +1546,7 @@ struct CinemaTheme: View {
                         .padding(.horizontal, 34 * u).frame(height: 64 * u).background(.white, in: .rect(cornerRadius: 14 * u))
                 }
                 .buttonStyle(.plain)
-                Button { model.theatrePad(.y) } label: { ghost("Details") }.buttonStyle(.plain)
+                Button { model.theatrePad(.y) } label: { ghost("Pick up") }.buttonStyle(.plain)
                 if g.app != nil { Button { model.theatrePad(.x) } label: { ghost("Play options") }.buttonStyle(.plain) }
             }
             .padding(.top, 28 * u)
@@ -1737,7 +1758,7 @@ struct TrailerTheme: View {
                     }
                     .buttonStyle(.plain)
                     Button { model.theatrePad(.y) } label: {
-                        HStack(spacing: 10 * u) { TheatreHints(model: model).glyph("Y"); Text("Details") }
+                        HStack(spacing: 10 * u) { TheatreHints(model: model).glyph("Y"); Text("Pick up") }
                             .font(.system(size: 21 * u, weight: .semibold))
                             .padding(.horizontal, 22 * u).frame(height: 54 * u)
                             .overlay(RoundedRectangle(cornerRadius: 12 * u).strokeBorder(.white.opacity(0.4), lineWidth: 1.5 * u))

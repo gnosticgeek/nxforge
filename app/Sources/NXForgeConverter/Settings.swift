@@ -138,6 +138,10 @@ struct Settings: Codable, Equatable {
     var theatreSounds = true
     var theatreMusic = true
     var theatreTimeOfDay = true
+    /// how a game starts on Theatre: its card into the console, or the lights going down
+    var theatreLaunch: TheatreLaunch = .card
+    /// the controller rumbles as a case snaps open and a card clicks home
+    var theatreRumble = true
     var theatreSeen: [String]?
     /// a folder of MP3 or Opus files Theatre plays in the background (TheatreMusic)
     var theatreMusicFolder: String?
@@ -167,6 +171,7 @@ struct Settings: Codable, Equatable {
         case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
         case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
+        case theatreLaunch = "theatre_launch", theatreRumble = "theatre_rumble"
     }
 
     init() {}
@@ -237,6 +242,8 @@ struct Settings: Codable, Equatable {
         theatreSounds = (try? c.decodeIfPresent(Bool.self, forKey: .theatreSounds)) ?? true
         theatreMusic = (try? c.decodeIfPresent(Bool.self, forKey: .theatreMusic)) ?? true
         theatreTimeOfDay = (try? c.decodeIfPresent(Bool.self, forKey: .theatreTimeOfDay)) ?? true
+        theatreLaunch = (try? c.decodeIfPresent(TheatreLaunch.self, forKey: .theatreLaunch)) ?? .card
+        theatreRumble = (try? c.decodeIfPresent(Bool.self, forKey: .theatreRumble)) ?? true
         theatreSeen = try? c.decodeIfPresent([String].self, forKey: .theatreSeen)
         theatreMusicFolder = try? c.decodeIfPresent(String.self, forKey: .theatreMusicFolder)
     }

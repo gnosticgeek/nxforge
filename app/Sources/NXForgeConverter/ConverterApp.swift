@@ -194,7 +194,19 @@ struct ConverterApp: App {
                 model.theatreMoment = TheatreMoment(kind: kind, game: id)
             }
             if env["NXC_CONFETTI"] != nil { model.theatreConfetti = 1 }
-            if let t = env["NXC_CURTAIN"].flatMap(Double.init), let id = model.theatreFocus { model.theatreCurtain = TheatreCurtain(game: id, frozen: t) }
+            // (NXC_LAUNCH=lights for the lights going down, else the card's way in; NXC_CONSOLE=1 Continue from the console)
+            if let t = env["NXC_CURTAIN"].flatMap(Double.init), let id = model.theatreFocus {
+                let console = env["NXC_CONSOLE"] != nil
+                model.theatreCurtain = TheatreCurtain(game: id, frozen: t, style: env["NXC_LAUNCH"] == "lights" ? .lights : .card, fromConsole: console)
+            }
+            // NXC_UNBOX=held or open: the case in the hand, held still (NXC_TURN=<eighths of a turn>)
+            if let b = env["NXC_UNBOX"], let id = model.theatreFocus {
+                var box = TheatreUnbox(game: id)
+                box.frozen = true
+                box.stage = b == "open" ? .open : .held
+                box.steps = env["NXC_TURN"].flatMap(Int.init) ?? 0
+                model.theatreUnbox = box
+            }
         }
         if let n = env["NXC_OFFER"] { model.theatreOffer = TVScreen(id: 0, name: n) }
         if let st = env["NXC_STAGE"], st != "theatre" {
