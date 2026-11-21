@@ -1,5 +1,5 @@
-// Disk space: what a build needs before it starts, a watch while it runs that stops it cleanly before a volume fills up
-// (a stopped build keeps its finished stages, so building again carries on), and the sizes the Storage page lists.
+// Disk space: what a build needs before it starts, a watch while it runs that makes room and pauses it before a volume
+// fills up (MakeRoom), and the sizes the Storage page lists.
 import Foundation
 
 enum Disk {
@@ -122,10 +122,12 @@ enum Disk {
         return (needs.first { $0.id == volumeID(appDir) } ?? needs.min { $0.need.free - $0.need.need < $1.need.free - $1.need.need })?.need
     }
 
-    /// While a build runs: below `stopBelow` on a volume the build writes to, it is stopped at once (the stage in progress is
-    /// lost, the finished ones are kept); below `warnBelow` the window warns.
+    /// While a build runs: below `warnBelow` on a volume the build writes to, the converter clears what it can make again
+    /// (MakeRoom) and the window warns; below `stopBelow` the build is paused where it stands, and it carries on by itself
+    /// above `resumeAbove`.
     static let stopBelow: Int64 = 3 << 30
     static let warnBelow: Int64 = 12 << 30
+    static let resumeAbove: Int64 = 6 << 30
 
     /// The volumes a build writes to: the game folder's (the build cache and, by default, the app), the output folder's and
     /// the home folder's (the shared Metal cache and the script's temporary files there).

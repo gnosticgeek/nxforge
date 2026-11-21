@@ -6,7 +6,7 @@ import AppKit
 import SwiftUI
 
 struct StorageItem: Identifiable, Hashable {
-    enum Kind: Hashable { case cache, backups, app, metal, gameFiles }
+    enum Kind: Hashable { case cache, backups, app, metal, gameFiles, forgotten }
     var id: String { path }
     let kind: Kind
     let game: String
@@ -14,24 +14,32 @@ struct StorageItem: Identifiable, Hashable {
     let bytes: Int64
     /// written to in the last ten minutes: a build may be using it (one started from Terminal is invisible to the converter)
     var busy = false
+    /// a forgotten item's own title and note (Forgotten.swift), and whether it is safe to delete
+    var label: String? = nil
+    var detail: String? = nil
+    var canGo = false
 
     var title: String {
+        if let label { return label }
         switch kind {
         case .cache: "Build cache"
         case .backups: "Older app copies"
         case .app: "Mac app"
         case .metal: "Shared Metal shader cache"
         case .gameFiles: "Game files"
+        case .forgotten: "Forgotten"
         }
     }
 
     var note: String {
+        if let detail { return detail }
         switch kind {
         case .cache: "The extracted game and compiled shaders. Deleting it makes the next build start over (about 30 to 50 minutes)."
         case .backups: "Apps a rebuild moved to app-backups. Restore one from Builds first if you still want it."
         case .app: "The game you play. Delete it from Builds (Move App to Trash)."
         case .metal: "Compiled shaders shared by every game. Deleting it makes the next shader stage compile everything again."
         case .gameFiles: "Your NSPs or other game files. The converter never deletes them."
+        case .forgotten: "A big file NXForge did not put there."
         }
     }
 
@@ -42,11 +50,12 @@ struct StorageItem: Identifiable, Hashable {
         case .app: "macwindow"
         case .metal: "square.stack.3d.up"
         case .gameFiles: "doc.zipper"
+        case .forgotten: "questionmark.folder"
         }
     }
 
     /// Only what the converter makes, and can make again, can be deleted here.
-    var deletable: Bool { kind == .cache || kind == .backups || kind == .metal }
+    var deletable: Bool { kind == .cache || kind == .backups || kind == .metal || (kind == .forgotten && canGo) }
 }
 
 struct VolumeInfo: Identifiable, Hashable {
@@ -80,7 +89,7 @@ enum Storage {
     }
 
     /// Every item, measured (slow: run it off the main thread).
-    static func scan(currentGame: String?) -> (items: [StorageItem], volumes: [VolumeInfo]) {
+    static func scan(currentGame: String?, gamesRoot: String? = nil, buildRunning: Bool = false) -> (items: [StorageItem], volumes: [VolumeInfo]) {
         let fm = FileManager.default
         var dirs: [String] = []
         // a Switch 2 game's record names its .nup: its build folder is beside it
@@ -106,7 +115,12 @@ enum Storage {
             let bk = d + "/app-backups"
             if fm.fileExists(atPath: bk) { items.append(StorageItem(kind: .backups, game: d.lastComponent, path: bk, bytes: Disk.size(bk))) }
         }
-        if fm.fileExists(atPath: Disk.cacheDir) { items.append(StorageItem(kind: .metal, game: "All games", path: Disk.cacheDir, bytes: Disk.size(Disk.cacheDir))) }
+        let forgotten = Forgotten.scan(gamesRoot: gamesRoot, folders: dirs, buildRunning: buildRunning)
+        items += forgotten
+        if fm.fileExists(atPath: Disk.cacheDir) {   // less what is listed on its own (held items, a stopped build's scratch)
+            let own = Disk.size(Disk.cacheDir) - Forgotten.insideCacheDir.map(Disk.size).reduce(0, +)
+            items.append(StorageItem(kind: .metal, game: "All games", path: Disk.cacheDir, bytes: max(own, 0)))
+        }
         return (items.sorted { $0.bytes > $1.bytes }, volumes(also: [NSHomeDirectory()] + dirs))
     }
 
@@ -137,7 +151,7 @@ enum Storage {
 
 /// The page's type filter chips, in the table's order of kinds.
 enum StorageFilter: String, CaseIterable {
-    case all = "All", apps = "Mac Apps", caches = "Caches", copies = "Copies", gameFiles = "Game Files", shaders = "Shaders"
+    case all = "All", apps = "Mac Apps", caches = "Caches", copies = "Copies", gameFiles = "Game Files", shaders = "Shaders", forgotten = "Forgotten"
 
     var symbol: String {
         switch self {
@@ -147,6 +161,7 @@ enum StorageFilter: String, CaseIterable {
         case .copies: "clock.arrow.circlepath"
         case .gameFiles: "gamecontroller"
         case .shaders: "square.stack.3d.up"
+        case .forgotten: "questionmark.folder"
         }
     }
 
@@ -158,16 +173,17 @@ enum StorageFilter: String, CaseIterable {
         case .copies: k == .backups
         case .gameFiles: k == .gameFiles
         case .shaders: k == .metal
+        case .forgotten: k == .forgotten
         }
     }
 }
 
 extension StorageItem.Kind {
     var badge: String {
-        switch self { case .app: "Mac App"; case .backups: "Copy"; case .cache: "Cache"; case .gameFiles: "Game Files"; case .metal: "Shaders" }
+        switch self { case .app: "Mac App"; case .backups: "Copy"; case .cache: "Cache"; case .gameFiles: "Game Files"; case .metal: "Shaders"; case .forgotten: "Forgotten" }
     }
     var color: Color {
-        switch self { case .app: .indigo; case .backups: .orange; case .cache: .green; case .gameFiles: .blue; case .metal: .pink }
+        switch self { case .app: .indigo; case .backups: .orange; case .cache: .green; case .gameFiles: .blue; case .metal: .pink; case .forgotten: .yellow }
     }
 }
 
@@ -274,7 +290,7 @@ struct StoragePage: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label { Text("Reclaimable space").font(.title3.weight(.semibold)) } icon: { Image(systemName: "leaf.fill").foregroundStyle(.green) }
                 Text(scanning && items.isEmpty ? "…" : Disk.gb(reclaimable)).font(.largeTitle.weight(.bold)).monospacedDigit()
-                Text("Build caches, older app copies and the shader cache.").foregroundStyle(.secondary)
+                Text("Build caches, older app copies, the shader cache and forgotten files that are safe to lose.").foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             Button { cleanUp() } label: { Label("Clean Up…", systemImage: "wand.and.sparkles") }
@@ -432,9 +448,9 @@ struct StoragePage: View {
     func scan() {
         guard !scanning else { return }
         scanning = true
-        let game = model.settings.gameDir
+        let game = model.settings.gameDir, root = model.settings.gamesRoot, building = model.run.running
         Task.detached {
-            let r = Storage.scan(currentGame: game)
+            let r = Storage.scan(currentGame: game, gamesRoot: root, buildRunning: building)
             await MainActor.run {
                 items = r.items; volumes = r.volumes; scanning = false
                 selection = selection.intersection(Set(r.items.map(\.id)))
