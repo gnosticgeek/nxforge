@@ -28,7 +28,7 @@ enum BookletPage: Equatable {
 
 enum Booklet {
     /// how much of the store's text a page takes, in characters, and how many pages of it at most
-    static let pageChars = 760, aboutPages = 4
+    static let pageChars = 600, aboutPages = 5
     /// how many of the store's screenshots go in, two to a page
     static let shots = 6
 
@@ -208,7 +208,7 @@ struct TheatreBookletView: View {
     @Environment(\.accessibilityReduceMotion) private var still
 
     /// the tallest a page is, and the widest the open booklet is
-    static let pageHeight = 800.0, openWidth = 1640.0, distance = 2600.0
+    static let pageHeight = 860.0, openWidth = 1680.0, distance = 2600.0
 
     var body: some View {
         if let g = model.stageGames().first(where: { $0.id == state.game }) {
@@ -224,7 +224,7 @@ struct TheatreBookletView: View {
                     Color.black.opacity(0.62 * seen).contentShape(.rect).onTapGesture { model.theatrePad(.a) }
                     leaves(g, turn: p, w: w, h: h)
                         .scaleEffect(0.86 + 0.14 * seen)
-                        .offset(y: (-14 + 60 * (1 - seen)) * u)
+                        .offset(y: (-30 + 60 * (1 - seen)) * u)
                         .opacity(seen)
                     words(g).opacity(seen)
                 }
@@ -321,7 +321,7 @@ struct BookletPaper: View {
         case .about(let first, let paragraphs):
             sheet(first ? "The game" : nil, s: s) {
                 ForEach(paragraphs, id: \.self) { p in
-                    Text(p).font(.system(size: 18.5 * s, design: .serif)).lineSpacing(5 * s).fixedSize(horizontal: false, vertical: true)
+                    Text(p).font(.system(size: 21 * s, design: .serif)).lineSpacing(5.5 * s).fixedSize(horizontal: false, vertical: true)
                 }
             }
         case .shots(let urls):
@@ -392,23 +392,23 @@ struct BookletPaper: View {
             Spacer(minLength: 0)
             Text("\(index + 1)").font(.system(size: 13 * s, design: .serif)).opacity(0.5).frame(maxWidth: .infinity, alignment: index % 2 == 0 ? .trailing : .leading)
         }
-        .padding(.horizontal, 54 * s).padding(.top, 58 * s).padding(.bottom, 30 * s)
+        .padding(.horizontal, 50 * s).padding(.top, 54 * s).padding(.bottom, 28 * s)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
     }
 
     func line(_ title: String, _ text: String, s: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 3 * s) {
-            Text(title).font(.system(size: 18.5 * s, weight: .bold, design: .serif))
-            Text(text).font(.system(size: 16.5 * s, design: .serif)).lineSpacing(3 * s).opacity(0.85).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.system(size: 21 * s, weight: .bold, design: .serif))
+            Text(text).font(.system(size: 18.5 * s, design: .serif)).lineSpacing(3.5 * s).opacity(0.85).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     func fact(_ name: String, _ value: String, s: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(name).font(.system(size: 16.5 * s, design: .serif)).opacity(0.62)
+            Text(name).font(.system(size: 19 * s, design: .serif)).opacity(0.62)
             Spacer(minLength: 12 * s)
-            Text(value).font(.system(size: 18 * s, weight: .semibold, design: .serif)).multilineTextAlignment(.trailing).lineLimit(2)
+            Text(value).font(.system(size: 20.5 * s, weight: .semibold, design: .serif)).multilineTextAlignment(.trailing).lineLimit(2)
         }
     }
 }

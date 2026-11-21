@@ -542,7 +542,8 @@ struct TheatreUnboxView: View {
                     LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black.opacity(0.9 * s.room), location: 0.82)], startPoint: .top, endPoint: .bottom)
                     RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
                     TheatreCaseScene(game: g, state: s, manual: manual, u: u)
-                    words(g).opacity(s.room)
+                    // the booklet open over it has the buttons then
+                    words(g).opacity(model.booklet == nil ? s.room : 0)
                 }
             }
             .accessibilityElement(children: .ignore)

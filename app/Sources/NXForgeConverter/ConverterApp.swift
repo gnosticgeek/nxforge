@@ -221,7 +221,9 @@ struct ConverterApp: App {
                 box.steps = env["NXC_TURN"].flatMap(Int.init) ?? 0
                 model.theatreUnbox = box
                 // NXC_BOOKLET=<opening>: its booklet open there (NXC_LEAF=<0 to 1>: the leaf that far over on its way to it)
+                // (NXC_MANUAL=<a PDF>: that as the game's manual)
                 if let n = env["NXC_BOOKLET"].flatMap(Int.init), let g = model.unboxedGame {
+                    if let m = env["NXC_MANUAL"] { GameManual.found[g.coverKey] = .some(URL(fileURLWithPath: m)) }
                     if model.settings.downloadStoreInfo { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) }
                     try? await Task.sleep(for: .seconds(1.5))
                     model.openBooklet(g)
