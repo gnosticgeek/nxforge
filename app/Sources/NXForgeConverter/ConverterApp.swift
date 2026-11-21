@@ -151,11 +151,13 @@ struct ConverterApp: App {
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.frontEnd = false; model.page = page }
         // NXC_STAGE=home, library, game, back, options, settings, launch, box, gallery or manual: the front end on that screen (game and the ones
         // after it: the first built game's)
-        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=carousel, cinema, gallery or trailer, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
+        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=showcase, carousel, fan, cinema or trailer: carousel and fan are Showcase's layouts, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
         if env["NXC_STAGE"] == "theatre" {
             try? await Task.sleep(for: .seconds(2))
             model.enterTheatre(on: nil)
-            model.theatreTheme = TheatreTheme(rawValue: (env["NXC_THEATRE"] ?? "").capitalized) ?? .carousel
+            let theme = (env["NXC_THEATRE"] ?? "").capitalized
+            model.theatreTheme = TheatreTheme(rawValue: theme) ?? .showcase
+            if let l = ShowcaseLayout.saved(theme: theme) { model.showcaseLayout = l }
             // Trailer: NXC_WATCH=1 its Watch; sound off while snapshotting
             model.theatreWatch = env["NXC_WATCH"] != nil
             model.theatreMuted = true

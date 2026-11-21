@@ -302,6 +302,7 @@ extension AppModel {
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
         case .mediaInGameFolder: flip(&settings.mediaInGameFolder)
         case .theatreTheme: cycle(&settings.theatreTheme); theatreTheme = settings.theatreTheme
+        case .showcaseLayout: cycle(&settings.showcaseLayout); showcaseLayout = settings.showcaseLayout
         case .theatreOnTV: cycle(&settings.theatreOnTV)
         case .theatreEdges: settings.theatreEdges = settings.theatreEdges.step(d)
         case .theatreSaver: cycle(&settings.theatreSaver)

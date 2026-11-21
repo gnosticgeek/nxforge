@@ -167,7 +167,9 @@ final class AppModel {
     /// Theatre (Theatre.swift): the front end full screen on a TV; its theme, the game in focus, Cinema's row, the Theatre menu's
     /// row while it is open, a TV's offer, the screen it is on, and when a button was last pressed (the carousel turns on by itself)
     var theatre = false
-    var theatreTheme: TheatreTheme = .carousel
+    var theatreTheme: TheatreTheme = .showcase
+    /// Showcase's layout: the carousel or the fan (ShowcaseLayout)
+    var showcaseLayout: ShowcaseLayout = .carousel
     var theatreFocus: String?
     var theatreRow = 0
     var theatreMenu: Int?

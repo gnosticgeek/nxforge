@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.9 (2026-11-21)
+
+- **Theatre's Carousel and Fan become one theme, Showcase** (Converter 0.22.9, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the same boxes as a turning carousel or a fan, switched with up and down on a controller, left and right on the Theatre menu's Showcase row, or Settings › Theatre › Showcase layout. ZL and ZR step through Showcase, Cinema and Trailer. A saved Carousel or Fan theme opens Showcase on that layout. No game rebuild needed.
+
 ## 0.48.8 (2026-11-20)
 
 - **Rebuilds keep their shader work** (Converter 0.22.8, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); layer patch build-speed): a new clean-up choice, `--cleanup shaders` ("Keep shader work only" in Settings › Building, and what the Convert page's "Clean up build files" switch now turns on), deletes the build's copies of the game files as "Remove build cache" does but keeps `shader.noindex/` and `pso/` in the build folder: the per-shader cache, the libraries and the pipeline archive's batches. The next build extracts the game again and skips the shader and archive steps while they are unchanged; after an engine update that changes the shader tools only the changed shaders are redone. Measured on Mario Strikers (3,230 shaders, M4 Pro): a rebuild after the clean-up took 55 s against 237 s from nothing, and the kept work is about 1 GB beside a 3.2 GB app. "Remove build cache" still deletes everything.

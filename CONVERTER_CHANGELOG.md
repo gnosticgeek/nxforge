@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.9 (2026-11-21)
+
+Shipped in NXForge 0.48.9.
+
+- **Showcase**: Theatre's Carousel and Fan themes are now one theme, Showcase, with two layouts of the same boxes, Carousel and Fan. Up and down on a controller switch layout on Theatre (the game in focus, the filter and the music stay as they are); the Theatre menu's Showcase row switches it with left and right, and Settings › Theatre has a "Showcase layout" row. The top bar reads "Showcase · Fan". ZL and ZR now step through three themes: Showcase, Cinema and Trailer. A saved Carousel or Fan theme (or the older Gallery and Shelf) opens Showcase on that layout. Sounds stay the quiet ticks, the right stick still only turns the box in front, and the music folder keeps playing on Showcase as before (off only on Trailer).
+
 ## 0.22.8 (2026-11-20)
 
 Shipped in NXForge 0.48.8.
