@@ -30,7 +30,7 @@ Claude-Session: https://claude.ai/code/session_016qteK5CgJi2GrwbMox94av
  dm/gfx/msl/present.metal                 |  34 +++++++
  dm/gfx/nvn/hdr.c                         |  67 +++++++++++++
  dm/gfx/nvn/hdr.h                         |  98 ++++++++++++++++++
- dm/gfx/nvn/nvn_mtl.m                     | 122 +++++++++++++++++++----
+ dm/gfx/nvn/nvn_mtl.m                     | 121 +++++++++++++++++++----
  dm/gfx/tests/Makefile                    |   3 +
  dm/gfx/tests/t_hdr.c                     |  87 ++++++++++++++++
  dm/gfx/tests/t_present_crop.m            | 102 +++++++++++++++++++
@@ -42,7 +42,7 @@ Claude-Session: https://claude.ai/code/session_016qteK5CgJi2GrwbMox94av
  docs/env_switches.tsv                    |   3 +
  docs/reference/services.md               |   2 +-
  docs/settings.md                         |   5 +
- 20 files changed, 607 insertions(+), 39 deletions(-)
+ 20 files changed, 607 insertions(+), 38 deletions(-)
  create mode 100644 dm/gfx/nvn/hdr.c
  create mode 100644 dm/gfx/nvn/hdr.h
  create mode 100644 dm/gfx/tests/t_hdr.c
@@ -394,7 +394,7 @@ index 0000000000000000000000000000000000000000..9a13c9b39f76a01f55b9c8b3781b2430
 +typedef struct { int std_lo, std_hi, ext_lo, ext_hi, gamut, tone, set; } dm_hdr_meta;
 +void dm_hdr_meta_get(dm_hdr_meta *m);
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef9633cc32ad 100644
+index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..f340fd77a6905c86495c8d882836776cb69045d6 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -50,6 +50,7 @@
@@ -422,15 +422,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
          if (!g_present_uv[i]) MDIE("failed to create present UV buffer[%d]", i);
          res_add(g_present_uv[i]);
      }
-@@ -18682,7 +18684,6 @@ void mtl_exec(const uint8_t *p) {
- }
- 
- // ---------- Present: draw the swapchain texture to the CAMetalLayer; optional screenshot ----------
--static id<MTLRenderPipelineState> g_blit_pso; static MTLPixelFormat g_blit_fmt;
- static id<MTLSamplerState> g_blit_samp;
- #include "nxforge/present_filters.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
- static uint64_t g_present_n;
-@@ -18725,6 +18726,7 @@ static struct { uint64_t frame; char path[1024]; } g_shotq[SHOTQ_MAX]; static in
+@@ -18725,6 +18727,7 @@ static struct { uint64_t frame; char path[1024]; } g_shotq[SHOTQ_MAX]; static in
  static pthread_mutex_t g_shotq_mu = PTHREAD_MUTEX_INITIALIZER;
  static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4]);
  static int present_crop_rect(id<MTLTexture> src, const int crop[4], NSUInteger r[4]);
@@ -438,7 +430,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
  enum { PRESENT_FAILED, PRESENT_STANDARD, PRESENT_METALFX };
  static int present_offscreen_m4(id<MTLTexture> src, const int crop[4], id<MTLTexture> out, void (^done)(int));
  static int present_offscreen_wait(id<MTLTexture> src, const int crop[4], id<MTLTexture> out);
-@@ -18784,7 +18786,8 @@ void dm_gfx_shot_at(long k, const char *path) {
+@@ -18784,7 +18787,8 @@ void dm_gfx_shot_at(long k, const char *path) {
  // of that size (with DM_PRESENT_UPSCALE=metalfx through MetalFX, on the Metal 4 queue: present_offscreen_m4); screen=0 (texture dump) is unaffected.
  // Without it, a window the game crops (nvnWindowSetCrop) is captured the same way at the window texture's own size: what is outside the crop is never presented and holds
  // whatever the texture held before (Bastion crops its 1920x1080 window textures to 1600x900; the strip outside was black in some runs and purple in others, which regress.py
@@ -448,7 +440,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
  static void shot(id<MTLTexture> src, const char *path, int screen, const int crop[4]) {
      static int out_w = -1, out_h;
      if (out_w < 0) {
-@@ -18794,7 +18797,8 @@ static void shot(id<MTLTexture> src, const char *path, int screen, const int cro
+@@ -18794,7 +18798,8 @@ static void shot(id<MTLTexture> src, const char *path, int screen, const int cro
      }
      id<MTLTexture> read = src;
      NSUInteger r[4]; int cropped = screen && !out_w && present_crop_rect(src, crop, r) && (r[0] || r[1] || r[2] != src.width || r[3] != src.height);
@@ -458,7 +450,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
          NSUInteger ow = out_w ? (NSUInteger)out_w : src.width, oh = out_w ? (NSUInteger)out_h : src.height;
          MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:ow height:oh mipmapped:NO];
          d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead; d.storageMode = MTLStorageModePrivate;
-@@ -19184,7 +19188,38 @@ static void present_pipeline(MTLPixelFormat format) {
+@@ -19184,7 +19189,38 @@ static void present_pipeline(MTLPixelFormat format) {
          g_blit_samp = [g_dev newSamplerStateWithDescriptor:sd];
      }
  }
@@ -497,16 +489,16 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
  // Present samples only the valid source rectangle declared by NVN; kept separate from the raw swapchain readback screenshot. Edges are clamped to the texel centers of the valid area, so bilinear does not read the black texels outside.
  // Present samples the raw bytes stored in the swapchain texture (the Switch's scan-out sends the stored bytes as they are): an sRGB source is replaced by a non-sRGB view of the same storage,
  // otherwise sampling decodes to linear first, the BGRA8Unorm layer does not encode again, and the whole picture comes out dark. Other formats are returned as they are (Mario's swapchain is RGBA8 and does not come here).
-@@ -19240,7 +19275,7 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
+@@ -19240,7 +19276,7 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
      if (memcmp(meta, last_crop, sizeof meta)) { memcpy(last_crop, meta, sizeof meta);
          MLOG("present crop: source texture %lux%lu, valid %lu,%lu %lux%lu → target %lux%lu", (unsigned long)src.width, (unsigned long)src.height,
               (unsigned long)cx, (unsigned long)cy, (unsigned long)cw, (unsigned long)ch, (unsigned long)dst.width, (unsigned long)dst.height); }
 -    present_pipeline(dst.pixelFormat);
-+    id<MTLRenderPipelineState> pso = present_pipeline(dst.pixelFormat, present_variant(present_pq(src), dst.pixelFormat));
++    present_pipeline(dst.pixelFormat);   // NXForge's pipelines and the sampler; an HDR10 picture takes present_hdr_pipeline below
      MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
      double dw = dst.width, dh = dst.height;
      MTLViewport vp = present_fit(src, dw, dh);
-@@ -19253,10 +19288,11 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
+@@ -19253,10 +19289,11 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
      rp.colorAttachments[0].storeAction = MTLStoreActionStore;
      id<MTLRenderCommandEncoder> en = [cb renderCommandEncoderWithDescriptor:rp];
      [en setViewport:vp];
@@ -520,7 +512,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
      if (atomic_load_explicit(&g_origin_ll, memory_order_relaxed)) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
      [en setFragmentBytes:uv length:sizeof uv atIndex:0];
      [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-@@ -19649,7 +19685,10 @@ static int up_mfx_encode(NvShader *cs) {
+@@ -19649,7 +19686,10 @@ static int up_mfx_encode(NvShader *cs) {
  // (fx: the scaler state to use, nil = bilinear). uvb: the pass's crop constants (one buffer per present allocator, written by the CPU)
  static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4], id<MTLBuffer> uvb, fx_state *fx) {
      NSUInteger r[4]; if (!present_crop_rect(src, crop, r)) return 0;
@@ -532,7 +524,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
      // The window's right part a front end keeps for a panel (mtl_present_inset): the picture fits and centres in what is left. Only the window's present (fx is the present thread's):
      // screenshots and recordings stay whole
      double dw = dst.width, dh = dst.height, aw = fx == &g_fx_present ? dw * (1 - atomic_load(&g_present_inset)) : dw;
-@@ -19659,22 +19698,22 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+@@ -19659,22 +19699,22 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
      static int direct_ok = -1; if (direct_ok < 0) { const char *e = getenv("DM_FX_DIRECT"); direct_ok = !(e && !strcmp(e, "0")); }
      // Anti-aliasing first, on the game's own pixels (aa_encode); its output stands in for the game's texture from here on, at the origin
      id<MTLTexture> tex = present_raw_src(src), aa;
@@ -561,7 +553,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
      if (wrote) return PRESENT_METALFX;
      if (up && fx == &g_fx_present) { static int once; if (!once++)
          MLOG("present upscaling: the present pass draws MetalFX's output into the drawable: %s (drawable %lux%lu format %lu usage %#lx, picture %lux%lu)",
-@@ -19700,10 +19739,10 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+@@ -19700,10 +19740,10 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
      uv[4] = (float)((fmax(floor(cx + 1e-6), 0) + 0.5) / tw); uv[5] = (float)((fmax(floor(cy + 1e-6), 0) + 0.5) / th);
      uv[6] = (float)((fmin(ceil(cx + cw - 1e-6), tw) - 0.5) / tw); uv[7] = (float)((fmin(ceil(cy + ch - 1e-6), th) - 0.5) / th);
      if (flipped) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
@@ -574,7 +566,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
      [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
      m4_end(en);
      return up ? PRESENT_METALFX : PRESENT_STANDARD;
-@@ -19749,6 +19788,43 @@ static void present_gpu_note(double s, int fx) {
+@@ -19749,6 +19789,43 @@ static void present_gpu_note(double s, int fx) {
      MLOG("present command buffer GPU time over 600 presents %s: p50 %.3f ms, p95 %.3f ms, max %.3f ms", fx ? "through MetalFX" : "through the bilinear pass", a[299], a[569], a[599]);
      n[fx] = 0;
  }
@@ -618,7 +610,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
  static double g_link_it_tin;   // Enqueue time of the frame the display-link callback is presenting (read and written only on the display-link thread)
  // External presents wait on g_q4, but diagnostic readback can use another queue. Wait for the producer before any read of that frame.
  static id<MTLSharedEvent> g_ext_ev;
-@@ -19818,6 +19894,8 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -19818,6 +19895,8 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      for (int i = 0; i < g_nshotq;) if (g_present_n >= g_shotq[i].frame) { present_shot(src, g_shotq[i].path, crop, ev_val, &shot_ready); g_shotq[i] = g_shotq[--g_nshotq]; } else i++;
      pthread_mutex_unlock(&g_shotq_mu);
  
@@ -627,7 +619,7 @@ index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..70ae70c2d68e194f457a6b3d2adbef96
      if (atomic_load(&g_gpu_lost)) return 0;   // the display command buffer would be ignored too: take no drawable from the screen the front end is about to close
      CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
      if (!layer) return 0;
-@@ -19825,8 +19903,16 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -19825,8 +19904,16 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
  #if TARGET_OS_OSX
      if (!layer.displaySyncEnabled) layer.displaySyncEnabled = YES;   // Windowed mode follows the display's vsync to prevent tearing
  #endif
