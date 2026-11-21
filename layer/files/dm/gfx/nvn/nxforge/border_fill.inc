@@ -26,7 +26,10 @@ void mtl_present_border_set(int mode) {
     if (atomic_exchange(&g_bf, mode) != mode) MLOG("present: border fill %s", mode == DM_PBORDER_GLOW ? "glow" : mode == DM_PBORDER_ART ? "art" : "off");
 }
 void mtl_present_border_art(const char *path) {   // any thread: an image file (JPEG or PNG), NULL for none
-    pthread_mutex_lock(&g_bf_mu); free(g_bf_art_path); g_bf_art_path = path && *path ? strdup(path) : NULL; g_bf_art_new = 1; pthread_mutex_unlock(&g_bf_mu);
+    if (path && !*path) path = NULL;
+    pthread_mutex_lock(&g_bf_mu);
+    if ((!path && g_bf_art_path) || (path && (!g_bf_art_path || strcmp(path, g_bf_art_path)))) { free(g_bf_art_path); g_bf_art_path = path ? strdup(path) : NULL; g_bf_art_new = 1; }   // the same file again is not read again
+    pthread_mutex_unlock(&g_bf_mu);
 }
 static id<MTLRenderPipelineState> bf_pso(id<MTLLibrary> lib, NSString *fs, MTLPixelFormat pf) {
     MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new]; NSError *e = nil;

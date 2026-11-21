@@ -11,7 +11,7 @@ Ships in NXForge 0.49.0.
 - **Instant replay** (Capture): a switch keeps the last 30 seconds of the game as presented, with sound, encoded in memory (H.264, 1920x1080; about 50 MB). Save the last 30 seconds, ⇧⌘L, the Capture menu or a controller's Capture button held writes them to the Recordings folder without a second encode. Off by default: while on, every frame is drawn once more and encoded.
 - **The Capture button**: a press takes a screenshot, held for half a second it saves the replay.
 - **Players** (Controls): the players by controller name, and Make player 1. Rumble and motion follow the trade. Original Joy-Cons keep the player they joined as.
-- **Around the picture** (Graphics): Black, Glow (the picture itself, blurred and dimmed) or Game art in the bars beside a picture that does not fill the window. Saved per game; `around_the_picture` in the settings file.
+- **Around the picture** (Graphics): Black, Glow (the picture itself, blurred and dimmed) or Game art (the wide art or box front NXForge keeps in the game's media folder) in the bars beside a picture that does not fill the window. Saved per game; `around_the_picture` in the settings file.
 - **Save battery** (General, on a Mac with a battery): unplugged, the game pauses while another app is in front and after ten minutes without input (not during a movie), and runs again when you are back. The row says the charge and macOS's estimate of the time left.
 - **Laptop-safe play**: sleep, a closed lid or 4 % battery pause the game with the sidebar up and copy its save to a snapshot first; 10 % shows a message.
 
