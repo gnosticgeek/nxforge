@@ -10,6 +10,7 @@ struct ShowcaseTheme: View {
             switch model.showcaseLayout {
             case .carousel: CarouselTheme(model: model).transition(.opacity)
             case .fan: FanTheme(model: model).transition(.opacity)
+            case .shelf: ShelfTheme(model: model).transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.45), value: model.showcaseLayout)
