@@ -17,6 +17,11 @@ Ten things for the player, in the app (Converter 0.23.0, [CONVERTER_CHANGELOG.md
 - **Save battery** (game): unplugged, a game nobody is playing pauses: while another app is in front, and after ten minutes without a button. The sidebar's General page has the switch and says how long the battery lasts (`DM_BATTERY_SAVER=0`, layer patch battery-saver). It does not change the frame rate of a game being played; a 40 fps mode and skipping repeated frames were left out, as they change frame pacing and need measuring per game.
 - **Links for Shortcuts and Siri, games in Spotlight** (app): `nxforge://play/<game>`, `nxforge://game/<game>` and `nxforge://theatre` open from Shortcuts' Open URL action (and so from Siri, the menu bar or a Stream Deck), and built games are in Spotlight by name. Native Siri phrases without a shortcut are not there yet.
 
+## 0.48.13 (2026-11-21)
+
+- **Nintendo Switch Sports builds again** (layer patch `0040-upstream-pr-3081`, upstream nxnative 9b03dee5 taken early): the build stopped at the shader split with "the split shader tables differ from game profile 04008E001F098000's". The engine at c43a1f7a reads shader archives differently from when the game's profile was made (PR #2943 drops two stray BAHS entries in agl's `agl_technique_pfx.sharcb`, and duplicate shaders in `main` take their first copy's label), but the profile's `shader_map.tsv` was not refreshed. Upstream refreshed it today; its data rows match a v65536 split on the Mac byte for byte. The patch drops out at the next engine update. Switch Sports is on the upstream watch list.
+- **A failed build keeps its reason after a restart** (Converter 0.22.13, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the game shows "Build failed", why and what to do, until a build succeeds; the profile shader-list mismatch has a diagnosis of its own that points to Updates. No game rebuild needed (Switch Sports needs its first build).
+
 ## 0.48.12 (2026-11-21)
 
 - **A native top bar** (Converter 0.22.12, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the window's top bar is now a real macOS toolbar on the same row as the window's buttons, with the window title, a segmented Home / Discover / Saves / Converter switch, one Liquid Glass group for Theatre, Refresh and Settings, and the system search field. No game rebuild needed.

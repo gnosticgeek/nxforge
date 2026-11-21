@@ -287,7 +287,7 @@ extension AppModel {
         let (g, b) = resolve(r)
         guard let app = r.app ?? b?.app, FileManager.default.fileExists(atPath: app) else {
             // a game that cannot play yet: the step that fixes it (GameStatus), and a build only when that is what it needs
-            if let sg = stageGames().first(where: { $0.isRef(r) }), sg.app == nil, status(sg) != .notBuilt { fix(sg); return }
+            if let sg = stageGames().first(where: { $0.isRef(r) }), sg.app == nil, !status(sg).buildable { fix(sg); return }
             if let g { frontEnd = false; convertFromLibrary(g) }
             return
         }

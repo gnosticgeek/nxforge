@@ -470,7 +470,7 @@ struct StageActions: View {
             } else {
                 let st = model.status(g)
                 Button { model.fix(g) } label: { Label(st.action, systemImage: st.actionSymbol).padding(.horizontal, 8) }
-                    .buttonStyle(StageButton(primary: true, height: height, glow: tint)).disabled(st == .notBuilt && (model.run.running || model.batchRunning))
+                    .buttonStyle(StageButton(primary: true, height: height, glow: tint)).disabled(st.buildable && (model.run.running || model.batchRunning))
                     .help(st.detail)
             }
             if showDetails {
@@ -1070,7 +1070,7 @@ struct StageGameMenu: View {
             Button("Play Options…") { model.openPlayOptions(g.ref) }
             Button("Play with the Game's Own Settings Window") { model.playWithOwnWindow(g.ref) }
         } else if g.game != nil {
-            if game.app == nil { let st = model.status(game); Button(st.action) { model.fix(game) }.disabled(st == .notBuilt && (model.run.running || model.batchRunning)) }
+            if game.app == nil { let st = model.status(game); Button(st.action) { model.fix(game) }.disabled(st.buildable && (model.run.running || model.batchRunning)) }
         }
         Divider()
         Button("View Box") { model.openCaseViewer(g) }
