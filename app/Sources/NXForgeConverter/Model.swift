@@ -201,6 +201,12 @@ final class AppModel {
     var theatreConfetti = 0
     var theatreSpinning = false
     var theatreCurtain: TheatreCurtain?
+    /// the case in the hand (TheatreUnbox.swift)
+    var theatreUnbox: TheatreUnbox?
+    /// the booklet open over the case in the hand (TheatreBooklet.swift)
+    var booklet: BookletState?
+    /// the launch being started is Continue from the console (its card is in the slot already)
+    @ObservationIgnored var theatreFromConsole = false
     /// the window's frame before Theatre moved it to the TV, whether Theatre put it in full screen, and the Mac kept awake
     @ObservationIgnored var theatreSavedFrame: NSRect?
     @ObservationIgnored var theatreMadeFullScreen = false

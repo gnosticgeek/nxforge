@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.52.0 (2026-11-21)
+## 0.54.0 (2026-11-21)
 
 Backend streamlining and speed-ups. The engine stays on nxnative c43a1f7a. A game gets the pipelines and the Ocarina changes below at its next build (Ocarina of Time: an Update build is enough, its shader chain is unchanged); nothing else needs a rebuild.
 
@@ -18,6 +18,18 @@ Backend streamlining and speed-ups. The engine stays on nxnative c43a1f7a. A gam
 - **Faster CI**: the build job's "every gfx test compiled" step (about 24 of its 28 minutes) compiles each shared source once, through ccache, instead of once per test: `scripts/ci_clang.py` stands in for `clang` there. Its cache is kept between runs. On the Mac, four tests rebuilt in 0.5 s from a warm cache against 8.6 s without.
 - **Long-session memory is the game's own** (BACKLOG): Mario Kart World's growth from about 8 to 13 GB over 7 minutes is its own memory pools (4.3 to 9.0 GB, then flat), not memory the host keeps; host textures stay small. Nothing to change on the host.
 - **Sent upstream**: three fixes NXForge carries, rebased onto nxnative 806fabe1 and checked on the Mac: shader tables that keep their bytes ([seedds/nxnative#3172](https://github.com/seedds/nxnative/pull/3172)), the Mario Kart World post-race VP9 abort ([#3173](https://github.com/seedds/nxnative/pull/3173)), and a pause or window switch that no longer steps the frame hold up or gets paid back ([#3174](https://github.com/seedds/nxnative/pull/3174)).
+
+## 0.52.0 (2026-11-21)
+
+- **Theatre: tilt, collector touches and the card wallet** (Converter 0.26.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the case in your hand leans as you lean the controller. Cases show their history: a sticker with the hours you have played, wear on the ones you play most, and a COMPLETED stamp you bring down with R. Wallet is a fifth Theatre theme: your games as game cards in a zip-up wallet, twenty-four to a page. No game rebuild needed.
+
+## 0.51.0 (2026-11-21)
+
+- **Theatre: a booklet for every game, and the shelf** (Converter 0.25.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): X with a case in your hand opens its booklet on Theatre, two pages at a time, each leaf turning over the spine with a paper sound and a tap in the controller. A game with a manual (a PDF) has that as its booklet. Every other game gets one NXForge makes: the store's words about the game, its screenshots, what Quick settings does while you play, the game's facts and your own time with it. Showcase has a third layout, Shelf: your games standing spine out along a shelf, the one in focus drawn out and turned to face you. No game rebuild needed.
+
+## 0.50.0 (2026-11-21)
+
+- **Theatre: the case in your hand, and the card into the console** (Converter 0.24.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Y lifts the game in focus out of the theme as its case, the right stick turns it, A opens it (the game card in its clip, the booklet in the lid when the game has a manual) and A again takes the card to a console under the screen, which starts the game. Starting a game from any theme now plays the same thing by itself: the case opens, the card drops into the console with a click and its light fills the room (Settings › Theatre › When a game starts keeps Lights down as the other choice). The controller gives a small knock as a case snaps open and a card clicks home, with sounds to match. Theatre's wordmark is now that console, with the card of the game played last in its slot, and the Theatre menu's first row continues it. Y's old job, Details, is Y again with the case in the hand. No game rebuild needed.
 
 ## 0.49.0 (2026-11-21)
 

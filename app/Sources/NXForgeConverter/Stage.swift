@@ -311,6 +311,10 @@ extension AppModel {
         case .theatreSounds: flip(&settings.theatreSounds)
         case .theatreMusic: flip(&settings.theatreMusic)
         case .theatreTimeOfDay: flip(&settings.theatreTimeOfDay)
+        case .theatreLaunch: cycle(&settings.theatreLaunch)
+        case .theatreRumble: flip(&settings.theatreRumble)
+        case .theatreTilt: flip(&settings.theatreTilt)
+        case .theatreCollector: flip(&settings.theatreCollector)
         case .cloudSaves:
             var on = settings.cloudSavesAll
             flip(&on)

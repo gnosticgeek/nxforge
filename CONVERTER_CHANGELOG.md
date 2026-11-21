@@ -4,6 +4,33 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.26.0 (2026-11-21)
+
+Shipped in NXForge 0.52.0.
+
+- **Tilt the case.** With a case in your hand on Theatre, leaning the controller leans the case, and the light on its sleeve moves with it. There is nothing to set up: wherever you have been holding the controller is its rest, and a lean held for a few seconds comes slowly back upright. Only for controllers that tell a Mac how they are held; NXForge switches the sensors on while the case is up and off again after. Settings › Theatre › Tilt turns it off.
+- **Collector touches.** A case you have played for an hour or more carries a round sticker with its hours. After five hours its sleeve begins to wear: pale edges and fine scratches, the game's own and the same every time, all there by sixty hours. R with the case in your hand brings a COMPLETED stamp down on the cover, with a thud and a knock in the controller, and R again takes it off; the booklet's Your copy page says so too. The sticker, stamp and wear show on the case in your hand, on the launch, and on the case in front on the Shelf. Settings › Theatre › Collector touches turns them off (the stamps you gave are kept).
+- **Wallet, a fifth Theatre theme.** Your built games as their game cards (grey for Switch, red for Switch 2) in a zip-up card wallet lying open: two halves of twelve pockets, twenty-four cards to a page. The arrows move from pocket to pocket and the card in focus stands up out of its sleeve; going past a page's edge turns to the next page of cards. A, X, Y, the filter on L and R and everything else work as on the other themes. It is in the Theatre menu, on ZL and ZR, and in Settings › Theatre › Theme.
+- Tests for the new settings, the sticker and wear, the lean and its limits, the wallet's moves across pockets and pages, and the stamp's sound.
+
+## 0.25.0 (2026-11-21)
+
+Shipped in NXForge 0.51.0.
+
+- **A booklet for every game.** With a case in your hand on Theatre, X opens its booklet: two pages either side of a spine, left and right (or A) turn a leaf over it, with a soft paper sound and a tap in the controller, and B closes it. A game with a manual (a PDF beside its files, or one added on its page) has the manual as its booklet, and Y there opens it in the manual viewer to zoom in. A game without one gets a booklet NXForge makes from what it knows: the store's description set as pages, up to six of its screenshots, a page on what Quick settings does while you play, and Your copy (how long you have played, how many sittings, first and last played, publisher, release date, players, genre, version and size). The booklet now shows in every open case's lid, with the manual's first page as its cover when there is one. The made booklet needs Settings › Artwork › Download store details for its words and pictures; without them it is shorter.
+- **Shelf, Showcase's third layout.** Your games stand spine out along a shelf, with their real spine art, and the game in focus is drawn out of the row and turned to face you. Left and right run along the shelf, the right stick turns the case in front, and up and down step through Carousel, Fan and Shelf. Settings › Theatre › Showcase layout and the Theatre menu have it too.
+- Tests for the booklet's pages (a manual first, an even number of made pages, long text broken between sentences, which pages face each other), the shelf's layout and the page-turn sound.
+
+## 0.24.0 (2026-11-21)
+
+Shipped in NXForge 0.50.0.
+
+- **Pick up the box.** On any Theatre theme Y lifts the game in focus out as its case, in three dimensions: the right stick turns it freely, left and right turn it an eighth at a time, and the light slides over its sleeve. A opens it on its spine: the game card sits in its clip (grey for Switch, red for Switch 2, the game's icon as its label) and a booklet is in the lid when the game has a manual (X reads it). B shuts the case, and B again puts it back. Y there opens the game's page, which Y opened before; the themes' hints now say Pick up.
+- **The card goes into the console.** A with the case open lifts the card out and drops it into a console under the screen; it clicks home, the console's light comes on and fills the room, and the game comes up out of it. A on a theme plays the whole thing by itself, in about three seconds while the game is already starting. Settings › Theatre › When a game starts chooses between Game card and Lights down (the box opening into light, as before). With Reduce Motion the room only dims.
+- **Rumble and new sounds.** A small knock in the controller as a case snaps open or shut and a firmer one as the card clicks home, on controllers that can rumble on a Mac (Settings › Theatre › Rumble). The case's catches, the card leaving its clip and the card going home each have a sound, made in the app like Theatre's others.
+- **The console on the top bar.** Theatre's NXFORGE wordmark is drawn as the console, with the card of the built game you played last standing in its slot, its light on, and the game's name beside it. The Theatre menu's first row, Continue, starts that game: the card is in the console already, so it only clicks down.
+- **Pictures without a window.** `NXC_HEADLESS=1` with `NXC_SNAPSHOT` keeps the app out of the Dock and its window off every screen, so a picture can be taken (`screencapture -l`) while the Mac is in use. `NXC_UNBOX=held|open` shows the case in the hand, and `NXC_CURTAIN=<s>` the card's launch at that moment (`NXC_LAUNCH=lights` for the old one, `NXC_CONSOLE=1` from the console).
+
 ## 0.23.0 (2026-11-21)
 
 Shipped in NXForge 0.49.0.
