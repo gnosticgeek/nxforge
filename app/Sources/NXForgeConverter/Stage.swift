@@ -645,7 +645,6 @@ struct StageView: View {
             if let g = detail { GameKeyArt(game: g, banner: true, bannerBottom: bannerBottom).id(g.id).transition(.opacity) }
             else if model.stageTab == .home, let g = focus { GameKeyArt(game: g, coverFallback: false).id(g.id).transition(.opacity) }
             VStack(spacing: 0) {
-                if detail == nil { StageTopBar(model: model) }
                 Group {
                     if let g = detail {
                         StageGamePage(model: model, game: g)
@@ -692,9 +691,9 @@ struct StageView: View {
         .animation(.easeInOut(duration: 0.25), value: model.caseViewer?.game.id)
         .animation(.easeInOut(duration: 0.25), value: model.manual?.id)
         .animation(.easeInOut(duration: 0.25), value: model.gameDetail)
-        .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .navigationTitle("NXForge")
+        // Discover's search, in the window's toolbar (TopBar.swift): typing on Home goes to Discover
+        .searchable(text: $model.stageSearch, placement: .toolbar, prompt: "Search games")
+        .onChange(of: model.stageSearch) { _, q in if !q.isEmpty, model.stageTab == .home { model.stageTab = .discover } }
         .focusable()
         .focused($keys)
         .focusEffectDisabled()
@@ -724,129 +723,6 @@ struct StageView: View {
         let covers: String = games.map { $0.coverKey }.joined(separator: "|")
         let flags: String = [model.settings.downloadCovers, model.settings.downloadHeroes, model.settings.squareCovers].map { $0 ? "1" : "0" }.joined()
         return covers + flags
-    }
-}
-
-struct StageTopBar: View {
-    @Bindable var model: AppModel
-    @Namespace private var marks
-
-    var body: some View {
-        // the logo at the left, the Home / Library / Converter switch in the middle, the rest at the right
-        HStack(spacing: 14) {
-            HStack(spacing: 9) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().interpolation(.high).frame(width: 26, height: 26)
-                    .shadow(color: .black.opacity(0.4), radius: 4, y: 2).accessibilityHidden(true)
-                Text("NXForge").font(.system(size: 18, weight: .heavy)).fontWidth(.expanded).tracking(-0.4)
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity)
-            HStack(spacing: 4) {
-                ForEach(StageTab.allCases, id: \.self) { t in
-                    tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
-                }
-                tab("Saves", on: !model.frontEnd && model.page == .saves) { model.showConverter(); model.page = .saves }
-                    .help("Every game's saves, and Cloud saves for all of them")
-                tab("Converter", on: !model.frontEnd && model.page != .saves) {
-                    if model.frontEnd || model.page == .saves { model.showConverter(); if model.page == .saves { model.page = model.converterPage } }
-                }
-                    .help("Convert, Game Files, Builds, Storage, Toolchain and Updates")
-            }
-            .padding(4)
-            .glassEffect(.regular, in: .capsule)
-            .animation(.spring(duration: 0.32), value: model.stageTab)
-            .layoutPriority(1)
-            // the right side; where it is too narrow for every label, Theatre and the controller show as icons only
-            ViewThatFits(in: .horizontal) {
-                right(compact: false)
-                right(compact: true)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
-        // under the converter's bar, a hairline between it and the page's own tabs
-        .overlay(alignment: .bottom) {
-            if !model.frontEnd && model.page != .saves { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
-        }
-    }
-
-    func right(compact: Bool) -> some View {
-            HStack(spacing: 14) {
-            Spacer(minLength: 0)
-            // Theatre: full screen for a TV (⇧⌘F)
-            Button { model.enterTheatre() } label: {
-                Group {
-                    if compact { Image(systemName: "tv").font(.system(size: 14, weight: .semibold)).frame(width: 36, height: 36) }
-                    else { Label("Theatre", systemImage: "tv").font(.callout.weight(.semibold)).lineLimit(1).fixedSize().padding(.horizontal, 12).frame(height: 36) }
-                }
-                .contentShape(.capsule)
-            }
-            .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .capsule)
-            .help("Theatre: your games full screen on a TV, driven by a controller (⇧⌘F)").accessibilityLabel("Theatre")
-            if let pad = GCController.controllers().first?.vendorName {
-                Group {
-                    if compact { Image(systemName: "gamecontroller").font(.system(size: 14, weight: .medium)).frame(width: 36, height: 36) }
-                    else { Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).lineLimit(1).fixedSize().padding(.horizontal, 12).frame(height: 36) }
-                }
-                .foregroundStyle(StageLook.soft).glassEffect(.regular, in: .capsule).help(pad)
-            }
-            if let s = search {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(StageLook.soft)
-                    TextField(s.prompt, text: s.text).textFieldStyle(.plain).frame(width: 170)
-                    if !s.text.wrappedValue.isEmpty {
-                        Button { s.text.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
-                            .buttonStyle(.plain).accessibilityLabel("Clear Search")
-                    }
-                }
-                .padding(.horizontal, 14).frame(height: 36).glassEffect(.regular, in: .capsule)
-            }
-            refresh
-            round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
-            round("slider.horizontal.3", "Settings") { model.openSettings() }
-            }
-    }
-
-    /// Refresh: scans the games folder again now (NXForge also looks every 10 minutes and when it comes to the front); new games
-    /// get their art and details. The arrow turns while it scans.
-    var refresh: some View {
-        Button { model.scanLibrary() } label: {
-            Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .semibold))
-                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: model.libraryScanning)
-                .frame(width: 36, height: 36)
-                .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
-        }
-        .buttonStyle(.plain)
-        .disabled(model.libraryScanning || model.settings.gamesRoot == nil)
-        .help(model.libraryScanning ? "Looking through \(model.settings.gamesRoot?.tildePath ?? "the games folder")…"
-              : "Refresh the library: look for new games now (also every 10 minutes), and fetch their artwork and details (⌥⌘R)")
-        .accessibilityLabel(model.libraryScanning ? "Refreshing Library" : "Refresh Library")
-    }
-
-    /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
-    var search: (prompt: String, text: Binding<String>)? {
-        if model.frontEnd { return model.stageTab == .discover ? ("Search games", $model.stageSearch) : nil }
-        // the converter's Game Files and Builds have their own search fields
-        return nil
-    }
-
-    func tab(_ title: String, on: Bool, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            Text(title).font(.system(size: 14, weight: .semibold)).padding(.horizontal, 16).frame(height: 30)
-                .foregroundStyle(on ? Color.black : Color(white: 0.92))
-                .background { if on { Capsule().fill(convertAccent).matchedGeometryEffect(id: "tab", in: marks) } }
-                .contentShape(.capsule)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
-    }
-
-    func round(_ symbol: String, _ label: String, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            Image(systemName: symbol).font(.system(size: 14, weight: .semibold)).frame(width: 36, height: 36)
-                .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
-        }
-        .buttonStyle(.plain).help(label).accessibilityLabel(label)
     }
 }
 

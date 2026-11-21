@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.12 (2026-11-21)
+
+- **A native top bar** (Converter 0.22.12, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the window's top bar is now a real macOS toolbar on the same row as the window's buttons, with the window title, a segmented Home / Discover / Saves / Converter switch, one Liquid Glass group for Theatre, Refresh and Settings, and the system search field. No game rebuild needed.
+
 ## 0.48.11 (2026-11-21)
 
 - **Theatre's genre filter shows only that genre's games** (Converter 0.22.11, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): L and R listed every genre in your games folder, but Showcase, Cinema and Shutter show only built games, so a genre with no built game (Puzzles, Shooters, Retro collections...) fell back to showing every built game under its name. Now the stops are the genres of the games the theme shows (built games; every game on Trailer), and a filter chosen on Trailer that has no built game is All games on the other themes. No game rebuild needed.

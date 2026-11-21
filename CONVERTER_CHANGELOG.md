@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.12 (2026-11-21)
+
+Shipped in NXForge 0.48.12.
+
+- **A native top bar.** The bar across the top of the window was a row of separate large glass pills under the window's buttons; it is now a real macOS toolbar on the same row as them, so the pages start higher. "NXForge" is the window's title at the left, Home, Discover, Saves and Converter are a segmented switch in the middle, Theatre, Refresh and Settings (now a gear) share one Liquid Glass group, and search is the system's search field, which folds to a magnifier in a narrow window and is there on Home and Discover (typing on Home goes to Discover). The Full Screen button is gone: the window's green button and ⌃⌘F do it, as in every Mac app; the connected controller's name moved into Theatre's help tag. The toolbar steps aside wherever a page fills the window (a game's page, the launch screen, the box, gallery and manual viewers, Theatre). Code: `TopBar.swift`.
+
 ## 0.22.11 (2026-11-21)
 
 Shipped in NXForge 0.48.11.
