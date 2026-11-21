@@ -48,7 +48,7 @@ enum StageSettingRow: Int, CaseIterable {
     case straightPlay, firstPlayOptions, batteryPreset, localShaders
     case folderCheck, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
-    case theatreTheme, theatreOnTV, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreMusic, theatreTimeOfDay
+    case theatreTheme, showcaseLayout, theatreOnTV, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreMusic, theatreTimeOfDay
     case cloudSaves, snapshotAfterPlay, saveBackupPush
     case notify, openAfterBuild, keepBackups, reuseCache
     case autoUpdate
@@ -59,7 +59,7 @@ enum StageSettingRow: Int, CaseIterable {
         case .straightPlay, .firstPlayOptions, .batteryPreset, .localShaders: .playing
         case .folderCheck, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
-        case .theatreTheme, .theatreOnTV, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreMusic, .theatreTimeOfDay: .theatre
+        case .theatreTheme, .showcaseLayout, .theatreOnTV, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreMusic, .theatreTimeOfDay: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
         case .notify, .openAfterBuild, .keepBackups, .reuseCache: .building
         case .autoUpdate: .updates
@@ -444,8 +444,12 @@ struct StageSettings: View {
             row("Theatre", "Your games full screen, for the sofa and a controller. Also ⇧⌘F. B leaves it.") {
                 button(model.theatre ? "Leave Theatre" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }
             },
-            row("Theme", "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Gallery shows three covers on a quiet wall; Trailer plays the game's trailer. ZL and ZR switch them on Theatre.", .theatreTheme) {
+            row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Trailer plays the game's trailer. ZL and ZR switch them on Theatre.", .theatreTheme) {
                 segmented(theme, TheatreTheme.allCases, width: 300) { $0.rawValue }
+            },
+            row("Showcase layout", "Carousel turns a ring of your boxes; Fan spreads them like a hand of cards. Up and down switch them on Theatre.", .showcaseLayout) {
+                segmented($model.settings.showcaseLayout, ShowcaseLayout.allCases, width: 240) { $0.rawValue }
+                    .onChange(of: model.settings.showcaseLayout) { _, l in model.showcaseLayout = l }
             },
             row("When a TV is plugged in", "Ask offers Theatre when a controller is connected too; Always opens it straight away.", .theatreOnTV) {
                 segmented($model.settings.theatreOnTV, TheatreOnTV.allCases, width: 240) { $0.rawValue }
@@ -458,11 +462,11 @@ struct StageSettings: View {
             },
         ]
         let sound: [SettingsRowSpec] = [
-            row("Volume", "Of everything Theatre plays: its sounds, a game's music and trailers. The right stick sets it on Theatre, and its press mutes.", .theatreVolume) {
+            row("Volume", "Of everything Theatre plays: its sounds, a game's music and trailers. - and = set it on Theatre, and the right stick's press mutes.", .theatreVolume) {
                 Slider(value: volume, in: 0...100, step: 10).frame(width: 190).tint(.white).accessibilityLabel("Theatre volume")
                 Text("\(model.settings.theatreVolume) %").font(.system(size: 12.5, weight: .medium)).monospacedDigit().foregroundStyle(StageLook.soft).frame(width: 46, alignment: .trailing)
             },
-            toggle("Sounds", "A soft tick for each step, a quiet tick as the Carousel or Fan turns and a thunk on launch.", $model.settings.theatreSounds, .theatreSounds),
+            toggle("Sounds", "A soft tick for each step, a quiet tick as the Showcase turns and a thunk on launch.", $model.settings.theatreSounds, .theatreSounds),
             toggle("Music", "Plays your music folder in the background (not in Trailer); a game with its own music.m4a or .mp3 in its media folder plays that while it is in focus.", $model.settings.theatreMusic, .theatreMusic),
             row("Music folder", "MP3 or Opus files (and M4A, FLAC, WAV), shuffled through in turn.") {
                 path(model.settings.theatreMusicFolder?.tildePath, none: "None chosen", width: 220)

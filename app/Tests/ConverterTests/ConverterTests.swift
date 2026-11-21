@@ -2001,11 +2001,25 @@ import Testing
         #expect(abs(s.first!) < 0.05 && abs(s.last!) < 0.05)
     }
 
-    @Test func galleryAndShelfBecomeTheFan() throws {
-        for (saved, theme) in [("Gallery", TheatreTheme.fan), ("Shelf", .fan), ("Fan", .fan), ("Cinema", .cinema), ("rubbish", .carousel)] {
+    @Test func carouselAndFanBecomeShowcase() throws {
+        for (saved, theme) in [("Carousel", TheatreTheme.showcase), ("Fan", .showcase), ("Gallery", .showcase), ("Shelf", .showcase),
+                               ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
             #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
         }
-        #expect(!TheatreTheme.allCases.map(\.rawValue).contains("Gallery"))
+        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Trailer"])
+    }
+
+    @Test func anOldThemeOpensShowcaseOnItsLayout() throws {
+        func load(_ json: String) throws -> Settings { try JSONDecoder().decode(Settings.self, from: Data(json.utf8)) }
+        for (saved, layout) in [("Carousel", ShowcaseLayout.carousel), ("Fan", .fan), ("Gallery", .fan), ("Shelf", .fan), ("Cinema", .carousel)] {
+            #expect(try load(#"{"theatre_theme": "\#(saved)"}"#).showcaseLayout == layout)
+        }
+        // a saved layout wins, and it survives a round trip
+        var s = try load(#"{"theatre_theme": "Carousel", "theatre_showcase_layout": "Fan"}"#)
+        #expect(s.theatreTheme == .showcase && s.showcaseLayout == .fan)
+        s.showcaseLayout = .carousel
+        #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).showcaseLayout == .carousel)
+        #expect(ShowcaseLayout.carousel.other == .fan && ShowcaseLayout.fan.other == .carousel)
     }
 
     @Test func fanDrawsTheBoxesNearTheFront() {

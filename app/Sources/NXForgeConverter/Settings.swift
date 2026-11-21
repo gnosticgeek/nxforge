@@ -120,7 +120,9 @@ struct Settings: Codable, Equatable {
     /// the front end's covers as the games' square shop art instead of boxes: more to a row, and the same shape as Discover's
     var squareCovers = false
     /// Theatre's theme, and what happens when a TV is plugged in (Theatre.swift)
-    var theatreTheme: TheatreTheme = .carousel
+    var theatreTheme: TheatreTheme = .showcase
+    /// Showcase's layout, the carousel or the fan
+    var showcaseLayout: ShowcaseLayout = .carousel
     var theatreOnTV: TheatreOnTV = .ask
     /// Theatre's picture inset for a TV that crops its edges, how long until the screensaver, the trailer's volume (0 to 100),
     /// and where Theatre was left: the game in focus and the filter (TheatreFilter.key), so it reopens there
@@ -159,7 +161,7 @@ struct Settings: Codable, Equatable {
         case localShaders = "local_shaders"
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
         case squareCovers = "square_covers"
-        case theatreTheme = "theatre_theme", theatreOnTV = "theatre_on_tv"
+        case theatreTheme = "theatre_theme", showcaseLayout = "theatre_showcase_layout", theatreOnTV = "theatre_on_tv"
         case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
         case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
@@ -218,7 +220,11 @@ struct Settings: Codable, Equatable {
         sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true
         lightWhilePlaying = (try? c.decodeIfPresent(Bool.self, forKey: .lightWhilePlaying)) ?? true
         squareCovers = (try? c.decodeIfPresent(Bool.self, forKey: .squareCovers)) ?? false
-        theatreTheme = (try? c.decodeIfPresent(TheatreTheme.self, forKey: .theatreTheme)) ?? .carousel
+        theatreTheme = (try? c.decodeIfPresent(TheatreTheme.self, forKey: .theatreTheme)) ?? .showcase
+        // a settings file from before Showcase: its Carousel or Fan theme is the layout to open on
+        let savedTheme = (try? c.decodeIfPresent(String.self, forKey: .theatreTheme)).flatMap { $0 }
+        showcaseLayout = (try? c.decodeIfPresent(ShowcaseLayout.self, forKey: .showcaseLayout)).flatMap { $0 }
+            ?? savedTheme.flatMap { ShowcaseLayout.saved(theme: $0) } ?? .carousel
         theatreOnTV = (try? c.decodeIfPresent(TheatreOnTV.self, forKey: .theatreOnTV)) ?? .ask
         theatreEdges = (try? c.decodeIfPresent(TheatreEdges.self, forKey: .theatreEdges)) ?? .full
         theatreSaver = (try? c.decodeIfPresent(TheatreSaver.self, forKey: .theatreSaver)) ?? .five

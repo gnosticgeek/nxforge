@@ -160,7 +160,7 @@ extension AppModel {
             let r = cinemaRow(rows)
             return (rows[r].games, r)
         case .trailer: return (trailerGames(), nil)
-        case .carousel, .fan: return (theatreGames(), nil)
+        case .showcase: return (theatreGames(), nil)
         }
     }
 
@@ -665,8 +665,7 @@ struct TheatreMomentCard: View {
     /// where the game stands across the screen, on the themes where it stands in one place
     var beamX: CGFloat? {
         switch model.theatreTheme {
-        case .carousel: width / 2
-        case .fan: width / 2
+        case .showcase: width / 2
         case .cinema, .trailer: nil
         }
     }
