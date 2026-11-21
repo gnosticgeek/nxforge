@@ -421,7 +421,7 @@ struct TheatreCaseScene: View {
         let w = Self.consoleWidth * u, h = Self.consoleHeight * u
         return ZStack {
             // its light on the wall behind, once the card is home
-            Ellipse().fill(RadialGradient(colors: [Color(red: 1, green: 0.95, blue: 0.86).opacity(0.5), .clear], center: .center, startRadius: 0, endRadius: 330 * u))
+            Ellipse().fill(EllipticalGradient(colors: [Color(red: 1, green: 0.95, blue: 0.86).opacity(0.5), .clear], center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5))
                 .frame(width: 760 * u, height: 320 * u).offset(y: -120 * u).opacity(s.lit)
             RoundedRectangle(cornerRadius: 24 * u)
                 .fill(LinearGradient(colors: [Color(white: 0.21), Color(white: 0.10), Color(white: 0.075)], startPoint: .top, endPoint: .bottom))
