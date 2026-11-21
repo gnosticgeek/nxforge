@@ -419,7 +419,7 @@ static void settings_apply(int start) {
       NSMutableArray<NSString *> *tries = [NSMutableArray array];
       for (NSString *m in @[@"media", [own stringByAppendingString:@" media"]]) for (NSString *n in @[@"wide-art.jpg", @"wide-art.png", @"cover-front.jpg", @"cover-front.png"])
           [tries addObject:[[dir stringByAppendingPathComponent:m] stringByAppendingPathComponent:n]];
-      for (NSString *n in @[@"dm/banner.jpg", @"dm/banner.png"]) [tries addObject:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:n]];
+      for (NSString *n in @[@"dm/banner.jpg", @"dm/banner.png"]) [tries addObject:[(NSBundle.mainBundle.resourcePath ?: app) stringByAppendingPathComponent:n]];
       for (NSString *f in tries) if (!art && [NSFileManager.defaultManager fileExistsAtPath:f]) art = f;
       mtl_present_border_art(art.fileSystemRepresentation); }
     qs_volume_apply();
