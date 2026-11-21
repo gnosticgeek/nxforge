@@ -3,6 +3,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import simd
 import Testing
 @testable import NXForgeConverter
 
@@ -2103,6 +2104,67 @@ import Testing
         s.theatreSounds = false; s.theatreMusic = false; s.theatreTimeOfDay = false; s.theatreSeen = ["a", "b"]; s.theatreMusicFolder = "/Music/Theatre"
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
         #expect(!back.theatreSounds && !back.theatreMusic && !back.theatreTimeOfDay && back.theatreSeen == ["a", "b"] && back.theatreMusicFolder == "/Music/Theatre")
+    }
+}
+
+@Suite struct TheatreCaseInTheHand {
+    @Test func launchSettingsDefaultToTheCardAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreLaunch == .card && old.theatreRumble)
+        var s = Settings()
+        s.theatreLaunch = .lights; s.theatreRumble = false
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back.theatreLaunch == .lights && !back.theatreRumble)
+    }
+
+    @Test func theCardGoesHomeBeforeTheLightComesUp() {
+        // each part of the launch begins after the one before it, and the launch screen comes up once the room is full of light
+        let c = CaseSceneState.self
+        #expect(c.opens < c.cardLifts && c.cardLifts < c.cardFlies && c.cardFlies < c.cardSeats && c.cardSeats < c.clicks && c.clicks <= c.blooms && c.blooms < c.reveal && c.reveal < c.length)
+        let start = c.launch(0), mid = c.launch(c.cardFlies), end = c.launch(c.reveal)
+        #expect(start.open == 0 && start.cardFly == 0 && start.bloom == 0)
+        #expect(mid.open == 1 && mid.cardOut > 0.4 && mid.cardSeat == 0 && mid.lit == 0)
+        #expect(end.cardSeat == 1 && end.lit == 1 && end.bloom > 0.4)
+        // from the open case, and from the console, the sequence starts part of the way in and is that much shorter
+        let open = TheatreCurtain(game: "g", style: .card, offset: c.cardLifts)
+        #expect(abs(open.length - (c.length - c.cardLifts)) < 1e-9 && open.reveal > 0 && open.reveal < open.length)
+        let console = TheatreCurtain(game: "g", style: .card, offset: c.fromConsole, fromConsole: true)
+        #expect(console.reveal > 0.5 && c.launch(c.fromConsole, consoleOnly: true).cardSeat == 0)
+        let lights = TheatreCurtain(game: "g")
+        #expect(lights.style == .lights && lights.reveal == 1.75 && lights.length == 2.35)
+    }
+
+    @Test func aBoxShowsOnlyTheFacesTurnedToTheCamera() {
+        let d = 2000.0
+        func seen(_ m: Solid.Matrix) -> Set<Solid.BoxSide> {
+            Set(Solid.box(width: 372, height: 602, depth: 37).filter { Solid.facing(m * $0.matrix, distance: d) > 0.001 }.map(\.side))
+        }
+        #expect(seen(Solid.identity) == [.front])
+        #expect(seen(Solid.turnY(.pi)) == [.back])
+        // turned to its right, the spine (its left side) comes into view beside the front
+        #expect(seen(Solid.turnY(0.5)) == [.front, .left])
+        #expect(seen(Solid.turnY(-0.5)) == [.front, .right])
+        #expect(seen(Solid.turnX(0.4)).contains(.bottom))
+    }
+
+    @Test func theLidSwingsTowardsYouOnItsSpine() {
+        // the lid's far edge, a case's width from the hinge: half open it is nearer the camera, fully open it lies to the left
+        func edge(_ open: Double) -> SIMD3<Double> { Solid.point(Solid.turnY(-open * 176 * .pi / 180), 372, 0, 0) }
+        #expect(edge(0.5).z > 300)
+        #expect(edge(1).x < -365 && edge(1).z > 0)
+        // nearer the camera is bigger on screen
+        #expect(Solid.onScreen(SIMD3(100, 0, 500), distance: 2000).x > 100)
+        #expect(Solid.onScreen(SIMD3(100, 0, -500), distance: 2000).x < 100)
+    }
+
+    @Test(arguments: TheatreRumble.Knock.allCases)
+    func knocksAreShortAndInRange(_ k: TheatreRumble.Knock) {
+        #expect(!k.taps.isEmpty && k.taps.allSatisfy { $0.at >= 0 && $0.at < 0.3 && $0.intensity > 0 && $0.intensity <= 1 && $0.sharpness >= 0 && $0.sharpness <= 1 })
+    }
+
+    @Test func continueIsOnTheMenuOnlyWithACardInTheConsole() {
+        #expect(TheatreMenuRow.allCases.first == .resume)
+        #expect(TheatreMenuRow.row(.shutter) == .shutter && TheatreMenuRow.resume.theme == nil)
     }
 }
 

@@ -2,15 +2,19 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.50.0 (2026-11-21)
+## 0.51.0 (2026-11-21)
 
-Builds that look after the Mac's disk, and a cleanup that keeps what it said it would (Converter 0.24.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); layer patch disk-room).
+Builds that look after the Mac's disk, and a cleanup that keeps what it said it would (Converter 0.25.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); layer patch disk-room).
 
 - **A build makes room instead of stopping** (app): when a disk a build writes to drops under 12 GB free, the converter clears what it can make again without a build (temporary files of other games' stopped builds, the pipeline copies kept on the Mac for games on other drives, older app copies, logs over 30 days old, Metal's idle archive folders) and says so in the log. If a disk still drops under 3 GB the build is paused where it stands, every process of it, instead of stopped (the step in progress was lost: up to an hour of shaders), with a notification; it carries on by itself once 6 GB is free, and Stop still works. A Build selected queue waits rather than giving up its other games.
 - **The startup disk keeps its room during a build** (layer patch disk-room): a build whose game drive is not APFS keeps its compilers' temporary files on the startup disk only while that has 25 GB or more free (`SCRATCH_MIN_GB`), else they stay on the game drive. The shared Metal cache (12 GB, `DMSH_MTLCACHE_GB`) gives back what the startup disk is short of 30 GB free when a build trims it, down to 4 GB.
 - **Cleanup keeps work inside a worktree** (`nxforge clean --worktree`): a checkout inside the worktree (the engine `tree/`, a clone made there) with changes or commits on no remote branch now keeps the worktree, with the reason; an engine tree exactly as `layer.py assemble` left it does not count. The dry run and the real run use the same check. On 2026-11-21 a worktree whose `tree/` held unpushed commits was removed although the dry run had called it kept.
 - **Removed worktrees and build caches are held a day** (`nxforge clean`): they are moved into a holding folder on their own volume (`~/Library/Caches/NXForge/held`, `.nxforge-held` at the top of another drive), a rename that costs no time or space, and deleted by the first cleanup a day later (`NXFORGE_HELD_HOURS`). `nxforge held` lists them, `nxforge restore <name>` puts one back (a worktree is repaired), `clean --empty-held` frees them now. The safe hourly categories still delete at once.
 - **Storage finds forgotten files** (app): a Forgotten filter lists game packages and unfinished downloads of 256 MB or more in Downloads, hidden folders included (a 23 GB update NSP sat in `~/Downloads/.switch-staging` on 2026-11-21), what the cleanup is holding, and a stopped build's temporary files. One that is safe to lose (an unfinished download, a copy of a file in the games folder with the same name and size, a held item) can be deleted there; a package found only in Downloads is shown with where it is and left to you.
+
+## 0.50.0 (2026-11-21)
+
+- **Theatre: the case in your hand, and the card into the console** (Converter 0.24.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Y lifts the game in focus out of the theme as its case, the right stick turns it, A opens it (the game card in its clip, the booklet in the lid when the game has a manual) and A again takes the card to a console under the screen, which starts the game. Starting a game from any theme now plays the same thing by itself: the case opens, the card drops into the console with a click and its light fills the room (Settings › Theatre › When a game starts keeps Lights down as the other choice). The controller gives a small knock as a case snaps open and a card clicks home, with sounds to match. Theatre's wordmark is now that console, with the card of the game played last in its slot, and the Theatre menu's first row continues it. Y's old job, Details, is Y again with the case in the hand. No game rebuild needed.
 
 ## 0.49.0 (2026-11-21)
 
