@@ -67,6 +67,7 @@ extension AppModel {
             if let before { out.games = GameLibrary.carryDetails(from: before.games, to: out.games) }
             await MainActor.run {
                 self.library = out
+                self.checkNewlyPlayable()
                 self.libraryProgress = nil
                 self.libraryMessage = r.stopped
                 if r.stopped == nil || !r.games.isEmpty { GameLibrary.saveCache(out) }

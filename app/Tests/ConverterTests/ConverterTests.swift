@@ -2363,3 +2363,30 @@ import Testing
         #expect(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)).homeOpensTheatre)
     }
 }
+
+@Suite struct NewlyPlayableGames {
+    @Test func levelsFollowTheProfileAndTheList() {
+        #expect(NewlyPlayable.level(profile: false, result: nil) == 0)
+        #expect(NewlyPlayable.level(profile: true, result: nil) == 1)
+        #expect(NewlyPlayable.level(profile: true, result: "boots") == 2)
+        #expect(NewlyPlayable.level(profile: true, result: "plays") == 3)
+        #expect(NewlyPlayable.level(profile: true, result: "broken") == 0)
+    }
+
+    @Test func onlyARiseForAKnownUnbuiltGameIsAnArrival() {
+        let old = ["A": 0, "B": 1, "C": 0, "D": 2, "E": 3]
+        let now: [(titleID: String, name: String, level: Int, built: Bool)] = [
+            ("A", "Alpha", 1, false),    // a profile arrived
+            ("B", "Beta", 1, false),     // no change
+            ("C", "Gamma", 3, true),     // plays now, but built already
+            ("D", "Delta", 3, false),    // boots → plays
+            ("E", "Epsilon", 0, false),  // went down
+            ("F", "Zeta", 3, false),     // new to the games folder
+        ]
+        let a = NewlyPlayable.arrivals(old: old, now: now)
+        #expect(a.map(\.titleID) == ["D", "A"])
+        #expect(a[0].what == "plays now")
+        #expect(NewlyPlayable.headline(a) == "2 of your games can be built now")
+        #expect(NewlyPlayable.headline([a[1]]) == "Alpha can be built now")
+    }
+}

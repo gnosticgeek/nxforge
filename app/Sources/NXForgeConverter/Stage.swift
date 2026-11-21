@@ -844,6 +844,7 @@ struct StageHome: View {
                     Text("Your games").font(.system(size: 26, weight: .heavy)).tracking(-0.4)
                     Text("\(games.filter { $0.app != nil }.count) ready").font(.system(size: 16, weight: .medium)).foregroundStyle(StageLook.soft)
                     Spacer()
+                    NewlyPlayablePill(model: model)
                     if let w = week, w.seconds > 0, geo.size.width > 900 { WeekStrip(week: w).padding(.trailing, 14) }
                     if games.filter({ $0.app != nil }).count > 1 {
                         Button { model.pickRandom(games) } label: {

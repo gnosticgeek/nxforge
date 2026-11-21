@@ -174,6 +174,8 @@ final class AppModel {
     var theatreRow = 0
     var theatreMenu: Int?
     var theatreOffer: TVScreen?
+    /// games an engine update made buildable, announced and not yet built or dismissed (NewlyPlayable.swift)
+    var newlyPlayable: [PlayableArrival] = []
     /// what Spotlight was last given (Links.swift indexSpotlight): the games' ids, names and apps
     @ObservationIgnored var spotlightStamp = ""
     /// bumped when Open at login is switched, so Settings reads the login item again (LoginItem)
@@ -359,7 +361,7 @@ final class AppModel {
             let verified = VerifiedGames.load(e.repo)
             await MainActor.run {
                 let repoChanged = self.env?.repo != e.repo
-                self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date()
+                self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date(); self.checkNewlyPlayable()
                 // a NUP or a dump is read by the engine's Python: check it again now that it is known (zbic may just have been installed)
                 if !self.needsKeys { self.validate() }
                 if repoChanged { self.measure() }   // the game's profile (GameNeeds) is in the engine checkout
@@ -475,7 +477,7 @@ final class AppModel {
             let note = available.flatMap { Engine.upstreamNote(repo, target: $0.ref) }
             let target = found?.ref
             await MainActor.run {
-                self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note
+                self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note; self.verified = VerifiedGames.load(self.env?.repo); self.checkNewlyPlayable()
                 self.engineUpdate = available
                 self.lastUpdateCheck = Date()
                 self.revision += 1
