@@ -1066,6 +1066,7 @@ final class QuickSettings: ObservableObject {
     func goTo(_ h: SearchHit) {
         if case .cheat(let id) = h.nav, let c = cheats.first(where: { $0.id == id }) { folded.remove(c.section) }
         search = ""; searchFocused = false
+        if let w = sharedHost?.window, w.firstResponder is NSText { w.makeFirstResponder(w.contentView) }   // the typing back to the game view, so keys move the selection again
         setPage(h.page)
         DispatchQueue.main.async { self.sel = h.nav }   // after the page is drawn, so the scroll finds it
     }
@@ -1453,7 +1454,7 @@ struct QuickSettingsView: View {
         }
         .padding(.horizontal, 9).padding(.vertical, 5).frame(width: 168)
         .background(.white.opacity(searchFocus ? 0.12 : 0.07), in: .capsule).overlay(Capsule().stroke(.white.opacity(searchFocus ? 0.25 : 0.1)))
-        .background { Button("") { m.searchFocused = true }.keyboardShortcut("f", modifiers: .command).opacity(0).allowsHitTesting(false).accessibilityHidden(true) }
+        .background { Button("") { dm_qs_search_focus() }.keyboardShortcut("f", modifiers: .command).opacity(0).allowsHitTesting(false).accessibilityHidden(true) }
         .help("Search every setting (/ or ⌘F)")
         .onChange(of: m.searchFocused) { _, v in if searchFocus != v { searchFocus = v } }
         .onChange(of: searchFocus) { _, v in if m.searchFocused != v { m.searchFocused = v } }
@@ -2173,13 +2174,14 @@ public func dm_qs_toast_long(_ parent: UnsafeMutableRawPointer, _ msg: UnsafePoi
 public func dm_qs_gpu_memory_low(_ usedMB: UInt64, _ lowMB: UInt64) { shared?.gpuMemoryLow = (usedMB, lowMB) }
 
 private var shared: QuickSettings?
+private weak var sharedHost: NSView?   // the sidebar's view, for giving the search field the typing
 @_cdecl("dm_qs_make")
 public func dm_qs_make(_ game: UnsafePointer<CChar>, _ modsDir: UnsafePointer<CChar>, _ modsRun: UnsafePointer<CChar>?,
                        _ close: @escaping @convention(c) () -> Void, _ fps: @escaping @convention(c) () -> Void) -> UnsafeMutableRawPointer {
     let run = modsRun.map { String(cString: $0).split(separator: "\n").map(String.init) }   // in load order
     let m = QuickSettings(game: String(cString: game), modsDir: String(cString: modsDir), modsRunOrder: run, close: { close() }, fpsChanged: { fps() })
     shared = m
-    let v = NSHostingView(rootView: QuickSettingsView(m: m))
+    let v = NSHostingView(rootView: QuickSettingsView(m: m)); sharedHost = v
     v.sizingOptions = []   // front_mac.m sizes it: the right of the game window, full height
     return Unmanaged.passRetained(v).toOpaque()
 }
@@ -2202,7 +2204,16 @@ public func dm_qs_compare(_ on: Int32) { shared?.compare(on != 0) }
 @_cdecl("dm_qs_compare_glyph")
 public func dm_qs_compare_glyph(_ symbol: UnsafePointer<CChar>?) { shared?.compareGlyph = symbol.map { String(cString: $0) } }
 @_cdecl("dm_qs_search_focus")
-public func dm_qs_search_focus() { shared?.searchFocused = true }
+public func dm_qs_search_focus() {
+    shared?.searchFocused = true
+    // SwiftUI's focus does not always reach a field in a hosting view whose window has the game view as first responder: give the field the typing directly too
+    DispatchQueue.main.async { if let h = sharedHost, let f = searchTextField(in: h) { h.window?.makeFirstResponder(f) } }
+}
+private func searchTextField(in v: NSView) -> NSTextField? {
+    if let f = v as? NSTextField, f.isEditable, f.placeholderString == "Search" { return f }
+    for s in v.subviews { if let f = searchTextField(in: s) { return f } }
+    return nil
+}
 @_cdecl("dm_qs_peek_glyph")
 public func dm_qs_peek_glyph(_ symbol: UnsafePointer<CChar>?) { shared?.peekGlyph = symbol.map { String(cString: $0) } }
 @_cdecl("dm_qs_input")
