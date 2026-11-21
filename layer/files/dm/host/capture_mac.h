@@ -3,6 +3,7 @@
 #pragma once
 #import <Foundation/Foundation.h>
 void capture_screenshot(const char *game, void (^done)(NSString *path, NSString *err));
+void capture_picture_to(NSString *path, size_t height, void (^done)(NSString *path, NSString *err));   // the next frame as a picture height pixels tall (16:9) at path: .png, or .jpg
 void capture_record_start(const char *game, void (^done)(NSString *path, NSString *err));   // done: when the recording could not start, or when it ends (capture_record_stop)
 void capture_record_stop(void);
 int capture_recording(void);

@@ -16,7 +16,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.8.0"
+let SIDEBAR_VERSION = "0.9.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -177,6 +177,18 @@ enum Nav: Hashable {
         }
     }
 }
+// Search every setting (Sidebar 0.9.0): a row the search found, the page it is on, and a word on where it sits there
+struct SearchHit: Hashable { let nav: Nav; let title: String; let page: Int; let detail: String }
+/// Words that find a row by what it does, beside its own name (a search for "scanlines" finds the CRT filter, "120" frame interpolation)
+private let searchWords: [Nav: String] = [
+    .crt: "scanlines retro tv old filter shader", .strength: "crt", .scanlines: "crt scanline rows", .upscale: "metalfx sharp upscale resolution scaler", .aa: "fxaa jaggies edges smooth",
+    .aniso: "texture sharp angle", .edr: "hdr xdr bright glow", .edrStrength: "hdr bright", .scale: "stretch fit integer pixel perfect aspect size", .border: "bars blur glow art letterbox",
+    .pixel: "2d sprites sharp smooth mmpx", .fullscreen: "window", .fps: "frame rate counter", .corner: "fps counter", .fpsMs: "fps frame time", .interp: "120 hz smooth promotion",
+    .frameTimes: "performance stutter", .pauseOpen: "pause menu", .duckOpen: "volume sound quiet", .keepLibrary: "theatre suspend resume", .batterySaver: "power laptop unplugged",
+    .backup: "save snapshot copy", .replay: "clip record 30 seconds", .replaySave: "clip replay", .showFolder: "screenshots recordings captures", .changeFolder: "screenshots recordings captures",
+    .resetGraphics: "defaults", .resetPerformance: "defaults", .resetControls: "defaults keys buttons remap", .defaultsSave: "every game", .undoSession: "undo revert",
+    .settingsShow: "text file", .cheatsAllOff: "cheats", .modsOpen: "mods folder", .cheatsOpen: "cheats folder", .playerFirst(1): "controller swap",
+]
 struct Cheat: Identifiable {
     let id: Int, name: String, why: String, note: String, kind: Int32, on: Bool, flags: Int32, section: String
     var master: Bool { kind == 1 }
@@ -276,7 +288,7 @@ enum SaveBackup {
 // slot in the launcher's DM_LAUNCHER_SLOT_LOAD file and restarts the game: the launcher swaps the slot in with the host stopped (dm/mac/nxforge/launcher_slots.inc).
 // <save's folder>/save-slots/<n>/{manifest.json, data/save, data/save_device}: the snapshots' layout, so a slot can be copied into save-snapshots/ by hand and restored there
 struct SlotManifest: Codable { var schema = 1; var slot: Int; var titleID: String; var created: Date; var gameSaved: Date?; var inventory: BackupInventory }
-struct SlotInfo: Equatable { var created: Date; var gameSaved: Date? }
+struct SlotInfo: Equatable { var created: Date; var gameSaved: Date?; var shot: NSImage? }   // shot: the game as it was when the slot was saved (Sidebar 0.9.0)
 enum SaveSlots {
     static let count = 3
     static let changed = Notification.Name("NXForgeSaveSlotsChanged")
@@ -288,7 +300,9 @@ enum SaveSlots {
               m.schema == 1, m.slot == n, m.titleID == String(cString: front_qs_title_id()).uppercased() else { return nil }
         return m
     }
-    static func info(_ n: Int) -> SlotInfo? { manifest(n).map { SlotInfo(created: $0.created, gameSaved: $0.gameSaved) } }
+    static func info(_ n: Int) -> SlotInfo? { manifest(n).map { SlotInfo(created: $0.created, gameSaved: $0.gameSaved, shot: shotPath(n).flatMap { NSImage(contentsOfFile: $0) }) } }
+    /// The slot's picture: the game on screen when the slot was saved (front_qs_slot_shot), beside its save; the launcher's load takes only data/
+    static func shotPath(_ n: Int) -> String? { path(n).map { $0 + "/shot.jpg" } }
     /// The newest file's modification time under the save parts in dir: when the game last saved what is there
     private static func newest(_ roots: [String]) -> Date? {
         let fm = FileManager.default; var best: Date?
@@ -339,6 +353,13 @@ enum SaveSlots {
     }
 }
 private func ago(_ d: Date) -> String { d.formatted(.relative(presentation: .named)) }
+/// When this run of the game started (the host process's own start time), for the header's status line
+private let sessionStart: Date = {
+    var kp = kinfo_proc(), size = MemoryLayout<kinfo_proc>.stride, mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    guard sysctl(&mib, 4, &kp, &size, nil, 0) == 0, kp.kp_proc.p_un.__p_starttime.tv_sec > 0 else { return Date() }
+    let t = kp.kp_proc.p_un.__p_starttime
+    return Date(timeIntervalSince1970: TimeInterval(t.tv_sec) + TimeInterval(t.tv_usec) / 1_000_000)
+}()
 private var slotBusy = false
 private var slotArmed: (slot: Int, at: Date)?
 /// The Save Slots menu and its shortcuts (front_mac_quick_settings.inc): save now, a toast when done. Main thread
@@ -387,7 +408,9 @@ public func dm_qs_slot_save(_ n: Int32) {
         DispatchQueue.main.async {
             slotBusy = false
             switch r {
-            case .success(let m): front_qs_toast_text("Slot \(n) saved: the game's save from \(m.gameSaved.map(ago) ?? "now")")
+            case .success(let m):
+                front_qs_toast_text("Slot \(n) saved: the game's save from \(m.gameSaved.map(ago) ?? "now")")
+                if let p = SaveSlots.shotPath(n) { front_qs_slot_shot(p) { _ in NotificationCenter.default.post(name: SaveSlots.changed, object: nil) } }   // its picture, a moment later
             case .failure(let e): front_qs_toast_text("Slot \(n) not saved: \((e as? SaveBackup.Failure)?.text ?? e.localizedDescription)")
             }
             NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
@@ -491,6 +514,13 @@ final class QuickSettings: ObservableObject {
     @Published var assigning = -1
     @Published var peeking = false        // a peek is held (front_qs_peek): the sidebar has faded
     @Published var peekGlyph: String?     // the controller's symbol for the peek button (its top face button)
+    @Published var comparing = false      // a compare is held (dm_qs_compare): the graphics at their defaults meanwhile
+    @Published var compareGlyph: String?  // the controller's symbol for the compare button (its left face button)
+    @Published var search = ""            // Search every setting: what is typed (empty: the page as usual)
+    @Published var searchFocused = false  // the search field has the typing (/, ⌘F, a click)
+    /// Where the footer's Library button goes: Theatre when NXForge started the game from it (NXFORGE_FRONT_END_PAGE), else the library
+    let toTheatre = env["NXFORGE_FRONT_END_PAGE"] == "theatre"
+    var place: String { toTheatre ? "Theatre" : "Library" }
     private var baseline: [String: NSObject] = [:]   // Undo this session: the stored settings when the sidebar was first made
     private var cheatsBaseline: [Int: Bool] = [:]
     @Published var keyNames: [String] = keyDefaults
@@ -903,6 +933,143 @@ final class QuickSettings: ObservableObject {
         front_qs_toast_text("Settings put back as the game started")
     }
 
+    // Hold to compare (Sidebar 0.9.0): the live graphics settings at their defaults while held, put back on release, nothing saved; the picture full size meanwhile, as a peek
+    /// Something on the Graphics page differs from its default, so a compare shows a difference
+    var compareOffered: Bool { (filter != 0 && !filterFixed) || (scanline != 0 && crtOn) || (!upscale && !upscaleFixed) || (aa != 0 && !envFixed("DM_PRESENT_AA")) || (edr && !envFixed("DM_PRESENT_EDR"))
+        || (pixel != Int(DM_PIXEL_AUTO) && !envFixed("DM_PIXEL_ART")) || (scale != 0 && !scaleFixed) || (border != 0 && !borderFixed) }
+    func compare(_ on: Bool) {
+        guard on != comparing else { return }
+        comparing = on
+        if on {
+            if !filterFixed { mtl_present_filter_set(0, Float(strength)) }
+            if !upscaleFixed { mtl_present_upscale_set(1) }
+            if !envFixed("DM_PRESENT_AA") { mtl_present_aa_set(0) }
+            if !envFixed("DM_PRESENT_EDR") { mtl_present_edr_set(0) }
+            if !envFixed("DM_PIXEL_ART") { mtl_present_pixel_set(Int32(DM_PIXEL_AUTO)) }
+            if !scaleFixed { mtl_present_scale_set(0) }
+            if !borderFixed { mtl_present_border_set(0) }
+            front_qs_peek(1); front_qs_toast_text(compareOffered ? "Defaults: let go to see your settings" : "Your graphics are the defaults")
+        } else {
+            mtl_present_filter_set(Int32(filter), Float(strength)); mtl_present_upscale_set(upscale ? 1 : 0); mtl_present_aa_set(Int32(aa)); mtl_present_edr_set(edr ? 1 : 0)
+            mtl_present_pixel_set(Int32(pixel)); mtl_present_scale_set(Int32(scale)); mtl_present_border_set(Int32(border))
+            front_qs_peek(0)
+        }
+    }
+
+    // Search every setting (Sidebar 0.9.0): every row of every page by its name, the words it answers to and its page, the cheats (folded sections too) and mods by name.
+    // Up and down move through what it found, Return goes to that row on its page; a row on the quick bar is always in sight, so it is left out
+    func searchTitle(_ n: Nav) -> String? {
+        switch n {
+        case .replay: return "Instant replay"
+        case .replaySave: return "Save the last 30 seconds"
+        case .undoSession: return "Put it all back"
+        case .preset(let i): return Preset(rawValue: i).map { "\($0.name) preset" }
+        case .pauseOpen: return "Pause the game"
+        case .duckOpen: return "Quieter sound"
+        case .keepLibrary: return "Library keeps the game"
+        case .batterySaver: return "Save battery"
+        case .backup: return "Back up save now"
+        case .slotSave(let i): return "Save to slot \(i)"
+        case .slotLoad(let i): return "Load slot \(i)"
+        case .settingsShow: return "Settings file"
+        case .defaultsSave: return "Make these my defaults"
+        case .defaultsUse: return "Use my defaults"
+        case .fullscreen: return "Full screen"
+        case .scale: return "Picture size"
+        case .border: return "Around the picture"
+        case .pixel: return "Pixel art"
+        case .crt: return "CRT filter"
+        case .strength: return "CRT strength"
+        case .scanlines: return "Line size"
+        case .upscale: return "MetalFX upscaling"
+        case .aa: return "Anti-aliasing"
+        case .aniso: return "Anisotropic filtering"
+        case .edr: return "HDR highlights"
+        case .edrStrength: return "Brightness boost"
+        case .resetGraphics: return "Reset graphics"
+        case .fps: return "Show FPS"
+        case .corner: return "Counter position"
+        case .fpsMs: return "Show milliseconds"
+        case .interp: return "Frame interpolation"
+        case .frameTimes: return "Record frame times"
+        case .frameTimesFolder: return "Show frame times"
+        case .resetPerformance: return "Reset performance"
+        case .showFolder: return "Capture folder"
+        case .changeFolder: return "Change capture folder"
+        case .mod(let n): return "Mod: \(n)"
+        case .modsOpen: return "Open mods folder"
+        case .cheat(let id): return cheats.first { $0.id == id }?.name
+        case .cheatsAllOff: return "Turn all cheats off"
+        case .cheatsRestore: return "Restore saved cheats"
+        case .cheatsOpen: return "Open cheats folder"
+        case .key(let i): return "\(actionNames[i]) (keyboard)"
+        case .pad(let i): return "\(actionNames[i]) (controller)"
+        case .resetControls: return "Reset controls"
+        case .playerFirst(let p): return "Make player \(p + 1) player 1"
+        default: return nil
+        }
+    }
+    /// The row's value now, shown beside it in the results
+    func searchValue(_ n: Nav) -> String? {
+        func onOff(_ b: Bool) -> String { b ? "On" : "Off" }
+        switch n {
+        case .pauseOpen: return onOff(pauseOpen)
+        case .duckOpen: return onOff(duckOpen)
+        case .keepLibrary: return onOff(keepLibrary)
+        case .batterySaver: return onOff(batterySaver)
+        case .replay: return onOff(replay)
+        case .fullscreen: return onOff(fullscreen)
+        case .scale: return sizeNames[safe: scale]
+        case .border: return borderNames[safe: border]
+        case .pixel: return pixelNames[pixel]
+        case .crt: return onOff(crtOn)
+        case .strength: return "\(Int((strength * 100).rounded()))%"
+        case .upscale: return onOff(upscale)
+        case .aa: return aaNames[safe: aa]
+        case .aniso: return aniso == 0 ? "Game default" : "\(aniso)x"
+        case .edr: return onOff(edr)
+        case .edrStrength: return "\(Int((edrStrength * 100).rounded()))%"
+        case .fps: return onOff(fps)
+        case .corner: return cornerNames[safe: corner]
+        case .fpsMs: return onOff(fpsMs)
+        case .interp: return interpNames[safe: interp]
+        case .frameTimes: return onOff(frameTimes)
+        case .mod(let n): return onOff(wanted.contains(n))
+        case .cheat(let id): return cheats.first { $0.id == id }.map { onOff($0.on || $0.master) }
+        case .key(let i): return keyNames[safe: i]
+        case .pad(let i): return padNames[safe: i]
+        default: return nil
+        }
+    }
+    var searchHits: [SearchHit] {
+        let words = search.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return [] }
+        var out: [SearchHit] = [], seen: Set<Nav> = []
+        for p in pages.indices {
+            var navs = pageRows(p).flatMap { $0 }
+            if p == pCheats {   // every cheat, a folded section's too, and not the section headings
+                navs = cheats.filter { !$0.label }.map { Nav.cheat($0.id) } + navs.filter { if case .cheat = $0 { return false }; if case .section = $0 { return false }; return true }
+            }
+            for n in navs where !seen.contains(n) {
+                guard let t = searchTitle(n) else { continue }
+                var detail = pages[p].title
+                if case .cheat(let id) = n, let c = cheats.first(where: { $0.id == id }), !c.section.isEmpty { detail += " › \(c.section)" }
+                let hay = [t, detail, searchWords[n] ?? ""].joined(separator: " ")
+                guard words.allSatisfy({ hay.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }) else { continue }
+                seen.insert(n); out.append(SearchHit(nav: n, title: t, page: p, detail: detail))
+                if out.count >= 40 { return out }
+            }
+        }
+        return out
+    }
+    /// Go to a row the search found: its page, the row selected and in sight, a folded cheats section opened, the search put away
+    func goTo(_ h: SearchHit) {
+        if case .cheat(let id) = h.nav, let c = cheats.first(where: { $0.id == id }) { folded.remove(c.section) }
+        search = ""; searchFocused = false
+        setPage(h.page)
+        DispatchQueue.main.async { self.sel = h.nav }   // after the page is drawn, so the scroll finds it
+    }
+
     // What applies at the next launch: one count for the footer and the names under it, the same test as each row's tag
     var anisoPending: Bool { env["DM_ANISO"] == nil && aniso != anisoRun }
     var frameTimesPending: Bool { env["DM_FRAME_TIMES"] == nil && frameTimes != (frameTimesNow != nil) }
@@ -932,7 +1099,7 @@ final class QuickSettings: ObservableObject {
         if keepLibrary, let fe = frontEndApp {
             libraryArmed = false; front_qs_suspend()
             DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.gameSuspended"), object: Bundle.main.bundlePath, userInfo: ["pid": "\(getpid())"], deliverImmediately: true)
-            DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: nil, deliverImmediately: true)
+            DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: toTheatre ? ["place": "theatre"] : nil, deliverImmediately: true)
             let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
             NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: fe), configuration: cfg) { _, err in
                 if let err { fputs("quick settings: Library could not open NXForge at \(fe): \(err.localizedDescription)\n", stderr) }
@@ -940,7 +1107,7 @@ final class QuickSettings: ObservableObject {
             }
             return
         }
-        DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: nil, deliverImmediately: true)
+        DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: toTheatre ? ["place": "theatre"] : nil, deliverImmediately: true)
         guard let fe = frontEndApp else { NSApp.terminate(nil); return }
         let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: fe), configuration: cfg) { _, err in
@@ -974,16 +1141,17 @@ final class QuickSettings: ObservableObject {
         }
     }
     var rows: [[Nav]] {
-        var r: [[Nav]] = [[.shot, .record, .fpsQuick], [.mute, .volume], pages.indices.map { .tab($0) }] + pageRows(page)
+        var r: [[Nav]] = [[.shot, .record, .fpsQuick], [.mute, .volume], pages.indices.map { .tab($0) }] + (search.isEmpty ? pageRows(page) : searchHits.map { [$0.nav] })
         if restartCount > 0 && canRestart { r.append([.restart]) }
         return r + [frontEndApp == nil ? [.resume, .quit] : [.resume, .library, .quit]]
     }
-    var firstOnPage: Nav { pageRows(page).first?.first ?? .tab(page) }
-    func setPage(_ p: Int) { page = p; UserDefaults.standard.set(p, forKey: optKey("page")); if p == pCapture { refreshCaptures() } }
+    var firstOnPage: Nav { search.isEmpty ? pageRows(page).first?.first ?? .tab(page) : searchHits.first?.nav ?? .tab(page) }
+    func setPage(_ p: Int) { if p != page && !search.isEmpty { search = "" }; page = p; UserDefaults.standard.set(p, forKey: optKey("page")); if p == pCapture { refreshCaptures() } }
     func turnPage(_ d: Int) { setPage((page + d + pages.count) % pages.count); sel = firstOnPage }
     func nav(_ cmd: Int32) {
         if cmd == 6 { close(); return }
         if cmd == 7 || cmd == 8 { turnPage(cmd == 8 ? 1 : -1); return }
+        if cmd == 5 && !search.isEmpty, let h = searchHits.first(where: { $0.nav == sel }) ?? (sel == nil ? searchHits.first : nil) { goTo(h); return }   // Return on a result
         let rs = rows
         guard let cur = sel, let ri = rs.firstIndex(where: { $0.contains(cur) }), let ci = rs[ri].firstIndex(of: cur) else { sel = firstOnPage; return }
         switch cmd {
@@ -1121,7 +1289,8 @@ final class QuickSettings: ObservableObject {
             }
         } else { r.append(Hint(caps: [Cap(symbol: nil, text: pad ? "▲▼" : "↑↓")], text: "Move")) }
         r += [Hint(caps: [back], text: "Close"), Hint(caps: turn, text: "Page")]
-        // Hold to peek where the line has room (no selection, or one with a single hint): else the eye button's help says it
+        // Hold to peek where the line has room (no selection, or one with a single hint): else the eye button's help says it. On the Graphics page with something to compare, Hold to compare
+        if r.count <= 3 && page == pGraphics && search.isEmpty && compareOffered { return r + [Hint(caps: [pad ? Cap(symbol: compareGlyph, text: "Y") : Cap(symbol: nil, text: "C")], text: "Hold to compare")] }
         return r.count <= 3 ? r + [Hint(caps: [pad ? Cap(symbol: peekGlyph, text: "X") : Cap(symbol: nil, text: "P")], text: "Hold to peek")] : r
     }
 }
@@ -1202,6 +1371,7 @@ struct QuickSettingsView: View {
     @ObservedObject var m: QuickSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var compact = false   // a short window: tighter spacing
+    @FocusState private var searchFocus: Bool
     private var motion: Animation? { reduceMotion ? nil : .snappy }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1211,12 +1381,17 @@ struct QuickSettingsView: View {
             Divider().padding(.horizontal, 22)
             ScrollViewReader { proxy in ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(pages[m.page].title).font(.title3.bold()).id("top")
-                    pageBody
+                    HStack(spacing: 10) {
+                        Text(m.search.isEmpty ? pages[m.page].title : "Search").font(.title3.bold()).lineLimit(1)
+                        Spacer(minLength: 8)
+                        searchField
+                    }.id("top")
+                    if m.search.isEmpty { pageBody } else { searchResults }
                 }.padding(.horizontal, 22).padding(.vertical, 14).frame(maxWidth: .infinity, alignment: .leading)
             }.scrollIndicators(.automatic)
             .onChange(of: m.sel) { _, s in if let s { withAnimation(motion) { proxy.scrollTo(s, anchor: .center) } } }
-            .onChange(of: m.page) { _, _ in proxy.scrollTo("top", anchor: .top) } }
+            .onChange(of: m.page) { _, _ in proxy.scrollTo("top", anchor: .top) }
+            .onChange(of: m.search) { _, _ in proxy.scrollTo("top", anchor: .top) } }
             Divider().padding(.horizontal, 22)
             footer.padding(.horizontal, 22).padding(.top, compact ? 8 : 12).padding(.bottom, compact ? 10 : 14)
         }
@@ -1244,11 +1419,67 @@ struct QuickSettingsView: View {
                 }
                 Text(GameLook.name ?? m.game).font(.system(size: compact ? 20 : 24, weight: .heavy)).tracking(-0.5).lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                statusLine
             }
             Spacer(minLength: 8)
             peekButton
             Button(action: m.close) { Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 22, height: 22) }
                 .modifier(GlassButton(prominent: false)).buttonBorderShape(.circle).controlSize(.large).help("Close (Esc)")
+        }
+    }
+    // Under the game's name (Sidebar 0.9.0): how long this run has been going, the time, and the Mac's battery where it has one; each minute
+    private var statusLine: some View {
+        TimelineView(.everyMinute) { ctx in
+            let mins = Int(ctx.date.timeIntervalSince(sessionStart) / 60), b = BatteryNow.read()
+            HStack(spacing: 10) {
+                Label(mins < 1 ? "Just started" : mins < 60 ? "\(mins) min" : "\(mins / 60) h \(mins % 60) min", systemImage: "hourglass").help("How long the game has been open this time")
+                Label(ctx.date.formatted(date: .omitted, time: .shortened), systemImage: "clock")
+                if let b {
+                    Label("\(b.percent)%", systemImage: !b.onBattery ? "battery.100percent.bolt" : b.percent > 80 ? "battery.100percent" : b.percent > 55 ? "battery.75percent"
+                          : b.percent > 30 ? "battery.50percent" : b.percent > 10 ? "battery.25percent" : "battery.0percent")
+                        .foregroundStyle(b.onBattery && b.percent <= 20 ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary)).help(BatteryNow.line(b))
+                }
+            }.font(.caption.monospacedDigit()).foregroundStyle(.secondary).labelStyle(StatusLabel()).lineLimit(1)
+        }
+    }
+    // Search every setting: a field beside the page's name (/ or ⌘F give it the typing); while it holds words the page shows what they find
+    private var searchField: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
+            TextField("Search", text: $m.search).textFieldStyle(.plain).font(.callout).focused($searchFocus)
+            if !m.search.isEmpty {
+                Button { m.search = ""; m.searchFocused = false } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).help("Clear the search")
+            }
+        }
+        .padding(.horizontal, 9).padding(.vertical, 5).frame(width: 168)
+        .background(.white.opacity(searchFocus ? 0.12 : 0.07), in: .capsule).overlay(Capsule().stroke(.white.opacity(searchFocus ? 0.25 : 0.1)))
+        .background { Button("") { m.searchFocused = true }.keyboardShortcut("f", modifiers: .command).opacity(0).allowsHitTesting(false).accessibilityHidden(true) }
+        .help("Search every setting (/ or ⌘F)")
+        .onChange(of: m.searchFocused) { _, v in if searchFocus != v { searchFocus = v } }
+        .onChange(of: searchFocus) { _, v in if m.searchFocused != v { m.searchFocused = v } }
+    }
+    @ViewBuilder private var searchResults: some View {
+        let hits = m.searchHits
+        if hits.isEmpty {
+            Text("Nothing matches “\(m.search)”. Try a setting's name, or what it does (scanlines, HDR, 120).").font(.callout).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(hits, id: \.self) { h in
+                    Button { withAnimation(motion) { m.goTo(h) } } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: pages[h.page].icon).frame(width: 22).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(h.title).font(.body.weight(.medium)).lineLimit(1)
+                                Text(h.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            if let v = m.searchValue(h.nav) { Text(v).font(.callout).foregroundStyle(.secondary).lineLimit(1) }
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 6).padding(.horizontal, 8).background(.white.opacity(0.05), in: .rect(cornerRadius: 10)).contentShape(.rect)
+                    }.buttonStyle(.plain).nav(m, h.nav)
+                }
+                Text("Return goes to the selected one on its page.").font(.caption).foregroundStyle(.tertiary)
+            }
         }
     }
     // Hold to peek with the pointer: pressed, the sidebar fades and the game shows whole; let go and it is back (front_qs_peek)
@@ -1323,9 +1554,27 @@ struct QuickSettingsView: View {
         Button { withAnimation(motion) { action() } } label: { Label(title, systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
             .modifier(GlassButton(prominent: false)).controlSize(.large).disabled(!enabled).padding(.top, 4).nav(m, n)
     }
+    // Hold to compare (Sidebar 0.9.0): held with the pointer, C, or a controller's left face button, the game shows full size with the default graphics; let go for yours
+    private var compareButton: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(m.comparing ? "Showing the defaults" : "Hold to compare with defaults", systemImage: m.comparing ? "eye.fill" : "rectangle.split.2x1")
+                .font(.body.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 8)
+                .glassEffect(.regular.interactive(), in: .capsule).contentShape(.capsule).opacity(m.compareOffered ? 1 : 0.45)
+                .gesture(DragGesture(minimumDistance: 0).onChanged { _ in if !m.comparing { front_qs_compare(1) } }.onEnded { _ in front_qs_compare(0) })
+                .accessibilityLabel("Compare with the default graphics").accessibilityAddTraits(.isButton).padding(.top, 6)
+            note(m.compareOffered ? "Hold it, C, or a controller's left face button: the game full size with the default graphics until you let go"
+                 : "Your graphics are the defaults, so there is nothing to compare")
+        }
+    }
     private func slotRow(_ n: Int) -> some View {
         let info = m.slots[n - 1], armed = m.slotArmedNow == n
         return HStack(spacing: 10) {
+            Group {   // the game on screen when the slot was saved (Sidebar 0.9.0)
+                if let img = info?.shot { Image(nsImage: img).resizable().interpolation(.medium).aspectRatio(contentMode: .fill) }
+                else { Rectangle().fill(.white.opacity(0.06)).overlay(Text("\(n)").font(.callout.weight(.semibold)).foregroundStyle(.tertiary)) }
+            }
+            .frame(width: 64, height: 36).clipShape(.rect(cornerRadius: 6)).overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.12)))
+            .help(info?.shot != nil ? "The game when this slot was saved" : "")
             VStack(alignment: .leading, spacing: 1) {
                 Text("Slot \(n)").font(.body.weight(.medium))
                 Text(info.map { "Game saved \(($0.gameSaved ?? $0.created).formatted(.relative(presentation: .named)))" } ?? "Empty").font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -1359,7 +1608,7 @@ struct QuickSettingsView: View {
                 Row(title: "Library keeps the game", changed: !m.keepLibrary) {
                     Toggle("Library keeps the game", isOn: Binding(get: { m.keepLibrary }, set: { m.setKeepLibrary($0) })).toggleStyle(.switch).labelsHidden()
                 }.nav(m, .keepLibrary)
-                note(m.keepLibrary ? "Library pauses the game and keeps it, so Resume in NXForge picks up where you left off. It still uses its memory" : "Library ends the game, as Quit does")
+                note(m.keepLibrary ? "\(m.place) pauses the game and keeps it, so \(m.toTheatre ? "Continue" : "Resume") in NXForge picks up where you left off. It still uses its memory" : "\(m.place) ends the game, as Quit does")
             }
             if let b = m.battery {
                 subhead("On the battery").padding(.top, 6)
@@ -1525,6 +1774,7 @@ struct QuickSettingsView: View {
                  : m.edr && m.pixelPaused ? "Waits while Pixel art is on, which keeps the game's own colours"
                  : m.edrHeadroom <= 1.01 ? "Needs an XDR or HDR screen; this one shows SDR, so the picture stays the same"
                  : "Sun, lava and shiny things glow brighter than white. White HUD text brightens too")
+            compareButton
             resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
         }.onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in m.refreshPixel() }   // auto turns on by itself, and the art's grid follows the scene
     }
@@ -1795,9 +2045,10 @@ struct QuickSettingsView: View {
                 Button(action: m.close) { Text("Resume game").font(.headline).frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction).shadow(color: GameLook.colour.opacity(0.45), radius: 14, y: 2).nav(m, .resume)
                 if m.frontEndApp != nil {
-                    Button(action: m.quitToLibrary) { Label(m.libraryArmed ? "Press again" : "Library", systemImage: "square.grid.2x2").frame(minWidth: 96) }
+                    Button(action: m.quitToLibrary) { Label(m.libraryArmed ? "Press again" : m.place, systemImage: m.toTheatre ? "tv" : "square.grid.2x2").frame(minWidth: 96) }
                         .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.libraryArmed ? Color.orange : nil)
-                        .help("Ends the game and goes back to it in NXForge's library. Asks twice.").nav(m, .library)
+                        .help(m.toTheatre ? (m.keepLibrary ? "Pauses the game and goes back to NXForge's Theatre, where Continue picks it up again. Asks twice." : "Ends the game and goes back to NXForge's Theatre. Asks twice.")
+                              : m.keepLibrary ? "Pauses the game and goes back to it in NXForge's library, where Resume picks it up again. Asks twice." : "Ends the game and goes back to it in NXForge's library. Asks twice.").nav(m, .library)
                 }
                 Button(action: m.quit) { Label(m.quitArmed ? "Press again" : "Quit", systemImage: "power").frame(minWidth: 96) }
                     .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.quitArmed ? Color.red : nil).help("Ends the game, as ⌘Q does. Asks twice.").nav(m, .quit)
@@ -1867,6 +2118,10 @@ struct FrameGraph: View {
     }
 }
 private func tilde(_ p: String) -> String { (p as NSString).abbreviatingWithTildeInPath }
+extension Array { fileprivate subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil } }
+private struct StatusLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View { HStack(spacing: 3) { configuration.icon.imageScale(.small); configuration.title } }
+}
 private struct DotLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View { HStack(spacing: 5) { configuration.icon.font(.system(size: 6)); configuration.title } }
 }
@@ -1937,11 +2192,17 @@ public func dm_qs_refresh() { shared?.refresh() }
 @_cdecl("dm_qs_opened")
 public func dm_qs_opened(_ pad: Int32) {
     guard let m = shared else { return }
-    m.quitArmed = false; m.restartArmed = false; m.libraryArmed = false
+    m.quitArmed = false; m.restartArmed = false; m.libraryArmed = false; m.search = ""; m.searchFocused = false
     if pad != 0 { m.pad = true; m.sel = m.firstOnPage } else { m.sel = nil }
 }
 @_cdecl("dm_qs_peeked")
 public func dm_qs_peeked(_ on: Int32) { shared?.peeking = on != 0 }
+@_cdecl("dm_qs_compare")
+public func dm_qs_compare(_ on: Int32) { shared?.compare(on != 0) }
+@_cdecl("dm_qs_compare_glyph")
+public func dm_qs_compare_glyph(_ symbol: UnsafePointer<CChar>?) { shared?.compareGlyph = symbol.map { String(cString: $0) } }
+@_cdecl("dm_qs_search_focus")
+public func dm_qs_search_focus() { shared?.searchFocused = true }
 @_cdecl("dm_qs_peek_glyph")
 public func dm_qs_peek_glyph(_ symbol: UnsafePointer<CChar>?) { shared?.peekGlyph = symbol.map { String(cString: $0) } }
 @_cdecl("dm_qs_input")

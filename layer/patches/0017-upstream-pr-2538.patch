@@ -193,7 +193,7 @@ index 078cb118cc6000e2beed431deb82251954eedbed..971da557739f9d3947d89fe18c412806
      int movie_native_color_keys; // the movie SDK's MediaData uses the native buffer's colour index directly (MOVIE_NATIVE_COLOR_KEYS)
      int64_t patch_off;         // patch area relative to the base; negative = before the base (image too large, see patch_nso.py FAR), and size does not include it
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index a93fc6f260256c86ce981c3492ac92b449c27a52..7a4c1a0e880305f1ed175792087e31253a0e8e3d 100644
+index 4c1a7fd68aa587cdf479b189150b8a90f1afb1b1..0e4d6faf41fa6f46651942e71f786c21a57f2ba3 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -777,6 +777,17 @@ __attribute__((constructor)) static void prefs_from_old_id(void) {

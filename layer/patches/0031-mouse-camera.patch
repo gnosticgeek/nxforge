@@ -29,7 +29,7 @@ index 0e18f4acdba12baa3d1262f45e23c3dc6e171663..e52855e70c8f384bd8f119af32fca322
  DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone. macOS asks for access when you launch with this enabled.	level=basic
  DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index b3eb9ccefd0364a032e9faabefe31399624fb294..a2277ac4e5a731d036d6266e1900642d463b9ca7 100644
+index 4e239bc9bddf6b05a94a521b124a1233429bf384..c6986f66c17bb19117d05118be8fb63f6042aa85 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -6,7 +6,7 @@
@@ -108,7 +108,7 @@ index b3eb9ccefd0364a032e9faabefe31399624fb294..a2277ac4e5a731d036d6266e1900642d
 -            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
 +            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) { mcam_release(); [opts toggle:nil]; } return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
              if (g_menu_open) {   // the arrow keys, Return and Space move through the sidebar as a controller does; other keys go to its controls
-                 if (qs_peek_key(e)) return nil;   // NXForge: P held peeks at the game (front_mac_quick_settings.inc)
+                 { int k = qs_key(e); if (k) return k > 0 ? nil : e; }   // NXForge: P peeks, C compares, / searches; a text field keeps its typing (front_mac_quick_settings.inc)
                  int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK
 diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
 index 09a96a6babfdafda8447a18b3a1eb3116ed44acd..54be343db151ad5362aed4bc536dfb37dbf68a28 100644
