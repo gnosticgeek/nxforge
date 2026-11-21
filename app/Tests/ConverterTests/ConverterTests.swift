@@ -1785,7 +1785,7 @@ import Testing
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: dir) }
         let g = LibraryGame(kind: .dump, path: dir, name: "Switch Sports", fileCount: 1, bytes: 1, base: true, updates: 0, dlc: 0)
-        let f = BuildFailure(title: "A shader step failed", fix: "Build again.", error: "x", at: Date(), log: nil)
+        let f = FailedBuild(title: "A shader step failed", fix: "Build again.", error: "x", at: Date(), log: nil)
         let st = GameStatus.of(app: nil, game: g, keys: { _ in nil }, failure: { $0 == dir ? f : nil })
         #expect(st == .buildFailed(f))
         #expect(st.buildable && !st.playable && st.text == "Build failed" && st.action == "Build Again")

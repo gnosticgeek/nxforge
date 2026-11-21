@@ -260,7 +260,7 @@ final class AppModel {
     /// the summary a failed build's notification copies (Copy error summary)
     var lastErrorSummary: String?
     /// each game folder's last failed build, kept until one succeeds, so the game says why after a restart (BuildFailures)
-    var buildFailures: [String: BuildFailure] = BuildFailures.load()
+    var buildFailures: [String: FailedBuild] = BuildFailures.load()
     var playObservers: [NSObjectProtocol] = []
     /// each running game's memory samples, the task taking them, and the card shown when a game quits (PlayExtras)
     var playStats: [pid_t: PlayStats] = [:]
@@ -793,7 +793,7 @@ final class AppModel {
             return
         case .failure(let e):
             let d = BuildDiagnosis.diagnose(error: e.description, log: run.log)
-            let f = BuildFailure(title: d.title, fix: d.fix, error: e.description, at: Date(), log: run.logFile)
+            let f = FailedBuild(title: d.title, fix: d.fix, error: e.description, at: Date(), log: run.logFile)
             BuildFailures.record(f, folder: folder)
             buildFailures[folder] = f
         }

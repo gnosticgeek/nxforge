@@ -4,7 +4,7 @@
 // Application Support/failed-builds.json until a build of it succeeds, and the game shows "Build failed" with the reason.
 import Foundation
 
-struct BuildFailure: Codable, Equatable {
+struct FailedBuild: Codable, Equatable {
     /// the diagnosis in plain words (Diagnosis.title)
     var title: String
     /// what to do next (Diagnosis.fix)
@@ -20,19 +20,19 @@ enum BuildFailures {
     static var file: URL { Settings.supportDir.appending(path: "failed-builds.json") }
 
     /// game folder (Source.folder) → its last failed build
-    static func load() -> [String: BuildFailure] {
+    static func load() -> [String: FailedBuild] {
         guard let d = try? Data(contentsOf: file) else { return [:] }
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        return (try? dec.decode([String: BuildFailure].self, from: d)) ?? [:]
+        return (try? dec.decode([String: FailedBuild].self, from: d)) ?? [:]
     }
 
-    private static func save(_ all: [String: BuildFailure]) {
+    private static func save(_ all: [String: FailedBuild]) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601; enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let d = try? enc.encode(all) { try? d.write(to: file, options: .atomic) }
     }
 
-    static func record(_ f: BuildFailure, folder: String) { var all = load(); all[folder] = f; save(all) }
+    static func record(_ f: FailedBuild, folder: String) { var all = load(); all[folder] = f; save(all) }
 
     static func clear(folder: String) {
         var all = load()

@@ -16,7 +16,7 @@ enum GameStatus: Equatable {
     /// the folder the library found the game in is gone
     case filesMissing
     /// its last build stopped, and why (BuildFailures); building again is the fix
-    case buildFailed(BuildFailure)
+    case buildFailed(FailedBuild)
 
     /// Build is the step that fixes it (Not built yet, or a build that failed)
     var buildable: Bool {
@@ -106,7 +106,7 @@ enum GameStatus: Equatable {
     }
 
     /// A game's status from what is on disk (cheap: a few file checks)
-    static func of(app: String?, game: LibraryGame?, keys: (String) -> String?, failure: (String) -> BuildFailure? = { _ in nil },
+    static func of(app: String?, game: LibraryGame?, keys: (String) -> String?, failure: (String) -> FailedBuild? = { _ in nil },
                    fm: FileManager = .default) -> GameStatus {
         if app != nil { return .ready }
         guard let g = game else { return .notBuilt }
