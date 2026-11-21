@@ -184,7 +184,7 @@ struct ConverterApp: App {
             model.enterTheatre(on: nil)
             let theme = (env["NXC_THEATRE"] ?? "").capitalized
             model.theatreTheme = TheatreTheme(rawValue: theme) ?? .showcase
-            if let l = ShowcaseLayout.saved(theme: theme) { model.showcaseLayout = l }
+            if let l = theme == "Spines" ? .shelf : ShowcaseLayout.saved(theme: theme) { model.showcaseLayout = l }
             // Trailer: NXC_WATCH=1 its Watch; sound off while snapshotting
             model.theatreWatch = env["NXC_WATCH"] != nil
             model.theatreMuted = true
@@ -220,6 +220,21 @@ struct ConverterApp: App {
                 box.stage = b == "open" ? .open : .held
                 box.steps = env["NXC_TURN"].flatMap(Int.init) ?? 0
                 model.theatreUnbox = box
+                // NXC_BOOKLET=<opening>: its booklet open there (NXC_LEAF=<0 to 1>: the leaf that far over on its way to it)
+                // (NXC_MANUAL=<a PDF>: that as the game's manual)
+                if let n = env["NXC_BOOKLET"].flatMap(Int.init), let g = model.unboxedGame {
+                    if let m = env["NXC_MANUAL"] { GameManual.found[g.coverKey] = .some(URL(fileURLWithPath: m)) }
+                    if model.settings.downloadStoreInfo { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) }
+                    try? await Task.sleep(for: .seconds(1.5))
+                    model.openBooklet(g)
+                    if var b = model.booklet {
+                        b.frozen = true
+                        b.spread = min(max(n, 0), b.spreads - 1)
+                        b.from = b.spread
+                        if let l = env["NXC_LEAF"].flatMap(Double.init), b.spread > 0 { b.from = b.spread - 1; b.held = l }
+                        model.booklet = b
+                    }
+                }
             }
         }
         if let n = env["NXC_OFFER"] { model.theatreOffer = TVScreen(id: 0, name: n) }

@@ -30,6 +30,8 @@ struct TheatreUnbox: Equatable, Identifiable {
     var steps = 0
     /// held still as it is (a snapshot)
     var frozen = false
+    /// when the COMPLETED stamp came down on it
+    var stamped: Date?
 
     static let liftTime = 0.5, openTime = 0.65, shutTime = 0.45, leaveTime = 0.32
 }
@@ -136,13 +138,20 @@ extension AppModel {
             theatreUnbox = u
             theatreCue(.caseClose); theatreRumble(.snap)
         case (.open, .a): playFromCase(g)
-        case (_, .x): if let m = GameManual.find(g) { theatreCue(.open); openManual(m, title: g.name) }
+        case (_, .x): openBooklet(g)
         case (_, .y):
             // the game's page, as Y was before the case could be picked up
             theatreUnbox = nil
             caseFlipped = false
             gameDetail = g.ref
         case (_, .options): toggleFavorite(g); theatreCue(.step)
+        // the COMPLETED stamp comes down on the shut case, or is taken off
+        case (.held, .r) where settings.theatreCollector:
+            if toggleCompleted(g) {
+                u.stamped = Date(); u.steps = 0
+                theatreUnbox = u
+                theatreCueLater(.stamp, after: CaseKeepsake.stampTime * 0.8, rumble: .click)
+            } else { theatreCue(.step) }
         default: break
         }
     }
@@ -175,8 +184,10 @@ extension AppModel {
 struct TheatreCaseScene: View {
     let game: StageGame
     let state: CaseSceneState
-    /// the booklet shows in the lid
-    var booklet = false
+    /// its sticker, stamp and wear (Collector touches)
+    var keep: CaseKeepsake?
+    /// the game's manual, when it has one: its first page is the booklet's cover in the lid (else the booklet NXForge makes)
+    var manual: URL?
     let u: CGFloat
 
     // a Switch case is 105 × 170 × 10.5 mm
@@ -269,7 +280,7 @@ struct TheatreCaseScene: View {
         let plastic = red ? Color(red: 0.62, green: 0.06, blue: 0.09) : Color(white: 0.2)
         switch side {
         case .front:
-            art(CoverArt.front(game)).overlay(sleeve).clipShape(.rect(cornerRadius: 11 * u))
+            art(CoverArt.front(game)).overlay(sleeve).overlay { if let keep, !half { CaseKeepsakes(keep: keep, seed: game.coverKey) } }.clipShape(.rect(cornerRadius: 11 * u))
         case .back:
             art(CoverArt.back(game)).overlay(sleeve).clipShape(.rect(cornerRadius: 11 * u))
         case .left:
@@ -333,7 +344,7 @@ struct TheatreCaseScene: View {
         let w = Self.width * u, h = Self.height * u
         return ZStack {
             mould(red: red, tint: tint)
-            if booklet { bookletCover.frame(width: w * 0.80, height: h * 0.80).position(x: w / 2, y: h / 2) }
+            bookletCover.frame(width: w * 0.80, height: h * 0.80).position(x: w / 2, y: h / 2)
             ForEach([0.085, 0.915], id: \.self) { y in
                 RoundedRectangle(cornerRadius: 4 * u).fill(Color(white: red ? 0.5 : 0.36).opacity(0.9))
                     .frame(width: 54 * u, height: 13 * u).shadow(color: .black.opacity(0.5), radius: 3 * u, y: 2 * u)
@@ -342,26 +353,19 @@ struct TheatreCaseScene: View {
         }
     }
 
-    /// The booklet's cover: the game's wide art over its name, on cream paper
+    /// The booklet in the lid: the manual's first page, or the made booklet's cover
     var bookletCover: some View {
-        let paper = Color(red: 0.957, green: 0.937, blue: 0.894), ink = Color(red: 0.16, green: 0.14, blue: 0.11)
-        return GeometryReader { geo in
-            VStack(alignment: .leading, spacing: 0) {
-                art(CoverStore.shared.hero(game.coverKey) ?? CoverArt.wide(game) ?? CoverArt.front(game)).frame(height: geo.size.height * 0.56)
-                Text(game.name).font(.system(size: 25 * u, weight: .bold, design: .serif)).lineLimit(3).minimumScaleFactor(0.6)
-                    .padding(.top, 18 * u).padding(.horizontal, 20 * u)
-                Text("INSTRUCTION BOOKLET").font(.system(size: 11.5 * u, weight: .medium, design: .serif)).tracking(2 * u).opacity(0.62)
-                    .padding(.top, 6 * u).padding(.horizontal, 20 * u)
-                Spacer(minLength: 0)
+        Group {
+            if let m = manual, let img = BookletPress.shared.page(m, 0, height: 800) {
+                Color.white.overlay(Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill)).clipped()
+            } else {
+                BookletCover(game: game)
             }
-            .foregroundStyle(ink)
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-            .background(paper)
-            .clipShape(.rect(cornerRadius: 4 * u))
-            // the fold down its left, and the paper's edge
-            .overlay(alignment: .leading) { LinearGradient(colors: [.black.opacity(0.22), .clear], startPoint: .leading, endPoint: .trailing).frame(width: 14 * u) }
-            .shadow(color: .black.opacity(0.5), radius: 12 * u, y: 6 * u)
         }
+        .clipShape(.rect(cornerRadius: 4 * u))
+        // the fold down its left, and the paper's edge
+        .overlay(alignment: .leading) { LinearGradient(colors: [.black.opacity(0.22), .clear], startPoint: .leading, endPoint: .trailing).frame(width: 14 * u) }
+        .shadow(color: .black.opacity(0.5), radius: 12 * u, y: 6 * u)
     }
 
     // MARK: the card
@@ -540,7 +544,7 @@ struct TheatreUnboxView: View {
         if let g = model.stageGames().first(where: { $0.id == unbox.game }) {
             let _ = CoverStore.shared.revision
             let tint = CoverArt.tint(g)
-            let manual = GameManual.find(g) != nil
+            let manual = GameManual.find(g)
             TimelineView(.animation(paused: unbox.frozen)) { ctx in
                 let s = state(now: ctx.date)
                 ZStack {
@@ -548,12 +552,14 @@ struct TheatreUnboxView: View {
                     Color.black.opacity(0.88 * s.room).contentShape(.rect).onTapGesture { model.theatrePad(.a) }
                     LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black.opacity(0.9 * s.room), location: 0.82)], startPoint: .top, endPoint: .bottom)
                     RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
-                    TheatreCaseScene(game: g, state: s, booklet: manual, u: u)
-                    words(g, manual: manual).opacity(s.room)
+                    TheatreCaseScene(game: g, state: s, keep: keep(g, now: ctx.date), manual: manual, u: u)
+                    // the booklet open over it has the buttons then
+                    words(g).opacity(model.booklet == nil ? s.room : 0)
                 }
             }
+            .onDisappear { CaseTilt.stop() }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(g.name)'s case, \(unbox.stage == .open ? "open" : "in your hand")")
+            .accessibilityLabel("\(g.name)'s case, \(unbox.stage == .open ? "open" : "in your hand")" + (model.isCompleted(g) ? ", completed" : ""))
         }
     }
 
@@ -573,10 +579,23 @@ struct TheatreUnboxView: View {
         }
         s.yaw = spin.step(unbox, now: now, still: still) * (1 - s.open)
         s.pitch = 0.05 + 0.03 * s.open
+        // the case leans with the controller while it is in the hand
+        if model.settings.theatreTilt, !quick, unbox.leaving == nil {
+            let lean = CaseTilt.read(now: now)
+            s.yaw += lean.x * (1 - s.open)
+            s.pitch += lean.y * (1 - 0.6 * s.open)
+        }
         return s
     }
 
-    func words(_ g: StageGame, manual: Bool) -> some View {
+    /// The game's keepsakes, the stamp part of the way down while it is landing
+    func keep(_ g: StageGame, now: Date) -> CaseKeepsake? {
+        guard var k = model.keepsake(g) else { return nil }
+        if let t = unbox.stamped, !still, !unbox.frozen { k.landed = CaseSceneState.ease(now.timeIntervalSince(t) / CaseKeepsake.stampTime) }
+        return k
+    }
+
+    func words(_ g: StageGame) -> some View {
         let hints = TheatreHints(model: model)
         return VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10 * u) {
@@ -591,14 +610,15 @@ struct TheatreUnboxView: View {
             HStack(spacing: 30 * u) {
                 if unbox.stage == .open {
                     hints.hint("A", model.theatreAction(g), filled: true)
-                    if manual { hints.hint("X", "Read the booklet") }
+                    hints.hint("X", "Read the booklet")
                     hints.hint("Y", "Details")
                     hints.hint("B", "Close")
                 } else {
                     hints.hint("A", "Open", filled: true)
                     hints.hint("←", "→", "Turn")
-                    if manual { hints.hint("X", "Booklet") }
+                    hints.hint("X", "Booklet")
                     hints.hint("Y", "Details")
+                    if model.settings.theatreCollector { hints.hint("R", model.isCompleted(g) ? "Unstamp" : "Completed") }
                     hints.hint("B", "Put back")
                 }
             }

@@ -2043,7 +2043,7 @@ import Testing
                                ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
             #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
         }
-        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer"])
+        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer", "Wallet"])
         #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Shutter\"".utf8)) == .shutter)
     }
 
@@ -2057,7 +2057,8 @@ import Testing
         #expect(s.theatreTheme == .showcase && s.showcaseLayout == .fan)
         s.showcaseLayout = .carousel
         #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).showcaseLayout == .carousel)
-        #expect(ShowcaseLayout.carousel.other == .fan && ShowcaseLayout.fan.other == .carousel)
+        #expect(ShowcaseLayout.carousel.step(1) == .fan && ShowcaseLayout.fan.step(1) == .shelf && ShowcaseLayout.shelf.step(1) == .carousel)
+        #expect(ShowcaseLayout.carousel.step(-1) == .shelf && ShowcaseLayout.fan.step(-1) == .carousel)
     }
 
     @Test func shutterLaysPanelsEitherSideOfTheMiddle() {
@@ -2638,5 +2639,137 @@ import Testing
         #expect(index.contains("update.nsp|1"))
         let found = Forgotten.bigFiles(root.appending(path: ".staging").path)
         #expect(found.isEmpty)   // under the size worth a row
+
+@Suite struct TheatreBookletsAndTheShelf {
+    @Test func aManualIsTheBookletWhenThereIsOne() {
+        let p = Booklet.pages(manualPages: 5, about: ["Words"], excerpt: nil, shots: [])
+        #expect(p == (0..<5).map { BookletPage.manual($0) })
+        // a manual that cannot be read counts for nothing: the made booklet instead
+        #expect(Booklet.pages(manualPages: 0, about: [], excerpt: nil, shots: []).first == .cover)
+    }
+
+    @Test func aMadeBookletHasACoverABackAndAnEvenNumberOfPages() {
+        let shots = (1...9).map { URL(fileURLWithPath: "/s/\($0).jpg") }
+        for about in [[], ["Short."], Array(repeating: String(repeating: "A sentence of words. ", count: 30), count: 9)] {
+            for pictures in [[], Array(shots.prefix(1)), Array(shots.prefix(3)), shots] {
+                let p = Booklet.pages(manualPages: nil, about: about, excerpt: "An excerpt.", shots: pictures)
+                #expect(p.first == .cover && p.last == .back && p.count % 2 == 0)
+                #expect(p.contains(.playing) && p.contains(.facts))
+                #expect(p.filter { if case .about = $0 { true } else { false } }.count <= Booklet.aboutPages)
+                let shown = p.reduce(0) { n, page in if case .shots(let u) = page { n + u.count } else { n } }
+                #expect(shown == min(pictures.count, Booklet.shots))
+            }
+        }
+        // with no description, the store's one line stands in for it
+        let p = Booklet.pages(manualPages: nil, about: [], excerpt: "An excerpt.", shots: [])
+        #expect(p.contains(.about(first: true, paragraphs: ["An excerpt."])))
+    }
+
+    @Test func longWordsBreakBetweenSentencesAndFillPages() {
+        let long = String(repeating: "One sentence here. ", count: 100)
+        let pages = Booklet.fill([long, "Short."], limit: 400)
+        #expect(pages.count > 3)
+        for page in pages { for p in page { #expect(p.count <= 400 && (p.hasSuffix(".") || p.hasSuffix("!"))) } }
+        #expect(pages.flatMap { $0 }.joined(separator: " ").split(separator: " ").count == long.split(separator: " ").count + 1)
+        #expect(Booklet.fill(["  ", ""], limit: 400).isEmpty)
+    }
+
+    @Test func pagesFaceEachOtherAcrossTheSpine() {
+        // eight pages: the cover alone, three pairs, the back alone
+        #expect(Booklet.spreads(8) == 5)
+        #expect(Booklet.left(0) == nil && Booklet.right(0, pages: 8) == 0)
+        #expect(Booklet.left(1) == 1 && Booklet.right(1, pages: 8) == 2)
+        #expect(Booklet.left(4) == 7 && Booklet.right(4, pages: 8) == nil)
+        // an odd manual ends on a pair
+        #expect(Booklet.spreads(5) == 3 && Booklet.left(2) == 3 && Booklet.right(2, pages: 5) == 4)
+    }
+
+    @Test func theShelfsLayoutsStepRound() {
+        #expect(ShowcaseLayout.allCases == [.carousel, .fan, .shelf])
+        #expect(ShowcaseLayout.shelf.step(-1) == .fan)
+        // the shelf's own name, and the old Shelf theme's (which became the fan)
+        #expect(ShowcaseLayout(rawValue: "Shelf") == .shelf && ShowcaseLayout.saved(theme: "Shelf") == .fan)
+    }
+
+    @Test func theCaseInFrontComesOutOfTheRowAndTurns() {
+        let l = ShelfLayout.self
+        #expect(l.pull(0) == 1 && l.pull(1) == 0 && l.pull(-3) == 0)
+        #expect(abs(l.yaw(0) - l.turn) < 1e-9 && abs(l.yaw(2) - .pi / 2) < 1e-9)
+        // the row runs out evenly either side, with room for the case in front, and never doubles back as it slides
+        #expect(l.x(0) == 0 && l.x(-2) == -l.x(2))
+        #expect(abs(l.x(1) - (l.gap + l.pitch / 2)) < 1e-9 && abs(l.x(3) - l.x(2) - l.pitch) < 1e-9)
+        var last = l.x(-4)
+        for i in stride(from: -3.9, through: 4, by: 0.1) { #expect(l.x(i) > last); last = l.x(i) }
+        #expect(l.gap > l.width * (1 + l.grow) / 2)
+        #expect(l.shown(index: 0, count: 0) == nil && l.shown(index: 2, count: 100) == 0...(2 + l.reach))
+        #expect(l.light(0) == 1 && l.light(40) >= 0.45)
+    }
+
+    @Test func aPageTurnHasItsSound() {
+        #expect(!TheatreSynth.samples(.page).isEmpty && TheatreSynth.samples(.page).allSatisfy { abs($0) <= 1 })
+    }
+}
+
+@Suite struct TheatreKeepsakesTiltAndWallet {
+    @Test func theNewSettingsDefaultOnAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreTilt && old.theatreCollector && old.completed.isEmpty)
+        var s = Settings()
+        s.theatreTilt = false; s.theatreCollector = false; s.completed = ["0100AAAA00000000"]
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(!back.theatreTilt && !back.theatreCollector && back.completed == ["0100AAAA00000000"])
+        #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Wallet\"".utf8)) == .wallet)
+        #expect(TheatreMenuRow.row(.wallet) == .wallet)
+    }
+
+    @Test func aCaseShowsItsHoursAndItsWear() {
+        #expect(CaseKeepsake(hours: 0.4).sticker == nil && CaseKeepsake(hours: 0.4).plain)
+        #expect(CaseKeepsake(hours: 12.7).sticker == 12 && !CaseKeepsake(hours: 0, completed: true).plain)
+        #expect(CaseKeepsake(hours: 2).wear == 0 && CaseKeepsake(hours: 500).wear == 1)
+        let half = CaseKeepsake(hours: (CaseKeepsake.wearFrom + CaseKeepsake.wornAt) / 2).wear
+        #expect(abs(half - 0.5) < 1e-9)
+        // a game's scratches are its own, and the same every time
+        var a = Scuffs(seed: "0100AAAA00000000"), b = Scuffs(seed: "0100AAAA00000000"), c = Scuffs(seed: "0100BBBB00000000")
+        let x = (0..<8).map { _ in a.next() }, y = (0..<8).map { _ in b.next() }, z = (0..<8).map { _ in c.next() }
+        #expect(x == y && x != z && x.allSatisfy { (0..<1).contains($0) })
+    }
+
+    @Test func theCaseLeansWithTheControllerAndNoFurther() {
+        let flat = SIMD3<Double>(0, 0, -1)
+        #expect(CaseTilt.lean(gravity: flat, rest: flat) == SIMD2(0, 0))
+        // right side down turns the case to the right; top edge down tips it away; a big lean stops at the most
+        #expect(CaseTilt.lean(gravity: SIMD3(0.2, 0, -0.98), rest: flat).x > 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(-0.2, 0.1, -0.97), rest: flat).x < 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(0, 0.2, -0.98), rest: flat).y > 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(1, -1, 0), rest: flat) == SIMD2(CaseTilt.most.x, -CaseTilt.most.y))
+    }
+
+    @Test func theWalletsArrowsGoFromPocketToPocketAndOverThePage() {
+        let l = WalletLayout.self
+        #expect(l.perPage == 24 && l.pages(0) == 1 && l.pages(24) == 1 && l.pages(25) == 2)
+        // along a row, and up and down, within a page of 60 cards
+        #expect(l.move(from: 0, dx: 1, count: 60) == 1 && l.move(from: 9, dx: -1, count: 60) == 8)
+        #expect(l.move(from: 1, dy: 1, count: 60) == 9 && l.move(from: 17, dy: -1, count: 60) == 9)
+        #expect(l.move(from: 1, dy: -1, count: 60) == 1 && l.move(from: 17, dy: 1, count: 60) == 17)
+        // over the right edge to the same row of the next page, and back
+        #expect(l.move(from: 15, dx: 1, count: 60) == 32 && l.move(from: 32, dx: -1, count: 60) == 15)
+        // the last page is short: its rows end early, and going on comes round to the first page
+        #expect(l.move(from: 39, dx: 1, count: 60) == 56 && l.move(from: 47, dx: 1, count: 60) == 59)
+        #expect(l.move(from: 59, dx: 1, count: 60) == 8 && l.move(from: 0, dx: -1, count: 60) == 55)
+        #expect(l.move(from: 51, dy: 1, count: 60) == 59 && l.move(from: 59, dy: 1, count: 60) == 59)
+        // one short page
+        #expect(l.move(from: 4, dx: 1, count: 5) == 0 && l.move(from: 0, dx: -1, count: 5) == 4 && l.move(from: 2, dy: 1, count: 5) == 2)
+        #expect(l.move(from: 0, dx: 1, count: 0) == 0 && l.move(from: 0, dx: 1, count: 1) == 0)
+        // every pocket is inside the wallet, the two halves either side of the fold
+        for s in 0..<l.perPage {
+            let p = l.place(slot: s)
+            #expect(abs(p.x) + l.cardWidth / 2 <= l.width / 2 && abs(p.y) + l.cardHeight / 2 <= l.height / 2)
+            #expect(abs(p.x) - l.cardWidth / 2 >= l.spine / 2)
+        }
+        #expect(l.place(slot: 3).x < 0 && l.place(slot: 4).x > 0)
+    }
+
+    @Test func theStampHasItsSound() {
+        #expect(!TheatreSynth.samples(.stamp).isEmpty && TheatreSynth.samples(.stamp).allSatisfy { abs($0) <= 1 })
     }
 }
