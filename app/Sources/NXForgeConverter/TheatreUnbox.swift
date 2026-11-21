@@ -30,6 +30,8 @@ struct TheatreUnbox: Equatable, Identifiable {
     var steps = 0
     /// held still as it is (a snapshot)
     var frozen = false
+    /// when the COMPLETED stamp came down on it
+    var stamped: Date?
 
     static let liftTime = 0.5, openTime = 0.65, shutTime = 0.45, leaveTime = 0.32
 }
@@ -143,6 +145,13 @@ extension AppModel {
             caseFlipped = false
             gameDetail = g.ref
         case (_, .options): toggleFavorite(g); theatreCue(.step)
+        // the COMPLETED stamp comes down on the shut case, or is taken off
+        case (.held, .r) where settings.theatreCollector:
+            if toggleCompleted(g) {
+                u.stamped = Date(); u.steps = 0
+                theatreUnbox = u
+                theatreCueLater(.stamp, after: CaseKeepsake.stampTime * 0.8, rumble: .click)
+            } else { theatreCue(.step) }
         default: break
         }
     }
@@ -175,6 +184,8 @@ extension AppModel {
 struct TheatreCaseScene: View {
     let game: StageGame
     let state: CaseSceneState
+    /// its sticker, stamp and wear (Collector touches)
+    var keep: CaseKeepsake?
     /// the game's manual, when it has one: its first page is the booklet's cover in the lid (else the booklet NXForge makes)
     var manual: URL?
     let u: CGFloat
@@ -269,7 +280,7 @@ struct TheatreCaseScene: View {
         let plastic = red ? Color(red: 0.62, green: 0.06, blue: 0.09) : Color(white: 0.2)
         switch side {
         case .front:
-            art(CoverArt.front(game)).overlay(sleeve).clipShape(.rect(cornerRadius: 11 * u))
+            art(CoverArt.front(game)).overlay(sleeve).overlay { if let keep, !half { CaseKeepsakes(keep: keep, seed: game.coverKey) } }.clipShape(.rect(cornerRadius: 11 * u))
         case .back:
             art(CoverArt.back(game)).overlay(sleeve).clipShape(.rect(cornerRadius: 11 * u))
         case .left:
@@ -541,13 +552,14 @@ struct TheatreUnboxView: View {
                     Color.black.opacity(0.88 * s.room).contentShape(.rect).onTapGesture { model.theatrePad(.a) }
                     LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black.opacity(0.9 * s.room), location: 0.82)], startPoint: .top, endPoint: .bottom)
                     RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
-                    TheatreCaseScene(game: g, state: s, manual: manual, u: u)
+                    TheatreCaseScene(game: g, state: s, keep: keep(g, now: ctx.date), manual: manual, u: u)
                     // the booklet open over it has the buttons then
                     words(g).opacity(model.booklet == nil ? s.room : 0)
                 }
             }
+            .onDisappear { CaseTilt.stop() }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(g.name)'s case, \(unbox.stage == .open ? "open" : "in your hand")")
+            .accessibilityLabel("\(g.name)'s case, \(unbox.stage == .open ? "open" : "in your hand")" + (model.isCompleted(g) ? ", completed" : ""))
         }
     }
 
@@ -567,7 +579,20 @@ struct TheatreUnboxView: View {
         }
         s.yaw = spin.step(unbox, now: now, still: still) * (1 - s.open)
         s.pitch = 0.05 + 0.03 * s.open
+        // the case leans with the controller while it is in the hand
+        if model.settings.theatreTilt, !quick, unbox.leaving == nil {
+            let lean = CaseTilt.read(now: now)
+            s.yaw += lean.x * (1 - s.open)
+            s.pitch += lean.y * (1 - 0.6 * s.open)
+        }
         return s
+    }
+
+    /// The game's keepsakes, the stamp part of the way down while it is landing
+    func keep(_ g: StageGame, now: Date) -> CaseKeepsake? {
+        guard var k = model.keepsake(g) else { return nil }
+        if let t = unbox.stamped, !still, !unbox.frozen { k.landed = CaseSceneState.ease(now.timeIntervalSince(t) / CaseKeepsake.stampTime) }
+        return k
     }
 
     func words(_ g: StageGame) -> some View {
@@ -593,6 +618,7 @@ struct TheatreUnboxView: View {
                     hints.hint("←", "→", "Turn")
                     hints.hint("X", "Booklet")
                     hints.hint("Y", "Details")
+                    if model.settings.theatreCollector { hints.hint("R", model.isCompleted(g) ? "Unstamp" : "Completed") }
                     hints.hint("B", "Put back")
                 }
             }

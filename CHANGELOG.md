@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.52.0 (2026-11-21)
+
+- **Theatre: tilt, collector touches and the card wallet** (Converter 0.26.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the case in your hand leans as you lean the controller. Cases show their history: a sticker with the hours you have played, wear on the ones you play most, and a COMPLETED stamp you bring down with R. Wallet is a fifth Theatre theme: your games as game cards in a zip-up wallet, twenty-four to a page. No game rebuild needed.
+
 ## 0.51.0 (2026-11-21)
 
 - **Theatre: a booklet for every game, and the shelf** (Converter 0.25.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): X with a case in your hand opens its booklet on Theatre, two pages at a time, each leaf turning over the spine with a paper sound and a tap in the controller. A game with a manual (a PDF) has that as its booklet. Every other game gets one NXForge makes: the store's words about the game, its screenshots, what Quick settings does while you play, the game's facts and your own time with it. Showcase has a third layout, Shelf: your games standing spine out along a shelf, the one in focus drawn out and turned to face you. No game rebuild needed.
