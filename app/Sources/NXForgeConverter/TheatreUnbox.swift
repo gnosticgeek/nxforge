@@ -3,6 +3,7 @@
 // screen, which starts the game. The same scene, run by the clock, is the launch from any theme (Settings › Theatre › When a
 // game starts): the case comes forward and opens, the card drops into the console with a click, and its light fills the room.
 import AppKit
+import simd
 import SwiftUI
 
 /// How a game starts on Theatre (Settings › Theatre › When a game starts)
