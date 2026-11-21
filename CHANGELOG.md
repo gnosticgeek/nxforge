@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.11 (2026-11-21)
+
+- **A native top bar** (Converter 0.22.11, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the window's top bar is now a real macOS toolbar on the same row as the window's buttons, with the window title, a segmented Home / Discover / Saves / Converter switch, one Liquid Glass group for Theatre, Refresh and Settings, and the system search field. No game rebuild needed.
+
 ## 0.48.10 (2026-11-21)
 
 - **Theatre's Shutter theme** (Converter 0.22.10, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the games' wide art as slanted panels side by side, the game in focus wide in the middle with a pink accent bar under it and its neighbours narrow with their names in italics, on a deep plum room. Below: the name, big, a line of what the game is (console, genre, players, built, time played) and the buttons. ZL and ZR now step through Showcase, Cinema, Shutter and Trailer. No game rebuild needed.
