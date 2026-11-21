@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.24.1 (2026-11-21)
+
+Shipped in NXForge 0.51.0.
+
+- **Back to Theatre from a game.** A game started from Theatre is told so (`NXFORGE_FRONT_END_PAGE=theatre`), so its sidebar (Sidebar 0.9.0) offers Theatre instead of Library; when it says so, NXForge stays in Theatre with the focus on that game instead of opening the game's page. Code: `PlayOptions.swift`.
+
 ## 0.23.0 (2026-11-21)
 
 Shipped in NXForge 0.49.0.
