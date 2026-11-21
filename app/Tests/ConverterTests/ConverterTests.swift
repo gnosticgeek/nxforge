@@ -1914,6 +1914,28 @@ import Testing
         #expect(TheatreFilter.genre("Platformer").title == "Platformers")
     }
 
+    @Test func theatreFiltersOnlyOfferGenresTheGamesAreIn() {
+        func game(_ id: String, built: Bool, fav: Bool = false) -> StageGame {
+            var g = StageGame(id: id, ref: GameRef(app: "/\(id).app"), name: id, console: .switch1, app: built ? "/\(id).app" : nil)
+            g.favorite = fav
+            return g
+        }
+        let book = ["cup": ["Run and gun", "Action"], "dd": ["Beat 'em up"], "golf": ["Golf", "Sports"], "tetris": ["Puzzle"]]
+        let genres: (StageGame) -> [String] = { book[$0.id] ?? ["Other"] }
+        let all = [game("cup", built: true), game("dd", built: true, fav: true), game("golf", built: false), game("tetris", built: false)]
+        let built = all.filter { $0.app != nil }
+        // the built games' genres only: no Puzzles or Sports stop that would show every built game
+        let stops = TheatreFilter.stops(built, genres: genres)
+        #expect(stops == [.all, .favourites, .genre("Action"), .genre("Run and gun"), .genre("Beat 'em up")])
+        // Trailer shows unbuilt games too, so their genres are stops there
+        #expect(TheatreFilter.stops(all, genres: genres).contains(.genre("Puzzle")))
+        // a genre picks only its games
+        #expect(built.filter { TheatreFilter.genre("Beat 'em up").matches($0, genres: genres) }.map(\.id) == ["dd"])
+        // a genre none of these games is in (chosen on Trailer) is All games here, not every game under the genre's name
+        #expect(TheatreFilter.genre("Puzzle").inUse(built, genres: genres) == .all)
+        #expect(TheatreFilter.genre("Action").inUse(built, genres: genres) == .genre("Action"))
+    }
+
     @Test func recentlyPlayedIsTheLastThirtyDays() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         func game(_ daysAgo: Double?) -> StageGame {

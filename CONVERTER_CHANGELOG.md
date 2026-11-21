@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.11 (2026-11-21)
+
+Shipped in NXForge 0.48.11.
+
+- **Theatre's genre filter works**: L and R now step through only the genres of the games the theme shows (the built ones on Showcase, Cinema and Shutter; every game on Trailer), so each genre shows just its own games. Before, genres that only unbuilt games are in were stops too, and choosing one showed every built game under the genre's name. A genre chosen on Trailer that no built game is in reads All games on the other themes, and comes back on Trailer.
+
 ## 0.22.10 (2026-11-21)
 
 Shipped in NXForge 0.48.10.

@@ -114,6 +114,32 @@ enum TheatreFilter: Hashable {
         }
     }
 
+    /// Whether a game is in the filter, given its genres
+    func matches(_ g: StageGame, genres: (StageGame) -> [String]) -> Bool {
+        switch self {
+        case .all: true
+        case .favourites: g.favorite
+        case .recent: Self.isRecent(g)
+        case .genre(let x): genres(g).contains(x)
+        }
+    }
+
+    /// The stops L and R walk for these games: All games, then Favourites and Recently played when any of them are, then each
+    /// genre one of them is in. Only the games the theme shows count, so no stop comes up empty.
+    static func stops(_ games: [StageGame], genres: (StageGame) -> [String]) -> [TheatreFilter] {
+        var out: [TheatreFilter] = [.all]
+        if games.contains(where: \.favorite) { out.append(.favourites) }
+        if games.contains(where: { isRecent($0) }) { out.append(.recent) }
+        out += DiscoverSource.order(Set(games.flatMap(genres))).map { .genre($0) }
+        return out
+    }
+
+    /// The filter in use for these games: this one when any of them is in it, else All games (a genre only unbuilt games are in,
+    /// chosen on Trailer, is All games on Showcase), so a filter never shows every game under its own name
+    func inUse(_ games: [StageGame], genres: (StageGame) -> [String]) -> TheatreFilter {
+        self == .all || games.contains(where: { matches($0, genres: genres) }) ? self : .all
+    }
+
     /// Recently played: played in the last 30 days
     static let recentDays = 30.0
     static func isRecent(_ g: StageGame, now: Date = Date()) -> Bool {
@@ -258,7 +284,6 @@ extension AppModel {
         theatreSaver = false
         // where Theatre was left: its filter, and the game in focus (else the one played last)
         theatreFilter = TheatreFilter(key: settings.theatreFilter)
-        if !theatreFilters().contains(theatreFilter) { theatreFilter = .all }
         if theatreFocus == nil {
             let games = theatreGames()
             theatreFocus = games.first { $0.id == settings.theatreLastGame }?.id ?? Self.lastPlayed(games)?.id ?? games.first?.id
@@ -318,50 +343,43 @@ extension AppModel {
 
     /// The games on Theatre: the built ones (every game when none is built) in the filter, favourites first, then the ones played
     /// lately (newest first), then as the front end orders them
-    func theatreGames() -> [StageGame] {
+    func theatreGames() -> [StageGame] { theatreList(theatrePool(.showcase)) }
+
+    /// The games a theme picks from: Trailer every game, built or not; the others the built ones (every game when none is built)
+    func theatrePool(_ theme: TheatreTheme? = nil) -> [StageGame] {
         let games = stageGames()
+        if (theme ?? theatreTheme) == .trailer { return games }
         let built = games.filter { $0.app != nil }
-        return theatreOrder(theatreFiltered(built.isEmpty ? games : built))
+        return built.isEmpty ? games : built
     }
 
-    /// Favourites first, then the games played in the last 30 days (the newest first), then the rest in the order given;
-    /// Recently played is newest first throughout
-    func theatreOrder(_ games: [StageGame]) -> [StageGame] {
+    /// The filter in use for these games (TheatreFilter.inUse)
+    func theatreFilter(in games: [StageGame]) -> TheatreFilter { theatreFilter.inUse(games, genres: discover.genres(of:)) }
+
+    /// The filter the chip names: the one in use for the theme's games
+    var theatreShownFilter: TheatreFilter { theatreFilter(in: theatrePool()) }
+
+    /// The games in the filter, in Theatre's order: favourites first, then the games played in the last 30 days (the newest
+    /// first), then the rest in the order given; Recently played is newest first throughout
+    func theatreList(_ games: [StageGame]) -> [StageGame] {
+        let f = theatreFilter(in: games)
+        let list = games.filter { f.matches($0, genres: discover.genres(of:)) }
         let now = Date()
         let byLast: (StageGame, StageGame) -> Bool = { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }
-        if theatreFilter == .recent { return games.sorted(by: byLast) }
-        let favs = games.filter(\.favorite)
-        let recent = games.filter { !$0.favorite && TheatreFilter.isRecent($0, now: now) }.sorted(by: byLast)
-        let rest = games.filter { !$0.favorite && !TheatreFilter.isRecent($0, now: now) }
+        if f == .recent { return list.sorted(by: byLast) }
+        let favs = list.filter(\.favorite)
+        let recent = list.filter { !$0.favorite && TheatreFilter.isRecent($0, now: now) }.sorted(by: byLast)
+        let rest = list.filter { !$0.favorite && !TheatreFilter.isRecent($0, now: now) }
         return favs + recent + rest
     }
 
-    /// The games in the filter; when it holds none of these (a favourite unbuilt, say), all of them, so Theatre is never empty
-    func theatreFiltered(_ games: [StageGame]) -> [StageGame] {
-        let out: [StageGame]
-        switch theatreFilter {
-        case .all: return games
-        case .favourites: out = games.filter(\.favorite)
-        case .recent: out = games.filter { TheatreFilter.isRecent($0) }
-        case .genre(let g): out = games.filter { discover.genres(of: $0).contains(g) }
-        }
-        return out.isEmpty ? games : out
-    }
-
-    /// The stops L and R walk: All games, then Favourites and Recently played when there are any, then each genre your games are in
-    func theatreFilters() -> [TheatreFilter] {
-        let games = stageGames()
-        var out: [TheatreFilter] = [.all]
-        if games.contains(where: \.favorite) { out.append(.favourites) }
-        if games.contains(where: { TheatreFilter.isRecent($0) }) { out.append(.recent) }
-        out += discover.shelves(games).map { .genre($0) }
-        return out
-    }
+    /// The stops L and R walk, for the games the theme shows (TheatreFilter.stops)
+    func theatreFilters() -> [TheatreFilter] { TheatreFilter.stops(theatrePool(), genres: discover.genres(of:)) }
 
     func stepTheatreFilter(_ d: Int) {
         let all = theatreFilters()
         guard all.count > 1 else { return }
-        let i = all.firstIndex(of: theatreFilter) ?? 0
+        let i = all.firstIndex(of: theatreShownFilter) ?? 0
         theatreFilter = all[(i + d + all.count) % all.count]
         theatreRow = 0
         theatreWatch = false
@@ -421,7 +439,8 @@ extension AppModel {
         let all = stageGames()
         // the games drive away (or nothing built yet): every game, so Theatre still has rows
         let built = all.contains { $0.app != nil } ? all.filter { $0.app != nil } : all
-        if theatreFilter != .all { return [TheatreRow(title: theatreFilter.title, games: theatreOrder(theatreFiltered(built)))] }
+        let filter = theatreFilter(in: built)
+        if filter != .all { return [TheatreRow(title: filter.title, games: theatreList(built))] }
         var rows: [TheatreRow] = []
         let recent = built.filter { $0.last != nil }.sorted { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }
         if !recent.isEmpty { rows.append(TheatreRow(title: "Continue playing", games: Array(recent.prefix(12)))) }
@@ -451,7 +470,7 @@ extension AppModel {
 
     /// Trailer's strip: the games in the filter, built or not, favourites first, then the ones played lately, then as the front
     /// end orders them (built, recently played, by name)
-    func trailerGames() -> [StageGame] { theatreOrder(theatreFiltered(stageGames())) }
+    func trailerGames() -> [StageGame] { theatreList(theatrePool(.trailer)) }
 
     func setTheatreTheme(_ t: TheatreTheme) {
         theatreTheme = t
@@ -892,11 +911,11 @@ struct TheatreFilterChip: View {
     var body: some View {
         let all = model.theatreFilters()
         if all.count > 1 {
-            let i = all.firstIndex(of: model.theatreFilter) ?? 0
+            let i = all.firstIndex(of: model.theatreShownFilter) ?? 0
             HStack(spacing: 14 * u) {
                 TheatreHints(model: model, light: ink != .white).glyph("L")
                 VStack(spacing: 2 * u) {
-                    Text(model.theatreFilter.title).font(.system(size: 20 * u, weight: .semibold)).lineLimit(1)
+                    Text(model.theatreShownFilter.title).font(.system(size: 20 * u, weight: .semibold)).lineLimit(1)
                     // a dot a filter while there are few; with many genres a row of dots is only noise, so "3 of 17"
                     if all.count <= 8 {
                         HStack(spacing: 5 * u) {
@@ -913,9 +932,9 @@ struct TheatreFilterChip: View {
             }
             .padding(.horizontal, 16 * u).padding(.vertical, 8 * u)
             .background(ink.opacity(0.08), in: .capsule)
-            .animation(.easeInOut(duration: 0.25), value: model.theatreFilter)
+            .animation(.easeInOut(duration: 0.25), value: model.theatreShownFilter)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Filter: \(model.theatreFilter.title), L and R change it")
+            .accessibilityLabel("Filter: \(model.theatreShownFilter.title), L and R change it")
         }
     }
 }
