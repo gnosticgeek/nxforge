@@ -2057,7 +2057,8 @@ import Testing
         #expect(s.theatreTheme == .showcase && s.showcaseLayout == .fan)
         s.showcaseLayout = .carousel
         #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).showcaseLayout == .carousel)
-        #expect(ShowcaseLayout.carousel.other == .fan && ShowcaseLayout.fan.other == .carousel)
+        #expect(ShowcaseLayout.carousel.step(1) == .fan && ShowcaseLayout.fan.step(1) == .shelf && ShowcaseLayout.shelf.step(1) == .carousel)
+        #expect(ShowcaseLayout.carousel.step(-1) == .shelf && ShowcaseLayout.fan.step(-1) == .carousel)
     }
 
     @Test func shutterLaysPanelsEitherSideOfTheMiddle() {
@@ -2597,5 +2598,75 @@ import Testing
     @Test func aModWithoutTitlesTakesItsFoldersName() {
         #expect(CodeMods.fallbackName(URL(fileURLWithPath: "/mods/60 FPS/exefs/AABBCCDDEEFF0011.ips")) == "60 FPS")
         #expect(CodeMods.fallbackName(URL(fileURLWithPath: "/mods/Steady frame rate.pchtxt")) == "Steady frame rate")
+    }
+}
+
+@Suite struct TheatreBookletsAndTheShelf {
+    @Test func aManualIsTheBookletWhenThereIsOne() {
+        let p = Booklet.pages(manualPages: 5, about: ["Words"], excerpt: nil, shots: [])
+        #expect(p == (0..<5).map { BookletPage.manual($0) })
+        // a manual that cannot be read counts for nothing: the made booklet instead
+        #expect(Booklet.pages(manualPages: 0, about: [], excerpt: nil, shots: []).first == .cover)
+    }
+
+    @Test func aMadeBookletHasACoverABackAndAnEvenNumberOfPages() {
+        let shots = (1...9).map { URL(fileURLWithPath: "/s/\($0).jpg") }
+        for about in [[], ["Short."], Array(repeating: String(repeating: "A sentence of words. ", count: 30), count: 9)] {
+            for pictures in [[], Array(shots.prefix(1)), Array(shots.prefix(3)), shots] {
+                let p = Booklet.pages(manualPages: nil, about: about, excerpt: "An excerpt.", shots: pictures)
+                #expect(p.first == .cover && p.last == .back && p.count % 2 == 0)
+                #expect(p.contains(.playing) && p.contains(.facts))
+                #expect(p.filter { if case .about = $0 { true } else { false } }.count <= Booklet.aboutPages)
+                let shown = p.reduce(0) { n, page in if case .shots(let u) = page { n + u.count } else { n } }
+                #expect(shown == min(pictures.count, Booklet.shots))
+            }
+        }
+        // with no description, the store's one line stands in for it
+        let p = Booklet.pages(manualPages: nil, about: [], excerpt: "An excerpt.", shots: [])
+        #expect(p.contains(.about(first: true, paragraphs: ["An excerpt."])))
+    }
+
+    @Test func longWordsBreakBetweenSentencesAndFillPages() {
+        let long = String(repeating: "One sentence here. ", count: 100)
+        let pages = Booklet.fill([long, "Short."], limit: 400)
+        #expect(pages.count > 3)
+        for page in pages { for p in page { #expect(p.count <= 400 && (p.hasSuffix(".") || p.hasSuffix("!"))) } }
+        #expect(pages.flatMap { $0 }.joined(separator: " ").split(separator: " ").count == long.split(separator: " ").count + 1)
+        #expect(Booklet.fill(["  ", ""], limit: 400).isEmpty)
+    }
+
+    @Test func pagesFaceEachOtherAcrossTheSpine() {
+        // eight pages: the cover alone, three pairs, the back alone
+        #expect(Booklet.spreads(8) == 5)
+        #expect(Booklet.left(0) == nil && Booklet.right(0, pages: 8) == 0)
+        #expect(Booklet.left(1) == 1 && Booklet.right(1, pages: 8) == 2)
+        #expect(Booklet.left(4) == 7 && Booklet.right(4, pages: 8) == nil)
+        // an odd manual ends on a pair
+        #expect(Booklet.spreads(5) == 3 && Booklet.left(2) == 3 && Booklet.right(2, pages: 5) == 4)
+    }
+
+    @Test func theShelfsLayoutsStepRound() {
+        #expect(ShowcaseLayout.allCases == [.carousel, .fan, .shelf])
+        #expect(ShowcaseLayout.shelf.step(-1) == .fan)
+        // the shelf's own name, and the old Shelf theme's (which became the fan)
+        #expect(ShowcaseLayout(rawValue: "Shelf") == .shelf && ShowcaseLayout.saved(theme: "Shelf") == .fan)
+    }
+
+    @Test func theCaseInFrontComesOutOfTheRowAndTurns() {
+        let l = ShelfLayout.self
+        #expect(l.pull(0) == 1 && l.pull(1) == 0 && l.pull(-3) == 0)
+        #expect(abs(l.yaw(0) - l.turn) < 1e-9 && abs(l.yaw(2) - .pi / 2) < 1e-9)
+        // the row runs out evenly either side, with room for the case in front, and never doubles back as it slides
+        #expect(l.x(0) == 0 && l.x(-2) == -l.x(2))
+        #expect(abs(l.x(1) - (l.gap + l.pitch / 2)) < 1e-9 && abs(l.x(3) - l.x(2) - l.pitch) < 1e-9)
+        var last = l.x(-4)
+        for i in stride(from: -3.9, through: 4, by: 0.1) { #expect(l.x(i) > last); last = l.x(i) }
+        #expect(l.gap > l.width * (1 + l.grow) / 2)
+        #expect(l.shown(index: 0, count: 0) == nil && l.shown(index: 2, count: 100) == 0...(2 + l.reach))
+        #expect(l.light(0) == 1 && l.light(40) >= 0.45)
+    }
+
+    @Test func aPageTurnHasItsSound() {
+        #expect(!TheatreSynth.samples(.page).isEmpty && TheatreSynth.samples(.page).allSatisfy { abs($0) <= 1 })
     }
 }

@@ -288,7 +288,7 @@ extension AppModel {
 final class TheatreSound {
     static let shared = TheatreSound()
     /// lift, caseOpen, caseClose, cardOut and cardIn are the case in the hand's (TheatreUnbox.swift)
-    enum Cue: CaseIterable { case step, turn, theme, open, launch, chime, spin, land, lift, caseOpen, caseClose, cardOut, cardIn }
+    enum Cue: CaseIterable { case step, turn, theme, open, launch, chime, spin, land, lift, caseOpen, caseClose, cardOut, cardIn, page }
 
     private var engine: AVAudioEngine?
     private var players: [AVAudioPlayerNode] = []
@@ -359,6 +359,7 @@ enum TheatreSynth {
         case .caseOpen, .caseClose: 0.42
         case .cardOut: 0.26
         case .cardIn: 0.6
+        case .page: 0.2
         }
     }
 
@@ -380,6 +381,8 @@ enum TheatreSynth {
         case .cardOut: snaps([(0, 3200, 0.8)], length: 0.09)
         // the card sliding down and its catch: a light tick, then a firmer click with a little weight under it
         case .cardIn: mix(snaps([(0, 2800, 0.45), (0.07, 2100, 1)], length: 0.36), knock(at: 0.07, length: 0.36))
+        // a leaf going over: two light flicks of paper, no rush of air
+        case .page: snaps([(0, 1250, 0.5), (0.06, 900, 0.35)], length: 0.16)
         }
     }
 
@@ -917,7 +920,7 @@ struct TheatreLightsDown: View {
         ZStack {
             Color.black.opacity((curtain.fromConsole ? 0.88 : 0.88 + 0.06 * s.away) * s.room)
             RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
-            TheatreCaseScene(game: game, state: s, booklet: GameManual.find(game) != nil, u: u)
+            TheatreCaseScene(game: game, state: s, manual: GameManual.find(game), u: u)
         }
         .frame(width: size.width, height: size.height)
         .opacity(1 - out)
