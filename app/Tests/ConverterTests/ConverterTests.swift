@@ -2424,3 +2424,102 @@ import Testing
         #expect(SessionChecks.fix(fine, settings: all, values: [:]) == nil)
     }
 }
+
+@Suite struct CodeModFiles {
+    static let pch = """
+    # Some Game 60 FPS [0100ABCD01234000] v1.2.0
+    @nsobid-AABBCCDDEEFF00112233445566778899AABBCCDD
+    @flag print_values
+    @flag offset_shift 0x100
+
+    // [60 FPS]
+    @enabled
+    00123450 1F2003D5
+    00123458 E0031F2A C0035FD6 // two words
+    0012346C 2A
+
+    // Disable DOF
+    @disabled
+    00200000 "ab"
+
+    @stop
+    00999999 FFFFFFFF
+    """
+
+    @Test func pchtxtSectionsBuildAndOffsets() {
+        let m = CodeMods.parsePchtxt(Self.pch)
+        #expect(m.build == "AABBCCDDEEFF0011")
+        #expect(m.heading == "Some Game 60 FPS [0100ABCD01234000] v1.2.0")
+        #expect(m.sections.map(\.title) == ["60 FPS", "Disable DOF"])
+        #expect(m.sections.map(\.enabled) == [true, false])
+        // offset_shift 0x100: the offsets are addresses in main already
+        #expect(m.sections[0].writes == [CodeWrite(address: 0x123450, bytes: [0x1F, 0x20, 0x03, 0xD5]),
+                                         CodeWrite(address: 0x123458, bytes: [0xE0, 0x03, 0x1F, 0x2A, 0xC0, 0x03, 0x5F, 0xD6]),
+                                         CodeWrite(address: 0x12346C, bytes: [0x2A])])
+        #expect(m.sections[1].writes == [CodeWrite(address: 0x200000, bytes: [0x61, 0x62, 0])])
+    }
+
+    @Test func pchtxtWithoutShiftCountsFromTheFile() {
+        let m = CodeMods.parsePchtxt("@nsobid-0011223344556677\n@enabled\n00000200 AABB\n@little-endian\n00000300 AABB\n")
+        #expect(m.sections.count == 1)
+        #expect(m.sections[0].writes == [CodeWrite(address: 0x100, bytes: [0xAA, 0xBB]), CodeWrite(address: 0x200, bytes: [0xBB, 0xAA])])
+    }
+
+    @Test func storesAreLittleEndianWords() {
+        let lines = CodeMods.dmnt([CodeWrite(address: 0x123450, bytes: [0x1F, 0x20, 0x03, 0xD5, 0xAA, 0xBB, 0xCC])])
+        #expect(lines == ["04000000 00123450 D503201F", "02000000 00123454 0000BBAA", "01000000 00123456 000000CC"])
+    }
+
+    @Test func ipsRecordsAndRuns() {
+        var d = Data("PATCH".utf8)
+        d.append(contentsOf: [0x00, 0x02, 0x00, 0x00, 0x02, 0xDE, 0xAD])           // 0x200: DE AD
+        d.append(contentsOf: [0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x03, 0x7F])     // 0x300: 7F three times
+        d.append(contentsOf: Array("EOF".utf8))
+        #expect(CodeMods.parseIPS(d) == [CodeWrite(address: 0x100, bytes: [0xDE, 0xAD]), CodeWrite(address: 0x200, bytes: [0x7F, 0x7F, 0x7F])])
+        var w = Data("IPS32".utf8)
+        w.append(contentsOf: [0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x42])
+        w.append(contentsOf: Array("EEOF".utf8))
+        #expect(CodeMods.parseIPS(w) == [CodeWrite(address: 0x0100_0000, bytes: [0x42])])
+        #expect(CodeMods.parseIPS(Data("hello".utf8)) == nil)
+        #expect(CodeMods.parseIPS(Data("PATCH".utf8) + Data([0, 2, 0, 0, 9])) == nil)   // cut short
+    }
+
+    @Test func aCodeModBecomesEnhancementsSwitchedOff() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxf-codemod-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let src = dir.appending(path: "AABBCCDDEEFF0011.pchtxt")
+        try Data(Self.pch.utf8).write(to: src)
+        let folder = dir.appending(path: "enhancements")
+        let r = try CodeMods.add(src, folder: folder, titleID: "0100ABCD01234000", build: "AABBCCDDEEFF0011")
+        #expect(r.names == ["60 FPS", "Disable DOF"])
+        #expect(r.note == nil)
+        let list = Enhancements.load(folder: folder)
+        #expect(list.count == 2)
+        let fps = try #require(list.first { $0.name == "60 FPS" })
+        #expect(!fps.on)
+        #expect(fps.builds == ["AABBCCDDEEFF0011"])
+        #expect(fps.kinds == ["Game code"])
+        #expect(fps.patch.first == "04000000 00123450 D503201F")
+        #expect(fps.patch.count == 4)
+        // the same file again adds nothing new
+        try CodeMods.add(src, folder: folder, titleID: "0100ABCD01234000", build: "AABBCCDDEEFF0011")
+        #expect(Enhancements.load(folder: folder).count == 2)
+        // another build: added, with a note
+        let other = try CodeMods.add(src, folder: dir.appending(path: "other"), titleID: "0100ABCD01234000", build: "FFFFFFFFFFFFFFFF")
+        #expect(other.note?.contains("another version") == true)
+    }
+
+    @Test func aPchtxtBlockInAnEnhancementFile() throws {
+        let text = "---\nnxforge_enhancement: 1\nname: \"Sixty\"\non: true\n---\n# Sixty\n\nRuns at 60.\n\n```pchtxt\n@nsobid-0011223344556677AA\n@flag offset_shift 0x100\n@enabled\n00001000 1F2003D5\n@disabled\n00002000 1F2003D5\n```\n"
+        let e = try #require(Enhancements.parse(text, file: "sixty.md"))
+        #expect(e.patch == ["04000000 00001000 D503201F"])
+        #expect(e.builds == ["0011223344556677"])
+        #expect(e.summary == "Runs at 60.")
+    }
+
+    @Test func aModWithoutTitlesTakesItsFoldersName() {
+        #expect(CodeMods.fallbackName(URL(fileURLWithPath: "/mods/60 FPS/exefs/AABBCCDDEEFF0011.ips")) == "60 FPS")
+        #expect(CodeMods.fallbackName(URL(fileURLWithPath: "/mods/Steady frame rate.pchtxt")) == "Steady frame rate")
+    }
+}

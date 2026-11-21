@@ -158,6 +158,8 @@ struct EnhancementsActions: View {
     @ViewBuilder var buttons: some View {
             Button { state.lookUp() } label: { Label(state.looking ? "Looking…" : "Get from Library", systemImage: "books.vertical") }
                 .disabled(state.looking).help("Lists this game's enhancements in NXForge's library on GitHub. Nothing is added until you choose.")
+            Button { state.addCodeMods() } label: { Label("Add Code Mod…", systemImage: "chevron.left.forwardslash.chevron.right") }
+                .help("Adds a 60 fps, resolution or graphics patch made for the Switch: a .pchtxt or .ips file from a mod's exefs folder. It is added switched off.")
             Button { state.newFile() } label: { Label("New…", systemImage: "plus") }.help("Makes a new enhancement file in the game's folder and opens it.")
             Button { state.showFolder() } label: { Label("Show Folder", systemImage: "folder") }
             Spacer(minLength: 0)
@@ -182,7 +184,7 @@ struct EnhancementsCard: View {
         Card(title: "Enhancements", subtitle: "Improvements made for this game: steadier frame rates, 60 fps patches, fixes and mods. Each is a Markdown file in the game's folder, apart from its cheats. Switches apply at the next launch.") {
             if let state {
                 if state.list.isEmpty {
-                    Text("No enhancements for this game yet. Get from Library looks in NXForge's collection.").foregroundStyle(.secondary)
+                    Text("No enhancements for this game yet. Get from Library looks in NXForge's collection; Add Code Mod takes a 60 fps or resolution patch you have.").foregroundStyle(.secondary)
                 }
                 ForEach(state.list) { e in EnhancementRow(e: e, build: state.build, disabled: playing) { state.set(e, $0) } }
                 if playing { Text("The game is running: changes apply when it next starts.").font(.caption).foregroundStyle(.secondary) }
@@ -230,7 +232,7 @@ struct EnhancementsTab: View {
                 }
                 Text("Each enhancement is a file in the game's enhancements folder. Switches apply at the next launch, whichever way the game is opened.")
                     .font(.system(size: 12)).foregroundStyle(StageLook.faint)
-                if state.list.isEmpty { Text("No enhancements for this game yet. Get from Library looks in NXForge's collection.").font(.system(size: 13)).foregroundStyle(StageLook.soft) }
+                if state.list.isEmpty { Text("No enhancements for this game yet. Get from Library looks in NXForge's collection; Add Code Mod takes a 60 fps or resolution patch you have.").font(.system(size: 13)).foregroundStyle(StageLook.soft) }
                 EnhancementsActions(state: state, stage: true)
             }
         }
