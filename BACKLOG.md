@@ -90,7 +90,7 @@ From the list of ten on 2026-10-31, all in 0.8.0.
 | Nightly upstream check | On fork main (0.8.0) | `upstream-check.yml`; one issue labelled `upstream`. |
 | Settings table and test | On fork main (0.8.0) | docs/settings.md, Quick settings on the Mac. |
 | Played on NXForge | On fork main (0.8.0) | `docs/nxforge-games.tsv` → the converter's Builds page (dropped from the README). Add a row after each play test. |
-| Session check per game | Shipped in 0.44.0 | `nxforge perf` / `scripts/perf_check.py` reads a game's log and compares the session with its history. Open: run it from the converter after each play, or from an hourly routine, so a slower session is flagged without asking. |
+| Session check per game | Shipped in 0.44.0; after every play since 0.49.0 | `nxforge perf` / `scripts/perf_check.py` reads a game's log and compares the session with its history. Since Converter 0.23.0 the converter runs it when a game quits and the recap card and game page say why a slower session was slower (`SessionCheck.swift`). |
 | Frame times per release | On fork main (0.8.0) | `scripts/perf_release.py`, `docs/perf/`. From 0.36.3 it also measures installed apps (`--app`, with `--host` the release's host on the app's files), since the Mac keeps no build folders; an app on another shader chain is skipped. More games with `bench.tsv` routes would make it sharper. |
 
 ## Save states and rewind

@@ -309,10 +309,14 @@ def export(log=print) -> None:
         if '\ndiff --git ' not in text:
             continue
         new.append((slug(subject), text))
+    subject = lambda t: next((ln for ln in t.splitlines() if ln.startswith('Subject: ')), '')
+    old_names = {}   # a patch keeps its file name while its place and subject stay (one named by hand, 0040-upstream-pr-3081, too)
     for p in patch_files():
+        old_names[p.name[:4]] = (p.name, subject(p.read_text(encoding='utf-8', errors='replace')))
         p.unlink()
     for i, (name, text) in enumerate(new, 1):
-        (PATCHES / f'{i:04d}-{name}.patch').write_text(text, encoding='utf-8')
+        kept, subj = old_names.get(f'{i:04d}', ('', None))
+        (PATCHES / (kept if kept and subj == subject(text) else f'{i:04d}-{name}.patch')).write_text(text, encoding='utf-8')
     log(f'layer/patches: {len(new)} patch(es)')
     changed = 0
     for rel in sorted(overlay):
