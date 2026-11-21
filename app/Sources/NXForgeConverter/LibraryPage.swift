@@ -292,7 +292,10 @@ struct LibraryPage: View {
 
     /// The status column's word and colour
     func statusWord(_ g: LibraryGame, _ b: LibraryBuild?) -> (String, Color) {
-        guard let b else { return ("Not built yet", StageLook.soft) }
+        guard let b else {
+            if model.buildFailures[g.folder] != nil { return ("Build failed", Color(red: 1, green: 0.55, blue: 0.45)) }
+            return ("Not built yet", StageLook.soft)
+        }
         if model.isPlaying(app: b.app) { return ("Playing now", Color(red: 0.38, green: 0.65, blue: 0.98)) }
         if model.outdated(b) { return ("Older engine", .orange) }
         return ("Built", Color(red: 0.29, green: 0.87, blue: 0.50))

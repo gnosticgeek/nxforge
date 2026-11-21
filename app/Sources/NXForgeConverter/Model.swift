@@ -259,6 +259,8 @@ final class AppModel {
     var batchActivity: NSObjectProtocol?
     /// the summary a failed build's notification copies (Copy error summary)
     var lastErrorSummary: String?
+    /// each game folder's last failed build, kept until one succeeds, so the game says why after a restart (BuildFailures)
+    var buildFailures: [String: BuildFailure] = BuildFailures.load()
     var playObservers: [NSObjectProtocol] = []
     /// each running game's memory samples, the task taking them, and the card shown when a game quits (PlayExtras)
     var playStats: [pid_t: PlayStats] = [:]
@@ -744,6 +746,7 @@ final class AppModel {
         diskWatch?.cancel(); diskWatch = nil; diskWarning = nil
         if run.planning { return }   // a preview: it stays on Convert, with its plan
         if case .failure(let e) = r { lastErrorSummary = errorSummary(e.description) }
+        if run.ipa == nil { rememberOutcome(r) }
         if run.ipa != nil { ipaEnded(r); return }
         if batchCurrent != nil { batchBuildEnded(r) }
         let name = game?.name ?? "The game"
@@ -775,6 +778,24 @@ final class AppModel {
             measure()
             queueMessage = "Rebuild all stopped at \(game?.name ?? "a game"): its build failed."
             rebuildQueue = []
+        }
+    }
+
+    /// Keeps a failed build's reason with its game folder (a Stop asked for is not a failure), and drops it once a build succeeds.
+    func rememberOutcome(_ r: Result<String, ConverterError>) {
+        guard let dir = settings.gameDir else { return }
+        let folder = Source.folder(of: dir)
+        switch r {
+        case .success:
+            BuildFailures.clear(folder: folder)
+            buildFailures[folder] = nil
+        case .failure(let e) where e.description == "stopped":
+            return
+        case .failure(let e):
+            let d = BuildDiagnosis.diagnose(error: e.description, log: run.log)
+            let f = BuildFailure(title: d.title, fix: d.fix, error: e.description, at: Date(), log: run.logFile)
+            BuildFailures.record(f, folder: folder)
+            buildFailures[folder] = f
         }
     }
 

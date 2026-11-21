@@ -281,6 +281,7 @@ import Testing
         ("[RED] no base game NSP found in /Games/Mario (title ID 010015100B514000)", .gameFiles),
         ("[RED] patch_nso.py exit code 1 on main (full output: x.log)", .rewriter),
         ("[RED] dmsh_build.py exit code 2 (full output: x.log)", .shaders),
+        ("[RED] the split shader tables differ from game profile 04008E001F098000's:\nshader_map.tsv: 154 row(s) only in the profile", .profileTables),
         ("another build of this folder is running (process 412); wait for it to finish", .folderBusy),
         ("signature check failed: code object is not signed at all", .signing),
         ("stopped", .stopped),
@@ -1777,6 +1778,19 @@ import Testing
         #expect(b.type("m", at: t0.addingTimeInterval(3)) == "m")
         #expect(TypeSelectBuffer.first(["Mario", "The Legend of Zelda", "Zelda II"], prefix: "zel", title: { $0 }) == "Zelda II")
         #expect(TypeSelectBuffer.first(["Mario", "The Legend of Zelda", "Zelda II"], prefix: "leg", title: { $0 }) == "The Legend of Zelda")
+    }
+
+    @Test func failedBuildIsTold() {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxc-failed-\(UUID().uuidString)").path
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let g = LibraryGame(kind: .dump, path: dir, name: "Switch Sports", fileCount: 1, bytes: 1, base: true, updates: 0, dlc: 0)
+        let f = BuildFailure(title: "A shader step failed", fix: "Build again.", error: "x", at: Date(), log: nil)
+        let st = GameStatus.of(app: nil, game: g, keys: { _ in nil }, failure: { $0 == dir ? f : nil })
+        #expect(st == .buildFailed(f))
+        #expect(st.buildable && !st.playable && st.text == "Build failed" && st.action == "Build Again")
+        #expect(GameStatus.of(app: nil, game: g, keys: { _ in nil }) == .notBuilt)
+        #expect(GameStatus.of(app: "/x.app", game: g, keys: { _ in nil }, failure: { _ in f }) == .ready)
     }
 
     @Test func offlineDriveIsNamed() {
