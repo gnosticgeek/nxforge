@@ -16,7 +16,7 @@ import SwiftUI
 import WebKit
 
 enum TheatreTheme: String, Codable, CaseIterable {
-    case showcase = "Showcase", cinema = "Cinema", trailer = "Trailer"
+    case showcase = "Showcase", cinema = "Cinema", shutter = "Shutter", trailer = "Trailer"
 
     /// Carousel and Fan (to 0.48.8) became Showcase's two layouts (Fan had been Gallery, and Gallery Shelf); anything else
     /// unknown is Showcase too
@@ -28,6 +28,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         switch self {
         case .showcase: "Your boxes as a carousel or a fan, ↑ ↓ to switch"
         case .cinema: "Big art, rows like a TV app"
+        case .shutter: "Slanted panels of art, the game in focus wide"
         case .trailer: "The trailer fills the room"
         }
     }
@@ -35,6 +36,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         switch self {
         case .showcase: "rotate.3d"
         case .cinema: "film"
+        case .shutter: "rectangle.split.3x1"
         case .trailer: "play.rectangle"
         }
     }
@@ -135,7 +137,7 @@ struct TheatreFact: Hashable {
 
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case showcase, cinema, trailer, shuffle, edges, settings, leave
+    case showcase, cinema, shutter, trailer, shuffle, edges, settings, leave
     var title: String {
         switch self {
         case .shuffle: "What Should I Play?"
@@ -149,6 +151,7 @@ enum TheatreMenuRow: Int, CaseIterable {
         switch self {
         case .showcase: .showcase
         case .cinema: .cinema
+        case .shutter: .shutter
         case .trailer: .trailer
         case .shuffle, .edges, .settings, .leave: nil
         }
@@ -501,7 +504,7 @@ extension AppModel {
         if covered { stagePad(k); return }
         let focus: StageGame?
         switch theatreTheme {
-        case .showcase, .trailer:
+        case .showcase, .shutter, .trailer:
             let games = theatreTheme == .trailer ? trailerGames() : theatreGames()
             focus = theatreFocused(games)
             if k == .down, theatreTheme == .trailer { theatreWatch = true; return }
@@ -556,7 +559,7 @@ extension AppModel {
     func pickTheatreMenu(_ r: TheatreMenuRow) {
         theatreMenu = nil
         switch r {
-        case .showcase, .cinema, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
+        case .showcase, .cinema, .shutter, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
         case .shuffle: shuffleTheatre()
         // A steps the edges round and keeps the menu up, so the corners stay in view
         case .edges:
@@ -806,6 +809,7 @@ struct TheatreView: View {
         switch model.theatreTheme {
         case .showcase: ShowcaseTheme(model: model).transition(.opacity)
         case .cinema: CinemaTheme(model: model).transition(.opacity)
+        case .shutter: ShutterTheme(model: model).transition(.opacity)
         case .trailer: TrailerTheme(model: model).transition(.opacity)
         }
     }
@@ -1019,7 +1023,7 @@ struct TheatreMenu: View {
     func icon(_ r: TheatreMenuRow) -> String {
         switch r {
         case .showcase: model.showcaseLayout.symbol
-        case .cinema, .trailer: r.theme?.symbol ?? ""
+        case .cinema, .shutter, .trailer: r.theme?.symbol ?? ""
         case .shuffle: "dice"
         case .edges: "rectangle.dashed"
         case .settings: "gearshape"
@@ -1030,7 +1034,7 @@ struct TheatreMenu: View {
     func note(_ r: TheatreMenuRow) -> String? {
         switch r {
         case .showcase: "Your boxes as a carousel or a fan: ← → here, ↑ ↓ on Theatre"
-        case .cinema, .trailer: r.theme?.note
+        case .cinema, .shutter, .trailer: r.theme?.note
         case .shuffle: "Spin the shelf and land on a game (L3)"
         case .edges: "Can you see all four corners? ← → to inset the picture"
         case .settings: nil

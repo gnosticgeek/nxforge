@@ -2006,7 +2006,8 @@ import Testing
                                ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
             #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
         }
-        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Trailer"])
+        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer"])
+        #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Shutter\"".utf8)) == .shutter)
     }
 
     @Test func anOldThemeOpensShowcaseOnItsLayout() throws {
@@ -2020,6 +2021,22 @@ import Testing
         s.showcaseLayout = .carousel
         #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).showcaseLayout == .carousel)
         #expect(ShowcaseLayout.carousel.other == .fan && ShowcaseLayout.fan.other == .carousel)
+    }
+
+    @Test func shutterLaysPanelsEitherSideOfTheMiddle() {
+        #expect(ShutterLayout.places(index: 0, count: 0).isEmpty)
+        // a short list stops at its ends
+        #expect(ShutterLayout.places(index: 0, count: 3).map(\.d) == [0, 1, 2])
+        #expect(ShutterLayout.places(index: 2, count: 3).map(\.game) == [0, 1, 2])
+        // a long one goes round: the first game has the last ones on its left
+        let p = ShutterLayout.places(index: 0, count: 10)
+        #expect(p.map(\.game) == [7, 8, 9, 0, 1, 2, 3] && p.map(\.d) == Array(-3...3))
+        #expect(Set(p.map(\.game)).count == p.count)
+        // the middle is wide, the neighbours sit either side without touching
+        #expect(ShutterLayout.centre(0) == 0 && ShutterLayout.centre(-1) == -ShutterLayout.centre(1))
+        #expect(ShutterLayout.centre(1) - ShutterLayout.narrow / 2 - ShutterLayout.wide / 2 == ShutterLayout.gap)
+        #expect(ShutterLayout.centre(2) - ShutterLayout.centre(1) == ShutterLayout.narrow + ShutterLayout.gap)
+        #expect(ShutterLayout.opacity(ShutterLayout.reach) == 0 && ShutterLayout.opacity(2) == 1)
     }
 
     @Test func fanDrawsTheBoxesNearTheFront() {

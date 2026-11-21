@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.48.10 (2026-11-21)
+
+- **Theatre's Shutter theme** (Converter 0.22.10, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the games' wide art as slanted panels side by side, the game in focus wide in the middle with a pink accent bar under it and its neighbours narrow with their names in italics, on a deep plum room. Below: the name, big, a line of what the game is (console, genre, players, built, time played) and the buttons. ZL and ZR now step through Showcase, Cinema, Shutter and Trailer. No game rebuild needed.
+
 ## 0.48.9 (2026-11-21)
 
 - **Theatre's Carousel and Fan become one theme, Showcase** (Converter 0.22.9, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the same boxes as a turning carousel or a fan, switched with up and down on a controller, left and right on the Theatre menu's Showcase row, or Settings › Theatre › Showcase layout. ZL and ZR step through Showcase, Cinema and Trailer. A saved Carousel or Fan theme opens Showcase on that layout. No game rebuild needed.
