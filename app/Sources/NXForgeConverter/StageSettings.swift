@@ -450,8 +450,8 @@ struct StageSettings: View {
             row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Shutter shows slanted panels of art; Trailer plays the game's trailer. ZL and ZR switch them on Theatre.", .theatreTheme) {
                 segmented(theme, TheatreTheme.allCases, width: 400) { $0.rawValue }
             },
-            row("Showcase layout", "Carousel turns a ring of your boxes; Fan spreads them like a hand of cards. Up and down switch them on Theatre.", .showcaseLayout) {
-                segmented($model.settings.showcaseLayout, ShowcaseLayout.allCases, width: 240) { $0.rawValue }
+            row("Showcase layout", "Carousel turns a ring of your boxes; Fan spreads them like a hand of cards; Shelf stands them spine out. Up and down switch them on Theatre.", .showcaseLayout) {
+                segmented($model.settings.showcaseLayout, ShowcaseLayout.allCases, width: 330) { $0.rawValue }
                     .onChange(of: model.settings.showcaseLayout) { _, l in model.showcaseLayout = l }
             },
             row("When a TV is plugged in", "Ask offers Theatre when a controller is connected too; Always opens it straight away.", .theatreOnTV) {

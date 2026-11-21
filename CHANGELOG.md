@@ -2,9 +2,9 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.51.0 (2026-11-21)
+## 0.52.0 (2026-11-21)
 
-Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)) and the app side of one (Converter 0.24.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). They need each game app's host rebuilt ("Update" on the game does it).
+Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)) and the app side of one (Converter 0.25.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). They need each game app's host rebuilt ("Update" on the game does it).
 
 - **Back to Theatre**: a game started from Theatre has a Theatre button in its sidebar's footer instead of Library, and NXForge comes back to Theatre with the focus on that game (Continue picks it up when Library keeps the game is on).
 - **Search every setting**: a search field beside the page's name (/ or ⌘F) finds any row on any page by its name or what it does ("scanlines", "HDR", "120"), cheats and mods by name too, with each one's value; Return goes to it on its page.
@@ -12,6 +12,10 @@ Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELO
 - **A status line** under the game's name: how long the game has been open, the time, and the battery.
 - **Hold to compare**: hold the Graphics page's Compare button, C, or a controller's left face button to see the game full size with the default graphics; let go for yours.
 - **The FPS counter stays in sight**: in a right-hand corner it moves beside the open sidebar instead of under it. Space and the arrow keys now type in the sidebar's search fields (the cheats' search too) instead of moving the selection.
+
+## 0.51.0 (2026-11-21)
+
+- **Theatre: a booklet for every game, and the shelf** (Converter 0.25.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): X with a case in your hand opens its booklet on Theatre, two pages at a time, each leaf turning over the spine with a paper sound and a tap in the controller. A game with a manual (a PDF) has that as its booklet. Every other game gets one NXForge makes: the store's words about the game, its screenshots, what Quick settings does while you play, the game's facts and your own time with it. Showcase has a third layout, Shelf: your games standing spine out along a shelf, the one in focus drawn out and turned to face you. No game rebuild needed.
 
 ## 0.50.0 (2026-11-21)
 

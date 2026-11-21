@@ -26,7 +26,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
     }
     var note: String {
         switch self {
-        case .showcase: "Your boxes as a carousel or a fan, ↑ ↓ to switch"
+        case .showcase: "Your boxes as a carousel, a fan or a shelf, ↑ ↓ to switch"
         case .cinema: "Big art, rows like a TV app"
         case .shutter: "Slanted panels of art, the game in focus wide"
         case .trailer: "The trailer fills the room"
@@ -292,6 +292,7 @@ extension AppModel {
         theatreSpinning = false
         theatreCurtain = nil
         theatreUnbox = nil
+        booklet = nil
         theatre = true
         // a new arrival's spotlight, else welcome back on the game played last (TheatreDelight.swift)
         theatreOpeningMoment()
@@ -329,6 +330,7 @@ extension AppModel {
         theatreSpinning = false
         theatreCurtain = nil
         theatreUnbox = nil
+        booklet = nil
         TheatreRumble.shared.rest()
         TheatreMusic.shared.stop()
         rememberTheatreFocus()
@@ -500,7 +502,10 @@ extension AppModel {
         if theatreMoment != nil, k != .r3, k != .volUp, k != .volDown { theatreMoment = nil }
         let covered = stageSettings || viewerOpen || launching != nil || playOptions != nil || gameDetail != nil || caseViewer != nil
         // the case in the hand: its own buttons (the booklet and the game's page opened from it work as on the front end)
-        if theatreUnbox != nil, !covered, theatreMenu == nil, k != .r3, k != .volUp, k != .volDown { unboxPad(k); return }
+        if theatreUnbox != nil, !covered, theatreMenu == nil, k != .r3, k != .volUp, k != .volDown {
+            if booklet != nil { bookletPad(k) } else { unboxPad(k) }
+            return
+        }
         // Theatre's sound (the trailer, the game's music, the clicks): the right stick's press mutes; - and = set the volume (the
         // stick itself only turns the box in front, so pushing it never changes the volume)
         switch k {
@@ -517,7 +522,7 @@ extension AppModel {
             case .left, .right:
                 if rows[i] == .edges { settings.theatreEdges = settings.theatreEdges.step(k == .left ? -1 : 1) }
                 // left and right on Showcase's row choose its layout, and pick the theme too
-                if rows[i] == .showcase { setTheatreTheme(.showcase); setShowcaseLayout(showcaseLayout.other); theatreCue(.theme) }
+                if rows[i] == .showcase { setTheatreTheme(.showcase); setShowcaseLayout(showcaseLayout.step(k == .left ? -1 : 1)); theatreCue(.theme) }
             case .a: pickTheatreMenu(rows[i])
             case .b, .menu: theatreMenu = nil
             default: break
@@ -534,8 +539,8 @@ extension AppModel {
             let games = theatreTheme == .trailer ? trailerGames() : theatreGames()
             focus = theatreFocused(games)
             if k == .down, theatreTheme == .trailer { theatreWatch = true; return }
-            // up and down: Showcase's other layout, the carousel or the fan
-            if k == .up || k == .down, theatreTheme == .showcase { setShowcaseLayout(showcaseLayout.other); theatreCue(.theme); return }
+            // up and down: Showcase's next layout (the carousel, the fan, the shelf)
+            if k == .up || k == .down, theatreTheme == .showcase { setShowcaseLayout(showcaseLayout.step(k == .up ? -1 : 1)); theatreCue(.theme); return }
             if (k == .left || k == .right), !games.isEmpty {
                 let i = games.firstIndex { $0.id == focus?.id } ?? 0
                 theatreFocus = games[(i + (k == .left ? -1 : 1) + games.count) % games.count].id
@@ -591,7 +596,7 @@ extension AppModel {
     func pickTheatreMenu(_ r: TheatreMenuRow) {
         theatreMenu = nil
         switch r {
-        case .resume: theatreUnbox = nil; continueFromConsole()
+        case .resume: theatreUnbox = nil; booklet = nil; continueFromConsole()
         case .showcase, .cinema, .shutter, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
         case .shuffle: shuffleTheatre()
         // A steps the edges round and keeps the menu up, so the corners stay in view
@@ -858,7 +863,10 @@ struct TheatreView: View {
             .padding(24)
             .transition(.move(edge: .trailing).combined(with: .opacity))
         }
-        if let b = model.theatreUnbox, model.theatreCurtain == nil { TheatreUnboxView(model: model, unbox: b).id(b.id) }
+        if let b = model.theatreUnbox, model.theatreCurtain == nil {
+            TheatreUnboxView(model: model, unbox: b).id(b.id)
+            if let k = model.booklet { TheatreBookletView(model: model, state: k).id(k.id) }
+        }
         if let s = model.caseViewer { CaseViewer(model: model, state: s).id(s.game.id).transition(.opacity) }
         if let g = model.gallery { GalleryViewer(model: model, state: g).id(g.id).transition(.opacity) }
         if let m = model.manual { ManualViewer(model: model, state: m).id(m.id).transition(.opacity) }
@@ -1073,7 +1081,7 @@ struct TheatreMenu: View {
     func note(_ r: TheatreMenuRow) -> String? {
         switch r {
         case .resume: "Its card is still in the console"
-        case .showcase: "Your boxes as a carousel or a fan: ← → here, ↑ ↓ on Theatre"
+        case .showcase: "Your boxes as a carousel, a fan or a shelf: ← → here, ↑ ↓ on Theatre"
         case .cinema, .shutter, .trailer: r.theme?.note
         case .shuffle: "Spin the shelf and land on a game (L3)"
         case .edges: "Can you see all four corners? ← → to inset the picture"
