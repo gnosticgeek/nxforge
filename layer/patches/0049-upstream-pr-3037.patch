@@ -32,13 +32,13 @@ Claude-Session: https://claude.ai/code/session_016qteK5CgJi2GrwbMox94av
  dm/games/0400486024DEC000/shape_anchor.c    | 213 +++++++++++++++
  dm/games/settings.tsv                       |   2 +-
  dm/host/dm.h                                |   1 +
- dm/host/loader.c                            |  19 +-
+ dm/host/loader.c                            |  20 +-
  dm/tools/docs_patches.py                    |   5 +-
  dm/tools/tests/test_launcher_settings.py    |   8 +
  dm/tools/tests/test_ocarina_screen_shape.py | 167 ++++++++++++
  docs/agents/game-patches.md                 |   9 +-
  docs/env_switches.tsv                       |   2 +-
- 15 files changed, 714 insertions(+), 11 deletions(-)
+ 15 files changed, 715 insertions(+), 11 deletions(-)
  create mode 100644 dm/games/0400486024DEC000/shape_anchor.c
  create mode 100644 dm/tools/tests/test_ocarina_screen_shape.py
 
@@ -676,7 +676,7 @@ index 971da557739f9d3947d89fe18c412806ef130ddb..ff4d453d9c38a7805e192cd2ed5e5ff9
      int movie_native_color_keys; // the movie SDK's MediaData uses the native buffer's colour index directly (MOVIE_NATIVE_COLOR_KEYS)
      int64_t patch_off;         // patch area relative to the base; negative = before the base (image too large, see patch_nso.py FAR), and size does not include it
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index 0addb189be3777565349c75e87dea9df733c2319..80135624b6c71ff936ee46eb2b81174f2a63c3aa 100644
+index 0addb189be3777565349c75e87dea9df733c2319..c403f3704bf892c73a6287f75b4afde855f82130 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
 @@ -316,6 +316,7 @@ static void read_layout(module_t *m, const char *dir) {
@@ -703,14 +703,15 @@ index 0addb189be3777565349c75e87dea9df733c2319..80135624b6c71ff936ee46eb2b81174f
  }
  // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
  // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
-@@ -418,6 +420,21 @@ void dm_fps_state_apply(void) {
+@@ -418,6 +420,22 @@ void dm_fps_state_apply(void) {
      if (cn && *cn) { char *end; unsigned long v = strtoul(cn, &end, 10); if (end == cn || *end || v > 3) LOG("[RED] DM_SHADOW_CASCADES=%s: 1, 2 or 3; keeping the game's shadow cascades", cn); else if (v) { scn = (uint32_t)v; LOG("%s: at most %u shadow cascades (DM_SHADOW_CASCADES; builds with the stub)", g_fps_mod, scn); } }
      memcpy(dm_fps_state + 0x308, &scn, sizeof scn);
      }
 +    // NXForge: a build with both wide-screen and screen-shape stubs (Ocarina of Time since nxnative PR #3037) takes a screen taller than 16:9 through the shape stubs, which also
 +    // fit the HUD, menus and movies to the height; DM_SCREEN_WIDE (the Mac settings' Aspect ratio row) keeps the wider screens. 16x10, or auto on a 16:10 MacBook, becomes
 +    // DM_SCREEN_ASPECT=<ratio> and DM_SCREEN_WIDE=0, unless DM_SCREEN_ASPECT is already set (a value of its own wins)
-+    if (g_screen_wide && g_screen_aspect && !(getenv("DM_SCREEN_ASPECT") && *getenv("DM_SCREEN_ASPECT"))) {
++    const char *sa0 = getenv("DM_SCREEN_ASPECT");
++    if (g_screen_wide && g_screen_aspect && !(sa0 && *sa0)) {
 +        const char *w0 = getenv("DM_SCREEN_WIDE"); unsigned tw = 0, th = 0; char tl = 0;
 +        const char *om = getenv("DM_OPMODE");
 +        if (!w0 || !*w0 || !strcmp(w0, "auto")) { if (getenv("DM_WINDOW") && dm_front_screen && !dm_front_screen(&tw, &th)) tw = th = 0; }
