@@ -28,14 +28,14 @@ struct ShutterTopBar: View {
             if model.theatreFilters().count > 1 {
                 HStack(spacing: 40 * u) {
                     hints.glyph("L")
-                    Text(model.theatreFilter.title).font(.system(size: 36 * u, weight: .semibold).width(.condensed)).lineLimit(1)
+                    Text(model.theatreShownFilter.title).font(.system(size: 36 * u, weight: .semibold).width(.condensed)).lineLimit(1)
                         .frame(minWidth: 220 * u)
                         .contentTransition(.opacity)
                     hints.glyph("R")
                 }
-                .animation(.easeInOut(duration: 0.25), value: model.theatreFilter)
+                .animation(.easeInOut(duration: 0.25), value: model.theatreShownFilter)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Filter: \(model.theatreFilter.title), L and R change it")
+                .accessibilityLabel("Filter: \(model.theatreShownFilter.title), L and R change it")
             }
         }
         .foregroundStyle(ShutterLook.ink)

@@ -10,6 +10,12 @@ Shipped in NXForge 0.48.12.
 
 - **A native top bar.** The bar across the top of the window was a row of separate large glass pills under the window's buttons; it is now a real macOS toolbar on the same row as them, so the pages start higher. "NXForge" is the window's title at the left, Home, Discover, Saves and Converter are a segmented switch in the middle, Theatre, Refresh and Settings (now a gear) share one Liquid Glass group, and search is the system's search field, which folds to a magnifier in a narrow window and is there on Home and Discover (typing on Home goes to Discover). The Full Screen button is gone: the window's green button and ⌃⌘F do it, as in every Mac app; the connected controller's name moved into Theatre's help tag. The toolbar steps aside wherever a page fills the window (a game's page, the launch screen, the box, gallery and manual viewers, Theatre). Code: `TopBar.swift`.
 
+## 0.22.11 (2026-11-21)
+
+Shipped in NXForge 0.48.11.
+
+- **Theatre's genre filter works**: L and R now step through only the genres of the games the theme shows (the built ones on Showcase, Cinema and Shutter; every game on Trailer), so each genre shows just its own games. Before, genres that only unbuilt games are in were stops too, and choosing one showed every built game under the genre's name. A genre chosen on Trailer that no built game is in reads All games on the other themes, and comes back on Trailer.
+
 ## 0.22.10 (2026-11-21)
 
 Shipped in NXForge 0.48.10.
