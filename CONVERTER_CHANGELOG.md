@@ -4,6 +4,17 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.23.0 (2026-11-21)
+
+Shipped in NXForge 0.49.0.
+
+- **Add Code Mod.** The Enhancements card, sheet and Play options tab have Add Code Mod…: choose a `.pchtxt` or `.ips` file from a mod's exefs folder and each of its parts becomes an enhancement with its own switch, added switched off, marked with the build it is for (one for another version says so and stays off). A part its file had disabled says so. An enhancement file's ```` ```pchtxt ```` block is read the same way.
+- **Home opens Theatre.** A controller's Home button brings NXForge forward into Theatre from behind other apps, never over a running game. Settings › Theatre: "Home button opens Theatre" (on) and "Open NXForge at login".
+- **Newly playable.** Home shows a line when games in your folder became buildable since you last looked (an engine update, a newer verified list), with Build Tonight, Build Now and a way to dismiss it. A notification says the same when the app is behind.
+- **A check after every session.** After a game quits, its session is compared with its own earlier ones (`scripts/perf_check.py`). When it ran slower, the recap and the game page show why in a line and a button for the one change that should help.
+- **Links and Spotlight.** `nxforge://play/<name or title ID>`, `nxforge://game/…`, `nxforge://theatre`, `home`, `discover` and `saves` open the app there; built games are indexed in Spotlight and open on their page.
+- **Before the Mac slept.** Save snapshots made by a game before sleep or on a low battery (Sidebar 0.8.0) show with that reason and are pruned on their own.
+
 ## 0.22.12 (2026-11-21)
 
 Shipped in NXForge 0.48.12.
