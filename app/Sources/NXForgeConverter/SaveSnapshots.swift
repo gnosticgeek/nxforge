@@ -24,11 +24,12 @@ struct SaveInventory: Codable, Equatable {
 }
 
 enum SnapshotReason: String, Codable, CaseIterable {
-    case manual, beforeRestore, beforeRebuild, beforeAppRestore, imported, afterPlay
+    case manual, beforeRestore, beforeRebuild, beforeAppRestore, imported, afterPlay, beforeSleep
     var label: String {
         switch self {
         case .manual: "Snapshot"
         case .afterPlay: "After playing"
+        case .beforeSleep: "Before the Mac slept"
         case .imported: "Imported"
         case .beforeRestore: "Before a restore"
         case .beforeRebuild: "Before a rebuild"
@@ -267,7 +268,8 @@ enum SaveSnapshots {
     /// run of sessions never pushes out the snapshot taken before a restore or a rebuild.
     static func prune(_ loc: SaveLocation) {
         let auto = list(loc).filter { $0.reason != .manual }
-        for group in [auto.filter { $0.reason == .afterPlay }, auto.filter { $0.reason != .afterPlay }] {
+        let perSession: [SnapshotReason] = [.afterPlay, .beforeSleep]
+        for group in [auto.filter { $0.reason == .afterPlay }, auto.filter { $0.reason == .beforeSleep }, auto.filter { !perSession.contains($0.reason) }] {
             for s in group.dropFirst(keepAutomatic) { try? FileManager.default.trashItem(at: s.path.url, resultingItemURL: nil) }
         }
     }

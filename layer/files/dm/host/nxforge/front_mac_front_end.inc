@@ -5,6 +5,9 @@
 // the game app's path) so its launch screen goes in the same moment. A game that draws nothing for 15 s (a first start that builds its shaders
 // before its first frame) is shown anyway. DM_FRONT_END_FADE=0 shows the window at once, as before.
 #include "front_mac_power.inc"   // thermal state, Low Power Mode and power source for the log and the frame step
+#include "front_mac_sleep.inc"   // a pause and a save copy before the Mac sleeps or its battery runs out
+#include "front_mac_battery.inc"   // on the battery, a game nobody is playing pauses
+#include "front_mac_players.inc"   // who is player 1: the sidebar's Players rows
 static NSWindow *g_nxf_fe_win;
 static NSTimer *g_nxf_fe_timer;
 static CFAbsoluteTime g_nxf_fe_t0;
@@ -19,7 +22,7 @@ static void nxf_front_end_show(const char *why) {
 }
 
 static void nxf_front_end_window(NSWindow *win) {
-    nxf_power_init();
+    nxf_power_init(); nxf_sleep_init(); nxf_battery_saver_init();
     const char *fe = getenv("NXFORGE_FRONT_END"), *fade = getenv("DM_FRONT_END_FADE");
     if (!fe || !*fe || (fade && !atoi(fade))) return;
     g_nxf_fe_win = win; g_nxf_fe_t0 = CFAbsoluteTimeGetCurrent();

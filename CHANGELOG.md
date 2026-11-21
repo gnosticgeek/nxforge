@@ -2,6 +2,21 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.49.0 (2026-11-21)
+
+Ten things for the player, in the app (Converter 0.23.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)) and in the game (Sidebar 0.8.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)). The in-game ones need each game app's host rebuilt (a full rebuild is not needed; "Update" on the game does it).
+
+- **Code mods load** (app): Enhancements › Add Code Mod takes a `.pchtxt` or `.ips` file from a mod's exefs folder (the usual form of 60 fps, resolution and graphics patches) and makes an enhancement with a switch from each of its parts, for the build it names. The patches run as the stores into the game's program the engine already makes for Atmosphère codes, which are refused where the rewriter changed the code. An enhancement file may carry a ```` ```pchtxt ```` block as written.
+- **A controller's Home button opens Theatre** (app): with NXForge open behind other apps, Home brings it forward into Theatre, unless a game is in front (there Home is the game's). Settings › Theatre has the switch and Open NXForge at login.
+- **Instant replay** (game): the sidebar's Capture page can keep the last 30 seconds ready, in memory. ⇧⌘L, the Capture menu or a controller's Capture button held saves them to the game's Recordings, where the game page's Media row shows them. A press of the Capture button takes a screenshot, as on the Switch.
+- **Newly playable** (app): when an engine update or a newer verified list makes a game in your games folder buildable, Home says so, with Build Tonight and Build Now.
+- **Players** (game): the sidebar's Controls page lists who is player 1 to 4 by controller name, and Make player 1 trades two players' controllers without unplugging anything.
+- **Around the picture** (game): where the picture does not fill the window or the screen (a 16:9 game on a 16:10 laptop, a 4:3 one on a TV), the bars can be a soft, dimmed glow of the picture itself or the game's own art instead of black (Graphics › Around the picture; `DM_PRESENT_BORDER`, layer patch border-fill).
+- **Laptop-safe play** (game): before the Mac or its screens sleep, and at 4 % battery, the game pauses with the sidebar up and its save is copied to a snapshot ("Before the Mac slept"); at 10 % a message asks for the charger (`DM_SLEEP_SAFE=0` turns it off, layer patch sleep-safe).
+- **A check after every session** (app): when a game ran slower than its own usual, the session recap and the game page say why in a line and offer the one change that should help.
+- **Save battery** (game): unplugged, a game nobody is playing pauses: while another app is in front, and after ten minutes without a button. The sidebar's General page has the switch and says how long the battery lasts (`DM_BATTERY_SAVER=0`, layer patch battery-saver). It does not change the frame rate of a game being played; a 40 fps mode and skipping repeated frames were left out, as they change frame pacing and need measuring per game.
+- **Links for Shortcuts and Siri, games in Spotlight** (app): `nxforge://play/<game>`, `nxforge://game/<game>` and `nxforge://theatre` open from Shortcuts' Open URL action (and so from Siri, the menu bar or a Stream Deck), and built games are in Spotlight by name. Native Siri phrases without a shortcut are not there yet.
+
 ## 0.48.13 (2026-11-21)
 
 - **Nintendo Switch Sports builds again** (layer patch `0040-upstream-pr-3081`, upstream nxnative 9b03dee5 taken early): the build stopped at the shader split with "the split shader tables differ from game profile 04008E001F098000's". The engine at c43a1f7a reads shader archives differently from when the game's profile was made (PR #2943 drops two stray BAHS entries in agl's `agl_technique_pfx.sharcb`, and duplicate shaders in `main` take their first copy's label), but the profile's `shader_map.tsv` was not refreshed. Upstream refreshed it today; its data rows match a v65536 split on the Mac byte for byte. The patch drops out at the next engine update. Switch Sports is on the upstream watch list.

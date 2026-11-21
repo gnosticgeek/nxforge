@@ -124,6 +124,8 @@ struct Settings: Codable, Equatable {
     /// Showcase's layout, the carousel or the fan
     var showcaseLayout: ShowcaseLayout = .carousel
     var theatreOnTV: TheatreOnTV = .ask
+    /// a controller's Home button brings NXForge to the front on Theatre while it is behind other apps (ControllerNav.home)
+    var homeOpensTheatre = true
     /// Theatre's picture inset for a TV that crops its edges, how long until the screensaver, the trailer's volume (0 to 100),
     /// and where Theatre was left: the game in focus and the filter (TheatreFilter.key), so it reopens there
     var theatreEdges: TheatreEdges = .full
@@ -161,7 +163,7 @@ struct Settings: Codable, Equatable {
         case localShaders = "local_shaders"
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
         case squareCovers = "square_covers"
-        case theatreTheme = "theatre_theme", showcaseLayout = "theatre_showcase_layout", theatreOnTV = "theatre_on_tv"
+        case theatreTheme = "theatre_theme", showcaseLayout = "theatre_showcase_layout", theatreOnTV = "theatre_on_tv", homeOpensTheatre = "home_opens_theatre"
         case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
         case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
@@ -226,6 +228,7 @@ struct Settings: Codable, Equatable {
         showcaseLayout = (try? c.decodeIfPresent(ShowcaseLayout.self, forKey: .showcaseLayout)).flatMap { $0 }
             ?? savedTheme.flatMap { ShowcaseLayout.saved(theme: $0) } ?? .carousel
         theatreOnTV = (try? c.decodeIfPresent(TheatreOnTV.self, forKey: .theatreOnTV)) ?? .ask
+        homeOpensTheatre = (try? c.decodeIfPresent(Bool.self, forKey: .homeOpensTheatre)) ?? true
         theatreEdges = (try? c.decodeIfPresent(TheatreEdges.self, forKey: .theatreEdges)) ?? .full
         theatreSaver = (try? c.decodeIfPresent(TheatreSaver.self, forKey: .theatreSaver)) ?? .five
         theatreVolume = min(max((try? c.decodeIfPresent(Int.self, forKey: .theatreVolume)) ?? 100, 0), 100)

@@ -9,13 +9,14 @@
 // from what this launch runs, and the footer counts and names those. General: pause while open, quieter while open, a save backup (the Converter's save snapshots, same format),
 // the settings file (front_mac_settings_file.inc: the settings as text beside the game) and my defaults for every game
 import AppKit
+import IOKit.ps
 import AVFoundation
 import GameController
 import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.7.1"
+let SIDEBAR_VERSION = "0.8.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -24,6 +25,8 @@ private let cornerNames = ["Top left", "Top right", "Bottom left", "Bottom right
 private let anisoSteps = [0, 2, 4, 8, 16]   // front.h mtl_aniso_set: 0 is the game's own
 private let anisoDefault = 16               // front_mac.m graphics_start: 16x until a choice is saved
 private let sizeNames = ["Fit", "Stretch", "Pixel-perfect"]   // front.h DM_PSCALE_*, in that order
+private let borderNames = ["Black", "Glow", "Game art"]   // front.h DM_PBORDER_*, in that order
+private let borderFixed = env["DM_PRESENT_BORDER"] != nil
 private let scaleFixed = env["DM_PRESENT_SCALE"] != nil
 private let aaNames = ["Off", "FXAA"]   // front.h DM_PAA_*, in that order
 private let interpNames = ["Off", "On", "Auto"]   // front.h mtl_present_interp, in that order
@@ -133,8 +136,8 @@ private func presetValue(_ p: Preset, _ s: LaunchRow) -> String {
 // Every setting the sidebar or the settings window keeps for this game is in the user defaults under these prefixes (the page shown is not a setting)
 private let sessionPrefixes = ["DMQuickSettings.", "DMPresentFilter.", "launcher.", "nxforge.mirror."]
 private let sessionNames = ["fps": "FPS counter", "fpsPos": "Counter corner", "fpsMs": "Milliseconds", "frameTimes": "Record frame times", "mods": "Mods", "modOrder": "Mod load order",
-                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
-                            "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size",
+                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "replay": "Instant replay", "batterySaver": "Save battery", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
+                            "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size", "border": "Around the picture",
                             "keys": "Keyboard controls", "keyNames": "Keyboard controls", "pad": "Controller buttons", "padNames": "Controller buttons", "captureDir": "Capture folder",
                             "mode": "CRT filter", "strength": "CRT strength", "scanline": "Line size", "DM_PRESENT_UPSCALE": "MetalFX upscaling"]
 // The settings window's own variables the sidebar keeps under its names too (front_mac_launcher_sync.inc): listed once, by the sidebar's name
@@ -156,20 +159,20 @@ private let pages: [(tab: String, title: String, icon: String)] = [("General", "
 private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods = 4, pCheats = 5, pControls = 6
 // What the controller and keyboard selection can be on (dm_qs_nav)
 enum Nav: Hashable {
-    case shot, record, fpsQuick, volume, mute, tab(Int)
+    case shot, record, fpsQuick, volume, mute, tab(Int), replay, replaySave
     case undoSession, preset(Int)
-    case pauseOpen, duckOpen, keepLibrary, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
-    case fullscreen, scale, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
+    case pauseOpen, duckOpen, keepLibrary, batterySaver, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
+    case fullscreen, scale, border, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
     case section(String), cheat(Int), cheatsAllOff, cheatsRestore, cheatsOpen, cheatsRefresh
-    case key(Int), pad(Int), resetControls
+    case key(Int), pad(Int), resetControls, playerFirst(Int)
     case restart, resume, library, quit
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .fullscreen, .scale, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .batterySaver, .replay, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
@@ -339,6 +342,41 @@ private func ago(_ d: Date) -> String { d.formatted(.relative(presentation: .nam
 private var slotBusy = false
 private var slotArmed: (slot: Int, at: Date)?
 /// The Save Slots menu and its shortcuts (front_mac_quick_settings.inc): save now, a toast when done. Main thread
+// The Mac's battery for the General page's Save battery row: its charge, whether the Mac runs on it, and macOS's own estimate of the time left (0 while it still works that out)
+enum BatteryNow {
+    static func read() -> (percent: Int, onBattery: Bool, minutes: Int)? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(), let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for src in list {
+            guard let d = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue() as? [String: Any], d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
+                  let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
+            let on = d[kIOPSPowerSourceStateKey] as? String == kIOPSBatteryPowerValue, left = d[kIOPSTimeToEmptyKey] as? Int ?? 0
+            return (cur * 100 / max, on, on && left > 0 ? left : 0)
+        }
+        return nil
+    }
+    static func line(_ b: (percent: Int, onBattery: Bool, minutes: Int)) -> String {
+        if !b.onBattery { return "Plugged in now, at \(b.percent) %" }
+        if b.minutes <= 0 { return "On the battery now, at \(b.percent) %" }
+        let h = b.minutes / 60, m = b.minutes % 60
+        return "On the battery now, at \(b.percent) %: about \(h > 0 ? "\(h) h \(m) min" : "\(m) min") left at this rate"
+    }
+}
+// Laptop-safe play (nxforge/front_mac_sleep.inc): before the Mac sleeps or its battery runs out, a snapshot of the committed save, unless the newest snapshot is already newer than
+// everything in the save. The Converter lists it as "Before the Mac slept" and prunes it with its other automatic snapshots
+@_cdecl("dm_qs_safety_copy")
+public func dm_qs_safety_copy() -> Int32 {
+    guard let save = SaveBackup.save else { return -1 }
+    let fm = FileManager.default; var newest: Date?
+    for root in [save, save + "_device"] {
+        guard let walk = fm.enumerator(atPath: root) else { continue }
+        for case let rel as String in walk {
+            if let d = (try? fm.attributesOfItem(atPath: "\(root)/\(rel)"))?[.modificationDate] as? Date, newest.map({ d > $0 }) ?? true { newest = d }
+        }
+    }
+    guard let newest else { return -1 }
+    if let last = SaveBackup.latest(), last >= newest { return 0 }
+    do { _ = try SaveBackup.make(reason: "beforeSleep"); return 1 } catch { return -1 }
+}
 @_cdecl("dm_qs_slot_save")
 public func dm_qs_slot_save(_ n: Int32) {
     let n = Int(n)
@@ -404,6 +442,7 @@ final class QuickSettings: ObservableObject {
     @Published var volume = 1.0
     @Published var muted = false
     @Published var recording = false
+    @Published var replay = false   // Instant replay: the last 30 s are kept in memory (capture_mac.m)
     @Published var shotDir = ""
     @Published var upscale = false   // MetalFX where the picture is shown larger than the game renders it
     @Published var aa = 0            // the present's anti-aliasing (DM_PAA_*)
@@ -415,12 +454,16 @@ final class QuickSettings: ObservableObject {
     @Published var aniso = 0      // the chosen anisotropic filtering floor (0: the game's own)
     @Published var anisoRun = 0   // the one this launch took
     @Published var scale = 0      // picture size (DM_PSCALE_*)
+    @Published var border = 0     // what shows around a picture that does not fill the window (DM_PBORDER_*)
     @Published var pixel = Int(DM_PIXEL_AUTO)   // pixel art chosen (DM_PIXEL_*)
     @Published var pixelActive = 0                // the mode in effect now (auto: off until the game shows pixel art)
     @Published var pixelGrid: (w: Float, h: Float, s: Float)?   // the art's own size and texels per art pixel, while a grid holds
     @Published var fullscreen = false
     @Published var pauseOpen = true   // pause the game while the sidebar is up
     @Published var duckOpen = false   // quieter sound while it is up
+    @Published var batterySaver = true   // on the battery, a game nobody is playing pauses (nxforge/front_mac_battery.inc)
+    @Published var battery: (percent: Int, onBattery: Bool, minutes: Int)? = nil   // nil: a Mac without a battery
+    @Published var players: [Player] = []   // the controllers by player, for the Controls page
     @Published var keepLibrary = true // Library pauses and keeps the game (front_qs_suspend) instead of ending it
     @Published var paused = false
     @Published var lastBackup: Date?
@@ -480,13 +523,14 @@ final class QuickSettings: ObservableObject {
         if let e = env["DM_FRAME_TIMES"] { frameTimes = (Int(e) ?? 0) != 0 } else { frameTimes = d.bool(forKey: optKey("frameTimes")) }
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
         volume = d.object(forKey: optKey("volume")) == nil ? 1 : d.double(forKey: optKey("volume")); muted = d.bool(forKey: optKey("muted"))
-        recording = front_qs_recording() != 0
+        recording = front_qs_recording() != 0; replay = front_qs_replay() != 0
         pauseOpen = d.object(forKey: optKey("pauseOpen")) == nil ? true : d.bool(forKey: optKey("pauseOpen")); duckOpen = d.bool(forKey: optKey("duckOpen"))
         keepLibrary = d.object(forKey: optKey("keepLibrary")) == nil ? true : d.bool(forKey: optKey("keepLibrary"))
+        batterySaver = d.object(forKey: optKey("batterySaver")) == nil ? true : d.bool(forKey: optKey("batterySaver")); battery = BatteryNow.read(); readPlayers()
         paused = front_qs_paused() != 0; fullscreen = front_qs_fullscreen() != 0
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
-        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale()); pixel = Int(mtl_present_pixel()); refreshPixel()
+        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale()); border = Int(mtl_present_border()); pixel = Int(mtl_present_pixel()); refreshPixel()
         edr = mtl_present_edr() != 0; edrStrength = Double(mtl_present_edr_strength()) / 100; edrHeadroom = mtl_present_edr_headroom(); interp = Int(mtl_present_interp()); interpActive = mtl_present_interp_active() != 0
         shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
         settingsPath = String(cString: front_qs_settings_path()); defaultsExist = front_qs_defaults_exist() != 0
@@ -633,12 +677,13 @@ final class QuickSettings: ObservableObject {
     }
     var pixelPaused: Bool { pixelActive != 0 }
     func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("scale")) }
+    func setBorder(_ n: Int) { guard !borderFixed else { return }; border = n; mtl_present_border_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("border")) }
     func toggleFullscreen() { front_qs_fullscreen_toggle() }
-    var graphicsChanged: Bool { pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
+    var graphicsChanged: Bool { pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || border != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
-        setUpscale(true); setScale(0); setPixel(Int(DM_PIXEL_AUTO))
+        setUpscale(true); setScale(0); setBorder(0); setPixel(Int(DM_PIXEL_AUTO))
         if !envFixed("DM_PRESENT_AA") { setAA(0) }
         setEDR(false); setEDRStrength(0.5)
         if env["DM_ANISO"] == nil { setAniso(anisoDefault) }
@@ -685,6 +730,7 @@ final class QuickSettings: ObservableObject {
     // Sound: the volume and mute are saved, and front_mac.m sets the game's gain from them (quieter while the sidebar is up when that is on)
     func setVolume(_ v: Double) { volume = v; muted = false; UserDefaults.standard.set(v, forKey: optKey("volume")); UserDefaults.standard.set(false, forKey: optKey("muted")); front_qs_volume_apply() }
     func setMuted(_ on: Bool) { muted = on; UserDefaults.standard.set(on, forKey: optKey("muted")); front_qs_volume_apply() }
+    func setBatterySaver(_ on: Bool) { batterySaver = on; UserDefaults.standard.set(on, forKey: optKey("batterySaver")) }
     func setKeepLibrary(_ on: Bool) { keepLibrary = on; UserDefaults.standard.set(on, forKey: optKey("keepLibrary")) }
     func setDuck(_ on: Bool) { duckOpen = on; UserDefaults.standard.set(on, forKey: optKey("duckOpen")); front_qs_volume_apply() }
     func setPauseOpen(_ on: Bool) { pauseOpen = on; front_qs_pause_set(on ? 1 : 0); paused = front_qs_paused() != 0 }
@@ -761,7 +807,23 @@ final class QuickSettings: ObservableObject {
     func openCapture() { if let p = picked { NSWorkspace.shared.open(URL(fileURLWithPath: p)) } }
     func revealCapture() { if let p = picked { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) } }
     func record() { front_qs_record(); recording = front_qs_recording() != 0 }
+    func setReplay(_ on: Bool) { front_qs_replay_set(on ? 1 : 0); replay = front_qs_replay() != 0 }
     func assign(_ i: Int, pad: Bool) { front_qs_assign(Int32(i), pad ? 1 : 0); assigning = Int(front_qs_assigning()) }
+    /// Who plays (front_mac_players.inc): each player with a controller, by its name; canMove false for Joy-Cons, which keep the player they joined as
+    struct Player: Identifiable { let slot: Int; let name: String; let canMove: Bool; var id: Int { slot } }
+    func readPlayers() {
+        var out: [Player] = []
+        for p in 0..<8 {
+            var name = [CChar](repeating: 0, count: 64)
+            let k = front_qs_player(Int32(p), &name, 64)
+            if k > 0 { out.append(Player(slot: p, name: String(cString: name), canMove: k == 1)) }
+        }
+        if out.map(\.id) != players.map(\.id) || out.map(\.name) != players.map(\.name) { players = out }
+    }
+    func makeFirst(_ p: Int) {
+        guard front_qs_player_swap(Int32(p), 0) != 0 else { return }
+        readPlayers(); front_qs_toast_text("\(players.first { $0.slot == 0 }?.name ?? "That controller") is player 1 now")
+    }
     func resetControls() {
         for k in ["keys", "keyNames", "pad", "padNames"] { UserDefaults.standard.removeObject(forKey: optKey(k)) }
         front_qs_controls_reload(); refresh()
@@ -892,12 +954,12 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + [[Nav.backup, Nav.backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
-        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + [[Nav.backup, Nav.backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
-            return (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
+            return [[Nav.replay]] + (replay ? [[Nav.replaySave]] : []) + (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
                 + [[.showFolder, .changeFolder]] + (customDir ? [[.defaultFolder]] : [])
         case pMods: return mods.map { [.mod($0), .modUp($0), .modDown($0)] } + [[.modsOpen, .modsRefresh]]
         case pCheats:
@@ -907,7 +969,7 @@ final class QuickSettings: ObservableObject {
                 r += g.rows.filter { !$0.label }.map { [.cheat($0.id)] }
             }
             return r + (cheatsOn > 0 ? [[.cheatsAllOff]] : []) + [[.cheatsOpen, .cheatsRefresh]]
-        case pControls: return actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
+        case pControls: return players.filter { $0.slot > 0 && $0.canMove && players.first?.canMove != false }.map { [Nav.playerFirst($0.slot)] } + actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
         default: return []
         }
     }
@@ -944,8 +1006,11 @@ final class QuickSettings: ObservableObject {
         case .pauseOpen: setPauseOpen(d > 0)
         case .duckOpen: setDuck(d > 0)
         case .keepLibrary: setKeepLibrary(d > 0)
+        case .replay: setReplay(d > 0)
+        case .batterySaver: setBatterySaver(d > 0)
         case .fullscreen: if (d > 0) != fullscreen { toggleFullscreen() }
         case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
+        case .border: setBorder(min(max(border + d, 0), borderNames.count - 1))
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[min(max(i + d, 0), pixelOrder.count - 1)]) }
         case .crt: setCRT(d > 0)
         case .strength: if crtOn { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
@@ -970,12 +1035,15 @@ final class QuickSettings: ObservableObject {
         switch n {
         case .shot: front_qs_screenshot()
         case .record: record()
+        case .replay: setReplay(!replay)
+        case .replaySave: front_qs_replay_save()
         case .fps, .fpsQuick: setFps(!fps)
         case .mute, .volume: setMuted(!muted)
         case .tab(let i): setPage(i); sel = firstOnPage
         case .pauseOpen: setPauseOpen(!pauseOpen)
         case .duckOpen: setDuck(!duckOpen)
         case .keepLibrary: setKeepLibrary(!keepLibrary)
+        case .batterySaver: setBatterySaver(!batterySaver)
         case .undoSession: undoSession()
         case .preset(let i): if let p = Preset(rawValue: i) { choosePreset(p) }
         case .backup: backup()
@@ -988,6 +1056,7 @@ final class QuickSettings: ObservableObject {
         case .defaultsUse: useDefaults()
         case .fullscreen: toggleFullscreen()
         case .scale: setScale((scale + 1) % sizeNames.count)
+        case .border: setBorder((border + 1) % borderNames.count)
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[(i + 1) % pixelOrder.count]) }
         case .crt: setCRT(!crtOn)
         case .scanlines: if crtOn { setScanline((scanline + 1) % 9) }
@@ -1024,6 +1093,7 @@ final class QuickSettings: ObservableObject {
         case .key(let i): assign(i, pad: false)
         case .pad(let i): assign(i, pad: true)
         case .resetControls: resetControls()
+        case .playerFirst(let p): makeFirst(p)
         case .restart: restart()
         case .resume: close()
         case .library: quitToLibrary()
@@ -1291,6 +1361,14 @@ struct QuickSettingsView: View {
                 }.nav(m, .keepLibrary)
                 note(m.keepLibrary ? "Library pauses the game and keeps it, so Resume in NXForge picks up where you left off. It still uses its memory" : "Library ends the game, as Quit does")
             }
+            if let b = m.battery {
+                subhead("On the battery").padding(.top, 6)
+                Row(title: "Save battery", changed: !m.batterySaver) {
+                    Toggle("Save battery", isOn: Binding(get: { m.batterySaver }, set: { m.setBatterySaver($0) })).toggleStyle(.switch).labelsHidden()
+                }.nav(m, .batterySaver)
+                note((m.batterySaver ? "Unplugged, the game pauses while another app is in front, and after ten minutes without a button" : "The game keeps running when you leave it, plugged in or not")
+                     + ". " + BatteryNow.line(b))
+            }
             subhead("Save").padding(.top, 6)
             HStack(spacing: 10) {
                 Button { m.backup() } label: { Label(m.backupBusy ? "Backing up…" : "Back up save now", systemImage: "externaldrive.badge.timemachine").frame(maxWidth: .infinity) }
@@ -1371,6 +1449,15 @@ struct QuickSettingsView: View {
             note(scaleFixed ? "Set by DM_PRESENT_SCALE for this run" : m.scale == 1 ? "Fills the window; the picture may look wider or taller than the game draws it"
                  : m.scale == 2 ? (m.pixelGrid != nil && m.pixelPaused ? "Each art pixel the same whole number of screen pixels, counted on the art's own grid, with a border"
                                    : "Each game pixel the same whole number of screen pixels: crisp pixel art, with a border") : "The game's shape, with black bars where the window is wider or taller")
+            // Around the picture (border_fill.inc): the picture or the game's art, blurred, where the window is wider or taller than the picture, in place of black bars
+            Row(title: "Around the picture", changed: m.border != 0) {
+                Picker("Around the picture", selection: Binding(get: { m.border }, set: { m.setBorder($0) })) {
+                    ForEach(borderNames.indices, id: \.self) { Text(borderNames[$0]).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(borderFixed)
+            }.nav(m, .border)
+            note(borderFixed ? "Set by DM_PRESENT_BORDER for this run" : m.scale == 1 ? "Nothing to fill while the picture is stretched over the window"
+                 : m.border == 1 ? "The picture itself, blurred and dimmed, where there would be black bars" : m.border == 2 ? "The game's art, blurred and dimmed, where there would be black bars (the glow when the game has none)"
+                 : "Black bars where the window is wider or taller than the picture")
             // Pixel art: sharp, even pixels for 2D games, on the art's own grid where the game enlarged it (pixel_art.inc); auto turns it on where the picture shows pixel art
             Row(title: "Pixel art", changed: m.pixel != Int(DM_PIXEL_AUTO)) {
                 Picker("Pixel art", selection: Binding(get: { m.pixel }, set: { m.setPixel($0) })) {
@@ -1487,6 +1574,16 @@ struct QuickSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Screenshot and Record are at the top of this menu. The picture is saved as you see it, filter included.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            subhead("Instant replay")
+            Row(title: "Instant replay", changed: m.replay) {
+                Toggle("Instant replay", isOn: Binding(get: { m.replay }, set: { m.setReplay($0) })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .replay)
+            if m.replay {
+                Button { front_qs_replay_save() } label: { Label("Save the last 30 seconds", systemImage: "gobackward.30").frame(maxWidth: .infinity) }
+                    .modifier(GlassButton(prominent: false)).controlSize(.large).help("Shift-Command-L, or hold a controller's Capture button").nav(m, .replaySave)
+            }
+            note(m.replay ? "The last 30 seconds are always kept, with sound. Shift-Command-L or a controller's Capture button held saves them; this uses a little of the Mac's power all the time"
+                 : "Keeps the last 30 seconds of play ready to save after something worth keeping happened. A controller's Capture button takes a screenshot; held, it saves the replay")
             subhead("Recent")
             if m.captures.isEmpty { Text("Nothing yet: your screenshots and recordings show here.").font(.callout).foregroundStyle(.tertiary) }
             else {
@@ -1512,7 +1609,7 @@ struct QuickSettingsView: View {
                 Button { m.defaultCaptureFolder() } label: { Label("Use the game folder again", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: false)).controlSize(.large).nav(m, .defaultFolder)
             }
-            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording, Shift-Command-L saves the last 30 seconds.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
     private func captureTile(_ c: CaptureFile) -> some View {
@@ -1578,6 +1675,22 @@ struct QuickSettingsView: View {
             if !m.keyClash.isEmpty || !m.padClash.isEmpty {
                 Label("\(m.keyClash.count + m.padClash.count) buttons share a key or button with another (marked below). Choose a new one, or Reset controls.", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            if !m.players.isEmpty {
+                subhead("Players").padding(.top, 4)
+                ForEach(m.players) { pl in
+                    Row(title: "Player \(pl.slot + 1)") {
+                        HStack(spacing: 8) {
+                            Text(pl.name).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                            if pl.slot > 0 && pl.canMove && m.players.first?.canMove != false {
+                                Button("Make player 1") { withAnimation(motion) { m.makeFirst(pl.slot) } }.modifier(GlassButton(prominent: false)).nav(m, .playerFirst(pl.slot))
+                            }
+                        }
+                    }
+                }
+                if m.players.count > 1 {
+                    note(m.players.contains { !$0.canMove } ? "Joy-Cons keep the player they joined as: they join in the order their first buttons are pressed" : "Make player 1 trades that controller with player 1's")
+                }
             }
             subhead("Keyboard").padding(.top, 4)
             ForEach(actionNames.indices, id: \.self) { i in Row(title: actionNames[i]) { assignButton(i, pad: false) }.nav(m, .key(i)) }

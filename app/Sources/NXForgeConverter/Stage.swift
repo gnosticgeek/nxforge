@@ -304,6 +304,7 @@ extension AppModel {
         case .theatreTheme: cycle(&settings.theatreTheme); theatreTheme = settings.theatreTheme
         case .showcaseLayout: cycle(&settings.showcaseLayout); showcaseLayout = settings.showcaseLayout
         case .theatreOnTV: cycle(&settings.theatreOnTV)
+        case .homeOpensTheatre: flip(&settings.homeOpensTheatre); ControllerNav.shared.background(settings.homeOpensTheatre)
         case .theatreEdges: settings.theatreEdges = settings.theatreEdges.step(d)
         case .theatreSaver: cycle(&settings.theatreSaver)
         case .theatreVolume: if !toggle { settings.theatreVolume = min(max(settings.theatreVolume + d * 10, 0), 100); theatreVolumeTick += 1 }
@@ -843,6 +844,7 @@ struct StageHome: View {
                     Text("Your games").font(.system(size: 26, weight: .heavy)).tracking(-0.4)
                     Text("\(games.filter { $0.app != nil }.count) ready").font(.system(size: 16, weight: .medium)).foregroundStyle(StageLook.soft)
                     Spacer()
+                    NewlyPlayablePill(model: model)
                     if let w = week, w.seconds > 0, geo.size.width > 900 { WeekStrip(week: w).padding(.trailing, 14) }
                     if games.filter({ $0.app != nil }).count > 1 {
                         Button { model.pickRandom(games) } label: {

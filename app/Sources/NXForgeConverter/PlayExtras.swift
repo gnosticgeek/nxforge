@@ -97,7 +97,8 @@ extension AppModel {
         recap = r
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(20))
-            if self?.recap?.id == r.id { self?.recap = nil }
+            // a slower session's note (SessionCheck.swift) keeps the card up until it is answered
+            if self?.recap?.id == r.id, self?.sessionCheck(app: r.app) == nil { self?.recap = nil }
         }
     }
 
@@ -174,6 +175,7 @@ struct RecapCard: View {
                 if let m = recap.peakMB { stat("Peak memory", memoryText(m)) }
                 if let f = recap.fps { stat("Frame rate", String(format: "%.1f fps", f)) }
             }
+            SessionCheckNote(model: model, app: recap.app)
         }
         .padding(18)
         .frame(width: 440)
@@ -181,7 +183,7 @@ struct RecapCard: View {
         .background(StageLook.panel.opacity(0.92), in: .rect(cornerRadius: 22))
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
         .shadow(color: .black.opacity(0.5), radius: 30, y: 14)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     func stat(_ k: String, _ v: String) -> some View {

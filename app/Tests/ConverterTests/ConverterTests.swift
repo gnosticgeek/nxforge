@@ -2341,3 +2341,199 @@ import Testing
         #expect(FolderCheck.manual.seconds == nil && FolderCheck.hour.seconds == 3600)
     }
 }
+
+@Suite struct GameLinks {
+    struct G { let name: String; let id: String?; let built: Bool }
+    let games = [G(name: "The Legend of Zelda™: Ocarina of Time", id: "0400486024DEC000", built: true),
+                 G(name: "The Legend of Zelda: Breath of the Wild", id: "01007EF00011E000", built: false),
+                 G(name: "Mario Kart World", id: "0400C3F00006E000", built: true),
+                 G(name: "Mario Kart 8 Deluxe", id: "0100152000022000", built: false),
+                 G(name: "Pokémon™ Legends: Z-A", id: nil, built: false)]
+    func find(_ q: String) -> String? { GameLink.find(q, in: games, name: \.name, titleID: \.id, built: \.built)?.name }
+
+    @Test func linksNameAnActionAndAGame() {
+        #expect(GameLink.parse(URL(string: "nxforge://play/mario%20kart")!)?.game == "mario kart")
+        #expect(GameLink.parse(URL(string: "nxforge://play?game=Zelda")!)?.action == "play")
+        #expect(GameLink.parse(URL(string: "nxforge://play?game=Zelda")!)?.game == "Zelda")
+        #expect(GameLink.parse(URL(string: "nxforge://theatre")!)?.game == nil)
+        #expect(GameLink.parse(URL(string: "https://example.com/play")!) == nil)
+    }
+
+    @Test func aFewWordsFindTheGame() {
+        #expect(find("0400c3f00006e000") == "Mario Kart World")
+        #expect(find("mario kart 8") == "Mario Kart 8 Deluxe")
+        #expect(find("mario kart") == "Mario Kart World")          // two start with it: the built one
+        #expect(find("zelda") == "The Legend of Zelda™: Ocarina of Time")
+        #expect(find("breath wild") == "The Legend of Zelda: Breath of the Wild")
+        #expect(find("pokemon za") == "Pokémon™ Legends: Z-A")
+        #expect(find("metroid") == nil)
+        #expect(find("  ") == nil)
+    }
+
+    @Test func homeOpensTheatreIsKeptAndOnByDefault() throws {
+        #expect(Settings().homeOpensTheatre)
+        var s = Settings(); s.homeOpensTheatre = false
+        #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).homeOpensTheatre == false)
+        #expect(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)).homeOpensTheatre)
+    }
+}
+
+@Suite struct NewlyPlayableGames {
+    @Test func levelsFollowTheProfileAndTheList() {
+        #expect(NewlyPlayable.level(profile: false, result: nil) == 0)
+        #expect(NewlyPlayable.level(profile: true, result: nil) == 1)
+        #expect(NewlyPlayable.level(profile: true, result: "boots") == 2)
+        #expect(NewlyPlayable.level(profile: true, result: "plays") == 3)
+        #expect(NewlyPlayable.level(profile: true, result: "broken") == 0)
+    }
+
+    @Test func onlyARiseForAKnownUnbuiltGameIsAnArrival() {
+        let old = ["A": 0, "B": 1, "C": 0, "D": 2, "E": 3]
+        let now: [(titleID: String, name: String, level: Int, built: Bool)] = [
+            ("A", "Alpha", 1, false),    // a profile arrived
+            ("B", "Beta", 1, false),     // no change
+            ("C", "Gamma", 3, true),     // plays now, but built already
+            ("D", "Delta", 3, false),    // boots → plays
+            ("E", "Epsilon", 0, false),  // went down
+            ("F", "Zeta", 3, false),     // new to the games folder
+        ]
+        let a = NewlyPlayable.arrivals(old: old, now: now)
+        #expect(a.map(\.titleID) == ["D", "A"])
+        #expect(a[0].what == "plays now")
+        #expect(NewlyPlayable.headline(a) == "2 of your games can be built now")
+        #expect(NewlyPlayable.headline([a[1]]) == "Alpha can be built now")
+    }
+}
+
+@Suite struct SessionChecking {
+    static let json = #"""
+    [{"log": "/x/0100000000010000.log", "title_id": "0100000000010000", "ended": 1795000000, "build": "abc", "chain": "d4f", "fullscreen": true, "screen": "own",
+      "upscale": "metalfx", "fps_hold": "", "thermal_max": 1, "low_power": false, "battery": true, "covered": 0, "held2": 40, "held3": 2, "players": 1, "exit": "",
+      "frames": 90000, "on_time": 91.2, "gpu_p50": 15.1, "gpu_p95": 18.0, "footprint_mb": 6100, "causes": ["GPU-bound"], "usual": 98.4, "sessions": 5, "verdict": "slower"}]
+    """#
+    func setting(_ json: String) throws -> LaunchSetting { try JSONDecoder().decode(LaunchSetting.self, from: Data(json.utf8)) }
+
+    @Test func readsTheChecksJSON() throws {
+        let c = try #require(SessionChecks.decode(Data(Self.json.utf8)).first)
+        #expect(c.slower && c.titleID == "0100000000010000" && c.held == 42 && c.battery && c.frames == 90000)
+        #expect(c.numbers == "91 % of frames on time, usually 98 %")
+        #expect(c.why.hasPrefix("The graphics chip was at its limit"))
+        #expect(SessionChecks.decode(Data("nonsense".utf8)).isEmpty)
+    }
+
+    @Test func theFixIsTheCheapestChangeLeft() throws {
+        let c = try #require(SessionChecks.decode(Data(Self.json.utf8)).first)
+        let interp = try setting(#"{"env":"DM_PRESENT_INTERP","kind":"choice","label":"Frame interpolation","default":"off","options":[["off","Off"],["on","On"]]}"#)
+        let up = try setting(#"{"env":"DM_PRESENT_UPSCALE","kind":"choice","label":"MetalFX upscaling","default":"metalfx","options":[["off","Off"],["metalfx","MetalFX"]]}"#)
+        let scale = try setting(#"{"env":"DM_RENDER_SCALE","kind":"range","label":"Render scale","default":"1.00","min":0.5,"max":2,"step":0.25}"#)
+        let all = [interp, up, scale]
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_INTERP": "on"])?.env == "DM_PRESENT_INTERP")
+        #expect(SessionChecks.fix(c, settings: all, values: [:]) == SessionFix(label: "Turn Off MetalFX", env: "DM_PRESENT_UPSCALE", value: "off"))
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_UPSCALE": "off"]) == SessionFix(label: "Lower Render Scale to 75 %", env: "DM_RENDER_SCALE", value: "0.75"))
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_UPSCALE": "off", "DM_RENDER_SCALE": "0.50"]) == nil)
+        var low = c; low.lowPower = true
+        #expect(SessionChecks.fix(low, settings: all, values: [:]) == nil)
+        #expect(low.why.hasPrefix("Low Power Mode"))
+        var fine = c; fine.verdict = "smooth"
+        #expect(SessionChecks.fix(fine, settings: all, values: [:]) == nil)
+    }
+}
+
+@Suite struct CodeModFiles {
+    static let pch = """
+    # Some Game 60 FPS [0100ABCD01234000] v1.2.0
+    @nsobid-AABBCCDDEEFF00112233445566778899AABBCCDD
+    @flag print_values
+    @flag offset_shift 0x100
+
+    // [60 FPS]
+    @enabled
+    00123450 1F2003D5
+    00123458 E0031F2A C0035FD6 // two words
+    0012346C 2A
+
+    // Disable DOF
+    @disabled
+    00200000 "ab"
+
+    @stop
+    00999999 FFFFFFFF
+    """
+
+    @Test func pchtxtSectionsBuildAndOffsets() {
+        let m = CodeMods.parsePchtxt(Self.pch)
+        #expect(m.build == "AABBCCDDEEFF0011")
+        #expect(m.heading == "Some Game 60 FPS [0100ABCD01234000] v1.2.0")
+        #expect(m.sections.map(\.title) == ["60 FPS", "Disable DOF"])
+        #expect(m.sections.map(\.enabled) == [true, false])
+        // offset_shift 0x100: the offsets are addresses in main already
+        #expect(m.sections[0].writes == [CodeWrite(address: 0x123450, bytes: [0x1F, 0x20, 0x03, 0xD5]),
+                                         CodeWrite(address: 0x123458, bytes: [0xE0, 0x03, 0x1F, 0x2A, 0xC0, 0x03, 0x5F, 0xD6]),
+                                         CodeWrite(address: 0x12346C, bytes: [0x2A])])
+        #expect(m.sections[1].writes == [CodeWrite(address: 0x200000, bytes: [0x61, 0x62, 0])])
+    }
+
+    @Test func pchtxtWithoutShiftCountsFromTheFile() {
+        let m = CodeMods.parsePchtxt("@nsobid-0011223344556677\n@enabled\n00000200 AABB\n@little-endian\n00000300 AABB\n")
+        #expect(m.sections.count == 1)
+        #expect(m.sections[0].writes == [CodeWrite(address: 0x100, bytes: [0xAA, 0xBB]), CodeWrite(address: 0x200, bytes: [0xBB, 0xAA])])
+    }
+
+    @Test func storesAreLittleEndianWords() {
+        let lines = CodeMods.dmnt([CodeWrite(address: 0x123450, bytes: [0x1F, 0x20, 0x03, 0xD5, 0xAA, 0xBB, 0xCC])])
+        #expect(lines == ["04000000 00123450 D503201F", "02000000 00123454 0000BBAA", "01000000 00123456 000000CC"])
+    }
+
+    @Test func ipsRecordsAndRuns() {
+        var d = Data("PATCH".utf8)
+        d.append(contentsOf: [0x00, 0x02, 0x00, 0x00, 0x02, 0xDE, 0xAD])           // 0x200: DE AD
+        d.append(contentsOf: [0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x03, 0x7F])     // 0x300: 7F three times
+        d.append(contentsOf: Array("EOF".utf8))
+        #expect(CodeMods.parseIPS(d) == [CodeWrite(address: 0x100, bytes: [0xDE, 0xAD]), CodeWrite(address: 0x200, bytes: [0x7F, 0x7F, 0x7F])])
+        var w = Data("IPS32".utf8)
+        w.append(contentsOf: [0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x42])
+        w.append(contentsOf: Array("EEOF".utf8))
+        #expect(CodeMods.parseIPS(w) == [CodeWrite(address: 0x0100_0000, bytes: [0x42])])
+        #expect(CodeMods.parseIPS(Data("hello".utf8)) == nil)
+        #expect(CodeMods.parseIPS(Data("PATCH".utf8) + Data([0, 2, 0, 0, 9])) == nil)   // cut short
+    }
+
+    @Test func aCodeModBecomesEnhancementsSwitchedOff() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxf-codemod-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let src = dir.appending(path: "AABBCCDDEEFF0011.pchtxt")
+        try Data(Self.pch.utf8).write(to: src)
+        let folder = dir.appending(path: "enhancements")
+        let r = try CodeMods.add(src, folder: folder, titleID: "0100ABCD01234000", build: "AABBCCDDEEFF0011")
+        #expect(r.names == ["60 FPS", "Disable DOF"])
+        #expect(r.note == nil)
+        let list = Enhancements.load(folder: folder)
+        #expect(list.count == 2)
+        let fps = try #require(list.first { $0.name == "60 FPS" })
+        #expect(!fps.on)
+        #expect(fps.builds == ["AABBCCDDEEFF0011"])
+        #expect(fps.kinds == ["Game code"])
+        #expect(fps.patch.first == "04000000 00123450 D503201F")
+        #expect(fps.patch.count == 4)
+        // the same file again adds nothing new
+        try CodeMods.add(src, folder: folder, titleID: "0100ABCD01234000", build: "AABBCCDDEEFF0011")
+        #expect(Enhancements.load(folder: folder).count == 2)
+        // another build: added, with a note
+        let other = try CodeMods.add(src, folder: dir.appending(path: "other"), titleID: "0100ABCD01234000", build: "FFFFFFFFFFFFFFFF")
+        #expect(other.note?.contains("another version") == true)
+    }
+
+    @Test func aPchtxtBlockInAnEnhancementFile() throws {
+        let text = "---\nnxforge_enhancement: 1\nname: \"Sixty\"\non: true\n---\n# Sixty\n\nRuns at 60.\n\n```pchtxt\n@nsobid-0011223344556677AA\n@flag offset_shift 0x100\n@enabled\n00001000 1F2003D5\n@disabled\n00002000 1F2003D5\n```\n"
+        let e = try #require(Enhancements.parse(text, file: "sixty.md"))
+        #expect(e.patch == ["04000000 00001000 D503201F"])
+        #expect(e.builds == ["0011223344556677"])
+        #expect(e.summary == "Runs at 60.")
+    }
+
+    @Test func aModWithoutTitlesTakesItsFoldersName() {
+        #expect(CodeMods.fallbackName(URL(fileURLWithPath: "/mods/60 FPS/exefs/AABBCCDDEEFF0011.ips")) == "60 FPS")
+        #expect(CodeMods.fallbackName(URL(fileURLWithPath: "/mods/Steady frame rate.pchtxt")) == "Steady frame rate")
+    }
+}

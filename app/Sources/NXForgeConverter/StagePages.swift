@@ -246,6 +246,13 @@ struct GameHeroColumn: View {
             }
             AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build line says Older engine
                 .padding(.top, 18)
+            if let app = g.app, model.sessionCheck(app: app) != nil {
+                SessionCheckNote(model: model, app: app, onStage: true)
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(StageLook.card, in: .rect(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(StageLook.edge, lineWidth: 1))
+                    .padding(.top, 10)
+            }
         }
     }
 

@@ -174,6 +174,14 @@ final class AppModel {
     var theatreRow = 0
     var theatreMenu: Int?
     var theatreOffer: TVScreen?
+    /// the newest slower session per game, by title ID (SessionCheck.swift)
+    var sessionChecks: [String: SessionCheck] = SessionChecks.load()
+    /// games an engine update made buildable, announced and not yet built or dismissed (NewlyPlayable.swift)
+    var newlyPlayable: [PlayableArrival] = []
+    /// what Spotlight was last given (Links.swift indexSpotlight): the games' ids, names and apps
+    @ObservationIgnored var spotlightStamp = ""
+    /// bumped when Open at login is switched, so Settings reads the login item again (LoginItem)
+    var loginItemTick = 0
     var theatreScreen: CGDirectDisplayID?
     var theatreTouched = Date()
     /// Trailer: the trailer has the room (Watch), and its sound is off (S)
@@ -310,11 +318,13 @@ final class AppModel {
         restoreBatchQueue()
         if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { backUpDataIfDue() }
         if settings.gameDir != nil { validate() }
+        Task { [weak self] in try? await Task.sleep(for: .seconds(8)); self?.indexSpotlight() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
                 self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
+                self?.indexSpotlight()
                 if self?.settings.folderCheck != .manual { self?.rescanIfFolderChanged() }   // games filed into the games folder while NXForge was in the back
                 if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { self?.backUpDataIfDue() }
                 guard let self, self.fixPending, !self.checking else { return }
@@ -355,7 +365,7 @@ final class AppModel {
             let verified = VerifiedGames.load(e.repo)
             await MainActor.run {
                 let repoChanged = self.env?.repo != e.repo
-                self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date()
+                self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date(); self.checkNewlyPlayable()
                 // a NUP or a dump is read by the engine's Python: check it again now that it is known (zbic may just have been installed)
                 if !self.needsKeys { self.validate() }
                 if repoChanged { self.measure() }   // the game's profile (GameNeeds) is in the engine checkout
@@ -471,7 +481,7 @@ final class AppModel {
             let note = available.flatMap { Engine.upstreamNote(repo, target: $0.ref) }
             let target = found?.ref
             await MainActor.run {
-                self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note
+                self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note; self.verified = VerifiedGames.load(self.env?.repo); self.checkNewlyPlayable()
                 self.engineUpdate = available
                 self.lastUpdateCheck = Date()
                 self.revision += 1
