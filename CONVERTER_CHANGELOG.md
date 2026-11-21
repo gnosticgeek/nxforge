@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.22.10 (2026-11-21)
+
+Shipped in NXForge 0.48.10.
+
+- **Shutter**, a new Theatre theme to Tom's mock-up: the games' wide art cut into slanted panels like the blades of a shutter. The game in focus is the wide panel in the middle with a pink accent bar along its foot; the neighbours are narrow, a little darker, named in bold italics. Left and right slide the panels along (a list of seven or more goes round, a shorter one stops at its ends); a click on a panel brings it to the middle. The top bar has the NXFORGE wordmark, the filter between L and R, and "Shutter" beside the clock; the foot has the game's name, big, over "Switch · genre · players ✓ Built · time played", the coral main button (Continue, Play or the step the game needs), Details, Play options, and Theme, Menu and Leave between accent rules. ZL and ZR step through Showcase, Cinema, Shutter and Trailer, and it is in the Theatre menu and Settings › Theatre › Theme. Sounds are the quiet ticks, the right stick does nothing here, and the music folder plays as on Showcase and Cinema.
+
 ## 0.22.9 (2026-11-21)
 
 Shipped in NXForge 0.48.9.

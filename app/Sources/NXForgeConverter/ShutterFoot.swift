@@ -27,6 +27,7 @@ struct ShutterFoot: View {
                         HStack(spacing: 14 * u) {
                             PadGlyph(text: "A", filled: true, dark: true).fixedSize().scaleEffect(u * 1.5).frame(width: 34 * u, height: 34 * u)
                             Text(model.theatreAction(game)).font(.system(size: 32 * u, weight: .bold).width(.condensed))
+                                .lineLimit(1).fixedSize()
                         }
                         .foregroundStyle(ShutterLook.buttonInk)
                         .padding(.horizontal, 34 * u).frame(height: 70 * u)

@@ -22,7 +22,8 @@ struct ShutterPanel: View {
                 LinearGradient(stops: [.init(color: .black.opacity(0.25), location: 0), .init(color: .black.opacity(0.2), location: 0.55),
                                        .init(color: .black.opacity(0.78), location: 1)], startPoint: .top, endPoint: .bottom)
                 Text(game.name)
-                    .font(.system(size: 34 * u, weight: .heavy).width(.condensed).italic())
+                    .font(.system(size: 34 * u, weight: .heavy).width(.condensed))
+                    .italic()
                     .lineLimit(2).minimumScaleFactor(0.6)
                     .shadow(color: .black.opacity(0.7), radius: 8 * u, y: 2 * u)
                     .frame(width: width - 44 * u, alignment: .leading)
