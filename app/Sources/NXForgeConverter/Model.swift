@@ -174,6 +174,8 @@ final class AppModel {
     var theatreRow = 0
     var theatreMenu: Int?
     var theatreOffer: TVScreen?
+    /// the newest slower session per game, by title ID (SessionCheck.swift)
+    var sessionChecks: [String: SessionCheck] = SessionChecks.load()
     /// games an engine update made buildable, announced and not yet built or dismissed (NewlyPlayable.swift)
     var newlyPlayable: [PlayableArrival] = []
     /// what Spotlight was last given (Links.swift indexSpotlight): the games' ids, names and apps

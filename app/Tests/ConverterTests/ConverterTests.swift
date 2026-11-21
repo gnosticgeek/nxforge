@@ -2390,3 +2390,37 @@ import Testing
         #expect(NewlyPlayable.headline([a[1]]) == "Alpha can be built now")
     }
 }
+
+@Suite struct SessionChecking {
+    static let json = #"""
+    [{"log": "/x/0100000000010000.log", "title_id": "0100000000010000", "ended": 1795000000, "build": "abc", "chain": "d4f", "fullscreen": true, "screen": "own",
+      "upscale": "metalfx", "fps_hold": "", "thermal_max": 1, "low_power": false, "battery": true, "covered": 0, "held2": 40, "held3": 2, "players": 1, "exit": "",
+      "frames": 90000, "on_time": 91.2, "gpu_p50": 15.1, "gpu_p95": 18.0, "footprint_mb": 6100, "causes": ["GPU-bound"], "usual": 98.4, "sessions": 5, "verdict": "slower"}]
+    """#
+    func setting(_ json: String) throws -> LaunchSetting { try JSONDecoder().decode(LaunchSetting.self, from: Data(json.utf8)) }
+
+    @Test func readsTheChecksJSON() throws {
+        let c = try #require(SessionChecks.decode(Data(Self.json.utf8)).first)
+        #expect(c.slower && c.titleID == "0100000000010000" && c.held == 42 && c.battery && c.frames == 90000)
+        #expect(c.numbers == "91 % of frames on time, usually 98 %")
+        #expect(c.why.hasPrefix("The graphics chip was at its limit"))
+        #expect(SessionChecks.decode(Data("nonsense".utf8)).isEmpty)
+    }
+
+    @Test func theFixIsTheCheapestChangeLeft() throws {
+        let c = try #require(SessionChecks.decode(Data(Self.json.utf8)).first)
+        let interp = try setting(#"{"env":"DM_PRESENT_INTERP","kind":"choice","label":"Frame interpolation","default":"off","options":[["off","Off"],["on","On"]]}"#)
+        let up = try setting(#"{"env":"DM_PRESENT_UPSCALE","kind":"choice","label":"MetalFX upscaling","default":"metalfx","options":[["off","Off"],["metalfx","MetalFX"]]}"#)
+        let scale = try setting(#"{"env":"DM_RENDER_SCALE","kind":"range","label":"Render scale","default":"1.00","min":0.5,"max":2,"step":0.25}"#)
+        let all = [interp, up, scale]
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_INTERP": "on"])?.env == "DM_PRESENT_INTERP")
+        #expect(SessionChecks.fix(c, settings: all, values: [:]) == SessionFix(label: "Turn Off MetalFX", env: "DM_PRESENT_UPSCALE", value: "off"))
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_UPSCALE": "off"]) == SessionFix(label: "Lower Render Scale to 75 %", env: "DM_RENDER_SCALE", value: "0.75"))
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_UPSCALE": "off", "DM_RENDER_SCALE": "0.50"]) == nil)
+        var low = c; low.lowPower = true
+        #expect(SessionChecks.fix(low, settings: all, values: [:]) == nil)
+        #expect(low.why.hasPrefix("Low Power Mode"))
+        var fine = c; fine.verdict = "smooth"
+        #expect(SessionChecks.fix(fine, settings: all, values: [:]) == nil)
+    }
+}
