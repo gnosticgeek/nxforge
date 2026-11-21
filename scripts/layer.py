@@ -21,6 +21,10 @@ the layer files as one last commit ("NXForge layer files"). Builds, the converte
   layer.py local --off          back to the pinned engine. A new pin (an NXForge release) ends it by itself
   layer.py try [REF]            dry run of update: which patches apply to REF (default: nxnative's main), which nxnative already
                                 has, which conflict and in what files. Changes nothing (a temporary worktree)
+  layer.py carried [--offline]  the patches NXForge carries for nxnative work (upstream-pr-N patches, seedds/nxnative#N and
+                                "Origin: seedds/nxnative commit X" in a patch's header) and where that work is now: open, merged,
+                                closed, or a commit already on nxnative's main. A merged PR or a landed commit means the next
+                                `layer.py update` drops the patch; a closed one is worth a look. Uses GH_TOKEN/GITHUB_TOKEN if set
   layer.py path                 print tree/'s path
 
 To change a patch: edit in tree/, commit (`git -C tree commit --fixup <patch commit>` then `git -C tree rebase -i --autosquash
@@ -412,6 +416,66 @@ def try_update(ref: str | None, log=print) -> list[tuple[str, str, list[str]]]:
     return out
 
 
+PR_IN_NAME = re.compile(r'upstream-pr-(\d+)')
+PR_IN_HEADER = re.compile(r'seedds/nxnative#(\d+)|seedds/nxnative/pull/(\d+)')
+ORIGIN_COMMIT = re.compile(r'Origin: seedds/nxnative commit ([0-9a-f]{7,40})')
+
+
+def carried_refs(name: str, text: str) -> tuple[list[int], list[str]]:
+    """(nxnative PR numbers, nxnative commits) a patch carries, from its file name and the header above its diffstat."""
+    header = text.split('\n---\n', 1)[0]
+    prs = [int(m[1]) for m in PR_IN_NAME.finditer(name)]
+    prs += [int(m[1] or m[2]) for m in PR_IN_HEADER.finditer(header)]
+    commits = [m[1] for m in ORIGIN_COMMIT.finditer(header)]
+    return sorted(set(prs)), list(dict.fromkeys(commits))
+
+
+def pr_state(repo: str, number: int) -> str:
+    """'open', 'merged', 'closed' or 'unknown (<why>)' for a pull request of repo (owner/name), from GitHub's API."""
+    import json
+    import urllib.request
+    req = urllib.request.Request(f'https://api.github.com/repos/{repo}/pulls/{number}',
+                                 headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'nxforge-layer'})
+    token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            pr = json.load(r)
+    except Exception as e:  # noqa: BLE001 - offline, rate limit, no such PR: say so and go on
+        return f'unknown ({e})'
+    return 'merged' if pr.get('merged_at') else str(pr.get('state', 'unknown'))
+
+
+def carried(offline: bool = False, log=print, state=pr_state, fetch: bool | None = None) -> list[tuple[str, str, str, bool]]:
+    """[(patch, 'PR #N' | 'commit X', where it is, droppable)] for each patch that carries nxnative work."""
+    url, pin = read_engine()
+    repo = re.sub(r'^https://github.com/|\.git$', '', url)
+    if (not offline) if fetch is None else fetch:
+        git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=False)
+    have_main = git('rev-parse', '--verify', '--quiet', MAIN_REF, check=False).returncode == 0
+    out = []
+    for p in patch_files():
+        prs, commits = carried_refs(p.name, p.read_text(encoding='utf-8', errors='replace'))
+        for c in commits:
+            if not have_main:
+                where, drop = 'unknown (nxnative main not fetched)', False
+            elif git('merge-base', '--is-ancestor', c, MAIN_REF, check=False).returncode == 0:
+                drop = git('merge-base', '--is-ancestor', c, pin, check=False).returncode != 0
+                where = 'on nxnative main' + (', after the pin: the next update drops it' if drop else ', at or before the pin')
+            else:
+                where, drop = 'not on nxnative main', False
+            out.append((p.name, f'commit {c[:10]}', where, drop))
+        for n in prs:
+            where = 'not checked (--offline)' if offline else state(repo, n)
+            out.append((p.name, f'PR #{n}', where, where == 'merged'))
+    for name, ref, where, drop in out:
+        log(f'  {name}: {ref} {where}' + ('  -> drop at the next update' if drop else ''))
+    if not out:
+        log('  no patch carries nxnative work')
+    return out
+
+
 def status(log=print) -> None:
     url, commit = read_engine()
     git('fetch', '--quiet', url, f'+refs/heads/main:{MAIN_REF}', check=False)
@@ -437,6 +501,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest='cmd', required=True)
     a_as = sub.add_parser('assemble'); a_as.add_argument('--force', action='store_true')
     sub.add_parser('status'); sub.add_parser('export'); sub.add_parser('path')
+    a_ca = sub.add_parser('carried'); a_ca.add_argument('--offline', action='store_true')
     a_up = sub.add_parser('update'); a_up.add_argument('ref', nargs='?')
     a_try = sub.add_parser('try'); a_try.add_argument('ref', nargs='?')
     a_co = sub.add_parser('continue'); a_co.add_argument('--skip', action='store_true')
@@ -449,6 +514,8 @@ def main(argv: list[str] | None = None) -> int:
             print('tree/ is current' if not assemble(a.force) else 'tree/ assembled')
         elif a.cmd == 'status':
             status()
+        elif a.cmd == 'carried':
+            carried(a.offline)
         elif a.cmd == 'export':
             export()
         elif a.cmd == 'update':
