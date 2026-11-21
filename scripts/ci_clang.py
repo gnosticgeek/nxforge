@@ -8,7 +8,7 @@ no -c/-E/-S becomes one `ccache clang ... -c` per source (the same flags, so the
 command's) and a link of the objects. Any other command goes through ccache as it is (ccache caches a one-file -c and runs the rest unchanged). Without
 ccache it does nothing.
 
-  NXF_CLANG_REAL   the real clang (default: the next `clang` on PATH after this one's folder, or `xcrun -f clang`)
+  NXF_CLANG_REAL   the real clang (default: the next `clang` on PATH after this one's folder, else /usr/bin/clang)
   NXF_CLANG_OFF=1  pass everything through
 """
 from __future__ import annotations
@@ -40,10 +40,7 @@ def real_clang() -> str:
         c = Path(d) / 'clang'
         if c.is_file() and os.access(c, os.X_OK) and c.resolve() != Path(__file__).resolve():
             return str(c)
-    try:
-        return subprocess.run(['xcrun', '-f', 'clang'], capture_output=True, text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return 'clang'
+    return '/usr/bin/clang'   # (not `xcrun -f clang`: the toolchain's own clang has no SDK path, /usr/bin/clang's shim adds it)
 
 
 def split(args: list[str]) -> tuple[list[str], list[str], list[str], str | None] | None:
