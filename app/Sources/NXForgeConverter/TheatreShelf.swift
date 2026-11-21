@@ -152,7 +152,7 @@ struct ShelfCases: View {
                 if let range = ShelfLayout.shown(index: index, count: games.count) {
                     ForEach(range, id: \.self) { k in
                         let d = Double(k) - at
-                        ShelfCase(game: games[k], d: d, stick: abs(CaseStick.x) > 0.15 ? CaseStick.x : 0)
+                        ShelfCase(game: games[k], d: d, stick: abs(CaseStick.x) > 0.15 ? CaseStick.x : 0, keep: abs(d) < 1 ? model.keepsake(games[k]) : nil)
                             .zIndex(-abs(d))
                     }
                 }
@@ -176,6 +176,7 @@ struct ShelfCase: View {
     let game: StageGame
     let d: Double
     let stick: Double
+    var keep: CaseKeepsake?
     @Environment(\.tu) private var u
 
     var body: some View {
@@ -203,7 +204,7 @@ struct ShelfCase: View {
 
     @ViewBuilder func face(_ side: Solid.BoxSide, plastic: Color, e: Double) -> some View {
         switch side {
-        case .front: art(CoverArt.front(game)).overlay(sleeve).clipShape(.rect(cornerRadius: 9 * u))
+        case .front: art(CoverArt.front(game)).overlay(sleeve).overlay { if let keep, e > 0.01 { CaseKeepsakes(keep: keep, seed: game.coverKey).opacity(e) } }.clipShape(.rect(cornerRadius: 9 * u))
         case .back: art(CoverArt.back(game)).overlay(sleeve).clipShape(.rect(cornerRadius: 9 * u))
         case .left:
             art(CoverArt.spine(game))

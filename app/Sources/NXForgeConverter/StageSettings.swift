@@ -48,7 +48,7 @@ enum StageSettingRow: Int, CaseIterable {
     case straightPlay, firstPlayOptions, batteryPreset, localShaders
     case folderCheck, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
-    case theatreTheme, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch
+    case theatreTheme, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
     case cloudSaves, snapshotAfterPlay, saveBackupPush
     case notify, openAfterBuild, keepBackups, reuseCache
     case autoUpdate
@@ -59,7 +59,7 @@ enum StageSettingRow: Int, CaseIterable {
         case .straightPlay, .firstPlayOptions, .batteryPreset, .localShaders: .playing
         case .folderCheck, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
-        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch: .theatre
+        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
         case .notify, .openAfterBuild, .keepBackups, .reuseCache: .building
         case .autoUpdate: .updates
@@ -485,6 +485,8 @@ struct StageSettings: View {
             row("When a game starts", "Game card: its case opens and the card drops into the console under the screen. Lights down: the box opens and its light fills the room.", .theatreLaunch) {
                 segmented($model.settings.theatreLaunch, TheatreLaunch.allCases, width: 240) { $0.rawValue }
             },
+            toggle("Tilt", "The case in your hand leans as you lean the controller. Only on controllers that tell a Mac how they are held.", $model.settings.theatreTilt, .theatreTilt),
+            toggle("Collector touches", "A sticker with the hours you have played, wear on the cases you play most, and a COMPLETED stamp you add with R when a case is in your hand.", $model.settings.theatreCollector, .theatreCollector),
         ]
         return [SettingsGroup(rows: screen), SettingsGroup(caption: "Sound and light", rows: sound)]
     }
