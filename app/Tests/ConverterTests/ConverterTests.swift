@@ -2639,6 +2639,8 @@ import Testing
         #expect(index.contains("update.nsp|1"))
         let found = Forgotten.bigFiles(root.appending(path: ".staging").path)
         #expect(found.isEmpty)   // under the size worth a row
+    }
+}
 
 @Suite struct TheatreBookletsAndTheShelf {
     @Test func aManualIsTheBookletWhenThereIsOne() {
