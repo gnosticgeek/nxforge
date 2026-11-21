@@ -40,6 +40,16 @@ class RepoFiles(unittest.TestCase):
     def test_lint_command_covers_everything(self):
         self.assertEqual(rc.main(['lint']), 0)
 
+    def test_newest_release_is_ready_to_tag(self):
+        # release.yml runs `check vX.Y.Z` only after the tag is pushed, too late to fix; v0.45.0, v0.45.1 and v0.45.6
+        # got no GitHub release that way (BACKLOG.md date left behind). Checking the newest entry here fails the release
+        # PR instead, before it merges and is tagged.
+        changelog, backlog = (REPO / 'CHANGELOG.md').read_text(), (REPO / 'BACKLOG.md').read_text()
+        found, _ = rc.entries(changelog)
+        if not found or not found[0].version:
+            self.skipTest('"## Unreleased" on top: nothing to tag yet')
+        self.assertEqual(rc.check(found[0].version, changelog, backlog), [])
+
 
 SWIFT = 'import SwiftUI\n\nlet SIDEBAR_VERSION = "0.2.0"\n'
 SIDE_LOG = LOG.replace('0.8.0', '0.2.0').replace('0.7.1', '0.1.0')
