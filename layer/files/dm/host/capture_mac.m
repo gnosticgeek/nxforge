@@ -321,6 +321,7 @@ void capture_replay_save(const char *game, void (^done)(NSString *, NSString *))
         NSError *e = nil; AVAssetWriter *w = [AVAssetWriter assetWriterWithURL:[NSURL fileURLWithPath:path] fileType:AVFileTypeQuickTimeMovie error:&e];
         if (!w) { end(nil, [NSString stringWithFormat:@"The replay could not be saved: %@", e.localizedDescription ?: @"no writer"]); return; }
         AVAssetWriterInput *vi = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:nil sourceFormatHint:CMSampleBufferGetFormatDescription(first)];
+        vi.expectsMediaDataInRealTime = YES;   // as a recording's inputs: the writer then does not hold the picture back for sound that starts later or has gaps (a silent stretch)
         [w addInput:vi];
         // The sound of the same stretch, counted back from the newest sample heard
         int ch = atomic_load(&r->ch); uint64_t wpos = atomic_load_explicit(&r->wpos, memory_order_acquire), heard = atomic_load_explicit(&r->heard_ns, memory_order_acquire);
@@ -334,6 +335,7 @@ void capture_replay_save(const char *game, void (^done)(NSString *, NSString *))
                 uint64_t start = wpos - count; for (size_t i = 0; i < count; i++) mem[i] = r->pcm[(start + i) % RP_PCM];
                 frames -= (size_t)over;
                 ai = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio outputSettings:@{AVFormatIDKey: @(kAudioFormatMPEG4AAC), AVSampleRateKey: @48000, AVNumberOfChannelsKey: @2, AVEncoderBitRateKey: @192000}];
+                ai.expectsMediaDataInRealTime = YES;
                 [w addInput:ai];
             }
         }
@@ -361,8 +363,8 @@ void capture_replay_save(const char *game, void (^done)(NSString *, NSString *))
             }
             return YES;
         };
-        BOOL ok = YES; const char *stopped = NULL;
-        for (NSUInteger i = from; ok && i < all.count; i++) {
+        BOOL ok = YES; const char *stopped = NULL; NSUInteger wrote = 0;
+        for (NSUInteger i = from; ok && i < all.count; i++, wrote++) {
             CMSampleBufferRef sb = (__bridge CMSampleBufferRef)all[i];
             if (!sound_to(rp_ns(sb) + 500000000ull)) { ok = NO; stopped = "the sound was not taken"; break; }
             if (!rp_ready(vi)) { ok = NO; stopped = "the writer did not take the picture in time"; break; }
@@ -376,6 +378,8 @@ void capture_replay_save(const char *game, void (^done)(NSString *, NSString *))
         [w finishWritingWithCompletionHandler:^{
             BOOL good = ok && w.status == AVAssetWriterStatusCompleted;
             LOG("capture: replay of the last %.0f s %s %s", secs, path.UTF8String, good ? "saved" : (w.error.localizedDescription.UTF8String ?: stopped ?: "could not be written"));
+            if (!good) LOG("capture: replay: %lu of %lu frames and %lu of %lu sound frames (%d channels, starting %.2f s after the picture) were written; writer status %ld",
+                           (unsigned long)wrote, (unsigned long)(all.count - from), (unsigned long)at, (unsigned long)frames, ch, a0 > t0 ? (a0 - t0) / 1e9 : 0.0, (long)w.status);
             if (!good) [NSFileManager.defaultManager removeItemAtPath:path error:nil];
             end(good ? path : nil, good ? nil : [NSString stringWithFormat:@"The replay could not be saved: %@", w.error.localizedDescription ?: @"the file could not be written"]);
         }];
