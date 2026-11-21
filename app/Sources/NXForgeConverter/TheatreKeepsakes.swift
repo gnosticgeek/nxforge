@@ -83,13 +83,14 @@ struct CaseKeepsakes: View {
                 }
                 if keep.completed {
                     let ink = Color(red: 0.80, green: 0.10, blue: 0.12)
-                    Text("COMPLETED").font(.system(size: 37 * s, weight: .black, design: .rounded)).tracking(3 * s)
+                    Text("COMPLETED").font(.system(size: 40 * s, weight: .black, design: .rounded)).tracking(3 * s)
                         .padding(.horizontal, 16 * s).padding(.vertical, 7 * s)
                         .overlay(RoundedRectangle(cornerRadius: 9 * s).strokeBorder(ink, lineWidth: 5 * s))
                         .overlay(RoundedRectangle(cornerRadius: 5 * s).strokeBorder(ink, lineWidth: 1.5 * s).padding(8 * s))
                         .foregroundStyle(ink)
-                        .background(Color.white.opacity(0.16), in: .rect(cornerRadius: 9 * s))
-                        .opacity(0.9 * min(keep.landed * 3, 1))
+                        .background(Color(red: 1, green: 0.97, blue: 0.93).opacity(0.72), in: .rect(cornerRadius: 9 * s))
+                        .shadow(color: .black.opacity(0.35), radius: 5 * s, y: 2 * s)
+                        .opacity(0.94 * min(keep.landed * 3, 1))
                         .scaleEffect(1 + 1.1 * (1 - keep.landed))
                         .rotationEffect(.degrees(-15))
                         .position(x: w / 2, y: h * 0.63)

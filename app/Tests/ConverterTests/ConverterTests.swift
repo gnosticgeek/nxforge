@@ -2043,7 +2043,7 @@ import Testing
                                ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
             #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
         }
-        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer"])
+        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer", "Wallet"])
         #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Shutter\"".utf8)) == .shutter)
     }
 

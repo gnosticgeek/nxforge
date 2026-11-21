@@ -8,7 +8,7 @@ enum WalletLayout {
     /// pockets across (four on each half) and down
     static let columns = 8, rows = 3
     static let perPage = columns * rows
-    static let cardWidth = 104.0, cardHeight = 104.0 * 148 / 100
+    static let cardWidth = 118.0, cardHeight = 118.0 * 148 / 100
     static let gapX = 24.0, gapY = 26.0, spine = 54.0, edge = 34.0
 
     static var halfWidth: Double { Double(columns / 2) * cardWidth + Double(columns / 2 + 1) * gapX }
