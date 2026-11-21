@@ -7,7 +7,21 @@ import SwiftUI
 import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    private var headless: NSObjectProtocol?
     func applicationDidFinishLaunching(_ n: Notification) {
+        // NXC_HEADLESS=1 (with NXC_SNAPSHOT): no Dock icon, never in front, and its window kept off every screen, so a picture
+        // can be taken while the Mac is in use (`screencapture -l` still sees the window)
+        if ProcessInfo.processInfo.environment["NXC_HEADLESS"] != nil, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil {
+            NSApp.setActivationPolicy(.accessory)
+            headless = NotificationCenter.default.addObserver(forName: NSWindow.didUpdateNotification, object: nil, queue: .main) { n in
+                MainActor.assumeIsolated {
+                    guard let w = n.object as? NSWindow, w.frame.origin.x > -20000 else { return }
+                    w.ignoresMouseEvents = true
+                    w.setFrameOrigin(NSPoint(x: -30000, y: w.frame.origin.y))
+                }
+            }
+            return
+        }
         // run straight from the build folder (not a bundle), the process must ask to be a regular app
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
@@ -323,7 +337,7 @@ struct ConverterApp: App {
         }
         // the window can be ordered out for a moment when the app starts behind another one: bring it back rather than give up
         guard let w = NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first(where: { $0.contentView != nil }) else { exit(1) }
-        if !w.isVisible { NSApp.unhide(nil); w.orderFrontRegardless(); try? await Task.sleep(for: .seconds(1)) }
+        if !w.isVisible, env["NXC_HEADLESS"] == nil { NSApp.unhide(nil); w.orderFrontRegardless(); try? await Task.sleep(for: .seconds(1)) }
         // NXC_WINSIZE=<w>x<h>: the window at that size, e.g. a short one to check that the Settings panel scrolls
         if let sz = env["NXC_WINSIZE"]?.split(separator: "x").compactMap({ Double($0) }), sz.count == 2 {
             w.setContentSize(NSSize(width: sz[0], height: sz[1])); try? await Task.sleep(for: .seconds(1))

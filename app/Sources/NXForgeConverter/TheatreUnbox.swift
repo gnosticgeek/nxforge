@@ -185,7 +185,7 @@ struct TheatreCaseScene: View {
     static let distance = 2100.0
     /// the middle of the case, above the middle of the picture
     static let restY = -72.0
-    static let cardWidth = 92.0, cardHeight = 136.0
+    static let cardWidth = 100.0, cardHeight = 148.0
     /// the clip's middle on the tray, from the tray's middle
     static let clipY = -128.0
     static let consoleTop = 338.0, consoleWidth = 560.0, consoleHeight = 104.0, slotWidth = 150.0
@@ -544,7 +544,8 @@ struct TheatreUnboxView: View {
             TimelineView(.animation(paused: unbox.frozen)) { ctx in
                 let s = state(now: ctx.date)
                 ZStack {
-                    Color.black.opacity(0.80 * s.room)
+                    Color.black.opacity(0.88 * s.room)
+                    LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black.opacity(0.9 * s.room), location: 0.82)], startPoint: .top, endPoint: .bottom)
                     RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
                     TheatreCaseScene(game: g, state: s, booklet: manual, u: u)
                     words(g, manual: manual).opacity(s.room)
