@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.24.0 (2026-11-21)
+
+Shipped in NXForge 0.50.0.
+
+- **Pick up the box.** On any Theatre theme Y lifts the game in focus out as its case, in three dimensions: the right stick turns it freely, left and right turn it an eighth at a time, and the light slides over its sleeve. A opens it on its spine: the game card sits in its clip (grey for Switch, red for Switch 2, the game's icon as its label) and a booklet is in the lid when the game has a manual (X reads it). B shuts the case, and B again puts it back. Y there opens the game's page, which Y opened before; the themes' hints now say Pick up.
+- **The card goes into the console.** A with the case open lifts the card out and drops it into a console under the screen; it clicks home, the console's light comes on and fills the room, and the game comes up out of it. A on a theme plays the whole thing by itself, in about three seconds while the game is already starting. Settings › Theatre › When a game starts chooses between Game card and Lights down (the box opening into light, as before). With Reduce Motion the room only dims.
+- **Rumble and new sounds.** A small knock in the controller as a case snaps open or shut and a firmer one as the card clicks home, on controllers that can rumble on a Mac (Settings › Theatre › Rumble). The case's catches, the card leaving its clip and the card going home each have a sound, made in the app like Theatre's others.
+- **The console on the top bar.** Theatre's NXFORGE wordmark is drawn as the console, with the card of the built game you played last standing in its slot, its light on, and the game's name beside it. The Theatre menu's first row, Continue, starts that game: the card is in the console already, so it only clicks down.
+- **Pictures without a window.** `NXC_HEADLESS=1` with `NXC_SNAPSHOT` keeps the app out of the Dock and its window off every screen, so a picture can be taken (`screencapture -l`) while the Mac is in use. `NXC_UNBOX=held|open` shows the case in the hand, and `NXC_CURTAIN=<s>` the card's launch at that moment (`NXC_LAUNCH=lights` for the old one, `NXC_CONSOLE=1` from the console).
+
 ## 0.23.0 (2026-11-21)
 
 Shipped in NXForge 0.49.0.

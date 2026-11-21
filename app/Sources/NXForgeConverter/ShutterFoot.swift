@@ -35,7 +35,7 @@ struct ShutterFoot: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    hint(hints, "Y", "Details")
+                    hint(hints, "Y", "Pick up")
                     if game.app != nil { hint(hints, "X", "Play options") }
                 }
                 .font(.system(size: 28 * u, weight: .medium))
