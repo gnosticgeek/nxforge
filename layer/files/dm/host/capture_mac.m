@@ -339,29 +339,43 @@ void capture_replay_save(const char *game, void (^done)(NSString *, NSString *))
         }
         if (![w startWriting]) { free(mem); end(nil, [NSString stringWithFormat:@"The replay could not be saved: %@", w.error.localizedDescription]); return; }
         [w startSessionAtSourceTime:CMTimeMake((int64_t)t0, 1000000000)];
-        BOOL ok = YES;
-        for (NSUInteger i = from; ok && i < all.count; i++) ok = rp_ready(vi) && [vi appendSampleBuffer:(__bridge CMSampleBufferRef)all[i]];
-        [vi markAsFinished];
+        // Sound and picture go in side by side, a second of sound ahead of each frame's time: a writer that is not fed in real time holds one input back
+        // (readyForMoreMediaData) until the other has caught up, so the whole picture first would wait for sound that never came
+        CMAudioFormatDescriptionRef f = NULL; __block size_t at = 0;
         if (ai) {
             AudioStreamBasicDescription d = {.mSampleRate = 48000, .mFormatID = kAudioFormatLinearPCM, .mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
                                              .mBytesPerPacket = 2u * ch, .mFramesPerPacket = 1, .mBytesPerFrame = 2u * ch, .mChannelsPerFrame = (UInt32)ch, .mBitsPerChannel = 16};
-            CMAudioFormatDescriptionRef f = NULL; CMAudioFormatDescriptionCreate(NULL, &d, 0, NULL, 0, NULL, NULL, &f);
-            for (size_t at = 0; ok && f && at < frames; at += 48000) {   // a second at a time
-                size_t n = MIN((size_t)48000, frames - at), bytes = n * ch * 2; CMBlockBufferRef bb = NULL; CMSampleBufferRef sb = NULL;
-                if (CMBlockBufferCreateWithMemoryBlock(NULL, NULL, bytes, NULL, NULL, 0, bytes, kCMBlockBufferAssureMemoryNowFlag, &bb)) break;
+            CMAudioFormatDescriptionCreate(NULL, &d, 0, NULL, 0, NULL, NULL, &f);
+        }
+        BOOL (^sound_to)(uint64_t) = ^BOOL(uint64_t until) {   // the sound up to a time (a second past it at most), in blocks of half a second
+            while (ai && f && at < frames && a0 + (uint64_t)at * 1000000000ull / 48000 <= until) {
+                size_t n = MIN((size_t)24000, frames - at), bytes = n * ch * 2; CMBlockBufferRef bb = NULL; CMSampleBufferRef sb = NULL;
+                if (CMBlockBufferCreateWithMemoryBlock(NULL, NULL, bytes, NULL, NULL, 0, bytes, kCMBlockBufferAssureMemoryNowFlag, &bb)) return NO;
                 CMBlockBufferReplaceDataBytes(mem + at * ch, bb, 0, bytes);
                 CMAudioSampleBufferCreateReadyWithPacketDescriptions(NULL, bb, f, (CMItemCount)n, CMTimeMake((int64_t)(a0 + (uint64_t)at * 1000000000ull / 48000), 1000000000), NULL, &sb);
-                if (sb) { if (rp_ready(ai)) [ai appendSampleBuffer:sb]; CFRelease(sb); }
+                BOOL good = sb && rp_ready(ai) && [ai appendSampleBuffer:sb];
+                if (sb) CFRelease(sb);
                 CFRelease(bb);
+                if (!good) return NO;
+                at += n;
             }
-            if (f) CFRelease(f);
-            [ai markAsFinished];
+            return YES;
+        };
+        BOOL ok = YES; const char *stopped = NULL;
+        for (NSUInteger i = from; ok && i < all.count; i++) {
+            CMSampleBufferRef sb = (__bridge CMSampleBufferRef)all[i];
+            if (!sound_to(rp_ns(sb) + 500000000ull)) { ok = NO; stopped = "the sound was not taken"; break; }
+            if (!rp_ready(vi)) { ok = NO; stopped = "the writer did not take the picture in time"; break; }
+            if (![vi appendSampleBuffer:sb]) { ok = NO; stopped = "a frame was refused"; }
         }
+        if (ok && !sound_to(UINT64_MAX)) { ok = NO; stopped = "the sound was not taken"; }
+        [vi markAsFinished]; [ai markAsFinished];
+        if (f) CFRelease(f);
         free(mem);
         double secs = (newest - t0) / 1e9;
         [w finishWritingWithCompletionHandler:^{
             BOOL good = ok && w.status == AVAssetWriterStatusCompleted;
-            LOG("capture: replay of the last %.0f s %s %s", secs, path.UTF8String, good ? "saved" : (w.error.localizedDescription.UTF8String ?: "could not be written"));
+            LOG("capture: replay of the last %.0f s %s %s", secs, path.UTF8String, good ? "saved" : (w.error.localizedDescription.UTF8String ?: stopped ?: "could not be written"));
             if (!good) [NSFileManager.defaultManager removeItemAtPath:path error:nil];
             end(good ? path : nil, good ? nil : [NSString stringWithFormat:@"The replay could not be saved: %@", w.error.localizedDescription ?: @"the file could not be written"]);
         }];
