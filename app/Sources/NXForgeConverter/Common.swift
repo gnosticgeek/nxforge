@@ -60,6 +60,7 @@ struct RootView: View {
         .sheet(item: $model.cheatsFor) { CheatsSheet(model: model, ref: $0) }
         .sheet(item: $model.enhancementsFor) { EnhancementsSheet(model: model, ref: $0) }
         .sheet(isPresented: $model.commandPalette) { CommandPalette(model: model) }
+        .modifier(TopBar(model: model))
         .task { ControllerNav.shared.start(model); TheatreWatch.shared.start(model) }
     }
 }
@@ -82,7 +83,6 @@ struct ConverterRoot: View {
             let g = lit
             StageBackdrop(tint: g.map { CoverArt.tint($0) } ?? Color(red: 0.25, green: 0.35, blue: 0.75), art: g.flatMap { CoverArt.ambient($0) }, artKey: g?.id ?? "", strength: 0.55)
             VStack(spacing: 0) {
-                StageTopBar(model: model)
                 if model.page != .saves { ConverterNav(model: model) }
                 Group {
                     if let r = model.gameDetail, model.page == .library || model.page == .builds {
@@ -103,9 +103,6 @@ struct ConverterRoot: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .navigationTitle("NXForge")
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         // a game folder (or a file in it) dropped anywhere on the window becomes the game to convert
         .dropDestination(for: URL.self) { urls, _ in
