@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.51.0 (2026-11-21)
+
+- **Theatre: a booklet for every game, and the shelf** (Converter 0.25.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): X with a case in your hand opens its booklet on Theatre, two pages at a time, each leaf turning over the spine with a paper sound and a tap in the controller. A game with a manual (a PDF) has that as its booklet. Every other game gets one NXForge makes: the store's words about the game, its screenshots, what Quick settings does while you play, the game's facts and your own time with it. Showcase has a third layout, Shelf: your games standing spine out along a shelf, the one in focus drawn out and turned to face you. No game rebuild needed.
+
 ## 0.50.0 (2026-11-21)
 
 - **Theatre: the case in your hand, and the card into the console** (Converter 0.24.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Y lifts the game in focus out of the theme as its case, the right stick turns it, A opens it (the game card in its clip, the booklet in the lid when the game has a manual) and A again takes the card to a console under the screen, which starts the game. Starting a game from any theme now plays the same thing by itself: the case opens, the card drops into the console with a click and its light fills the room (Settings › Theatre › When a game starts keeps Lights down as the other choice). The controller gives a small knock as a case snaps open and a card clicks home, with sounds to match. Theatre's wordmark is now that console, with the card of the game played last in its slot, and the Theatre menu's first row continues it. Y's old job, Details, is Y again with the case in the hand. No game rebuild needed.

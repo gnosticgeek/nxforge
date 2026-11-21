@@ -1,4 +1,4 @@
-// Theatre's Showcase theme: the Carousel and the Fan as one theme with two layouts (ShowcaseLayout). Switching layout keeps
+// Theatre's Showcase theme: the Carousel, the Fan and the Shelf as one theme with three layouts (ShowcaseLayout). Switching layout keeps
 // the game in focus, the filter and the music; only the boxes rearrange.
 import SwiftUI
 

@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.25.0 (2026-11-21)
+
+Shipped in NXForge 0.51.0.
+
+- **A booklet for every game.** With a case in your hand on Theatre, X opens its booklet: two pages either side of a spine, left and right (or A) turn a leaf over it, with a soft paper sound and a tap in the controller, and B closes it. A game with a manual (a PDF beside its files, or one added on its page) has the manual as its booklet, and Y there opens it in the manual viewer to zoom in. A game without one gets a booklet NXForge makes from what it knows: the store's description set as pages, up to six of its screenshots, a page on what Quick settings does while you play, and Your copy (how long you have played, how many sittings, first and last played, publisher, release date, players, genre, version and size). The booklet now shows in every open case's lid, with the manual's first page as its cover when there is one. The made booklet needs Settings › Artwork › Download store details for its words and pictures; without them it is shorter.
+- **Shelf, Showcase's third layout.** Your games stand spine out along a shelf, with their real spine art, and the game in focus is drawn out of the row and turned to face you. Left and right run along the shelf, the right stick turns the case in front, and up and down step through Carousel, Fan and Shelf. Settings › Theatre › Showcase layout and the Theatre menu have it too.
+- Tests for the booklet's pages (a manual first, an even number of made pages, long text broken between sentences, which pages face each other), the shelf's layout and the page-turn sound.
+
 ## 0.24.0 (2026-11-21)
 
 Shipped in NXForge 0.50.0.
