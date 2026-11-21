@@ -48,6 +48,9 @@ void dm_qs_nav(int cmd);
 void front_qs_assign(int action, int pad);
 int front_qs_assigning(void);
 void front_qs_controls_reload(void);
+// Players (nxforge/front_mac_players.inc): player p's controller (0 nobody, 1 one that can trade places, 2 one that cannot; its name into name), and trading two players (1: done)
+int front_qs_player(int p, char *name, int cap);
+int front_qs_player_swap(int a, int b);
 // Where captures go (front_mac.m): the folder of the next screenshot (0) or recording (1); whether this game has a folder of its own; choose one (NULL: back to the default,
 // Screenshots / Recordings in the game folder). Main thread
 const char *front_qs_capture_folder(int video);

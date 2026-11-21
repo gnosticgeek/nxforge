@@ -7,6 +7,7 @@
 #include "front_mac_power.inc"   // thermal state, Low Power Mode and power source for the log and the frame step
 #include "front_mac_sleep.inc"   // a pause and a save copy before the Mac sleeps or its battery runs out
 #include "front_mac_battery.inc"   // on the battery, a game nobody is playing pauses
+#include "front_mac_players.inc"   // who is player 1: the sidebar's Players rows
 static NSWindow *g_nxf_fe_win;
 static NSTimer *g_nxf_fe_timer;
 static CFAbsoluteTime g_nxf_fe_t0;

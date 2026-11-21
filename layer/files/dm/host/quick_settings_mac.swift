@@ -167,7 +167,7 @@ enum Nav: Hashable {
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
     case section(String), cheat(Int), cheatsAllOff, cheatsRestore, cheatsOpen, cheatsRefresh
-    case key(Int), pad(Int), resetControls
+    case key(Int), pad(Int), resetControls, playerFirst(Int)
     case restart, resume, library, quit
     /// A setting with a value: left and right change it
     var isValue: Bool {
@@ -462,6 +462,7 @@ final class QuickSettings: ObservableObject {
     @Published var duckOpen = false   // quieter sound while it is up
     @Published var batterySaver = true   // on the battery, a game nobody is playing pauses (nxforge/front_mac_battery.inc)
     @Published var battery: (percent: Int, onBattery: Bool, minutes: Int)? = nil   // nil: a Mac without a battery
+    @Published var players: [Player] = []   // the controllers by player, for the Controls page
     @Published var keepLibrary = true // Library pauses and keeps the game (front_qs_suspend) instead of ending it
     @Published var paused = false
     @Published var lastBackup: Date?
@@ -524,7 +525,7 @@ final class QuickSettings: ObservableObject {
         recording = front_qs_recording() != 0
         pauseOpen = d.object(forKey: optKey("pauseOpen")) == nil ? true : d.bool(forKey: optKey("pauseOpen")); duckOpen = d.bool(forKey: optKey("duckOpen"))
         keepLibrary = d.object(forKey: optKey("keepLibrary")) == nil ? true : d.bool(forKey: optKey("keepLibrary"))
-        batterySaver = d.object(forKey: optKey("batterySaver")) == nil ? true : d.bool(forKey: optKey("batterySaver")); battery = BatteryNow.read()
+        batterySaver = d.object(forKey: optKey("batterySaver")) == nil ? true : d.bool(forKey: optKey("batterySaver")); battery = BatteryNow.read(); readPlayers()
         paused = front_qs_paused() != 0; fullscreen = front_qs_fullscreen() != 0
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
@@ -806,6 +807,21 @@ final class QuickSettings: ObservableObject {
     func revealCapture() { if let p = picked { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) } }
     func record() { front_qs_record(); recording = front_qs_recording() != 0 }
     func assign(_ i: Int, pad: Bool) { front_qs_assign(Int32(i), pad ? 1 : 0); assigning = Int(front_qs_assigning()) }
+    /// Who plays (front_mac_players.inc): each player with a controller, by its name; canMove false for Joy-Cons, which keep the player they joined as
+    struct Player: Identifiable { let slot: Int; let name: String; let canMove: Bool; var id: Int { slot } }
+    func readPlayers() {
+        var out: [Player] = []
+        for p in 0..<8 {
+            var name = [CChar](repeating: 0, count: 64)
+            let k = front_qs_player(Int32(p), &name, 64)
+            if k > 0 { out.append(Player(slot: p, name: String(cString: name), canMove: k == 1)) }
+        }
+        if out.map(\.id) != players.map(\.id) || out.map(\.name) != players.map(\.name) { players = out }
+    }
+    func makeFirst(_ p: Int) {
+        guard front_qs_player_swap(Int32(p), 0) != 0 else { return }
+        readPlayers(); front_qs_toast_text("\(players.first { $0.slot == 0 }?.name ?? "That controller") is player 1 now")
+    }
     func resetControls() {
         for k in ["keys", "keyNames", "pad", "padNames"] { UserDefaults.standard.removeObject(forKey: optKey(k)) }
         front_qs_controls_reload(); refresh()
@@ -951,7 +967,7 @@ final class QuickSettings: ObservableObject {
                 r += g.rows.filter { !$0.label }.map { [.cheat($0.id)] }
             }
             return r + (cheatsOn > 0 ? [[.cheatsAllOff]] : []) + [[.cheatsOpen, .cheatsRefresh]]
-        case pControls: return actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
+        case pControls: return players.filter { $0.slot > 0 && $0.canMove && players.first?.canMove != false }.map { [Nav.playerFirst($0.slot)] } + actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
         default: return []
         }
     }
@@ -1072,6 +1088,7 @@ final class QuickSettings: ObservableObject {
         case .key(let i): assign(i, pad: false)
         case .pad(let i): assign(i, pad: true)
         case .resetControls: resetControls()
+        case .playerFirst(let p): makeFirst(p)
         case .restart: restart()
         case .resume: close()
         case .library: quitToLibrary()
@@ -1643,6 +1660,22 @@ struct QuickSettingsView: View {
             if !m.keyClash.isEmpty || !m.padClash.isEmpty {
                 Label("\(m.keyClash.count + m.padClash.count) buttons share a key or button with another (marked below). Choose a new one, or Reset controls.", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            if !m.players.isEmpty {
+                subhead("Players").padding(.top, 4)
+                ForEach(m.players) { pl in
+                    Row(title: "Player \(pl.slot + 1)") {
+                        HStack(spacing: 8) {
+                            Text(pl.name).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                            if pl.slot > 0 && pl.canMove && m.players.first?.canMove != false {
+                                Button("Make player 1") { withAnimation(motion) { m.makeFirst(pl.slot) } }.modifier(GlassButton(prominent: false)).nav(m, .playerFirst(pl.slot))
+                            }
+                        }
+                    }
+                }
+                if m.players.count > 1 {
+                    note(m.players.contains { !$0.canMove } ? "Joy-Cons keep the player they joined as: they join in the order their first buttons are pressed" : "Make player 1 trades that controller with player 1's")
+                }
             }
             subhead("Keyboard").padding(.top, 4)
             ForEach(actionNames.indices, id: \.self) { i in Row(title: actionNames[i]) { assignButton(i, pad: false) }.nav(m, .key(i)) }
