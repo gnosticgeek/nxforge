@@ -174,6 +174,8 @@ final class AppModel {
     var theatreRow = 0
     var theatreMenu: Int?
     var theatreOffer: TVScreen?
+    /// bumped when Open at login is switched, so Settings reads the login item again (LoginItem)
+    var loginItemTick = 0
     var theatreScreen: CGDirectDisplayID?
     var theatreTouched = Date()
     /// Trailer: the trailer has the room (Watch), and its sound is off (S)

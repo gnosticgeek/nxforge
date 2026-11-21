@@ -304,6 +304,7 @@ extension AppModel {
         case .theatreTheme: cycle(&settings.theatreTheme); theatreTheme = settings.theatreTheme
         case .showcaseLayout: cycle(&settings.showcaseLayout); showcaseLayout = settings.showcaseLayout
         case .theatreOnTV: cycle(&settings.theatreOnTV)
+        case .homeOpensTheatre: flip(&settings.homeOpensTheatre); ControllerNav.shared.background(settings.homeOpensTheatre)
         case .theatreEdges: settings.theatreEdges = settings.theatreEdges.step(d)
         case .theatreSaver: cycle(&settings.theatreSaver)
         case .theatreVolume: if !toggle { settings.theatreVolume = min(max(settings.theatreVolume + d * 10, 0), 100); theatreVolumeTick += 1 }

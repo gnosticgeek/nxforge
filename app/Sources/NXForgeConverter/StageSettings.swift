@@ -48,7 +48,7 @@ enum StageSettingRow: Int, CaseIterable {
     case straightPlay, firstPlayOptions, batteryPreset, localShaders
     case folderCheck, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
-    case theatreTheme, showcaseLayout, theatreOnTV, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreMusic, theatreTimeOfDay
+    case theatreTheme, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreMusic, theatreTimeOfDay
     case cloudSaves, snapshotAfterPlay, saveBackupPush
     case notify, openAfterBuild, keepBackups, reuseCache
     case autoUpdate
@@ -59,7 +59,7 @@ enum StageSettingRow: Int, CaseIterable {
         case .straightPlay, .firstPlayOptions, .batteryPreset, .localShaders: .playing
         case .folderCheck, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
-        case .theatreTheme, .showcaseLayout, .theatreOnTV, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreMusic, .theatreTimeOfDay: .theatre
+        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreMusic, .theatreTimeOfDay: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
         case .notify, .openAfterBuild, .keepBackups, .reuseCache: .building
         case .autoUpdate: .updates
@@ -440,6 +440,9 @@ struct StageSettings: View {
     var theatre: [SettingsGroup] {
         let theme = Binding(get: { model.settings.theatreTheme }, set: { model.settings.theatreTheme = $0; model.theatreTheme = $0 })
         let volume = Binding(get: { Double(model.settings.theatreVolume) }, set: { model.settings.theatreVolume = Int($0.rounded()); model.theatreVolumeTick += 1 })
+        let homeOpens = Binding(get: { model.settings.homeOpensTheatre }, set: { model.settings.homeOpensTheatre = $0; ControllerNav.shared.background($0) })
+        let atLogin = Binding(get: { LoginItem.on }, set: { LoginItem.set($0); model.loginItemTick += 1 })
+        _ = model.loginItemTick
         let screen: [SettingsRowSpec] = [
             row("Theatre", "Your games full screen, for the sofa and a controller. Also ⇧⌘F. B leaves it.") {
                 button(model.theatre ? "Leave Theatre" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }
@@ -454,6 +457,8 @@ struct StageSettings: View {
             row("When a TV is plugged in", "Ask offers Theatre when a controller is connected too; Always opens it straight away.", .theatreOnTV) {
                 segmented($model.settings.theatreOnTV, TheatreOnTV.allCases, width: 240) { $0.rawValue }
             },
+            toggle("Home button opens Theatre", "Press Home on a controller while NXForge is behind other apps and it comes to the front on Theatre. In a game, Home still opens the game's Quick settings.", homeOpens, .homeOpensTheatre),
+            toggle("Open NXForge at login", "NXForge starts with the Mac, so the Home button and a plugged-in TV can open Theatre without the keyboard.", atLogin),
             row("TV edges", "Some TVs crop the edges of the picture. If Theatre's clock or buttons are cut off, inset the picture.", .theatreEdges) {
                 segmented($model.settings.theatreEdges, TheatreEdges.allCases, width: 240) { $0.title }
             },
