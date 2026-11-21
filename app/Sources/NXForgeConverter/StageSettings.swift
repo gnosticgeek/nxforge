@@ -447,8 +447,8 @@ struct StageSettings: View {
             row("Theatre", "Your games full screen, for the sofa and a controller. Also ⇧⌘F. B leaves it.") {
                 button(model.theatre ? "Leave Theatre" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }
             },
-            row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Shutter shows slanted panels of art; Trailer plays the game's trailer. ZL and ZR switch them on Theatre.", .theatreTheme) {
-                segmented(theme, TheatreTheme.allCases, width: 400) { $0.rawValue }
+            row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Shutter shows slanted panels of art; Trailer plays the game's trailer; Wallet shows your game cards in their wallet. ZL and ZR switch them on Theatre.", .theatreTheme) {
+                segmented(theme, TheatreTheme.allCases, width: 480) { $0.rawValue }
             },
             row("Showcase layout", "Carousel turns a ring of your boxes; Fan spreads them like a hand of cards; Shelf stands them spine out. Up and down switch them on Theatre.", .showcaseLayout) {
                 segmented($model.settings.showcaseLayout, ShowcaseLayout.allCases, width: 330) { $0.rawValue }

@@ -16,7 +16,7 @@ import SwiftUI
 import WebKit
 
 enum TheatreTheme: String, Codable, CaseIterable {
-    case showcase = "Showcase", cinema = "Cinema", shutter = "Shutter", trailer = "Trailer"
+    case showcase = "Showcase", cinema = "Cinema", shutter = "Shutter", trailer = "Trailer", wallet = "Wallet"
 
     /// Carousel and Fan (to 0.48.8) became Showcase's two layouts (Fan had been Gallery, and Gallery Shelf); anything else
     /// unknown is Showcase too
@@ -30,6 +30,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         case .cinema: "Big art, rows like a TV app"
         case .shutter: "Slanted panels of art, the game in focus wide"
         case .trailer: "The trailer fills the room"
+        case .wallet: "Your game cards in their wallet"
         }
     }
     var symbol: String {
@@ -38,6 +39,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         case .cinema: "film"
         case .shutter: "rectangle.split.3x1"
         case .trailer: "play.rectangle"
+        case .wallet: "wallet.bifold"
         }
     }
 }
@@ -163,7 +165,7 @@ struct TheatreFact: Hashable {
 
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case resume, showcase, cinema, shutter, trailer, shuffle, edges, settings, leave
+    case resume, showcase, cinema, shutter, trailer, wallet, shuffle, edges, settings, leave
     var title: String {
         switch self {
         case .resume: "Continue"
@@ -180,6 +182,7 @@ enum TheatreMenuRow: Int, CaseIterable {
         case .cinema: .cinema
         case .shutter: .shutter
         case .trailer: .trailer
+        case .wallet: .wallet
         case .resume, .shuffle, .edges, .settings, .leave: nil
         }
     }
@@ -547,6 +550,11 @@ extension AppModel {
                 if games.count > 1 { theatreCue(theatreTheme == .showcase ? .turn : .step) }
                 return
             }
+        case .wallet:
+            // the arrows go from pocket to pocket, and over a page's edge to the next page of cards
+            let games = theatreGames()
+            focus = theatreFocused(games)
+            if [.left, .right, .up, .down].contains(k) { walletPad(k, games: games, focus: focus); return }
         case .cinema:
             let rows = theatreRows()
             guard !rows.isEmpty else { focus = nil; break }
@@ -597,7 +605,7 @@ extension AppModel {
         theatreMenu = nil
         switch r {
         case .resume: theatreUnbox = nil; booklet = nil; continueFromConsole()
-        case .showcase, .cinema, .shutter, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
+        case .showcase, .cinema, .shutter, .trailer, .wallet: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
         case .shuffle: shuffleTheatre()
         // A steps the edges round and keeps the menu up, so the corners stay in view
         case .edges:
@@ -849,6 +857,7 @@ struct TheatreView: View {
         case .cinema: CinemaTheme(model: model).transition(.opacity)
         case .shutter: ShutterTheme(model: model).transition(.opacity)
         case .trailer: TrailerTheme(model: model).transition(.opacity)
+        case .wallet: WalletTheme(model: model).transition(.opacity)
         }
     }
 
@@ -1070,7 +1079,7 @@ struct TheatreMenu: View {
         switch r {
         case .resume: "play.fill"
         case .showcase: model.showcaseLayout.symbol
-        case .cinema, .shutter, .trailer: r.theme?.symbol ?? ""
+        case .cinema, .shutter, .trailer, .wallet: r.theme?.symbol ?? ""
         case .shuffle: "dice"
         case .edges: "rectangle.dashed"
         case .settings: "gearshape"
@@ -1082,7 +1091,7 @@ struct TheatreMenu: View {
         switch r {
         case .resume: "Its card is still in the console"
         case .showcase: "Your boxes as a carousel, a fan or a shelf: ← → here, ↑ ↓ on Theatre"
-        case .cinema, .shutter, .trailer: r.theme?.note
+        case .cinema, .shutter, .trailer, .wallet: r.theme?.note
         case .shuffle: "Spin the shelf and land on a game (L3)"
         case .edges: "Can you see all four corners? ← → to inset the picture"
         case .settings: nil

@@ -26,6 +26,8 @@ extension AppModel {
     /// What the game's case shows (nil with Collector touches off)
     func keepsake(_ g: StageGame) -> CaseKeepsake? {
         guard settings.theatreCollector else { return nil }
+        // NXC_KEEP=<hours>: a snapshot's case as played that long, and completed
+        if let h = ProcessInfo.processInfo.environment["NXC_KEEP"].flatMap(Double.init) { return CaseKeepsake(hours: h, completed: true) }
         return CaseKeepsake(hours: g.total / 3600, completed: settings.completed.contains(g.favoriteKey))
     }
 
