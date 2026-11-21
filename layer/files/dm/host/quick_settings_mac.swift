@@ -24,6 +24,8 @@ private let cornerNames = ["Top left", "Top right", "Bottom left", "Bottom right
 private let anisoSteps = [0, 2, 4, 8, 16]   // front.h mtl_aniso_set: 0 is the game's own
 private let anisoDefault = 16               // front_mac.m graphics_start: 16x until a choice is saved
 private let sizeNames = ["Fit", "Stretch", "Pixel-perfect"]   // front.h DM_PSCALE_*, in that order
+private let borderNames = ["Black", "Glow", "Game art"]   // front.h DM_PBORDER_*, in that order
+private let borderFixed = env["DM_PRESENT_BORDER"] != nil
 private let scaleFixed = env["DM_PRESENT_SCALE"] != nil
 private let aaNames = ["Off", "FXAA"]   // front.h DM_PAA_*, in that order
 private let interpNames = ["Off", "On", "Auto"]   // front.h mtl_present_interp, in that order
@@ -134,7 +136,7 @@ private func presetValue(_ p: Preset, _ s: LaunchRow) -> String {
 private let sessionPrefixes = ["DMQuickSettings.", "DMPresentFilter.", "launcher.", "nxforge.mirror."]
 private let sessionNames = ["fps": "FPS counter", "fpsPos": "Counter corner", "fpsMs": "Milliseconds", "frameTimes": "Record frame times", "mods": "Mods", "modOrder": "Mod load order",
                             "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
-                            "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size",
+                            "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size", "border": "Around the picture",
                             "keys": "Keyboard controls", "keyNames": "Keyboard controls", "pad": "Controller buttons", "padNames": "Controller buttons", "captureDir": "Capture folder",
                             "mode": "CRT filter", "strength": "CRT strength", "scanline": "Line size", "DM_PRESENT_UPSCALE": "MetalFX upscaling"]
 // The settings window's own variables the sidebar keeps under its names too (front_mac_launcher_sync.inc): listed once, by the sidebar's name
@@ -159,7 +161,7 @@ enum Nav: Hashable {
     case shot, record, fpsQuick, volume, mute, tab(Int)
     case undoSession, preset(Int)
     case pauseOpen, duckOpen, keepLibrary, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
-    case fullscreen, scale, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
+    case fullscreen, scale, border, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
@@ -169,7 +171,7 @@ enum Nav: Hashable {
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .fullscreen, .scale, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
@@ -431,6 +433,7 @@ final class QuickSettings: ObservableObject {
     @Published var aniso = 0      // the chosen anisotropic filtering floor (0: the game's own)
     @Published var anisoRun = 0   // the one this launch took
     @Published var scale = 0      // picture size (DM_PSCALE_*)
+    @Published var border = 0     // what shows around a picture that does not fill the window (DM_PBORDER_*)
     @Published var pixel = Int(DM_PIXEL_AUTO)   // pixel art chosen (DM_PIXEL_*)
     @Published var pixelActive = 0                // the mode in effect now (auto: off until the game shows pixel art)
     @Published var pixelGrid: (w: Float, h: Float, s: Float)?   // the art's own size and texels per art pixel, while a grid holds
@@ -502,7 +505,7 @@ final class QuickSettings: ObservableObject {
         paused = front_qs_paused() != 0; fullscreen = front_qs_fullscreen() != 0
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
-        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale()); pixel = Int(mtl_present_pixel()); refreshPixel()
+        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale()); border = Int(mtl_present_border()); pixel = Int(mtl_present_pixel()); refreshPixel()
         edr = mtl_present_edr() != 0; edrStrength = Double(mtl_present_edr_strength()) / 100; edrHeadroom = mtl_present_edr_headroom(); interp = Int(mtl_present_interp()); interpActive = mtl_present_interp_active() != 0
         shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
         settingsPath = String(cString: front_qs_settings_path()); defaultsExist = front_qs_defaults_exist() != 0
@@ -649,12 +652,13 @@ final class QuickSettings: ObservableObject {
     }
     var pixelPaused: Bool { pixelActive != 0 }
     func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("scale")) }
+    func setBorder(_ n: Int) { guard !borderFixed else { return }; border = n; mtl_present_border_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("border")) }
     func toggleFullscreen() { front_qs_fullscreen_toggle() }
-    var graphicsChanged: Bool { pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
+    var graphicsChanged: Bool { pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || border != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
-        setUpscale(true); setScale(0); setPixel(Int(DM_PIXEL_AUTO))
+        setUpscale(true); setScale(0); setBorder(0); setPixel(Int(DM_PIXEL_AUTO))
         if !envFixed("DM_PRESENT_AA") { setAA(0) }
         setEDR(false); setEDRStrength(0.5)
         if env["DM_ANISO"] == nil { setAniso(anisoDefault) }
@@ -909,7 +913,7 @@ final class QuickSettings: ObservableObject {
         switch p {
         case pGeneral:
             return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + [[Nav.backup, Nav.backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
-        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
+        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
@@ -962,6 +966,7 @@ final class QuickSettings: ObservableObject {
         case .keepLibrary: setKeepLibrary(d > 0)
         case .fullscreen: if (d > 0) != fullscreen { toggleFullscreen() }
         case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
+        case .border: setBorder(min(max(border + d, 0), borderNames.count - 1))
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[min(max(i + d, 0), pixelOrder.count - 1)]) }
         case .crt: setCRT(d > 0)
         case .strength: if crtOn { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
@@ -1004,6 +1009,7 @@ final class QuickSettings: ObservableObject {
         case .defaultsUse: useDefaults()
         case .fullscreen: toggleFullscreen()
         case .scale: setScale((scale + 1) % sizeNames.count)
+        case .border: setBorder((border + 1) % borderNames.count)
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[(i + 1) % pixelOrder.count]) }
         case .crt: setCRT(!crtOn)
         case .scanlines: if crtOn { setScanline((scanline + 1) % 9) }
@@ -1387,6 +1393,15 @@ struct QuickSettingsView: View {
             note(scaleFixed ? "Set by DM_PRESENT_SCALE for this run" : m.scale == 1 ? "Fills the window; the picture may look wider or taller than the game draws it"
                  : m.scale == 2 ? (m.pixelGrid != nil && m.pixelPaused ? "Each art pixel the same whole number of screen pixels, counted on the art's own grid, with a border"
                                    : "Each game pixel the same whole number of screen pixels: crisp pixel art, with a border") : "The game's shape, with black bars where the window is wider or taller")
+            // Around the picture (border_fill.inc): the picture or the game's art, blurred, where the window is wider or taller than the picture, in place of black bars
+            Row(title: "Around the picture", changed: m.border != 0) {
+                Picker("Around the picture", selection: Binding(get: { m.border }, set: { m.setBorder($0) })) {
+                    ForEach(borderNames.indices, id: \.self) { Text(borderNames[$0]).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(borderFixed)
+            }.nav(m, .border)
+            note(borderFixed ? "Set by DM_PRESENT_BORDER for this run" : m.scale == 1 ? "Nothing to fill while the picture is stretched over the window"
+                 : m.border == 1 ? "The picture itself, blurred and dimmed, where there would be black bars" : m.border == 2 ? "The game's art, blurred and dimmed, where there would be black bars (the glow when the game has none)"
+                 : "Black bars where the window is wider or taller than the picture")
             // Pixel art: sharp, even pixels for 2D games, on the art's own grid where the game enlarged it (pixel_art.inc); auto turns it on where the picture shows pixel art
             Row(title: "Pixel art", changed: m.pixel != Int(DM_PIXEL_AUTO)) {
                 Picker("Pixel art", selection: Binding(get: { m.pixel }, set: { m.setPixel($0) })) {

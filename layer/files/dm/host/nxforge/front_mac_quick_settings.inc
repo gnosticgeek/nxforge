@@ -397,6 +397,11 @@ static void settings_apply(int start) {
     // Pixel art: auto (on once the picture shows a steady pixel grid) unless this game's saved choice says otherwise (pixel_art.inc)
     if (!env_fixed("DM_PIXEL_ART")) mtl_present_pixel_set([d objectForKey:opt_key(@"pixel")] ? (int)[d integerForKey:opt_key(@"pixel")] : DM_PIXEL_AUTO);
     if (!getenv("DM_PRESENT_SCALE")) mtl_present_scale_set([d objectForKey:opt_key(@"scale")] ? (int)[d integerForKey:opt_key(@"scale")] : DM_PSCALE_FIT);
+    // Border fill (border_fill.inc): black bars unless this game's saved choice says glow or art; the art is the app's banner, when it has one
+    if (!getenv("DM_PRESENT_BORDER")) mtl_present_border_set((int)[d integerForKey:opt_key(@"border")]);
+    { NSString *res = NSBundle.mainBundle.resourcePath, *art = nil;
+      for (NSString *n in @[@"dm/banner.jpg", @"dm/banner.png"]) { NSString *f = [res stringByAppendingPathComponent:n]; if (!art && [NSFileManager.defaultManager fileExistsAtPath:f]) art = f; }
+      mtl_present_border_art(art.fileSystemRepresentation); }
     qs_volume_apply();
     if (!getenv("DM_PRESENT_SCANLINE")) mtl_present_scanline_set([d objectForKey:pfx_key(@"scanline")] ? (int)[d integerForKey:pfx_key(@"scanline")] : 0);
     if (!start && g_opts) [g_opts fpsCounter];
