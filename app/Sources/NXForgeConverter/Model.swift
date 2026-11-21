@@ -174,6 +174,8 @@ final class AppModel {
     var theatreRow = 0
     var theatreMenu: Int?
     var theatreOffer: TVScreen?
+    /// what Spotlight was last given (Links.swift indexSpotlight): the games' ids, names and apps
+    @ObservationIgnored var spotlightStamp = ""
     /// bumped when Open at login is switched, so Settings reads the login item again (LoginItem)
     var loginItemTick = 0
     var theatreScreen: CGDirectDisplayID?
@@ -310,11 +312,13 @@ final class AppModel {
         restoreBatchQueue()
         if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { backUpDataIfDue() }
         if settings.gameDir != nil { validate() }
+        Task { [weak self] in try? await Task.sleep(for: .seconds(8)); self?.indexSpotlight() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
                 self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
+                self?.indexSpotlight()
                 if self?.settings.folderCheck != .manual { self?.rescanIfFolderChanged() }   // games filed into the games folder while NXForge was in the back
                 if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { self?.backUpDataIfDue() }
                 guard let self, self.fixPending, !self.checking else { return }

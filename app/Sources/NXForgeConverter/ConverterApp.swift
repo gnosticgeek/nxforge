@@ -2,6 +2,7 @@
 // opens and quits (NXC_PAGE=library, builds, storage or toolchain for another page; NXC_AUTOBUILD=1 builds the chosen
 // folder first, NXC_CONFIRM=1 puts a delete confirmation over it), for checking the layout without a screen capture.
 import AppKit
+import CoreSpotlight
 import SwiftUI
 import UserNotifications
 
@@ -51,8 +52,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         MainActor.assumeIsolated { AppModel.shared?.dockMenu() }
     }
     /// A game folder dropped on the Dock icon (Info.plist lists folders as a document type)
+    /// or an nxforge:// link (Links.swift): a Shortcut's Open URLs, `open nxforge://play/zelda`
     func application(_ app: NSApplication, open urls: [URL]) {
-        MainActor.assumeIsolated { AppModel.shared?.openDropped(urls) }
+        MainActor.assumeIsolated {
+            guard let m = AppModel.shared else { return }
+            let links = urls.filter { $0.scheme?.lowercased() == GameLink.scheme }
+            for u in links { m.openLink(u) }
+            if links.isEmpty { m.openDropped(urls) }
+        }
+    }
+    /// A game picked in Spotlight (Links.swift indexSpotlight): its page
+    func application(_ app: NSApplication, continue activity: NSUserActivity, restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        guard activity.activityType == CSSearchableItemActionType, let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return false }
+        MainActor.assumeIsolated { AppModel.shared?.openSpotlight(id) }
+        return true
     }
 }
 

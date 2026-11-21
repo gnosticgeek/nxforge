@@ -2327,3 +2327,39 @@ import Testing
         #expect(FolderCheck.manual.seconds == nil && FolderCheck.hour.seconds == 3600)
     }
 }
+
+@Suite struct GameLinks {
+    struct G { let name: String; let id: String?; let built: Bool }
+    let games = [G(name: "The Legend of Zelda™: Ocarina of Time", id: "0400486024DEC000", built: true),
+                 G(name: "The Legend of Zelda: Breath of the Wild", id: "01007EF00011E000", built: false),
+                 G(name: "Mario Kart World", id: "0400C3F00006E000", built: true),
+                 G(name: "Mario Kart 8 Deluxe", id: "0100152000022000", built: false),
+                 G(name: "Pokémon™ Legends: Z-A", id: nil, built: false)]
+    func find(_ q: String) -> String? { GameLink.find(q, in: games, name: \.name, titleID: \.id, built: \.built)?.name }
+
+    @Test func linksNameAnActionAndAGame() {
+        #expect(GameLink.parse(URL(string: "nxforge://play/mario%20kart")!)?.game == "mario kart")
+        #expect(GameLink.parse(URL(string: "nxforge://play?game=Zelda")!)?.action == "play")
+        #expect(GameLink.parse(URL(string: "nxforge://play?game=Zelda")!)?.game == "Zelda")
+        #expect(GameLink.parse(URL(string: "nxforge://theatre")!)?.game == nil)
+        #expect(GameLink.parse(URL(string: "https://example.com/play")!) == nil)
+    }
+
+    @Test func aFewWordsFindTheGame() {
+        #expect(find("0400c3f00006e000") == "Mario Kart World")
+        #expect(find("mario kart 8") == "Mario Kart 8 Deluxe")
+        #expect(find("mario kart") == "Mario Kart World")          // two start with it: the built one
+        #expect(find("zelda") == "The Legend of Zelda™: Ocarina of Time")
+        #expect(find("breath wild") == "The Legend of Zelda: Breath of the Wild")
+        #expect(find("pokemon za") == "Pokémon™ Legends: Z-A")
+        #expect(find("metroid") == nil)
+        #expect(find("  ") == nil)
+    }
+
+    @Test func homeOpensTheatreIsKeptAndOnByDefault() throws {
+        #expect(Settings().homeOpensTheatre)
+        var s = Settings(); s.homeOpensTheatre = false
+        #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).homeOpensTheatre == false)
+        #expect(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)).homeOpensTheatre)
+    }
+}
