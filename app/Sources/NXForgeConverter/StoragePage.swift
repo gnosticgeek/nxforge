@@ -21,7 +21,7 @@ struct StorageItem: Identifiable, Hashable {
 
     var title: String {
         if let label { return label }
-        switch kind {
+        return switch kind {
         case .cache: "Build cache"
         case .backups: "Older app copies"
         case .app: "Mac app"
@@ -33,7 +33,7 @@ struct StorageItem: Identifiable, Hashable {
 
     var note: String {
         if let detail { return detail }
-        switch kind {
+        return switch kind {
         case .cache: "The extracted game and compiled shaders. Deleting it makes the next build start over (about 30 to 50 minutes)."
         case .backups: "Apps a rebuild moved to app-backups. Restore one from Builds first if you still want it."
         case .app: "The game you play. Delete it from Builds (Move App to Trash)."
