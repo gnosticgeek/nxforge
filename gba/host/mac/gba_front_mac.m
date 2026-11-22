@@ -103,7 +103,7 @@ static NSString *const kShader = @
 "  float2 c = float2(vid & 1, vid >> 1); V o;\n"
 "  o.pos = u.b.x < 0.5 ? float4(c * 2 - 1, 0, 1) : float4(mix(u.pic.xy, u.pic.zw, c), 0, 1);\n"
 "  o.uv = float2(c.x, 1 - c.y); return o; }\n"
-"fragment float4 fs(V in, constant U &u [[buffer(0)]], texture2d<float> t [[texture(0)]], sampler lin [[sampler(0)]]) {\n"
+"fragment float4 fs(V in [[stage_in]], constant U &u [[buffer(0)]], texture2d<float> t [[texture(0)]], sampler lin [[sampler(0)]]) {\n"
 "  const float2 src = float2(240, 160);\n"
 "  if (u.b.x < 0.5) {\n"   // around the picture: the picture itself, blurred and dimmed
 "    float3 s = float3(0);\n"
