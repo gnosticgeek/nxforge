@@ -10,7 +10,7 @@ enum StageTab: String, CaseIterable { case home = "Home", discover = "Discover" 
 /// Discover's two collections: every game in the games folder, or only the ones built and playable on this Mac
 enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
 enum StageFilter: String, CaseIterable {
-    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance", notBuilt = "Not built yet"
+    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", gba = "GBA", notBuilt = "Not built yet"
     /// the filters that mean something in a collection: Built has no unbuilt games
     static func shown(_ scope: StageScope) -> [StageFilter] { scope == .built ? allCases.filter { $0 != .notBuilt } : allCases }
 }

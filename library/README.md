@@ -92,3 +92,11 @@ Switching an enhancement off takes back what it added. Nothing needs a rebuild.
 
 `scripts/library.py collect <games folder>` copies every game folder's `enhancements/*.md` and `cheats/*.md` into this folder
 (by the title ID in each file), switched off, for a commit. `scripts/library.py check` checks every file here (CI runs it).
+
+## Game Boy Advance
+
+`library/gba/` holds notes on Game Boy Advance games that have been converted ([gba/README.md](../gba/README.md)): `<game code>-<first 8
+of the cartridge's SHA-1>.md`, and beside it an optional `.labels` file listing entry points earlier conversions found by playing, in
+gba-recomp's own format (addresses only, no game code or data). A conversion of the same cartridge adds them before it starts, so its
+first pass translates what play had to find. A GBA game's genres go in `library/<title ID>/game.md` like any other game's; its title
+ID is `0BA0`, the game code in hex, the version byte and `00`.
