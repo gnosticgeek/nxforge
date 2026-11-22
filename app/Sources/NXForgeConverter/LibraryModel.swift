@@ -33,7 +33,7 @@ extension AppModel {
     func chooseGBARoot() {
         guard let d = choose(folder: true, start: GBA.root(settings) ?? settings.gamesRoot ?? "/Volumes") else { return }
         settings.gbaRoot = d
-        scanLibrary()
+        if settings.gamesRoot == nil { scanGBA() } else { scanLibrary() }
     }
 
     func chooseGamesRoot() {
@@ -91,6 +91,28 @@ extension AppModel {
         }
     }
 
+    /// The Game Boy Advance folder alone, merged into the kept list: one listing and a few hundred bytes of each file. Run when
+    /// NXForge starts and with every look at the games folder, so cartridges are listed (and new ones show up) without a scan of
+    /// the Switch games folder, which may be on a drive that is away. A folder that does not answer keeps the ones it had.
+    func scanGBA() {
+        guard let gbaRoot = GBA.root(settings), !libraryScanning, !gbaScanRunning else { return }
+        gbaScanRunning = true
+        Task.detached(priority: .utility) {
+            let found = Source.isDir(gbaRoot) ? GBA.scan(root: gbaRoot) : nil
+            await MainActor.run {
+                self.gbaScanRunning = false
+                guard let found, !self.libraryScanning else { return }
+                var l = self.library ?? LibraryScan(root: self.settings.gamesRoot ?? gbaRoot, scanned: Date(), games: [])
+                let had = l.games.filter { $0.kind == .gba }
+                guard had.map(\.id) != found.map(\.id) else { return }
+                l.games = l.games.filter { $0.kind != .gba } + GameLibrary.carryDetails(from: had, to: found)
+                self.library = l
+                GameLibrary.saveCache(l)
+                self.readLibraryDetails()
+            }
+        }
+    }
+
     func stopLibraryScan() { libraryTask?.cancel(); detailsTask?.cancel() }
 
     /// Scan again when the games folder's drive or share is mounted, and when the Library opens on a list over a day old.
@@ -109,6 +131,7 @@ extension AppModel {
     /// there by a download watcher or by hand shows up without a press of Refresh. One listing of the folder itself, off the main
     /// thread; a folder that does not answer is left alone (the mount watcher scans once it is back).
     func rescanIfFolderChanged() {
+        scanGBA()
         guard let root = settings.gamesRoot, !libraryScanning, folderCheckRunning == false else { return }
         let known = library?.root == root ? library?.top : nil
         folderCheckRunning = true
@@ -158,6 +181,7 @@ extension AppModel {
     }
 
     func scanIfStale() {
+        scanGBA()
         guard let root = settings.gamesRoot, !libraryScanning else { return }
         if library?.root != root || (library.map { Date().timeIntervalSince($0.scanned) > 24 * 3600 } ?? true) { scanLibrary() }
     }

@@ -118,6 +118,7 @@ final class AppModel {
     var detailsTask: Task<Void, Never>?
     /// a look at the games folder for new games is under way (rescanIfFolderChanged)
     @ObservationIgnored var folderCheckRunning = false
+    @ObservationIgnored var gbaScanRunning = false
     /// games a scan found that the one before did not have, waiting for their names to be read (lookUpNewGames)
     @ObservationIgnored var newGameIDs = Set<String>()
     var mountObserver: NSObjectProtocol?
@@ -321,6 +322,7 @@ final class AppModel {
         recheck()
         watchMounts()
         watchGamesFolder()
+        scanGBA()
         trackPlay()
         watchActive()
         watchLaunch()
