@@ -135,7 +135,7 @@ extension AppModel {
         }
         for (name, free) in drives.sorted(by: { $0.key < $1.key }) where free < Disk.warnBelow {
             out.append(HealthFinding(id: "disk-\(name)", level: free < Disk.stopBelow ? .problem : .warning, symbol: "internaldrive",
-                                     title: "\(name) has \(Disk.gb(free)) free", detail: "A build stops under \(Disk.gb(Disk.stopBelow)). Storage shows what NXForge keeps and what can go.",
+                                     title: "\(name) has \(Disk.gb(free)) free", detail: "A build pauses under \(Disk.gb(Disk.stopBelow)). Storage shows what NXForge keeps and what can go.",
                                      repair: "Open Storage", run: { [weak self] in self?.showConverter(); self?.page = .storage }))
         }
 

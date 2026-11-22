@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.27.0 (2026-11-21)
+
+Shipped in NXForge 0.53.0.
+
+- **Make room, then pause, instead of stopping.** While a build runs and a disk it writes to has under 12 GB free, the converter clears what can be made again (other games' stopped-build scratch, pipeline copies of games not running, and `nxforge clean --only app-backups,old-logs,gpuarchiver`), at most every five minutes, and logs what went. Under 3 GB the build is paused (SIGSTOP on the script and every process under it) rather than stopped, the Convert page and menu bar say so with how much to free, a notification is sent, and the build carries on by itself at 6 GB free; Stop lets it go first. The wait is left out of the stage's elapsed time and time left. Code: `MakeRoom.swift`, `BuildRun.pause()`/`resume()`, `AppModel.watchDisk`.
+- **Storage › Forgotten.** Big files NXForge did not make a place for: game packages and unfinished downloads in Downloads (hidden folders too, four levels down), items `nxforge clean` holds, and a stopped build's scratch. Safe ones (an unfinished download, a copy of a games-folder file by name and size, a held item, scratch) can be deleted with Undo as usual; others say where they are. The shared cache row no longer counts what is listed on its own. Code: `Forgotten.swift`.
+
 ## 0.26.0 (2026-11-21)
 
 Shipped in NXForge 0.52.0.

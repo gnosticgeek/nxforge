@@ -339,7 +339,7 @@ extension AppModel {
             }
         }
         let short = batchNeed(games, builds: builds).filter { $0.need > $0.free }
-        if !short.isEmpty, !confirm("Build with too little free space?", short.map { "\($0.volume): about \(Disk.gb($0.need)) needed, \(Disk.gb($0.free)) free." }.joined(separator: "\n") + " Each build stops by itself before a disk fills up, and the rest are then left. Storage lists what can be deleted.", action: "Build Anyway") { return }
+        if !short.isEmpty, !confirm("Build with too little free space?", short.map { "\($0.volume): about \(Disk.gb($0.need)) needed, \(Disk.gb($0.free)) free." }.joined(separator: "\n") + " Each build pauses before a disk fills up and carries on once there is room. Storage lists what can be deleted.", action: "Build Anyway") { return }
         batchQueue = games
         batchResults = []
         batchMessage = nil

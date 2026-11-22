@@ -540,7 +540,7 @@ struct ConvertCard: View {
 
     var spaceHelp: String {
         model.source == nil
-            ? "A first build extracts the game and compiles its shaders: allow about twice the game files' size plus 10 GB. A rebuild needs room for a second copy of the app while it builds, and the shared Metal cache can grow to 12 GB. While a build runs, the converter stops it if free space drops below \(Disk.gb(Disk.stopBelow)). The time is from earlier builds of this game, else of games its size."
-            : "A Switch 2 game's first build unpacks its files into one image, compiles its shaders and makes a pipeline archive: allow about twice the game files' size plus 20 GB (Ocarina of Time, a 26 GB .nup, peaked near 76 GB). The build folder goes beside the .nup, so choose a .nup on a drive with room. While a build runs, the converter stops it if free space drops below \(Disk.gb(Disk.stopBelow))."
+            ? "A first build extracts the game and compiles its shaders: allow about twice the game files' size plus 10 GB. A rebuild needs room for a second copy of the app while it builds, and the shared Metal cache can grow to 12 GB. While a build runs and space gets low, the converter clears what it can make again, and pauses the build below \(Disk.gb(Disk.stopBelow)) until there is room. The time is from earlier builds of this game, else of games its size."
+            : "A Switch 2 game's first build unpacks its files into one image, compiles its shaders and makes a pipeline archive: allow about twice the game files' size plus 20 GB (Ocarina of Time, a 26 GB .nup, peaked near 76 GB). The build folder goes beside the .nup, so choose a .nup on a drive with room. While a build runs, the converter pauses it below \(Disk.gb(Disk.stopBelow)) free until there is room."
     }
 }

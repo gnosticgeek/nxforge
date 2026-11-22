@@ -1,0 +1,147 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Sat, 21 Nov 2026 21:42:27 +0000
+Subject: disk-room: the shared Metal cache and the scratch folder make way on
+ a startup disk short of space
+
+---
+ dm/gfx/tools/dmsh_mtlcache.py                 | 24 ++++++++++++++++---
+ dm/tools/tests/test_nsp_mac.py                | 20 ++++++++++++++++
+ dm/tools/tests/test_shader_toolchain_cache.py | 16 +++++++++++++
+ scripts/build_ipa_from_nsp.py                 | 11 ++++++++-
+ 4 files changed, 67 insertions(+), 4 deletions(-)
+
+diff --git a/dm/gfx/tools/dmsh_mtlcache.py b/dm/gfx/tools/dmsh_mtlcache.py
+index 75204e168a59e51a01009e3e0e24ee1df33c4ced..06a6dce5335ee96663ada151e1df6db5b159bd08 100644
+--- a/dm/gfx/tools/dmsh_mtlcache.py
++++ b/dm/gfx/tools/dmsh_mtlcache.py
+@@ -22,6 +22,22 @@ LEGACY = os.path.expanduser('~/Library/Caches/NXForge/metallib')   # the shared
+ # so the next chain change compiled 12,000 of them again. prune() also never goes below what this build used
+ LIMIT_GB = float(os.environ.get('DMSH_MTLCACHE_GB') or 12)
+ 
++# NXForge: the shared cache is on the startup disk, which a game on an external drive otherwise leaves alone. When that disk has less than ROOMY_GB free after a build,
++# the cache gives back the shortfall (down to FLOOR_GB): a library compiled again later costs seconds, a full startup disk stops the next build and the Mac.
++ROOMY_GB, FLOOR_GB = 30.0, 4.0
++
++
++def spare_limit(limit_gb, free):
++    """The cache's limit for a disk with free GB free: limit_gb, less what the disk is short of ROOMY_GB, never under FLOOR_GB (nor over limit_gb). free None: limit_gb"""
++    if free is None: return limit_gb
++    return min(limit_gb, max(FLOOR_GB, limit_gb - max(0.0, ROOMY_GB - free)))
++
++
++def free_gb(path):
++    try: return shutil.disk_usage(path).free / 2**30
++    except OSError: return None
++
++
+ FORMAT = b'dmsh_mtlcache 3'   # 3-way cut stores _b / _bx / _bf from one compile (fetch fold); earlier formats cannot be reused
+ OUTPUT = re.compile(r'[0-9a-f]{16}_b\.metal')   # a shader's MSL in dmsh_build.py's outputs: <key>_b.metal
+ _clonefile = getattr(ctypes.CDLL(None, use_errno=True), 'clonefile', None)   # APFS copy-on-write copy (no data written); elsewhere a plain copy
+@@ -110,12 +126,14 @@ class Cache:
+ 
+     def prune(self, limit_gb=LIMIT_GB):
+         """NXForge: removes the metallib/ entries unused the longest until the libraries are under limit_gb, or under what this build used when that is more
+-        (the entries it used are the newest, so none of them goes). Returns the line to print"""
++        (the entries it used are the newest, so none of them goes). A startup disk with less than ROOMY_GB free lowers the limit by the shortfall (spare_limit). Returns the line to print"""
+         with self.lock: mine = sum(self.used.values())
+-        limit_gb = max(limit_gb, mine / 2**30)
+         assert isinstance(self.store, shader_cache.Store), 'prune runs in the process that opened the cache'
++        set_gb = limit_gb
++        limit_gb = max(spare_limit(limit_gb, free_gb(os.path.dirname(self.store.path))), mine / 2**30)
++        low = f'; the disk is short of space, so the limit is {limit_gb:g} GB this time, not {set_gb:g}' if limit_gb < set_gb else ''
+         n, total, gone = self.store.prune_oldest('metallib/', int(limit_gb * 2**30))
+-        return f'Metal cache: {n - gone:,} libraries, {total / 2**30:.1f} GB in {self.store.path}' + (f' ({gone:,} unused the longest removed, limit {limit_gb:g} GB, DMSH_MTLCACHE_GB)' if gone else '')
++        return f'Metal cache: {n - gone:,} libraries, {total / 2**30:.1f} GB in {self.store.path}' + (f' ({gone:,} unused the longest removed, limit {limit_gb:g} GB, DMSH_MTLCACHE_GB{low})' if gone else '')
+ 
+     def compile_split(self, target, msl, libs, split):
+         """msl → the libraries libs cut from its one compile, split(the library's bytes) → their bytes, in order: clones of what the same source gave before, or a compile (then the pieces
+diff --git a/dm/tools/tests/test_nsp_mac.py b/dm/tools/tests/test_nsp_mac.py
+index 477b63b660b90a6f81be4514764a65f6c74c1b2d..3c191e5e9889b1d468a4c71b1d24fe1d7af8c64b 100644
+--- a/dm/tools/tests/test_nsp_mac.py
++++ b/dm/tools/tests/test_nsp_mac.py
+@@ -376,5 +376,25 @@ class EnvFile(Base):
+         with self.assertRaises(nsp.BuildError): nsp.env_file_pairs(self.tmp / 'none.txt')
+ 
+ 
++
++class Scratch(unittest.TestCase):   # NXForge: temporary files off an exFAT game drive, but only to a startup disk with room (it filled during builds, 2026-11-21)
++    def setUp(self):
++        self.td = tempfile.TemporaryDirectory(); self.home = Path(self.td.name) / 'home'; self.work = Path(self.td.name) / 'game/X_build'
++        self.p = [mock.patch.object(nsp.sys, 'platform', 'darwin'), mock.patch.object(nsp, 'can_clone', lambda p: False), mock.patch.object(nsp.Path, 'home', lambda: self.home),
++                  mock.patch('atexit.register', lambda *a: None)]
++        for x in self.p: x.start()
++
++    def tearDown(self):
++        for x in self.p: x.stop()
++        self.td.cleanup()
++
++    def test_roomy_startup_disk_takes_the_scratch(self):
++        with mock.patch.object(nsp, 'free_gb', lambda p: 100):
++            self.assertEqual(nsp.scratch_folder(self.work, '0100', {}), self.home / 'Library/Caches/NXForge/scratch/0100')
++
++    def test_short_startup_disk_leaves_it_in_the_build_folder(self):
++        with mock.patch.object(nsp, 'free_gb', lambda p: nsp.SCRATCH_MIN_GB - 1):
++            self.assertIsNone(nsp.scratch_folder(self.work, '0100', {}))
++
+ if __name__ == '__main__':
+     unittest.main()
+diff --git a/dm/tools/tests/test_shader_toolchain_cache.py b/dm/tools/tests/test_shader_toolchain_cache.py
+index df108948f69764d42d13a4834c4bcbc23a0d48c8..a9e9442c296f6d724a7617df452bfa5f9835aa49 100644
+--- a/dm/tools/tests/test_shader_toolchain_cache.py
++++ b/dm/tools/tests/test_shader_toolchain_cache.py
+@@ -565,6 +565,22 @@ class SharedMetalCache(unittest.TestCase):
+         for text in ('one', 'two', 'six'): self.assertTrue(self.store.has(self.cache.path('mac', (text * 5000).encode())))
+         self.assertNotIn('removed', line)
+ 
++    def test_a_short_startup_disk_lowers_the_limit(self):   # NXForge: the startup disk filled during builds (2026-11-21)
++        self.assertEqual(dmsh_mtlcache.spare_limit(12, 100), 12)
++        self.assertEqual(dmsh_mtlcache.spare_limit(12, 25), 7)    # 5 GB short of 30
++        self.assertEqual(dmsh_mtlcache.spare_limit(12, 2), 4)     # never under the floor
++        self.assertEqual(dmsh_mtlcache.spare_limit(3, 2), 3)      # nor over the limit set
++        self.assertEqual(dmsh_mtlcache.spare_limit(12, None), 12)
++        for i, text in enumerate(('old', 'new')):
++            self.cache.compile('mac', self.source(f'{text}.metal', text * 5000), str(self.root / f'{text}.metallib'))
++            self.store._run('UPDATE entry SET mtime=? WHERE name=?', 1000 + i, self.cache.path('mac', (text * 5000).encode()))
++        self.cache.used.pop(self.cache.path('mac', (b'old' * 5000)))
++        size = len(b'LIB ' + b'old' * 5000) / 2**30
++        with mock.patch.object(dmsh_mtlcache, 'spare_limit', lambda limit, free: 1.5 * size), mock.patch.object(dmsh_mtlcache, 'free_gb', lambda p: 1.0):
++            line = self.cache.prune(10 * size)
++        self.assertFalse(self.store.has(self.cache.path('mac', b'old' * 5000)))
++        self.assertIn('the disk is short of space', line)
++
+     def test_adopt_moves_the_old_shared_folder_with_every_target(self):
+         old = self.root / 'NXForge/metallib'
+         for target in ('mac', 'ios'):
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index 3920edfed3f9de7bfb3d1c2f454dd93aa78a691b..18ca93621462aad29e3f205cc1ed2f12adf00ca3 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -3257,10 +3257,14 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+ PSO_BASE_JOBS = int(os.environ.get('DM_PSO_BASE_JOBS') or 1)   # NXForge: metal-tt runs at a time for the pipeline archive's batches of bases (pso_offline.py --base-jobs)
+ 
+ 
++SCRATCH_MIN_GB = 25   # NXForge: the startup disk's free GB under which scratch_folder leaves the temporary files on the game drive
++
++
+ def scratch_folder(work, gid, environ=os.environ):
+     """NXForge: where the shader compiles' and metal-tt's short-lived files go when the build folder is on a volume without APFS clones (an exFAT game drive: it creates and removes
+     a small file about ten times slower than the startup disk, and a shader build makes several per shader): ~/Library/Caches/NXForge/scratch/<title ID>, emptied when the build
+-    starts and removed when it ends. None when the build folder is on APFS (its own tmp.noindex is as fast, and stays on the volume the user chose). NXFORGE_SCRATCH=off keeps
++    starts and removed when it ends. None when the build folder is on APFS (its own tmp.noindex is as fast, and stays on the volume the user chose), or when the startup disk has
++    under SCRATCH_MIN_GB free. NXFORGE_SCRATCH=off keeps
+     them in the build folder, NXFORGE_SCRATCH=<folder> names another place. Only temporary files: every cache and output stays in the build folder"""
+     import atexit
+     want = environ.get('NXFORGE_SCRATCH', '')
+@@ -3272,6 +3276,11 @@ def scratch_folder(work, gid, environ=os.environ):
+             if can_clone(work): return None
+         except OSError: return None
+         d = Path.home() / 'Library/Caches/NXForge/scratch' / gid
++        # the startup disk must have room for them: a shader build's temporary files reach several GB, and with the shared Metal cache growing on the same disk a
++        # nearly full startup disk ran out during a build (2026-11-21); the slower game drive is the better place then
++        try: home_free = free_gb(Path.home())
++        except OSError: home_free = 0
++        if home_free < SCRATCH_MIN_GB: return None
+     try: rmtree(d); d.mkdir(parents=True)
+     except OSError: return None
+     atexit.register(shutil.rmtree, d, True)
