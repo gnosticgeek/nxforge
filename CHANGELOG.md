@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.55.0 (2026-11-22)
+## 0.54.0 (2026-11-22)
 
 Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)) and the app side of one (Converter 0.27.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). They need each game app's host rebuilt ("Update" on the game does it).
 
