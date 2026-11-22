@@ -1,0 +1,176 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 22 Nov 2026 01:01:36 +0000
+Subject: [PATCH] NXForge: the machine can be cloned (save states)
+
+---
+ crates/gba-core/src/apu.rs     | 2 +-
+ crates/gba-core/src/backup.rs  | 2 ++
+ crates/gba-core/src/cpu.rs     | 1 +
+ crates/gba-core/src/exec.rs    | 1 +
+ crates/gba-core/src/gax.rs     | 2 ++
+ crates/gba-core/src/machine.rs | 1 +
+ crates/gba-core/src/mem.rs     | 1 +
+ crates/gba-core/src/mp2k.rs    | 1 +
+ crates/gba-core/src/rdrv.rs    | 1 +
+ crates/gba-core/src/rtc.rs     | 1 +
+ crates/gba-core/src/shadow.rs  | 2 ++
+ 11 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/crates/gba-core/src/apu.rs b/crates/gba-core/src/apu.rs
+index 818efb0..d53a0e6 100644
+--- a/crates/gba-core/src/apu.rs
++++ b/crates/gba-core/src/apu.rs
+@@ -126,7 +126,7 @@ impl Square {
+     }
+ }
+ 
+-#[derive(Default)]
++#[derive(Clone, Default)]
+ pub struct Apu {
+     sq: [Square; 2],
+     // Wave channel.
+diff --git a/crates/gba-core/src/backup.rs b/crates/gba-core/src/backup.rs
+index c254e2e..b4d1c8c 100644
+--- a/crates/gba-core/src/backup.rs
++++ b/crates/gba-core/src/backup.rs
+@@ -55,6 +55,7 @@ enum FlashState {
+     Bank,  // next write to 0x0E000000 selects the bank
+ }
+ 
++#[derive(Clone)]
+ pub struct Flash {
+     pub data: Vec<u8>,
+     state: FlashState,
+@@ -151,6 +152,7 @@ enum EepromMode {
+     Reading { addr: usize, bit: u32 },
+ }
+ 
++#[derive(Clone)]
+ pub struct Eeprom {
+     pub data: Vec<u8>,
+     /// Bits accumulated from writes since the last completed request.
+diff --git a/crates/gba-core/src/cpu.rs b/crates/gba-core/src/cpu.rs
+index 4aafcdb..8d77369 100644
+--- a/crates/gba-core/src/cpu.rs
++++ b/crates/gba-core/src/cpu.rs
+@@ -59,6 +59,7 @@ pub enum Exception {
+ }
+ 
+ #[repr(C)]
++#[derive(Clone)]
+ pub struct Cpu {
+     /// Active register view for the current mode. `regs[15]` holds the
+     /// *fetch* address of the next instruction between steps; during
+diff --git a/crates/gba-core/src/exec.rs b/crates/gba-core/src/exec.rs
+index 97e3091..1b7df1c 100644
+--- a/crates/gba-core/src/exec.rs
++++ b/crates/gba-core/src/exec.rs
+@@ -40,6 +40,7 @@ pub fn step_cached<B: Bus>(cpu: &mut Cpu, bus: &mut B, cache: &mut DecodeCache)
+ /// inputs — so a hit is always identical to a fresh decode, and
+ /// self-modifying code simply misses and re-decodes. The fetch itself
+ /// still goes through the bus on every step.
++#[derive(Clone)]
+ pub struct DecodeCache {
+     entries: Box<[CacheEntry]>,
+ }
+diff --git a/crates/gba-core/src/gax.rs b/crates/gba-core/src/gax.rs
+index f0d0ba5..3dd504c 100644
+--- a/crates/gba-core/src/gax.rs
++++ b/crates/gba-core/src/gax.rs
+@@ -129,6 +129,7 @@ impl Default for Voice {
+ /// buffer (the 256-halfword echo processor): per-channel independent
+ /// delays, so the ring holds L/R pairs and cursors count pairs. The
+ /// mono variant's ring is one halfword per sample.
++#[derive(Clone)]
+ struct Echo {
+     ring: Vec<(f32, f32)>,
+     rd: usize,
+@@ -198,6 +199,7 @@ enum Mode {
+     V3,
+ }
+ 
++#[derive(Clone)]
+ pub struct GaxHle {
+     mode: Mode,
+     /// Guest address of the live SoundSystem block (found by scan).
+diff --git a/crates/gba-core/src/machine.rs b/crates/gba-core/src/machine.rs
+index f08e8fc..42a8995 100644
+--- a/crates/gba-core/src/machine.rs
++++ b/crates/gba-core/src/machine.rs
+@@ -24,6 +24,7 @@ pub const IRQ_RETURN_ADDR: u32 = 0x0000_0138;
+ const HANDLER_PTR: u32 = 0x0300_7FFC;
+ 
+ #[repr(C)]
++#[derive(Clone)]
+ pub struct Machine {
+     pub cpu: Cpu,
+     pub bus: MemMap,
+diff --git a/crates/gba-core/src/mem.rs b/crates/gba-core/src/mem.rs
+index d0f9e23..957b4d1 100644
+--- a/crates/gba-core/src/mem.rs
++++ b/crates/gba-core/src/mem.rs
+@@ -112,6 +112,7 @@ enum VPhase {
+     LineEnd,
+ }
+ 
++#[derive(Clone)]
+ pub struct MemMap {
+     pub bios: Vec<u8>,
+     pub ewram: Vec<u8>,
+diff --git a/crates/gba-core/src/mp2k.rs b/crates/gba-core/src/mp2k.rs
+index 9aa002d..748dfd8 100644
+--- a/crates/gba-core/src/mp2k.rs
++++ b/crates/gba-core/src/mp2k.rs
+@@ -247,6 +247,7 @@ impl Default for Voice {
+ 
+ /// The MP2K HLE shadow mixer. Lives on the bus; fed by the dispatch
+ /// hook (`frame_hook`) and the audio grid (`render`).
++#[derive(Clone)]
+ pub struct Mp2kHle {
+     /// Dispatch keys (SoundMainRAM entry | thumb) the loops compare PC
+     /// against — more than one when the image links several driver
+diff --git a/crates/gba-core/src/rdrv.rs b/crates/gba-core/src/rdrv.rs
+index ad5774b..dea8f22 100644
+--- a/crates/gba-core/src/rdrv.rs
++++ b/crates/gba-core/src/rdrv.rs
+@@ -135,6 +135,7 @@ struct Layout {
+     chanvol2: u32,
+ }
+ 
++#[derive(Clone)]
+ pub struct RdrvHle {
+     pub active: bool,
+     pub engaged: bool,
+diff --git a/crates/gba-core/src/rtc.rs b/crates/gba-core/src/rtc.rs
+index 707030c..2fd91c1 100644
+--- a/crates/gba-core/src/rtc.rs
++++ b/crates/gba-core/src/rtc.rs
+@@ -55,6 +55,7 @@ enum Phase {
+     Write,
+ }
+ 
++#[derive(Clone)]
+ pub struct Rtc {
+     // --- GPIO port registers (low nibble significant) ---
+     /// Last value written to the data port (read back on output pins).
+diff --git a/crates/gba-core/src/shadow.rs b/crates/gba-core/src/shadow.rs
+index 5fde84a..d9fdc81 100644
+--- a/crates/gba-core/src/shadow.rs
++++ b/crates/gba-core/src/shadow.rs
+@@ -14,6 +14,7 @@
+ /// Both streams are rectified and lowpassed into envelopes, decimated,
+ /// and Pearson-correlated over a coarse lag range covering the
+ /// driver's output pipeline delay.
++#[derive(Clone)]
+ struct SelfCheck {
+     /// One-pole envelope followers (per side, canon and shadow).
+     lp_x: (f32, f32),
+@@ -163,6 +164,7 @@ pub enum Judgement {
+ }
+ 
+ /// The engine-agnostic verification state machine.
++#[derive(Clone)]
+ pub struct Verifier {
+     check: SelfCheck,
+     /// Differentially calibrated output gain (1.0 = stock scale):

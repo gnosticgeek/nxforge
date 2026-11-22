@@ -10,7 +10,7 @@ enum StageTab: String, CaseIterable { case home = "Home", discover = "Discover" 
 /// Discover's two collections: every game in the games folder, or only the ones built and playable on this Mac
 enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
 enum StageFilter: String, CaseIterable {
-    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", notBuilt = "Not built yet"
+    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", gba = "GBA", notBuilt = "Not built yet"
     /// the filters that mean something in a collection: Built has no unbuilt games
     static func shown(_ scope: StageScope) -> [StageFilter] { scope == .built ? allCases.filter { $0 != .notBuilt } : allCases }
 }
@@ -100,7 +100,7 @@ extension AppModel {
         for (t, b) in builds where !apps.contains(b.app) && !titles.contains(t) {
             let rec = plays[t] ?? plays[b.app]
             out.append(StageGame(id: b.app, ref: GameRef(libraryID: nil, app: b.app), name: b.app.url.deletingPathExtension().lastPathComponent,
-                                 console: b.record.map { Console.of($0) } ?? (t.hasPrefix("04") ? .switch2 : .switch1), titleID: t, icon: nil, app: b.app,
+                                 console: b.record.map { Console.of($0) } ?? Console.of(titleID: t), titleID: t, icon: nil, app: b.app,
                                  version: nil, last: rec?.last, total: rec?.total ?? 0, outdated: outdated(b), game: nil))
         }
         // two copies of one game under different title IDs (a second dump, another region) are one cover: the built one, else the first
@@ -135,6 +135,7 @@ extension AppModel {
         case .favorites: out = out.filter(\.favorite)
         case .switch2: out = out.filter { $0.console == .switch2 }
         case .switch1: out = out.filter { $0.console == .switch1 }
+        case .gba: out = out.filter { $0.console == .gba }
         case .notBuilt: out = out.filter { $0.app == nil }
         }
         let q = stageSearch.trimmingCharacters(in: .whitespaces)
@@ -1007,6 +1008,7 @@ struct StageLibrary: View {
         case .favorites: pool.filter(\.favorite).count
         case .switch2: pool.filter { $0.console == .switch2 }.count
         case .switch1: pool.filter { $0.console == .switch1 }.count
+        case .gba: pool.filter { $0.console == .gba }.count
         case .notBuilt: pool.filter { $0.app == nil }.count
         }
     }

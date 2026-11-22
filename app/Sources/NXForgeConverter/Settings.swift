@@ -48,6 +48,8 @@ struct Settings: Codable, Equatable {
     var defaultKeys: String?
     /// the Library page's root: every game under it is listed (a drive or a share, such as /Volumes/Gaming/roms/switch)
     var gamesRoot: String?
+    /// the Game Boy Advance games folder (cartridge files side by side); nil = a folder named gba beside the games folder, when there is one (GBA.root)
+    var gbaRoot: String?
     /// how often the games folder is looked at for new games, in front or not, and whether coming to the front looks too
     var folderCheck: FolderCheck = .ten
     var appearance: Appearance = .system
@@ -158,7 +160,7 @@ struct Settings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
-        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root", folderCheck = "folder_check"
+        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root", gbaRoot = "gba_root", folderCheck = "folder_check"
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
@@ -194,6 +196,7 @@ struct Settings: Codable, Equatable {
         outDir = try c.decodeIfPresent(String.self, forKey: .outDir)
         defaultKeys = try c.decodeIfPresent(String.self, forKey: .defaultKeys)
         gamesRoot = try c.decodeIfPresent(String.self, forKey: .gamesRoot)
+        gbaRoot = try c.decodeIfPresent(String.self, forKey: .gbaRoot)
         folderCheck = (try? c.decodeIfPresent(FolderCheck.self, forKey: .folderCheck)) ?? .ten
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? .system
         notify = (try? c.decodeIfPresent(Bool.self, forKey: .notify)) ?? true

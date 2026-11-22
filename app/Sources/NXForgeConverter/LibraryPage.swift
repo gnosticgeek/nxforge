@@ -16,7 +16,7 @@ extension AppModel {
         let sorted = librarySorted(builds)
         // grouped: the Switch 2 section first, each in the chosen order, so the arrow keys walk the games as shown
         guard libraryGrouped else { return sorted }
-        return sorted.filter { $0.console == .switch2 } + sorted.filter { $0.console != .switch2 }
+        return sorted.filter { $0.console == .switch2 } + sorted.filter { $0.console == .switch1 } + sorted.filter { $0.console == .gba }
     }
 
     /// The Library in a Switch 2 section and a Switch one: chosen, and both consoles on show.
@@ -692,8 +692,9 @@ struct LibraryPage: View {
     func sections(_ games: [LibraryGame]) -> [LibrarySection] {
         guard model.libraryGrouped else { return [LibrarySection(title: "", games: games)] }
         let two = games.filter { $0.console == .switch2 }
-        let one = games.filter { $0.console != .switch2 }
-        return [LibrarySection(title: Console.switch2.rawValue, games: two), LibrarySection(title: Console.switch1.rawValue, games: one)].filter { !$0.games.isEmpty }
+        let one = games.filter { $0.console == .switch1 }
+        let gba = games.filter { $0.console == .gba }
+        return [LibrarySection(title: Console.switch2.rawValue, games: two), LibrarySection(title: Console.switch1.rawValue, games: one), LibrarySection(title: Console.gba.rawValue, games: gba)].filter { !$0.games.isEmpty }
     }
 
     func revealPath(_ g: LibraryGame) -> String { g.shared ? "\(g.path)/\(g.files.first ?? "")" : g.path }

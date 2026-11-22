@@ -118,6 +118,12 @@ void front_qs_record(void) {
     if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
 }
 int front_qs_recording(void) { return capture_recording(); }
+// The Game Boy Advance player's rows (quick_settings_mac.h): none in a Switch game
+int front_qs_gba(void) { return 0; }
+int front_qs_gba_opt(int which) { (void)which; return 0; }
+void front_qs_gba_opt_set(int which, int on) { (void)which; (void)on; }
+int front_qs_gba_state(int slot, int op) { (void)slot; (void)op; return 0; }
+const char *front_qs_gba_sound(void) { return ""; }
 // Instant replay (capture_mac.m): the sidebar's switch (saved per game, off unless turned on) and Save the last 30 seconds (the Capture menu's ⇧⌘L, or a controller's
 // Capture button held: front_mac_pad_nav.inc)
 int front_qs_replay(void) { return capture_replay_on(); }

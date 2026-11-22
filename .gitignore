@@ -12,3 +12,7 @@ dm/games/*/cb_extent.tsv
 .coverage.*
 /coverage.json
 tree/
+# The Game Boy Advance engine assembled from gba/ENGINE and gba/patches (scripts/gba_engine.py), and the host's build outputs
+gba/tree/
+gba/host/target/
+gba/build/
