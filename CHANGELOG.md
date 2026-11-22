@@ -2,6 +2,16 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.57.0 (2026-11-22)
+
+Mario Kart World fixes from [No Lag Kart](https://github.com/kingbumi31/no-lag-kart) (MIT, a Mario Kart World 1.8.0 fork of nxnative by Bumi), layer patch mkw-no-lag-kart. Only what nxnative does not already have: its frame-step fixes, the 1.8.0 frame step, the written-pages commit walk and the cube-map filter speed-ups are already in the engine in nxnative's own form. Mario Kart World needs an Update build to get them; its shader chain is unchanged, so no shader rebuild.
+
+- **No freeze once per stretch of track**: a memory pool's Finalize now costs what the pool holds. The game finalizes 8 to 53 pools in a row as it leaves a stretch of track behind, and each walked all 131,000 texture IDs and sorted the pool index anew; the pools' IDs are now listed by pool, the index is put right instead of sorted, and the view cache is walked only for a pool that has views. In No Lag Kart's runs the 50 to 70 ms freeze went from 14 of 17 runs to 1 of 12.
+- **The sky's cube map draws in one pass a view instead of six**: a sparse texture now counts as sharing storage only with the pools its pool has mapped pages of, not with every texture.
+- **Shorter scene cuts**: texture upload sources are copied into a 128 MB resident ring (profile key `up_copy`, `DM_NVN_UP_COPY`) instead of a buffer made resident for each upload; the cut to the starting grid does half the residency work, its frame 20 to 28 ms shorter.
+- **Mario Kart World's tested settings**: the encode thread on, and a submission goes to the GPU in segments of 8 draws (new profile key `nvn_cut`; `DM_NVN_CUT` still overrides) so the GPU starts sooner, which in No Lag Kart's split-screen runs took the frames off their step to none.
+- Left out on purpose: the streamed submission and the GPU clock keeper (split-screen gains, with lock-order and power costs here), the host PGO profile, the shader-chain change of PR #1230 and the merged warm-up list.
+
 ## 0.56.1 (2026-11-22)
 
 - **Games start straight in, with no settings window of their own** (layer patch no-settings-window, Converter 0.28.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a built game app no longer opens its General / Graphics / Advanced window before the game, from NXForge.app, Finder or the Dock. Its settings are NXForge.app's Play options (and Quick settings while it runs), which keep the same saved choices the window kept, so nothing chosen is lost. The cloud save check still runs before the game and only asks when both saves changed or iCloud is slow. The window's microphone input picker is now a Play options row under Microphone. A game built before 0.56.1 keeps its window until it is updated (NXForge.app's Play already skipped it).
