@@ -123,6 +123,8 @@ final class BuildRun {
     /// they stand (SIGSTOP), and carry on (SIGCONT) once there is room (Model.watchDisk)
     var paused = false
     var pausedAt: Date?
+    /// paused by the person (Pause on the Convert page or the build strip): only they let it carry on
+    var held = false
     /// the converter's own log of the build in <id>_build/logs, once it ends
     var logFile: String?
     private var process: Process?
@@ -163,7 +165,7 @@ final class BuildRun {
                 if let a = self.activity { ProcessInfo.processInfo.endActivity(a); self.activity = nil }
                 self.running = false
                 self.process = nil
-                self.paused = false; self.pausedAt = nil
+                self.paused = false; self.pausedAt = nil; self.held = false
                 if case .failure(let e) = r, e.description == "stopped", let note = self.stopNote { self.result = .failure(ConverterError(note)) } else { self.result = r }
                 self.onChange?()
             }
@@ -200,7 +202,7 @@ final class BuildRun {
             let waited = Date().timeIntervalSince(t)
             stageStartedAt = stageStartedAt?.addingTimeInterval(waited); startedAt = startedAt?.addingTimeInterval(waited)
         }
-        paused = false; pausedAt = nil; lastActivity = Date()
+        paused = false; pausedAt = nil; held = false; lastActivity = Date()
         onChange?()
     }
 

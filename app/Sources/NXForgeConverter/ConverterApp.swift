@@ -152,6 +152,7 @@ struct ConverterApp: App {
                 Button("Rebuild All on Older Engines") { model.rebuildAll() }.disabled(model.run.running || !model.allOK || model.outdatedBuilds.isEmpty)
                 Button("Build iPhone and iPad IPA…") { model.buildIPA() }.keyboardShortcut("b", modifiers: [.command, .option]).disabled(!model.ready)
                 Divider()
+                Button(model.run.held ? "Resume Build" : "Pause Build") { model.pauseBuild() }.keyboardShortcut("p", modifiers: [.command, .option]).disabled(!model.run.running || (model.run.paused && !model.run.held))
                 Button("Stop Build…") { model.stopBuild() }.keyboardShortcut(".").disabled(!model.run.running)
             }
             CommandGroup(after: .sidebar) {
@@ -345,6 +346,26 @@ struct ConverterApp: App {
         if env["NXC_AUTOBUILD"] != nil {
             while !model.ready && model.run.result == nil { try? await Task.sleep(for: .milliseconds(300)) }
             model.build()
+            // NXC_PAUSE=<seconds in>,<seconds held>: Pause that long into the build, a picture of it at <NXC_SNAPSHOT>.paused.png
+            // and the processes' states at <NXC_SNAPSHOT>.paused.txt, then Resume
+            if let p = env["NXC_PAUSE"]?.split(separator: ",").compactMap({ Double($0) }), p.count == 2 {
+                try? await Task.sleep(for: .seconds(p[0]))
+                model.pauseBuild()
+                try? await Task.sleep(for: .seconds(p[1] / 2))
+                if let w = NSApp.windows.first(where: { $0.contentView != nil }), let v = w.contentView?.superview ?? w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".paused.png"))
+                }
+                let ps = Process(); ps.executableURL = URL(fileURLWithPath: "/bin/ps"); ps.arguments = ["-axo", "pid,ppid,stat,etime,command"]
+                let pipe = Pipe(); ps.standardOutput = pipe
+                if (try? ps.run()) != nil {
+                    let all = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                    let mine = all.split(separator: "\n").filter { $0.contains("gba_build.py") || $0.contains("build.py") || $0.contains("clang") || $0.contains("recomp") }.map { String($0.prefix(160)) }
+                    try? (["paused: \(model.run.paused), stage: \(model.run.stage.name), detail: \(model.run.stage.detail)"] + mine).joined(separator: "\n").write(toFile: out + ".paused.txt", atomically: true, encoding: .utf8)
+                }
+                try? await Task.sleep(for: .seconds(p[1] / 2))
+                model.pauseBuild()
+            }
             // a successful build clears its result as it hands the app to Builds, so wait for the run to end instead
             try? await Task.sleep(for: .seconds(1))
             while model.run.running { try? await Task.sleep(for: .milliseconds(300)) }

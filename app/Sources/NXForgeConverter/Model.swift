@@ -563,6 +563,7 @@ final class AppModel {
                 guard let self, self.run.running else { return }
                 var low = await Task.detached { Disk.lowest(paths) }.value
                 guard self.run.running else { return }
+                if self.run.paused, self.run.held { try? await Task.sleep(for: .seconds(5)); continue }
                 if self.run.paused {
                     if let l = low, l.free >= Disk.resumeAbove {
                         self.run.resume()
@@ -605,6 +606,19 @@ final class AppModel {
         c.title = "Build paused: \(volume) is nearly full"
         c.body = "Only \(Disk.gb(free)) left. Free up some space and the build carries on by itself."
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "nxforge-disk-pause", content: c, trigger: nil))
+    }
+
+    /// Pause the build where it stands (every process of it is stopped, nothing is lost), or let it carry on.
+    func pauseBuild() {
+        guard run.running else { return }
+        if run.paused {
+            guard run.held else { return }   // paused for a full disk: it carries on by itself once there is room
+            run.resume()
+            run.log.append("NXForge: the build carries on.")
+        } else if run.pause() {
+            run.held = true
+            run.log.append("NXForge: paused. Resume carries on from this point.")
+        }
     }
 
     /// Stop, after saying what is kept: the finished stages are reused when the game is built again.
