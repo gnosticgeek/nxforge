@@ -436,7 +436,112 @@ def worktree_state(ctx, wt):
     head = git(wt, 'rev-parse', 'HEAD')
     if head and git(wt, 'branch', '-r', '--contains', head) == '': return False, 'its commit is not on any remote branch (unpushed work)', info
     if any(str(wt) in b['command'] for b in ctx['running']['builds']): return False, 'a build runs from it', info
+    # a checkout inside it (the engine tree/ a worktree assembles, a clone made there) goes with it: its own work counts too. `git worktree remove` checked only the
+    # outer one, so a worktree whose tree/ held unpushed commits was removed while the dry run had called it removable (2026-11-21)
+    for n in nested_checkouts(wt):
+        if why := unsaved_work(n): return False, f'{n.relative_to(wt)} inside it has {why}', info
     return True, 'clean and pushed', info
+
+
+def nested_checkouts(root):
+    """git checkouts (a .git folder or file) under root, root itself not included; build and cache folders are not walked"""
+    out = []
+    for d, dirs, files in os.walk(root):
+        if d != str(root) and ('.git' in dirs or '.git' in files): out.append(Path(d))
+        dirs[:] = [x for x in dirs if x not in ('.git', '.build', 'node_modules') and not x.endswith(('.noindex', '_build', '.app'))]
+    return out
+
+
+def unsaved_work(p):
+    """Why a checkout holds work kept nowhere else, or None: changes, or commits on no remote branch. An engine tree exactly as `layer.py assemble` left it (its HEAD is the
+    head the assemble recorded, nothing committed since) is made again from the layer, so its local commits are not work"""
+    st = git(p, 'status', '--porcelain')
+    if st is None: return 'a checkout git cannot read'
+    if st: return 'uncommitted or untracked changes'
+    head = git(p, 'rev-parse', 'HEAD')
+    if not head or git(p, 'branch', '-r', '--contains', head): return None
+    gd = git(p, 'rev-parse', '--absolute-git-dir')
+    rec = Path(gd) / 'nxforge-layer' if gd else None
+    if rec and rec.is_file() and rec.read_text().split()[1:2] == [head]: return None
+    return 'commits not on any remote branch (unpushed work)'
+
+
+# ---------- the holding folder ----------
+# What a cleanup removes by name (an engine worktree, a game's whole build cache) is moved aside first, not deleted: into a holding folder on the same volume (a rename, so
+# it costs no time or space), kept HELD_HOURS, then deleted by the next cleanup. `nxforge held` lists it, `nxforge restore <name>` puts it back, `clean --empty-held` frees it now.
+HOLD = {'worktrees', 'build-cache'}
+HELD_HOURS = float(os.environ.get('NXFORGE_HELD_HOURS') or 24)
+
+
+def held_root(p):
+    """The holding folder on p's volume: ~/Library/Caches/NXForge/held on the home folder's, else .nxforge-held at the volume's top"""
+    p = Path(p).resolve(); dev = os.stat(p).st_dev
+    if os.stat(HOME).st_dev == dev: return HOME / 'Library/Caches/NXForge/held'
+    m = p
+    while m.parent != m and os.stat(m.parent).st_dev == dev: m = m.parent
+    return m / '.nxforge-held'
+
+
+def held_roots(ctx):
+    roots = {HOME / 'Library/Caches/NXForge/held'}
+    for d in [*ctx.get('game_dirs', []), *ctx.get('build_dirs', []), *checkouts(ctx)]:
+        try: roots.add(held_root(d))
+        except OSError: pass
+    return sorted(r for r in roots if r.is_dir())
+
+
+def hold(item, category, ctx):
+    """Move an item into its volume's holding folder, with a note of where it came from"""
+    p = Path(item['path']); root = held_root(p); root.mkdir(parents=True, exist_ok=True)
+    name = f'{time.strftime("%Y%m%d-%H%M%S")}-{p.name}'
+    os.rename(p, root / name)   # same volume: instant; EXDEV (another volume) is an OSError and the item stays
+    (root / f'{name}.json').write_text(json.dumps({'from': str(p), 'category': category, 'bytes': item['bytes'], 'why': item.get('why', ''), 'at': time.time()}))
+    if category == 'worktrees' and ctx.get('repo'): git(ctx['repo'], 'worktree', 'lock', '--reason', f'held in {root / name}', str(p))
+    return root / name
+
+
+def held(ctx=None):
+    """What the holding folders keep: [{'name', 'path', 'from', 'category', 'bytes', 'age_hours'}], oldest first"""
+    ctx = ctx or context(); out = []
+    for r in held_roots(ctx):
+        for j in r.glob('*.json'):
+            info = load_json(j, {}); d = j.with_suffix('')
+            if not d.exists() and not d.is_symlink(): j.unlink(missing_ok=True); continue
+            out.append({'name': d.name, 'path': str(d), 'from': info.get('from', ''), 'category': info.get('category', ''), 'bytes': info.get('bytes', 0),
+                        'age_hours': round((time.time() - info.get('at', j.stat().st_mtime)) / 3600, 1)})
+    return sorted(out, key=lambda h: -h['age_hours'])
+
+
+def purge_held(ctx, hours=HELD_HOURS):
+    """Delete what has been held longer than hours (0: everything); → the items deleted"""
+    gone = []
+    for h in held(ctx):
+        if h['age_hours'] < hours: continue
+        hp = Path(h['path'])
+        if hp.is_dir() and not hp.is_symlink(): shutil.rmtree(hp, ignore_errors=True)
+        else: hp.unlink(missing_ok=True)
+        if not hp.exists() and not hp.is_symlink():
+            Path(h['path'] + '.json').unlink(missing_ok=True); gone.append(h); log_line(f'deleted held {h["path"]} ({gb(h["bytes"])} GB, from {h["from"]})')
+    if any(h['category'] == 'worktrees' for h in gone) and ctx.get('repo'):
+        for h in gone:
+            if h['category'] == 'worktrees': git(ctx['repo'], 'worktree', 'unlock', h['from'])
+        git(ctx['repo'], 'worktree', 'prune')
+    return gone
+
+
+def restore(name, ctx=None):
+    """Put a held item back where it was"""
+    ctx = ctx or context()
+    h = next((h for h in held(ctx) if h['name'] == name or Path(h['from']).name == name), None)
+    if not h: raise Refused(f'nothing held is named {name} (nxforge held lists them)')
+    dst = Path(h['from'])
+    if dst.exists(): raise Refused(f'{dst} exists again: move it away first')
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    os.rename(h['path'], dst); Path(h['path'] + '.json').unlink(missing_ok=True)
+    if h['category'] == 'worktrees' and ctx.get('repo'):
+        git(ctx['repo'], 'worktree', 'unlock', str(dst)); git(ctx['repo'], 'worktree', 'repair', str(dst))
+    log_line(f'restored {dst} from {h["path"]}')
+    return {'restored': str(dst), 'from': h['path']}
 
 
 def find_worktrees(ctx):
@@ -556,9 +661,9 @@ def log_line(msg):
     with open(support_dir() / 'cli-clean.log', 'a') as f: f.write(f'{datetime.datetime.now():%Y-%m-%d %H:%M:%S} {msg}\n')
 
 
-def clean(cats, dry_run=False, ctx=None, worktree=None):
+def clean(cats, dry_run=False, ctx=None, worktree=None, empty_held=False):
     ctx = ctx or context()
-    held = None if dry_run else lock()
+    locked = None if dry_run else lock()
     try:
         res = {'dry_run': dry_run, 'categories': find(ctx, cats), 'free_before': free_bytes(), 'errors': []}
         if worktree:
@@ -571,19 +676,27 @@ def clean(cats, dry_run=False, ctx=None, worktree=None):
                 if dry_run: continue
                 try:
                     guard(it, ctx)
-                    if c == 'worktrees':
-                        if git(ctx['repo'], 'worktree', 'remove', it['path'], timeout=600) is None: raise OSError('git worktree remove failed')
-                    else: delete(it, ctx)
+                    if c == 'worktrees':   # checked again now, as the dry run did: the same rules decide both
+                        ok, why, _ = worktree_state(ctx, it['path'])
+                        if not ok: raise Refused(f'kept: {why}')
+                    if c in HOLD:
+                        it['held'] = str(hold(it, c, ctx)); it['deleted'] = True
+                        log_line(f'held {it["path"]} in {it["held"]} for {HELD_HOURS:g} h ({gb(it["bytes"])} GB, {c}: {it["why"]})'); continue
+                    delete(it, ctx)
                     it['deleted'] = True; log_line(f'deleted {it["path"]} ({gb(it["bytes"])} GB, {c}: {it["why"]})')
                 except (OSError, Refused) as e:
                     it['deleted'] = False; res['errors'].append(f'{it["path"]}: {e}'); log_line(f'[RED] not deleted {it["path"]}: {e}')
         for r in res['categories'].values(): [(i.pop('files', None), i.pop('dirs', None)) for i in r['items']]
         res['bytes'] = sum(r.get('bytes', 0) for r in res['categories'].values())
+        if not dry_run:   # what was held long enough goes now; --empty-held: all of it
+            try: res['held_deleted'] = purge_held(ctx, 0 if empty_held else HELD_HOURS)
+            except OSError as e: res['errors'].append(f'held items: {e}')
+        res['held'] = held(ctx)
         res['free_after'] = free_bytes()
         if not dry_run: res['freed_bytes'] = max(res['free_after'] - res['free_before'], 0)   # what the volume got back: less than the sizes when clones share blocks
         return res
     finally:
-        if held: held.close()
+        if locked: locked.close()
 
 
 # ---------- builds ----------
@@ -851,10 +964,16 @@ def human(cmd, res):
         verb = 'would free' if res.get('dry_run', True) else 'freed'
         for c, r in res['categories'].items():
             print(f'{c}: {verb} {gb(r.get("bytes", 0))} GB{" (safe)" if CATEGORIES[c][1] else ""}')
-            for i in r['items']: print(f'  {gb(i["bytes"]):>8} GB  {i["path"]}  ({i["why"]}){"" if i.get("deleted", True) else "  NOT DELETED"}')
+            for i in r['items']: print(f'  {gb(i["bytes"]):>8} GB  {i["path"]}  ({i["why"]}){"" if i.get("deleted", True) else "  NOT DELETED"}' + (f'\n             held {HELD_HOURS:g} h in {i["held"]} (nxforge restore {Path(i["held"]).name})' if i.get('held') else ''))
             for n in r['notes']: print(f'  - {n}')
         print(f'total: {verb} {gb(res["bytes"])} GB' + (f' (the volume got {gb(res["freed_bytes"])} GB back)' if 'freed_bytes' in res else '') + f'; free now {gb(res.get("free_after", free_bytes()))} GB')
+        for h in res.get('held_deleted', []): print(f'held item deleted: {h["from"]} ({gb(h["bytes"])} GB, held {h["age_hours"]:g} h)')
+        if res.get('held'): print(f'held: {len(res["held"])} item(s), {gb(sum(h["bytes"] for h in res["held"]))} GB, deleted after {HELD_HOURS:g} h (nxforge held)')
         for e in res.get('errors', []): print(f'[RED] {e}')
+    elif cmd == 'held':
+        if not res: print('nothing held')
+        for h in res: print(f'{gb(h["bytes"]):>8} GB  {h["name"]}  ({h["category"]}, from {h["from"]}, {h["age_hours"]:g} h ago; deleted after {HELD_HOURS:g} h)')
+    elif cmd == 'restore': print(f'restored {res["restored"]}')
     elif cmd == 'update':
         print(f'{res["repo"]}: {res["behind"]} commits on {res["target"]}{" (applied)" if res["applied"] else ""}')
         for c in res['commits']: print(f'  {c}')
@@ -885,7 +1004,8 @@ def main(argv=None):
         p.add_argument('--metal-cache-gb', type=float, help=f'metal-cache: trim to this size (default {MTLCACHE_GB:g}, DMSH_MTLCACHE_GB)')
         if name == 'clean':
             p.add_argument('--dry-run', action='store_true', help='list what would go, delete nothing')
-            p.add_argument('--worktree', help='remove this engine worktree (only when clean, pushed and not the engine)')
+            p.add_argument('--worktree', help='remove this engine worktree (only when clean, pushed and not the engine, with nothing unpushed in a checkout inside it)')
+            p.add_argument('--empty-held', action='store_true', help=f'delete what the holding folders keep now, not after {HELD_HOURS:g} h')
         else: p.add_argument('--all', action='store_true', help='every category, not only the safe ones')
     p = sub.add_parser('build', help="build or rebuild a game's Mac app")
     p.add_argument('game_dir')
@@ -897,6 +1017,8 @@ def main(argv=None):
     p.add_argument('--sign', help='codesign identity (default: the settings, else ad-hoc)')
     p.add_argument('--background', action='store_true', help='start it detached and print the job')
     p.add_argument('--events', action='store_true', help=argparse.SUPPRESS)   # one JSON event per line, then a result event (background jobs)
+    sub.add_parser('held', help=f'what cleanups moved aside (worktrees, build caches), kept {HELD_HOURS:g} h before it is deleted')
+    sub.add_parser('restore', help='put a held item back where it was').add_argument('name', help='its name in `held`, or the original folder name')
     sub.add_parser('jobs', help='background builds started here')
     sub.add_parser('job', help='one background build: stage, progress, last lines').add_argument('id')
     sub.add_parser('stop', help='stop a background build').add_argument('id')
@@ -916,14 +1038,14 @@ def main(argv=None):
                 if bad := [c for c in cats if c not in CATEGORIES]: ap.error(f'unknown category: {", ".join(bad)}')
             elif a.cmd == 'disk' and a.all: cats = list(CATEGORIES)
             elif a.safe or a.cmd == 'disk': cats = SAFE
-            elif a.worktree: cats = []
-            else: ap.error('clean needs --safe, --only <categories> or --worktree <path>')
+            elif a.worktree or a.empty_held: cats = []
+            else: ap.error('clean needs --safe, --only <categories>, --worktree <path> or --empty-held')
             ctx = context(game=a.game, idle_hours=a.idle_hours, backup_days=a.backup_days, backup_keep=a.backup_keep, log_days=a.log_days, mtlcache_gb=a.metal_cache_gb)
             if a.cmd == 'disk':
                 res = {'dry_run': True, 'categories': find(ctx, cats), 'overview': overview(ctx)}
                 res['bytes'] = sum(r.get('bytes', 0) for r in res['categories'].values()); res['free_after'] = free_bytes()
                 for r in res['categories'].values(): [(i.pop('files', None), i.pop('dirs', None)) for i in r['items']]
-            else: res = clean(cats, a.dry_run, ctx, a.worktree)
+            else: res = clean(cats, a.dry_run, ctx, a.worktree, a.empty_held)
         elif a.cmd == 'build':
             kw = {k: getattr(a, k) for k in ('plan', 'rebuild', 'out', 'keys', 'cleanup', 'sign')}
             for k in ('rebuild', 'out', 'keys'):   # the build runs in the engine's tree/: a relative path means the caller's folder
@@ -933,6 +1055,8 @@ def main(argv=None):
                 show = (lambda ev: print(json.dumps(ev), flush=True)) if a.events else (lambda ev: ev.get('msg') and print(ev['msg'], flush=True)) if not a.json else None
                 res = run_build(a.game_dir, events=show, **kw)
                 if a.events: print(json.dumps({'ev': 'result', **res}), flush=True); return 0 if res['ok'] else 1
+        elif a.cmd == 'held': res = held()
+        elif a.cmd == 'restore': res = restore(a.name)
         elif a.cmd == 'jobs': res = list_jobs()
         elif a.cmd == 'job': res = job_state(a.id)
         elif a.cmd == 'stop': res = stop_job(a.id)

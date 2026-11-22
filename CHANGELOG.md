@@ -2,9 +2,9 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.52.0 (2026-11-21)
+## 0.55.0 (2026-11-22)
 
-Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)) and the app side of one (Converter 0.25.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). They need each game app's host rebuilt ("Update" on the game does it).
+Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)) and the app side of one (Converter 0.27.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). They need each game app's host rebuilt ("Update" on the game does it).
 
 - **Back to Theatre**: a game started from Theatre has a Theatre button in its sidebar's footer instead of Library, and NXForge comes back to Theatre with the focus on that game (Continue picks it up when Library keeps the game is on).
 - **Search every setting**: a search field beside the page's name (/ or ⌘F) finds any row on any page by its name or what it does ("scanlines", "HDR", "120"), cheats and mods by name too, with each one's value; Return goes to it on its page.
@@ -12,6 +12,20 @@ Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELO
 - **A status line** under the game's name: how long the game has been open, the time, and the battery.
 - **Hold to compare**: hold the Graphics page's Compare button, C, or a controller's left face button to see the game full size with the default graphics; let go for yours.
 - **The FPS counter stays in sight**: in a right-hand corner it moves beside the open sidebar instead of under it. Space and the arrow keys now type in the sidebar's search fields (the cheats' search too) instead of moving the selection.
+
+## 0.53.0 (2026-11-21)
+
+Builds that look after the Mac's disk, and a cleanup that keeps what it said it would (Converter 0.27.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); layer patch disk-room).
+
+- **A build makes room instead of stopping** (app): when a disk a build writes to drops under 12 GB free, the converter clears what it can make again without a build (temporary files of other games' stopped builds, the pipeline copies kept on the Mac for games on other drives, older app copies, logs over 30 days old, Metal's idle archive folders) and says so in the log. If a disk still drops under 3 GB the build is paused where it stands, every process of it, instead of stopped (the step in progress was lost: up to an hour of shaders), with a notification; it carries on by itself once 6 GB is free, and Stop still works. A Build selected queue waits rather than giving up its other games.
+- **The startup disk keeps its room during a build** (layer patch disk-room): a build whose game drive is not APFS keeps its compilers' temporary files on the startup disk only while that has 25 GB or more free (`SCRATCH_MIN_GB`), else they stay on the game drive. The shared Metal cache (12 GB, `DMSH_MTLCACHE_GB`) gives back what the startup disk is short of 30 GB free when a build trims it, down to 4 GB.
+- **Cleanup keeps work inside a worktree** (`nxforge clean --worktree`): a checkout inside the worktree (the engine `tree/`, a clone made there) with changes or commits on no remote branch now keeps the worktree, with the reason; an engine tree exactly as `layer.py assemble` left it does not count. The dry run and the real run use the same check. On 2026-11-21 a worktree whose `tree/` held unpushed commits was removed although the dry run had called it kept.
+- **Removed worktrees and build caches are held a day** (`nxforge clean`): they are moved into a holding folder on their own volume (`~/Library/Caches/NXForge/held`, `.nxforge-held` at the top of another drive), a rename that costs no time or space, and deleted by the first cleanup a day later (`NXFORGE_HELD_HOURS`). `nxforge held` lists them, `nxforge restore <name>` puts one back (a worktree is repaired), `clean --empty-held` frees them now. The safe hourly categories still delete at once.
+- **Storage finds forgotten files** (app): a Forgotten filter lists game packages and unfinished downloads of 256 MB or more in Downloads, hidden folders included (a 23 GB update NSP sat in `~/Downloads/.switch-staging` on 2026-11-21), what the cleanup is holding, and a stopped build's temporary files. One that is safe to lose (an unfinished download, a copy of a file in the games folder with the same name and size, a held item) can be deleted there; a package found only in Downloads is shown with where it is and left to you.
+
+## 0.52.0 (2026-11-21)
+
+- **Theatre: tilt, collector touches and the card wallet** (Converter 0.26.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the case in your hand leans as you lean the controller. Cases show their history: a sticker with the hours you have played, wear on the ones you play most, and a COMPLETED stamp you bring down with R. Wallet is a fifth Theatre theme: your games as game cards in a zip-up wallet, twenty-four to a page. No game rebuild needed.
 
 ## 0.51.0 (2026-11-21)
 

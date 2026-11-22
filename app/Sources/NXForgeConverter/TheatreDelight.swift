@@ -165,7 +165,7 @@ extension AppModel {
             let r = cinemaRow(rows)
             return (rows[r].games, r)
         case .trailer: return (trailerGames(), nil)
-        case .showcase, .shutter: return (theatreGames(), nil)
+        case .showcase, .shutter, .wallet: return (theatreGames(), nil)
         }
     }
 
@@ -288,7 +288,7 @@ extension AppModel {
 final class TheatreSound {
     static let shared = TheatreSound()
     /// lift, caseOpen, caseClose, cardOut and cardIn are the case in the hand's (TheatreUnbox.swift)
-    enum Cue: CaseIterable { case step, turn, theme, open, launch, chime, spin, land, lift, caseOpen, caseClose, cardOut, cardIn, page }
+    enum Cue: CaseIterable { case step, turn, theme, open, launch, chime, spin, land, lift, caseOpen, caseClose, cardOut, cardIn, page, stamp }
 
     private var engine: AVAudioEngine?
     private var players: [AVAudioPlayerNode] = []
@@ -360,6 +360,7 @@ enum TheatreSynth {
         case .cardOut: 0.26
         case .cardIn: 0.6
         case .page: 0.2
+        case .stamp: 0.5
         }
     }
 
@@ -383,6 +384,8 @@ enum TheatreSynth {
         case .cardIn: mix(snaps([(0, 2800, 0.45), (0.07, 2100, 1)], length: 0.36), knock(at: 0.07, length: 0.36))
         // a leaf going over: two light flicks of paper, no rush of air
         case .page: snaps([(0, 1250, 0.5), (0.06, 900, 0.35)], length: 0.16)
+        // a rubber stamp coming down: a soft thud with a little slap on top
+        case .stamp: mix(snaps([(0, 700, 0.5)], length: 0.3), knock(at: 0, length: 0.3))
         }
     }
 
@@ -744,7 +747,7 @@ struct TheatreMomentCard: View {
     var beamX: CGFloat? {
         switch model.theatreTheme {
         case .showcase, .shutter: width / 2
-        case .cinema, .trailer: nil
+        case .cinema, .trailer, .wallet: nil
         }
     }
 
@@ -920,7 +923,7 @@ struct TheatreLightsDown: View {
         ZStack {
             Color.black.opacity((curtain.fromConsole ? 0.88 : 0.88 + 0.06 * s.away) * s.room)
             RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
-            TheatreCaseScene(game: game, state: s, manual: GameManual.find(game), u: u)
+            TheatreCaseScene(game: game, state: s, keep: model.keepsake(game), manual: GameManual.find(game), u: u)
         }
         .frame(width: size.width, height: size.height)
         .opacity(1 - out)

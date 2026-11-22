@@ -4,11 +4,28 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
-## 0.25.1 (2026-11-21)
+## 0.27.1 (2026-11-22)
+
+Shipped in NXForge 0.55.0.
+
+- **Back to Theatre from a game.** A game started from Theatre is told so (`NXFORGE_FRONT_END_PAGE=theatre`), so its sidebar (Sidebar 0.9.0) offers Theatre instead of Library; when it says so, NXForge stays in Theatre with the focus on that game instead of opening the game's page. Code: `PlayOptions.swift`.
+
+## 0.27.0 (2026-11-21)
+
+Shipped in NXForge 0.53.0.
+
+- **Make room, then pause, instead of stopping.** While a build runs and a disk it writes to has under 12 GB free, the converter clears what can be made again (other games' stopped-build scratch, pipeline copies of games not running, and `nxforge clean --only app-backups,old-logs,gpuarchiver`), at most every five minutes, and logs what went. Under 3 GB the build is paused (SIGSTOP on the script and every process under it) rather than stopped, the Convert page and menu bar say so with how much to free, a notification is sent, and the build carries on by itself at 6 GB free; Stop lets it go first. The wait is left out of the stage's elapsed time and time left. Code: `MakeRoom.swift`, `BuildRun.pause()`/`resume()`, `AppModel.watchDisk`.
+- **Storage › Forgotten.** Big files NXForge did not make a place for: game packages and unfinished downloads in Downloads (hidden folders too, four levels down), items `nxforge clean` holds, and a stopped build's scratch. Safe ones (an unfinished download, a copy of a games-folder file by name and size, a held item, scratch) can be deleted with Undo as usual; others say where they are. The shared cache row no longer counts what is listed on its own. Code: `Forgotten.swift`.
+
+## 0.26.0 (2026-11-21)
 
 Shipped in NXForge 0.52.0.
 
-- **Back to Theatre from a game.** A game started from Theatre is told so (`NXFORGE_FRONT_END_PAGE=theatre`), so its sidebar (Sidebar 0.9.0) offers Theatre instead of Library; when it says so, NXForge stays in Theatre with the focus on that game instead of opening the game's page. Code: `PlayOptions.swift`.
+- **Tilt the case.** With a case in your hand on Theatre, leaning the controller leans the case, and the light on its sleeve moves with it. There is nothing to set up: wherever you have been holding the controller is its rest, and a lean held for a few seconds comes slowly back upright. Only for controllers that tell a Mac how they are held; NXForge switches the sensors on while the case is up and off again after. Settings › Theatre › Tilt turns it off.
+- **Collector touches.** A case you have played for an hour or more carries a round sticker with its hours. After five hours its sleeve begins to wear: pale edges and fine scratches, the game's own and the same every time, all there by sixty hours. R with the case in your hand brings a COMPLETED stamp down on the cover, with a thud and a knock in the controller, and R again takes it off; the booklet's Your copy page says so too. The sticker, stamp and wear show on the case in your hand, on the launch, and on the case in front on the Shelf. Settings › Theatre › Collector touches turns them off (the stamps you gave are kept).
+- **Wallet, a fifth Theatre theme.** Your built games as their game cards (grey for Switch, red for Switch 2) in a zip-up card wallet lying open: two halves of twelve pockets, twenty-four cards to a page. The arrows move from pocket to pocket and the card in focus stands up out of its sleeve; going past a page's edge turns to the next page of cards. A, X, Y, the filter on L and R and everything else work as on the other themes. It is in the Theatre menu, on ZL and ZR, and in Settings › Theatre › Theme.
+- Tests for the new settings, the sticker and wear, the lean and its limits, the wallet's moves across pockets and pages, and the stamp's sound.
+
 ## 0.25.0 (2026-11-21)
 
 Shipped in NXForge 0.51.0.

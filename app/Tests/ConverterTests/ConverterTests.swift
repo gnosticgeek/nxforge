@@ -2043,7 +2043,7 @@ import Testing
                                ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
             #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
         }
-        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer"])
+        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer", "Wallet"])
         #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Shutter\"".utf8)) == .shutter)
     }
 
@@ -2601,6 +2601,47 @@ import Testing
     }
 }
 
+/// A paused build stops every process of it and lets them all go again (BuildRun.signalTree, MakeRoom's pause).
+@Suite struct PauseTree {
+    func state(_ pid: pid_t) -> String {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/ps"); p.arguments = ["-o", "state=", "-p", "\(pid)"]
+        let out = Pipe(); p.standardOutput = out
+        try? p.run(); p.waitUntilExit()
+        return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @Test func childrenAreStoppedAndResumed() throws {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh"); p.arguments = ["-c", "sleep 30 & sleep 30 & wait"]
+        try p.run()
+        defer { BuildRun.signalTree(p.processIdentifier, SIGCONT); for c in BuildRun.tree(p.processIdentifier) { kill(c, SIGKILL) } }
+        var tree: [pid_t] = []
+        for _ in 0..<50 { tree = BuildRun.tree(p.processIdentifier); if tree.count >= 3 { break }; usleep(20_000) }
+        #expect(tree.count == 3 && tree.first == p.processIdentifier)
+        BuildRun.signalTree(p.processIdentifier, SIGSTOP)
+        usleep(100_000)
+        for pid in tree { #expect(state(pid).hasPrefix("T")) }
+        BuildRun.signalTree(p.processIdentifier, SIGCONT)
+        usleep(100_000)
+        for pid in tree { #expect(!state(pid).hasPrefix("T")) }
+    }
+}
+
+@Suite struct ForgottenFiles {
+    @Test func aCopyInTheGamesFolderIsSafeAndAnOnlyCopyIsNot() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "forgotten-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let big = Data(count: 1)
+        let staging = root.appending(path: ".staging/Game Update"), games = root.appending(path: "games/Switch 1/Game")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: games, withIntermediateDirectories: true)
+        try big.write(to: staging.appending(path: "update.nsp")); try big.write(to: games.appending(path: "update.nsp"))
+        let index = Forgotten.packageIndex(root.appending(path: "games").path)
+        #expect(index.contains("update.nsp|1"))
+        let found = Forgotten.bigFiles(root.appending(path: ".staging").path)
+        #expect(found.isEmpty)   // under the size worth a row
+    }
+}
+
 @Suite struct TheatreBookletsAndTheShelf {
     @Test func aManualIsTheBookletWhenThereIsOne() {
         let p = Booklet.pages(manualPages: 5, about: ["Words"], excerpt: nil, shots: [])
@@ -2668,5 +2709,69 @@ import Testing
 
     @Test func aPageTurnHasItsSound() {
         #expect(!TheatreSynth.samples(.page).isEmpty && TheatreSynth.samples(.page).allSatisfy { abs($0) <= 1 })
+    }
+}
+
+@Suite struct TheatreKeepsakesTiltAndWallet {
+    @Test func theNewSettingsDefaultOnAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreTilt && old.theatreCollector && old.completed.isEmpty)
+        var s = Settings()
+        s.theatreTilt = false; s.theatreCollector = false; s.completed = ["0100AAAA00000000"]
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(!back.theatreTilt && !back.theatreCollector && back.completed == ["0100AAAA00000000"])
+        #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Wallet\"".utf8)) == .wallet)
+        #expect(TheatreMenuRow.row(.wallet) == .wallet)
+    }
+
+    @Test func aCaseShowsItsHoursAndItsWear() {
+        #expect(CaseKeepsake(hours: 0.4).sticker == nil && CaseKeepsake(hours: 0.4).plain)
+        #expect(CaseKeepsake(hours: 12.7).sticker == 12 && !CaseKeepsake(hours: 0, completed: true).plain)
+        #expect(CaseKeepsake(hours: 2).wear == 0 && CaseKeepsake(hours: 500).wear == 1)
+        let half = CaseKeepsake(hours: (CaseKeepsake.wearFrom + CaseKeepsake.wornAt) / 2).wear
+        #expect(abs(half - 0.5) < 1e-9)
+        // a game's scratches are its own, and the same every time
+        var a = Scuffs(seed: "0100AAAA00000000"), b = Scuffs(seed: "0100AAAA00000000"), c = Scuffs(seed: "0100BBBB00000000")
+        let x = (0..<8).map { _ in a.next() }, y = (0..<8).map { _ in b.next() }, z = (0..<8).map { _ in c.next() }
+        #expect(x == y && x != z && x.allSatisfy { (0..<1).contains($0) })
+    }
+
+    @Test func theCaseLeansWithTheControllerAndNoFurther() {
+        let flat = SIMD3<Double>(0, 0, -1)
+        #expect(CaseTilt.lean(gravity: flat, rest: flat) == SIMD2(0, 0))
+        // right side down turns the case to the right; top edge down tips it away; a big lean stops at the most
+        #expect(CaseTilt.lean(gravity: SIMD3(0.2, 0, -0.98), rest: flat).x > 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(-0.2, 0.1, -0.97), rest: flat).x < 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(0, 0.2, -0.98), rest: flat).y > 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(1, -1, 0), rest: flat) == SIMD2(CaseTilt.most.x, -CaseTilt.most.y))
+    }
+
+    @Test func theWalletsArrowsGoFromPocketToPocketAndOverThePage() {
+        let l = WalletLayout.self
+        #expect(l.perPage == 24 && l.pages(0) == 1 && l.pages(24) == 1 && l.pages(25) == 2)
+        // along a row, and up and down, within a page of 60 cards
+        #expect(l.move(from: 0, dx: 1, count: 60) == 1 && l.move(from: 9, dx: -1, count: 60) == 8)
+        #expect(l.move(from: 1, dy: 1, count: 60) == 9 && l.move(from: 17, dy: -1, count: 60) == 9)
+        #expect(l.move(from: 1, dy: -1, count: 60) == 1 && l.move(from: 17, dy: 1, count: 60) == 17)
+        // over the right edge to the same row of the next page, and back
+        #expect(l.move(from: 15, dx: 1, count: 60) == 32 && l.move(from: 32, dx: -1, count: 60) == 15)
+        // the last page is short: its rows end early, and going on comes round to the first page
+        #expect(l.move(from: 39, dx: 1, count: 60) == 56 && l.move(from: 47, dx: 1, count: 60) == 59)
+        #expect(l.move(from: 59, dx: 1, count: 60) == 8 && l.move(from: 0, dx: -1, count: 60) == 55)
+        #expect(l.move(from: 51, dy: 1, count: 60) == 59 && l.move(from: 59, dy: 1, count: 60) == 59)
+        // one short page
+        #expect(l.move(from: 4, dx: 1, count: 5) == 0 && l.move(from: 0, dx: -1, count: 5) == 4 && l.move(from: 2, dy: 1, count: 5) == 2)
+        #expect(l.move(from: 0, dx: 1, count: 0) == 0 && l.move(from: 0, dx: 1, count: 1) == 0)
+        // every pocket is inside the wallet, the two halves either side of the fold
+        for s in 0..<l.perPage {
+            let p = l.place(slot: s)
+            #expect(abs(p.x) + l.cardWidth / 2 <= l.width / 2 && abs(p.y) + l.cardHeight / 2 <= l.height / 2)
+            #expect(abs(p.x) - l.cardWidth / 2 >= l.spine / 2)
+        }
+        #expect(l.place(slot: 3).x < 0 && l.place(slot: 4).x > 0)
+    }
+
+    @Test func theStampHasItsSound() {
+        #expect(!TheatreSynth.samples(.stamp).isEmpty && TheatreSynth.samples(.stamp).allSatisfy { abs($0) <= 1 })
     }
 }

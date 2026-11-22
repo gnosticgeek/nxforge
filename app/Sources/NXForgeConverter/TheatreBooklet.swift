@@ -353,6 +353,7 @@ struct BookletPaper: View {
                 if let n = r?.sessions.count, n > 0 { fact("Sittings", "\(n)", s: s) }
                 if let f = r?.sessions.map(\.start).min() { fact("First played", f.formatted(date: .abbreviated, time: .omitted), s: s) }
                 if let l = game.last { fact("Last played", l.formatted(date: .abbreviated, time: .omitted), s: s) }
+                if model.settings.theatreCollector, model.isCompleted(game) { fact("Completed", "Yes", s: s) }
                 Rectangle().fill(Self.ink.opacity(0.25)).frame(height: 1).padding(.vertical, 6 * s)
                 fact("For", game.console.rawValue, s: s)
                 if let p = info?.publisher ?? game.game?.publisher, !p.isEmpty { fact("Publisher", p, s: s) }
