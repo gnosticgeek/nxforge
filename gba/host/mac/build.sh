@@ -10,7 +10,9 @@ if [ ! -f "$OUT/quick_settings_mac.o" ] || [ "$QS/quick_settings_mac.swift" -nt 
   swiftc -O -target arm64-apple-macos$MIN -parse-as-library -module-name dmquick -import-objc-header "$QS/quick_settings_mac.h" -Xcc -I. \
     -c "$QS/quick_settings_mac.swift" -o "$OUT/quick_settings_mac.o"
 fi
-clang -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -target arm64-apple-macos$MIN -I. -I.. -I"$QS" gba_front_mac.m "$OUT/quick_settings_mac.o" ../target/release/libnxgba.a \
+clang -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -target arm64-apple-macos$MIN -I. -I.. -I"$QS" gba_front_mac.m "$OUT/quick_settings_mac.o" ../target/release/libnxgba.a -lcompression \
   -framework Cocoa -framework Metal -framework QuartzCore -framework GameController -framework AudioToolbox -framework CoreAudio -framework IOKit -framework Security \
-  -L"$SDK/usr/lib/swift" -L"$(dirname "$(xcrun -f swiftc)")/../lib/swift/macosx" -Wl,-rpath,/usr/lib/swift -o "$OUT/nxgba-player"
+  -L"$SDK/usr/lib/swift" -L"$(dirname "$(xcrun -f swiftc)")/../lib/swift/macosx" -Wl,-rpath,/usr/lib/swift -Wl,-dead_strip -o "$OUT/nxgba-player"
+# the symbol table is half the file and nothing reads it at run time (crash reports keep addresses)
+strip "$OUT/nxgba-player"
 echo "built $OUT/nxgba-player"

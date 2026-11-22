@@ -26,6 +26,7 @@ import plistlib
 import re
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import time
@@ -39,6 +40,42 @@ import gba_engine as gba  # noqa: E402
 STAGES = ["Read ROM", "Check profile", "Capture RAM code", "Find code", "Write C", "Compile", "Link", "Trial run", "Package"]
 SAVE_KINDS = ["None", "SRAM", "Flash 64K", "Flash 128K", "EEPROM"]
 UNIT_BYTES = 2 << 20
+
+
+# Bump when the link step's flags change, so a kept build links again.
+LINK_FLAGS_VERSION = "exports-only 1"
+PACKED_MAGIC = b"NXGBAZ1\0"   # gba/host/src/lib.rs read_rom
+
+
+def pack_rom(src, dst) -> bool:
+    """The cartridge packed for the app: PACKED_MAGIC, its size (u64 little-endian), one LZFSE stream (Apple's
+    libcompression: about half the bytes, unpacked in a few milliseconds when the game starts). False when it cannot
+    be packed here (not a Mac), and the plain image goes in instead."""
+    if sys.platform != "darwin":
+        return False
+    import ctypes
+    try:
+        lib = ctypes.CDLL("/usr/lib/libcompression.dylib")
+    except OSError:
+        return False
+    enc = lib.compression_encode_buffer
+    enc.restype = ctypes.c_size_t
+    enc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_uint32]
+    dec = lib.compression_decode_buffer
+    dec.restype, dec.argtypes = enc.restype, enc.argtypes
+    with open(src, "rb") as f:
+        rom = f.read()
+    out = ctypes.create_string_buffer(len(rom) + 4096)
+    n = enc(out, len(out), rom, len(rom), None, 0x801)
+    if not n or n >= len(rom):
+        return False
+    packed = bytes(out.raw[:n])
+    back = ctypes.create_string_buffer(len(rom))
+    if dec(back, len(rom), packed, n, None, 0x801) != len(rom) or back.raw != rom:   # never ship a cartridge that does not unpack to itself
+        return False
+    with open(dst, "wb") as f:
+        f.write(PACKED_MAGIC + struct.pack("<Q", len(rom)) + packed)
+    return True
 
 
 class Stop(Exception):
@@ -418,15 +455,20 @@ class Build:
             p.stage("Link", "game.dylib")
         else:
             p.step("Second pass: Link")
-        sig = hashlib.sha1("".join(open(o + ".sha").read() for o in objs).encode()).hexdigest()
+        sig = hashlib.sha1(("".join(open(o + ".sha").read() for o in objs) + LINK_FLAGS_VERSION).encode()).hexdigest()
         if self.state.get("linked") == sig and os.path.exists(lib):
             if not second:
                 self.end(f"{os.path.getsize(lib) / (1 << 20):.0f} MB", reused=True)
             return lib
         cc = os.environ.get("GBA_RECOMP_CC") or "cc"
-        r = subprocess.run([cc, "-shared", "-o", lib + ".tmp", *objs], env=self.env, capture_output=True, text=True)
+        # the host looks up only rcg_blocks and rcg_block_count: the thousands of block functions stay inside the library,
+        # so their names (about 0.8 MB) can go. The code itself is the same, so it runs at the same speed.
+        flags = ["-Wl,-dead_strip", "-Wl,-exported_symbol,_rcg_blocks", "-Wl,-exported_symbol,_rcg_block_count"] if sys.platform == "darwin" else []
+        r = subprocess.run([cc, "-shared", *flags, "-o", lib + ".tmp", *objs], env=self.env, capture_output=True, text=True)
         if r.returncode != 0:
             raise Stop("the link failed: " + (r.stderr.strip().splitlines()[-1] if r.stderr.strip() else str(r.returncode)))
+        if sys.platform == "darwin":
+            subprocess.run(["strip", "-x", lib + ".tmp"], capture_output=True)
         os.replace(lib + ".tmp", lib)
         self.keep(linked=sig, trial=None)
         if not second:
@@ -476,11 +518,15 @@ class Build:
         exe = os.path.join(tmp, "Contents", "MacOS", "nxnative")   # the name the Converter's check looks for
         shutil.copy2(player, exe)
         os.chmod(exe, 0o755)
-        shutil.copy2(rom_path, os.path.join(res, "game.gba"))
+        if not pack_rom(rom_path, os.path.join(res, "game.gba.lzfse")):
+            shutil.copy2(rom_path, os.path.join(res, "game.gba"))
         shutil.copy2(lib, os.path.join(res, "game.dylib"))
         for pic in ("trial.png", "title.png"):
             if os.path.exists(os.path.join(self.work, pic)):
                 shutil.copy2(os.path.join(self.work, pic), os.path.join(res, pic))
+                # nxgba-run writes its pictures uncompressed: sips writes the same pixels in about a tenth of the bytes
+                if sys.platform == "darwin":
+                    subprocess.run(["sips", "-s", "format", "png", os.path.join(res, pic)], capture_output=True)
         icon = self.icon(os.path.join(self.work, "title.png"), os.path.join(tmp, "Contents", "Resources"))
         port = dict(platform="gba", **info, engine=dict(name="gba-recomp", commit=self.tools["commit"]), built=int(time.time()),
                     stages=[dict(name=s, seconds=round(self.times.get(s, 0), 1)) for s in STAGES[:-1]], trial=trial, status=meta.get("status"), **self.report)
