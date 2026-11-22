@@ -9,6 +9,7 @@
 
 pub mod audio;
 pub mod cheats;
+pub mod rewind;
 
 use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -152,6 +153,8 @@ pub struct NxGba {
     engine: CString,
     pub cheats: cheats::Cheats,
     scratch: CString,
+    /// the last seconds of play, while Rewind is on (rewind.rs)
+    pub rewind: Option<rewind::Rewind>,
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -248,6 +251,7 @@ impl NxGba {
             engine: CString::new(engine).unwrap_or_default(),
             cheats: cheats::Cheats::default(),
             scratch: CString::default(),
+            rewind: None,
         })
     }
 
@@ -322,6 +326,9 @@ impl NxGba {
         if self.machine.bus.frames % 300 == 0 {
             self.save_flush();
         }
+        if let Some(r) = self.rewind.as_mut() {
+            r.frame(&mut self.machine);
+        }
         self.machine.bus.frames != before
     }
 
@@ -356,13 +363,33 @@ impl NxGba {
         let Some(Some(s)) = self.slots.get(slot) else { return false };
         // into the same allocation: the translated code's machine pointer stays good
         *self.machine = (**s).clone();
+        self.audio_clear();
+        true
+    }
+
+    /// Rewind: on (seconds kept, a snapshot every `every` frames) or off (0 seconds). What it held is dropped.
+    pub fn rewind_set(&mut self, seconds: u32, every: u32) {
+        self.rewind = if seconds == 0 { None } else { Some(rewind::Rewind::new(seconds, every)) };
+    }
+
+    /// One snapshot back (the sound waiting to play is dropped): false when there is none left
+    pub fn rewind_step(&mut self) -> bool {
+        let Some(r) = self.rewind.as_mut() else { return false };
+        if !r.step(&mut self.machine) {
+            return false;
+        }
+        self.audio_clear();
+        true
+    }
+
+    /// The sound waiting to play, dropped (after a jump in time)
+    pub fn audio_clear(&mut self) {
         let mut st = self.streams.lock().unwrap();
         st.mixed.clear();
         st.psg.clear();
         st.hle.clear();
         st.fifo[0].clear();
         st.fifo[1].clear();
-        true
     }
 
     pub fn reset(&mut self) {
@@ -477,10 +504,12 @@ fn capture_iwram(cap: &mut Option<Box<labels::Blob>>, iwram: &[u8], entry: u32) 
 }
 
 /// 15-bit GBA colour to RGBA8. mode 0: the raw colour, as emulators showed it for years (oversaturated on a modern
-/// screen); 1: corrected for the GBA's LCD (the panel's channel mixing and its darker response, after the public-domain
-/// "gba-color" shader's matrix), which is what the art was drawn for.
+/// screen); 1: corrected for the original GBA's unlit LCD (the panel's channel mixing and its darker response, after the
+/// public-domain "gba-color" shader's matrix), which is what most of the art was drawn for; 2: the backlit GBA SP
+/// (AGS-101) screen, brighter and less washed out than the first, with only a little of the channel mixing.
 pub fn rgba(px: &[u16], out: &mut [u8], mode: u32) {
     static LUT: std::sync::OnceLock<Vec<[u8; 3]>> = std::sync::OnceLock::new();
+    static SP: std::sync::OnceLock<Vec<[u8; 3]>> = std::sync::OnceLock::new();
     if mode == 0 {
         for (p, o) in px.iter().zip(out.chunks_exact_mut(4)) {
             let (r, g, b) = (p & 31, (p >> 5) & 31, (p >> 10) & 31);
@@ -491,7 +520,23 @@ pub fn rgba(px: &[u16], out: &mut [u8], mode: u32) {
         }
         return;
     }
-    let lut = LUT.get_or_init(|| {
+    let lut = if mode == 2 {
+        SP.get_or_init(|| {
+            let mut t = Vec::with_capacity(32768);
+            for i in 0..32768u32 {
+                let lin = |c: u32| ((c & 31) as f64 / 31.0).powf(2.2);
+                let (r, g, b) = (lin(i), lin(i >> 5), lin(i >> 10));
+                let mix = |x: f64| (x.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0 + 0.5) as u8;
+                t.push([
+                    mix(0.955 * r + 0.045 * g + 0.0 * b),
+                    mix(0.03 * r + 0.93 * g + 0.04 * b),
+                    mix(0.0 * r + 0.07 * g + 0.93 * b),
+                ]);
+            }
+            t
+        })
+    } else {
+        LUT.get_or_init(|| {
         let mut t = Vec::with_capacity(32768);
         for i in 0..32768u32 {
             let lin = |c: u32| ((c & 31) as f64 / 31.0).powf(2.4);
@@ -504,7 +549,8 @@ pub fn rgba(px: &[u16], out: &mut [u8], mode: u32) {
             ]);
         }
         t
-    });
+        })
+    };
     for (p, o) in px.iter().zip(out.chunks_exact_mut(4)) {
         let c = lut[(*p & 0x7FFF) as usize];
         o[0] = c[0];
@@ -727,4 +773,30 @@ pub extern "C" fn nxgba_cheat_set(p: *mut NxGba, i: i32, on: i32) {
     if let Some(c) = g!(p).cheats.list.get_mut(i.max(0) as usize) {
         c.on = on != 0 && c.unsupported.is_empty();
     }
+}
+
+/// Rewind (rewind.rs): seconds of play to keep (0: off), a snapshot every `every` frames. Turning it on, off or to another length drops what it held.
+#[no_mangle]
+pub extern "C" fn nxgba_rewind_set(p: *mut NxGba, seconds: i32, every: i32) {
+    g!(p).rewind_set(seconds.max(0) as u32, every.max(1) as u32);
+}
+
+/// One snapshot back: 1, or 0 when none is left (or Rewind is off)
+#[no_mangle]
+pub extern "C" fn nxgba_rewind_step(p: *mut NxGba) -> i32 {
+    g!(p).rewind_step() as i32
+}
+
+/// Seconds of play Rewind holds now; `bytes`, when not NULL, what they take
+///
+/// # Safety
+/// `bytes` is NULL or points to a u64.
+#[no_mangle]
+pub unsafe extern "C" fn nxgba_rewind_held(p: *mut NxGba, bytes: *mut u64) -> f64 {
+    let g = g!(p);
+    let (s, b) = g.rewind.as_ref().map_or((0.0, 0), |r| (r.seconds(), r.bytes as u64));
+    if !bytes.is_null() {
+        *bytes = b;
+    }
+    s
 }

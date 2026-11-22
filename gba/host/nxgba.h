@@ -34,7 +34,7 @@ void nxgba_close(NxGba *);
 void nxgba_keys(NxGba *, uint32_t down);
 int32_t nxgba_run_frame(NxGba *);
 const uint16_t *nxgba_pixels(NxGba *);                  // 240 x 160, 15-bit
-void nxgba_rgba(NxGba *, uint8_t *out, uint32_t mode);  // mode 0 raw, 1 the handheld screen's colours
+void nxgba_rgba(NxGba *, uint8_t *out, uint32_t mode);  // mode 0 raw, 1 the original GBA's screen, 2 the backlit GBA SP's
 // Any thread (the device's render callback): `frames` interleaved stereo pairs at `rate`.
 void nxgba_audio_render(NxGba *, float *out, int32_t frames, double rate);
 int32_t nxgba_audio_fill(NxGba *);
@@ -46,6 +46,11 @@ int32_t nxgba_state_save(NxGba *, int32_t slot);
 int32_t nxgba_state_load(NxGba *, int32_t slot);
 int32_t nxgba_state_has(NxGba *, int32_t slot);
 void nxgba_reset(NxGba *);
+// Rewind (src/rewind.rs): seconds of play kept (0 off), a snapshot every `every` frames; turning it on, off or to another
+// length drops what it held. A step goes back one snapshot (1) or finds none left (0). Held: the seconds kept, and their bytes.
+void nxgba_rewind_set(NxGba *, int32_t seconds, int32_t every);
+int32_t nxgba_rewind_step(NxGba *);
+double nxgba_rewind_held(NxGba *, uint64_t *bytes);
 void nxgba_get_info(NxGba *, nxgba_info *out);
 // which 0 the header's title, 1 the game code, 2 the ROM's SHA-1, 3 its SHA-256, 4 what Enhanced audio does here
 const char *nxgba_text(NxGba *, int32_t which);

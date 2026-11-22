@@ -115,6 +115,10 @@ int front_qs_gba_opt(int which);
 void front_qs_gba_opt_set(int which, int on);
 int front_qs_gba_state(int slot, int op);
 const char *front_qs_gba_sound(void);
+// Sidebar 0.11.0: a GBA game's settings with several values, kept per game: 0 Handheld colours (0 off, 1 GBA, 2 GBA SP), 1 Frame blending (0, 1), 2 Rewind
+// (seconds kept, 0 off), 3 Fast forward speed (2, 3, 4, 8; 0 as fast as it goes), 4 Fast forward key (0 hold, 1 press to switch), 5 Slow motion (percent). Main thread
+int front_qs_gba_value(int which);
+void front_qs_gba_value_set(int which, int v);
 // Sidebar 0.9.0. Hold to compare: the graphics at their defaults while held, full size as a peek (front_mac_quick_settings.inc qs_compare starts or ends one, dm_qs_compare swaps the
 // settings without saving them; dm_qs_compare_glyph gives the controller's symbol for its button, NULL: the keyboard's C). Search: / gives the sidebar's search field the typing.
 // A quick-save slot's picture: the next frame, 360 pixels tall, at path (.jpg), done(1) on the main thread once written. Main thread
