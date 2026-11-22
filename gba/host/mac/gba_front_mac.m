@@ -38,7 +38,7 @@ static _Atomic uint32_t g_keys_kb, g_keys_pad;
 static _Atomic int g_filter, g_scan, g_scale, g_border, g_pixel = DM_PIXEL_AUTO, g_aa, g_upscale, g_edr, g_edr_strength = 50, g_interp, g_aniso, g_colour;
 static _Atomic float g_strength = 0.5f, g_inset;
 static _Atomic int g_dw = 960, g_dh = 640;
-static _Atomic uint64_t g_presents, g_snap_until;
+static _Atomic uint64_t g_presents, g_snap_until, g_frames;
 static double g_times[254]; static int g_times_n, g_times_at; static double g_last_present; static pthread_mutex_t g_times_mu = PTHREAD_MUTEX_INITIALIZER;
 
 static double now_s(void) { static mach_timebase_info_data_t tb; if (!tb.denom) mach_timebase_info(&tb); return (double)mach_absolute_time() * tb.numer / tb.denom * 1e-9; }
@@ -251,7 +251,6 @@ static uint32_t script_keys(uint64_t frame) {
     }
     return k;
 }
-static _Atomic uint64_t g_frames;
 static void *game_thread(void *ctx) {
     (void)ctx; pthread_setname_np("nxgba game");
     const double period = 1.0 / 59.7275;
