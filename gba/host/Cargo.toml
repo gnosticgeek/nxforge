@@ -1,0 +1,30 @@
+# The Game Boy Advance host NXForge's GBA game apps run on: gba-recomp's machine (gba-core) behind a small C interface
+# (nxgba.h) that the Mac player (gba_front_mac.m) and the headless test tool (nxgba-run) both use. The engine is not in
+# this repository: scripts/gba.py assembles it into gba/tree from gba/ENGINE and gba/patches.
+[package]
+name = "nxgba"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "nxgba-run"
+path = "src/run.rs"
+
+[dependencies]
+gba-core = { path = "../tree/crates/gba-core" }
+recomp-core = { path = "../tree/crates/recomp-core" }
+sha2 = "0.11.0"
+sha1 = "0.11.0"
+libc = "0.2"
+
+[profile.release]
+debug = false
+lto = "thin"
+codegen-units = 4
+opt-level = 3
+
+[workspace]

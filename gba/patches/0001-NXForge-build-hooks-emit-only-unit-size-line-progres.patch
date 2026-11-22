@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 22 Nov 2026 01:00:55 +0000
+Subject: [PATCH] NXForge: build hooks (emit only, unit size, line progress,
+ --out)
+
+---
+ crates/recomp-core/src/build.rs | 20 ++++++++++++++++++--
+ crates/recomp/src/main.rs       | 10 +++++++++-
+ 2 files changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/crates/recomp-core/src/build.rs b/crates/recomp-core/src/build.rs
+index 1f524c2..2f44d4a 100644
+--- a/crates/recomp-core/src/build.rs
++++ b/crates/recomp-core/src/build.rs
+@@ -177,7 +177,13 @@ pub fn build_library(
+     // source image a hundredfold, and a single huge unit makes cc balloon
+     // to many GB. Bounded units keep each cc invocation modest AND let the
+     // units compile in parallel.
+-    const MAX_UNIT: usize = 16 << 20;
++    // NXForge: RECOMP_UNIT_BYTES sets the unit size, so a build has more, smaller units: they
++    // compile on every core, and a build that stops between units has less to redo.
++    let max_unit: usize = std::env::var("RECOMP_UNIT_BYTES")
++        .ok()
++        .and_then(|v| v.parse::<usize>().ok())
++        .filter(|&n| n >= 1 << 16)
++        .unwrap_or(16 << 20);
+     let span_start = start_pct + 2;
+ 
+     // Phase 1 — emit every unit to disk. Streaming keeps peak memory at one
+@@ -187,7 +193,7 @@ pub fn build_library(
+     // emits 32-bit absolute relocations (R_X86_64_32S) for jump tables and
+     // constant pools, which the linker rejects for a shared object.
+     let mut units: Vec<(String, String)> = Vec::new(); // (c_path, o_path)
+-    emit::emit_c_chunked(&analysis, view, MAX_UNIT, |c, _blocks_done| {
++    emit::emit_c_chunked(&analysis, view, max_unit, |c, _blocks_done| {
+         let i = units.len();
+         let c_path = format!("{prefix}.{i}.c");
+         let o_path = format!("{prefix}.{i}.o");
+@@ -200,6 +206,16 @@ pub fn build_library(
+         Ok(())
+     })?;
+     let unit_count = units.len();
++    // NXForge: RECOMP_EMIT_ONLY stops here, with the C units on disk (`<stem>.<i>.c`), so the
++    // caller compiles and links them itself and can pick a stopped build up at the unit it reached.
++    if std::env::var_os("RECOMP_EMIT_ONLY").is_some() {
++        println!("emitted {unit_count} units");
++        return Ok(BuildReport {
++            blocks: analysis.blocks.len(),
++            instrs: n_instrs,
++            units: unit_count,
++        });
++    }
+     let keep_c = std::env::var_os("RECOMP_KEEP_C").is_some();
+ 
+     // Phase 2 — compile. Two backends: an external compiler spawned per unit
+diff --git a/crates/recomp/src/main.rs b/crates/recomp/src/main.rs
+index 9b511e5..4ce810a 100644
+--- a/crates/recomp/src/main.rs
++++ b/crates/recomp/src/main.rs
+@@ -1765,10 +1765,12 @@ fn cmd_build(args: &[String]) -> Result<(), String> {
+     let mut bios: Option<Vec<u8>> = None;
+     let mut explicit_labels: Option<String> = None;
+     let mut gamedb_path: Option<String> = None;
++    let mut out_path: Option<String> = None;
+     let mut it = args.iter();
+     while let Some(arg) = it.next() {
+         match arg.as_str() {
+             "--ram" => ram = true,
++            "--out" => out_path = Some(it.next().ok_or("--out needs a value")?.to_string()),
+             "--bios" => bios = Some(load_bios_file(it.next().ok_or("--bios needs a value")?)?),
+             "--labels" => {
+                 explicit_labels = Some(it.next().ok_or("--labels needs a value")?.to_string())
+@@ -1817,7 +1819,7 @@ fn cmd_build(args: &[String]) -> Result<(), String> {
+         bios.as_deref(),
+         label_source,
+         exhaustive,
+-        &format!("out/{stem}{suffix}.{LIB_EXT}"),
++        &out_path.unwrap_or_else(|| format!("out/{stem}{suffix}.{LIB_EXT}")),
+         &mut term_progress,
+     );
+     eprintln!();
+@@ -2565,6 +2567,12 @@ names only; the local iwram snapshot is never exported)",
+ /// Single-line terminal build progress: bar, percent, phase label.
+ fn term_progress(pct: u8, msg: &str) {
+     use std::io::Write;
++    // NXForge: RECOMP_PROGRESS=lines prints one line per update on stdout for a supervising script.
++    if std::env::var_os("RECOMP_PROGRESS").is_some() {
++        println!("PROGRESS {pct} {msg}");
++        let _ = std::io::stdout().flush();
++        return;
++    }
+     let filled = pct as usize * 28 / 100;
+     eprint!(
+         "\r\x1b[K  [{}{}] {pct:>3}%  {msg}",
