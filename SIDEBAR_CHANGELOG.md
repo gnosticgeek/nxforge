@@ -6,7 +6,7 @@ What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/hos
 
 ## 0.9.0 (2026-11-21)
 
-Ships in NXForge 0.54.0.
+Ships in NXForge 0.55.0.
 
 - **Theatre** (a game NXForge started from Theatre: `NXFORGE_FRONT_END_PAGE=theatre`): the footer's Library button is a Theatre button (a TV), and NXForge comes back to Theatre with the focus on the game instead of opening its page. With Library keeps the game on, Theatre's Continue picks the game up where it was.
 - **Search every setting**: a field beside the page's name; / or ⌘F give it the typing. It finds every row of every page by its name, by words for what it does (scanlines finds the CRT filter, 120 frame interpolation, HDR the HDR highlights) and by its page, and every cheat (a folded section's too) and mod by name. Each result shows its page and its value now; up and down move through them, Return or a click goes to the row on its page with it selected. Changing page clears the search.

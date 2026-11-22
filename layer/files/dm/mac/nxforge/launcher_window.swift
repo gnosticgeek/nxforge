@@ -10,7 +10,7 @@ enum NXFLauncherTab: String, CaseIterable { case general = "General", graphics =
 enum NXFLauncherLayout {
     /// The Graphics tab's boxes and their rows in order, whatever settings.tsv's section or level says (its sections are the iPhone's single list)
     static let graphicsBoxes: [(title: String, envs: [String])] = [
-        ("Resolution", ["DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER", "DM_SCREEN_ASPECT", "DM_SCREEN_WIDE", "DM_PRESENT_AA"]),
+        ("Resolution", ["DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_DRS_HEADROOM", "DM_PRESENT_UPSCALE", "DM_UPSCALER", "DM_SCREEN_ASPECT", "DM_SCREEN_WIDE", "DM_PRESENT_AA"]),
         ("Frame rate", ["DM_FPS_TARGET", "DM_PRESENT_INTERP"]),
         ("HDR", ["DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH"]),
         ("Pixel art", ["DM_PIXEL_ART"]),
@@ -28,6 +28,7 @@ enum NXFLauncherLayout {
     /// The Mac window's shorter notes (the two-column boxes are narrow); a setting not listed keeps settings.tsv's note
     static let notes: [String: String] = [
         "DM_DYNAMIC_RESOLUTION": "Lets the game lower its resolution under load.",
+        "DM_DRS_HEADROOM": "Keeps some GPU time spare so a busy moment stays at 60.",
         "DM_PRESENT_UPSCALE": "Uses more GPU time and can increase heat.",
         "DM_SCREEN_ASPECT": "Auto matches the screen. 16:10 renders a little more.",
         "DM_SCREEN_WIDE": "Auto matches the screen: fills 16:10 or ultrawide.",

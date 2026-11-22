@@ -2,7 +2,7 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
-## 0.54.0 (2026-11-22)
+## 0.55.0 (2026-11-22)
 
 Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)) and the app side of one (Converter 0.27.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). They need each game app's host rebuilt ("Update" on the game does it).
 
@@ -12,6 +12,23 @@ Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELO
 - **A status line** under the game's name: how long the game has been open, the time, and the battery.
 - **Hold to compare**: hold the Graphics page's Compare button, C, or a controller's left face button to see the game full size with the default graphics; let go for yours.
 - **The FPS counter stays in sight**: in a right-hand corner it moves beside the open sidebar instead of under it. Space and the arrow keys now type in the sidebar's search fields (the cheats' search too) instead of moving the selection.
+
+## 0.54.0 (2026-11-21)
+
+Backend streamlining and speed-ups. The engine stays on nxnative c43a1f7a. A game gets the pipelines and the Ocarina changes below at its next build (Ocarina of Time: an Update build is enough, its shader chain is unchanged); nothing else needs a rebuild.
+
+- **A merged release tags itself**: the `release` workflow now also runs when a commit lands on `main`. For each changelog that commit changed (this one, the Converter's, the Sidebar's), the newest entry without a tag is checked, tagged on the commit and published as a GitHub release (`scripts/release_check.py newest`). Nothing has to be pushed from the Mac any more; a tag pushed by hand still works as before.
+- **Upstream work NXForge carries, at a glance**: `scripts/layer.py carried` lists the patches that carry nxnative work (an `upstream-pr-N` patch, `seedds/nxnative#N` or an `Origin: seedds/nxnative commit` line) with where it stands now: the PR open, merged or closed, or the commit already on nxnative's `main`, marked "drop at the next update". The nightly upstream check's summary includes it. `layer.py export` keeps a patch's file name while its place and subject stay.
+- **Rebuilt apps bring the pipelines you played** (layer patch `played-pipelines`): the build's prewarm step (`--prebake`) also makes the pipelines this Mac's player compiled in the middle of play (the R and M rows of `~/Library/Application Support/nxnative/<id>/pso_user.tsv`), so after an engine update they are in the app instead of compiled at a draw again. Ocarina of Time gains 5,475 of them over its profile's list, Mario Kart World 8,127 (it had none). The prewarm step takes longer for it. `NXFORGE_PLAYED_PIPELINES=off` builds the profile's list alone.
+- **Ocarina of Time: Resolution headroom** (layer patch `drs-headroom`): with Dynamic resolution on, Settings › Resolution headroom (None, Some 5 %, More 10 %, Most 20 %; `DM_DRS_HEADROOM`) lowers the load the resolution climb allows, so it settles a level or two lower and a heavier moment no longer drops the game to 30 fps. Off by default. On an M4 Pro the game sat at 16.4 ms of 16.7.
+- **Ocarina of Time: the Chamber of Sages no longer goes white** (layer patch `upstream-f7ae8a3a`, from nxnative's `main` after the pinned commit): the game's 8 GiB memory alias region is reserved as on the console ([seedds/nxnative#3103](https://github.com/seedds/nxnative/issues/3103)).
+- **Ocarina of Time: 16:10 is drawn by the game** (layer patch `upstream-pr-3037`, from [seedds/nxnative#3037](https://github.com/seedds/nxnative/pull/3037)): with Aspect ratio 16:10 or Auto on the MacBook's screen, the game renders the taller picture itself, showing more above and below with the HUD at the screen's edges, and the title screen's movie stays 16:9 with bars. The Picture shape row stays for the games that have it (Breath of the Wild, Animal Crossing).
+- **No 30 fps second after a load** (layer patch `upstream-pr-2091`, from [seedds/nxnative#2091](https://github.com/seedds/nxnative/pull/2091) by cocoman93): one slow frame after a run of frames on time (a load, a door) is shown once without stepping the frame hold down to 30 fps. Real stalls keep NXForge's stall grace as before.
+- **Ocarina of Time: real HDR on an HDR screen** (layer patch `upstream-pr-3009`, from [seedds/nxnative#3009](https://github.com/seedds/nxnative/pull/3009) by Vitalii Apostolyuk): when the screen can show HDR (the MacBook's XDR screen), the game is told so and draws its own HDR10 picture, shown through an extended-range layer. Settings › Game › HDR (`DM_HDR`) turns it off; other games keep NXForge's EDR highlights. Frame interpolation, pixel art, anti-aliasing and filters are skipped while an HDR picture is shown.
+- **The nightly fuzz job passes again** (layer patch `cra-damaged-members`): a damaged LZ4 or zstd member in a Camelot archive was an uncaught error in the shader split, and an LZ4 member's declared size was allocated before any check. Both are now the archive's own error, and an impossible LZ4 size is refused first, as the SHN! reader does. Both of the 20 and 21 November findings are fixed.
+- **Faster CI**: the build job's "every gfx test compiled" step (about 24 of its 28 minutes) compiles each shared source once, through ccache, instead of once per test: `scripts/ci_clang.py` stands in for `clang` there. Its cache is kept between runs. On the Mac, four tests rebuilt in 0.5 s from a warm cache against 8.6 s without.
+- **Long-session memory is the game's own** (BACKLOG): Mario Kart World's growth from about 8 to 13 GB over 7 minutes is its own memory pools (4.3 to 9.0 GB, then flat), not memory the host keeps; host textures stay small. Nothing to change on the host.
+- **Sent upstream**: three fixes NXForge carries, rebased onto nxnative 806fabe1 and checked on the Mac: shader tables that keep their bytes ([seedds/nxnative#3172](https://github.com/seedds/nxnative/pull/3172)), the Mario Kart World post-race VP9 abort ([#3173](https://github.com/seedds/nxnative/pull/3173)), and a pause or window switch that no longer steps the frame hold up or gets paid back ([#3174](https://github.com/seedds/nxnative/pull/3174)).
 
 ## 0.53.0 (2026-11-21)
 

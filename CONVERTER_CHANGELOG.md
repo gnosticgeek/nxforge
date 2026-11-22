@@ -6,7 +6,7 @@ What counts as the converter: everything under `app/` (the SwiftUI app, its test
 
 ## 0.27.1 (2026-11-22)
 
-Shipped in NXForge 0.54.0.
+Shipped in NXForge 0.55.0.
 
 - **Back to Theatre from a game.** A game started from Theatre is told so (`NXFORGE_FRONT_END_PAGE=theatre`), so its sidebar (Sidebar 0.9.0) offers Theatre instead of Library; when it says so, NXForge stays in Theatre with the focus on that game instead of opening the game's page. Code: `PlayOptions.swift`.
 
