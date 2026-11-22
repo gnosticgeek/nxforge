@@ -42,10 +42,10 @@ enum MuseumLighting: String, Codable, CaseIterable {
     /// how lit the cases are away from the lamps (1 as they are)
     var ambient: Double {
         switch self {
-        case .classic: 0.9
+        case .classic: 0.97
         case .daylight: 1
-        case .evening: 0.78
-        case .neon: 0.74
+        case .evening: 0.9
+        case .neon: 0.8
         case .lightsOut: 0.34
         }
     }
@@ -205,7 +205,7 @@ struct MuseumTheme: View {
                             let on = min(max((since - 0.25 - 0.35 * Double(i)) / 0.5, 0), 1)
                             MuseumShelf(model: model, console: shelf.console, games: shelf.games, focus: focus, light: light,
                                         lit: CaseSceneState.ease(on), width: W, rowH: rowH)
-                                .frame(width: W * u, height: rowH * u)
+                                .frame(width: W * u, height: rowH * u, alignment: .topLeading)
                                 .offset(y: (MuseumLayout.top + Double(i) * rowH) * u)
                                 .zIndex(shelf.games.contains { $0.id == focus?.id } ? 1 : 0)
                         }
@@ -350,13 +350,15 @@ struct MuseumShelf: View {
         ZStack(alignment: .topLeading) {
             // the lamp's light falling down the back of the shelf
             if strength > 0 {
-                LampCone(spread: 0.42)
-                    .fill(LinearGradient(colors: [lamp.opacity(0.55 * strength), lamp.opacity(0.12 * strength), .clear], startPoint: .top, endPoint: .bottom))
-                    .frame(width: (inner - MuseumLayout.bay) * 0.9 * u, height: floor * u)
-                    .offset(x: (mid - (inner - MuseumLayout.bay) * 0.45) * u, y: 6 * u)
-                    .blendMode(.screen).blur(radius: 14 * u)
-                Ellipse().fill(lamp.opacity(0.32 * strength)).blur(radius: 26 * u)
-                    .frame(width: 620 * u, height: 40 * u).offset(x: (mid - 310) * u, y: (floor - 22) * u).blendMode(.screen)
+                // a soft pool from the lamp down the back of the shelf, brightest just under it, and its light on the board
+                let span = (inner - MuseumLayout.bay) * 0.95
+                Ellipse()
+                    .fill(RadialGradient(colors: [lamp.opacity(0.34 * strength), lamp.opacity(0.12 * strength), .clear], center: .top, startRadius: 0, endRadius: span * 0.5 * u))
+                    .frame(width: span * u, height: floor * 1.5 * u)
+                    .offset(x: (mid - span / 2) * u, y: -floor * 0.25 * u)
+                    .blendMode(.screen).blur(radius: 24 * u)
+                Ellipse().fill(lamp.opacity(0.22 * strength)).blur(radius: 30 * u)
+                    .frame(width: span * 0.7 * u, height: 36 * u).offset(x: (mid - span * 0.35) * u, y: (floor - 20) * u).blendMode(.screen)
             }
             if light == .neon {
                 Rectangle().fill(lamp).frame(width: (inner - 60) * u, height: 2.5 * u).shadow(color: lamp, radius: 8 * u).shadow(color: lamp, radius: 20 * u)
