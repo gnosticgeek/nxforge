@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Assemble and build the Game Boy Advance engine (gba/README.md).
 
-  scripts/gba.py assemble   clone gba-recomp at the commit in gba/ENGINE into gba/tree and apply gba/patches
-  scripts/gba.py build      assemble if needed, then build the recompiler (recomp), the host (nxgba) and, on a Mac, the player
-  scripts/gba.py where      print the paths the build script uses, as JSON
+  scripts/gba_engine.py assemble   clone gba-recomp at the commit in gba/ENGINE into gba/tree and apply gba/patches
+  scripts/gba_engine.py build      assemble if needed, then build the recompiler (recomp), the host (nxgba) and, on a Mac, the player
+  scripts/gba_engine.py where      print the paths the build script uses, as JSON
 
 The engine's code is never committed here: gba/tree is assembled and git-ignored, like tree/ for nxnative.
 """

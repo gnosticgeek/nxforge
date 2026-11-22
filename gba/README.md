@@ -16,9 +16,9 @@ it or in the folder NXForge builds in.
 |---|---|
 | `gba/ENGINE` | The gba-recomp commit NXForge builds on (`url`, `commit`). |
 | `gba/patches/` | NXForge's changes to gba-recomp, applied in order: the translator can write the C without compiling it, in units of a chosen size, with a progress line per unit; the machine can be copied (save states). |
-| `gba/tree/` | Git-ignored. `python3 scripts/gba.py assemble` makes it: gba-recomp at the pinned commit with the patches applied. |
+| `gba/tree/` | Git-ignored. `python3 scripts/gba_engine.py assemble` makes it: gba-recomp at the pinned commit with the patches applied. |
 | `gba/host/` | NXForge's own: a Rust library (`nxgba`, C API in `nxgba.h`) around gba-recomp's machine, with cartridge saves, cheats, Enhanced audio and save states; `nxgba-run`, a tool that runs a game with no window; and the Mac player (`mac/gba_front_mac.m`). |
-| `scripts/gba.py` | `assemble`, `build` (the translator, the library, the player), `where`. |
+| `scripts/gba_engine.py` | `assemble`, `build` (the translator, the library, the player), `where`. |
 | `scripts/gba_build.py` | Converts one game. The NXForge app runs it; it also runs by hand. |
 | `library/gba/` | Optional notes per game (`<CODE>-<first 8 of SHA-1>.md`), and entry points earlier conversions found (`.labels`), so the next conversion of that game translates them the first time. |
 
@@ -74,7 +74,7 @@ cartridge's game code in hex, its version byte and `00` (Minish Cap, Europe: `0B
 ## Checking a change
 
 ```
-python3 scripts/gba.py build
+python3 scripts/gba_engine.py build
 gba/host/target/release/nxgba-run game.gba --lib game.dylib --frames 3600 --demo --sheet out.png --json
 NXGBA_SNAPSHOT=out.png NXGBA_SNAPSHOT_SIDEBAR=0 gba/build/nxgba-player game.gba game.dylib
 ```

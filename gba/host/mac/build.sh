@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the Game Boy Advance player (gba/build/nxgba-player): gba_front_mac.m, NXForge's sidebar (the same Swift file
-# the Switch player builds) and the host library (cargo build --release in gba/host; scripts/gba.py build does both).
+# the Switch player builds) and the host library (cargo build --release in gba/host; scripts/gba_engine.py build does both).
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT=../../..; OUT=$ROOT/gba/build; QS=$ROOT/layer/files/dm/host; MIN=${MACOS_MIN:-26.0}

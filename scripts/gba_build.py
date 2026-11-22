@@ -4,7 +4,7 @@
   scripts/gba_build.py <game.gba | game.zip> [--home DIR] [-o <Name>.app] [--work-dir DIR] [--progress json]
                        [--name NAME] [--fresh] [--trial-frames N] [--info]
 
-The game's code is translated to C by gba-recomp (gba/ENGINE, assembled by scripts/gba.py), compiled and linked into
+The game's code is translated to C by gba-recomp (gba/ENGINE, assembled by scripts/gba_engine.py), compiled and linked into
 game.dylib, and packaged with NXForge's GBA player (gba/host). Stages, in order:
 
   Read ROM, Check profile, Capture RAM code, Find code, Write C, Compile, Link, Trial run, Package
@@ -34,7 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
-import gba  # noqa: E402
+import gba_engine as gba  # noqa: E402
 
 STAGES = ["Read ROM", "Check profile", "Capture RAM code", "Find code", "Write C", "Compile", "Link", "Trial run", "Package"]
 SAVE_KINDS = ["None", "SRAM", "Flash 64K", "Flash 128K", "EEPROM"]
@@ -257,7 +257,7 @@ class Build:
             if not shutil.which("cargo", path=self.env["PATH"]):
                 raise Stop("Game Boy Advance games need Rust to build their engine once: install it from rustup.rs, then convert again")
             p.step("Building the Game Boy Advance engine (once, a few minutes)")
-            r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "gba.py"), "build"], env=self.env, capture_output=True, text=True)
+            r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "gba_engine.py"), "build"], env=self.env, capture_output=True, text=True)
             if r.returncode != 0:
                 tail = (r.stderr or r.stdout).strip().splitlines()[-6:]
                 for line in tail:
@@ -322,7 +322,7 @@ class Build:
         proc = subprocess.Popen(cmd, cwd=self.work, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
         self.child = proc
         phase, seeds, blocks, log = 0, 0, 0, []
-        for line in proc.stdout:
+        for line in proc.stdout or []:
             line = line.rstrip()
             log.append(line)
             m = re.match(r"PROGRESS (\d+) (.*)", line)
@@ -433,15 +433,16 @@ class Build:
             self.end(f"{os.path.getsize(lib) / (1 << 20):.0f} MB")
         return lib
 
-    def trial(self, rom_path, lib, sha256, second=False):
+    def trial(self, rom_path, lib, sha256, second=False) -> dict:
         p = self.p
         if not second:
             p.stage("Trial run", "Playing the converted game without a window")
         else:
             p.step("Second pass: Trial run")
         sheet, shot = os.path.join(self.work, "trial.png"), os.path.join(self.work, "title.png")
-        if self.state.get("trial") and os.path.exists(sheet):
-            return self.state["trial"]
+        kept = self.state.get("trial")
+        if isinstance(kept, dict) and os.path.exists(sheet):
+            return kept
         frames = self.a.trial_frames
         sav = os.path.join(self.work, "trial.sav")
         if os.path.exists(sav):
@@ -455,7 +456,7 @@ class Build:
         j = json.loads(line)
         # the title picture: a second, short run to the frame most games show their title at
         subprocess.run([self.tools["run"], rom_path, "--lib", lib, "--frames", "1500", "--demo", "--png", shot], env=self.env, capture_output=True)
-        trial = dict(frames=j["frames"], fps=j["fps"], blocks=j["blocks"], nativeBlocks=j["native_blocks"], fallbackSteps=j["fallback_steps"], nativeShare=j["native_share"],
+        trial: dict = dict(frames=j["frames"], fps=j["fps"], blocks=j["blocks"], nativeBlocks=j["native_blocks"], fallbackSteps=j["fallback_steps"], nativeShare=j["native_share"],
                      missesRom=j["misses_rom"], missesRam=j["misses_ram"], labelsAdded=j.get("labels_added", 0), saveKind=SAVE_KINDS[min(j["save_kind"], 4)], saveBytes=j["save_bytes"],
                      rtc=bool(j["rtc"]), enhancedAudio=bool(j["hle_live"]), stateCheck="state check passed" in r.stdout + r.stderr, hash=j["hash"])
         self.keep(trial=trial)
