@@ -369,6 +369,9 @@ void front_qs_screenshot(void) {
 }
 void front_qs_record(void) { toast(@"Recording is not in Game Boy Advance games yet"); }
 int front_qs_recording(void) { return 0; }
+// Sidebar 0.9.0: hold to compare is not offered here (the sidebar hides its button), and a save state has no picture
+void front_qs_compare(int on) { (void)on; }
+void front_qs_slot_shot(const char *path, void (*done)(int ok)) { (void)path; if (done) done(0); }
 int front_qs_replay(void) { return 0; }
 void front_qs_replay_set(int on) { if (on) toast(@"Instant replay is not in Game Boy Advance games yet"); }
 void front_qs_replay_save(void) { toast(@"Instant replay is not in Game Boy Advance games yet"); }

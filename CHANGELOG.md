@@ -10,6 +10,16 @@ Game Boy Advance games (Converter 0.28.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHA
 - **The player** (`gba/host`): a Metal window for the 240 x 160 picture with NXForge's Quick settings sidebar, the same file the Switch games use. Sharp pixels, CRT and LCD filters, fit / stretch / whole-number scaling, the glow border, Handheld colours. Cartridge saves in the place every NXForge game keeps its save, so save snapshots and cloud saves work. Save states at once on ⌘1 to ⌘3 (⌥⌘1 to ⌥⌘3 to go back). Enhanced audio: the game's sampled sound at 48 kHz with smooth interpolation, with Bass lift and Wider stereo, and a switch back to the original sound. GameShark / Action Replay / CodeBreaker cheats from `cheats/<CODE>.txt`. Keyboard and controller, fast forward on Space. `nxgba-run` runs a game with no window for checks, and `NXGBA_SNAPSHOT` takes the player's own picture off screen.
 - **In the app** (Converter 0.28.0): the Game Boy Advance folder's games in the Library and on Home, Convert builds them, the game page shows what the conversion did, and Theatre shows them beside the Switch games. A build, of any kind, can now be paused and resumed by hand.
 - `scripts/gba.py` would have been shadowed by the `gba/` folder for the type check, so the engine script is `scripts/gba_engine.py`. Tests: `tests/test_gba_build.py` (header, title ID, names, `--info`).
+## 0.55.0 (2026-11-22)
+
+Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)) and the app side of one (Converter 0.27.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). They need each game app's host rebuilt ("Update" on the game does it).
+
+- **Back to Theatre**: a game started from Theatre has a Theatre button in its sidebar's footer instead of Library, and NXForge comes back to Theatre with the focus on that game (Continue picks it up when Library keeps the game is on).
+- **Search every setting**: a search field beside the page's name (/ or ⌘F) finds any row on any page by its name or what it does ("scanlines", "HDR", "120"), cheats and mods by name too, with each one's value; Return goes to it on its page.
+- **Slot pictures**: each quick-save slot shows the game as it was when the slot was saved.
+- **A status line** under the game's name: how long the game has been open, the time, and the battery.
+- **Hold to compare**: hold the Graphics page's Compare button, C, or a controller's left face button to see the game full size with the default graphics; let go for yours.
+- **The FPS counter stays in sight**: in a right-hand corner it moves beside the open sidebar instead of under it. Space and the arrow keys now type in the sidebar's search fields (the cheats' search too) instead of moving the selection.
 
 ## 0.54.0 (2026-11-21)
 

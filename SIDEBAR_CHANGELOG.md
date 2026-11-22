@@ -9,6 +9,17 @@ What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/hos
 Ships in NXForge 0.56.0.
 
 - **The sidebar in Game Boy Advance games.** The same sidebar is built into NXForge's Game Boy Advance player ([gba/README.md](gba/README.md)). There, General has a Sound group (Enhanced audio, Bass lift, Wider stereo) and Save states (three, kept at once and loaded at once, in place of the quick-save slots, which restart a Switch game); Graphics has Handheld colours in place of the image quality group (render scale, MetalFX and the like mean nothing for a 240 x 160 picture); Controls lists the handheld's buttons. The filters, scaling, border, volume, cheats and the rest are the ones Switch games have. A player says it is the Game Boy Advance one through five new functions in `quick_settings_mac.h` (`front_qs_gba` and the ones beside it); the Switch player answers no, and nothing changes in a Switch game.
+## 0.9.0 (2026-11-21)
+
+Ships in NXForge 0.55.0.
+
+- **Theatre** (a game NXForge started from Theatre: `NXFORGE_FRONT_END_PAGE=theatre`): the footer's Library button is a Theatre button (a TV), and NXForge comes back to Theatre with the focus on the game instead of opening its page. With Library keeps the game on, Theatre's Continue picks the game up where it was.
+- **Search every setting**: a field beside the page's name; / or ⌘F give it the typing. It finds every row of every page by its name, by words for what it does (scanlines finds the CRT filter, 120 frame interpolation, HDR the HDR highlights) and by its page, and every cheat (a folded section's too) and mod by name. Each result shows its page and its value now; up and down move through them, Return or a click goes to the row on its page with it selected. Changing page clears the search.
+- **Slot pictures**: saving a quick-save slot keeps a small picture of the game at that moment beside the slot's save (`save-slots/<n>/shot.jpg`, 640×360); the General page shows it on each slot's row. A paused game draws its picture once more for it, its clock still stopped (`front_qs_slot_shot`, `capture_picture_to` in `capture_mac.m`).
+- **Status line** under the game's name: how long the game has been open this time, the time, and the Mac's charge (orange from 20 % on the battery; its help says the time left).
+- **Hold to compare** (Graphics): while the Compare button, C or a controller's left face button is held, the picture shows full size and running, as a peek, with the graphics settings at their defaults (CRT off, MetalFX on, no anti-aliasing or HDR highlights, Auto pixel art, Fit, black bars); let go and yours are back. Nothing is saved. The legend shows "Hold to compare" on the Graphics page when there is room.
+- **The FPS counter beside the panel**: in a right-hand corner it sat under the open sidebar; it now moves to the panel's left edge while the sidebar is up and goes back to its corner when it closes or fades for a peek.
+- **Typing in a search field**: Space and the left and right arrow keys reach the field (the cheats' search and the new one) instead of choosing or changing the selected row; up, down and Return still move through the results. The key monitor's hook is `qs_key` (`front_mac_quick_settings.inc`), in patch `0001-host-player`.
 
 ## 0.8.0 (2026-11-21)
 

@@ -9,7 +9,7 @@ Subject: screen-vrr: a ProMotion screen keeps its variable refresh in
  1 file changed, 2 insertions(+)
 
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index a2277ac4e5a731d036d6266e1900642d463b9ca7..dc3ea6ee494b3b092192395d7ffe42d34bd953f0 100644
+index c6986f66c17bb19117d05118be8fb63f6042aa85..e8e98a24cad6285f7b6d6d7c4643842af486bfd9 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -105,6 +105,7 @@ static void screen_match_restore(int on_it) {   // main thread: the screen this

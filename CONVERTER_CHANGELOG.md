@@ -13,6 +13,11 @@ Shipped in NXForge 0.56.0.
 - **Pause and Resume a build.** A Pause button beside Stop on the Convert page, the build strip and the menu bar item, and Build › Pause Build (⌥⌘P), hold a build where it is: every process of it is stopped, nothing is lost, and the time it waited is left out of the time left. Resume carries on from the same point. It works for Switch builds too. A build NXForge paused itself for a full disk still carries on by itself; one paused by hand waits for Resume.
 - Game Boy Advance games count as a console of their own: a Game Boy Advance filter in the Library, on Home and in Theatre, and "Game Boy Advance" where a game's console is named.
 - For checks: `NXC_AUTOBUILD` with `NXC_PAUSE=<seconds in>,<seconds held>` pauses and resumes a build with no window and writes what was running; a build that never becomes ready writes why and ends.
+## 0.27.1 (2026-11-22)
+
+Shipped in NXForge 0.55.0.
+
+- **Back to Theatre from a game.** A game started from Theatre is told so (`NXFORGE_FRONT_END_PAGE=theatre`), so its sidebar (Sidebar 0.9.0) offers Theatre instead of Library; when it says so, NXForge stays in Theatre with the focus on that game instead of opening the game's page. Code: `PlayOptions.swift`.
 
 ## 0.27.0 (2026-11-21)
 
