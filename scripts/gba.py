@@ -2,7 +2,7 @@
 """Assemble and build the Game Boy Advance engine (gba/README.md).
 
   scripts/gba.py assemble   clone gba-recomp at the commit in gba/ENGINE into gba/tree and apply gba/patches
-  scripts/gba.py build      assemble if needed, then build the recompiler (recomp) and the host (nxgba)
+  scripts/gba.py build      assemble if needed, then build the recompiler (recomp), the host (nxgba) and, on a Mac, the player
   scripts/gba.py where      print the paths the build script uses, as JSON
 
 The engine's code is never committed here: gba/tree is assembled and git-ignored, like tree/ for nxnative.
@@ -77,6 +77,7 @@ def where():
         "recomp": os.path.join(TREE, "target", "release", "recomp"),
         "run": os.path.join(HOST, "target", "release", "nxgba-run"),
         "lib": os.path.join(HOST, "target", "release", "libnxgba.a"),
+        "player": os.path.join(GBA, "build", "nxgba-player"),
         "runtime_dir": os.path.join(TREE, "runtime"),
         "tree": TREE,
         "commit": engine()["commit"],
@@ -87,6 +88,8 @@ def build():
     assemble()
     subprocess.run(["cargo", "build", "--release", "-p", "recomp"], cwd=TREE, env=env(), check=True)
     subprocess.run(["cargo", "build", "--release"], cwd=HOST, env=env(), check=True)
+    if sys.platform == "darwin":
+        subprocess.run([os.path.join(HOST, "mac", "build.sh")], env=env(), check=True)
 
 
 def main():
