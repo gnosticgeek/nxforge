@@ -3,7 +3,7 @@
 # the Switch player builds) and the host library (cargo build --release in gba/host; scripts/gba.py build does both).
 set -euo pipefail
 cd "$(dirname "$0")"
-ROOT=../../..; OUT=$ROOT/gba/build; QS=$ROOT/layer/files/dm/host; MIN=${MACOS_MIN:-14.0}
+ROOT=../../..; OUT=$ROOT/gba/build; QS=$ROOT/layer/files/dm/host; MIN=${MACOS_MIN:-26.0}
 mkdir -p "$OUT"
 SDK=$(xcrun --show-sdk-path)
 if [ ! -f "$OUT/quick_settings_mac.o" ] || [ "$QS/quick_settings_mac.swift" -nt "$OUT/quick_settings_mac.o" ] || [ "$QS/quick_settings_mac.h" -nt "$OUT/quick_settings_mac.o" ] || [ front.h -nt "$OUT/quick_settings_mac.o" ]; then
