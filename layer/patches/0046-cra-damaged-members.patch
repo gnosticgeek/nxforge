@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Sat, 21 Nov 2026 21:58:44 +0000
+Subject: cra-damaged-members: a Camelot archive member that does not unpack is
+ the archive's error, not a crash
+
+cra.undo raised lz4's and zstd's own errors for a damaged member, which
+shader_split's NARC reader does not catch (it catches cra.Error), and an LZ4
+member's declared size was allocated before any check. Both now raise
+cra.Error, and an LZ4 size over 255 bytes per stored byte is refused up
+front, as the SHN! reader does. Found by the nightly fuzz job
+(LZ4BlockError@cra.py:undo, Oversized@cra.py:undo).
+---
+ dm/gfx/tools/cra.py | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/dm/gfx/tools/cra.py b/dm/gfx/tools/cra.py
+index 66e625adb0bdd732cf9ef6c137a70710d8fc1066..86a5861f57b6bfe28a5f894752bac0cdd3eb6993 100644
+--- a/dm/gfx/tools/cra.py
++++ b/dm/gfx/tools/cra.py
+@@ -328,8 +328,16 @@ def undo(d):
+             s = struct.unpack_from('<I', d, 12 + 4 * i)[0]
+             out.append(undo(d[at:at + s])); at += (s + 15) & ~15
+         return b''.join(out)
+-    if k == 0x94 and len(d) >= 8: return lz4.block.decompress(d[8:], uncompressed_size=struct.unpack_from('<I', d, 4)[0])
+-    if k == 0x5a and d[:4] == b'Z\0\0\0': return zstd_mod().decompress(d[8:])
++    if k == 0x94 and len(d) >= 8:
++        size = struct.unpack_from('<I', d, 4)[0]
++        # LZ4 decodes at most 255 bytes per stored byte: reject a damaged length before the decoder allocates it
++        if size > 255 * (len(d) - 8): raise Error(f'an LZ4 member that claims {size:#x} bytes from {len(d) - 8:#x}')
++        try: return lz4.block.decompress(d[8:], uncompressed_size=size)
++        except lz4.block.LZ4BlockError as e: raise Error(f'an LZ4 member that does not unpack: {e}') from e
++    if k == 0x5a and d[:4] == b'Z\0\0\0':
++        zstd = zstd_mod()
++        try: return zstd.decompress(d[8:])
++        except zstd.ZstdError as e: raise Error(f'a zstd member that does not unpack: {e}') from e
+     if k == 0x50 and len(d) >= 8: return lz_undo(d, 8)
+     if k == 0x60 and len(d) >= 4: return lz_undo(d, 4)
+     if k in (0x70, 0x80) and len(d) >= 0x10: return d[0x10:]

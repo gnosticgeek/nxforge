@@ -26,7 +26,7 @@ int mtl_present_edr_strength(void) { edr_env(); return g_edr_k; }
 void mtl_present_edr_strength_set(int k) { edr_env(); k = k < 0 ? 0 : k > 100 ? 100 : k; atomic_store(&g_edr_k, k); }
 float mtl_present_edr_headroom(void) { return g_edr_head; }
 // Present thread: the layer's format and colour space follow the choice (a drawable already handed out keeps its format; the pass takes the destination's format, present_pipeline)
-static void nxf_edr_layer(CAMetalLayer *layer) {
+static void nxf_edr_layer(CAMetalLayer *layer, int hdr) {   // hdr: an HDR10 picture in effect (DM_HDR, nxnative PR #3009) wants the extended linear layer too
 #if TARGET_OS_OSX
     static uint64_t n; static _Atomic int asking;
     if (!(n++ % 120) && !atomic_exchange(&asking, 1)) dispatch_async(dispatch_get_main_queue(), ^{   // NSScreen on the main thread
@@ -34,7 +34,7 @@ static void nxf_edr_layer(CAMetalLayer *layer) {
         if (s && [s respondsToSelector:NSSelectorFromString(@"maximumPotentialExtendedDynamicRangeColorComponentValue")]) h = [[s valueForKey:@"maximumPotentialExtendedDynamicRangeColorComponentValue"] floatValue];
         if (fabsf(h - g_edr_head) > 0.01f) MLOG("present: screen EDR headroom %.2fx SDR white", (double)h);
         g_edr_head = h < 1 ? 1 : h; asking = 0; });
-    int on = mtl_present_edr() && !nxf_px_active(), is = layer.pixelFormat == MTLPixelFormatRGBA16Float;   // pixel art keeps the game's colours (pixel_art.inc)
+    int on = hdr || (mtl_present_edr() && !nxf_px_active()), is = layer.pixelFormat == MTLPixelFormatRGBA16Float;   // pixel art keeps the game's colours (pixel_art.inc)
     if (on == is) return;
     if (on) {
         CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
@@ -43,7 +43,7 @@ static void nxf_edr_layer(CAMetalLayer *layer) {
     } else { layer.wantsExtendedDynamicRangeContent = NO; layer.colorspace = NULL; layer.pixelFormat = MTLPixelFormatBGRA8Unorm; }
     MLOG("present: window layer %s", on ? "RGBA16Float, extended linear sRGB (EDR)" : "BGRA8Unorm (SDR)");
 #else
-    (void)layer;
+    (void)layer; (void)hdr;
 #endif
 }
 // The pass's hdr constants (Crop.hdr): only a pass into RGBA16Float reads them

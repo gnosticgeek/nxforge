@@ -1,0 +1,1081 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Vitalii Apostolyuk <vitalii.apostolyuk@gmail.com>
+Date: Sat, 21 Nov 2026 22:11:38 +0000
+Subject: upstream-pr-3009: Ocarina of Time draws HDR on a Mac screen that can
+ show it
+
+nxnative PR #3009 (oxyp1e, open): Ocarina of Time asks vi::QueryDisplayHdrStatus every frame
+and switches its window textures between RGBA8 (SDR) and RGB10A2 (HDR10) with its own tone
+mapping. The host now answers from the window's screen (potential EDR headroom of 4 or more:
+a MacBook Pro's XDR panel reports 16) and presents the HDR10 picture in extended dynamic
+range. DM_HDR=auto|0 (launcher row "HDR", default from the profile key hdr, Ocarina only).
+
+NXForge on top:
+- an HDR10 picture takes the PR's pass (present_hdr_pipeline); every other picture keeps
+  NXForge's present pass, its filters, anti-aliasing, pixel art and EDR highlights
+- under HDR10 the present skips anti-aliasing, pixel art, filters, border fill and frame
+  interpolation (they read gamma bytes); MetalFX keeps the picture's own format
+- the layer is switched by EDR highlights' own switch (present_edr.inc nxf_edr_layer, which
+  now also takes the HDR want), so the two never fight over the layer's format
+- the present constants buffer stays NXForge's 44 floats; HDR10's sit at 8-11
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_016qteK5CgJi2GrwbMox94av
+---
+ dm/games/0400486024DEC000/game.tsv       |   3 +
+ dm/games/game.py                         |   1 +
+ dm/games/settings.py                     |   1 +
+ dm/games/settings.tsv                    |   3 +-
+ dm/gfx/hle_vi.c                          |  45 +++++----
+ dm/gfx/msl/present.metal                 |  34 +++++++
+ dm/gfx/nvn/hdr.c                         |  67 +++++++++++++
+ dm/gfx/nvn/hdr.h                         |  98 ++++++++++++++++++
+ dm/gfx/nvn/nvn_mtl.m                     | 121 +++++++++++++++++++----
+ dm/gfx/tests/Makefile                    |   3 +
+ dm/gfx/tests/t_hdr.c                     |  87 ++++++++++++++++
+ dm/gfx/tests/t_present_crop.m            | 102 +++++++++++++++++++
+ dm/host/front.h                          |   4 +
+ dm/host/front_mac.m                      |  40 ++++++++
+ dm/host/tests/Makefile                   |   2 +-
+ dm/host/tests/t_vi_history.c             |  17 ++++
+ dm/tools/tests/test_launcher_settings.py |   7 ++
+ docs/env_switches.tsv                    |   3 +
+ docs/reference/services.md               |   2 +-
+ docs/settings.md                         |   5 +
+ 20 files changed, 607 insertions(+), 38 deletions(-)
+ create mode 100644 dm/gfx/nvn/hdr.c
+ create mode 100644 dm/gfx/nvn/hdr.h
+ create mode 100644 dm/gfx/tests/t_hdr.c
+
+diff --git a/dm/games/0400486024DEC000/game.tsv b/dm/games/0400486024DEC000/game.tsv
+index cbbaa1fcf4d165279be0a2b9353ed5a2c8e424da..7bcee82140d0c6002d6d6ca65b9fd469ffbecce1 100644
+--- a/dm/games/0400486024DEC000/game.tsv
++++ b/dm/games/0400486024DEC000/game.tsv
+@@ -46,3 +46,6 @@ draw_barriers	game
+ # As Tears of the Kingdom: the terrain's height, blend and hole maps are written by the CPU into textures after they are created. Without these keys they stay zero: holes in the ground and the wrong materials
+ tex_flush_upload	on
+ tex_dirty_upload	on
++# HDR (nvn/hdr.c, DM_HDR): the game asks vi::QueryDisplayHdrStatus every frame and switches its window textures between RGBA8 (SDR) and RGB10A2 (HDR10) on the answer, live (main+0x346c680, the
++# query; main+0x5702c0, the queue submit that switches the format); the host answers on while the window's screen can show HDR, so DM_HDR defaults to auto for this game
++hdr	on
+diff --git a/dm/games/game.py b/dm/games/game.py
+index ffecd5232664a6647efaff417372bb541ed77283..d7ccb91a05e3499364a59dc5da4acb5e014553e1 100644
+--- a/dm/games/game.py
++++ b/dm/games/game.py
+@@ -241,6 +241,7 @@ def header_one(g):
+          f'#define DM_GAME_MEM_MAP_LIMIT {int(mml == "on")}',
+          f'#define DM_GAME_STDALLOC_CAP {int(g.get("stdalloc_cap", "0"), 0):#x}ull',   # StandardAllocator's address space with virtual address memory (hle_svc.c); 0 = what the alias region has room for
+          f'#define DM_GAME_SCREEN_ASPECT {("off", "on").index(g.get("screen_aspect", "off"))}',   # stubs that follow a screen taller than 16:9 (DM_SCREEN_ASPECT): off / on
++         f'#define DM_GAME_HDR {("off", "on").index(g.get("hdr", "off"))}',   # the game renders HDR itself when vi says the display can show it (nvn/hdr.c, DM_HDR's default auto): off / on
+          f'#define DM_GAME_DISPLAY_VERSIONS {vers}',
+          f'#define DM_GAME_PRESENT_DISPLAY {int(pi == "display")}',
+          f'#define DM_GAME_CORE_PREEMPT {int(cp == "on")}',
+diff --git a/dm/games/settings.py b/dm/games/settings.py
+index 05407eeed664f76f9140677a01ad1e2f38236e1b..14f82fbfa9f7b19f1ed75c05e9a25a0a65a67fa6 100644
+--- a/dm/games/settings.py
++++ b/dm/games/settings.py
+@@ -75,6 +75,7 @@ def build(gid, patched, control, other_programs=()):
+         return macros[name].strip('"')
+ 
+     def shown(cond, n):
++        if '&' in cond: return all(shown(c, n) for c in cond.split('&'))   # every condition holds (platform:mac&DM_GAME_HDR!=0)
+         if cond == 'always': return True
+         if cond == 'mac-mic': return mac_mic
+         if '&' in cond: return all(shown(c, n) for c in cond.split('&'))   # every one of them (gfxapi:nvn&platform:mac)
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index da021558a04d431523d490cabe745733b21dce78..ba4829d78febae641d6a5563d23e6ab96c3d576a 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -9,7 +9,7 @@
+ #             <ios>|<mac> selects the platform's default before resolving a profile macro or build variable
+ #   shown     always; DM_GAME_<NAME>!=<value> or ==<value>; fixups:<KEY>: main's rewriter table has that key (a stub in the game's build, patch_nso.py); languages>1 (more than one to pick, so also when the control data lists none); gfxapi:<API>: the packer's GFXAPI; several joined by & must all hold (gfxapi:nvn&platform:mac);
+ #             mac-mic: a Mac app whose modules import the supported polling InputStream API;
+-#             platform:<ios | mac>: the app's platform (SETTINGS_PLATFORM, ios when unset), for a switch only that platform's front end reads
++#             platform:<ios | mac>: the app's platform (SETTINGS_PLATFORM, ios when unset), for a switch only that platform's front end reads; <shown>&<shown>: all of them
+ #   section   Game, Controls or Performance: a heading on the single settings screen. Rows appear in table order within each section
+ #             Reset to tested defaults clears all launcher choices; values fixed by an env file stay
+ #   label, note  the setting's name and the line under it (may be empty; only for a setting with a cost: latency, memory, heat)
+@@ -48,6 +48,7 @@ DM_SCREEN_WIDE	choice	0=16:9 (Switch),16x10=16:10?platform:mac,auto=Auto (match
+ DM_FOLIAGE	toggle	on/off	1	fixups:FOLIAGE	Game	Grass and ground cover	Turn off on a slower GPU: grass, ferns, clover and moss are not drawn (about 3.5 ms of GPU a frame in Ocarina of Time). Cut grass and bushes stay.
+ DM_MODEL_LOD	choice	0=Full,2=Lower,4=Lowest	0	fixups:MODEL_LOD	Game	Model detail	Lower picks the game's simpler models nearer the camera, for a slower GPU (about 1 to 3 ms a frame in Ocarina of Time's busiest scenes).
+ DM_SHADOW_CASCADES	choice	0=Full,2=2 cascades,1=1 cascade	0	fixups:SHADOW_CASCADES	Game	Shadow range	Fewer cascades end the sun's shadows nearer the camera and make near shadows softer. Takes effect at the next game start.
++DM_HDR	choice	auto=On (HDR screens),0=Off	auto	platform:mac&DM_GAME_HDR!=0	Game	HDR	Brighter highlights on a screen that can show HDR, such as a MacBook Pro's. On other screens the game draws its usual picture, and moving the window between screens switches it.
+ DM_PRESENT_SNAP	toggle	-	DM_GAME_PRESENT_SNAP	gfxapi:nvn	Performance	Frame buffering	Up to one frame more display latency.
+ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
+ DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
+diff --git a/dm/gfx/hle_vi.c b/dm/gfx/hle_vi.c
+index 3fa30ea8da8a03c4bc3c887efa6828dc5b1ccb58..839de080dbfaa8e483a30a4aa5ea9e3a717c4602 100644
+--- a/dm/gfx/hle_vi.c
++++ b/dm/gfx/hle_vi.c
+@@ -1,6 +1,7 @@
+ // nn::vi (display layer): on a real device, the vi service is used to open the display, create a layer and get the native window handle; the handle is passed to NVN's window builder.
+ // Host: returns host static objects; when hooking up Metal, the native window corresponds to the front end's CAMetalLayer (front_metal_layer()).
+ #include "../host/hle.h"
++#include "nvn/hdr.h"
+ #include <stdatomic.h>
+ 
+ static struct { uint32_t magic; } g_display = {0x50534944}, g_layer = {0x5259414c};
+@@ -134,13 +135,19 @@ HLE_FORCE("_ZN2nn2vi8FinalizeEv", "display service shutdown; the host has no vi
+ 
+ // ---------- Switch 2 SDKs: HDR, VRR and extended swap intervals ----------
+ // The SDK's versions check the display against its own default display object and forward the layer to vi2, whose layer object the host never made (Donkey Kong Bananza: a call
+-// through null from SetLayerNextHdrContentGamutMetadata, main+0x2036f4). The host's output is SDR at a fixed refresh rate: no HDR output, no VRR, and the layer metadata has
+-// nothing to apply to. HdrOutputFormat 0 is SDR; paper white is the BT.2408 reference, 203 nits, read only when HDR is on
+-HLE_FORCE("_ZN2nn2vi21QueryDisplayHdrStatusEPbPNS0_15HdrOutputFormatEPtPKNS0_7DisplayE", "display HDR status: SDR output (the host presents SDR)", Result, h_vi_HdrStatus,
++// through null from SetLayerNextHdrContentGamutMetadata, main+0x2036f4). No VRR, and HDR only as DM_HDR and the window's screen allow (nvn/hdr.c): on while the setting is auto
++// (the default for a game whose profile has hdr on: Ocarina of Time) and the screen can show HDR, with the screen's peak (its potential EDR headroom × paper white, at most 1600
++// nits). Ocarina of Time asks every frame (main+0x346c680) and switches its window textures to RGB10A2 (HDR10) or back to RGBA8 on the answer; the present follows the texture.
++// HdrOutputFormat stays 0: its HDR values are not known, and Ocarina of Time never reads it. Paper white: the BT.2408 reference, 203 nits (DM_HDR_PAPER_WHITE), which the present
++// maps to the screen's SDR white
++HLE_FORCE("_ZN2nn2vi21QueryDisplayHdrStatusEPbPNS0_15HdrOutputFormatEPtPKNS0_7DisplayE", "display HDR status: on while DM_HDR and the window's screen allow it (nvn/hdr.c)", Result, h_vi_HdrStatus,
+           uint8_t *on, uint32_t *fmt, uint16_t *peak, const void *disp) {
+-    (void)disp; if (on) *on = 0; if (fmt) *fmt = 0; if (peak) *peak = 0; return RES_OK; }
+-HLE_FORCE("_ZN2nn2vi25QueryDisplayHdrPaperWhiteEPtPKNS0_7DisplayE", "display HDR paper white: 203 nits (BT.2408); HDR is off", Result, h_vi_PaperWhite, uint16_t *nits, const void *disp) {
+-    (void)disp; if (nits) *nits = 203; return RES_OK; }
++    (void)disp; uint16_t pk; int o = dm_hdr_answer(&pk);
++    static atomic_int last; if (atomic_exchange(&last, o) != o) LOG("[hdr] vi::QueryDisplayHdrStatus answers %s", o ? "HDR (the game switches to its RGB10A2 window textures)" : "SDR (the game switches back to RGBA8)");
++    if (o) { static atomic_int lp; if (atomic_exchange(&lp, pk) != pk) LOG("[hdr] vi: peak %u nits, paper white %d nits (headroom %.1f for the game's tone map)", pk, dm_hdr_paper_white(), (double)pk / dm_hdr_paper_white()); }
++    if (on) *on = o; if (fmt) *fmt = 0; if (peak) *peak = pk; return RES_OK; }
++HLE_FORCE("_ZN2nn2vi25QueryDisplayHdrPaperWhiteEPtPKNS0_7DisplayE", "display HDR paper white: 203 nits (BT.2408; DM_HDR_PAPER_WHITE)", Result, h_vi_PaperWhite, uint16_t *nits, const void *disp) {
++    (void)disp; if (nits) *nits = (uint16_t)dm_hdr_paper_white(); return RES_OK; }
+ HLE_FORCE("_ZN2nn2vi24QueryDisplayVrrSupportedEPbPKNS0_7DisplayE", "display VRR: not supported (fixed refresh rate)", Result, h_vi_VrrSupported, uint8_t *on, const void *disp) {
+     (void)disp; if (on) *on = 0; return RES_OK; }
+ HLE_FORCE("_ZN2nn2vi23SetDisplayVrrCapabilityEPNS0_7DisplayEb", "display VRR capability: the host has no VRR", Result, h_vi_SetVrr, void *disp, unsigned on) {
+@@ -169,18 +176,20 @@ HLE_FORCE("_ZN2nn2vi28SetLayerExtendedSwapIntervalEPNS0_5LayerEii", "layer exten
+           void *layer, int a, int b) {
+     (void)layer; static atomic_int once; if (!atomic_exchange(&once, 1)) LOG("vi::SetLayerExtendedSwapInterval %d %d: no VRR on the host, the NVN swap interval stays", a, b); return RES_OK; }
+ HLE_FORCE("_ZN2nn2vi30ClearLayerExtendedSwapIntervalEPNS0_5LayerE", "layer extended swap interval cleared", Result, h_vi_ExtSwapClear, void *layer) { (void)layer; return RES_OK; }
+-HLE_FORCE("_ZN2nn2vi35SetLayerNextHdrContentGamutMetadataEPNS0_5LayerENS0_15HdrContentGamutE", "layer HDR metadata: SDR output, nothing to apply", Result, h_vi_HdrGamut, void *layer, int g) {
+-    (void)layer; (void)g; return RES_OK; }
+-HLE_FORCE("_ZN2nn2vi39SetLayerNextHdrToSdrToneMappingMetadataEPNS0_5LayerENS0_14HdrToneMappingE", "layer HDR metadata: SDR output, nothing to apply", Result, h_vi_HdrToneMap, void *layer, int m) {
+-    (void)layer; (void)m; return RES_OK; }
+-HLE_FORCE("_ZN2nn2vi52SetLayerNextHdrExtendedContentLuminanceRangeMetadataEPNS0_5LayerEtt", "layer HDR metadata: SDR output, nothing to apply", Result, h_vi_HdrExtLum,
+-          void *layer, uint32_t lo, uint32_t hi) { (void)layer; (void)lo; (void)hi; return RES_OK; }
+-HLE_FORCE("_ZN2nn2vi52SetLayerNextHdrStandardContentLuminanceRangeMetadataEPNS0_5LayerEtt", "layer HDR metadata: SDR output, nothing to apply", Result, h_vi_HdrStdLum,
+-          void *layer, uint32_t lo, uint32_t hi) { (void)layer; (void)lo; (void)hi; return RES_OK; }
++// The layer HDR metadata the game sends with each frame in HDR (Ocarina of Time: main+0x5702c0): kept for the present's diagnostics (nvn/hdr.c dm_hdr_meta, DM_HDR_DUMP), not applied:
++// the present maps the picture to the screen itself (paper white = the screen's SDR white, the rest up to its current headroom)
++HLE_FORCE("_ZN2nn2vi35SetLayerNextHdrContentGamutMetadataEPNS0_5LayerENS0_15HdrContentGamutE", "layer HDR metadata: content gamut, kept (nvn/hdr.c)", Result, h_vi_HdrGamut, void *layer, int g) {
++    (void)layer; dm_hdr_meta_set(HDR_META_GAMUT, g, 0); return RES_OK; }
++HLE_FORCE("_ZN2nn2vi39SetLayerNextHdrToSdrToneMappingMetadataEPNS0_5LayerENS0_14HdrToneMappingE", "layer HDR metadata: HDR-to-SDR tone mapping, kept (nvn/hdr.c)", Result, h_vi_HdrToneMap, void *layer, int m) {
++    (void)layer; dm_hdr_meta_set(HDR_META_TONE, m, 0); return RES_OK; }
++HLE_FORCE("_ZN2nn2vi52SetLayerNextHdrExtendedContentLuminanceRangeMetadataEPNS0_5LayerEtt", "layer HDR metadata: extended luminance range, kept (nvn/hdr.c)", Result, h_vi_HdrExtLum,
++          void *layer, uint32_t lo, uint32_t hi) { (void)layer; dm_hdr_meta_set(HDR_META_EXT, (uint16_t)lo, (uint16_t)hi); return RES_OK; }
++HLE_FORCE("_ZN2nn2vi52SetLayerNextHdrStandardContentLuminanceRangeMetadataEPNS0_5LayerEtt", "layer HDR metadata: standard luminance range, kept (nvn/hdr.c)", Result, h_vi_HdrStdLum,
++          void *layer, uint32_t lo, uint32_t hi) { (void)layer; dm_hdr_meta_set(HDR_META_STD, (uint16_t)lo, (uint16_t)hi); return RES_OK; }
+ // The rest of SDK 22's layer HDR metadata calls (the Bezier tone curve and the clears): the SDK forwards them through a table its graphics system fills, which is null on the host, so
+ // unanswered they call through null (Mario Kart World 1.8.0 sets the curve every frame, by pull request #1116)
+-HLE_FORCE("_ZN2nn2vi39SetLayerNextHdrAdjustableBezierMetadataEPNS0_5LayerEfff", "layer HDR metadata: SDR output, nothing to apply", Result, h_vi_HdrBezier,
++HLE_FORCE("_ZN2nn2vi39SetLayerNextHdrAdjustableBezierMetadataEPNS0_5LayerEfff", "layer HDR metadata: the Bezier tone curve, not used", Result, h_vi_HdrBezier,
+           void *layer, float a, float b, float c) { (void)layer; (void)a; (void)b; (void)c; return RES_OK; }
+-HLE_FORCE("_ZN2nn2vi41ClearLayerNextHdrAdjustableBezierMetadataEPNS0_5LayerE", "layer HDR metadata cleared: SDR output", Result, h_vi_HdrBezierClear, void *layer) { (void)layer; return RES_OK; }
+-HLE_FORCE("_ZN2nn2vi37ClearLayerNextHdrContentGamutMetadataEPNS0_5LayerE", "layer HDR metadata cleared: SDR output", Result, h_vi_HdrGamutClear, void *layer) { (void)layer; return RES_OK; }
+-HLE_FORCE("_ZN2nn2vi41ClearLayerNextHdrToSdrToneMappingMetadataEPNS0_5LayerE", "layer HDR metadata cleared: SDR output", Result, h_vi_HdrToneMapClear, void *layer) { (void)layer; return RES_OK; }
++HLE_FORCE("_ZN2nn2vi41ClearLayerNextHdrAdjustableBezierMetadataEPNS0_5LayerE", "layer HDR metadata cleared", Result, h_vi_HdrBezierClear, void *layer) { (void)layer; return RES_OK; }
++HLE_FORCE("_ZN2nn2vi37ClearLayerNextHdrContentGamutMetadataEPNS0_5LayerE", "layer HDR metadata cleared", Result, h_vi_HdrGamutClear, void *layer) { (void)layer; return RES_OK; }
++HLE_FORCE("_ZN2nn2vi41ClearLayerNextHdrToSdrToneMappingMetadataEPNS0_5LayerE", "layer HDR metadata cleared", Result, h_vi_HdrToneMapClear, void *layer) { (void)layer; return RES_OK; }
+diff --git a/dm/gfx/msl/present.metal b/dm/gfx/msl/present.metal
+index 7a0222334907cbedb0a778e558677abeed091343..bc8f10df63ff93800ed6a04bd466af428e11b5e8 100644
+--- a/dm/gfx/msl/present.metal
++++ b/dm/gfx/msl/present.metal
+@@ -102,3 +102,37 @@ fragment float4 fs_lcd(V in [[stage_in]], texture2d<float> t [[texture(0)]], sam
+   float3 col = cell_texel(t, g, n, c.edge) * mix(float3(1), sub * mix(0.25f, 1.0f, lit), vis);
+   return edr_out(float4(saturate(col * (1.0f + 0.3f * vis)), 1), c);
+ }
++
++// HDR (DM_HDR, nvn/hdr.h): the game's HDR window texture is HDR10, RGB10A2 holding PQ (SMPTE ST 2084) code values of BT.2020 colours. hdr.x = 10000 / paper white (nits), so
++// paper white is 1.0, the screen's SDR white; hdr.y = the screen's current EDR headroom. The constants and the matrix are hdr.h's
++struct CropHdr { float4 rect; float4 edge; float4 hdr; };
++static float3 pq_eotf(float3 e) {   // code value → nits / 10000
++    const float m1 = 2610.0 / 16384.0, m2 = 2523.0 / 4096.0 * 128.0, c1 = 3424.0 / 4096.0, c2 = 2413.0 / 4096.0 * 32.0, c3 = 2392.0 / 4096.0 * 32.0;
++    float3 p = pow(clamp(e, 0.0, 1.0), 1.0 / m2);
++    return pow(max(p - c1, 0.0) / (c2 - c3 * p), 1.0 / m1);
++}
++static float3 bt2020_to_709(float3 c) {   // linear; rows of hdr.h's HDR_BT2020_TO_709
++    return float3(dot(float3(1.660491, -0.587641, -0.072850), c), dot(float3(-0.124550, 1.132900, -0.008349), c), dot(float3(-0.018151, -0.100579, 1.118730), c));
++}
++static float3 pq_linear(V in, texture2d<float> t, sampler s, constant CropHdr& c) {   // linear BT.709, paper white = 1
++    return bt2020_to_709(pq_eotf(t.sample(s, clamp(in.uv * c.rect.zw + c.rect.xy, c.edge.xy, c.edge.zw)).rgb) * c.hdr.x);
++}
++static float3 srgb_encode(float3 c) { c = clamp(c, 0.0, 1.0); return select(1.055 * pow(c, 1.0 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308); }
++static float3 srgb_decode(float3 c) { return select(pow((c + 0.055) / 1.055, 2.4), c / 12.92, c <= 0.04045); }
++// PQ → an extended linear sRGB drawable (RGBA16Float, kCGColorSpaceExtendedLinearSRGB, wantsExtendedDynamicRangeContent): up to the current headroom. Values below 0 (colours outside
++// BT.709) are kept, as extended sRGB carries them
++fragment float4 fs_edr(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant CropHdr& c [[buffer(0)]]) {
++    return float4(min(pq_linear(in, t, s, c), c.hdr.y), 1);
++}
++// PQ → an 8-bit SDR target (the screenshots, and a drawable still in the SDR format while the layer switches): linear up to 0.8 of paper white, then an exponential shoulder
++// 1 − 0.2·e^(−(m − 0.8)/0.2) on the largest channel m (hue kept; continuous with slope 1 at the knee): paper white 0.93 (sRGB 247), 1.5× paper white 0.99, brighter nears 1.
++// Then the sRGB curve. hdr.h's hdr_sdr_shoulder is the same curve
++fragment float4 fs_pq_sdr(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant CropHdr& c [[buffer(0)]]) {
++    float3 l = max(pq_linear(in, t, s, c), 0.0); float m = max(max(l.r, l.g), l.b);
++    if (m > 0.8) l *= (1 - 0.2 * exp(-(m - 0.8) / 0.2)) / m;
++    return float4(srgb_encode(l), 1);
++}
++// An SDR picture (the game's gamma bytes) into the extended linear drawable, while the layer switches back: decoded, so it shows as on the SDR layer
++fragment float4 fs_sdr_lin(V in [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]], constant CropHdr& c [[buffer(0)]]) {
++    return float4(srgb_decode(t.sample(s, clamp(in.uv * c.rect.zw + c.rect.xy, c.edge.xy, c.edge.zw)).rgb), 1);
++}
+diff --git a/dm/gfx/nvn/hdr.c b/dm/gfx/nvn/hdr.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..2efbcd2df3cd54291bae36eecadc2b22f44f9345
+--- /dev/null
++++ b/dm/gfx/nvn/hdr.c
+@@ -0,0 +1,67 @@
++// HDR output's shared state (hdr.h): the setting (read once, never written), the window's screen's capability and headroom (the front end writes them on screen events and a 2 Hz
++// poll), what the game was told (hle_vi.c) and the layer HDR metadata it sends. Atomics: the front end writes on the main thread, vi reads on the game's threads every frame, the
++// present reads on the present thread
++#include "../../host/dm.h"
++#include "hdr.h"
++#include <stdatomic.h>
++
++static _Atomic int g_pref = -1, g_pw = -1;
++int dm_hdr_pref(void) {
++    int p = atomic_load(&g_pref);
++    if (p >= 0) return p;
++    const char *e = getenv("DM_HDR"); int bad, dflt = DM_GAME_HDR ? HDR_PREF_AUTO : HDR_PREF_OFF;
++    p = hdr_pref_parse(e, dflt, &bad);
++    int was = -1;
++    if (atomic_compare_exchange_strong(&g_pref, &was, p)) {
++        if (bad) LOG("[RED] [hdr] DM_HDR=%s: auto or 0; keeping %s", e, p ? "auto" : "0");
++        else LOG("[hdr] DM_HDR=%s%s: %s", e && *e ? e : (p ? "auto" : "0"), e && *e ? "" : " (the game profile's default)",
++                 p ? "HDR on a screen that can show it, switched live as the window moves between screens" : "never HDR");
++    }
++    return atomic_load(&g_pref);
++}
++int dm_hdr_paper_white(void) {
++    int v = atomic_load(&g_pw);
++    if (v > 0) return v;
++    const char *e = getenv("DM_HDR_PAPER_WHITE"); v = hdr_paper_white_parse(e);
++    if (v < 0) { LOG("[RED] [hdr] DM_HDR_PAPER_WHITE=%s: nits from %d to %d; keeping %d", e, HDR_PAPER_WHITE_MIN, HDR_PAPER_WHITE_MAX, HDR_PAPER_WHITE_DEFAULT); v = HDR_PAPER_WHITE_DEFAULT; }
++    else if (e && *e) LOG("[hdr] paper white %d nits (DM_HDR_PAPER_WHITE)", v);
++    atomic_store(&g_pw, v);
++    return v;
++}
++
++static _Atomic int g_on, g_told;
++static _Atomic uint32_t g_headroom, g_potential;   // f32 bits
++static void f32_store(_Atomic uint32_t *a, float f) { uint32_t b; memcpy(&b, &f, 4); atomic_store(a, b); }
++static float f32_load(_Atomic uint32_t *a) { uint32_t b = atomic_load(a); float f; memcpy(&f, &b, 4); return f; }
++int dm_hdr_screen(double potential, double current) {
++    hdr_decision d = {.pref = dm_hdr_pref()};
++    int on = hdr_decision_screen(&d, potential);
++    f32_store(&g_potential, (float)potential); dm_hdr_headroom_set(current); atomic_store(&g_on, on);
++    return on;
++}
++void dm_hdr_headroom_set(double current) { f32_store(&g_headroom, current > 1 && isfinite(current) ? (float)current : 1.0f); }
++int dm_hdr_on(void) { return atomic_load(&g_on); }
++float dm_hdr_headroom(void) { float h = f32_load(&g_headroom); return h > 1 ? h : 1; }
++int dm_hdr_answer(uint16_t *peak) {
++    int on = atomic_load(&g_on);
++    if (peak) *peak = on ? hdr_peak_nits(f32_load(&g_potential), dm_hdr_paper_white()) : 0;
++    if (on && !atomic_load_explicit(&g_told, memory_order_relaxed)) atomic_store(&g_told, 1);
++    return on;
++}
++int dm_hdr_told(void) { return atomic_load_explicit(&g_told, memory_order_relaxed); }
++
++static _Atomic int g_meta[7];   // dm_hdr_meta's fields in order; set: any call seen
++void dm_hdr_meta_set(int which, int a, int b) {
++    switch (which) {
++    case HDR_META_STD: atomic_store(&g_meta[0], a); atomic_store(&g_meta[1], b); break;
++    case HDR_META_EXT: atomic_store(&g_meta[2], a); atomic_store(&g_meta[3], b); break;
++    case HDR_META_GAMUT: atomic_store(&g_meta[4], a); break;
++    case HDR_META_TONE: atomic_store(&g_meta[5], a); break;
++    default: return;
++    }
++    atomic_store(&g_meta[6], 1);
++}
++void dm_hdr_meta_get(dm_hdr_meta *m) {
++    int v[7]; for (int i = 0; i < 7; i++) v[i] = atomic_load(&g_meta[i]);
++    *m = (dm_hdr_meta){v[0], v[1], v[2], v[3], v[4], v[5], v[6]};
++}
+diff --git a/dm/gfx/nvn/hdr.h b/dm/gfx/nvn/hdr.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..9a13c9b39f76a01f55b9c8b3781b2430fb9324d4
+--- /dev/null
++++ b/dm/gfx/nvn/hdr.h
+@@ -0,0 +1,98 @@
++// HDR output (DM_HDR): a game that renders HDR itself is told so through vi (hle_vi.c QueryDisplayHdrStatus) while the window's screen can show it, and its HDR window texture
++// is presented in extended dynamic range (nvn_mtl.m present_now, msl/present.metal fs_edr). Ocarina of Time (Switch 2) asks every frame and switches its window textures between
++// RGBA8 (SDR) and RGB10A2 (HDR10: PQ, BT.2020) on the answer, live, both ways. The setting is read once and never written: the screen decides only whether it is in effect, so moving
++// the window from a MacBook (HDR) to a Studio Display (SDR) and back turns HDR off and on again. The pure parts are here (t_hdr.c tests them); the shared state is hdr.c
++#pragma once
++#include <stdint.h>
++#include <string.h>
++#include <stdlib.h>
++#include <math.h>
++
++// A screen shows HDR when its potential EDR headroom (NSScreen.maximumPotentialExtendedDynamicRangeColorComponentValue) is at least this. Measured in the play test (2026-11-18):
++// a MacBook Pro's built-in XDR panel 16.00; a Studio Display (no HDR) 2.00 at start, then 1.00 (backlight headroom below maximum brightness, unstable). 4 keeps the Studio Display
++// SDR at either value and still takes an HDR panel (an XDR panel 16, the Pro Display XDR about the same; an EDR-capable screen below 4 gives too little room for highlights
++// anyway). One constant: the front end's [hdr] line logs the potential and current values on every change
++#define HDR_CAPABLE_POTENTIAL 4.0
++// The peak the game is told (QueryDisplayHdrStatus): the screen's potential headroom × paper white, within [paper white, this]. 1600 nits is the MacBook Pro XDR panel's peak; the game
++// itself caps it again (Ocarina of Time: min(peak, 1400 or its per-mode table))
++#define HDR_PEAK_MAX_NITS 1600.0
++// Paper white (QueryDisplayHdrPaperWhite, DM_HDR_PAPER_WHITE): the BT.2408 reference, 203 nits. The present maps it to EDR 1.0 (the screen's SDR white). Accepted range
++#define HDR_PAPER_WHITE_DEFAULT 203
++#define HDR_PAPER_WHITE_MIN 80
++#define HDR_PAPER_WHITE_MAX 1000
++
++enum { HDR_PREF_OFF = 0, HDR_PREF_AUTO = 1 };
++// DM_HDR: "auto" (HDR where the screen can show it) or "0" (never); unset or empty = dflt (the game profile's: DM_GAME_HDR). Anything else: *bad = 1 and dflt
++static inline int hdr_pref_parse(const char *e, int dflt, int *bad) {
++    if (bad) *bad = 0;
++    if (!e || !*e) return dflt;
++    if (!strcmp(e, "auto")) return HDR_PREF_AUTO;
++    if (!strcmp(e, "0")) return HDR_PREF_OFF;
++    if (bad) *bad = 1;
++    return dflt;
++}
++static inline int hdr_screen_capable(double potential) { return potential >= HDR_CAPABLE_POTENTIAL; }
++static inline int hdr_decide(int pref, int capable) { return pref == HDR_PREF_AUTO && capable; }
++// The whole decision as the front end drives it: pref is fixed at start, each screen event (moving screens, its parameters, full screen) gives the window's screen's
++// potential headroom; returns whether HDR is in effect. Nothing here writes pref
++typedef struct { int pref, capable, on; double potential; } hdr_decision;
++static inline int hdr_decision_screen(hdr_decision *d, double potential) {
++    d->potential = potential; d->capable = hdr_screen_capable(potential); d->on = hdr_decide(d->pref, d->capable);
++    return d->on;
++}
++static inline uint16_t hdr_peak_nits(double potential, double paper_white) {
++    double p = potential * paper_white;
++    if (!(p >= paper_white)) p = paper_white;   // NaN too
++    if (p > HDR_PEAK_MAX_NITS) p = HDR_PEAK_MAX_NITS;
++    return (uint16_t)lround(p);
++}
++static inline int hdr_paper_white_parse(const char *e) {
++    if (!e || !*e) return HDR_PAPER_WHITE_DEFAULT;
++    char *end; long v = strtol(e, &end, 10);
++    if (*end || v < HDR_PAPER_WHITE_MIN || v > HDR_PAPER_WHITE_MAX) return -1;
++    return (int)v;
++}
++
++// SMPTE ST 2084 (PQ) EOTF: a code value 0..1 → absolute luminance in nits (0..10000). The same constants as msl/present.metal's pq_eotf
++#define HDR_PQ_M1 (2610.0 / 16384.0)
++#define HDR_PQ_M2 (2523.0 / 4096.0 * 128.0)
++#define HDR_PQ_C1 (3424.0 / 4096.0)
++#define HDR_PQ_C2 (2413.0 / 4096.0 * 32.0)
++#define HDR_PQ_C3 (2392.0 / 4096.0 * 32.0)
++static inline double hdr_pq_nits(double e) {
++    if (!(e > 0)) return 0;
++    if (e > 1) e = 1;
++    double p = pow(e, 1.0 / HDR_PQ_M2), n = p - HDR_PQ_C1; if (n < 0) n = 0;
++    return 10000.0 * pow(n / (HDR_PQ_C2 - HDR_PQ_C3 * p), 1.0 / HDR_PQ_M1);
++}
++// Linear BT.2020 → linear BT.709 (sRGB primaries), rows (ITU-R BT.2087). The same matrix as msl/present.metal's
++static const double HDR_BT2020_TO_709[3][3] = {
++    { 1.660491, -0.587641, -0.072850},
++    {-0.124550,  1.132900, -0.008349},
++    {-0.018151, -0.100579,  1.118730},
++};
++// One RGB10A2Unorm texel (R bits 0-9, G 10-19, B 20-29, A 30-31) → code values 0..1
++static inline void hdr_rgb10a2_codes(uint32_t t, double c[3]) { for (int i = 0; i < 3; i++) c[i] = ((t >> (10 * i)) & 0x3ff) / 1023.0; }
++// A PQ BT.2020 texel → extended linear sRGB with paper white = 1.0, clamped to the headroom above (negative values outside BT.709 are kept, as extended sRGB carries them):
++// what fs_edr outputs
++static inline void hdr_pq_to_edr(const double code[3], double paper_white, double headroom, double out[3]) {
++    double n[3]; for (int i = 0; i < 3; i++) n[i] = hdr_pq_nits(code[i]) / paper_white;
++    for (int i = 0; i < 3; i++) { double v = 0; for (int j = 0; j < 3; j++) v += HDR_BT2020_TO_709[i][j] * n[j]; out[i] = v < headroom ? v : headroom; }
++}
++// The screenshots' HDR → SDR curve (msl/present.metal fs_pq_sdr) on the largest channel m of linear BT.709 with paper white = 1: unchanged up to 0.8, then 1 − 0.2·e^(−(m − 0.8)/0.2)
++static inline double hdr_sdr_shoulder(double m) { return m > 0.8 ? 1 - 0.2 * exp(-(m - 0.8) / 0.2) : m; }
++static inline double hdr_srgb_encode(double c) { c = c < 0 ? 0 : c > 1 ? 1 : c; return c <= 0.0031308 ? 12.92 * c : 1.055 * pow(c, 1 / 2.4) - 0.055; }
++
++// ---------- The shared state (hdr.c; any thread) ----------
++int dm_hdr_pref(void);                                         // DM_HDR, read once (default: the game profile's hdr key, DM_GAME_HDR); never written
++int dm_hdr_screen(double potential, double current);           // the front end, on every screen event: the window's screen's EDR headroom (potential, current); returns whether HDR is in effect
++void dm_hdr_headroom_set(double current);                      // the front end's 2 Hz poll while HDR is in effect (the brightness slider sends no notification)
++int dm_hdr_on(void);                                           // the setting and the screen allow HDR
++float dm_hdr_headroom(void);                                   // the current EDR headroom, at least 1
++int dm_hdr_paper_white(void);                                  // nits (DM_HDR_PAPER_WHITE, 203)
++int dm_hdr_answer(uint16_t *peak);                             // vi::QueryDisplayHdrStatus: on, and the peak in nits; an "on" answer marks the game told (dm_hdr_told)
++int dm_hdr_told(void);                                         // the game has been told HDR at least once: its RGB10A2 window textures are PQ from then on
++enum { HDR_META_STD, HDR_META_EXT, HDR_META_GAMUT, HDR_META_TONE };
++void dm_hdr_meta_set(int which, int a, int b);                 // the game's layer HDR metadata (hle_vi.c): luminance ranges (lo, hi nits), gamut, tone mapping (a)
++typedef struct { int std_lo, std_hi, ext_lo, ext_hi, gamut, tone, set; } dm_hdr_meta;
++void dm_hdr_meta_get(dm_hdr_meta *m);
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index 4781a8644ec321f01aad6c0c0aaa8512b3dc7988..f340fd77a6905c86495c8d882836776cb69045d6 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -50,6 +50,7 @@
+ #include "msl_image.h"
+ #include "dmsh_chain.h"   // DMSH_CHAIN: the translation chain version of the B shader library expected by this source tree, one for every game (beside this file, tools/dmsh_chain.py --header)
+ #include "game_profile.h"   // game profile constants (profile id, the profile's switches)
++#include "hdr.h"   // HDR output (DM_HDR): the shared state, the PQ decode the dump uses
+ // Texture slot table per stage: 0-127 the combined handles (nvnCommandBufferBindTexture), 128-255 the separate texture binds (NVN_SEPTEX_SLOT0, nvn_obj.h)
+ #define NTEX 256
+ // The NVN driver's constant segments c0 and c2 (byte offsets, slot counts) and the binding kinds of the shader reflection have one definition, which the shader build reads too (dmsh_build.py through dmsh_abi.py)
+@@ -298,6 +299,7 @@ static _Atomic int g_up_pending;
+ // discarded as the victim of another's error comes back with a timeout too while the game goes on, as it did in #1326's second run
+ static _Atomic int g_gpu_lost;
+ void front_gpu_lost(void);
++__attribute__((weak)) void front_hdr_layer(int edr) { (void)edr; }   // front_mac.m switches the layer between SDR and extended linear sRGB (HDR, DM_HDR); none on iOS and in tests
+ __attribute__((weak)) void front_gpu_lost(void) { MDIE("GPU access revoked: macOS runs none of this process's GPU work any more"); }   // the Mac front end leaves full screen, says why and quits
+ static void gpu_lost_release(void) {
+     static os_unfair_lock lk = OS_UNFAIR_LOCK_INIT;   // never lower it
+@@ -1073,7 +1075,7 @@ static void mtl_init_once(void) {
+     g_present_args = [g_dev newArgumentTableWithDescriptor:pad error:&ate];
+     if (!g_present_args) MDIE("failed to create the present argument table: %s", ate.localizedDescription.UTF8String);
+     for (int i = 0; i < 3; i++) {
+-        g_present_uv[i] = [g_dev newBufferWithLength:sizeof(float) * 44 options:MTLResourceStorageModeShared];   // the crop (8) and the present filter's parameters (4, pfx_params), then the anti-aliasing pass's (12, aa_encode), EDR's (4), pixel art's (16, pixel_art.inc)
++        g_present_uv[i] = [g_dev newBufferWithLength:sizeof(float) * 44 options:MTLResourceStorageModeShared];   // the crop (8; an HDR10 picture's constants then at 8-11, present_hdr_consts) and the present filter's parameters (4, pfx_params), then the anti-aliasing pass's (12, aa_encode), EDR's (4), pixel art's (16, pixel_art.inc)
+         if (!g_present_uv[i]) MDIE("failed to create present UV buffer[%d]", i);
+         res_add(g_present_uv[i]);
+     }
+@@ -18725,6 +18727,7 @@ static struct { uint64_t frame; char path[1024]; } g_shotq[SHOTQ_MAX]; static in
+ static pthread_mutex_t g_shotq_mu = PTHREAD_MUTEX_INITIALIZER;
+ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4]);
+ static int present_crop_rect(id<MTLTexture> src, const int crop[4], NSUInteger r[4]);
++static int present_pq(id<MTLTexture> t);
+ enum { PRESENT_FAILED, PRESENT_STANDARD, PRESENT_METALFX };
+ static int present_offscreen_m4(id<MTLTexture> src, const int crop[4], id<MTLTexture> out, void (^done)(int));
+ static int present_offscreen_wait(id<MTLTexture> src, const int crop[4], id<MTLTexture> out);
+@@ -18784,7 +18787,8 @@ void dm_gfx_shot_at(long k, const char *path) {
+ // of that size (with DM_PRESENT_UPSCALE=metalfx through MetalFX, on the Metal 4 queue: present_offscreen_m4); screen=0 (texture dump) is unaffected.
+ // Without it, a window the game crops (nvnWindowSetCrop) is captured the same way at the window texture's own size: what is outside the crop is never presented and holds
+ // whatever the texture held before (Bastion crops its 1920x1080 window textures to 1600x900; the strip outside was black in some runs and purple in others, which regress.py
+-// took for a rendering change). An uncropped window is read as it is, so its shots are the texture's own pixels
++// took for a rendering change). An uncropped window is read as it is, so its shots are the texture's own pixels. An HDR10 window texture (DM_HDR: PQ in RGB10A2) always goes
++// through the present pass, whose fs_pq_sdr tone-maps it to SDR (paper white at white, highlights rolled off): its bytes are never written as sRGB ones
+ static void shot(id<MTLTexture> src, const char *path, int screen, const int crop[4]) {
+     static int out_w = -1, out_h;
+     if (out_w < 0) {
+@@ -18794,7 +18798,8 @@ static void shot(id<MTLTexture> src, const char *path, int screen, const int cro
+     }
+     id<MTLTexture> read = src;
+     NSUInteger r[4]; int cropped = screen && !out_w && present_crop_rect(src, crop, r) && (r[0] || r[1] || r[2] != src.width || r[3] != src.height);
+-    if ((out_w || cropped) && screen) {
++    int pq = present_pq(src);   // HDR10: drawn to SDR, whatever screen says
++    if (((out_w || cropped) && screen) || pq) {
+         NSUInteger ow = out_w ? (NSUInteger)out_w : src.width, oh = out_w ? (NSUInteger)out_h : src.height;
+         MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:ow height:oh mipmapped:NO];
+         d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead; d.storageMode = MTLStorageModePrivate;
+@@ -19184,7 +19189,38 @@ static void present_pipeline(MTLPixelFormat format) {
+         g_blit_samp = [g_dev newSamplerStateWithDescriptor:sd];
+     }
+ }
++// The present's fragment, by the picture's encoding and the target's format (HDR, DM_HDR: nvn/hdr.h; msl/present.metal). The game's own SDR picture into an 8-bit target is fs, as
++// it always was; an HDR10 picture (PQ, BT.2020 in RGB10A2, once the game has been told HDR) into the extended linear drawable (RGBA16Float) is fs_edr, into an 8-bit target (a
++// screenshot, or a drawable taken before the layer switched) fs_pq_sdr; an SDR picture into the extended linear drawable (the frames while the layer switches back) fs_sdr_lin
++enum { PV_SDR, PV_EDR, PV_PQ_SDR, PV_SDR_LIN, PV_N };
++static int present_pq(id<MTLTexture> t) { return t.pixelFormat == MTLPixelFormatRGB10A2Unorm && dm_hdr_told(); }
++static int present_variant(int pq, MTLPixelFormat dst) { int edr = dst == MTLPixelFormatRGBA16Float; return pq ? (edr ? PV_EDR : PV_PQ_SDR) : edr ? PV_SDR_LIN : PV_SDR; }
++// One pipeline per variant and target format, made on first use (the present thread; screenshots on the classic queue run there too)
++// NXForge: the HDR10 pass's pipelines (nxnative PR #3009); every other picture keeps NXForge's present_pipeline above
++static id<MTLRenderPipelineState> present_hdr_pipeline(MTLPixelFormat format, int variant) {
++    static struct { MTLPixelFormat fmt; int variant; __strong id<MTLRenderPipelineState> pso; } cache[8]; static int n;
++    for (int i = 0; i < n; i++) if (cache[i].fmt == format && cache[i].variant == variant) return cache[i].pso;
++    static NSString *const fn[PV_N] = {@"fs", @"fs_edr", @"fs_pq_sdr", @"fs_sdr_lin"};
++    NSError *e = nil;
++    id<MTLLibrary> lib = host_lib("present", &e);
++    if (!lib) MDIE("present shader compile failed %s", e.localizedDescription.UTF8String);
++    MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new];
++    pd.vertexFunction = [lib newFunctionWithName:@"vs"]; pd.fragmentFunction = [lib newFunctionWithName:fn[variant]];
++    pd.colorAttachments[0].pixelFormat = format;
++    id<MTLRenderPipelineState> pso = dev_rps(pd, &e);
++    if (!pso) MDIE("present pipeline failed %s", e.localizedDescription.UTF8String);
++    if (!g_blit_samp) {
++        MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new]; sd.minFilter = sd.magFilter = MTLSamplerMinMagFilterLinear; sd.supportArgumentBuffers = YES;
++        g_blit_samp = [g_dev newSamplerStateWithDescriptor:sd];
++    }
++    if (variant != PV_SDR) MLOG("[hdr] present pipeline %s for format %lu", fn[variant].UTF8String, (unsigned long)format);
++    if (n == 8) n = 0;   // more than 8 target formats: start over (each made again on use)
++    cache[n].fmt = format; cache[n].variant = variant; cache[n].pso = pso; n++;
++    return pso;
++}
+ static id<MTLRenderPipelineState> pfx_pso(void) { id<MTLRenderPipelineState> p = g_pfx_pso[pfx_mode()]; return p ? p : g_blit_pso; }
++// The HDR constants after the crop (CropHdr.hdr): 10000 / paper white, the current EDR headroom
++static void present_hdr_consts(float *h) { h[0] = 10000.0f / dm_hdr_paper_white(); h[1] = dm_hdr_headroom(); h[2] = h[3] = 0; }
+ // Present samples only the valid source rectangle declared by NVN; kept separate from the raw swapchain readback screenshot. Edges are clamped to the texel centers of the valid area, so bilinear does not read the black texels outside.
+ // Present samples the raw bytes stored in the swapchain texture (the Switch's scan-out sends the stored bytes as they are): an sRGB source is replaced by a non-sRGB view of the same storage,
+ // otherwise sampling decodes to linear first, the BGRA8Unorm layer does not encode again, and the whole picture comes out dark. Other formats are returned as they are (Mario's swapchain is RGBA8 and does not come here).
+@@ -19240,7 +19276,7 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
+     if (memcmp(meta, last_crop, sizeof meta)) { memcpy(last_crop, meta, sizeof meta);
+         MLOG("present crop: source texture %lux%lu, valid %lu,%lu %lux%lu → target %lux%lu", (unsigned long)src.width, (unsigned long)src.height,
+              (unsigned long)cx, (unsigned long)cy, (unsigned long)cw, (unsigned long)ch, (unsigned long)dst.width, (unsigned long)dst.height); }
+-    present_pipeline(dst.pixelFormat);
++    present_pipeline(dst.pixelFormat);   // NXForge's pipelines and the sampler; an HDR10 picture takes present_hdr_pipeline below
+     MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+     double dw = dst.width, dh = dst.height;
+     MTLViewport vp = present_fit(src, dw, dh);
+@@ -19253,10 +19289,11 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
+     rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+     id<MTLRenderCommandEncoder> en = [cb renderCommandEncoderWithDescriptor:rp];
+     [en setViewport:vp];
+-    [en setRenderPipelineState:pfx_pso()]; [en setFragmentTexture:present_raw_src(src) atIndex:0]; [en setFragmentSamplerState:g_blit_samp atIndex:0];
++    int pq_src = present_pq(src);   // NXForge: an HDR10 picture takes the HDR pass (nxnative PR #3009); anything else NXForge's pass, its filters and EDR highlights
++    [en setRenderPipelineState:pq_src ? present_hdr_pipeline(dst.pixelFormat, present_variant(1, dst.pixelFormat)) : pfx_pso()]; [en setFragmentTexture:present_raw_src(src) atIndex:0]; [en setFragmentSamplerState:g_blit_samp atIndex:0];
+     float uv[28] = {(float)cx / src.width, (float)cy / src.height, (float)cw / src.width, (float)ch / src.height,
+                    (cx + 0.5f) / src.width, (cy + 0.5f) / src.height, (cx + cw - 0.5f) / src.width, (cy + ch - 0.5f) / src.height};
+-    pfx_params(uv + 8, &vp, cw, ch); nxf_edr_params(uv + 24, dst.pixelFormat);   // NXForge: EDR highlights (present_edr.inc)
++    if (pq_src) present_hdr_consts(uv + 8); else { pfx_params(uv + 8, &vp, cw, ch); nxf_edr_params(uv + 24, dst.pixelFormat); }   // NXForge: EDR highlights (present_edr.inc)
+     if (atomic_load_explicit(&g_origin_ll, memory_order_relaxed)) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
+     [en setFragmentBytes:uv length:sizeof uv atIndex:0];
+     [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+@@ -19649,7 +19686,10 @@ static int up_mfx_encode(NvShader *cs) {
+ // (fx: the scaler state to use, nil = bilinear). uvb: the pass's crop constants (one buffer per present allocator, written by the CPU)
+ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4], id<MTLBuffer> uvb, fx_state *fx) {
+     NSUInteger r[4]; if (!present_crop_rect(src, crop, r)) return 0;
+-    present_pipeline(dst.pixelFormat);
++    // NXForge: an HDR10 picture (nxnative PR #3009, DM_HDR) takes the HDR pass: no anti-aliasing, pixel art, present filter, border fill or frame interpolation (they read gamma
++    // bytes); MetalFX keeps the picture's own format and encoding in a texture of its own, which the pass then converts
++    int pq = present_pq(src);
++    if (pq) present_hdr_pipeline(dst.pixelFormat, present_variant(1, dst.pixelFormat)); else present_pipeline(dst.pixelFormat);
+     // The window's right part a front end keeps for a panel (mtl_present_inset): the picture fits and centres in what is left. Only the window's present (fx is the present thread's):
+     // screenshots and recordings stay whole
+     double dw = dst.width, dh = dst.height, aw = fx == &g_fx_present ? dw * (1 - atomic_load(&g_present_inset)) : dw;
+@@ -19659,22 +19699,22 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+     static int direct_ok = -1; if (direct_ok < 0) { const char *e = getenv("DM_FX_DIRECT"); direct_ok = !(e && !strcmp(e, "0")); }
+     // Anti-aliasing first, on the game's own pixels (aa_encode); its output stands in for the game's texture from here on, at the origin
+     id<MTLTexture> tex = present_raw_src(src), aa;
+-    if (fx == &g_fx_present) tex = nxf_fi_source(cb, tex);   // NXForge: frame interpolation's in-between picture or held frame (frame_interp.inc)
++    if (fx == &g_fx_present && !pq) tex = nxf_fi_source(cb, tex);   // NXForge: frame interpolation's in-between picture or held frame (frame_interp.inc)
+     // NXForge: pixel art (pixel_art.inc) looks for the art's own grid in the game's picture and, while it is on, draws the art at its own size (fr: the crop the pass samples,
+     // fractional there) in place of anti-aliasing and MetalFX
+     double fr[4] = {r[0], r[1], r[2], r[3]};
+-    id<MTLTexture> px = fx ? nxf_px_encode(fx, cb, tex, r, vp, uvb, fx == &g_fx_present, fr) : nil;
+-    aa = fx && !nxf_px_active() ? aa_encode(fx, cb, tex, r, uvb, fx == &g_fx_present) : nil;
++    id<MTLTexture> px = fx && !pq ? nxf_px_encode(fx, cb, tex, r, vp, uvb, fx == &g_fx_present, fr) : nil;
++    aa = fx && !pq && !nxf_px_active() ? aa_encode(fx, cb, tex, r, uvb, fx == &g_fx_present) : nil;
+     if (aa) { tex = aa; r[0] = r[1] = 0; fr[0] = fr[1] = 0; }
+     if (px) tex = px;
+     // MetalFX with no present filter or with Sharpen, which then sharpens the scaled picture as FSR's RCAS follows its upscale (front.h mtl_present_filter); the other filters work on
+     // the game's own pixels, which the scaler would already have resampled. NXForge: not for a Pixel-perfect picture size either, which keeps every game pixel square
+-    int pf = pfx_mode();
++    int pf = pq ? DM_PFX_OFF : pfx_mode();
+     // The picture fills dst unflipped: MetalFX may write dst itself, as the pass would only copy its output 1:1 (fx_encode). NXForge: only when the pass has nothing of its own to add
+     // (no present filter, and an SDR drawable: EDR highlights are the pass's)
+-    int direct = direct_ok && full && !flipped && pf == DM_PFX_OFF && dst.pixelFormat != MTLPixelFormatRGBA16Float && dst.storageMode == MTLStorageModePrivate;   // MetalFX writes only private textures
++    int direct = direct_ok && full && !flipped && !pq && pf == DM_PFX_OFF && dst.pixelFormat != MTLPixelFormatRGBA16Float && dst.storageMode == MTLStorageModePrivate;   // MetalFX writes only private textures
+     id<MTLTexture> up = fx && !px && (pf == DM_PFX_OFF || pf == DM_PFX_SHARPEN) && mtl_present_scale() != DM_PSCALE_INTEGER
+-        ? fx_encode(fx, cb, tex, r, vp, dst.pixelFormat, fx == &g_fx_present, direct ? dst : nil, &wrote) : nil;
++        ? fx_encode(fx, cb, tex, r, vp, pq ? tex.pixelFormat : dst.pixelFormat, fx == &g_fx_present, direct ? dst : nil, &wrote) : nil;
+     if (wrote) return PRESENT_METALFX;
+     if (up && fx == &g_fx_present) { static int once; if (!once++)
+         MLOG("present upscaling: the present pass draws MetalFX's output into the drawable: %s (drawable %lux%lu format %lu usage %#lx, picture %lux%lu)",
+@@ -19700,10 +19740,10 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+     uv[4] = (float)((fmax(floor(cx + 1e-6), 0) + 0.5) / tw); uv[5] = (float)((fmax(floor(cy + 1e-6), 0) + 0.5) / th);
+     uv[6] = (float)((fmin(ceil(cx + cw - 1e-6), tw) - 0.5) / tw); uv[7] = (float)((fmin(ceil(cy + ch - 1e-6), th) - 0.5) / th);
+     if (flipped) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
+-    pfx_params(uv + 8, &vp, cw, ch); nxf_edr_params(uv + 24, dst.pixelFormat);   // NXForge: EDR highlights (present_edr.inc)
++    if (pq) present_hdr_consts(uv + 8); else { pfx_params(uv + 8, &vp, cw, ch); nxf_edr_params(uv + 24, dst.pixelFormat); }   // NXForge: EDR highlights (present_edr.inc); HDR10's own
+     at_addr(g_present_args, uvb.gpuAddress, 0, "present table slot", 1);
+     if (bf) nxf_bf_fill(en, dw, dh, bf_aspect, dst.pixelFormat);   // NXForge: the fill first, the picture over it
+-    [en setViewport:vp]; [en setRenderPipelineState:pfx_pso()];
++    [en setViewport:vp]; [en setRenderPipelineState:pq ? present_hdr_pipeline(dst.pixelFormat, present_variant(1, dst.pixelFormat)) : pfx_pso()];
+     [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+     m4_end(en);
+     return up ? PRESENT_METALFX : PRESENT_STANDARD;
+@@ -19749,6 +19789,43 @@ static void present_gpu_note(double s, int fx) {
+     MLOG("present command buffer GPU time over 600 presents %s: p50 %.3f ms, p95 %.3f ms, max %.3f ms", fx ? "through MetalFX" : "through the bilinear pass", a[299], a[569], a[599]);
+     n[fx] = 0;
+ }
++// HDR10 window textures (DM_HDR, nvn/hdr.h): the first one's size and format, the game's layer metadata when it changes (sent with every HDR frame), and with DM_HDR_DUMP the
++// code values of a centre patch decoded as PQ, to confirm the encoding on hardware (an HDR10 HUD's white sits near PQ 0.58, 203 nits; SDR gamma bytes would put it near 1.0).
++// DM_HDR_DUMP=1 reads the 120th HDR10 present (past the frames of the switch), =<n> the nth. Present thread
++static void hdr_present_note(id<MTLTexture> src) {
++    static uint64_t n; n++;
++    if (n == 1) MLOG("[hdr] present: first HDR10 window texture %lux%lu format %lu (RGB10A2: PQ, BT.2020), paper white %d nits = EDR 1.0", (unsigned long)src.width, (unsigned long)src.height,
++                     (unsigned long)src.pixelFormat, dm_hdr_paper_white());
++    dm_hdr_meta m; dm_hdr_meta_get(&m); static dm_hdr_meta last;
++    if (m.set && memcmp(&m, &last, sizeof m)) { last = m;
++        MLOG("[hdr] the game's layer HDR metadata: standard luminance %d..%d nits, extended %d..%d nits, content gamut %d, HDR-to-SDR tone mapping %d", m.std_lo, m.std_hi, m.ext_lo, m.ext_hi, m.gamut, m.tone); }
++    static long at = -1; if (at < 0) { const char *e = getenv("DM_HDR_DUMP"); at = e ? atol(e) : 0; if (at == 1) at = 120; if (at < 0) at = 0; }
++    if (!at || (long)n != at) return;
++    NSUInteger w = MIN((NSUInteger)64, src.width), h = MIN((NSUInteger)64, src.height), x0 = (src.width - w) / 2, y0 = (src.height - h) / 2;
++    id<MTLBuffer> rb = [g_dev newBufferWithLength:w * h * 4 options:MTLResourceStorageModeShared];
++    id<MTLCommandBuffer> cb = q_cb(); id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
++    [b copyFromTexture:src sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(x0, y0, 0) sourceSize:MTLSizeMake(w, h, 1) toBuffer:rb destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:w * h * 4];
++    [b endEncoding];
++    int pw = dm_hdr_paper_white(); float head = dm_hdr_headroom(); uint16_t peak; int on = dm_hdr_answer(&peak); uint64_t frame = n;
++    [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { (void)c;
++        const uint32_t *q = rb.contents; double cmin[3] = {1, 1, 1}, cmax[3] = {0}, csum[3] = {0}, nmin = 1e9, nmax = 0, nsum = 0, emax = -1e9, emin = 1e9;
++        for (NSUInteger k = 0; k < w * h; k++) {
++            double code[3], e[3]; hdr_rgb10a2_codes(q[k], code); hdr_pq_to_edr(code, pw, 1e9, e);
++            double nits = 0; for (int i = 0; i < 3; i++) { cmin[i] = fmin(cmin[i], code[i]); cmax[i] = fmax(cmax[i], code[i]); csum[i] += code[i]; nits = fmax(nits, hdr_pq_nits(code[i])); }
++            nmin = fmin(nmin, nits); nmax = fmax(nmax, nits); nsum += nits;
++            for (int i = 0; i < 3; i++) { emin = fmin(emin, e[i]); emax = fmax(emax, e[i]); }
++        }
++        double k = (double)(w * h);
++        MLOG("[hdr] DM_HDR_DUMP: HDR10 present %llu, window texture %lux%lu format %lu, centre %lux%lu at %lu,%lu: code values R %.3f..%.3f (avg %.3f) G %.3f..%.3f (%.3f) B %.3f..%.3f (%.3f); "
++             "as PQ %.1f..%.1f nits by the largest channel (avg %.1f), extended linear sRGB %.3f..%.3f with paper white %d nits = 1.0 (current headroom %.2f); the game was told %s, peak %u nits. "
++             "PQ reads right if a white HUD is near 0.58 and the sky well below 0.75 (1000 nits); gamma-encoded SDR would show white near 1.0",
++             (unsigned long long)frame, (unsigned long)src.width, (unsigned long)src.height, (unsigned long)src.pixelFormat, (unsigned long)w, (unsigned long)h, (unsigned long)x0, (unsigned long)y0,
++             cmin[0], cmax[0], csum[0] / k, cmin[1], cmax[1], csum[1] / k, cmin[2], cmax[2], csum[2] / k, nmin, nmax, nsum / k, emin, emax, pw, head, on ? "HDR" : "SDR", peak);
++        dm_hdr_meta mm; dm_hdr_meta_get(&mm);
++        MLOG("[hdr] DM_HDR_DUMP: the game's metadata: standard luminance %d..%d nits, extended %d..%d nits, content gamut %d, tone mapping %d%s", mm.std_lo, mm.std_hi, mm.ext_lo, mm.ext_hi, mm.gamut, mm.tone,
++             mm.set ? "" : " (none sent yet)"); }];
++    [cb commit];
++}
+ static double g_link_it_tin;   // Enqueue time of the frame the display-link callback is presenting (read and written only on the display-link thread)
+ // External presents wait on g_q4, but diagnostic readback can use another queue. Wait for the producer before any read of that frame.
+ static id<MTLSharedEvent> g_ext_ev;
+@@ -19818,6 +19895,8 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+     for (int i = 0; i < g_nshotq;) if (g_present_n >= g_shotq[i].frame) { present_shot(src, g_shotq[i].path, crop, ev_val, &shot_ready); g_shotq[i] = g_shotq[--g_nshotq]; } else i++;
+     pthread_mutex_unlock(&g_shotq_mu);
+ 
++    int pq = present_pq(src);
++    if (pq) hdr_present_note(src);
+     if (atomic_load(&g_gpu_lost)) return 0;   // the display command buffer would be ignored too: take no drawable from the screen the front end is about to close
+     CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
+     if (!layer) return 0;
+@@ -19825,8 +19904,16 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+ #if TARGET_OS_OSX
+     if (!layer.displaySyncEnabled) layer.displaySyncEnabled = YES;   // Windowed mode follows the display's vsync to prevent tearing
+ #endif
+-    nxf_edr_layer(layer);   // NXForge: EDR highlights switch the layer's format (present_edr.inc)
+-    present_pipeline(layer.pixelFormat);   // Same as the original path: the first frame compiles the pipeline before taking the drawable
++    // HDR (DM_HDR, nxnative PR #3009): the layer follows the picture. An HDR10 window texture while HDR is in effect wants the extended linear layer (RGBA16Float, extended linear
++    // sRGB, EDR); NXForge sets it here with EDR highlights' own switch (present_edr.inc), which otherwise keeps the layer as that setting wants. A drawable taken before a switch
++    // lands keeps the old format, and the pass converts into whatever format it gets (present_variant)
++    { static int asked; int want = pq && dm_hdr_on();
++      if (want != asked) { asked = want;
++          MLOG("[hdr] present: %s (window texture format %lu, current headroom %.2f)", want ? "an HDR10 picture: the layer to RGBA16Float, extended linear sRGB, EDR" :
++               pq ? "HDR is no longer in effect: the HDR10 frames until the game switches back tone-mapped" : "an SDR picture: the layer as EDR highlights want it",
++               (unsigned long)src.pixelFormat, dm_hdr_headroom()); }
++      nxf_edr_layer(layer, want); }
++    if (pq) present_hdr_pipeline(layer.pixelFormat, present_variant(1, layer.pixelFormat)); else present_pipeline(layer.pixelFormat);   // Same as the original path: the first frame compiles the pipeline before taking the drawable
+     if (g_grab_cb && g_fi_phase != FI_HELD) grab_present(src, crop, layer.drawableSize);   // Game picture needed by the whole-window screenshot (peek without the lock first; the real take locks inside the function)
+     if (atomic_load(&g_recorder_on) && g_fi_phase != FI_HELD) record_present(src, crop);   // the video recorder's frame (capture_mac.m)
+     static uint64_t nxf_dr_wait; if (!supplied && nxf_ll_trim_drop(nxf_dr_wait)) { nxf_dr_wait = 0; return 0; }   // NXForge: nxforge/low_lag.h (the trim)
+diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
+index 0657d044ef3d1e6501eed2bc5973816bfd9b19b7..16194b5e4d4250d6ae691f165b252da23963acdc 100644
+--- a/dm/gfx/tests/Makefile
++++ b/dm/gfx/tests/Makefile
+@@ -127,6 +127,9 @@ t_host_msl: t_host_msl.m ../nvn/host_msl.m ../nvn/host_msl.h $(MSL_H)
+ 	clang -O1 -g -Wall -I$(dir $(MSL_H)) -fobjc-arc -o $@ t_host_msl.m ../nvn/host_msl.m -framework Metal -framework Foundation
+ t_builtin: t_builtin.m ../nvn/nvn_builtin.h ../nvn/host_msl.m $(MSL_H)
+ 	clang -O1 -g -Wall -I$(dir $(MSL_H)) -fobjc-arc -o $@ t_builtin.m ../nvn/host_msl.m -framework Metal -framework Foundation
++# HDR output's pure parts (nvn/hdr.h): DM_HDR, the per-screen decision, the PQ decode; CPU only
++t_hdr: t_hdr.c ../nvn/hdr.h
++	clang -O1 -g -Wall -Wextra -o $@ t_hdr.c
+ t_vin: t_vin.m
+ 	clang -O1 -g -Wall -fobjc-arc -o $@ t_vin.m -framework Metal -framework Foundation
+ t_tbuf2d: t_tbuf2d.m ../nvn/nvn_tex.c ../nvn/nvn_tex.h
+diff --git a/dm/gfx/tests/t_hdr.c b/dm/gfx/tests/t_hdr.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa78f2d7bdc2623932e2ac0f236e9061804fe85e
+--- /dev/null
++++ b/dm/gfx/tests/t_hdr.c
+@@ -0,0 +1,87 @@
++// HDR output's pure parts (nvn/hdr.h): DM_HDR's values, the per-screen decision through screen changes (the setting is never changed by them), the peak the game is told,
++// paper white, the PQ (ST 2084) decode at known code values, the RGB10A2 unpack, the PQ → extended linear sRGB mapping fs_edr does and the screenshots' SDR curve.
++// CPU only; the GPU side of the same mapping is in t_present_crop
++#include "../nvn/hdr.h"
++#include <stdio.h>
++static int failed, cases;
++#define EXPECT(n, w, v) do { long a = (w), b = (v); cases++; printf("%s expected %ld → got %ld %s\n", n, a, b, a == b ? "✓" : "✗"); failed += a != b; } while (0)
++#define NEAR(n, w, v, tol) do { double a = (w), b = (v); cases++; int ok = fabs(a - b) <= (tol); printf("%s expected %.5g → got %.5g %s\n", n, a, b, ok ? "✓" : "✗"); failed += !ok; } while (0)
++
++int main(void) {
++    int bad;
++    // DM_HDR: auto | 0, unset = the game profile's default, anything else reported and the default kept
++    EXPECT("unset: the profile's default (auto)", HDR_PREF_AUTO, hdr_pref_parse(NULL, HDR_PREF_AUTO, &bad)); EXPECT("unset: not bad", 0, bad);
++    EXPECT("unset: the profile's default (off)", HDR_PREF_OFF, hdr_pref_parse(NULL, HDR_PREF_OFF, &bad));
++    EXPECT("empty: the default", HDR_PREF_AUTO, hdr_pref_parse("", HDR_PREF_AUTO, &bad));
++    EXPECT("auto", HDR_PREF_AUTO, hdr_pref_parse("auto", HDR_PREF_OFF, &bad)); EXPECT("auto: not bad", 0, bad);
++    EXPECT("0", HDR_PREF_OFF, hdr_pref_parse("0", HDR_PREF_AUTO, &bad)); EXPECT("0: not bad", 0, bad);
++    const char *wrong[] = {"1", "on", "Auto", "yes", "2", " auto"};
++    for (unsigned i = 0; i < sizeof wrong / sizeof *wrong; i++) { EXPECT(wrong[i], HDR_PREF_AUTO, hdr_pref_parse(wrong[i], HDR_PREF_AUTO, &bad)); EXPECT("reported", 1, bad); }
++
++    // Capability: potential EDR headroom at least HDR_CAPABLE_POTENTIAL (4.0; the play test measured the XDR panel at 16, the Studio Display at 2 then 1)
++    EXPECT("MacBook Pro XDR (16): capable", 1, hdr_screen_capable(16.0));
++    EXPECT("SDR screen (1.0): not capable", 0, hdr_screen_capable(1.0));
++    EXPECT("just above 1: not capable", 0, hdr_screen_capable(1.01));
++    EXPECT("Studio Display at start (2.0): not capable", 0, hdr_screen_capable(2.0));
++    EXPECT("3.99: not capable", 0, hdr_screen_capable(3.99));
++    EXPECT("4.0: capable (the threshold is inclusive)", 1, hdr_screen_capable(4.0));
++    EXPECT("0 (no screen value): not capable", 0, hdr_screen_capable(0));
++    EXPECT("NaN: not capable", 0, hdr_screen_capable(NAN));
++    // setting × capability
++    EXPECT("auto × capable: on", 1, hdr_decide(HDR_PREF_AUTO, 1)); EXPECT("auto × not capable: off", 0, hdr_decide(HDR_PREF_AUTO, 0));
++    EXPECT("0 × capable: off", 0, hdr_decide(HDR_PREF_OFF, 1)); EXPECT("0 × not capable: off", 0, hdr_decide(HDR_PREF_OFF, 0));
++
++    // Screen changes: MacBook → Studio Display → MacBook, then clamshell on the Studio Display and the lid opened again; the setting is the same after every step
++    const double screens[] = {16.0, 2.0, 16.0, 16.0, 1.0, 2.0, 16.0};   // the Studio Display as measured: 2 at start, then 1
++    const int want_auto[] = {1, 0, 1, 1, 0, 0, 1};
++    for (int pref = HDR_PREF_OFF; pref <= HDR_PREF_AUTO; pref++) {
++        hdr_decision d = {.pref = pref};
++        for (unsigned i = 0; i < sizeof screens / sizeof *screens; i++) {
++            char name[96];
++            snprintf(name, sizeof name, "DM_HDR=%s, screen %u (potential %.0f): %s", pref ? "auto" : "0", i, screens[i], pref && want_auto[i] ? "HDR" : "SDR");
++            EXPECT(name, pref ? want_auto[i] : 0, hdr_decision_screen(&d, screens[i]));
++            EXPECT("the setting is unchanged", pref, d.pref);
++        }
++    }
++
++    // The peak the game is told: potential × paper white within [paper white, 1600]
++    EXPECT("XDR, 203: 1600 (the cap)", 1600, hdr_peak_nits(16.0, 203));
++    EXPECT("potential 4, 203: 812", 812, hdr_peak_nits(4.0, 203));
++    EXPECT("potential 1.01, 203: at least paper white", 205, hdr_peak_nits(1.01, 203));
++    EXPECT("potential 0.5: paper white", 203, hdr_peak_nits(0.5, 203));
++    EXPECT("NaN: paper white", 203, hdr_peak_nits(NAN, 203));
++    // DM_HDR_PAPER_WHITE
++    EXPECT("paper white unset: 203", 203, hdr_paper_white_parse(NULL));
++    EXPECT("paper white 250", 250, hdr_paper_white_parse("250"));
++    EXPECT("paper white 79: refused", -1, hdr_paper_white_parse("79")); EXPECT("paper white 1001: refused", -1, hdr_paper_white_parse("1001"));
++    EXPECT("paper white 2x: refused", -1, hdr_paper_white_parse("2x"));
++
++    // PQ (SMPTE ST 2084) at known code values: (code, nits) from the inverse EOTF
++    const double pq[][2] = {{0, 0}, {0.062337, 0.1}, {0.508078, 100}, {0.580689, 203}, {0.751827, 1000}, {0.902572, 4000}, {1.0, 10000}};
++    for (unsigned i = 0; i < sizeof pq / sizeof *pq; i++) {
++        char name[64]; snprintf(name, sizeof name, "PQ %.6f → %.1f nits", pq[i][0], pq[i][1]);
++        NEAR(name, pq[i][1], hdr_pq_nits(pq[i][0]), fmax(pq[i][1] * 1e-3, 1e-4));
++    }
++    NEAR("PQ below 0 → 0", 0, hdr_pq_nits(-0.1), 0); NEAR("PQ above 1 → 10000", 10000, hdr_pq_nits(1.5), 1e-6);
++    // 10-bit: code 594 (of 1023) is paper white to within a 10-bit step
++    NEAR("10-bit code 594 → about 203 nits", 203, hdr_pq_nits(594 / 1023.0), 2.0);
++    // RGB10A2 unpack: R bits 0-9, G 10-19, B 20-29
++    double c[3]; hdr_rgb10a2_codes(1023u | 594u << 10 | 0u << 20 | 3u << 30, c);
++    NEAR("RGB10A2 R", 1.0, c[0], 1e-9); NEAR("RGB10A2 G", 594 / 1023.0, c[1], 1e-9); NEAR("RGB10A2 B", 0, c[2], 1e-9);
++    // PQ → extended linear sRGB: paper white grey is 1.0 in every channel (the matrix's rows sum to 1), 1000 nits grey 4.93, clamped at the headroom
++    double g[3] = {0.580689, 0.580689, 0.580689}, e[3];
++    hdr_pq_to_edr(g, 203, 8, e); for (int i = 0; i < 3; i++) NEAR("paper white grey → 1.0", 1.0, e[i], 2e-3);
++    double k[3] = {0.751827, 0.751827, 0.751827}; hdr_pq_to_edr(k, 203, 8, e); NEAR("1000 nits grey → 4.93", 1000 / 203.0, e[1], 5e-3);
++    hdr_pq_to_edr(k, 203, 3, e); NEAR("1000 nits grey at headroom 3 → 3", 3, e[0], 0);
++    // a BT.2020 primary red at paper white: outside BT.709, so negative green and blue in extended sRGB (kept), red above 1
++    double r[3] = {0.580689, 0, 0}; hdr_pq_to_edr(r, 203, 8, e);
++    NEAR("BT.2020 red: R 1.66", 1.660491, e[0], 4e-3); EXPECT("BT.2020 red: G below 0", 1, e[1] < 0); EXPECT("BT.2020 red: B below 0", 1, e[2] < 0);
++    // The screenshots' SDR curve: unchanged to 0.8, paper white 0.926 (sRGB 247), continuous at the knee, never above 1
++    NEAR("SDR shoulder: 0.5 unchanged", 0.5, hdr_sdr_shoulder(0.5), 0);
++    NEAR("SDR shoulder: paper white", 1 - 0.2 * exp(-1), hdr_sdr_shoulder(1.0), 1e-12);
++    EXPECT("SDR shoulder: paper white in sRGB bytes", 247, lround(hdr_srgb_encode(hdr_sdr_shoulder(1.0)) * 255));
++    NEAR("SDR shoulder: continuous at 0.8", 0.8, hdr_sdr_shoulder(0.8 + 1e-9), 1e-8);
++    EXPECT("SDR shoulder: 50 × paper white stays below 1", 1, hdr_sdr_shoulder(50) <= 1.0);
++    printf("== %d checks, %d failed ==\n", cases, failed);
++    return failed != 0;
++}
+diff --git a/dm/gfx/tests/t_present_crop.m b/dm/gfx/tests/t_present_crop.m
+index f7509a61b499a9184668675fabd00b7691f9577a..afae8d4d73b09ee824447c3711698dc6bafda84f 100644
+--- a/dm/gfx/tests/t_present_crop.m
++++ b/dm/gfx/tests/t_present_crop.m
+@@ -40,6 +40,17 @@ static int check_present_resize(id<MTLTexture> src, int w, int h) {
+ }
+ #endif
+ 
++#ifndef CROP_LEGACY_HEADER
++// One present of src into a w x h canvas (m4: the Metal 4 offscreen path, else the classic encoder); the canvas's RGBA bytes, the caller frees them
++static uint8_t *present_to(id<MTLTexture> src, const int crop[4], int w, int h, int m4) {
++    MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:w height:h mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
++    id<MTLTexture> ot=[g_dev newTextureWithDescriptor:od];res_add(ot);res_commit();
++    if(m4){EXPECT("Metal 4 present",1,present_offscreen_wait(src,crop,ot)!=PRESENT_FAILED);}
++    else{id<MTLCommandBuffer> cb=[g_q commandBuffer];EXPECT("classic present",1,present_encode(cb,src,ot,crop));[cb commit];[cb waitUntilCompleted];}
++    uint8_t *o=malloc(w*h*4);[ot getBytes:o bytesPerRow:w*4 fromRegion:MTLRegionMake2D(0,0,w,h) mipmapLevel:0];res_remove(ot);return o;
++}
++#endif
++
+ static void check(id<MTLTexture> src, const char *name, const int crop[4], int w, int h, int color) {
+     MTLTextureDescriptor *d=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:w height:h mipmapped:NO];
+     d.storageMode=MTLStorageModeShared;d.usage=MTLTextureUsageRenderTarget;
+@@ -78,6 +89,25 @@ static uint64_t display_ticket(uint64_t receipt, uint64_t before) {
+ }
+ 
+ #ifndef CROP_LEGACY_HEADER
++// HDR (nvn/hdr.h): an 8x8 texture of one texel value; a present of it into a w x h canvas of format pf (m4: Metal 4 offscreen, else classic), the canvas's centre texel as floats
++static id<MTLTexture> tex_fill(MTLPixelFormat pf, uint32_t texel) {
++    MTLTextureDescriptor *d=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:pf width:8 height:8 mipmapped:NO];d.storageMode=MTLStorageModeShared;d.usage=MTLTextureUsageShaderRead;
++    id<MTLTexture> t=[g_dev newTextureWithDescriptor:d];uint32_t px[64];for(int i=0;i<64;i++)px[i]=texel;
++    [t replaceRegion:MTLRegionMake2D(0,0,8,8) mipmapLevel:0 withBytes:px bytesPerRow:32];res_add(t);res_commit();return t;
++}
++static uint32_t pq_texel(int r, int g, int b) { return (uint32_t)r | (uint32_t)g << 10 | (uint32_t)b << 20 | 3u << 30; }
++static void present_px(id<MTLTexture> src, MTLPixelFormat pf, int w, int h, int m4, float out[4]) {
++    MTLTextureDescriptor *od=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:pf width:w height:h mipmapped:NO];od.storageMode=MTLStorageModeShared;od.usage=MTLTextureUsageRenderTarget;
++    id<MTLTexture> ot=[g_dev newTextureWithDescriptor:od];res_add(ot);res_commit();
++    if(m4){EXPECT("Metal 4 present",1,present_offscreen_wait(src,NULL,ot)!=PRESENT_FAILED);}
++    else{id<MTLCommandBuffer> cb=[g_q commandBuffer];EXPECT("classic present",1,present_encode(cb,src,ot,NULL));[cb commit];[cb waitUntilCompleted];}
++    MTLRegion c=MTLRegionMake2D(w/2,h/2,1,1);
++    if(pf==MTLPixelFormatRGBA16Float){__fp16 v[4];[ot getBytes:v bytesPerRow:8 fromRegion:c mipmapLevel:0];for(int i=0;i<4;i++)out[i]=v[i];}
++    else{uint8_t v[4];[ot getBytes:v bytesPerRow:4 fromRegion:c mipmapLevel:0];for(int i=0;i<4;i++)out[i]=v[i];}
++    res_remove(ot);
++}
++static int near(double a, double b, double tol) { return fabs(a-b)<=tol; }
++
+ static void check_external_png(const char *path) {
+     NSURL *url = [NSURL fileURLWithPath:@(path)];
+     CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
+@@ -145,6 +175,9 @@ static void check_external_screenshots(void) {
+ #endif
+ 
+ int main(int argc, char **argv) { @autoreleasepool {
++#ifndef CROP_LEGACY_HEADER
++    if (!(argc == 2 && !strcmp(argv[1], "--external-screenshots"))) setenv("DM_HDR","auto",1);   // read once, on first use (the HDR block at the end)
++#endif
+     mtl_init();
+ #ifndef CROP_LEGACY_HEADER
+     if (argc == 2 && !strcmp(argv[1], "--external-screenshots")) {
+@@ -517,6 +550,75 @@ int main(int argc, char **argv) { @autoreleasepool {
+         EXPECT("the shape reported to the front end is the layer's, width",1920,g_shape_w);EXPECT("the shape reported to the front end is the layer's, height",1080,g_shape_h);
+         res_remove(sw);
+     }
++    {   // HDR (DM_HDR, nvn/hdr.h, msl/present.metal): the decision through screen changes, what vi answers, the layer's wish, and the present's four variants on the GPU
++        mtl_present_layer(1,1);   // the square fixtures fill the canvas
++        id<MTLTexture> sdr=tex_fill(MTLPixelFormatRGBA8Unorm,0xff408020u),pqw=tex_fill(MTLPixelFormatRGB10A2Unorm,pq_texel(594,594,594));
++        uint8_t *sdr_before[2];for(int m4=0;m4<2;m4++)sdr_before[m4]=present_to(sdr,NULL,16,16,m4);
++        float px[4];
++        // Before the game is told HDR an RGB10A2 window texture is an SDR picture, presented as before (fs: its code values as they are)
++        EXPECT("not told: RGB10A2 is not PQ",0,present_pq(pqw));
++        for(int m4=0;m4<2;m4++){present_px(pqw,MTLPixelFormatRGBA8Unorm,16,16,m4,px);EXPECT("not told: RGB10A2 presented raw (594/1023 → 148)",148,(int)px[1]);}
++        // The decision: DM_HDR=auto (setenv above), the screen decides; screen changes never change the setting
++        EXPECT("DM_HDR=auto read",HDR_PREF_AUTO,dm_hdr_pref());
++        EXPECT("no screen yet: off",0,dm_hdr_on());uint16_t peak=1;EXPECT("no screen yet: vi answers SDR",0,dm_hdr_answer(&peak));EXPECT("SDR: peak 0",0,peak);
++        EXPECT("SDR answers do not mark the game told",0,dm_hdr_told());
++        EXPECT("MacBook (potential 16): on",1,dm_hdr_screen(16.0,8.0));EXPECT("on",1,dm_hdr_on());
++        EXPECT("vi answers HDR",1,dm_hdr_answer(&peak));EXPECT("peak: 16 × 203 capped at 1600",1600,peak);EXPECT("told",1,dm_hdr_told());
++        EXPECT("current headroom 8",8,(int)dm_hdr_headroom());
++        EXPECT("Studio Display (potential 1): off",0,dm_hdr_screen(1.0,1.0));EXPECT("vi answers SDR again",0,dm_hdr_answer(&peak));EXPECT("peak 0",0,peak);
++        EXPECT("setting unchanged on the Studio Display",HDR_PREF_AUTO,dm_hdr_pref());EXPECT("headroom at least 1",1,(int)dm_hdr_headroom());
++        EXPECT("back on the MacBook: on again",1,dm_hdr_screen(16.0,8.0));EXPECT("vi answers HDR again",1,dm_hdr_answer(&peak));EXPECT("setting still auto",HDR_PREF_AUTO,dm_hdr_pref());
++        dm_hdr_headroom_set(0.5);EXPECT("a headroom below 1 reads 1",1,(int)dm_hdr_headroom());dm_hdr_headroom_set(8.0);
++        EXPECT("paper white 203",203,dm_hdr_paper_white());
++        dm_hdr_meta_set(HDR_META_STD,0,406);dm_hdr_meta_set(HDR_META_EXT,0,1400);dm_hdr_meta_set(HDR_META_GAMUT,1,0);dm_hdr_meta_set(HDR_META_TONE,0,0);
++        dm_hdr_meta m;dm_hdr_meta_get(&m);EXPECT("metadata kept: standard max",406,m.std_hi);EXPECT("metadata kept: extended max",1400,m.ext_hi);EXPECT("metadata kept: gamut",1,m.gamut);EXPECT("metadata seen",1,m.set);
++        // Variants by picture and target
++        EXPECT("SDR → BGRA8: fs",PV_SDR,present_variant(0,MTLPixelFormatBGRA8Unorm));EXPECT("HDR10 → RGBA16Float: fs_edr",PV_EDR,present_variant(1,MTLPixelFormatRGBA16Float));
++        EXPECT("HDR10 → BGRA8: fs_pq_sdr",PV_PQ_SDR,present_variant(1,MTLPixelFormatBGRA8Unorm));EXPECT("SDR → RGBA16Float: fs_sdr_lin",PV_SDR_LIN,present_variant(0,MTLPixelFormatRGBA16Float));
++        EXPECT("told: RGB10A2 is PQ",1,present_pq(pqw));EXPECT("told: RGBA8 is not",0,present_pq(sdr));
++        // fs_edr on the GPU against the CPU decode: paper white grey, 1000 nits grey, 10000 nits (clamped at headroom 8), BT.2020 red at paper white (negative G and B kept)
++        const int codes[][3]={{594,594,594},{769,769,769},{1023,1023,1023},{594,0,0},{0,0,0}};
++        for(unsigned i=0;i<sizeof codes/sizeof *codes;i++){
++            id<MTLTexture> t=tex_fill(MTLPixelFormatRGB10A2Unorm,pq_texel(codes[i][0],codes[i][1],codes[i][2]));
++            double code[3]={codes[i][0]/1023.0,codes[i][1]/1023.0,codes[i][2]/1023.0},want[3];hdr_pq_to_edr(code,203,8,want);
++            for(int m4=0;m4<2;m4++){
++                present_px(t,MTLPixelFormatRGBA16Float,16,16,m4,px);int ok=1;
++                for(int c=0;c<3;c++)ok&=near(px[c],want[c],fmax(fabs(want[c])*0.01,0.002));
++                char name[160];snprintf(name,sizeof name,"%s fs_edr PQ (%d,%d,%d) → (%.3f %.3f %.3f), CPU (%.3f %.3f %.3f)",m4?"Metal 4":"classic",codes[i][0],codes[i][1],codes[i][2],px[0],px[1],px[2],want[0],want[1],want[2]);
++                EXPECT(name,1,ok);
++            }
++            res_remove(t);
++        }
++        // fs_pq_sdr: paper white grey into an 8-bit target is 247 (hdr_sdr_shoulder), 10000 nits stays below 255
++        for(int m4=0;m4<2;m4++){present_px(pqw,MTLPixelFormatRGBA8Unorm,16,16,m4,px);EXPECT("fs_pq_sdr: paper white → 247 (±1)",1,near(px[1],247,1));}
++        { id<MTLTexture> t=tex_fill(MTLPixelFormatRGB10A2Unorm,pq_texel(1023,1023,1023));present_px(t,MTLPixelFormatRGBA8Unorm,16,16,1,px);EXPECT("fs_pq_sdr: 10000 nits → 255 at most, 254 at least",1,px[0]>=254&&px[0]<=255);res_remove(t); }
++        // fs_sdr_lin: the game's SDR bytes into the extended linear drawable while it switches back: decoded (0x80 → 0.2158)
++        for(int m4=0;m4<2;m4++){present_px(sdr,MTLPixelFormatRGBA16Float,16,16,m4,px);EXPECT("fs_sdr_lin: 0x80 → 0.216",1,near(px[1],0.2158,0.002));}
++        // SDR pictures into 8-bit targets stay byte-identical with HDR on and the game told
++        for(int m4=0;m4<2;m4++){uint8_t *o=present_to(sdr,NULL,16,16,m4);EXPECT("HDR on: an SDR picture's present byte-identical",0,memcmp(o,sdr_before[m4],16*16*4));free(o);free(sdr_before[m4]);}
++        // The screenshot of an HDR10 picture: through fs_pq_sdr into 8 bits, never its PQ bytes (paper white grey → 247)
++        char dir[]="/tmp/t_present_crop_XXXXXX";if(mkdtemp(dir)){char path[256];snprintf(path,sizeof path,"%s/hdr.png",dir);shot(pqw,path,1,NULL);
++            CGImageSourceRef is=CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:@(path)],NULL);CGImageRef im=is?CGImageSourceCreateImageAtIndex(is,0,NULL):NULL;
++            EXPECT("HDR screenshot written",1,im!=NULL);
++            if(im){CFDataRef dd=CGDataProviderCopyData(CGImageGetDataProvider(im));const uint8_t *b=CFDataGetBytePtr(dd);size_t bpr=CGImageGetBytesPerRow(im);const uint8_t *c=b+4*bpr+4*4;
++                EXPECT("HDR screenshot: 8-bit",8,(int)CGImageGetBitsPerComponent(im));EXPECT("HDR screenshot: paper white grey 247 (±1), not PQ's 148",1,near(c[1],247,1)&&near(c[0],247,1)&&near(c[2],247,1));
++                CFRelease(dd);CGImageRelease(im);}
++            if(is)CFRelease(is);unlink(path);rmdir(dir);}
++        // MetalFX under HDR: the scaler keeps the HDR10 picture's format (its own output texture, never the float drawable), and fs_edr converts after it
++        { g_fx_mode=1;uint64_t was_n=g_present_n;g_present_n=g_fx_present.made_at+FX_REMAKE_PRESENTS;   // past the scaler-remake throttle
++          MTLTextureDescriptor *cd=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float width:32 height:32 mipmapped:NO];
++          cd.storageMode=MTLStorageModeShared;cd.usage=MTLTextureUsageRenderTarget|MTLTextureUsageShaderRead|MTLTextureUsageShaderWrite;id<MTLTexture> canvas=[g_dev newTextureWithDescriptor:cd];res_add(canvas);res_commit();
++          id<MTL4CommandAllocator> al=[g_dev newCommandAllocator];id<MTL4CommandBuffer> cb=[g_dev newCommandBuffer];id<MTLSharedEvent> ev=[g_dev newSharedEvent];uint64_t direct=g_fx_present.direct_n;
++          [cb beginCommandBufferWithAllocator:al];int kind=present_encode_m4(cb,pqw,canvas,NULL,g_present_uv[0],&g_fx_present);[cb endCommandBuffer];
++          [g_q4 commit:&cb count:1];[g_q4 signalEvent:ev value:1];EXPECT("HDR MetalFX present completes",1,[ev waitUntilSignaledValue:1 timeoutMS:10000]);
++          EXPECT("HDR: through MetalFX",PRESENT_METALFX,kind);
++          EXPECT("HDR: the scaler's output keeps the picture's format (RGB10A2)",MTLPixelFormatRGB10A2Unorm,g_fx_present.out?(int)g_fx_present.out.pixelFormat:-1);
++          EXPECT("HDR: the scaler never writes the float drawable",1,g_fx_present.direct_n==direct);
++          __fp16 v[4];[canvas getBytes:v bytesPerRow:8 fromRegion:MTLRegionMake2D(16,16,1,1) mipmapLevel:0];
++          char name[96];snprintf(name,sizeof name,"HDR MetalFX: paper white grey → 1.0 (got %.3f)",(float)v[1]);EXPECT(name,1,near(v[1],1.0,0.02));
++          res_remove(canvas);g_fx_mode=0;g_present_n=was_n; }
++        res_remove(sdr);res_remove(pqw);mtl_present_layer(0,0);
++    }
+ #endif
+     h_nvnQueueFinalize(&queue);
+     printf("== %d checks, %d failed ==\n",cases,failed);return failed!=0;
+diff --git a/dm/host/front.h b/dm/host/front.h
+index 086003520fb6dc3e86beca979cec4caa1df4de9d..bc9dd744d876183f854b5e55e002793f62dce4da 100644
+--- a/dm/host/front.h
++++ b/dm/host/front.h
+@@ -156,6 +156,10 @@ void front_save_failed(int err);
+ // The Mac front end leaves full screen, says why in an alert and quits as ⌘Q does; without a window it ends the run as the default weak implementation (nvn_mtl.m) does, which the iOS
+ // front end keeps: a FATAL line and an abort. Called on Metal's feedback queue; the front end switches to the main thread itself and must not block
+ void front_gpu_lost(void);
++// HDR (DM_HDR, nvn/hdr.h): the present wants the layer in extended dynamic range (edr = 1: RGBA16Float, kCGColorSpaceExtendedLinearSRGB, wantsExtendedDynamicRangeContent) for the
++// game's HDR10 picture, or back exactly as the front end made it (edr = 0: BGRA8Unorm, its own colour space, no EDR). Called from the present thread on a change only; the Mac front end
++// switches the layer on its main thread and does not block (the present draws into each drawable's own format meanwhile). A weak no-op default in nvn_mtl.m (iOS, tests)
++void front_hdr_layer(int edr);
+ 
+ // GPU memory nearly full (called by the graphics backend's nvn_mtl.m guard_stop, once): the game's GPU memory reached about 95% of Metal's working set, the most the driver can wire, and nothing more
+ // could be let go. Past the working set the submit thread would wait in the kernel, unkillable, with the Mac frozen. The Mac front end stops the game's GPU work and sound, leaves full screen, says
+diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
+index dc3ea6ee494b3b092192395d7ffe42d34bd953f0..d2d0484b8c149f6cfc8282818ef6d1ecb2b66d40 100644
+--- a/dm/host/front_mac.m
++++ b/dm/host/front_mac.m
+@@ -23,6 +23,7 @@ _Static_assert(QS_CHEAT_LABEL == DM_CHEAT_LABEL && QS_CHEAT_SECTION_START == DM_
+                && QS_CHEAT_PAIR_OFF == DM_CHEAT_PAIR_OFF && QS_CHEAT_ONCE == DM_CHEAT_ONCE, "quick_settings_mac.h's cheat flags follow dm.h's");
+ #include "capture_mac.h"
+ #include "hle.h"
++#include "../gfx/nvn/hdr.h"
+ #include "pad_slots.h"
+ #include "haptics_apple.h"
+ #include "motion_apple.h"
+@@ -70,11 +71,13 @@ int front_display_pixels(int *w, int *h) {
+ }
+ static _Atomic int g_screen_variable_refresh;
+ int front_screen_variable_refresh(void) { return g_screen_variable_refresh; }
++static void hdr_refresh(NSScreen *screen);
+ static void screen_refresh(NSScreen *screen) {   // main thread: refresh capabilities of the current screen and mode, including a mode change without moving the window
+     if (!screen) return;
+     g_screen_fps = (int)screen.maximumFramesPerSecond;
+     g_screen_id = [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue];
+     g_screen_variable_refresh = screen.minimumRefreshInterval > 0 && screen.maximumRefreshInterval > screen.minimumRefreshInterval;
++    hdr_refresh(screen);
+ }
+ // The software keyboard input box is up (front_text_input). The game window is not key then, which is not a focus change the game should see: on hardware the inline keyboard is drawn inside
+ // the game, which keeps its focus, and ShowKeyboard's applet sends its own out-of-focus / in-focus pair (DM_APPLET). Monster Hunter Rise dropped the hunter's name after the round trip and asked again. Main thread only
+@@ -147,6 +150,43 @@ static void screen_match_apply(void) {   // main thread: on a new frame rate, on
+     if (modes) CFRelease(modes);
+     CGDisplayModeRelease(cur);
+ }
++// HDR (DM_HDR, ../gfx/nvn/hdr.h): every screen event (the window shown, moved to another screen, a screen's parameters, full screen entered and left: whatever calls
++// screen_refresh) re-reads the window's screen: HDR is in effect while the setting is auto and the screen's potential EDR headroom is at least HDR_CAPABLE_POTENTIAL (4). The setting is
++// never written, so a MacBook → Studio Display → MacBook round trip goes HDR → SDR → HDR with no restart; vi tells the game (hle_vi.c), which switches its window textures, and the present
++// follows them (nvn_mtl.m present_now → front_hdr_layer). One [hdr] line per change of screen, potential headroom or decision. The current headroom follows the brightness slider
++// with no notification: a 2 Hz poll while HDR is in effect (it reads about 1.0 until EDR content is on screen, so the first half second after a switch may clip highlights). Main thread
++static NSTimer *g_hdr_timer; static double g_hdr_cur_logged;
++static void hdr_poll(void) {
++    NSScreen *s = g_win.screen; if (!s) return;
++    double cur = s.maximumExtendedDynamicRangeColorComponentValue; dm_hdr_headroom_set(cur);
++    if (fabs(cur - g_hdr_cur_logged) > 0.1 * fmax(g_hdr_cur_logged, 1)) { g_hdr_cur_logged = cur; LOG("[hdr] current EDR headroom %.2f on '%s'", cur, s.localizedName.UTF8String); }
++}
++static void hdr_refresh(NSScreen *screen) {
++    double pot = screen.maximumPotentialExtendedDynamicRangeColorComponentValue, cur = screen.maximumExtendedDynamicRangeColorComponentValue;
++    int on = dm_hdr_screen(pot, cur), pref = dm_hdr_pref();
++    CGDirectDisplayID id = g_screen_id; static int last_on = -1; static double last_pot = -1; static CGDirectDisplayID last_id;
++    if (on != last_on || pot != last_pot || id != last_id) {
++        last_on = on; last_pot = pot; last_id = id; g_hdr_cur_logged = cur;
++        LOG("[hdr] '%s': potential EDR headroom %.2f, current %.2f: %s (DM_HDR=%s)", screen.localizedName.UTF8String, pot, cur,
++            on ? "HDR" : !pref ? "SDR, HDR is off" : "SDR, the screen cannot show HDR", pref ? "auto" : "0");
++    }
++    if (on && !g_hdr_timer) {
++        g_hdr_timer = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) { (void)t; hdr_poll(); }];
++        [NSRunLoop.mainRunLoop addTimer:g_hdr_timer forMode:NSRunLoopCommonModes];   // during a live resize too
++    } else if (!on && g_hdr_timer) { [g_hdr_timer invalidate]; g_hdr_timer = nil; }
++}
++void front_hdr_layer(int edr) {
++    dispatch_async(dispatch_get_main_queue(), ^{
++        CAMetalLayer *l = g_layer; if (!l) return;
++        static CGColorSpaceRef own; static int kept;   // the layer's colour space as made (none: no colour matching), given back for SDR
++        if (!kept) { kept = 1; own = l.colorspace; if (own) CGColorSpaceRetain(own); }
++        if (edr) {
++            CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
++            l.wantsExtendedDynamicRangeContent = YES; l.colorspace = cs; l.pixelFormat = MTLPixelFormatRGBA16Float; CGColorSpaceRelease(cs);
++        } else { l.pixelFormat = MTLPixelFormatBGRA8Unorm; l.colorspace = own; l.wantsExtendedDynamicRangeContent = NO; }
++        LOG("[hdr] front end: the layer %s", edr ? "in extended dynamic range: RGBA16Float, extended linear sRGB" : "back to SDR: BGRA8Unorm, its own colour space, no EDR");
++    });
++}
+ void front_screen_match(int fps) {
+     if (!g_layer || g_match_want == fps) return;   // no window (a windowless run's main thread runs the guest), or the rate as before
+     g_match_want = fps; dispatch_async(dispatch_get_main_queue(), ^{ screen_match_apply(); });
+diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
+index 5574c2148bffbcd13f78b1f6d8b67ae9def27ba8..a7f94f55746cf0a728e01c94d0aa8aaa3286eba2 100644
+--- a/dm/host/tests/Makefile
++++ b/dm/host/tests/Makefile
+@@ -264,7 +264,7 @@ $(B)/t_shared_font: t_shared_font.c ../hle_sdk16.c ../hle.h ../dm.h $(GAME_H) |
+ 	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -Wno-frame-address -I.. $(GINC) -o $@ t_shared_font.c
+ # nn::vi::ListFrameHistory: the SDK's FrameInfo, newest first, from the present queue's progress
+ run: $(B)/t_vi_history
+-$(B)/t_vi_history: t_vi_history.c ../../gfx/hle_vi.c ../hle.h ../dm.h $(GAME_H) | $(B)
++$(B)/t_vi_history: t_vi_history.c ../../gfx/hle_vi.c ../../gfx/nvn/hdr.c ../../gfx/nvn/hdr.h ../hle.h ../dm.h $(GAME_H) | $(B)
+ 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_vi_history.c
+ run: $(B)/t_nv
+ $(B)/t_nv: t_nv.c ../../gfx/hle_nv.c ../hle.h ../dm.h $(GAME_H) | $(B)
+diff --git a/dm/host/tests/t_vi_history.c b/dm/host/tests/t_vi_history.c
+index 846ba14b159886153ca5b6d64b772ef9817e0a51..ba6b3ce17ca053df35cde6f668719ebdad395fcd 100644
+--- a/dm/host/tests/t_vi_history.c
++++ b/dm/host/tests/t_vi_history.c
+@@ -2,6 +2,7 @@
+ // frame the present queue handed on with a present tick (one the Mac dropped too: a Switch shows every frame it is handed), 1 for one still queued, the frame numbers of GetLatestFrameNumber. Unreal's RHI takes the
+ // first status-2 entry as its latest flip (Minecraft Dungeons II main+0x142b0b0), so the newest shown frame has to come first
+ #include "../../gfx/hle_vi.c"
++#include "../../gfx/nvn/hdr.c"   // the HDR state vi answers from (DM_HDR)
+ #include <assert.h>
+ 
+ static uint64_t g_count, g_in, g_done, g_gns = 5000000000ull, g_hns = 9000000000ull;
+@@ -41,5 +42,21 @@ int main(void) {
+     assert(fi[5][3] == ticks(g_gns - 1000000000ull));   // the first-seen time stays
+     assert(h_vi_FrameHist(fi, 2, NULL) == 2 && fi[0][1] == 10 && fi[1][1] == 9);   // a smaller buffer gets the newest
+     puts("vi frame history: count query 8, newest first, shown once handed on, presented or first-seen tick, dropped frames shown, queued ones not");
++    // HDR (nvn/hdr.c): QueryDisplayHdrStatus follows the window's screen under DM_HDR=auto, the paper white is 203, the layer metadata is kept, and every call succeeds
++    setenv("DM_HDR", "auto", 1);
++    uint8_t on = 9; uint32_t fmt = 9; uint16_t peak = 9, pw = 0;
++    assert(h_vi_HdrStatus(&on, &fmt, &peak, NULL) == RES_OK && on == 0 && fmt == 0 && peak == 0);   // no screen yet: SDR, as before
++    assert(h_vi_PaperWhite(&pw, NULL) == RES_OK && pw == 203);
++    dm_hdr_screen(16.0, 8.0);                                                                        // a MacBook Pro's XDR panel
++    assert(h_vi_HdrStatus(&on, &fmt, &peak, NULL) == RES_OK && on == 1 && fmt == 0 && peak == 1600 && dm_hdr_told());
++    dm_hdr_screen(1.0, 1.0);                                                                         // moved to a screen without HDR
++    assert(h_vi_HdrStatus(&on, &fmt, &peak, NULL) == RES_OK && on == 0 && peak == 0 && dm_hdr_pref() == HDR_PREF_AUTO);
++    dm_hdr_screen(16.0, 8.0);
++    assert(h_vi_HdrStatus(&on, &fmt, &peak, NULL) == RES_OK && on == 1 && peak == 1600);           // and back, the setting untouched
++    assert(h_vi_HdrStdLum(NULL, 0, 406) == RES_OK && h_vi_HdrExtLum(NULL, 0, 1400) == RES_OK && h_vi_HdrGamut(NULL, 1) == RES_OK && h_vi_HdrToneMap(NULL, 0) == RES_OK);
++    dm_hdr_meta m; dm_hdr_meta_get(&m);
++    assert(m.set && m.std_lo == 0 && m.std_hi == 406 && m.ext_lo == 0 && m.ext_hi == 1400 && m.gamut == 1 && m.tone == 0);
++    assert(h_vi_HdrBezier(NULL, 1, 2, 3) == RES_OK && h_vi_HdrGamutClear(NULL) == RES_OK);
++    puts("vi HDR: SDR with no screen, HDR with peak 1600 on an XDR screen, SDR on a screen without HDR and back, paper white 203, the layer metadata kept");
+     return 0;
+ }
+diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
+index 8bd7ed616ab1ab397834f50d000baaa97c1bdcf3..18e0f9ad50fea28c1770eaec5faee10c7d24777b 100644
+--- a/dm/tools/tests/test_launcher_settings.py
++++ b/dm/tools/tests/test_launcher_settings.py
+@@ -82,6 +82,13 @@ class LauncherSettingsTests(unittest.TestCase):
+         s = mac['DM_FULLSCREEN']
+         self.assertEqual((s['kind'], s['default'], s['options'], s['level']), ('choice', '0', [['0', 'Window'], ['1', 'Fullscreen']], 'basic'))
+ 
++    def test_hdr_only_on_the_mac_for_a_game_that_renders_hdr(self):   # DM_HDR (nvn/hdr.c): the profile's hdr key (Ocarina of Time), the Mac front end's screens; conditions joined by &
++        oot = '0400486024DEC000'
++        s = build(oot, 'nvn', 'mac')['DM_HDR']
++        self.assertEqual((s['kind'], s['default'], s['options'], s['section']), ('choice', 'auto', [['auto', 'On (HDR screens)'], ['0', 'Off']], 'Game'))
++        self.assertNotIn('DM_HDR', build(oot, 'nvn', 'ios'))   # iOS presents SDR
++        self.assertNotIn('DM_HDR', build(BOTW, 'nvn', 'mac'))   # no hdr in its profile
++
+     def test_defaults_follow_each_platform_host(self):
+         # nvn_mtl.m pso4_on: Mac defaults on, iOS follows the profile. nvn_rec.h rec_on: iOS on, Mac off.
+         for gid, ios_pso in ((BOTW, '1'), (WONDER, '0')):
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index a7797ba9eb9056647f4b028c264fe46594c5f9d8..c062a60a9e18901081da55fbb4a739385c7f2f78 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -97,6 +97,9 @@ DM_GUEST_FILE_PUNCH	switch	`0` keeps the disk blocks of guest memory the game gi
+ DM_GUEST_FILE_SCAN	diagnostic	`=1` (with `DM_GUEST_FILE=1`): every 30 s a `[mem] guest file scan` line, the dirty guest pages by region (heap, alias, stack, other) and how many of them read all 0
+ DM_GUEST_SPAWN_TEST	diagnostic	`=1` runs a self-test before `nnMain`: a host-started guest thread does SDK malloc / free and locks an `nn::os` mutex, and the result is logged; `=2` also keeps a resident thread
+ DM_HEAP_RETRY	switch	`0`: Ocarina of Time's model rebuild (main+0x4366e0) goes on with a null block when its small model heap is full, as shipped; by default the CPU buffers and GPU memory are tried again in the heap's parents and the default heap (`patches.py` `heap_retry`, Hookshot issue 1697; state page +0x170 / +0x174 the counts, +0x17c the off flag)
++DM_HDR	player	A game that renders HDR itself (profile `hdr on`: Ocarina of Time): `auto` (its default) tells the game through `vi::QueryDisplayHdrStatus` that the display shows HDR while the Mac window's screen can (potential EDR headroom at least 4: a MacBook Pro's XDR panel reports 16, a Studio Display 1 to 2), and presents the game's HDR10 picture (RGB10A2, PQ, BT.2020) in extended dynamic range, paper white at the screen's SDR white; on a screen without HDR (a Studio Display) the game is told SDR and draws its usual picture. Re-read on every screen change (moving the window, docking, full screen), live both ways; the setting itself is never changed, and each change logs an `[hdr]` line with the potential and current headroom. `0` never HDR, exactly as before. Any other game: `0` by default (`auto` forces the answer, untested). Screenshots stay SDR (tone-mapped). Launcher setting (Mac: HDR)
++DM_HDR_DUMP	diagnostic	`=1` logs, at the 120th present of the game's HDR10 picture (`=<n>`: the nth), the window texture's size and format and a 64x64 centre patch's code values decoded as PQ (min / max / average, nits and extended sRGB), with the vi answers and the game's layer HDR metadata, to confirm the encoding on hardware (a white HUD near PQ 0.58 = 203 nits)
++DM_HDR_PAPER_WHITE	switch	`=<nits>` (80 to 1000, default 203, BT.2408): the paper white `vi::QueryDisplayHdrPaperWhite` gives the game under `DM_HDR`, which the present maps to the screen's SDR white (EDR 1.0); the game tone-maps its highlights into peak / paper white (at most 1600 / 203 = 7.9), so a higher value leaves them less room
+ DM_HID_LOG	diagnostic	`1` logs the HID button usage number of each button pressed on a raw HID gamepad (`pad_hid_mac.h`), to write a `DM_HID_MAP`
+ DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, `pad_hid.h`); Mac only
+ DM_HID_PADS	switch	`0` stops reading raw HID gamepads that GameController does not list, such as an 8BitDo in its own mode (`pad_hid_mac.h`); Mac only
+diff --git a/docs/reference/services.md b/docs/reference/services.md
+index b1a9f2e71ea32ccb8da84bb65ae02c9b32fab54b..9473cfe5f74c11c01b8668791227e6fbf972ef6b 100644
+--- a/docs/reference/services.md
++++ b/docs/reference/services.md
+@@ -973,7 +973,7 @@ Most service calls can be found before they crash, before the first boot or the
+ 
+ - **Symptom:** `CRASH sig=11 addr=0 pc=0` with the link register just after a call to a `vi::SetLayerNextHdr…` or `vi::ClearLayerNextHdr…` function.
+ - **Cause:** the SDK forwards a layer's HDR metadata through a table its graphics system fills, which is null on the host.
+-- **Fix:** every layer HDR metadata call of SDK 22's free functions succeeds with nothing to apply (`dm/gfx/hle_vi.c`): the content gamut, the HDR to SDR tone mapping, the standard and extended content luminance ranges, the adjustable Bezier tone curve, and the clears of the gamut, the tone mapping and the curve. The host presents SDR.
++- **Fix:** every layer HDR metadata call of SDK 22's free functions succeeds (`dm/gfx/hle_vi.c`): the content gamut, the HDR to SDR tone mapping, the standard and extended content luminance ranges, the adjustable Bezier tone curve, and the clears of the gamut, the tone mapping and the curve. The gamut, the tone mapping and the luminance ranges are kept for the present's diagnostics (`dm/gfx/nvn/hdr.c`, `DM_HDR_DUMP`), not applied. `vi::QueryDisplayHdrStatus` answers SDR unless `DM_HDR` is `auto` (the default for a profile with `hdr on`: Ocarina of Time) and the Mac window's screen can show HDR; then it answers HDR with the screen's peak, the game switches its window textures to RGB10A2 (HDR10: PQ, BT.2020), and the present shows them in extended dynamic range (`present.metal` `fs_edr`), live as the window moves between screens.
+ - **Found on:** [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) (the set calls); the curve and the clears: [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) 1.8.0 sets the curve every frame, from pull request #1116 (that build is not run here).
+ 
+ ### Layer frame numbers
+diff --git a/docs/settings.md b/docs/settings.md
+index f49a2a1866b4decc6a4554d4a2aa630a4aeedc78..8108f8bb59c06c6aa242f98b9bfa257c28bff863 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -273,6 +273,10 @@ Turn off **Show at launch** to start the game at once with your choices. Hold Op
+ 
+ **Window** or **Fullscreen**: how the game's window opens. ⌃⌘F or the green button changes it while you play. In an `env.txt`: `DM_FULLSCREEN=1` or `0`.
+ 
++### HDR
++
++**On (HDR screens)** by default, for a game that draws HDR itself (Ocarina of Time). On a screen that can show HDR, such as a MacBook Pro's, the game draws its HDR picture: the sky, lights and highlights go brighter than white while the HUD stays at the screen's usual white. On a screen without HDR, such as a Studio Display, the game draws its usual picture. Moving the window between screens, docking or full screen switches it within a frame or two, and back again, without changing the setting. The brightness slider changes how much room the highlights have. Screenshots stay SDR. **Off** always draws the usual picture. In an `env.txt`: `DM_HDR=auto` or `0`.
++
+ ### Switch 2 controllers
+ 
+ **Off** by default. On, the game takes Joy-Con 2 and Pro Controller 2 over Bluetooth: hold the small Sync button on one during the game, until its player lights sweep, to pair it with this Mac; after that a press of any of its buttons connects it ([Switch 2 controllers](playing.md#switch-2-controllers-mac)). macOS asks for Bluetooth access the first time, and again after the app is packed again. In an `env.txt`: `DM_SW2=1`.
+@@ -351,6 +355,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+ | Console mode | `DM_OPMODE` | `1` docked, `0` handheld |
+ | Game language | `DM_LANG` | a language code, such as `ja` |
+ | Display mode (Mac) | `DM_FULLSCREEN` | `1` fullscreen, `0` a window |
++| HDR (Mac) | `DM_HDR` | `auto` HDR on a screen that can show it, switched live as the window moves between screens (default for a game that draws HDR), `0` off |
+ | Cloud saves folder (Mac) | `DM_SAVE_SYNC` | a folder; `icloud`: iCloud Drive › nxnative Saves; `0`: off |
+ | Picture (iPhone and iPad) | `DM_PICTURE_FIT` | `fit` 16:9 with black bars, `fill` covers the screen, cropped |
+ | Picture shape (Mac: Aspect ratio) | `DM_SCREEN_ASPECT` | `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1; on the Mac the main screen below its notch, 16:10 on a MacBook), else 16:9; `1.6` 16:10 (Mac), `1.43` the iPhone Duo's shape, `0` 16:9 |

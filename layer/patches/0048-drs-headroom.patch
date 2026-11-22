@@ -1,0 +1,113 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Sat, 21 Nov 2026 22:04:24 +0000
+Subject: drs-headroom: Ocarina's dynamic resolution can keep part of the frame
+ free
+
+The level stub's climb compared each level's measured load with the game's
+threshold (83, about 16.4 ms of 16.7), so on an M4 Pro it settled right at
+the edge and a heavier moment held the frame step at 2 vsyncs. With
+DM_DRS_HEADROOM=<percent> (0 to 30; the loader writes it as a float at
+state +0x44) the stub lowers the threshold by that share:
+ldr s2,[x16,#0x44]; fmsub s1,s1,s2,s1. 0 or unset keeps the game's. A
+settings row (Resolution headroom: None, Some 5, More 10, Most 20) shows
+under Dynamic resolution on builds with the DRS_HEADROOM capability.
+---
+ dm/games/0400486024DEC000/README.md  | 1 +
+ dm/games/0400486024DEC000/patches.py | 5 ++++-
+ dm/games/settings.tsv                | 1 +
+ dm/host/loader.c                     | 5 +++++
+ docs/env_switches.tsv                | 1 +
+ docs/settings.md                     | 4 ++++
+ 6 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
+index a9a9ddc4113f6251bb6896ed3465ada2be54e178..4f5f55e2100832c0d7345cb075467bbecafbdb07 100644
+--- a/dm/games/0400486024DEC000/README.md
++++ b/dm/games/0400486024DEC000/README.md
+@@ -100,6 +100,7 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
+ - Current: the launcher's **Dynamic resolution** (`DM_DYNAMIC_RESOLUTION`, off by default). Off holds full resolution. On climbs one level at a time on the load measured at each level, with no model of how the cost grows, within the game's own level list, threshold and counters:
+   - down when the load has been over the threshold for 8 frames in a row, and that level is marked as not fitting;
+   - up when the load fits and the level above was never measured, fitted when last measured, or was measured more than about 10 s ago.
++  - NXForge: **Resolution headroom** (`DM_DRS_HEADROOM`, 0 to 30 %, off by default) lowers the threshold the climb compares with by that share (state +0x44), so it settles below the edge. On an M4 Pro at full load the game sat at about 16.4 ms of 16.7 with a hold at 2 vsyncs about every 17 s (2026-11-11).
+ 
+   Nothing is decided until a level has held 8 frames, since the load is read a few frames late. The 8 frames in a row keep a single slow frame, or the first frames at a new size, from rejecting a level that fits. An earlier version stepped down on 2 frames over and stopped at level 2 after one burst to 90 at level 1. A version that stepped up only when the load, scaled by the next level's pixel ratio, stayed under the threshold sat at the floor too: 70 × 1.3 is over 83. Result (M4 Pro, 2026-11-09, `kokiri-still`, the full library on chain a02f1e0dfdde): from the floor to full size, then mostly at 1536x864. The load there is about 83, the game's own threshold, so a sustained frame over moves it to level 1 (0.70) for about 10 s. 59.9 fps, all 1,800 frames held at one vsync, frame p99 16.89 ms, GPU p50 14.5 ms. Loads by level: 72 at the floor, 75 at level 6, 80 at level 2, 82 at level 1, 83 at full size.
+ - Open: in heavier scenes it goes down to the floor for nothing. In the player's session (M4 Pro, 2026-11-09, Metal HUD) it held full size at loads of 80-84 until a scene took it to 94-102. It then stepped down to 683x384, where the load was still 83-86, about the same as at full size. It stayed near the floor at about 80 until a lighter scene (55 at the floor) let it climb again. The frame rate held about 60 throughout. The cost that decides the load here does not follow the resolution. The fix is to step down only to a level measured cheaper than the current one and otherwise climb back. Until then off, full size, is the better default on this Mac. Slower Macs, where resolution may matter, are not measured.
+diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
+index aab4b2c560eebce0a08284a891c35e51387a0d50..5a1bc4d2469c0513582172c6af15e4acdff985d7 100644
+--- a/dm/games/0400486024DEC000/patches.py
++++ b/dm/games/0400486024DEC000/patches.py
+@@ -197,7 +197,9 @@ def shadow_cascades(ctx):
+ # decision read). The update's fingerprint is required too: +0x8 and +0x174 are its fields
+ drs_controller = (   # drs_stub.s, assembled with clang; x0 the controller, x16 the state page (the ADRP before it)
+     0xb9404211, 0x35000071, 'DRS_OFF_B', 0xd65f03c0,                                                    # off (state +0x40 0): level 0 at the render scale (the block at the end)
+-    0xbd400800, 0xbd401001, 0xb9417402, 0xb941a003, 0x7100005f, 0x1a9fa042, 0x528001e9, 0x6b09005f,   # load, threshold, level (0..15), count
++    0xbd400800, 0xbd401001,                                                                            # load, threshold
++    0xbd404602, 0x1f028421,   # NXForge: threshold x (1 - headroom) (state +0x44, DM_DRS_HEADROOM: the share of the frame kept free; 0 = the game's threshold)
++    0xb9417402, 0xb941a003, 0x7100005f, 0x1a9fa042, 0x528001e9, 0x6b09005f,                           # level (0..15), count
+     0x1a89d042, 0xb9420204, 0x11000484, 0xb9020204, 0xb9420605, 0xb9420a06, 0x6b0200bf, 0x1a8617e6,   # calls + 1; calls at this level
+     0xb9020602, 0xb9020a06, 0x35000046, 0xb9020e1f, 0x91084207, 0x91094208, 0x710020df, 0x5400040b,   # a new level: none over; under 8 calls: stay
+     0x1e212000, 0x540001ad, 0xb9420e0b, 0x1100056b, 0xb9020e0b, 0x7100217f, 0x5400032b,               # over: under 8 in a row, stay
+@@ -222,6 +224,7 @@ def dynamic_resolution(ctx):
+     for w in drs_controller: emit(w)
+     fs_put(site, [B(site, start)], 'dynamic resolution level: 0 (full resolution), or with state +0x40 (DM_DYNAMIC_RESOLUTION) a climb on the load measured at each level')
+     ctx.capabilities.add('DYNAMIC_RESOLUTION')
++    ctx.capabilities.add('DRS_HEADROOM')   # NXForge: the threshold the climb compares with, lowered by state +0x44 (DM_DRS_HEADROOM)
+     ctx.render_scale = 2   # DM_RENDER_SCALE up to 2.0 of level 0 (0.75 of the output: 1.333 is native); the stub holds it at 1.0 of the output
+     output_4k(ctx)
+ 
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index 6f5be1985911a39e61dca53f7574299bbec236b1..8fc7841a492e628d51301e782de19b86b37bacc6 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -17,6 +17,7 @@
+ #             level=basic  a setting a front end shows first;  needs=<VAR>=<value>  a sub-setting, drawn only while the row that sets <VAR> has that value
+ DM_FPS_TARGET	choice	30=30 fps,60=60 fps,120=120 fps?DM_GAME_FPS_MAX==120	DM_GAME_FPS_TARGET	DM_GAME_FPS_TARGET!=0	Game	Frame rate		level=basic
+ DM_DYNAMIC_RESOLUTION	toggle	-	0	fixups:DYNAMIC_RESOLUTION	Game	Dynamic resolution	Lets the game lower its resolution under load. Turn off to keep full resolution for the selected console mode.
++DM_DRS_HEADROOM	choice	0=None,5=Some,10=More,20=Most	0	fixups:DRS_HEADROOM	Game	Resolution headroom	With Dynamic resolution on, keeps some of each frame free so a heavier moment does not drop the game to 30 fps (it settles one or two levels lower).	needs=DM_DYNAMIC_RESOLUTION=1
+ DM_RENDER_SCALE	range	0.5:1.0:0.05	1.0	fixups:RENDER_SCALE	Game	Render scale		level=basic
+ DM_OPMODE	choice	1=Docked,0=Handheld	DM_GAME_OPMODE	always	Game	Console mode		level=basic
+ DM_PRESENT_UPSCALE	choice	off=Standard,metalfx=MetalFX	off|metalfx	always	Game	Upscaling	Uses more GPU time and can increase heat.
+diff --git a/dm/host/loader.c b/dm/host/loader.c
+index 4eae79d8b4d6e56af7f3429ce979576e3685f7a0..0addb189be3777565349c75e87dea9df733c2319 100644
+--- a/dm/host/loader.c
++++ b/dm/host/loader.c
+@@ -392,6 +392,11 @@ void dm_fps_state_apply(void) {
+     const char *dr = getenv("DM_DYNAMIC_RESOLUTION"); uint32_t dyn = dr && !strcmp(dr, "1");
+     if (dr && strcmp(dr, "0") && strcmp(dr, "1")) LOG("[RED] DM_DYNAMIC_RESOLUTION=%s: must be 0 or 1; keeping full resolution", dr);
+     memcpy(dm_fps_state + 0x40, &dyn, sizeof dyn);
++    // NXForge: headroom for that climb, float at +0x44 (Ocarina of Time's level stub, the DRS_HEADROOM capability): DM_DRS_HEADROOM=<percent>, 0 to 30, lowers the load the
++    // climb allows by that share, so the level it settles on leaves GPU time free for a heavier moment instead of holding the frame step at 2 vsyncs; 0 or unset: the game's threshold
++    { const char *hd = getenv("DM_DRS_HEADROOM"); float hf = 0;
++      if (hd && *hd) { char *end; long v = strtol(hd, &end, 10); if (end == hd || *end || v < 0 || v > 30) LOG("[RED] DM_DRS_HEADROOM=%s: 0 to 30 (percent); keeping the game's threshold", hd); else if (v) { hf = (float)v / 100.0f; LOG("%s: dynamic resolution keeps %ld %% of the frame free (DM_DRS_HEADROOM; builds with the stub)", g_fps_mod, v); } }
++      memcpy(dm_fps_state + 0x44, &hf, sizeof hf); }
+     // A full model heap (Ocarina of Time's patches.py heap_retry): DM_HEAP_RETRY=0 writes 1 at +0x17c, and the game's allocations that found their heap full stay as shipped
+     { const char *hr = getenv("DM_HEAP_RETRY"); if (hr && !strcmp(hr, "0")) { uint32_t off = 1; memcpy(dm_fps_state + 0x17c, &off, 4); LOG("%s: full model heap retry off (DM_HEAP_RETRY=0)", g_fps_mod); } }
+     // Foliage (Ocarina of Time's patches.py foliage, from TVPort 8609a1cb), u32 at +0x300: DM_FOLIAGE=off makes the game's foliage module skip its grass and ground cover (its own
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index e95845d9996e2bc26355d456bf5d9fc9a5d8f28a..e161868ad33d0d899b69ac297730a0ba205e238c 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -41,6 +41,7 @@ DM_DETCLOCK	switch	`=<step ns>`: from the first present on, the guest clock adva
+ DM_DETCLOCK_PACE	switch	`=1` with `DM_DETCLOCK`: each frame takes at least one clock step of wall time, so background loading keeps up with the fixed clock (used by the screenshot gate)
+ DM_DISPLAY_NAME	switch	Overrides the iOS app's name in `build_ipa.sh` (default the game name in the base NSP's control data)
+ DM_DYNAMIC_RESOLUTION	player	`1` lets the game's own dynamic resolution run, `0` (default) keeps full resolution; only on the builds that declare the DYNAMIC_RESOLUTION capability: NieR:Automata 1.0.3 (its patches.py; scales between 70 and 100 %, `hle_fpslock.c` `k_nier_dr`) and Ocarina of Time (its frame step stub of the level function, state page +0x40: on, it steps one level at a time on the measured load, as the game's own extrapolation from pixel count kept it at its lowest level on Apple GPUs). The launcher's Dynamic resolution
++DM_DRS_HEADROOM	player	`0` to `30` (percent; `0` or unset keeps the game's threshold): with `DM_DYNAMIC_RESOLUTION=1`, the share of the frame the climb keeps free (Ocarina of Time: its patches.py level stub reads the float at state +0x44, the DRS_HEADROOM capability; NXForge)
+ DM_EMBED_TAG	path	Set by the iOS app of a game of several programs: the tag of the running program's embedded sections (`p<N>`, `gen_embed.py --tag`)
+ DM_ENTITLEMENTS	path	`=<plist>` gives a prepared Xcode project another entitlements file instead of the Increased Memory Limit one, and the ad-hoc signature of the unsigned IPA's executable carries them; relative paths start at the caller's directory; empty means no entitlements
+ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into the app as `dm/env.txt`, applied at boot; `Documents/env.txt` overrides them
+diff --git a/docs/settings.md b/docs/settings.md
+index 26f261b6fe32f53ba2f273c4bc74756a4d7adc9a..f49a2a1866b4decc6a4554d4a2aa630a4aeedc78 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -32,6 +32,10 @@ On a Mac, a game checked at that speed (Fire Emblem Fortune's Weave, Mario & Lui
+ 
+ Off, the default, keeps the 3D picture at full size. On lets the game lower its resolution when frames run heavy and raise it again when they fit, as on the Switch: steadier frame rate, at times a softer picture. Only games whose resolution control the app can hold offer it (NieR:Automata, Ocarina of Time).
+ 
++### Resolution headroom
++
++`DM_DRS_HEADROOM`, None by default, shown under Dynamic resolution while it is on, for games whose build has the stub (Ocarina of Time; NXForge). Some (5), More (10) and Most (20) lower the load the climb allows by that share of the frame, so it settles one or two levels lower and a heavier moment has GPU time to spare instead of dropping to 30 fps. On an M4 Pro, Ocarina at full load sat right at the game's threshold (about 16.4 ms of 16.7) with a hold at 2 vsyncs about every 17 seconds (2026-11-11).
++
+ ### Render scale
+ 
+ The size of the 3D picture, from 50 to 100 %. Below 100 % the size is fixed there and the game's own dynamic resolution is off; 100 % keeps the game's own. Lower can be lighter on the GPU but is blurrier; the HUD and text keep their sharpness. Only games the app can scale offer it.
