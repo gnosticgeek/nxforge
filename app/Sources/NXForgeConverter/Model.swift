@@ -179,6 +179,9 @@ final class AppModel {
     var showcaseLayout: ShowcaseLayout = .carousel
     var theatreFocus: String?
     var theatreRow = 0
+    /// the Museum wall (TheatreMuseum.swift): the lighting switch has the focus, and the place each shelf was left at
+    var museumLightFocus = false
+    var museumColumns: [String: Int] = [:]
     var theatreMenu: Int?
     var theatreOffer: TVScreen?
     /// the newest slower session per game, by title ID (SessionCheck.swift)

@@ -2043,7 +2043,7 @@ import Testing
                                ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
             #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
         }
-        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer", "Wallet"])
+        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer", "Wallet", "Museum"])
         #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Shutter\"".utf8)) == .shutter)
     }
 
@@ -2775,3 +2775,62 @@ import Testing
         #expect(!TheatreSynth.samples(.stamp).isEmpty && TheatreSynth.samples(.stamp).allSatisfy { abs($0) <= 1 })
     }
 }
+
+@Suite struct TheatreMuseumWall {
+    func game(_ id: String, _ c: Console, hours: Double = 0) -> StageGame {
+        StageGame(id: id, ref: GameRef(app: "/Apps/\(id).app"), name: id, console: c, app: "/Apps/\(id).app", total: hours * 3600)
+    }
+
+    @Test func itIsATheme() throws {
+        #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Museum\"".utf8)) == .museum)
+        #expect(TheatreMenuRow.row(.museum) == .museum && TheatreMenuRow.museum.theme == .museum)
+        #expect(Settings().museumLighting == .evening)
+        #expect(MuseumLighting.allCases.map(\.rawValue) == ["Classic", "Daylight", "Evening", "Neon", "Lights out"])
+        #expect(MuseumLighting.lightsOut.step(1) == .classic && MuseumLighting.classic.step(-1) == .lightsOut)
+        #expect(MuseumLighting.lightsOut.lampStrength == 0)
+    }
+
+    @Test func aShelfAConsoleSwitch2First() {
+        let games = [game("a", .switch1), game("b", .gba), game("c", .switch2), game("d", .switch1)]
+        let s = MuseumLayout.shelves(games)
+        #expect(s.map(\.console) == [.switch2, .switch1, .gba])
+        #expect(s[1].games.map(\.id) == ["a", "d"])
+        #expect(MuseumLayout.shelves(games.filter { $0.console == .switch1 }).count == 1)
+    }
+
+    @Test func theArrowsGoAlongAndBetweenShelves() {
+        let counts = [3, 8, 2]
+        // along a shelf, stopping at its ends
+        #expect(MuseumLayout.move(shelf: 1, column: 0, dx: -1, dy: 0, counts: counts)! == (1, 0))
+        #expect(MuseumLayout.move(shelf: 1, column: 7, dx: 1, dy: 0, counts: counts)! == (1, 7))
+        #expect(MuseumLayout.move(shelf: 1, column: 3, dx: 1, dy: 0, counts: counts)! == (1, 4))
+        // down to a shorter shelf lands on its last game; down from the last shelf stays
+        #expect(MuseumLayout.move(shelf: 1, column: 6, dx: 0, dy: 1, counts: counts)! == (2, 1))
+        #expect(MuseumLayout.move(shelf: 2, column: 1, dx: 0, dy: 1, counts: counts)! == (2, 1))
+        // up from the top shelf is the lighting switch
+        #expect(MuseumLayout.move(shelf: 0, column: 1, dx: 0, dy: -1, counts: counts) == nil)
+    }
+
+    @Test func theWindowKeepsTheFocusInSight() {
+        #expect(MuseumLayout.first(column: 0, count: 20, visible: 7) == 0)
+        #expect(MuseumLayout.first(column: 10, count: 20, visible: 7) == 7)
+        #expect(MuseumLayout.first(column: 19, count: 20, visible: 7) == 13)
+        #expect(MuseumLayout.first(column: 4, count: 5, visible: 7) == 0)
+        for c in 0..<20 {
+            let f = MuseumLayout.first(column: c, count: 20, visible: 7)
+            #expect(f <= c && c < f + 7)
+        }
+        // seven Switch cases fit a 16:9 screen's shelf, as in the mock-up
+        let h = MuseumLayout.caseHeight(row: MuseumLayout.rowHeight(count: 3, height: 1080))
+        #expect(MuseumLayout.visible(width: 1920 - 2 * MuseumLayout.side, caseWidth: h * MuseumLayout.caseRatio) >= 7)
+    }
+
+    @Test func thePlaqueAndTheCard() {
+        #expect(MuseumLayout.stats([game("a", .switch1, hours: 100), game("b", .switch1, hours: 46)]) == "2 games  ·  146 hours")
+        #expect(MuseumLayout.stats([game("a", .gba)]) == "1 game  ·  not played yet")
+        #expect(MuseumLayout.stats([game("a", .gba, hours: 0.5)]) == "1 game  ·  30 min")
+        #expect(MuseumLayout.year("20/10/2023") == "2023")
+        #expect(MuseumLayout.year(nil) == nil && MuseumLayout.year("soon") == nil)
+    }
+}
+

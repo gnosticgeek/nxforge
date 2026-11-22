@@ -48,7 +48,7 @@ enum StageSettingRow: Int, CaseIterable {
     case firstPlayOptions, batteryPreset, localShaders
     case folderCheck, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
-    case theatreTheme, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
+    case theatreTheme, museumLighting, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
     case cloudSaves, snapshotAfterPlay, saveBackupPush
     case notify, openAfterBuild, keepBackups, reuseCache
     case autoUpdate
@@ -59,7 +59,7 @@ enum StageSettingRow: Int, CaseIterable {
         case .firstPlayOptions, .batteryPreset, .localShaders: .playing
         case .folderCheck, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
-        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector: .theatre
+        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector, .museumLighting: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
         case .notify, .openAfterBuild, .keepBackups, .reuseCache: .building
         case .autoUpdate: .updates
@@ -450,8 +450,11 @@ struct StageSettings: View {
             row("Theatre", "Your games full screen, for the sofa and a controller. Also ⇧⌘F. B leaves it.") {
                 button(model.theatre ? "Leave Theatre" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }
             },
-            row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Shutter shows slanted panels of art; Trailer plays the game's trailer; Wallet shows your game cards in their wallet. ZL and ZR switch them on Theatre.", .theatreTheme) {
-                segmented(theme, TheatreTheme.allCases, width: 480) { $0.rawValue }
+            row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Shutter shows slanted panels of art; Trailer plays the game's trailer; Wallet shows your game cards in their wallet; Museum shows your collection on a lit wall, a shelf a console. ZL and ZR switch them on Theatre.", .theatreTheme) {
+                segmented(theme, TheatreTheme.allCases, width: 560) { $0.rawValue }
+            },
+            row("Museum lighting", "The Museum wall's light: Classic, Daylight, Evening, Neon (each shelf in its console's colour) or Lights out (only the game in focus lit). Up from the top shelf, then left and right, changes it on Theatre.", .museumLighting) {
+                segmented($model.settings.museumLighting, MuseumLighting.allCases, width: 420) { $0.rawValue }
             },
             row("Showcase layout", "Carousel turns a ring of your boxes; Fan spreads them like a hand of cards; Shelf stands them spine out. Up and down switch them on Theatre.", .showcaseLayout) {
                 segmented($model.settings.showcaseLayout, ShowcaseLayout.allCases, width: 330) { $0.rawValue }

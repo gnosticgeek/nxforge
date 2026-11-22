@@ -146,6 +146,8 @@ struct Settings: Codable, Equatable {
     var theatreTilt = true
     /// hours stickers, wear and the COMPLETED stamp on Theatre's cases (CaseKeepsake)
     var theatreCollector = true
+    /// the Museum wall's light (MuseumLighting)
+    var museumLighting: MuseumLighting = .evening
     /// the games stamped COMPLETED (StageGame.favoriteKey)
     var completed: [String] = []
     var theatreSeen: [String]?
@@ -178,7 +180,7 @@ struct Settings: Codable, Equatable {
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
         case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
         case theatreLaunch = "theatre_launch", theatreRumble = "theatre_rumble"
-        case theatreTilt = "theatre_tilt", theatreCollector = "theatre_collector", completed
+        case theatreTilt = "theatre_tilt", theatreCollector = "theatre_collector", completed, museumLighting = "theatre_museum_lighting"
     }
 
     init() {}
@@ -253,6 +255,7 @@ struct Settings: Codable, Equatable {
         theatreRumble = (try? c.decodeIfPresent(Bool.self, forKey: .theatreRumble)) ?? true
         theatreTilt = (try? c.decodeIfPresent(Bool.self, forKey: .theatreTilt)) ?? true
         theatreCollector = (try? c.decodeIfPresent(Bool.self, forKey: .theatreCollector)) ?? true
+        museumLighting = (try? c.decodeIfPresent(MuseumLighting.self, forKey: .museumLighting)).flatMap { $0 } ?? .evening
         completed = (try? c.decodeIfPresent([String].self, forKey: .completed)) ?? []
         theatreSeen = try? c.decodeIfPresent([String].self, forKey: .theatreSeen)
         theatreMusicFolder = try? c.decodeIfPresent(String.self, forKey: .theatreMusicFolder)
