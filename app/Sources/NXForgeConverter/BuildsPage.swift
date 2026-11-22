@@ -311,7 +311,7 @@ struct BuildDetail: View {
                 .buttonStyle(.plain).fixedSize().help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
             }
             .padding(.top, 26)
-            if build.launched != true { FirstLaunchNote().padding(.top, 12) }
+            if build.launched != true, !GBA.isApp(build.app) { FirstLaunchNote().padding(.top, 12) }
             rule.padding(.top, 26)
             }
             // "Built today at 21:11 · 2 min · Engine 0.40.0"

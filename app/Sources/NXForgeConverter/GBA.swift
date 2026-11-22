@@ -16,6 +16,8 @@ enum GBA {
     static let folderName = "NXForge Builds"
 
     static func isGame(_ p: String) -> Bool { extensions.contains(p.url.pathExtension.lowercased()) && !Source.isDir(p) }
+    /// Whether a built app is a Game Boy Advance one (its cartridge sits in Contents/Resources/gba)
+    static func isApp(_ app: String) -> Bool { FileManager.default.fileExists(atPath: app + "/Contents/Resources/gba/port.json") }
     static func isTitleID(_ t: String?) -> Bool { t?.uppercased().hasPrefix("0BA0") == true }
 
     /// "Legend of Zelda, The - The Minish Cap (Europe) (En,Fr,De,Es,It).zip" → "The Legend of Zelda - The Minish Cap" (gba_build.py clean_name)

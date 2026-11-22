@@ -455,7 +455,7 @@ struct ConvertCard: View {
                 Button { reveal(app) } label: { Label("Show in Finder", systemImage: "folder") }
             }
             .buttonStyle(.stage)
-            if b?.launched != true { FirstLaunchNote() }
+            if b?.launched != true, !GBA.isApp(app) { FirstLaunchNote() }
         }
     }
 

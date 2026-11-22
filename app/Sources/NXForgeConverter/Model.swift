@@ -829,7 +829,7 @@ final class AppModel {
             switch r {
             case .success(let msg):
                 if run.ipa != nil { c.title = "\(name)'s IPA is ready"; c.body = msg; c.categoryIdentifier = Notify.ipa; c.userInfo = ["path": run.ipa ?? ""] }
-                else { c.title = "\(name) is ready"; c.body = "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
+                else { c.title = "\(name) is ready"; c.body = run.app.map(GBA.isApp) == true ? "Converted\(took)." : "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
             case .failure(let e):
                 c.title = e.description.hasPrefix("Stopped: only") ? "Build stopped: disk almost full" : "Build failed"; c.body = e.description
                 if e.description != "stopped" { c.categoryIdentifier = Notify.failed }

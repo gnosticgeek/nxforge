@@ -437,7 +437,7 @@ final class BuildRun {
             // a Game Boy Advance cartridge: its own script (in the checkout, not the engine tree), its app and build folder in the game's own folder (GBA.home)
             try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true)
             args = ["-u", repo + "/" + GBA.helper, job.gameDir, "--progress", "json", "--home", job.folder, "--name", GBA.cleanName(job.gameDir)]
-            if let o = job.rebuild ?? job.out { args += ["-o", o] }
+            if let o = job.rebuild { args += ["-o", o] }   // else in the game's own folder, with its build folder and media
             if job.scratch || !job.reuseCache { args.append("--fresh") }
             if job.cleanup == .all { args.append("--cleanup") }   // the C and object files are what makes Convert again quick: only "all" removes them
         } else {
