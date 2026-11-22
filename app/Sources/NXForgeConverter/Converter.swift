@@ -33,6 +33,8 @@ struct Job {
 
     /// the folder holding the game's files, where <id>_build, the lock and the app go
     var folder: String { Source.folder(of: gameDir) }
+    /// a Game Boy Advance cartridge file (GBA.swift): scripts/gba_build.py converts it
+    var gba: Bool { GBA.isGame(gameDir) }
     /// the game files' size, recorded so other games' first builds can be estimated from this one
     var gameBytes: Int64 = 0
 }
@@ -244,6 +246,7 @@ final class BuildRun {
         defer { ProcessInfo.processInfo.endActivity(activity) }
         let say: (String) -> Void = { m in DispatchQueue.main.async { r.flushLog(); r.log.append(m); r.onChange?() } }
         do {
+            if job.gba { try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true) }
             let lock = try FolderLock(job.folder)
             defer { lock.release() }
             guard let repo = job.env.repo else { throw ConverterError("no NXForge engine checkout") }
@@ -428,6 +431,14 @@ final class BuildRun {
         p.executableURL = URL(fileURLWithPath: py)
         let tree = Layer.tree(repo)
         var args = ["-u", tree + "/" + scriptPath, job.gameDir, "--platform", job.ios ? "ios" : "mac-app", "--progress", "json"]
+        if job.gba {
+            // a Game Boy Advance cartridge: its own script (in the checkout, not the engine tree), its app and build folder in the game's own folder (GBA.home)
+            try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true)
+            args = ["-u", repo + "/" + GBA.helper, job.gameDir, "--progress", "json", "--home", job.folder, "--name", GBA.cleanName(job.gameDir)]
+            if let o = job.rebuild ?? job.out { args += ["-o", o] }
+            if job.scratch || !job.reuseCache { args.append("--fresh") }
+            if job.cleanup != .off { args.append("--cleanup") }
+        } else {
         if let k = job.keys { args += ["-k", k] }
         if job.plan { args.append("--plan") }
         if !job.ios, let id = job.sign { args += ["--mac-sign", id] }
@@ -437,8 +448,9 @@ final class BuildRun {
             try? FileManager.default.createDirectory(atPath: (w as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
             args += ["--work-dir", w]
         }
+        }
         p.arguments = args
-        p.currentDirectoryURL = URL(fileURLWithPath: tree)
+        p.currentDirectoryURL = URL(fileURLWithPath: job.gba ? repo : tree)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = job.env.path
         env["PYTHONUNBUFFERED"] = "1"

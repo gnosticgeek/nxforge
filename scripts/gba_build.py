@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Convert a Game Boy Advance game into a Mac app (gba/README.md).
 
-  scripts/gba_build.py <game.gba | game.zip> [-o <Name>.app] [--work-dir DIR] [--progress json]
+  scripts/gba_build.py <game.gba | game.zip> [--home DIR] [-o <Name>.app] [--work-dir DIR] [--progress json]
                        [--name NAME] [--fresh] [--trial-frames N] [--info]
 
 The game's code is translated to C by gba-recomp (gba/ENGINE, assembled by scripts/gba.py), compiled and linked into
@@ -232,8 +232,10 @@ class Build:
         if a.info:
             print(json.dumps(info), flush=True)
             return None
-        out = os.path.abspath(a.out or os.path.join(os.path.dirname(os.path.abspath(a.rom)), name + ".app"))
-        self.work = os.path.abspath(a.work_dir or os.path.join(os.path.dirname(out), tid + "_build"))
+        home = os.path.abspath(a.home) if a.home else None
+        safe = name.replace(":", " - ").replace("/", " - ")
+        out = os.path.abspath(a.out or os.path.join(home or os.path.dirname(os.path.abspath(a.rom)), safe + ".app"))
+        self.work = os.path.abspath(a.work_dir or os.path.join(home or os.path.dirname(out), tid + "_build"))
         if a.fresh and os.path.isdir(self.work):
             shutil.rmtree(self.work)
         os.makedirs(self.work, exist_ok=True)
@@ -249,12 +251,18 @@ class Build:
         p.stage("Check profile", f"{h['code']}-{sha1[:8]}")
         prof, meta, labels = profile_for(h["code"], sha1)
         added = merge_labels(labels, sha256) if labels else 0
-        for tool in ("recomp", "run"):
-            if not os.path.exists(self.tools[tool]):
-                raise Stop("the GBA engine is not built yet: run scripts/gba.py build (Toolchain page)")
-        player = os.path.join(ROOT, "gba", "build", "nxgba-player")
-        if not os.path.exists(player):
-            raise Stop("the GBA player is not built yet: run gba/host/mac/build.sh (Toolchain page)")
+        player = self.tools["player"]
+        if gba.stale():
+            # the first conversion on this Mac, or the first after an engine update: fetch gba-recomp and build it and the player
+            if not shutil.which("cargo", path=self.env["PATH"]):
+                raise Stop("Game Boy Advance games need Rust to build their engine once: install it from rustup.rs, then convert again")
+            p.step("Building the Game Boy Advance engine (once, a few minutes)")
+            r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "gba.py"), "build"], env=self.env, capture_output=True, text=True)
+            if r.returncode != 0:
+                tail = (r.stderr or r.stdout).strip().splitlines()[-6:]
+                for line in tail:
+                    p.say(line)
+                raise Stop("the Game Boy Advance engine did not build: " + (tail[-1] if tail else f"exit {r.returncode}"))
         self.report["profile"] = dict(file=os.path.relpath(prof, ROOT) if prof else None, status=meta.get("status"), labelsAdded=added)
         self.end((f"tested profile: {meta.get('status', 'listed')}" if prof else "no profile yet: converted from the cartridge alone")
                  + (f", {added} entry points from it" if added else ""))
@@ -523,6 +531,7 @@ def main():
     ap.add_argument("rom")
     ap.add_argument("-o", "--out")
     ap.add_argument("--work-dir")
+    ap.add_argument("--home", help="the game's own folder: the app and the build folder go here unless -o / --work-dir say otherwise")
     ap.add_argument("--progress", choices=["text", "json"], default="text")
     ap.add_argument("--name")
     ap.add_argument("--fresh", action="store_true")

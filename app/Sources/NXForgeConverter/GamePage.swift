@@ -86,13 +86,15 @@ struct GamePage: View {
                         if let b { PerformanceCard(app: b.app, titleID: tid, name: name) }
                     }
                 }
-                if let b, let tid {
+                if let b, let tid, GBA.isTitleID(tid) {
+                    PortDetailsCard(app: b.app, titleID: tid)
+                } else if let b, let tid {
                     layout {
                         CheatsCard(model: model, app: b.app, titleID: tid, name: name)
                         ModsCard(model: model, app: b.app, titleID: tid, name: name)
                     }
                     EnhancementsCard(model: model, app: b.app)
-                } else if let tid {
+                } else if let tid, !GBA.isTitleID(tid) {
                     // not built yet: its cheats can be fetched and switched on now, for the version its files hold
                     CheatsCard(model: model, app: nil, titleID: tid, name: name, version: g?.versionNumber)
                 }

@@ -30,6 +30,12 @@ extension AppModel {
     var libraryScanning: Bool { libraryProgress != nil }
     var batchRunning: Bool { batchCurrent != nil }
 
+    func chooseGBARoot() {
+        guard let d = choose(folder: true, start: GBA.root(settings) ?? settings.gamesRoot ?? "/Volumes") else { return }
+        settings.gbaRoot = d
+        scanLibrary()
+    }
+
     func chooseGamesRoot() {
         guard let d = choose(folder: true, start: settings.gamesRoot ?? "/Volumes") else { return }
         settings.gamesRoot = d
@@ -47,6 +53,7 @@ extension AppModel {
         libraryProgress = (0, root, 0)
         libraryMessage = nil
         let before = library?.root == root ? library : nil
+        let gbaRoot = GBA.root(settings)
         libraryTask = Task.detached(priority: .utility) {
             var lastGames = 0
             let r = GameLibrary.scan(root: root) { n, cur, games in
@@ -65,6 +72,10 @@ extension AppModel {
                 out.games = GameLibrary.fold(r.games + before.games.filter { o in !seen.contains(o.folder) && !r.games.contains { $0.id == o.id } })
             }
             if let before { out.games = GameLibrary.carryDetails(from: before.games, to: out.games) }
+            // the Game Boy Advance folder's cartridges join the list; a folder that does not answer keeps the ones it had
+            var gba = gbaRoot.map { GBA.scan(root: $0) } ?? []
+            if gba.isEmpty, let gbaRoot, !Source.isDir(gbaRoot) { gba = before?.games.filter { $0.kind == .gba } ?? [] }
+            out.games = out.games.filter { $0.kind != .gba } + gba
             await MainActor.run {
                 self.library = out
                 self.checkNewlyPlayable()

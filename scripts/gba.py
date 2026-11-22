@@ -84,6 +84,25 @@ def where():
     }
 
 
+def stale():
+    """True when the tools are missing or older than what they are built from (the pin, the patches, the host's and the
+    player's sources): scripts/gba_build.py builds them before its first conversion and after an engine update."""
+    w = where()
+    outs = [w["recomp"], w["run"]] + ([w["player"]] if sys.platform == "darwin" else [])
+    if not all(os.path.exists(o) for o in outs):
+        return True
+    mark = os.path.join(TREE, ".nxforge-assembled")
+    if not os.path.exists(mark) or open(mark).read() != stamp():
+        return True
+    built = min(os.path.getmtime(o) for o in outs)
+    srcs = [os.path.join(d, f) for top in (os.path.join(HOST, "src"), os.path.join(HOST, "mac")) for d, _, fs in os.walk(top) for f in fs]
+    srcs += [os.path.join(HOST, "Cargo.toml"), os.path.join(HOST, "nxgba.h")]
+    if sys.platform == "darwin":
+        qs = os.path.join(ROOT, "layer", "files", "dm", "host")
+        srcs += [os.path.join(qs, "quick_settings_mac.swift"), os.path.join(qs, "quick_settings_mac.h")]
+    return any(os.path.getmtime(s) > built for s in srcs if os.path.exists(s))
+
+
 def build():
     assemble()
     subprocess.run(["cargo", "build", "--release", "-p", "recomp"], cwd=TREE, env=env(), check=True)
@@ -98,6 +117,8 @@ def main():
         print("assembled" if assemble("--force" in sys.argv) else "up to date")
     elif cmd == "build":
         build()
+    elif cmd == "stale":
+        print("stale" if stale() else "current")
     elif cmd == "where":
         print(json.dumps(where()))
     else:

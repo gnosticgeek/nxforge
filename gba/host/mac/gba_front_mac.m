@@ -646,8 +646,10 @@ int main(int argc, const char **argv) {
         NSBundle *b = NSBundle.mainBundle; NSDictionary *info = b.infoDictionary ?: @{};
         const char *e;
         NSString *res = [b.resourcePath stringByAppendingPathComponent:@"gba"];
-        NSString *rom = (e = getenv("NXGBA_ROM")) ? @(e) : argc > 1 ? @(argv[1]) : [res stringByAppendingPathComponent:@"game.gba"];
-        NSString *lib = (e = getenv("NXGBA_LIB")) ? @(e) : argc > 2 ? @(argv[2]) : [res stringByAppendingPathComponent:@"game.dylib"];
+        // a ROM and its translation named on the command line (testing) win over the bundle's; options (NXForge passes --no-launcher, AppKit its own) are not paths
+        BOOL named = argc > 1 && argv[1][0] != '-';
+        NSString *rom = (e = getenv("NXGBA_ROM")) ? @(e) : named ? @(argv[1]) : [res stringByAppendingPathComponent:@"game.gba"];
+        NSString *lib = (e = getenv("NXGBA_LIB")) ? @(e) : named && argc > 2 && argv[2][0] != '-' ? @(argv[2]) : [res stringByAppendingPathComponent:@"game.dylib"];
         g_name = (e = getenv("NXGBA_NAME")) ? @(e) : info[@"CFBundleName"] ?: rom.lastPathComponent.stringByDeletingPathExtension;
         g_id = (e = getenv("NXGBA_ID")) ? @(e) : info[@"NXForgeTitleID"] ?: @"0BA0000000000000";
         NSString *support = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject.path;
