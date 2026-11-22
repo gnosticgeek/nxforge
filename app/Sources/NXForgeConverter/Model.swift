@@ -519,7 +519,7 @@ final class AppModel {
         let keys = needsKeys ? settings.keys : nil
         if needsKeys && keys == nil { _ = ensureKeys(); return }
         if !plan, let d = diskNeed, d.short, rebuildQueue.isEmpty, batchCurrent == nil,
-           !confirm("Build with too little free space?", "\(d.text). The converter stops the build if free space drops below \(Disk.gb(Disk.stopBelow)); the steps it finished are kept for the next try. Storage lists what can be deleted.", action: "Build Anyway") { return }
+           !confirm("Build with too little free space?", "\(d.text). If free space runs low the converter clears old app copies and other things it can make again, and if a disk still drops below \(Disk.gb(Disk.stopBelow)) it pauses the build until there is room. Storage lists what can be deleted.", action: "Build Anyway") { return }
         let name = game?.name ?? ""
         let out = settings.outDir.flatMap { $0 == folder || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
         let bytes = gameBytes
@@ -527,7 +527,7 @@ final class AppModel {
         run.start(Job(gameDir: dir, keys: keys, sign: settings.signIdentity, env: env, rebuild: plan ? nil : rebuild, out: plan ? (rebuild ?? out) : out,
                       keepBackup: settings.keepBackups, reuseCache: plan || settings.reuseCache, scratch: scratch && !plan, cleanup: settings.cleanup,
                       gameFiles: source?.describe, plan: plan, gameBytes: bytes), expected: exp)
-        if !plan { watchDisk(Disk.watched(gameDir: folder, outDir: settings.outDir)) }
+        if !plan { watchDisk(Disk.watched(gameDir: folder, outDir: settings.outDir), folder: folder) }
     }
 
     /// Rebuild the chosen game from scratch, once confirmed: its build folder is emptied, so the game is unpacked and its shaders
@@ -544,26 +544,61 @@ final class AppModel {
     /// The game's size in bytes: a Switch 2 game's files as source_info.py read them, else the packages in the folder.
     var gameBytes: Int64 { source.map { max($0.fileBytes, $0.romfsBytes, 0) } ?? gameFolder.map(Estimates.gameBytes) ?? 0 }
 
-    /// While the build runs, every 15 s: warn when a volume it writes to gets low, and stop it before one fills up (the stage in
-    /// progress is lost; the finished ones are reused by the next build).
-    private func watchDisk(_ paths: [String]) {
+    /// While the build runs, every 15 s (5 s once space is low): when a volume it writes to gets under Disk.warnBelow, clear what
+    /// can be made again (MakeRoom, at most every five minutes); under Disk.stopBelow, pause the build instead of losing the
+    /// step it is on, and let it carry on by itself once Disk.resumeAbove is free again.
+    private func watchDisk(_ paths: [String], folder: String) {
         diskWatch?.cancel()
         diskWarning = nil
         diskWatch = Task { [weak self] in
+            var cleared: Date?
+            var told = false
             while !Task.isCancelled {
                 guard let self, self.run.running else { return }
-                let low = await Task.detached { Disk.lowest(paths) }.value
+                var low = await Task.detached { Disk.lowest(paths) }.value
                 guard self.run.running else { return }
-                if let low, low.free < Disk.stopBelow {
-                    let name = Disk.volumeName(low.path)
-                    self.diskWarning = nil
-                    self.run.stop(because: "Stopped: not enough space, only \(Disk.gb(low.free)) left on \(name). Free up space (Storage lists what can go), then build again: the finished steps are reused.")
-                    return
+                if self.run.paused {
+                    if let l = low, l.free >= Disk.resumeAbove {
+                        self.run.resume()
+                        self.diskWarning = nil
+                        self.run.log.append("NXForge: \(Disk.gb(l.free)) free on \(Disk.volumeName(l.path)) again, the build carries on.")
+                        self.showBanner("The build carries on", detail: "\(Disk.gb(l.free)) free on \(Disk.volumeName(l.path)).", tone: .success, symbol: "play.fill")
+                        told = false
+                    } else if let l = low {
+                        self.diskWarning = "Paused: only \(Disk.gb(l.free)) left on \(Disk.volumeName(l.path)). Free up \(Disk.gb(Disk.resumeAbove - l.free)) or more (Storage shows what can go) and the build carries on by itself, or Stop it."
+                    }
+                    try? await Task.sleep(for: .seconds(5))
+                    continue
                 }
-                self.diskWarning = low.flatMap { $0.free < Disk.warnBelow ? "Free space is low: \(Disk.gb($0.free)) left on \(Disk.volumeName($0.path)). The build stops by itself below \(Disk.gb(Disk.stopBelow))." : nil }
-                try? await Task.sleep(for: .seconds(15))
+                if let l = low, l.free < Disk.warnBelow, cleared.map({ Date().timeIntervalSince($0) > 300 }) ?? true {
+                    cleared = Date()
+                    let env = self.env
+                    let playing = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.standardizedFileURL.path })
+                    let r = await Task.detached { MakeRoom.run(building: folder, playing: playing, env: env, watch: paths) }.value
+                    self.run.log.append("NXForge: " + r.line)
+                    low = await Task.detached { Disk.lowest(paths) }.value
+                    guard self.run.running else { return }
+                }
+                if let l = low, l.free < Disk.stopBelow, self.run.pause() {
+                    let name = Disk.volumeName(l.path)
+                    self.run.log.append("NXForge: paused, only \(Disk.gb(l.free)) left on \(name). It carries on once \(Disk.gb(Disk.resumeAbove)) is free.")
+                    self.diskWarning = "Paused: only \(Disk.gb(l.free)) left on \(name). Free up space (Storage shows what can go) and the build carries on by itself, or Stop it."
+                    if !told { told = true; self.notifyPaused(name, free: l.free) }
+                    continue
+                }
+                self.diskWarning = low.flatMap { $0.free < Disk.warnBelow ? "Free space is low: \(Disk.gb($0.free)) left on \(Disk.volumeName($0.path)). If it drops under \(Disk.gb(Disk.stopBelow)) the build pauses until there is room." : nil }
+                try? await Task.sleep(for: .seconds((low?.free ?? .max) < Disk.warnBelow ? 5 : 15))
             }
         }
+    }
+
+    /// A notification, so a build paused while nobody watches the window is noticed.
+    private func notifyPaused(_ volume: String, free: Int64) {
+        guard settings.notify, Bundle.main.bundleIdentifier != nil else { return }
+        let c = UNMutableNotificationContent()
+        c.title = "Build paused: \(volume) is nearly full"
+        c.body = "Only \(Disk.gb(free)) left. Free up some space and the build carries on by itself."
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "nxforge-disk-pause", content: c, trigger: nil))
     }
 
     /// Stop, after saying what is kept: the finished stages are reused when the game is built again.

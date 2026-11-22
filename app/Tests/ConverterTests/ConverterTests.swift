@@ -2601,6 +2601,47 @@ import Testing
     }
 }
 
+/// A paused build stops every process of it and lets them all go again (BuildRun.signalTree, MakeRoom's pause).
+@Suite struct PauseTree {
+    func state(_ pid: pid_t) -> String {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/ps"); p.arguments = ["-o", "state=", "-p", "\(pid)"]
+        let out = Pipe(); p.standardOutput = out
+        try? p.run(); p.waitUntilExit()
+        return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @Test func childrenAreStoppedAndResumed() throws {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh"); p.arguments = ["-c", "sleep 30 & sleep 30 & wait"]
+        try p.run()
+        defer { BuildRun.signalTree(p.processIdentifier, SIGCONT); for c in BuildRun.tree(p.processIdentifier) { kill(c, SIGKILL) } }
+        var tree: [pid_t] = []
+        for _ in 0..<50 { tree = BuildRun.tree(p.processIdentifier); if tree.count >= 3 { break }; usleep(20_000) }
+        #expect(tree.count == 3 && tree.first == p.processIdentifier)
+        BuildRun.signalTree(p.processIdentifier, SIGSTOP)
+        usleep(100_000)
+        for pid in tree { #expect(state(pid).hasPrefix("T")) }
+        BuildRun.signalTree(p.processIdentifier, SIGCONT)
+        usleep(100_000)
+        for pid in tree { #expect(!state(pid).hasPrefix("T")) }
+    }
+}
+
+@Suite struct ForgottenFiles {
+    @Test func aCopyInTheGamesFolderIsSafeAndAnOnlyCopyIsNot() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "forgotten-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let big = Data(count: 1)
+        let staging = root.appending(path: ".staging/Game Update"), games = root.appending(path: "games/Switch 1/Game")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: games, withIntermediateDirectories: true)
+        try big.write(to: staging.appending(path: "update.nsp")); try big.write(to: games.appending(path: "update.nsp"))
+        let index = Forgotten.packageIndex(root.appending(path: "games").path)
+        #expect(index.contains("update.nsp|1"))
+        let found = Forgotten.bigFiles(root.appending(path: ".staging").path)
+        #expect(found.isEmpty)   // under the size worth a row
+    }
+}
+
 @Suite struct TheatreBookletsAndTheShelf {
     @Test func aManualIsTheBookletWhenThereIsOne() {
         let p = Booklet.pages(manualPages: 5, about: ["Words"], excerpt: nil, shots: [])
