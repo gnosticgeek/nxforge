@@ -7,7 +7,8 @@
 //! cartridge and the BIOS never change, so they are never copied: the live machine's stay where they are. The decode
 //! cache is content-keyed, so the live one stays good across a step back and is not copied either.
 //!
-//! Memory: Minish Cap takes about 20 KB a snapshot, so 30 seconds at one snapshot every four frames is about 10 MB.
+//! Memory (M4 Pro, 2026-11-22, `nxgba-run --rewind-check`): 59 to 76 KB a snapshot (the picture changes most of the
+//! frame), so 30 seconds at one snapshot every four frames take 26 to 34 MB; one takes about 0.1 ms.
 
 use std::collections::VecDeque;
 

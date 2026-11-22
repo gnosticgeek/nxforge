@@ -746,7 +746,7 @@ final class QuickSettings: ObservableObject {
     var pixelNote: String {
         if envFixed("DM_PIXEL_ART") { return "Set by DM_PIXEL_ART for this run" }
         if pixelActive == 0 { return pixel == Int(DM_PIXEL_AUTO) ? "Auto: turns on by itself when the game draws pixel art" : "Off: the picture as the settings below make it" }
-        let paused = "MetalFX, anti-aliasing, HDR highlights and frame interpolation wait while it is on."
+        let paused = gba ? "" : "MetalFX, anti-aliasing, HDR highlights and frame interpolation wait while it is on."
         guard let g = pixelGrid else { return "On: this scene has no pixel grid, so the picture is scaled sharply. " + paused }
         return "On: the art is \(Int(g.w.rounded()))×\(Int(g.h.rounded())), every pixel the same size" + (pixelActive == Int(DM_PIXEL_SMOOTH) ? ", diagonals smoothed. " : ". ") + paused
     }
