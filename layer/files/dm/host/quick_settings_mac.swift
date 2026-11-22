@@ -169,9 +169,11 @@ enum Nav: Hashable {
     case section(String), cheat(Int), cheatsAllOff, cheatsRestore, cheatsOpen, cheatsRefresh
     case key(Int), pad(Int), resetControls, playerFirst(Int)
     case restart, resume, library, quit
+    case gbaOpt(Int), stateSave(Int), stateLoad(Int)   // a Game Boy Advance game's sound switches and save states
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
+        case .gbaOpt: return true
         case .volume, .pauseOpen, .duckOpen, .keepLibrary, .batterySaver, .replay, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
@@ -461,6 +463,13 @@ final class QuickSettings: ObservableObject {
     @Published var fullscreen = false
     @Published var pauseOpen = true   // pause the game while the sidebar is up
     @Published var duckOpen = false   // quieter sound while it is up
+    // A Game Boy Advance game (gba/host/mac/gba_front_mac.m): its sound switches (Enhanced audio, bass lift, wider stereo), the handheld screen's colours, and whether each save state holds one
+    let gba = front_qs_gba() != 0
+    @Published var gbaOpts = [true, false, false, false]
+    @Published var gbaStates = [false, false, false]
+    func setGbaOpt(_ i: Int, _ on: Bool) { gbaOpts[i] = on; front_qs_gba_opt_set(Int32(i), on ? 1 : 0) }
+    func gbaState(_ n: Int, load: Bool) { _ = front_qs_gba_state(Int32(n), load ? 2 : 1); refreshGba() }
+    func refreshGba() { guard gba else { return }; gbaOpts = (0..<4).map { front_qs_gba_opt(Int32($0)) != 0 }; gbaStates = (1...3).map { front_qs_gba_state(Int32($0), 0) != 0 } }
     @Published var batterySaver = true   // on the battery, a game nobody is playing pauses (nxforge/front_mac_battery.inc)
     @Published var battery: (percent: Int, onBattery: Bool, minutes: Int)? = nil   // nil: a Mac without a battery
     @Published var players: [Player] = []   // the controllers by player, for the Controls page
@@ -524,6 +533,7 @@ final class QuickSettings: ObservableObject {
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
         volume = d.object(forKey: optKey("volume")) == nil ? 1 : d.double(forKey: optKey("volume")); muted = d.bool(forKey: optKey("muted"))
         recording = front_qs_recording() != 0; replay = front_qs_replay() != 0
+        refreshGba()
         pauseOpen = d.object(forKey: optKey("pauseOpen")) == nil ? true : d.bool(forKey: optKey("pauseOpen")); duckOpen = d.bool(forKey: optKey("duckOpen"))
         keepLibrary = d.object(forKey: optKey("keepLibrary")) == nil ? true : d.bool(forKey: optKey("keepLibrary"))
         batterySaver = d.object(forKey: optKey("batterySaver")) == nil ? true : d.bool(forKey: optKey("batterySaver")); battery = BatteryNow.read(); readPlayers()
@@ -954,13 +964,14 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + [[Nav.backup, Nav.backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
-        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + (gba ? (0..<3).map { [Nav.gbaOpt($0)] } : []) + [[Nav.backup, Nav.backupShow]] + (gba ? (1...3).map { [Nav.stateSave($0), Nav.stateLoad($0)] } : (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] }) + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + (gba ? [[.gbaOpt(3)]] : [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : [])) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
             return [[Nav.replay]] + (replay ? [[Nav.replaySave]] : []) + (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
                 + [[.showFolder, .changeFolder]] + (customDir ? [[.defaultFolder]] : [])
+        case pMods where gba: return []
         case pMods: return mods.map { [.mod($0), .modUp($0), .modDown($0)] } + [[.modsOpen, .modsRefresh]]
         case pCheats:
             var r: [[Nav]] = cheatsSafe ? [[.cheatsRestore]] : []
@@ -969,6 +980,7 @@ final class QuickSettings: ObservableObject {
                 r += g.rows.filter { !$0.label }.map { [.cheat($0.id)] }
             }
             return r + (cheatsOn > 0 ? [[.cheatsAllOff]] : []) + [[.cheatsOpen, .cheatsRefresh]]
+        case pControls where gba: return []
         case pControls: return players.filter { $0.slot > 0 && $0.canMove && players.first?.canMove != false }.map { [Nav.playerFirst($0.slot)] } + actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
         default: return []
         }
@@ -1005,6 +1017,7 @@ final class QuickSettings: ObservableObject {
         switch n {
         case .pauseOpen: setPauseOpen(d > 0)
         case .duckOpen: setDuck(d > 0)
+        case .gbaOpt(let i): setGbaOpt(i, d > 0)
         case .keepLibrary: setKeepLibrary(d > 0)
         case .replay: setReplay(d > 0)
         case .batterySaver: setBatterySaver(d > 0)
@@ -1042,6 +1055,9 @@ final class QuickSettings: ObservableObject {
         case .tab(let i): setPage(i); sel = firstOnPage
         case .pauseOpen: setPauseOpen(!pauseOpen)
         case .duckOpen: setDuck(!duckOpen)
+        case .gbaOpt(let i): setGbaOpt(i, !gbaOpts[i])
+        case .stateSave(let n): gbaState(n, load: false)
+        case .stateLoad(let n): gbaState(n, load: true)
         case .keepLibrary: setKeepLibrary(!keepLibrary)
         case .batterySaver: setBatterySaver(!batterySaver)
         case .undoSession: undoSession()
@@ -1312,9 +1328,9 @@ struct QuickSettingsView: View {
         case pGraphics: graphics
         case pPerformance: performance
         case pCapture: capture
-        case pMods: mods
+        case pMods: if m.gba { Text("Game Boy Advance games have no mods folder. Cheats are on the next page.").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) } else { mods }
         case pCheats: cheats
-        default: controls
+        default: if m.gba { gbaControls } else { controls }
         }
     }
     private func subhead(_ t: String) -> some View { Text(t.uppercased()).font(.caption.weight(.semibold)).kerning(0.8).foregroundStyle(.secondary).padding(.top, 2) }
@@ -1322,6 +1338,14 @@ struct QuickSettingsView: View {
     private func resetButton(_ title: String, _ n: Nav, enabled: Bool, _ action: @escaping () -> Void) -> some View {
         Button { withAnimation(motion) { action() } } label: { Label(title, systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
             .modifier(GlassButton(prominent: false)).controlSize(.large).disabled(!enabled).padding(.top, 4).nav(m, n)
+    }
+    private func gbaRow(_ i: Int, _ title: String, on: String, off: String?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Row(title: title, changed: m.gbaOpts[i] != (i == 0)) {
+                Toggle(title, isOn: Binding(get: { m.gbaOpts[i] }, set: { m.setGbaOpt(i, $0) })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .gbaOpt(i))
+            note(m.gbaOpts[i] ? on : (off ?? on))
+        }
     }
     private func slotRow(_ n: Int) -> some View {
         let info = m.slots[n - 1], armed = m.slotArmedNow == n
@@ -1369,6 +1393,12 @@ struct QuickSettingsView: View {
                 note((m.batterySaver ? "Unplugged, the game pauses while another app is in front, and after ten minutes without a button" : "The game keeps running when you leave it, plugged in or not")
                      + ". " + BatteryNow.line(b))
             }
+            if m.gba {
+                subhead("Sound").padding(.top, 6)
+                gbaRow(0, "Enhanced audio", on: "The music is mixed again at 48 kHz with smooth sample and channel edges, so it loses the handheld's hiss and ringing. " + String(cString: front_qs_gba_sound()), off: "The sound as the handheld's own mixer made it")
+                gbaRow(1, "Bass lift", on: "A little more low end, for speakers larger than the handheld's", off: nil)
+                gbaRow(2, "Wider stereo", on: "The left and right channels a little further apart", off: nil)
+            }
             subhead("Save").padding(.top, 6)
             HStack(spacing: 10) {
                 Button { m.backup() } label: { Label(m.backupBusy ? "Backing up…" : "Back up save now", systemImage: "externaldrive.badge.timemachine").frame(maxWidth: .infinity) }
@@ -1380,11 +1410,27 @@ struct QuickSettingsView: View {
                 else if let d = m.lastBackup { Text("Last backup \(d.formatted(.relative(presentation: .named))). The NXForge Converter's Builds page restores it (Save snapshots).").foregroundStyle(.secondary) }
                 else { Text("A checked copy of this game's save, kept beside it; the NXForge Converter's Builds page restores it.").foregroundStyle(.secondary) }
             }.font(.caption).fixedSize(horizontal: false, vertical: true)
+            if m.gba {
+                subhead("Save states").padding(.top, 6)
+                ForEach(1...3, id: \.self) { n in
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("State \(n)").font(.body.weight(.medium))
+                            Text(m.gbaStates[n - 1] ? "Holds this run's moment" : "Empty").font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        Button { m.gbaState(n, load: false) } label: { Label("Save", systemImage: "square.and.arrow.down").frame(maxWidth: 80) }.modifier(GlassButton(prominent: false)).nav(m, .stateSave(n))
+                        Button { m.gbaState(n, load: true) } label: { Label("Load", systemImage: "arrow.counterclockwise").frame(maxWidth: 110) }.modifier(GlassButton(prominent: false)).disabled(!m.gbaStates[n - 1]).nav(m, .stateLoad(n))
+                    }.controlSize(.large)
+                }
+                Text("A save state is this exact moment, saved and loaded at once: ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too. States last until you quit the game; the game's own save is kept as always.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
             subhead("Quick-save slots").padding(.top, 6)
             ForEach(1...SaveSlots.count, id: \.self) { n in slotRow(n) }
-            Text(SaveSlots.canLoad ? "A slot keeps the game's own save as it last saved it (not this exact moment). Loading restarts the game from that save; ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too."
+            }
+            if !m.gba { Text(SaveSlots.canLoad ? "A slot keeps the game's own save as it last saved it (not this exact moment). Loading restarts the game from that save; ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too."
                  : "A slot keeps the game's own save as it last saved it. Loading one needs the game opened from its app, which restarts it.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             if !m.settingsPath.isEmpty {
                 subhead("Settings file").padding(.top, 6)
                 Text(tilde(m.settingsPath)).font(.callout).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
@@ -1485,6 +1531,15 @@ struct QuickSettingsView: View {
                 }.nav(m, .scanlines)
                 note("Auto gives about 240 lines; for pixel art, pick the rows one art pixel covers")
             }
+            if m.gba {
+                subhead("Screen").padding(.top, 6)
+                gbaRow(3, "Handheld colours", on: "The softer colours of the handheld's own screen", off: "The game's colours as it sends them, as on a modern screen")
+            } else { imageQuality }
+            resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
+        }.onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in m.refreshPixel() }
+    }
+    @ViewBuilder private var imageQuality: some View {
+        Group {
             subhead("Image quality").padding(.top, 6)
             // Upscaling: MetalFX's spatial scaler in place of the bilinear stretch wherever the window or screen is larger than the game's picture
             Row(title: "MetalFX upscaling", changed: !m.upscale) {
@@ -1525,8 +1580,7 @@ struct QuickSettingsView: View {
                  : m.edr && m.pixelPaused ? "Waits while Pixel art is on, which keeps the game's own colours"
                  : m.edrHeadroom <= 1.01 ? "Needs an XDR or HDR screen; this one shows SDR, so the picture stays the same"
                  : "Sun, lava and shiny things glow brighter than white. White HUD text brightens too")
-            resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
-        }.onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in m.refreshPixel() }   // auto turns on by itself, and the art's grid follows the scene
+        }
     }
     private var performance: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1667,6 +1721,19 @@ struct QuickSettingsView: View {
                 Button { m.openModsFolder() } label: { Label("Open mods folder", systemImage: "folder").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .modsOpen)
                 Button { withAnimation(motion) { m.refresh() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .modsRefresh)
             }.controlSize(.large)
+        }
+    }
+    private var gbaControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("A Game Boy Advance game's buttons. They are fixed for now.").font(.caption).foregroundStyle(.secondary)
+            subhead("Keyboard").padding(.top, 4)
+            ForEach([("D-pad", "Arrow keys or W A S D"), ("A", "J or X"), ("B", "K or Z"), ("L", "Q"), ("R", "E"), ("Start", "Return"), ("Select", "Tab or Delete"), ("Fast forward", "Hold Space"), ("This menu", "Esc")], id: \.0) { r in
+                Row(title: r.0) { Text(r.1).foregroundStyle(.secondary) }
+            }
+            subhead("Controller").padding(.top, 6)
+            ForEach([("D-pad", "D-pad or left stick"), ("A", "Right button"), ("B", "Bottom button"), ("L / R", "Shoulders or triggers"), ("Start", "Menu"), ("Select", "Options"), ("Fast forward", "Hold the right stick down"), ("This menu", "Press the left stick, or Home")], id: \.0) { r in
+                Row(title: r.0) { Text(r.1).foregroundStyle(.secondary) }
+            }
         }
     }
     private var controls: some View {

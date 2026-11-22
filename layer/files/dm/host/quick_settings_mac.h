@@ -107,3 +107,11 @@ void front_qs_live_changed(void);
 // Laptop-safe play (nxforge/front_mac_sleep.inc): a save snapshot "Before the Mac slept" when the game saved since the newest snapshot. 1 made, 0 nothing new, -1 no save yet or the
 // copy failed. Waits for the copy (a save is small). Main thread
 int dm_qs_safety_copy(void);
+// A Game Boy Advance game's player (gba/host/mac/gba_front_mac.m; 0 and nothing in the Switch player, front_mac_quick_settings.inc): whether this is one; its switches
+// (which 0 Enhanced audio, 1 bass lift, 2 wider stereo, 3 the handheld screen's colours), kept per game; its save states (slot 1 to 3; op 0 whether the slot holds one,
+// 1 save, 2 load); and a line on what Enhanced audio does for this game. Main thread
+int front_qs_gba(void);
+int front_qs_gba_opt(int which);
+void front_qs_gba_opt_set(int which, int on);
+int front_qs_gba_state(int slot, int op);
+const char *front_qs_gba_sound(void);
