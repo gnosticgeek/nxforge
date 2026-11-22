@@ -677,7 +677,7 @@ int main(int argc, const char **argv) {
         settings_apply(); cheats_load();
         if (g_snapshot) {   // a real window, kept off every screen and never in front
             g_snap_until = (e = getenv("NXGBA_SNAPSHOT_FRAMES")) ? strtoull(e, NULL, 10) : 600;
-            g_win.ignoresMouseEvents = YES; [g_win setFrameOrigin:NSMakePoint(-30000, -30000)]; [g_win orderFrontRegardless]; g_layer.displaySyncEnabled = NO;
+            g_win.ignoresMouseEvents = YES; [g_win setFrameOrigin:NSMakePoint(-30000, 100)]; [g_win orderFrontRegardless]; g_layer.displaySyncEnabled = NO;
         }
         else {
             menus(del); [g_win center]; [g_win setFrameAutosaveName:[@"NXGBA." stringByAppendingString:g_id]];
