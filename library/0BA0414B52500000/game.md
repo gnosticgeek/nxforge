@@ -4,7 +4,8 @@ title: "Kurukuru Kururin"
 title_id: "0BA0414B52500000"
 genres:
   - "Puzzle"
-  - "Arcade"---
+  - "Arcade"
+---
 
 # Kurukuru Kururin
 
