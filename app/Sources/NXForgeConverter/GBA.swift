@@ -22,7 +22,7 @@ enum GBA {
     static func cleanName(_ file: String) -> String {
         var n = (file.lastComponent as NSString).deletingPathExtension
         n = n.replacingOccurrences(of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
-        if let m = n.firstMatch(of: /^(.*?), (The|A|An)( - .*)?$/) { n = "\(m.2) \(m.1)\(m.3 ?? "")" }
+        if let m = n.firstMatch(of: #/^(.*?), (The|A|An)( - .*)?$/#) { n = "\(m.2) \(m.1)\(m.3 ?? "")" }
         return n.isEmpty ? "Game" : n
     }
 

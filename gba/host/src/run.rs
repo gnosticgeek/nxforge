@@ -82,15 +82,23 @@ fn write_wav(path: &str, samples: &[f32], rate: u32) -> Result<(), String> {
     std::fs::write(path, w).map_err(|e| format!("{path}: {e}"))
 }
 
+/// Keys for a run nobody plays: after the first four seconds, A in short presses (menus, text boxes), Start now and
+/// then (title screens, name entry's "end"), and the D-pad in turn for a moment every ten seconds, so a game that
+/// reaches play moves about. B and Select are left alone: they back out of menus.
 fn demo_keys(frame: u64) -> u16 {
     let mut keys = 0x3FFu16;
-    let phase = frame % 180;
-    if frame >= 240 {
-        if phase < 10 {
-            keys &= !(1 << 3);
-        } else if (60..70).contains(&phase) {
-            keys &= !(1 << 0);
-        }
+    if frame < 240 {
+        return keys;
+    }
+    let f = frame - 240;
+    if f % 24 < 6 {
+        keys &= !(1 << 0); // A
+    }
+    if f % 210 >= 200 {
+        keys &= !(1 << 3); // Start
+    }
+    if f % 600 >= 520 {
+        keys &= !(1 << [7u16, 4, 6, 5][((f / 600) % 4) as usize]); // Down, Right, Up, Left
     }
     keys
 }
