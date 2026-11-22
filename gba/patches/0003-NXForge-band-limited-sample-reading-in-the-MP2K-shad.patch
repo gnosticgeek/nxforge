@@ -1,0 +1,360 @@
+From 28b4737303d55a011e7ba0253f10f70cd1d76fb5 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 22 Nov 2026 11:36:32 +0000
+Subject: [PATCH] NXForge: band-limited sample reading in the MP2K shadow mixer
+
+The MP2K HLE mixer read each instrument sample with a straight line between
+neighbouring samples. That leaves mirror images of the instrument above its
+own Nyquist (the fizz on top of GBA music) and dulls its real top end, and a
+pitched-up voice folds its highs back down as aliasing. interp.rs evaluates a
+16-tap Kaiser-windowed sinc instead, centred on the play head (no delay),
+stretched for voices that play faster than the 65536 Hz grid, with the
+weights normalised so a constant stays constant. DPCM voices keep two decoded
+blocks so the window can straddle a block edge. RECOMP_MP2K_LINEAR=1 brings
+back the old reader for A/B listening.
+---
+ crates/gba-core/src/interp.rs | 156 ++++++++++++++++++++++++++++++++++
+ crates/gba-core/src/lib.rs    |   1 +
+ crates/gba-core/src/mp2k.rs   |  89 ++++++++++++++++---
+ 3 files changed, 233 insertions(+), 13 deletions(-)
+ create mode 100644 crates/gba-core/src/interp.rs
+
+diff --git a/crates/gba-core/src/interp.rs b/crates/gba-core/src/interp.rs
+new file mode 100644
+index 0000000..b8bddea
+--- /dev/null
++++ b/crates/gba-core/src/interp.rs
+@@ -0,0 +1,156 @@
++//! NXForge: band-limited sample interpolation for the HLE shadow mixers.
++//!
++//! A shadow voice reads an instrument sample (8-bit, usually recorded at 8-22 kHz) at an arbitrary pitch and renders
++//! it on the 65536 Hz grid. Straight-line interpolation between neighbouring samples leaves mirror images of the
++//! instrument above its own Nyquist (the metallic fizz on top of GBA music), and a pitched-up note folds its top end
++//! back down as aliasing. This evaluates a Kaiser-windowed sinc instead, stretched when the voice plays faster than
++//! the grid so it also filters before it decimates.
++//!
++//! The kernel is centred on the read position, so it adds no delay: the samples ahead of the play head are already
++//! in memory. The weights are normalised by their own sum, so a constant input comes out exactly constant (no ripple
++//! from the window at any fractional phase).
++
++/// Kernel half-width in source samples at unity speed (16 taps in all).
++pub const HALF: usize = 8;
++/// Table resolution: entries per source sample.
++const RES: usize = 256;
++/// Cutoff as a fraction of the source rate (0.5 = Nyquist), slightly under so the transition band sits mostly
++/// above the sample's own content.
++const FC: f64 = 0.46;
++/// Kaiser window shape (about -70 dB stop band for this length).
++const BETA: f64 = 7.0;
++/// Fastest voice the kernel stretches for; beyond it (rare: a sample pitched up more than 4x past the grid rate)
++/// the kernel stays at this width and some aliasing is accepted rather than unbounded cost.
++const MAX_STRETCH: f64 = 4.0;
++
++fn bessel_i0(x: f64) -> f64 {
++    let (mut sum, mut term, mut k) = (1.0, 1.0, 1.0);
++    while term > 1e-12 * sum {
++        term *= (x / (2.0 * k)) * (x / (2.0 * k));
++        sum += term;
++        k += 1.0;
++    }
++    sum
++}
++
++fn table() -> &'static [f32] {
++    static TABLE: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new();
++    TABLE.get_or_init(|| {
++        use std::f64::consts::PI;
++        let n = HALF * RES;
++        let i0b = bessel_i0(BETA);
++        (0..=n + 1)
++            .map(|i| {
++                let x = i as f64 / RES as f64;
++                if x >= HALF as f64 {
++                    return 0.0;
++                }
++                let sinc = if x == 0.0 { 2.0 * FC } else { (2.0 * PI * FC * x).sin() / (PI * x) };
++                let r = x / HALF as f64;
++                let win = bessel_i0(BETA * (1.0 - r * r).max(0.0).sqrt()) / i0b;
++                (sinc * win) as f32
++            })
++            .collect()
++    })
++}
++
++#[inline(always)]
++fn kernel(t: &[f32], x: f32) -> f32 {
++    let p = x.abs() * RES as f32;
++    let i = p as usize;
++    if i >= HALF * RES {
++        return 0.0;
++    }
++    let f = p - i as f32;
++    t[i] + (t[i + 1] - t[i]) * f
++}
++
++/// The value at fractional source position `pos` of a voice moving `step` source samples per output sample.
++/// `window(lo, n)` fills `buf[..n]` with source samples `lo..lo + n` (zeros outside the sound, loop wrap applied by
++/// the caller) and is called once per output sample.
++#[inline]
++pub fn sample<F: FnMut(i64, &mut [f32])>(pos: f64, step: f64, buf: &mut [f32; 4 * HALF * 2 + 2], mut window: F) -> f32 {
++    let t = table();
++    let stretch = step.clamp(1.0, MAX_STRETCH);
++    let half = HALF as f64 * stretch;
++    let lo = (pos - half).floor() as i64 + 1;
++    let hi = (pos + half).ceil() as i64 - 1;
++    let n = ((hi - lo + 1).max(0) as usize).min(buf.len());
++    window(lo, &mut buf[..n]);
++    let inv = (1.0 / stretch) as f32;
++    let base = (lo as f64 - pos) as f32;
++    let (mut acc, mut wsum) = (0.0f32, 0.0f32);
++    for (k, s) in buf[..n].iter().enumerate() {
++        let w = kernel(t, (base + k as f32) * inv);
++        acc += w * s;
++        wsum += w;
++    }
++    if wsum.abs() > 1e-6 {
++        acc / wsum
++    } else {
++        0.0
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn render(src: &[f32], step: f64, n: usize) -> Vec<f32> {
++        let mut buf = [0f32; 4 * HALF * 2 + 2];
++        (0..n)
++            .map(|i| {
++                sample(i as f64 * step, step, &mut buf, |lo, out| {
++                    for (k, o) in out.iter_mut().enumerate() {
++                        let j = lo + k as i64;
++                        *o = if j >= 0 && (j as usize) < src.len() { src[j as usize] } else { 0.0 };
++                    }
++                })
++            })
++            .collect()
++    }
++
++    #[test]
++    fn content_below_the_cutoff_passes_unchanged() {
++        // a tone at a fifth of the source rate, read at a third of a sample per step: every output lands on the tone
++        let src: Vec<f32> = (0..400).map(|i| 100.0 * (i as f32 * 0.2 * std::f32::consts::TAU).sin()).collect();
++        let out = render(&src, 1.0 / 3.0, 1200);
++        for (i, v) in out.iter().enumerate().take(1100).skip(60) {
++            let want = 100.0 * (i as f32 / 3.0 * 0.2 * std::f32::consts::TAU).sin();
++            assert!((v - want).abs() < 0.5, "{i}: {v} vs {want}");
++        }
++    }
++
++    #[test]
++    fn constant_stays_constant() {
++        let src = vec![50.0f32; 400];
++        for step in [0.13, 0.5, 1.0, 1.7, 3.3] {
++            let out = render(&src, step, (300.0 / step) as usize);
++            for (i, v) in out.iter().enumerate().take((250.0 / step) as usize).skip((40.0 / step) as usize) {
++                assert!((v - 50.0).abs() < 1e-3, "step {step} at {i}: {v}");
++            }
++        }
++    }
++
++    /// A tone at 3/8 of the source rate, played 4x slower (as an 8 kHz sample on a 32 kHz grid would be): the
++    /// interpolated output should hold the tone and almost nothing at its first mirror image.
++    #[test]
++    fn upsampling_suppresses_images() {
++        use std::f64::consts::PI;
++        let f = 0.375;
++        let src: Vec<f32> = (0..4096).map(|i| (2.0 * PI * f * i as f64).sin() as f32).collect();
++        let out = render(&src, 0.25, 8192);
++        let tone = |freq: f64| {
++            let (mut re, mut im) = (0.0, 0.0);
++            for (i, v) in out[1024..7168].iter().enumerate() {
++                let a = 2.0 * PI * freq * i as f64;
++                re += *v as f64 * a.cos();
++                im += *v as f64 * a.sin();
++            }
++            (re * re + im * im).sqrt()
++        };
++        let want = tone(f / 4.0);
++        let image = tone((1.0 - f) / 4.0);
++        assert!(image / want < 0.01, "image {:.4} of the tone", image / want);
++    }
++}
+diff --git a/crates/gba-core/src/lib.rs b/crates/gba-core/src/lib.rs
+index e0cb462..dc6b7a3 100644
+--- a/crates/gba-core/src/lib.rs
++++ b/crates/gba-core/src/lib.rs
+@@ -19,6 +19,7 @@ pub mod exec;
+ pub mod gax;
+ pub mod hle;
+ pub mod hostclock;
++pub mod interp;
+ pub mod machine;
+ pub mod mem;
+ pub mod mp2k;
+diff --git a/crates/gba-core/src/mp2k.rs b/crates/gba-core/src/mp2k.rs
+index 748dfd8..5922b29 100644
+--- a/crates/gba-core/src/mp2k.rs
++++ b/crates/gba-core/src/mp2k.rs
+@@ -214,9 +214,11 @@ struct Voice {
+     /// linear interpolation across the frame removes envelope zipper.
+     g0: (f32, f32),
+     g1: (f32, f32),
+-    /// Decoded DPCM block cache (33 bytes -> 64 samples).
+-    blk_idx: u32,
+-    blk: [i8; 64],
++    /// Decoded DPCM block cache (33 bytes -> 64 samples), two blocks so the interpolation window can straddle a
++    /// block boundary without decoding again every sample; `blk_next` is the slot the next miss replaces.
++    blk_idx: [u32; 2],
++    blk: [[i8; 64]; 2],
++    blk_next: u8,
+     /// Canon-domain check copy: the guest mixer samples this voice at
+     /// ITS mix rate (decimation aliasing and all) — the self-check
+     /// must compare against that rendition, not our full-rate one.
+@@ -237,8 +239,9 @@ impl Default for Voice {
+             step: 0.0,
+             g0: (0.0, 0.0),
+             g1: (0.0, 0.0),
+-            blk_idx: u32::MAX,
+-            blk: [0; 64],
++            blk_idx: [u32::MAX; 2],
++            blk: [[0; 64]; 2],
++            blk_next: 0,
+             chk_hold: 0.0,
+             chk_acc: 0.0,
+         }
+@@ -285,6 +288,10 @@ pub struct Mp2kHle {
+     mode_dwell: u32,
+     /// Grid samples per guest mixer output sample (65536/pcmFreq).
+     mix_step: f64,
++    /// NXForge: read the instrument samples through the band-limited interpolator (interp.rs) instead of a straight
++    /// line between neighbours. On unless RECOMP_MP2K_LINEAR is set (for A/B listening).
++    pub hq: bool,
++    hq_buf: [f32; 4 * crate::interp::HALF * 2 + 2],
+ }
+ 
+ impl Mp2kHle {
+@@ -322,6 +329,8 @@ impl Mp2kHle {
+             count_mode: 0,
+             mode_dwell: 0,
+             mix_step: 65536.0 / 13379.0,
++            hq: std::env::var_os("RECOMP_MP2K_LINEAR").is_none(),
++            hq_buf: [0.0; 4 * crate::interp::HALF * 2 + 2],
+         }
+     }
+ 
+@@ -628,7 +637,7 @@ impl Mp2kHle {
+             if !v.on {
+                 continue;
+             }
+-            let s = sample_voice(v, mem);
++            let s = if self.hq { sample_voice_hq(v, mem, &mut self.hq_buf) } else { sample_voice(v, mem) };
+             // Guest-rate ZOH: re-sample only when the guest mixer
+             // would, so heavily pitched-up instruments alias in the
+             // check copy exactly as they do in the canon stream.
+@@ -749,7 +758,7 @@ fn note_on(v: &mut Voice, mem: &MemView, ctype: u8, count: u32, wav: u32, count_
+     } else {
+         0.0
+     };
+-    v.blk_idx = u32::MAX;
++    v.blk_idx = [u32::MAX; 2];
+     true
+ }
+ 
+@@ -786,6 +795,50 @@ fn sample_voice(v: &mut Voice, mem: &MemView) -> f32 {
+ }
+ 
+ /// Fetch source sample `idx` as a float in s8 units.
++/// NXForge: `sample_voice` through the band-limited interpolator. Same play-head and loop handling; the window
++/// around the head reads past the end into the loop (or silence for a one-shot) and before the start as silence.
++fn sample_voice_hq(v: &mut Voice, mem: &MemView, buf: &mut [f32; 4 * crate::interp::HALF * 2 + 2]) -> f32 {
++    if v.pos >= v.size as f64 {
++        if v.looped && v.size > v.loop_start {
++            let span = (v.size - v.loop_start) as f64;
++            let over = (v.pos - v.loop_start as f64) % span;
++            v.pos = v.loop_start as f64 + over;
++        } else {
++            return 0.0;
++        }
++    }
++    let (pos, step) = (v.pos, v.step);
++    v.pos += v.step;
++    let out = crate::interp::sample(pos, step, buf, |lo, out| {
++        let n = out.len() as i64;
++        if !v.compressed && lo >= 0 && lo + n <= v.size as i64 {
++            if let Some(b) = mem.slice(v.data + lo as u32, n as usize) {
++                for (o, &x) in out.iter_mut().zip(b) {
++                    *o = x as i8 as f32;
++                }
++                return;
++            }
++        }
++        for (k, o) in out.iter_mut().enumerate() {
++            let mut j = lo + k as i64;
++            if j < 0 {
++                *o = 0.0;
++                continue;
++            }
++            if j >= v.size as i64 {
++                if v.looped && v.size > v.loop_start {
++                    j = v.loop_start as i64 + (j - v.size as i64) % (v.size - v.loop_start) as i64;
++                } else {
++                    *o = 0.0;
++                    continue;
++                }
++            }
++            *o = fetch(v, mem, j as u32);
++        }
++    });
++    out / 128.0
++}
++
+ fn fetch(v: &mut Voice, mem: &MemView, idx: u32) -> f32 {
+     if !v.compressed {
+         return mem.u8(v.data + idx).map_or(0.0, |b| b as i8 as f32);
+@@ -795,21 +848,28 @@ fn fetch(v: &mut Voice, mem: &MemView, idx: u32) -> f32 {
+     // unmodified; sample k (k>=1) reads byte 1+(k>>1), even k the high
+     // nibble, odd k the low — byte 1's high nibble is never read.
+     let blk = idx >> 6;
+-    if blk != v.blk_idx {
++    let slot = if v.blk_idx[0] == blk {
++        0
++    } else if v.blk_idx[1] == blk {
++        1
++    } else {
+         let Some(b) = mem.slice(v.data + blk * 33, 33) else {
+             return 0.0;
+         };
++        let slot = v.blk_next as usize;
++        v.blk_next ^= 1;
+         let mut cur = b[0] as i8;
+-        v.blk[0] = cur;
++        v.blk[slot][0] = cur;
+         for k in 1..64usize {
+             let byte = b[1 + (k >> 1)];
+             let nib = if k & 1 == 0 { byte >> 4 } else { byte & 0xF };
+             cur = cur.wrapping_add(DPCM_LUT[nib as usize]);
+-            v.blk[k] = cur;
++            v.blk[slot][k] = cur;
+         }
+-        v.blk_idx = blk;
+-    }
+-    v.blk[(idx & 63) as usize] as f32
++        v.blk_idx[slot] = blk;
++        slot
++    };
++    v.blk[slot][(idx & 63) as usize] as f32
+ }
+ 
+ #[cfg(test)]
+@@ -870,6 +930,9 @@ mod tests {
+             sound_main_off: 0,
+             sound_main_ram: 0x0300_2001,
+         }]);
++        // the envelope mirror is what this checks: read the sample point-wise (the band-limited reader rounds the
++        // note's hard start, tested in interp.rs)
++        h.hq = false;
+         h.frame_hook(&mem, 256 * 2000, 0x0300_2001);
+         assert!(h.engaged);
+         let v = &h.voices[0];
