@@ -109,6 +109,11 @@ def build():
     subprocess.run(["cargo", "build", "--release"], cwd=HOST, env=env(), check=True)
     if sys.platform == "darwin":
         subprocess.run([os.path.join(HOST, "mac", "build.sh")], env=env(), check=True)
+    # cargo leaves a tool it had nothing to rebuild with its old time, which stale() would read as out of date for good
+    w = where()
+    for o in [w["recomp"], w["run"]] + ([w["player"]] if sys.platform == "darwin" else []):
+        if os.path.exists(o):
+            os.utime(o)
 
 
 def main():

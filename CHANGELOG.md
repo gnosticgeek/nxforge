@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.56.3 (2026-11-22)
+
+- **The Game Boy Advance engine builds once after an update, not before every conversion** (scripts/gba_engine.py): when the host or player changed but gba-recomp's recompiler did not, cargo left the recompiler with its old time and every conversion went on rebuilding the engine (a few seconds and an extra step each time). The build now marks its tools as current.
+
 ## 0.56.2 (2026-11-22)
 
 - **Game Boy Advance apps about half the size** (scripts/gba_build.py, gba/host): Kirby - Nightmare in Dream Land goes from 24 MB to 13 MB, at the same speed (trial run 1,231 fps against 1,201; 6,000-frame A/B runs within 1%). The cartridge goes in packed with Apple's LZFSE (`game.gba.lzfse`, 8.0 to 4.7 MB, unpacked in a few milliseconds at start and checked to unpack to itself before it is shipped); the player is dead-stripped and stripped (6.3 to 2.0 MB); the translated code exports only `rcg_blocks` and `rcg_block_count`, so the 18,000 block names go (6.7 to 5.8 MB, same machine code); the trial-run and title pictures are written compressed (1.9 MB to 127 KB, the same pixels). Apps converted before 0.56.2 keep working and get smaller when converted again (the Link step runs again; compiled units are kept).
