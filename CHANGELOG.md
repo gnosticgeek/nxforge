@@ -12,6 +12,14 @@ Mario Kart World fixes from [No Lag Kart](https://github.com/kingbumi31/no-lag-k
 - **Mario Kart World's tested settings**: the encode thread on, and a submission goes to the GPU in segments of 8 draws (new profile key `nvn_cut`; `DM_NVN_CUT` still overrides) so the GPU starts sooner, which in No Lag Kart's split-screen runs took the frames off their step to none.
 - Left out on purpose: the streamed submission and the GPU clock keeper (split-screen gains, with lock-order and power costs here), the host PGO profile, the shader-chain change of PR #1230 and the merged warm-up list.
 
+## 0.56.3 (2026-11-22)
+
+- **The Game Boy Advance engine builds once after an update, not before every conversion** (scripts/gba_engine.py): when the host or player changed but gba-recomp's recompiler did not, cargo left the recompiler with its old time and every conversion went on rebuilding the engine (a few seconds and an extra step each time). The build now marks its tools as current.
+
+## 0.56.2 (2026-11-22)
+
+- **Game Boy Advance apps about half the size** (scripts/gba_build.py, gba/host): Kirby - Nightmare in Dream Land goes from 24 MB to 13 MB, at the same speed (trial run 1,231 fps against 1,201; 6,000-frame A/B runs within 1%). The cartridge goes in packed with Apple's LZFSE (`game.gba.lzfse`, 8.0 to 4.7 MB, unpacked in a few milliseconds at start and checked to unpack to itself before it is shipped); the player is dead-stripped and stripped (6.3 to 2.0 MB); the translated code exports only `rcg_blocks` and `rcg_block_count`, so the 18,000 block names go (6.7 to 5.8 MB, same machine code); the trial-run and title pictures are written compressed (1.9 MB to 127 KB, the same pixels). Apps converted before 0.56.2 keep working and get smaller when converted again (the Link step runs again; compiled units are kept).
+
 ## 0.56.1 (2026-11-22)
 
 - **Games start straight in, with no settings window of their own** (layer patch no-settings-window, Converter 0.28.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a built game app no longer opens its General / Graphics / Advanced window before the game, from NXForge.app, Finder or the Dock. Its settings are NXForge.app's Play options (and Quick settings while it runs), which keep the same saved choices the window kept, so nothing chosen is lost. The cloud save check still runs before the game and only asks when both saves changed or iCloud is slow. The window's microphone input picker is now a Play options row under Microphone. A game built before 0.56.1 keeps its window until it is updated (NXForge.app's Play already skipped it).

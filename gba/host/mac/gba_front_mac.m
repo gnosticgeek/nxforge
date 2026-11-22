@@ -4,7 +4,7 @@
 // (layer/files/dm/host/quick_settings_mac.swift), which is the same file the Switch player builds. The sidebar talks
 // to its player through the C calls in quick_settings_mac.h; they are implemented here for a GBA game.
 //
-// The app bundle holds the game (Contents/Resources/gba/game.gba, game.dylib: scripts/gba_build.py); the save, save
+// The app bundle holds the game (Contents/Resources/gba/game.gba or the packed game.gba.lzfse, game.dylib: scripts/gba_build.py); the save, save
 // snapshots, cheats and screenshots live where a Switch game's do, ~/Library/Application Support/nxnative/<title ID>.
 //
 // NXGBA_SNAPSHOT=<file.png> runs without showing anything: the game runs NXGBA_SNAPSHOT_FRAMES frames (600) with the
@@ -652,6 +652,8 @@ int main(int argc, const char **argv) {
         // a ROM and its translation named on the command line (testing) win over the bundle's; options (NXForge passes --no-launcher, AppKit its own) are not paths
         BOOL named = argc > 1 && argv[1][0] != '-';
         NSString *rom = (e = getenv("NXGBA_ROM")) ? @(e) : named ? @(argv[1]) : [res stringByAppendingPathComponent:@"game.gba"];
+        // newer apps carry the cartridge packed (game.gba.lzfse); the host unpacks it
+        if (!getenv("NXGBA_ROM") && !named && ![NSFileManager.defaultManager fileExistsAtPath:rom]) rom = [rom stringByAppendingPathExtension:@"lzfse"];
         NSString *lib = (e = getenv("NXGBA_LIB")) ? @(e) : named && argc > 2 && argv[2][0] != '-' ? @(argv[2]) : [res stringByAppendingPathComponent:@"game.dylib"];
         g_name = (e = getenv("NXGBA_NAME")) ? @(e) : info[@"CFBundleName"] ?: rom.lastPathComponent.stringByDeletingPathExtension;
         g_id = (e = getenv("NXGBA_ID")) ? @(e) : info[@"NXForgeTitleID"] ?: @"0BA0000000000000";

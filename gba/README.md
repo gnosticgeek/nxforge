@@ -53,8 +53,10 @@ own replacements.
 
 ## The app
 
-`<Name>.app/Contents/MacOS/nxnative` is the player; `Contents/Resources/gba/` holds `game.gba` (your copy),
-`game.dylib` (the translated code) and `port.json` (what the conversion did: steps and times, how much was
+`<Name>.app/Contents/MacOS/nxnative` is the player; `Contents/Resources/gba/` holds `game.gba.lzfse` (your copy,
+packed with Apple's LZFSE: about half the size, unpacked in a few milliseconds at start; older apps have a plain
+`game.gba`), `game.dylib` (the translated code, exporting only `rcg_blocks` and `rcg_block_count`, so the block
+names are stripped) and `port.json` (what the conversion did: steps and times, how much was
 translated, the trial run). The title ID NXForge uses for a GBA game is `0BA0`, the four letters of the
 cartridge's game code in hex, its version byte and `00` (Minish Cap, Europe: `0BA0425A4D500000`).
 
