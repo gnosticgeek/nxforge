@@ -4,6 +4,16 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.28.0 (2026-11-22)
+
+Shipped in NXForge 0.56.0.
+
+- **Game Boy Advance games.** Settings › Library has a Game Boy Advance folder (a folder named `gba` beside the Switch games folder is found by itself). Its `.gba` files and `.zip` files holding one are listed in the Library under Game Boy Advance, by the name and game code in the cartridge's header (a few hundred bytes of each file are read, so a folder on a share lists quickly). The folder is looked at when NXForge starts and with every look at the games folder, without a scan of the Switch folder. Convert runs `scripts/gba_build.py` with the same steps list, log, time left, menu bar progress and notifications as a Switch build; no keys are asked for. The app and its build folder go in `NXForge Builds/<game>` in the folder apps are saved to, or in Documents when the cartridges are on a share. The build keeps its C and object files, which is what makes Convert again quick, unless clean-up is set to Remove build cache. Code: `GBA.swift`, `Source.swift`, `Converter.swift`.
+- **Port details on the game page.** For a converted Game Boy Advance game: how much of its code was translated, how many entry points were left to the interpreter, the trial run's frame rate and pictures, the save type, and each step's time. Cheats and mods cards are hidden there (cheats are a text file, [gba/README.md](gba/README.md)).
+- **Pause and Resume a build.** A Pause button beside Stop on the Convert page, the build strip and the menu bar item, and Build › Pause Build (⌥⌘P), hold a build where it is: every process of it is stopped, nothing is lost, and the time it waited is left out of the time left. Resume carries on from the same point. It works for Switch builds too. A build NXForge paused itself for a full disk still carries on by itself; one paused by hand waits for Resume.
+- Game Boy Advance games count as a console of their own: a Game Boy Advance filter in the Library, on Home and in Theatre, and "Game Boy Advance" where a game's console is named.
+- For checks: `NXC_AUTOBUILD` with `NXC_PAUSE=<seconds in>,<seconds held>` pauses and resumes a build with no window and writes what was running; a build that never becomes ready writes why and ends.
+
 ## 0.27.0 (2026-11-21)
 
 Shipped in NXForge 0.53.0.

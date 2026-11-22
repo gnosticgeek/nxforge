@@ -35,3 +35,10 @@ work relies on are credited in README.md under Acknowledgements.
 
 NXForge and nxnative are not affiliated with Nintendo or any game publisher.
 No game code, keys or assets are included in this repository.
+
+Game Boy Advance games (gba/) are translated by gba-recomp
+(https://github.com/JRickey/gba-recomp, MIT License, by JRickey), which is
+not copied into this repository: gba/ENGINE names the commit, gba/patches
+holds NXForge's two changes to it, and scripts/gba_engine.py fetches and
+assembles it. NXForge's player and library around it (gba/host) are NXForge's
+own, under the same MIT License.

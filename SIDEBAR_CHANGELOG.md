@@ -4,6 +4,12 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.10.0 (2026-11-22)
+
+Ships in NXForge 0.56.0.
+
+- **The sidebar in Game Boy Advance games.** The same sidebar is built into NXForge's Game Boy Advance player ([gba/README.md](gba/README.md)). There, General has a Sound group (Enhanced audio, Bass lift, Wider stereo) and Save states (three, kept at once and loaded at once, in place of the quick-save slots, which restart a Switch game); Graphics has Handheld colours in place of the image quality group (render scale, MetalFX and the like mean nothing for a 240 x 160 picture); Controls lists the handheld's buttons. The filters, scaling, border, volume, cheats and the rest are the ones Switch games have. A player says it is the Game Boy Advance one through five new functions in `quick_settings_mac.h` (`front_qs_gba` and the ones beside it); the Switch player answers no, and nothing changes in a Switch game.
+
 ## 0.8.0 (2026-11-21)
 
 Ships in NXForge 0.49.0.
