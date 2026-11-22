@@ -344,7 +344,17 @@ struct ConverterApp: App {
             try? await Task.sleep(for: .seconds(1))
         }
         if env["NXC_AUTOBUILD"] != nil {
-            while !model.ready && model.run.result == nil { try? await Task.sleep(for: .milliseconds(300)) }
+            // not ready after two minutes: say why in <NXC_SNAPSHOT>.why.txt and give up
+            let asked = Date()
+            while !model.ready && model.run.result == nil {
+                try? await Task.sleep(for: .milliseconds(300))
+                if Date().timeIntervalSince(asked) > 120 {
+                    let failing = (model.checks ?? []).filter { !$0.ok }.map(\.name).joined(separator: ", ")
+                    let why = "game: \(model.settings.gameDir ?? "none"), library games: \(model.library?.games.count ?? -1), checks failing: \(failing.isEmpty ? "none" : failing), checking: \(model.checking), validating: \(model.validating), valid: \(model.valid), validation: \(String(describing: model.validation))"
+                    try? why.write(toFile: out + ".why.txt", atomically: true, encoding: .utf8)
+                    exit(2)
+                }
+            }
             model.build()
             // NXC_PAUSE=<seconds in>,<seconds held>: Pause that long into the build, a picture of it at <NXC_SNAPSHOT>.paused.png
             // and the processes' states at <NXC_SNAPSHOT>.paused.txt, then Resume
