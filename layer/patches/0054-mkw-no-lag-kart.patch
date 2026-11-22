@@ -137,7 +137,7 @@ index a5f68e9ed2686e5188b97b5be750dcd35cf48d7f..de3ed2d12777efc5a7c1c33db7342de1
 +        while (k < v->nphys && !(v->phys[k].lo <= lo && hi <= v->phys[k].hi)) k++;
 +        if (k == v->nphys && v->nphys == VPHYS_MAX) v->phys_all = 1;
 +        else if (k == v->nphys) {
-+            if (v->nphys == v->cphys && !(v->phys = realloc(v->phys, (size_t)(v->cphys = v->cphys ? 2 * v->cphys : 8) * sizeof *v->phys))) die("sparse pool storage ranges allocation failed");
++            if (v->nphys == v->cphys) { int nc = v->cphys ? 2 * v->cphys : 8; void *np = realloc(v->phys, (size_t)nc * sizeof *v->phys); if (!np) die("sparse pool storage ranges allocation failed"); v->phys = np; v->cphys = nc; }
 +            v->phys[v->nphys].lo = lo; v->phys[v->nphys++].hi = hi;
 +        }
 +    }
