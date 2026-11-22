@@ -169,10 +169,45 @@ pub fn header(rom: &[u8]) -> (String, String) {
     (clean(&rom[0xA0..0xAC]), clean(&rom[0xAC..0xB0]))
 }
 
+/// Packed cartridges (game.gba.lzfse, written by scripts/gba_build.py) start with this, then the cartridge's size
+/// (u64, little-endian), then the cartridge as one LZFSE stream: about half the bytes in the app, and Apple's
+/// decoder unpacks 8 MB in a few milliseconds at start-up. Anything else is a plain cartridge image.
+pub const PACKED_MAGIC: &[u8; 8] = b"NXGBAZ1\0";
+
+#[cfg(target_os = "macos")]
+#[link(name = "compression")]
+extern "C" {
+    fn compression_decode_buffer(dst: *mut u8, dst_size: usize, src: *const u8, src_size: usize, scratch: *mut c_void, algorithm: u32) -> usize;
+}
+
+/// The cartridge image at `path`, unpacked when it is a packed one.
+pub fn read_rom(path: &str) -> Result<Vec<u8>, String> {
+    let raw = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    if raw.len() < 16 || &raw[..8] != PACKED_MAGIC {
+        return Ok(raw);
+    }
+    let size = u64::from_le_bytes(raw[8..16].try_into().unwrap()) as usize;
+    if size > 32 << 20 {
+        return Err(format!("{path}: a packed cartridge of {size} bytes is too large"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        const LZFSE: u32 = 0x801;
+        let mut out = vec![0u8; size];
+        let n = unsafe { compression_decode_buffer(out.as_mut_ptr(), size, raw[16..].as_ptr(), raw.len() - 16, std::ptr::null_mut(), LZFSE) };
+        if n != size {
+            return Err(format!("{path}: the packed cartridge did not unpack ({n} of {size} bytes)"));
+        }
+        Ok(out)
+    }
+    #[cfg(not(target_os = "macos"))]
+    Err(format!("{path}: packed cartridges unpack only on a Mac"))
+}
+
 impl NxGba {
     pub fn open(rom_path: &str, translation: Option<&str>, sav_path: Option<&str>) -> Result<NxGba, String> {
         use sha2::Digest;
-        let rom = std::fs::read(rom_path).map_err(|e| format!("{rom_path}: {e}"))?;
+        let rom = read_rom(rom_path)?;
         if rom.len() < 0xC0 || rom.len() > 32 << 20 {
             return Err(format!("{rom_path}: not a Game Boy Advance cartridge image ({} bytes)", rom.len()));
         }
