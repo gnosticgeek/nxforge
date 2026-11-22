@@ -23,7 +23,7 @@ Play one game built from the release for a few minutes and tick what was tried. 
 fails into the release PR. A row that has never been tried in a running game says so in
 [BACKLOG.md](../BACKLOG.md).
 
-- [ ] The game opens from the settings window and reaches gameplay; progress is still there after quitting and reopening (saves in the game folder's `Saves`).
+- [ ] The game opens straight in (Play in NXForge.app, and from Finder) and reaches gameplay; progress is still there after quitting and reopening (saves in the game folder's `Saves`).
 - [ ] Full screen holds 60 fps on the built-in display.
 - [ ] Quick settings (Esc or Home) opens; a controller moves through it, L / R turn the pages and the legend shows its buttons; a Next launch change shows Restart game, which (pressed twice) restarts the game; Quit, pressed twice, ends it.
 - [ ] The CRT filter (strength, line size) changes the picture, and MetalFX and FXAA switch on and off.

@@ -42,7 +42,7 @@ enum BuildDiagnosis {
              fix: "Keep one game per folder: its base game (.nsp or .xci) and the updates and DLC you want, with the names they were dumped with. The error says which file is missing.", page: .convert),
         Rule(code: .language, phrases: ["unknown game language", "the game has no "],
              title: "The game does not have the language chosen for it",
-             fix: "Choose one of the languages the error lists, or the game's default, in the game's settings window."),
+             fix: "Choose one of the languages the error lists, or the game's default, in the game's Play options."),
         Rule(code: .metalToolchain, phrases: ["metal compiler does not run", "metal toolchain", "cannot execute tool 'metal'", "unable to find utility \"metal\""],
              title: "The Metal shader compiler is not installed",
              fix: "Install it on the Toolchain page (Fix beside Metal toolchain), or run xcodebuild -downloadComponent MetalToolchain, then build again.", page: .toolchain),

@@ -291,7 +291,6 @@ extension AppModel {
         case .returnToLibrary: flip(&settings.returnToLibrary)
         case .sessionRecap: flip(&settings.sessionRecap)
         case .lightWhilePlaying: flip(&settings.lightWhilePlaying)
-        case .straightPlay: flip(&settings.straightPlay)
         case .firstPlayOptions: flip(&settings.firstPlayOptions)
         case .batteryPreset: flip(&settings.batteryPreset)
         case .localShaders: flip(&settings.localShaders)
@@ -1074,7 +1073,6 @@ struct StageGameMenu: View {
         if g.app != nil {
             Button("Play") { model.playFromStage(g.ref) }
             Button("Play Options…") { model.openPlayOptions(g.ref) }
-            Button("Play with the Game's Own Settings Window") { model.playWithOwnWindow(g.ref) }
         } else if g.game != nil {
             if game.app == nil { let st = model.status(game); Button(st.action) { model.fix(game) }.disabled(st.buildable && (model.run.running || model.batchRunning)) }
         }

@@ -45,7 +45,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 /// left and right change the row, A flips a switch (AppModel.stepSetting).
 enum StageSettingRow: Int, CaseIterable {
     case startIn, returnToLibrary, sessionRecap, lightWhilePlaying
-    case straightPlay, firstPlayOptions, batteryPreset, localShaders
+    case firstPlayOptions, batteryPreset, localShaders
     case folderCheck, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
     case theatreTheme, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
@@ -56,7 +56,7 @@ enum StageSettingRow: Int, CaseIterable {
     var section: SettingsSection {
         switch self {
         case .startIn, .returnToLibrary, .sessionRecap, .lightWhilePlaying: .general
-        case .straightPlay, .firstPlayOptions, .batteryPreset, .localShaders: .playing
+        case .firstPlayOptions, .batteryPreset, .localShaders: .playing
         case .folderCheck, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
         case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector: .theatre
@@ -395,7 +395,6 @@ struct StageSettings: View {
 
     var playing: [SettingsGroup] {
         let rows: [SettingsRowSpec] = [
-            toggle("Play goes straight into the game", "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.", $model.settings.straightPlay, .straightPlay),
             toggle("Show Play options the first time", "A game you have not played yet opens its options once before it starts.", $model.settings.firstPlayOptions, .firstPlayOptions),
             toggle("Battery preset on battery", "Unplugged, a run takes the Battery preset (lowest frame rate, 75 % render scale) for the options still on the game's default. A choice you saved for a game, such as its frame rate, is kept.", $model.settings.batteryPreset, .batteryPreset),
             toggle("Keep shaders on this Mac", "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.", $model.settings.localShaders, .localShaders),

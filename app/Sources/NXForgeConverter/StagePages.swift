@@ -1,7 +1,7 @@
 // The front end's game page (its box in 3D over the game's key art, Play, the preset it starts with, its screenshots, then its save,
 // playtime and build) and the Play options
-// panel that slides over it: presets, then the game's settings in the General, Graphics and Advanced groups of its own
-// settings window.
+// panel that slides over it: presets, then the game's settings in General, Graphics and Advanced groups (the game has no
+// settings window of its own).
 import AppKit
 import SwiftUI
 

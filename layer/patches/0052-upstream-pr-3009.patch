@@ -895,7 +895,7 @@ index 086003520fb6dc3e86beca979cec4caa1df4de9d..bc9dd744d876183f854b5e55e002793f
  // GPU memory nearly full (called by the graphics backend's nvn_mtl.m guard_stop, once): the game's GPU memory reached about 95% of Metal's working set, the most the driver can wire, and nothing more
  // could be let go. Past the working set the submit thread would wait in the kernel, unkillable, with the Mac frozen. The Mac front end stops the game's GPU work and sound, leaves full screen, says
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index dc3ea6ee494b3b092192395d7ffe42d34bd953f0..d2d0484b8c149f6cfc8282818ef6d1ecb2b66d40 100644
+index e8e98a24cad6285f7b6d6d7c4643842af486bfd9..0d39a3400782cdd92e7d0529b7cb184ef182e61f 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -23,6 +23,7 @@ _Static_assert(QS_CHEAT_LABEL == DM_CHEAT_LABEL && QS_CHEAT_SECTION_START == DM_

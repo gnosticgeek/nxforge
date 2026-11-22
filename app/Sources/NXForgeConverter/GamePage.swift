@@ -192,21 +192,18 @@ struct OfflineBanner: View {
     }
 }
 
-/// The game's launch settings, as its own settings window has them (LaunchSettings).
+/// The game's launch settings (LaunchSettings): what Play options and the in-game sidebar set.
 struct LaunchSettingsCard: View {
     let app: String
     @State private var values: [String: String] = [:]
     @State private var settings: [LaunchSetting] = []
     @State private var advanced = false
-    @State private var showWindow = true
 
     var body: some View {
-        Card(title: "Launch settings", subtitle: "What the game starts with. The same choices as its own settings window.") {
+        Card(title: "Launch settings", subtitle: "What the game starts with. The same choices as its Play options.") {
             if settings.isEmpty {
                 Text("This app has no settings list (built before launcher.json, or a game with none).").foregroundStyle(.secondary)
             } else {
-                Toggle("Show the game's settings window at launch", isOn: Binding(get: { showWindow }, set: { showWindow = $0; LaunchSettings.setShowsWindow($0, app: app) }))
-                    .help("Off: the game opens straight in with these choices. Hold Option while it opens to see its window anyway.")
                 ForEach(settings.filter { $0.basic || advanced }.filter { LaunchSettings.visible($0, values: values) }) { s in row(s) }
                 HStack {
                     Toggle("Advanced settings", isOn: $advanced).toggleStyle(.checkbox)
@@ -225,7 +222,6 @@ struct LaunchSettingsCard: View {
     func load() {
         settings = LaunchSettings.load(app: app)
         values = Dictionary(uniqueKeysWithValues: settings.map { ($0.env, LaunchSettings.value($0, app: app)) })
-        showWindow = LaunchSettings.showsWindow(app: app)
         if settings.allSatisfy({ !$0.basic }) { advanced = true }
     }
 

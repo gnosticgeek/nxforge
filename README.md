@@ -59,7 +59,7 @@ python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys
 
 The IPA appears in the game's folder. The first build takes 30–60 minutes and needs free disk space of about twice the game's size plus 10 GB; building again is much faster.
 
-To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game to open from Finder, with a settings window before the game (frame rate, render scale, docked or handheld, language, MetalFX upscaling, rumble) and its save in a `Saves` folder beside it. In the game, Esc opens Quick settings: pixel-art scaling, a CRT filter, anisotropic filtering, the frame-rate counter, volume, controls, mods, cheats, screenshots and recordings ([A Mac app](https://github.com/seedds/nxnative/blob/main/docs/development.md#a-mac-app)). All options: [The packing script in detail](https://github.com/seedds/nxnative/blob/main/docs/development.md#the-packing-script-in-detail).
+To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game that starts straight into the game, with its settings (frame rate, render scale, docked or handheld, language, MetalFX upscaling, rumble) in NXForge.app's Play options, and its save in a `Saves` folder beside it. In the game, Esc opens Quick settings: pixel-art scaling, a CRT filter, anisotropic filtering, the frame-rate counter, volume, controls, mods, cheats, screenshots and recordings ([A Mac app](https://github.com/seedds/nxnative/blob/main/docs/development.md#a-mac-app)). All options: [The packing script in detail](https://github.com/seedds/nxnative/blob/main/docs/development.md#the-packing-script-in-detail).
 
 ### Install
 

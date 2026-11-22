@@ -97,8 +97,6 @@ struct Settings: Codable, Equatable {
     var lastLibraryFocus: String?
     /// the front end (Stage): what the window opens on, and how Play behaves there
     var startIn: StartIn = .home
-    /// Play opens the game straight in, with its saved Play options (--no-launcher); off: its own settings window as it is set
-    var straightPlay = true
     /// the first Play of a game shows its Play options once
     var firstPlayOptions = true
     /// on battery, a run takes the Battery preset without saving it
@@ -169,7 +167,7 @@ struct Settings: Codable, Equatable {
         case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
         case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
-        case startIn = "start_in", straightPlay = "straight_play", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
+        case startIn = "start_in", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
         case returnToLibrary = "return_to_library", downloadCovers = "download_covers", downloadHeroes = "download_heroes", downloadStoreInfo = "download_store_info", favorites
         case mediaInGameFolder = "media_in_game_folder"
         case localShaders = "local_shaders"
@@ -224,7 +222,6 @@ struct Settings: Codable, Equatable {
         lastBuild = try? c.decodeIfPresent(String.self, forKey: .lastBuild)
         lastLibraryFocus = try? c.decodeIfPresent(String.self, forKey: .lastLibraryFocus)
         startIn = (try? c.decodeIfPresent(StartIn.self, forKey: .startIn)) ?? .home
-        straightPlay = (try? c.decodeIfPresent(Bool.self, forKey: .straightPlay)) ?? true
         firstPlayOptions = (try? c.decodeIfPresent(Bool.self, forKey: .firstPlayOptions)) ?? true
         batteryPreset = (try? c.decodeIfPresent(Bool.self, forKey: .batteryPreset)) ?? true
         returnToLibrary = (try? c.decodeIfPresent(Bool.self, forKey: .returnToLibrary)) ?? true
