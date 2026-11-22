@@ -15,6 +15,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <GameController/GameController.h>
 #import <AudioToolbox/AudioToolbox.h>
+#include <dlfcn.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -617,19 +618,22 @@ static void snapshot(NSString *out, uint64_t frames) {
                 CGContextDrawImage(gc.CGContext, CGRectMake(0, 0, sz.width, sz.height), pic);
                 [NSGraphicsContext restoreGraphicsState]; CGImageRelease(pic);
                 if (g_open) {
-                    NSBitmapImageRep *side = [g_side bitmapImageRepForCachingDisplayInRect:g_side.bounds]; [g_side cacheDisplayInRect:g_side.bounds toBitmapImageRep:side];
                     [NSGraphicsContext saveGraphicsState]; NSGraphicsContext.currentContext = gc;
-                    [side drawInRect:g_side.frame fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:NO hints:nil];
+                    CGContextTranslateCTM(gc.CGContext, g_side.frame.origin.x, g_side.frame.origin.y);
+                    [g_side.layer renderInContext:gc.CGContext];
                     [NSGraphicsContext restoreGraphicsState];
                 }
-                // the window as the screen would show it (the sidebar's glass too); the picture made above is the fallback
-                NSTask *t = [NSTask new]; t.executableURL = [NSURL fileURLWithPath:@"/usr/sbin/screencapture"];
-                t.arguments = @[[NSString stringWithFormat:@"-l%ld", (long)g_win.windowNumber], @"-x", @"-o", out];
-                [NSFileManager.defaultManager removeItemAtPath:out error:nil];
-                BOOL ok = [t launchAndReturnError:nil]; if (ok) { [t waitUntilExit]; ok = t.terminationStatus == 0 && [NSFileManager.defaultManager fileExistsAtPath:out]; }
-                if (!ok || getenv("NXGBA_SNAPSHOT_COMPOSITE")) ok = [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:out atomically:YES];
+                // the window as the screen would show it (the sidebar's glass too): the window server's picture of this app's own window, which needs no
+                // screen-recording permission. The call left the SDK in macOS 15 but not the system, so it is looked up; the picture made above is the fallback
+                typedef CGImageRef (*WindowImage)(CGRect, uint32_t, uint32_t, uint32_t);
+                WindowImage window_image = (WindowImage)dlsym(RTLD_DEFAULT, "CGWindowListCreateImage");
+                CGImageRef shot = window_image && !getenv("NXGBA_SNAPSHOT_COMPOSITE") ? window_image(CGRectNull, 1 << 3, (uint32_t)g_win.windowNumber, 1 | (1 << 3)) : NULL;
+                BOOL ok = NO; const char *how = "window";
+                if (shot && CGImageGetWidth(shot) > 16) ok = png_write(shot, out);
+                if (shot) CGImageRelease(shot);
+                if (!ok) { how = "composite"; ok = [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:out atomically:YES]; }
                 pthread_mutex_lock(&g_mu); nxgba_info i; nxgba_get_info(g, &i); pthread_mutex_unlock(&g_mu);
-                printf("{\"snapshot\": %s, \"frames\": %llu, \"native_blocks\": %llu, \"fallback_steps\": %llu, \"paused\": %d, \"state\": %d}\n", ok ? "true" : "false",
+                printf("{\"snapshot\": %s, \"how\": \"%s\", \"frames\": %llu, \"native_blocks\": %llu, \"fallback_steps\": %llu, \"paused\": %d, \"state\": %d}\n", ok ? "true" : "false", how,
                        (unsigned long long)i.frames, (unsigned long long)i.native_blocks, (unsigned long long)i.fallback_steps, (int)g_paused, front_qs_gba_state(1, 0));
                 [NSApp terminate:nil];
             });
