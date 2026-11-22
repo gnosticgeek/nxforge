@@ -1,0 +1,3 @@
+# The gba-recomp commit NXForge's Game Boy Advance games are built on (scripts/gba_engine.py; gba/README.md).
+url https://github.com/JRickey/gba-recomp.git
+commit de4edf59b872d887046d6a3b005e2df551b6d44c

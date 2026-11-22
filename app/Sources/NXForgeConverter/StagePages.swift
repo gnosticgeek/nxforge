@@ -258,7 +258,7 @@ struct GameHeroColumn: View {
 
     /// "Nintendo Switch · Inti Creates · 20 Mar 2019", or with no store facts, how it stands ("Not played yet")
     var facts: [String] {
-        var out = [game.console == .switch2 ? "Nintendo Switch 2" : "Nintendo Switch"]
+        var out = [game.console.fullName]
         let suspended = model.isSuspended(app: game.app ?? ""), playing = model.isPlaying(app: game.app ?? "")
         // a game not built yet says how it stands in the Build card below, not here
         if game.app == nil {}

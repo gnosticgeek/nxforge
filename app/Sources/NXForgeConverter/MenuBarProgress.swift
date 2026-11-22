@@ -77,6 +77,7 @@ struct MenuBarProgress: View {
                     Button("Show Window") { show(.convert) }
                     Button("Show Log") { show(.convert) }
                     Spacer()
+                    Button(model.run.held ? "Resume" : "Pause") { model.pauseBuild() }.disabled(model.run.paused && !model.run.held)
                     Button("Stop Build…") { NSApp.activate(); model.stopBuild() }
                 }
                 .buttonStyle(.stage)

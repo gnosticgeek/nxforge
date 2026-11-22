@@ -30,6 +30,12 @@ extension AppModel {
     var libraryScanning: Bool { libraryProgress != nil }
     var batchRunning: Bool { batchCurrent != nil }
 
+    func chooseGBARoot() {
+        guard let d = choose(folder: true, start: GBA.root(settings) ?? settings.gamesRoot ?? "/Volumes") else { return }
+        settings.gbaRoot = d
+        if settings.gamesRoot == nil { scanGBA() } else { scanLibrary() }
+    }
+
     func chooseGamesRoot() {
         guard let d = choose(folder: true, start: settings.gamesRoot ?? "/Volumes") else { return }
         settings.gamesRoot = d
@@ -47,6 +53,7 @@ extension AppModel {
         libraryProgress = (0, root, 0)
         libraryMessage = nil
         let before = library?.root == root ? library : nil
+        let gbaRoot = GBA.root(settings)
         libraryTask = Task.detached(priority: .utility) {
             var lastGames = 0
             let r = GameLibrary.scan(root: root) { n, cur, games in
@@ -65,6 +72,10 @@ extension AppModel {
                 out.games = GameLibrary.fold(r.games + before.games.filter { o in !seen.contains(o.folder) && !r.games.contains { $0.id == o.id } })
             }
             if let before { out.games = GameLibrary.carryDetails(from: before.games, to: out.games) }
+            // the Game Boy Advance folder's cartridges join the list; a folder that does not answer keeps the ones it had
+            var gba = gbaRoot.map { GBA.scan(root: $0) } ?? []
+            if gba.isEmpty, let gbaRoot, !Source.isDir(gbaRoot) { gba = before?.games.filter { $0.kind == .gba } ?? [] }
+            out.games = out.games.filter { $0.kind != .gba } + gba
             await MainActor.run {
                 self.library = out
                 self.checkNewlyPlayable()
@@ -76,6 +87,28 @@ extension AppModel {
                 if let before { self.newGameIDs.formUnion(Set(out.games.map(\.id)).subtracting(before.games.map(\.id))) }
                 self.readLibraryDetails()
                 if self.libraryDetails == nil { self.lookUpNewGames() }
+            }
+        }
+    }
+
+    /// The Game Boy Advance folder alone, merged into the kept list: one listing and a few hundred bytes of each file. Run when
+    /// NXForge starts and with every look at the games folder, so cartridges are listed (and new ones show up) without a scan of
+    /// the Switch games folder, which may be on a drive that is away. A folder that does not answer keeps the ones it had.
+    func scanGBA() {
+        guard let gbaRoot = GBA.root(settings), !libraryScanning, !gbaScanRunning else { return }
+        gbaScanRunning = true
+        Task.detached(priority: .utility) {
+            let found = Source.isDir(gbaRoot) ? GBA.scan(root: gbaRoot) : nil
+            await MainActor.run {
+                self.gbaScanRunning = false
+                guard let found, !self.libraryScanning else { return }
+                var l = self.library ?? LibraryScan(root: self.settings.gamesRoot ?? gbaRoot, scanned: Date(), games: [])
+                let had = l.games.filter { $0.kind == .gba }
+                guard had.map(\.id) != found.map(\.id) else { return }
+                l.games = l.games.filter { $0.kind != .gba } + GameLibrary.carryDetails(from: had, to: found)
+                self.library = l
+                GameLibrary.saveCache(l)
+                self.readLibraryDetails()
             }
         }
     }
@@ -98,6 +131,7 @@ extension AppModel {
     /// there by a download watcher or by hand shows up without a press of Refresh. One listing of the folder itself, off the main
     /// thread; a folder that does not answer is left alone (the mount watcher scans once it is back).
     func rescanIfFolderChanged() {
+        scanGBA()
         guard let root = settings.gamesRoot, !libraryScanning, folderCheckRunning == false else { return }
         let known = library?.root == root ? library?.top : nil
         folderCheckRunning = true
@@ -147,6 +181,7 @@ extension AppModel {
     }
 
     func scanIfStale() {
+        scanGBA()
         guard let root = settings.gamesRoot, !libraryScanning else { return }
         if library?.root != root || (library.map { Date().timeIntervalSince($0.scanned) > 24 * 3600 } ?? true) { scanLibrary() }
     }

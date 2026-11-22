@@ -203,6 +203,7 @@ struct ConvertCard: View {
 
     /// "Nintendo Switch · Base game + update", or a Switch 2 game's container
     var kindLine: String {
+        if let s = model.source, s.kind == .gba { return "Game Boy Advance · cartridge\(s.fileBytes > 0 ? String(format: " · %.0f MB", Double(s.fileBytes) / 1048576) : "")" }
         if let s = model.source { return "Nintendo Switch 2 · \(s.form)\(s.romfsBytes > 0 ? String(format: " · %.1f GB", Double(s.romfsBytes) / 1e9) : "")" }
         guard let v = model.validation, !v.files.isEmpty else { return "Nintendo Switch" }
         let roles = v.files.map(\.role)
@@ -454,7 +455,7 @@ struct ConvertCard: View {
                 Button { reveal(app) } label: { Label("Show in Finder", systemImage: "folder") }
             }
             .buttonStyle(.stage)
-            if b?.launched != true { FirstLaunchNote() }
+            if b?.launched != true, !GBA.isApp(app) { FirstLaunchNote() }
         }
     }
 
@@ -495,6 +496,9 @@ struct ConvertCard: View {
                 Button { model.page = .storage } label: { Label("Free up space…", systemImage: "internaldrive") }.buttonStyle(.stage)
             }
             if model.run.running {
+                Button(model.run.held ? "Resume" : "Pause") { model.pauseBuild() }.buttonStyle(StageButton(height: 50))
+                    .disabled(model.run.paused && !model.run.held)
+                    .help(model.run.held ? "Carry on from where the build was paused" : "Hold the build where it is. Nothing is lost, and Resume carries on from the same point.")
                 Button("Stop") { model.stopBuild() }.buttonStyle(StageButton(height: 50))
             } else {
                 Button {
@@ -512,8 +516,8 @@ struct ConvertCard: View {
     /// The footer's mark, line and detail: ready with the space and time it takes, or what is in the way
     var readiness: (Readiness, String, String) {
         let run = model.run
-        if run.running { return (.working, run.planning ? "Checking what a build would redo…" : "Building · step \(max(run.stage.k, 1)) of \(max(run.stage.n, 1))", run.stage.name.isEmpty ? "Starting…" : friendly(run.stage.name)) }
-        if model.settings.gameDir == nil { return (.blocked, "Choose a game to start", "A folder of game files with prod.keys, or a Switch 2 game's .nup or dump folder") }
+        if run.running { return (.working, run.planning ? "Checking what a build would redo…" : "\(run.paused ? "Paused" : "Building") · step \(max(run.stage.k, 1)) of \(max(run.stage.n, 1))", run.stage.name.isEmpty ? "Starting…" : friendly(run.stage.name)) }
+        if model.settings.gameDir == nil { return (.blocked, "Choose a game to start", "A folder of game files with prod.keys, a Switch 2 game's .nup or dump folder, or a Game Boy Advance game") }
         if model.validating { return (.working, "Checking the game files…", "") }
         if let d = model.diskNeed, d.short { return (.warn, "Not enough space", d.text) }
         if model.ready { return (.ready, "Ready to build", needLine) }

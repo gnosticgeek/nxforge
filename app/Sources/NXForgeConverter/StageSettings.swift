@@ -409,6 +409,10 @@ struct StageSettings: View {
                 button(model.settings.gamesRoot == nil ? "Choose…" : "Change…") { model.chooseGamesRoot() }.disabled(model.libraryScanning)
                 button(model.libraryScanning ? "Refreshing…" : "Refresh") { model.scanLibrary() }.disabled(model.libraryScanning || model.settings.gamesRoot == nil)
             },
+            row("Game Boy Advance folder", "Your Game Boy Advance games: .gba files, or .zip files holding one each, side by side. Left unset, a folder named gba beside the games folder is used.") {
+                path(GBA.root(model.settings)?.tildePath, none: "Not chosen", width: 200)
+                button(model.settings.gbaRoot == nil ? "Choose…" : "Change…") { model.chooseGBARoot() }.disabled(model.libraryScanning)
+            },
             row("Look for new games", "How often NXForge looks at the games folder, in front or not, and scans when a game was added or removed. It also looks each time it comes to the front. Manual leaves it to Refresh.", .folderCheck) {
                 segmented($model.settings.folderCheck, FolderCheck.allCases, width: 290) { $0.rawValue }
             },

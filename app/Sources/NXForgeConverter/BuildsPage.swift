@@ -17,6 +17,7 @@ struct BuildsPage: View {
         case .all: break
         case .switch2: b = b.filter { Console.of($0) == .switch2 }
         case .switch1: b = b.filter { Console.of($0) == .switch1 }
+        case .gba: b = b.filter { Console.of($0) == .gba }
         }
         if olderOnly { b = b.filter { model.engine != nil && !model.isCurrent($0) && $0.kept != true } }
         switch model.buildSort {
@@ -275,7 +276,7 @@ struct BuildDetail: View {
                 AppIcon(path: build.app, size: 160)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(name).font(.system(size: 34, weight: .bold)).tracking(-0.5).lineLimit(2)
-                    Text("Nintendo \(Console.of(build).rawValue)").font(.system(size: 19)).foregroundStyle(StageLook.soft)
+                    Text(Console.of(build).fullName).font(.system(size: 19)).foregroundStyle(StageLook.soft)
                     HStack(spacing: 8) {
                         if model.isPlaying(app: build.app) {
                             Image(systemName: "gamecontroller.fill").foregroundStyle(Color(red: 0.38, green: 0.65, blue: 0.98))
@@ -310,7 +311,7 @@ struct BuildDetail: View {
                 .buttonStyle(.plain).fixedSize().help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
             }
             .padding(.top, 26)
-            if build.launched != true { FirstLaunchNote().padding(.top, 12) }
+            if build.launched != true, !GBA.isApp(build.app) { FirstLaunchNote().padding(.top, 12) }
             rule.padding(.top, 26)
             }
             // "Built today at 21:11 · 2 min · Engine 0.40.0"

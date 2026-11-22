@@ -78,6 +78,7 @@ enum Disk {
 
     static func gb(_ b: Int64) -> String {
         let g = Double(b) / 1e9
+        if b > 0, g < 0.095 { return String(format: "%.0f MB", max(Double(b) / 1e6, 1)) }   // a Game Boy Advance cartridge, a save: "8 MB", not "0.0 GB"
         return g < 10 ? String(format: "%.1f GB", g) : String(format: "%.0f GB", g)
     }
 

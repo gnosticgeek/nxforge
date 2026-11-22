@@ -28,16 +28,22 @@ enum BuildSort: String, CaseIterable { case newest = "Newest first", oldest = "O
 
 /// Which console a build's game is for: Switch 2 title IDs start 04 (0400486024DEC000), Switch ones 01.
 enum Console: String, CaseIterable {
-    case switch2 = "Switch 2", switch1 = "Switch"
+    case switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance"
+
+    /// "Nintendo Switch 2", "Game Boy Advance"
+    var fullName: String { self == .gba ? rawValue : "Nintendo \(rawValue)" }
+
+    static func of(titleID t: String) -> Console { GBA.isTitleID(t) ? .gba : t.hasPrefix("04") ? .switch2 : .switch1 }
 
     static func of(_ b: BuildRecord) -> Console {
-        if let t = VerifiedGames.titleID(ofApp: b.app) { return t.hasPrefix("04") ? .switch2 : .switch1 }
+        if GBA.isGame(b.gameDir) { return .gba }
+        if let t = VerifiedGames.titleID(ofApp: b.app) { return of(titleID: t) }
         return Source.isNupFile(b.gameDir) || b.gameFiles == "NUP container" ? .switch2 : .switch1
     }
 }
 
 /// The Builds page's console filter
-enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2", switch1 = "Switch" }
+enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance" }
 
 @MainActor @Observable
 final class AppModel {
@@ -112,6 +118,7 @@ final class AppModel {
     var detailsTask: Task<Void, Never>?
     /// a look at the games folder for new games is under way (rescanIfFolderChanged)
     @ObservationIgnored var folderCheckRunning = false
+    @ObservationIgnored var gbaScanRunning = false
     /// games a scan found that the one before did not have, waiting for their names to be read (lookUpNewGames)
     @ObservationIgnored var newGameIDs = Set<String>()
     var mountObserver: NSObjectProtocol?
@@ -315,6 +322,7 @@ final class AppModel {
         recheck()
         watchMounts()
         watchGamesFolder()
+        scanGBA()
         trackPlay()
         watchActive()
         watchLaunch()
@@ -557,6 +565,7 @@ final class AppModel {
                 guard let self, self.run.running else { return }
                 var low = await Task.detached { Disk.lowest(paths) }.value
                 guard self.run.running else { return }
+                if self.run.paused, self.run.held { try? await Task.sleep(for: .seconds(5)); continue }
                 if self.run.paused {
                     if let l = low, l.free >= Disk.resumeAbove {
                         self.run.resume()
@@ -601,6 +610,19 @@ final class AppModel {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "nxforge-disk-pause", content: c, trigger: nil))
     }
 
+    /// Pause the build where it stands (every process of it is stopped, nothing is lost), or let it carry on.
+    func pauseBuild() {
+        guard run.running else { return }
+        if run.paused {
+            guard run.held else { return }   // paused for a full disk: it carries on by itself once there is room
+            run.resume()
+            run.log.append("NXForge: the build carries on.")
+        } else if run.pause() {
+            run.held = true
+            run.log.append("NXForge: paused. Resume carries on from this point.")
+        }
+    }
+
     /// Stop, after saying what is kept: the finished stages are reused when the game is built again.
     func stopBuild() {
         guard run.running else { return }
@@ -616,7 +638,7 @@ final class AppModel {
     func openApp(_ app: String) {
         Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
         applyCloudSaves(app: app)
-        // straight in, with the choices saved for the game (--no-launcher: a game built before 0.55.1 still has a settings window of its own)
+        // straight in, with the choices saved for the game (--no-launcher: a game built before 0.56.1 still has a settings window of its own)
         let cfg = NSWorkspace.OpenConfiguration()
         cfg.arguments = ["--no-launcher"]
         var env = AppModel.frontEndEnvironment
@@ -807,7 +829,7 @@ final class AppModel {
             switch r {
             case .success(let msg):
                 if run.ipa != nil { c.title = "\(name)'s IPA is ready"; c.body = msg; c.categoryIdentifier = Notify.ipa; c.userInfo = ["path": run.ipa ?? ""] }
-                else { c.title = "\(name) is ready"; c.body = "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
+                else { c.title = "\(name) is ready"; c.body = run.app.map(GBA.isApp) == true ? "Converted\(took)." : "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
             case .failure(let e):
                 c.title = e.description.hasPrefix("Stopped: only") ? "Build stopped: disk almost full" : "Build failed"; c.body = e.description
                 if e.description != "stopped" { c.categoryIdentifier = Notify.failed }
@@ -959,12 +981,12 @@ final class AppModel {
         let p = NSOpenPanel()
         p.canChooseDirectories = true
         p.canChooseFiles = true
-        p.allowedContentTypes = [.folder] + (gameExtensions.sorted() + ["nup"]).compactMap { UTType(filenameExtension: $0) }
+        p.allowedContentTypes = [.folder] + (gameExtensions.sorted() + ["nup"] + GBA.extensions.sorted()).compactMap { UTType(filenameExtension: $0) }
         p.allowsMultipleSelection = false
-        p.message = "Choose the game's folder or a game file (.nsp, .xci, .nsz, .xcz), or a Switch 2 game's .nup file or dump folder"
+        p.message = "Choose the game's folder or a game file (.nsp, .xci, .nsz, .xcz), a Switch 2 game's .nup file or dump folder, or a Game Boy Advance game (.gba, or a .zip holding one)"
         if let start { p.directoryURL = Source.folder(of: start).url }
         guard p.runModal() == .OK, let u = p.url else { return nil }
-        return Source.isDir(u.path) || Source.isNupFile(u.path) ? u.path : u.deletingLastPathComponent().path
+        return Source.isDir(u.path) || Source.isNupFile(u.path) || GBA.isGame(u.path) ? u.path : u.deletingLastPathComponent().path
     }
 
     /// Asks on a sheet over the window in front (HIG: alerts about a window's work attach to it), waiting for the answer.

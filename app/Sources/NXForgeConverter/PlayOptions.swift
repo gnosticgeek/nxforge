@@ -349,7 +349,7 @@ extension AppModel {
 
     private func open(app: String, name: String, environment: [String: String]) {
         let cfg = NSWorkspace.OpenConfiguration()
-        cfg.arguments = ["--no-launcher"]   // a game built before NXForge 0.55.1 still has its own settings window: keep it closed
+        cfg.arguments = ["--no-launcher"]   // a game built before NXForge 0.56.1 still has its own settings window: keep it closed
         // added to the environment the game starts with; its launcher takes what is set there as fixed for the run
         var front = Self.frontEndEnvironment
         if theatre { front["NXFORGE_FRONT_END_PAGE"] = "theatre" }   // the game's sidebar then goes back to Theatre (Sidebar 0.9.0)

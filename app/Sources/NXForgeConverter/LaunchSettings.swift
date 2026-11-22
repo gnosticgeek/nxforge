@@ -1,7 +1,7 @@
 // A built game's launch settings, set from the converter (idea 5): the list is the app's own Resources/dm/launcher.json
 // (dm/games/settings.py), and the values are the game's saved choices: "launcher.<VARIABLE>" in the game app's preferences (its
 // bundle ID's domain), a string, removed when it is the default (dm/ios/Sources/LauncherSettings.swift, dm/mac/launcher.c). The game
-// has no settings window of its own (NXForge 0.55.1 on): it starts straight in with these choices, from here, Finder or the Dock.
+// has no settings window of its own (NXForge 0.56.1 on): it starts straight in with these choices, from here, Finder or the Dock.
 import Foundation
 
 struct LaunchSetting: Decodable, Identifiable, Hashable {

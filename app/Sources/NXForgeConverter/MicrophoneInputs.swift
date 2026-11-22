@@ -1,5 +1,5 @@
 // The microphone input a game listens to, as a Play options row: the game's own settings window had this picker (launcher.DM_MIC_DEVICE,
-// which dm/mac/launcher.c reads at launch), and NXForge's games have no such window from NXForge 0.55.1 on. It shows under Microphone
+// which dm/mac/launcher.c reads at launch), and NXForge's games have no such window from NXForge 0.56.1 on. It shows under Microphone
 // while that is on; System Default stores nothing, so the game follows macOS's input.
 import CoreAudio
 import Foundation

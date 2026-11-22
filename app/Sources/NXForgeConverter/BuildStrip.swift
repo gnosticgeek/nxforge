@@ -71,6 +71,9 @@ struct BuildStrip: View {
                 }
                 Button("View Build") { model.viewBuild() }.buttonStyle(StageButton(height: 32))
                     .help("The Convert page, with every step and the log")
+                Button(model.run.held ? "Resume" : "Pause") { model.pauseBuild() }.buttonStyle(StageButton(height: 32))
+                    .disabled(model.run.paused && !model.run.held)
+                    .help(model.run.held ? "Carry on from where the build was paused" : "Hold the build where it is. Nothing is lost, and Resume carries on from the same point.")
                 Button("Stop") { model.stopBuild() }.buttonStyle(StageButton(height: 32))
                     .help("Stop the build. The finished steps are kept, so building again carries on.")
             }
@@ -85,7 +88,8 @@ struct BuildStrip: View {
 
     /// "Step 4 of 9 · Mac shaders · 1,240/3,412 files"
     func line(_ run: BuildRun, step: String) -> String {
-        var parts = ["Step \(max(run.stage.k, 1)) of \(max(run.stage.n, 1))"]
+        var parts = run.paused ? ["Paused"] : []
+        parts += ["Step \(max(run.stage.k, 1)) of \(max(run.stage.n, 1))"]
         if !step.isEmpty { parts.append(step) }
         if !run.stage.detail.isEmpty { parts.append(run.stage.detail) }
         else if !run.stage.step.isEmpty { parts.append(run.stage.step) }
