@@ -454,8 +454,9 @@ class Build:
         if r.returncode != 0 or not line:
             raise Stop("the trial run stopped: " + ((r.stderr or r.stdout).strip().splitlines() or [f"exit {r.returncode}"])[-1])
         j = json.loads(line)
-        # the title picture: a second, short run to the frame most games show their title at
-        subprocess.run([self.tools["run"], rom_path, "--lib", lib, "--frames", "1500", "--demo", "--png", shot], env=self.env, capture_output=True)
+        # the title picture (the app's icon): a second, short run with no buttons pressed, to the frame most games have their
+        # title up at (ten seconds in: past the makers' logos, before an attract mode starts)
+        subprocess.run([self.tools["run"], rom_path, "--lib", lib, "--frames", "600", "--png", shot], env=self.env, capture_output=True)
         trial: dict = dict(frames=j["frames"], fps=j["fps"], blocks=j["blocks"], nativeBlocks=j["native_blocks"], fallbackSteps=j["fallback_steps"], nativeShare=j["native_share"],
                      missesRom=j["misses_rom"], missesRam=j["misses_ram"], labelsAdded=j.get("labels_added", 0), saveKind=SAVE_KINDS[min(j["save_kind"], 4)], saveBytes=j["save_bytes"],
                      rtc=bool(j["rtc"]), enhancedAudio=bool(j["hle_live"]), stateCheck="state check passed" in r.stdout + r.stderr, hash=j["hash"])
