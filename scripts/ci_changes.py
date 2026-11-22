@@ -25,7 +25,7 @@ def needs_engine(path: str) -> bool:
         return False
     if '/' not in path and path.endswith('.md'):   # README, the changelogs, BACKLOG, UPSTREAM, AGENTS
         return False
-    if path.startswith('scripts/') and path != 'scripts/layer.py':   # NXForge's own scripts: the "scripts" job tests them
+    if path.startswith('scripts/') and path not in ('scripts/layer.py', 'scripts/ci_clang.py'):   # NXForge's own scripts: the "scripts" job tests them (ci_clang.py is the build job's clang)
         return False
     return True
 

@@ -4,10 +4,16 @@
 # and SIDEBAR_VERSION in dm/host/quick_settings_mac.swift, published as "NXForge Sidebar X.Y.Z"; a converter-vX.Y.Z tag
 # likewise is the Converter app's (CONVERTER_CHANGELOG.md, CONVERTER_VERSION in app/Sources/NXForgeConverter/Version.swift). A release that already exists is left as it is. Run it by hand (workflow_dispatch) for a tag
 # that was pushed before this workflow existed.
+#
+# A push to main that changes a changelog (a merged release PR) tags itself: for each changelog changed by the commit,
+# the newest dated entry (scripts/release_check.py newest) that has no tag yet is checked, tagged on that commit, pushed
+# and published here. A tag pushed by this workflow's own token starts no other workflow, so the release is made in the
+# same job, and nobody has to push tags from a Mac.
 name: release
 
 on:
   push:
+    branches: [main]
     tags: ['v[0-9]+.[0-9]+.[0-9]+', 'sidebar-v[0-9]+.[0-9]+.[0-9]+', 'converter-v[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch:
     inputs:
@@ -22,8 +28,40 @@ concurrency:
   group: release-${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  tag:
+    name: Tag a merged release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Tag and publish each new version
+        run: |
+          changed=$(git diff --name-only HEAD^ HEAD)
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898333+github-actions[bot]@users.noreply.github.com'
+          python3 scripts/release_check.py newest | while read -r tag; do
+            read -r log _ title < <(python3 scripts/release_check.py tag "$tag")
+            grep -qx "$log" <<<"$changed" || continue          # this commit did not touch that changelog
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              echo "::notice::$tag is already tagged"; continue
+            fi
+            python3 scripts/release_check.py check "$tag"
+            git tag -a "$tag" -m "$title" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+            python3 scripts/release_check.py notes "$tag" > "$RUNNER_TEMP/notes.md"
+            latest=--latest; case "$tag" in sidebar-*|converter-*) latest=--latest=false;; esac
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$title" --notes-file "$RUNNER_TEMP/notes.md" "$latest"
+            echo "::notice::tagged and released $tag"
+          done
+
   release:
     name: GitHub release from the changelog
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

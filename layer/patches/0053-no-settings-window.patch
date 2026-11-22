@@ -231,10 +231,10 @@ index 9b99136807c1c8ba2fac4fdec143ec8c974d13f3..1533c284e5932eca29c72eed62c120b3
  1. **Pair a controller once, in the game.** While the game runs, hold the controller's small Sync button until its player lights sweep. The game pairs it and it plays; the log says `paired with this Mac`. A controller paired this way forgets the console it was paired with: pair it there again to use it with one.
  2. **From then on, press any button on it** while a game with the setting on is running: it wakes and connects, no Sync needed. A controller woken for a Switch 2 nearby is left alone.
 diff --git a/docs/settings.md b/docs/settings.md
-index 26f261b6fe32f53ba2f273c4bc74756a4d7adc9a..41dfd00ff306bae7c27a53f02c8e48d0261ebcd8 100644
+index 8108f8bb59c06c6aa242f98b9bfa257c28bff863..de8e3069d2c08af190d8cd79707f54055054dd10 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -253,17 +253,11 @@ Sets every setting back to the game's tested default; **Play** then forgets your
+@@ -257,17 +257,11 @@ Sets every setting back to the game's tested default; **Play** then forgets your
  
  ## The Mac settings window
  
@@ -255,7 +255,7 @@ index 26f261b6fe32f53ba2f273c4bc74756a4d7adc9a..41dfd00ff306bae7c27a53f02c8e48d0
  
  ### Display mode
  
-@@ -275,11 +269,11 @@ Turn off **Show at launch** to start the game at once with your choices. Hold Op
+@@ -283,11 +277,11 @@ Turn off **Show at launch** to start the game at once with your choices. Hold Op
  
  ### Cloud saves folder
  

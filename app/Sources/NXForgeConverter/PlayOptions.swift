@@ -26,7 +26,7 @@ enum PlayTab: String, CaseIterable, Identifiable {
 
 enum PlayOptions {
     /// The Graphics tab's rows in order
-    static let graphics = ["DM_FPS_TARGET", "DM_PRESENT_INTERP", "DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER",
+    static let graphics = ["DM_FPS_TARGET", "DM_PRESENT_INTERP", "DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_DRS_HEADROOM", "DM_PRESENT_UPSCALE", "DM_UPSCALER",
                            "DM_SCREEN_ASPECT", "DM_SCREEN_WIDE", "DM_PRESENT_AA", "DM_PIXEL_ART", "DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH",
                            "DM_FOLIAGE", "DM_MODEL_LOD", "DM_SHADOW_CASCADES"]
     /// On General though not level=basic: everyday controls (NXFLauncherLayout.general)
