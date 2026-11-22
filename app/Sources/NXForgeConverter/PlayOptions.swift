@@ -351,7 +351,9 @@ extension AppModel {
         let cfg = NSWorkspace.OpenConfiguration()
         cfg.arguments = ["--no-launcher"]   // a game built before NXForge 0.55.1 still has its own settings window: keep it closed
         // added to the environment the game starts with; its launcher takes what is set there as fixed for the run
-        cfg.environment = environment.merging(Self.frontEndEnvironment) { a, _ in a }
+        var front = Self.frontEndEnvironment
+        if theatre { front["NXFORGE_FRONT_END_PAGE"] = "theatre" }   // the game's sidebar then goes back to Theatre (Sidebar 0.9.0)
+        cfg.environment = environment.merging(front) { a, _ in a }
         cfg.activates = true
         let id = launching?.id
         NSWorkspace.shared.openApplication(at: app.url, configuration: cfg) { [weak self] _, error in
@@ -443,14 +445,18 @@ extension AppModel {
         }
     }
 
-    /// The game's sidebar said Quit to Library: its page on the front end, with NXForge in front
+    /// The game's sidebar said Quit to Library: its page on the front end, with NXForge in front. A game started from Theatre goes back to
+    /// Theatre with the focus on it (its sidebar says Theatre), not to its page
     func showGameFromPlayer(app: String) {
         let path = app.url.standardizedFileURL.path
         launching = nil
         playOptions = nil
         stageSettings = false
         frontEnd = true
-        if let g = stageGames().first(where: { $0.app.map { $0.url.standardizedFileURL.path } == path }) {
+        if theatre {
+            if let g = theatreGames().first(where: { $0.app.map { $0.url.standardizedFileURL.path } == path }) { theatreFocus = g.id; rememberTheatreFocus() }
+            gameDetail = nil
+        } else if let g = stageGames().first(where: { $0.app.map { $0.url.standardizedFileURL.path } == path }) {
             libraryFocus = g.id
             caseFlipped = false
             gameDetail = g.ref

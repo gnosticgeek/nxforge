@@ -242,7 +242,7 @@ index 7f3b2303a57ee1a432e112605943a566ad3b8c03..abbcca72bbf88570ea92f9abc5afe588
  // thread. front_web_open: dir = the folder the document path is relative to (an HtmlDocument's html-document), path = the document path with its query, callback = the URL prefix whose
  // loading ends the page (exit reason 3, the URL as the last URL), hidden = loaded without being shown until front_web_show. 0 = opened; -1 = no web view (no window): the caller's
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b449c27a52 100644
+index d80024f7676653b169f77450725ea2f20dde8784..4c1a7fd68aa587cdf479b189150b8a90f1afb1b1 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -1,12 +1,13 @@
@@ -555,7 +555,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
              if (e.type == NSEventTypeKeyDown && fn_shortcut(e)) return e;   // fn (Globe) + a letter is the system's (fn+F full screen, GitHub issue #873), not the game's F
 +            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
 +            if (g_menu_open) {   // the arrow keys, Return and Space move through the sidebar as a controller does; other keys go to its controls
-+                if (qs_peek_key(e)) return nil;   // NXForge: P held peeks at the game (front_mac_quick_settings.inc)
++                { int k = qs_key(e); if (k) return k > 0 ? nil : e; }   // NXForge: P peeks, C compares, / searches; a text field keeps its typing (front_mac_quick_settings.inc)
 +                int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK
 +                        : e.keyCode == 48 ? (e.modifierFlags & NSEventModifierFlagShift ? NAV_PREV : NAV_NEXT) : 0;   // Tab / Shift-Tab: the next / previous page
 +                if (!nav) return e;

@@ -125,11 +125,15 @@ static void rec_release(int audio) { mtl_record_set(NULL); if (audio) dm_audio_t
 static void rec_attach(DmRecording *r) { mtl_recorder m = {rec_next, rec_done, (__bridge void *)r}; mtl_record_set(&m); }
 
 void capture_screenshot(const char *game, void (^done)(NSString *, NSString *)) {
-    if (g_rec) { done(nil, @"A recording is in progress; stop it first"); return; }
     CGFloat hgt = NSApp.keyWindow ? NSApp.keyWindow.contentView.bounds.size.height * NSApp.keyWindow.backingScaleFactor : 1080;
-    size_t h = (size_t)MAX(720, (long)hgt) & ~1ul, w = (size_t)(h * 16 / 9) & ~1ul;
+    capture_picture_to(g_rec ? nil : capture_path(0, game, @"png"), (size_t)MAX(720, (long)hgt), done);
+}
+void capture_picture_to(NSString *path, size_t height, void (^done)(NSString *, NSString *)) {
+    if (g_rec || !path) { done(nil, @"A recording is in progress; stop it first"); return; }
+    size_t h = height & ~1ul, w = (size_t)(h * 16 / 9) & ~1ul;
+    BOOL jpeg = [path.pathExtension.lowercaseString isEqualToString:@"jpg"];
     DmRecording *r = rec_new(w, h); if (!r) { done(nil, @"The screenshot could not be set up"); return; }
-    r.single = YES; NSString *path = capture_path(0, game, @"png"); g_rec = r;
+    r.single = YES; g_rec = r;
     r.shot = ^(CVPixelBufferRef pb) {
         rec_release(0);
         CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
@@ -138,7 +142,8 @@ void capture_screenshot(const char *game, void (^done)(NSString *, NSString *)) 
                                                 kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little);
         CGImageRef img = cg ? CGBitmapContextCreateImage(cg) : NULL;
         CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-        NSData *png = img ? [[[NSBitmapImageRep alloc] initWithCGImage:img] representationUsingType:NSBitmapImageFileTypePNG properties:@{}] : nil;
+        NSData *png = img ? [[[NSBitmapImageRep alloc] initWithCGImage:img] representationUsingType:jpeg ? NSBitmapImageFileTypeJPEG : NSBitmapImageFileTypePNG
+                                                                                         properties:jpeg ? @{NSImageCompressionFactor: @0.8} : @{}] : nil;
         BOOL ok = [png writeToFile:path atomically:YES];
         CGImageRelease(img); CGContextRelease(cg); CGColorSpaceRelease(cs);
         dispatch_async(dispatch_get_main_queue(), ^{ g_rec = nil; LOG("capture: screenshot %s%s", path.UTF8String, ok ? "" : " could not be written"); done(ok ? path : nil, ok ? nil : @"The screenshot could not be saved"); });
