@@ -321,6 +321,22 @@ jobs:
           xcodebuild -version
           xcrun metal --version
           python3 dm/gfx/tools/own_compilers.py --check-metal
+      # Every gfx test is one clang command naming dozens of shared sources: scripts/ci_clang.py, first on PATH as clang,
+      # compiles each source through ccache, so a shared source is compiled once per run (and once per engine change across runs).
+      - name: Compiler cache (ccache behind scripts/ci_clang.py)
+        working-directory: .
+        run: |
+          brew install ccache
+          mkdir -p "$RUNNER_TEMP/clang-bin" && ln -sf "$PWD/scripts/ci_clang.py" "$RUNNER_TEMP/clang-bin/clang"
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$PWD" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/clang-bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-build-${{ hashFiles('layer/ENGINE', 'layer/patches/**', 'layer/files/**') }}
+          restore-keys: ccache-build-
       - name: Mac host for three profiles (Vulkan, NVN, OpenGL)
         run: |
           mkdir -p logs
@@ -346,6 +362,9 @@ jobs:
         run: |
           python3 dm/tools/host_warnings.py --report logs/dmhost-*.log
           python3 dm/tools/host_warnings.py logs/dmhost-*.log
+      - name: Compiler cache hits
+        if: always()
+        run: ccache --show-stats || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
