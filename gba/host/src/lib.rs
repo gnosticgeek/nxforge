@@ -53,7 +53,7 @@ impl BlockTable {
             }
         };
         let blocks: &[RcgBlock] = unsafe {
-            let b = *(sym(b"rcg_blocks\0")? as *const *const RcgBlock);
+            let b = sym(b"rcg_blocks\0")? as *const RcgBlock;
             let n = *(sym(b"rcg_block_count\0")? as *const u64);
             std::slice::from_raw_parts(b, n as usize)
         };
