@@ -218,7 +218,8 @@ class Build:
     def run(self):
         a, p = self.a, self.p
         # 1 Read ROM
-        p.stage("Read ROM", os.path.basename(a.rom))
+        if not a.info:
+            p.stage("Read ROM", os.path.basename(a.rom))
         rom, rom_name = read_rom(a.rom)
         h = header(rom)
         if not h["fixed_ok"]:
@@ -471,7 +472,7 @@ class Build:
             if os.path.exists(os.path.join(self.work, pic)):
                 shutil.copy2(os.path.join(self.work, pic), os.path.join(res, pic))
         icon = self.icon(os.path.join(self.work, "title.png"), os.path.join(tmp, "Contents", "Resources"))
-        port = dict(platform="gba", name=name, **info, engine=dict(name="gba-recomp", commit=self.tools["commit"]), built=int(time.time()),
+        port = dict(platform="gba", **info, engine=dict(name="gba-recomp", commit=self.tools["commit"]), built=int(time.time()),
                     stages=[dict(name=s, seconds=round(self.times.get(s, 0), 1)) for s in STAGES[:-1]], trial=trial, status=meta.get("status"), **self.report)
         with open(os.path.join(res, "port.json"), "w") as f:
             json.dump(port, f, indent=1)
