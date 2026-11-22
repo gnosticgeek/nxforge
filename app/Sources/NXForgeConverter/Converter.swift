@@ -439,7 +439,7 @@ final class BuildRun {
             args = ["-u", repo + "/" + GBA.helper, job.gameDir, "--progress", "json", "--home", job.folder, "--name", GBA.cleanName(job.gameDir)]
             if let o = job.rebuild ?? job.out { args += ["-o", o] }
             if job.scratch || !job.reuseCache { args.append("--fresh") }
-            if job.cleanup != .off { args.append("--cleanup") }
+            if job.cleanup == .all { args.append("--cleanup") }   // the C and object files are what makes Convert again quick: only "all" removes them
         } else {
         if let k = job.keys { args += ["-k", k] }
         if job.plan { args.append("--plan") }
