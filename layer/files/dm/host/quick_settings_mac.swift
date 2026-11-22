@@ -1307,7 +1307,7 @@ final class QuickSettings: ObservableObject {
         } else { r.append(Hint(caps: [Cap(symbol: nil, text: pad ? "▲▼" : "↑↓")], text: "Move")) }
         r += [Hint(caps: [back], text: "Close"), Hint(caps: turn, text: "Page")]
         // Hold to peek where the line has room (no selection, or one with a single hint): else the eye button's help says it. On the Graphics page with something to compare, Hold to compare
-        if r.count <= 3 && page == pGraphics && search.isEmpty && compareOffered { return r + [Hint(caps: [pad ? Cap(symbol: compareGlyph, text: "Y") : Cap(symbol: nil, text: "C")], text: "Hold to compare")] }
+        if r.count <= 3 && page == pGraphics && search.isEmpty && compareOffered && !gba { return r + [Hint(caps: [pad ? Cap(symbol: compareGlyph, text: "Y") : Cap(symbol: nil, text: "C")], text: "Hold to compare")] }
         return r.count <= 3 ? r + [Hint(caps: [pad ? Cap(symbol: peekGlyph, text: "X") : Cap(symbol: nil, text: "P")], text: "Hold to peek")] : r
     }
 }
