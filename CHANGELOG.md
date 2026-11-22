@@ -2,6 +2,9 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.59.0 (2026-11-22)
+
+- **Museum wall, a sixth Theatre theme** (Converter 0.29.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): your collection in a walnut cabinet, a shelf for each console (Switch 2, Switch, Game Boy Advance), the console on a plinth at the end of its shelf with a brass plaque of its games and hours, brass picture lights that come on shelf by shelf, the game in focus lifted and glowing over a brass card, and five lights for the room. Built to Tom's mock-up; the idea of a museum wall comes from Boxshelf (GPL-3.0, ideas only, none of its code).
 ## 0.58.2 (2026-11-22)
 
 - **Ocarina of Time no longer crashes now and then mid-play** (layer patch pool-stats-lock): the once-every-five-seconds performance line read the size of the game's texture tables on the present thread while the replay thread was swapping those tables, and once in a while it asked a table that had just been freed for its size. Tom's crash in the Hall of Fallen Foes, 79 minutes in, was exactly that (`objc_msgSend` from `mtl_pool_stats`, exit 139). The line now reads the tables under the same lock the replay holds, and skips the count instead of waiting when the replay has it. Any game could hit it; Ocarina, with its 33,000-entry tables swapped many times a frame, the most. Games get it when they are updated (Update or Convert again; the shader chain is unchanged, so no shader rebuild).

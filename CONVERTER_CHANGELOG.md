@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.29.0 (2026-11-22)
+
+Shipped in NXForge 0.59.0.
+
+- **Museum wall, a sixth Theatre theme.** Your games in a walnut cabinet under a brass "Museum wall" plate, one shelf a console: Switch 2 at the top, Switch under it, Game Boy Advance at the foot. Switch and Switch 2 games stand as their cases, Game Boy Advance games as their cartridges. At the end of each shelf the console stands on a walnut plinth (drawn in the app), with a brass plaque under it: "Nintendo Switch · 9 games · 3 hours". A brass picture light hangs over each shelf and they come on one after another as the room opens. The game in focus lifts out of its row and glows in the lamp's colour, with a brass card under it giving its name, its year (from the store's details) and what A does; on the bottom shelf the card sits beside it. Left and right go along a shelf, which slides to keep the game in sight (a shelf you leave keeps its place); up and down go from shelf to shelf; up from the top shelf reaches the lighting switch at the top right, where left and right choose Classic, Daylight, Evening, Neon (each shelf lit in its console's colour) or Lights out (only the game in focus lit). Everything else works as on the other themes: A plays, Y picks the case up, X Play options, L and R the filter, ZL and ZR the theme. It is in the Theatre menu and Settings › Theatre › Theme, with Settings › Theatre › Museum lighting. Code: `TheatreMuseum.swift`.
+- For checks: `NXC_THEATRE=museum`, with `NXC_LIGHT=<lighting>` and `NXC_MUSEUMLIGHT=1` (the focus on the lighting switch).
+- Tests for the shelves' order, the arrows along and between shelves, the window that follows the focus, the plaque's words and the year.
+
 ## 0.28.1 (2026-11-22)
 
 Shipped in NXForge 0.56.1.
