@@ -268,8 +268,8 @@ struct Walnut: View {
 }
 
 /// Brass, as a fill: a bright line along its top, darker at its foot
-struct Brass: View {
-    var body: some View {
+enum Brass {
+    static var fill: LinearGradient {
         LinearGradient(stops: [.init(color: Color(red: 0.98, green: 0.86, blue: 0.55), location: 0), .init(color: Color(red: 0.80, green: 0.60, blue: 0.30), location: 0.35),
                                .init(color: Color(red: 0.62, green: 0.43, blue: 0.19), location: 0.8), .init(color: Color(red: 0.45, green: 0.30, blue: 0.13), location: 1)],
                        startPoint: .top, endPoint: .bottom)
@@ -442,9 +442,9 @@ struct PictureLight: View {
         GeometryReader { geo in
             let w = geo.size.width
             ZStack(alignment: .top) {
-                Circle().fill(Brass()).frame(width: 22 * u, height: 22 * u).overlay(Circle().strokeBorder(.black.opacity(0.35), lineWidth: 1)).offset(y: 0)
-                Rectangle().fill(Brass()).frame(width: 5 * u, height: 12 * u).offset(y: 18 * u)
-                Capsule().fill(Brass()).frame(width: w, height: 16 * u)
+                Circle().fill(Brass.fill).frame(width: 22 * u, height: 22 * u).overlay(Circle().strokeBorder(.black.opacity(0.35), lineWidth: 1)).offset(y: 0)
+                Rectangle().fill(Brass.fill).frame(width: 5 * u, height: 12 * u).offset(y: 18 * u)
+                Capsule().fill(Brass.fill).frame(width: w, height: 16 * u)
                     .overlay(Capsule().strokeBorder(.black.opacity(0.3), lineWidth: 1))
                     .shadow(color: .black.opacity(0.5), radius: 4 * u, y: 3 * u)
                     .offset(y: 26 * u)
@@ -612,12 +612,7 @@ struct MuseumLightSwitch: View {
             Text("Lighting: \(light.rawValue)").font(.system(size: 18 * u, design: .serif)).foregroundStyle(.white.opacity(0.9))
             HStack(spacing: 0) {
                 ForEach(MuseumLighting.allCases, id: \.self) { l in
-                    Text(l.rawValue).font(.system(size: 14 * u, design: .serif))
-                        .foregroundStyle(l == light ? Color(red: 0.22, green: 0.13, blue: 0.04) : .white.opacity(0.75))
-                        .padding(.horizontal, 14 * u).frame(height: 30 * u)
-                        .background { if l == light { Capsule().fill(Brass()) } }
-                        .contentShape(.rect)
-                        .onTapGesture { pick(l) }
+                    choice(l)
                     if l != MuseumLighting.allCases.last { Rectangle().fill(.white.opacity(0.14)).frame(width: 1, height: 18 * u) }
                 }
             }
@@ -631,6 +626,17 @@ struct MuseumLightSwitch: View {
         .shadow(color: focused ? Color(red: 1, green: 0.75, blue: 0.4).opacity(0.5) : .clear, radius: 16 * u)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Lighting: \(light.rawValue)")
+    }
+
+    func choice(_ l: MuseumLighting) -> some View {
+        let on = l == light
+        let ink: Color = on ? Color(red: 0.22, green: 0.13, blue: 0.04) : .white.opacity(0.75)
+        return Text(l.rawValue).font(.system(size: 14 * u, design: .serif))
+            .foregroundStyle(ink)
+            .padding(.horizontal, 14 * u).frame(height: 30 * u)
+            .background(Capsule().fill(Brass.fill).opacity(on ? 1 : 0))
+            .contentShape(.rect)
+            .onTapGesture { pick(l) }
     }
 }
 
