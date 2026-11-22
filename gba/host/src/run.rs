@@ -200,12 +200,23 @@ fn real_main() -> Result<(), String> {
     }
     let mut rewound: Option<(u64, u64)> = None; // (frame stepped back to, hash at the end of the first pass)
     let mut f = 0u64;
+    // frames the high-quality MP2K/GAX/driver mix was the one playing, and when it first and last switched
+    let (mut hle_frames, mut hle_first, mut hle_switches, mut was_live) = (0u64, None::<u64>, 0u32, false);
     while f < frames {
         g.machine().bus.keys = keys_at(f);
         if !g.run_frame() {
             return Err(format!("the game stopped making frames at frame {f} (stall guard)"));
         }
         f += 1;
+        let live = g.info().hle_live != 0;
+        if live {
+            hle_frames += 1;
+            hle_first.get_or_insert(f);
+        }
+        if live != was_live {
+            hle_switches += 1;
+            was_live = live;
+        }
         if wav.is_some() {
             // as much sound as one frame lasts (59.7275 frames a second)
             wanted += 48000.0 / 59.7275;
@@ -306,7 +317,7 @@ fn real_main() -> Result<(), String> {
     if json {
         let (title, code) = nxgba::header(&g.machine().bus.rom);
         println!(
-            "{{\"frames\": {}, \"hash\": \"{hash:016x}\", \"seconds\": {secs:.3}, \"fps\": {:.1}, \"blocks\": {}, \"native_blocks\": {}, \"fallback_steps\": {}, \"native_share\": {:.4}, \"misses_rom\": {}, \"misses_ram\": {}, \"labels_added\": {added}, \"save_kind\": {}, \"save_bytes\": {}, \"rtc\": {}, \"hle_live\": {}, \"title\": \"{}\", \"code\": \"{}\", \"sha1\": \"{}\", \"sha256\": \"{}\"}}",
+            "{{\"frames\": {}, \"hash\": \"{hash:016x}\", \"seconds\": {secs:.3}, \"fps\": {:.1}, \"blocks\": {}, \"native_blocks\": {}, \"fallback_steps\": {}, \"native_share\": {:.4}, \"misses_rom\": {}, \"misses_ram\": {}, \"labels_added\": {added}, \"save_kind\": {}, \"save_bytes\": {}, \"rtc\": {}, \"hle_live\": {}, \"hle_frames\": {hle_frames}, \"hle_first\": {}, \"hle_switches\": {hle_switches}, \"title\": \"{}\", \"code\": \"{}\", \"sha1\": \"{}\", \"sha256\": \"{}\"}}",
             i.frames,
             i.frames as f64 / secs.max(1e-9),
             i.blocks,
@@ -319,6 +330,7 @@ fn real_main() -> Result<(), String> {
             i.save_bytes,
             i.has_rtc,
             i.hle_live,
+            hle_first.map_or("null".to_string(), |v| v.to_string()),
             title.replace(['"', '\\'], ""),
             code.replace(['"', '\\'], ""),
             g.sha1(),

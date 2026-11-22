@@ -2,6 +2,9 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.58.1 (2026-11-22)
+
+- **Cleaner Game Boy Advance music with Enhanced audio** (gba/patches/0003, gba/host): games on Nintendo's MP2K ("Sappy") sound engine already had their music mixed again from its notes in floating point; that mixer now reads each instrument sample through a 16-tap Kaiser-windowed sinc instead of a straight line between samples, stretched for notes pitched up past the mixing rate. The instruments keep their real top end and lose the mirror-image fizz above it. Measured on 60-second headless runs against the previous mixer: 2-8 kHz detail up 0.7 to 2.6 dB on Kirby and Kururin, 8-12 kHz images down 0.4 to 2.3 dB; Minish Cap's instruments sit low enough that it barely changes. It costs under 1% of one core on an M4 Pro (6,000-frame runs of the translated games: Minish Cap 0.7%, Kirby 0.4%, Kururin 0.4%), with the same pictures and the same switch-over times as before. `nxgba-run --json` now reports how much of a run the re-mixed music played (`hle_frames`, `hle_first`, `hle_switches`): Kururin from 2 s in, Kirby 3 s, Minish Cap 8 s, never dropping back. A game gets it when it is converted again (the engine and player rebuild themselves first).
 ## 0.58.0 (2026-11-22)
 
 mGBA-style extras for Game Boy Advance games (Sidebar 0.11.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md); [gba/README.md](gba/README.md)). Games pick them up when their player is rebuilt: Convert again, or Update. No Switch game needs a rebuild.

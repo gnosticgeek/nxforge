@@ -15,7 +15,7 @@ it or in the folder NXForge builds in.
 | Path | What it is |
 |---|---|
 | `gba/ENGINE` | The gba-recomp commit NXForge builds on (`url`, `commit`). |
-| `gba/patches/` | NXForge's changes to gba-recomp, applied in order: the translator can write the C without compiling it, in units of a chosen size, with a progress line per unit; the machine can be copied (save states). |
+| `gba/patches/` | NXForge's changes to gba-recomp, applied in order: the translator can write the C without compiling it, in units of a chosen size, with a progress line per unit; the machine can be copied (save states); the MP2K mixer reads its instruments through a band-limited filter. |
 | `gba/tree/` | Git-ignored. `python3 scripts/gba_engine.py assemble` makes it: gba-recomp at the pinned commit with the patches applied. |
 | `gba/host/` | NXForge's own: a Rust library (`nxgba`, C API in `nxgba.h`) around gba-recomp's machine, with cartridge saves, cheats, Enhanced audio and save states; `nxgba-run`, a tool that runs a game with no window; and the Mac player (`mac/gba_front_mac.m`). |
 | `scripts/gba_engine.py` | `assemble`, `build` (the translator, the library, the player), `where`. |
@@ -76,7 +76,13 @@ cartridge's game code in hex, its version byte and `00` (Minish Cap, Europe: `0B
   the default), Handheld colours (Off, the original GBA's screen, the backlit GBA SP's) and Frame blending (each frame half
   blended with the one before, for games that flicker sprites for see-through effects); Controls lists the keys and buttons.
 - **Enhanced audio** plays the game's sampled sound at 48 kHz with smooth interpolation instead of the
-  handheld's rough 8-bit output. It is on by default and can be switched off for the original sound.
+  handheld's rough 8-bit output. It is on by default and can be switched off for the original sound. For games
+  on Nintendo's own sound engine (MP2K, "Sappy", most first-party games) and two others (GAX and one in-house
+  driver), the music is mixed again from the notes the engine plays, in floating point, so the 8-bit mixing
+  buffer and its low mixing rate are gone; it takes over a few seconds in, once its own mix is checked against
+  the game's (Kururin 2 s, Kirby 3 s, Minish Cap 8 s). Since 0.58.1 that mixer reads each instrument through a
+  band-limited (windowed-sinc) filter rather than a straight line between samples, which keeps the instruments'
+  real highs and drops the fizz above them (patch 0003).
 - **Cheats** are GameShark / Action Replay / CodeBreaker codes in `cheats/<CODE>.txt` in the game's folder.
 - **Keys**: arrows or WASD, X or J for A, Z or K for B, Q and E for L and R, Return for Start, Tab for Select,
   Space for fast forward, R held for rewind, F held for slow motion. A controller works as on the handheld (the
@@ -91,7 +97,9 @@ NXGBA_SNAPSHOT=out.png NXGBA_SNAPSHOT_SIDEBAR=0 gba/build/nxgba-player game.gba 
 ```
 
 `nxgba-run` prints how much of the game ran as translated code, the entry points missed and a hash of the
-last picture; `--sheet` writes a contact sheet of the run. `NXGBA_SNAPSHOT` makes the player take a picture
+last picture (with `--json`, also `hle_frames`, `hle_first` and `hle_switches`: how many frames the re-mixed music
+played, the first, and how often it came and went); `RECOMP_MP2K_LINEAR=1` renders the MP2K mixer the old way
+for an A/B with `--wav`; `--sheet` writes a contact sheet of the run. `NXGBA_SNAPSHOT` makes the player take a picture
 of its own window (kept off every screen) and quit, with the sidebar open on that page (0 is General).
 
 ## Not done yet
