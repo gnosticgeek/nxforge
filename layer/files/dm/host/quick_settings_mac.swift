@@ -16,7 +16,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.10.0"
+let SIDEBAR_VERSION = "0.11.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -27,6 +27,19 @@ private let anisoDefault = 16               // front_mac.m graphics_start: 16x u
 private let sizeNames = ["Fit", "Stretch", "Pixel-perfect"]   // front.h DM_PSCALE_*, in that order
 private let borderNames = ["Black", "Glow", "Game art"]   // front.h DM_PBORDER_*, in that order
 private let borderFixed = env["DM_PRESENT_BORDER"] != nil
+// A Game Boy Advance game's settings with several values (front_qs_gba_value): what each offers, in order, and its default
+struct GbaChoice: Hashable { let v: Int, name: String; init(_ v: Int, _ name: String) { self.v = v; self.name = name } }
+private let gbaChoices: [[GbaChoice]] = [
+    [GbaChoice(0, "Off"), GbaChoice(1, "GBA"), GbaChoice(2, "GBA SP")],                                          // 0 Handheld colours
+    [GbaChoice(0, "Off"), GbaChoice(1, "On")],                                                          // 1 Frame blending
+    [GbaChoice(0, "Off"), GbaChoice(10, "10 seconds"), GbaChoice(30, "30 seconds"), GbaChoice(60, "1 minute")],          // 2 Rewind
+    [GbaChoice(2, "2×"), GbaChoice(3, "3×"), GbaChoice(4, "4×"), GbaChoice(8, "8×"), GbaChoice(0, "As fast as it goes")],          // 3 Fast forward speed
+    [GbaChoice(0, "Hold"), GbaChoice(1, "Press to switch")],                                            // 4 Fast forward key
+    [GbaChoice(25, "25%"), GbaChoice(50, "50%"), GbaChoice(75, "75%")],                                          // 5 Slow motion
+]
+private let gbaDefaults = [0, 0, 30, 4, 0, 50]
+private let gbaFilters = [0, Int(DM_PFX_CRT), Int(DM_PFX_LCD)]   // a GBA game's Screen filter: off, CRT, LCD grid
+private let gbaFilterNames = [0: "Off", Int(DM_PFX_CRT): "CRT", Int(DM_PFX_LCD): "LCD grid"]
 private let scaleFixed = env["DM_PRESENT_SCALE"] != nil
 private let aaNames = ["Off", "FXAA"]   // front.h DM_PAA_*, in that order
 private let interpNames = ["Off", "On", "Auto"]   // front.h mtl_present_interp, in that order
@@ -170,10 +183,11 @@ enum Nav: Hashable {
     case key(Int), pad(Int), resetControls, playerFirst(Int)
     case restart, resume, library, quit
     case gbaOpt(Int), stateSave(Int), stateLoad(Int)   // a Game Boy Advance game's sound switches and save states
+    case gbaValue(Int)   // and its settings with several values (gbaChoices)
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .gbaOpt: return true
+        case .gbaOpt, .gbaValue: return true
         case .volume, .pauseOpen, .duckOpen, .keepLibrary, .batterySaver, .replay, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
@@ -189,6 +203,8 @@ private let searchWords: [Nav: String] = [
     .frameTimes: "performance stutter", .pauseOpen: "pause menu", .duckOpen: "volume sound quiet", .keepLibrary: "theatre suspend resume", .batterySaver: "power laptop unplugged",
     .backup: "save snapshot copy", .replay: "clip record 30 seconds", .replaySave: "clip replay", .showFolder: "screenshots recordings captures", .changeFolder: "screenshots recordings captures",
     .resetGraphics: "defaults", .resetPerformance: "defaults", .resetControls: "defaults keys buttons remap", .defaultsSave: "every game", .undoSession: "undo revert",
+    .gbaValue(0): "colour color correction lcd palette backlit sp", .gbaValue(1): "ghosting flicker interframe blend transparency", .gbaValue(2): "rewind back undo time",
+    .gbaValue(3): "fast forward turbo speed", .gbaValue(4): "fast forward toggle hold", .gbaValue(5): "slow motion speed",
     .settingsShow: "text file", .cheatsAllOff: "cheats", .modsOpen: "mods folder", .cheatsOpen: "cheats folder", .playerFirst(1): "controller swap",
 ]
 struct Cheat: Identifiable {
@@ -492,7 +508,26 @@ final class QuickSettings: ObservableObject {
     @Published var gbaStates = [false, false, false]
     func setGbaOpt(_ i: Int, _ on: Bool) { gbaOpts[i] = on; front_qs_gba_opt_set(Int32(i), on ? 1 : 0) }
     func gbaState(_ n: Int, load: Bool) { _ = front_qs_gba_state(Int32(n), load ? 2 : 1); refreshGba() }
-    func refreshGba() { guard gba else { return }; gbaOpts = (0..<4).map { front_qs_gba_opt(Int32($0)) != 0 }; gbaStates = (1...3).map { front_qs_gba_state(Int32($0), 0) != 0 } }
+    func refreshGba() {
+        guard gba else { return }
+        gbaOpts = (0..<4).map { front_qs_gba_opt(Int32($0)) != 0 }; gbaStates = (1...3).map { front_qs_gba_state(Int32($0), 0) != 0 }
+        gbaValues = gbaChoices.indices.map { Int(front_qs_gba_value(Int32($0))) }
+    }
+    @Published var gbaValues = gbaDefaults
+    func setGbaValue(_ i: Int, _ v: Int) { gbaValues[i] = v; front_qs_gba_value_set(Int32(i), Int32(v)) }
+    /// One step along a setting's choices (left / right), or round to the first after the last (activate)
+    func stepGbaValue(_ i: Int, _ d: Int, wrap: Bool = false) {
+        let c = gbaChoices[i], at = c.firstIndex { $0.v == gbaValues[i] } ?? 0
+        setGbaValue(i, c[wrap ? (at + d + c.count) % c.count : min(max(at + d, 0), c.count - 1)].v)
+    }
+    func gbaName(_ i: Int) -> String { gbaChoices[i].first { $0.v == gbaValues[i] }?.name ?? "\(gbaValues[i])" }
+    /// A GBA game's Screen filter, a step along off, CRT, LCD grid
+    func stepGbaFilter(_ d: Int, wrap: Bool = false) {
+        guard !filterFixed else { return }
+        let at = gbaFilters.firstIndex(of: filter) ?? 0
+        setFilter(gbaFilters[wrap ? (at + d + gbaFilters.count) % gbaFilters.count : min(max(at + d, 0), gbaFilters.count - 1)], strength)
+    }
+    var borderDefault: Int { gba ? Int(DM_PBORDER_GLOW) : 0 }   // a GBA game's slim bars glow with its edge colours unless chosen otherwise
     @Published var batterySaver = true   // on the battery, a game nobody is playing pauses (nxforge/front_mac_battery.inc)
     @Published var battery: (percent: Int, onBattery: Bool, minutes: Int)? = nil   // nil: a Mac without a battery
     @Published var players: [Player] = []   // the controllers by player, for the Controls page
@@ -711,7 +746,7 @@ final class QuickSettings: ObservableObject {
     var pixelNote: String {
         if envFixed("DM_PIXEL_ART") { return "Set by DM_PIXEL_ART for this run" }
         if pixelActive == 0 { return pixel == Int(DM_PIXEL_AUTO) ? "Auto: turns on by itself when the game draws pixel art" : "Off: the picture as the settings below make it" }
-        let paused = "MetalFX, anti-aliasing, HDR highlights and frame interpolation wait while it is on."
+        let paused = gba ? "" : "MetalFX, anti-aliasing, HDR highlights and frame interpolation wait while it is on."
         guard let g = pixelGrid else { return "On: this scene has no pixel grid, so the picture is scaled sharply. " + paused }
         return "On: the art is \(Int(g.w.rounded()))×\(Int(g.h.rounded())), every pixel the same size" + (pixelActive == Int(DM_PIXEL_SMOOTH) ? ", diagonals smoothed. " : ". ") + paused
     }
@@ -719,11 +754,15 @@ final class QuickSettings: ObservableObject {
     func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("scale")) }
     func setBorder(_ n: Int) { guard !borderFixed else { return }; border = n; mtl_present_border_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("border")) }
     func toggleFullscreen() { front_qs_fullscreen_toggle() }
-    var graphicsChanged: Bool { pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || border != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
+    var graphicsChanged: Bool {
+        if gba { return pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || scale != 0 || border != borderDefault || gbaValues[0] != 0 || gbaValues[1] != 0 }
+        return pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || border != 0 || edr || abs(edrStrength - 0.5) > 0.001
+    }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
-        setUpscale(true); setScale(0); setBorder(0); setPixel(Int(DM_PIXEL_AUTO))
+        setUpscale(true); setScale(0); setBorder(borderDefault); setPixel(Int(DM_PIXEL_AUTO))
+        if gba { setGbaValue(0, 0); setGbaValue(1, 0) }
         if !envFixed("DM_PRESENT_AA") { setAA(0) }
         setEDR(false); setEDRStrength(0.5)
         if env["DM_ANISO"] == nil { setAniso(anisoDefault) }
@@ -1032,7 +1071,8 @@ final class QuickSettings: ObservableObject {
         case .scale: return sizeNames[safe: scale]
         case .border: return borderNames[safe: border]
         case .pixel: return pixelNames[pixel]
-        case .crt: return onOff(crtOn)
+        case .crt: return gba ? gbaFilterNames[filter] : onOff(crtOn)
+        case .gbaValue(let i): return gbaName(i)
         case .strength: return "\(Int((strength * 100).rounded()))%"
         case .upscale: return onOff(upscale)
         case .aa: return aaNames[safe: aa]
@@ -1132,8 +1172,9 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + (gba ? (0..<3).map { [Nav.gbaOpt($0)] } : []) + [[Nav.backup, Nav.backupShow]] + (gba ? (1...3).map { [Nav.stateSave($0), Nav.stateLoad($0)] } : (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] }) + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
-        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + (gba ? [[.gbaOpt(3)]] : [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : [])) + [[.resetGraphics]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + (gba ? (2...5).map { [Nav.gbaValue($0)] } + (0..<3).map { [Nav.gbaOpt($0)] } : []) + [[Nav.backup, Nav.backupShow]] + (gba ? (1...3).map { [Nav.stateSave($0), Nav.stateLoad($0)] } : (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] }) + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (gba ? (filter != 0 ? [[.strength]] : []) + (crtOn ? [[.scanlines]] : []) + [[.gbaValue(0)], [.gbaValue(1)]]
+                : (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : [])) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
@@ -1187,6 +1228,7 @@ final class QuickSettings: ObservableObject {
         case .pauseOpen: setPauseOpen(d > 0)
         case .duckOpen: setDuck(d > 0)
         case .gbaOpt(let i): setGbaOpt(i, d > 0)
+        case .gbaValue(let i): stepGbaValue(i, d)
         case .keepLibrary: setKeepLibrary(d > 0)
         case .replay: setReplay(d > 0)
         case .batterySaver: setBatterySaver(d > 0)
@@ -1194,8 +1236,8 @@ final class QuickSettings: ObservableObject {
         case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
         case .border: setBorder(min(max(border + d, 0), borderNames.count - 1))
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[min(max(i + d, 0), pixelOrder.count - 1)]) }
-        case .crt: setCRT(d > 0)
-        case .strength: if crtOn { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
+        case .crt: if gba { stepGbaFilter(d) } else { setCRT(d > 0) }
+        case .strength: if crtOn || (gba && filter != 0) { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
         case .scanlines: if crtOn { setScanline(min(max(scanline + d, 0), 8)) }
         case .upscale: setUpscale(d > 0)
         case .edr: setEDR(d > 0)
@@ -1225,6 +1267,7 @@ final class QuickSettings: ObservableObject {
         case .pauseOpen: setPauseOpen(!pauseOpen)
         case .duckOpen: setDuck(!duckOpen)
         case .gbaOpt(let i): setGbaOpt(i, !gbaOpts[i])
+        case .gbaValue(let i): stepGbaValue(i, 1, wrap: true)
         case .stateSave(let n): gbaState(n, load: false)
         case .stateLoad(let n): gbaState(n, load: true)
         case .keepLibrary: setKeepLibrary(!keepLibrary)
@@ -1243,7 +1286,7 @@ final class QuickSettings: ObservableObject {
         case .scale: setScale((scale + 1) % sizeNames.count)
         case .border: setBorder((border + 1) % borderNames.count)
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[(i + 1) % pixelOrder.count]) }
-        case .crt: setCRT(!crtOn)
+        case .crt: if gba { stepGbaFilter(1, wrap: true) } else { setCRT(!crtOn) }
         case .scanlines: if crtOn { setScanline((scanline + 1) % 9) }
         case .upscale: setUpscale(!upscale)
         case .edr: setEDR(!edr)
@@ -1571,6 +1614,16 @@ struct QuickSettingsView: View {
         Button { withAnimation(motion) { action() } } label: { Label(title, systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
             .modifier(GlassButton(prominent: false)).controlSize(.large).disabled(!enabled).padding(.top, 4).nav(m, n)
     }
+    private func gbaPicker(_ i: Int, _ title: String, _ line: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Row(title: title, changed: m.gbaValues[i] != gbaDefaults[i]) {
+                Picker(title, selection: Binding(get: { m.gbaValues[i] }, set: { v in withAnimation(motion) { m.setGbaValue(i, v) } })) {
+                    ForEach(gbaChoices[i], id: \.v) { Text($0.name).tag($0.v) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize()
+            }.nav(m, .gbaValue(i))
+            note(line)
+        }
+    }
     private func gbaRow(_ i: Int, _ title: String, on: String, off: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Row(title: title, changed: m.gbaOpts[i] != (i == 0)) {
@@ -1644,6 +1697,11 @@ struct QuickSettingsView: View {
                      + ". " + BatteryNow.line(b))
             }
             if m.gba {
+                subhead("Play").padding(.top, 6)
+                gbaPicker(2, "Rewind", m.gbaValues[2] == 0 ? "Off" : "Hold R, or the left trigger, to step back through the last \(m.gbaName(2).lowercased()) of play at twice the speed")
+                gbaPicker(3, "Fast forward", "Space, the right trigger or the right stick; the sound plays faster too")
+                gbaPicker(4, "Fast forward key", m.gbaValues[4] == 1 ? "A press turns fast forward on, the next turns it off" : "Fast while held")
+                gbaPicker(5, "Slow motion", "Hold F, or the controller's left face button: the game and its sound at \(m.gbaValues[5])%")
                 subhead("Sound").padding(.top, 6)
                 gbaRow(0, "Enhanced audio", on: "The music is mixed again at 48 kHz with smooth sample and channel edges, so it loses the handheld's hiss and ringing. " + String(cString: front_qs_gba_sound()), off: "The sound as the handheld's own mixer made it")
                 gbaRow(1, "Bass lift", on: "A little more low end, for speakers larger than the handheld's", off: nil)
@@ -1746,12 +1804,13 @@ struct QuickSettingsView: View {
                  : m.scale == 2 ? (m.pixelGrid != nil && m.pixelPaused ? "Each art pixel the same whole number of screen pixels, counted on the art's own grid, with a border"
                                    : "Each game pixel the same whole number of screen pixels: crisp pixel art, with a border") : "The game's shape, with black bars where the window is wider or taller")
             // Around the picture (border_fill.inc): the picture or the game's art, blurred, where the window is wider or taller than the picture, in place of black bars
-            Row(title: "Around the picture", changed: m.border != 0) {
+            Row(title: "Around the picture", changed: m.border != m.borderDefault) {
                 Picker("Around the picture", selection: Binding(get: { m.border }, set: { m.setBorder($0) })) {
                     ForEach(borderNames.indices, id: \.self) { Text(borderNames[$0]).tag($0) }
                 }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(borderFixed)
             }.nav(m, .border)
             note(borderFixed ? "Set by DM_PRESENT_BORDER for this run" : m.scale == 1 ? "Nothing to fill while the picture is stretched over the window"
+                 : m.border == 1 && m.gba ? "Ambient edges: the game's own colours at each edge glow softly into the bars"
                  : m.border == 1 ? "The picture itself, blurred and dimmed, where there would be black bars" : m.border == 2 ? "The game's art, blurred and dimmed, where there would be black bars (the glow when the game has none)"
                  : "Black bars where the window is wider or taller than the picture")
             // Pixel art: sharp, even pixels for 2D games, on the art's own grid where the game enlarged it (pixel_art.inc); auto turns it on where the picture shows pixel art
@@ -1762,6 +1821,23 @@ struct QuickSettingsView: View {
             }.nav(m, .pixel)
             note(m.pixelNote)
             subhead("Look").padding(.top, 6)
+            if m.gba {
+                Row(title: "Screen filter", changed: m.filter != 0) {
+                    Picker("Screen filter", selection: Binding(get: { m.filter }, set: { f in withAnimation(motion) { m.setFilter(f, m.strength) } })) {
+                        ForEach(gbaFilters, id: \.self) { Text(gbaFilterNames[$0] ?? "").tag($0) }
+                    }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(filterFixed)
+                }.nav(m, .crt)
+                note(filterFixed ? "Set by DM_PRESENT_FILTER for this run" : m.crtOn ? "Scanlines and an RGB mask, like an old TV"
+                     : m.filter == Int(DM_PFX_LCD) ? "The handheld's screen up close: dark lines between the pixels and faint colour stripes" : "Off: the picture as the game draws it")
+                if m.filter != 0 {
+                    Row(title: "Strength", changed: abs(m.strength - 0.5) > 0.001) {
+                        HStack(spacing: 10) {
+                            Slider(value: Binding(get: { m.strength }, set: { m.setFilter(m.filter, $0) }), in: 0...1)
+                            Text("\(Int((m.strength * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
+                        }
+                    }.nav(m, .strength)
+                }
+            } else {
             Row(title: "CRT filter", changed: m.crtOn) {
                 Toggle("CRT filter", isOn: Binding(get: { m.crtOn }, set: { on in withAnimation(motion) { m.setCRT(on) } })).toggleStyle(.switch).labelsHidden().disabled(filterFixed)
             }.nav(m, .crt)
@@ -1781,9 +1857,21 @@ struct QuickSettingsView: View {
                 }.nav(m, .scanlines)
                 note("Auto gives about 240 lines; for pixel art, pick the rows one art pixel covers")
             }
+            }
+            if m.gba && m.crtOn {
+                Row(title: "Line size", changed: m.scanline != 0) {
+                    Picker("Line size", selection: Binding(get: { m.scanline }, set: { m.setScanline($0) })) {
+                        Text("Auto").tag(0)
+                        ForEach(1..<9) { Text("\($0) game row\($0 == 1 ? "" : "s")").tag($0) }
+                    }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(env["DM_PRESENT_SCANLINE"] != nil)
+                }.nav(m, .scanlines)
+            }
             if m.gba {
                 subhead("Screen").padding(.top, 6)
-                gbaRow(3, "Handheld colours", on: "The softer colours of the handheld's own screen", off: "The game's colours as it sends them, as on a modern screen")
+                gbaPicker(0, "Handheld colours", m.gbaValues[0] == 1 ? "The original GBA's screen: softer and darker, the colours the art was drawn for"
+                          : m.gbaValues[0] == 2 ? "The backlit GBA SP's screen: brighter, a little softer than a modern screen" : "Off: the game's colours as it sends them, as on a modern screen")
+                gbaPicker(1, "Frame blending", m.gbaValues[1] == 1 ? "Each frame half blended with the one before, as the handheld's slow screen did: sprites games flicker for see-through shadows and water look solid again"
+                          : "Off: every frame as the game draws it")
             } else { imageQuality }
             if !m.gba { compareButton }   // the Game Boy Advance player has no compare
             resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
@@ -1978,11 +2066,11 @@ struct QuickSettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("A Game Boy Advance game's buttons. They are fixed for now.").font(.caption).foregroundStyle(.secondary)
             subhead("Keyboard").padding(.top, 4)
-            ForEach([("D-pad", "Arrow keys or W A S D"), ("A", "J or X"), ("B", "K or Z"), ("L", "Q"), ("R", "E"), ("Start", "Return"), ("Select", "Tab or Delete"), ("Fast forward", "Hold Space"), ("This menu", "Esc")], id: \.0) { r in
+            ForEach([("D-pad", "Arrow keys or W A S D"), ("A", "J or X"), ("B", "K or Z"), ("L", "Q"), ("R", "E"), ("Start", "Return"), ("Select", "Tab or Delete"), ("Fast forward", "Space"), ("Rewind", "Hold R"), ("Slow motion", "Hold F"), ("This menu", "Esc")], id: \.0) { r in
                 Row(title: r.0) { Text(r.1).foregroundStyle(.secondary) }
             }
             subhead("Controller").padding(.top, 6)
-            ForEach([("D-pad", "D-pad or left stick"), ("A", "Right button"), ("B", "Bottom button"), ("L / R", "Shoulders or triggers"), ("Start", "Menu"), ("Select", "Options"), ("Fast forward", "Hold the right stick down"), ("This menu", "Press the left stick, or Home")], id: \.0) { r in
+            ForEach([("D-pad", "D-pad or left stick"), ("A", "Right button"), ("B", "Bottom button"), ("L / R", "Shoulders"), ("Start", "Menu"), ("Select", "Options"), ("Rewind", "Hold the left trigger"), ("Fast forward", "Right trigger, or the right stick pressed"), ("Slow motion", "Hold the left face button"), ("This menu", "Press the left stick, or Home")], id: \.0) { r in
                 Row(title: r.0) { Text(r.1).foregroundStyle(.secondary) }
             }
         }

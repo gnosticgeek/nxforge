@@ -62,16 +62,25 @@ cartridge's game code in hex, its version byte and `00` (Minish Cap, Europe: `0B
 
 - **Saves** are the cartridge's own (`game.sav`) under `~/Library/Application Support/nxnative/<title ID>/save/`,
   written when the game saves and on quit. NXForge's save snapshots and cloud saves treat it like any game's.
+- **Rewind, fast forward and slow motion** (mGBA's): hold R, or the controller's left trigger, to step back through the
+  last 30 seconds at twice the speed of play (`src/rewind.rs`: a snapshot every four frames, stored as a difference from a
+  key snapshot; about 30 MB for 30 s). Space, the right trigger or the right stick runs at 2×, 3×, 4×, 8× or as fast as
+  it goes, held or pressed to switch; F, or the left face button, held is 25%, 50% or 75% speed. The sound plays at the
+  speed of play, higher or lower like a tape. All set in Quick settings › General › Play.
 - **Save states**: ⌘1 to ⌘3 keep the moment, ⌥⌘1 to ⌥⌘3 go back to it, at once. They are kept while the
   game is open; the cartridge save is what lasts between sessions.
 - **Quick settings** (Esc, or Home on a controller): the same sidebar as the Switch games. General has
-  Sound (Enhanced audio, Bass lift, Wider stereo) and Save states; Graphics has the picture filters (Sharp
-  pixels, CRT, LCD), scaling, the border, and Handheld colours; Controls lists the keys and buttons.
+  Sound (Enhanced audio, Bass lift, Wider stereo) and Save states; Graphics has Pixel art (Sharp pixels, or Smooth edges:
+  the Switch player's MMPX shader twice, to 960 × 640), the Screen filter (Off, CRT, LCD grid), scaling, Around the
+  picture (Glow is ambient edges: the bars a 3:2 picture leaves fill with the game's own edge colours, blurred, and it is
+  the default), Handheld colours (Off, the original GBA's screen, the backlit GBA SP's) and Frame blending (each frame half
+  blended with the one before, for games that flicker sprites for see-through effects); Controls lists the keys and buttons.
 - **Enhanced audio** plays the game's sampled sound at 48 kHz with smooth interpolation instead of the
   handheld's rough 8-bit output. It is on by default and can be switched off for the original sound.
 - **Cheats** are GameShark / Action Replay / CodeBreaker codes in `cheats/<CODE>.txt` in the game's folder.
 - **Keys**: arrows or WASD, X or J for A, Z or K for B, Q and E for L and R, Return for Start, Tab for Select,
-  Space held for fast forward. A controller works as on the handheld (the right-hand button is A).
+  Space for fast forward, R held for rewind, F held for slow motion. A controller works as on the handheld (the
+  right-hand button is A; the shoulders are L and R, the triggers rewind and fast forward).
 
 ## Checking a change
 

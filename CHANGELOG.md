@@ -2,6 +2,19 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.58.0 (2026-11-22)
+
+mGBA-style extras for Game Boy Advance games (Sidebar 0.11.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md); [gba/README.md](gba/README.md)). Games pick them up when their player is rebuilt: Convert again, or Update. No Switch game needs a rebuild.
+
+- **Rewind**: hold R, or the controller's left trigger, and the game steps back through the last 30 seconds at twice the speed of play (Quick settings › General › Play: off, 10 s, 30 s or a minute). A snapshot every four frames costs about 0.1 ms; 30 seconds take 26 to 34 MB (Minish Cap, Kururin, Advance Wars). Each snapshot is the CPU and bus with the memories stored as a difference from a key snapshot, unchanged runs left out (gba/host/src/rewind.rs). `nxgba-run --rewind-check` steps back 30 snapshots and checks that the run from there ends on the same picture; it passes on all three.
+- **Fast forward at a speed you choose**: 2×, 3×, 4× (as before), 8× or as fast as it goes, held or pressed to switch on and off. The sound plays faster with it, like a tape, instead of dropping out, and what queued up is dropped when you let go so the sound does not lag. The controller's right trigger does it too (the triggers are no longer a second L and R; the shoulders are).
+- **Slow motion**: hold F, or the controller's left face button, for 25%, 50% or 75% speed, the sound slowed with it.
+- **Handheld colours: GBA or GBA SP**: the original GBA's darker, softer screen as before, or the brighter backlit GBA SP.
+- **Frame blending**: each frame half blended with the one before, as the handheld's slow screen did, so games that flicker sprites for see-through shadows and water look solid.
+- **Screen filter: Off, CRT or LCD grid**: the LCD grid (dark lines between the pixels and faint colour stripes) joins CRT, with its strength.
+- **Pixel art › Smooth edges is MMPX** in GBA games too: the Switch player's own shader, twice, so 240 × 160 becomes 960 × 640 with smooth diagonals and no blur.
+- **Ambient edges**: the slim bars a 3:2 picture leaves on a 16:10 screen glow with the game's own colours at each edge, blurred along it and fading out, in place of black. On by default (Around the picture › Glow); Black brings the bars back.
+
 ## 0.57.0 (2026-11-22)
 
 Mario Kart World fixes from [No Lag Kart](https://github.com/kingbumi31/no-lag-kart) (MIT, a Mario Kart World 1.8.0 fork of nxnative by Bumi), layer patch mkw-no-lag-kart. Only what nxnative does not already have: its frame-step fixes, the 1.8.0 frame step, the written-pages commit walk and the cube-map filter speed-ups are already in the engine in nxnative's own form. Mario Kart World needs an Update build to get them; its shader chain is unchanged, so no shader rebuild.
