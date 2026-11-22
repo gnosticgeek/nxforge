@@ -147,7 +147,7 @@ struct SavesPage: View {
             } else if !own.isEmpty {
                 Text(s.cloudSavesAll
                      ? "\(names(own)) still \(own.count == 1 ? "uses its" : "use their") own folder; \(own.count == 1 ? "it moves" : "they move") here at \(own.count == 1 ? "its" : "their") next start."
-                     : "\(names(own)) already \(own.count == 1 ? "syncs" : "sync") through \(own.count == 1 ? "its own folder" : "their own folders"), set in \(own.count == 1 ? "its" : "their") settings window. Turning this on moves \(own.count == 1 ? "it" : "them") here; turning it off later turns every game's off.")
+                     : "\(names(own)) already \(own.count == 1 ? "syncs" : "sync") through \(own.count == 1 ? "its own folder" : "their own folders"), set in \(own.count == 1 ? "its" : "their") old settings window. Turning this on moves \(own.count == 1 ? "it" : "them") here; turning it off later turns every game's off.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Each game keeps its own folder in there, named after its title ID. A save that is replaced is kept in the save's backups first, and when both sides changed the game asks which to keep.")

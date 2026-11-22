@@ -1400,7 +1400,7 @@ import Testing
 
     @Test func frontEndSettingsDefault() throws {
         let s = try JSONDecoder().decode(Settings.self, from: Data(#"{"start_in": "Converter", "battery_preset": false}"#.utf8))
-        #expect(s.startIn == .converter && !s.batteryPreset && s.straightPlay && s.returnToLibrary && s.downloadCovers)
+        #expect(s.startIn == .converter && !s.batteryPreset && s.returnToLibrary && s.downloadCovers)
     }
 }
 

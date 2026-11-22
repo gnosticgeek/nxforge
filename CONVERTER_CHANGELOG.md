@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.27.2 (2026-11-22)
+
+Shipped in NXForge 0.55.1.
+
+- **No more game settings window.** Game apps built from 0.55.1 start straight into the game, so the Settings switch "Play goes straight into the game" and the cover menu's "Play with the Game's Own Settings Window" are gone, as is the game page's "Show the game's settings window at launch". Play still passes `--no-launcher`, so a game built earlier keeps its window closed too. The window's microphone input picker is a Play options row (General, under Microphone, while it is on): System Default stores nothing, a device stores its UID in `launcher.DM_MIC_DEVICE` as the window did. Code: `MicrophoneInputs.swift`, `LaunchSettings.load`.
+
 ## 0.27.0 (2026-11-21)
 
 Shipped in NXForge 0.53.0.

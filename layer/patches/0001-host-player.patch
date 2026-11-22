@@ -15,9 +15,8 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/host/hle_hid.c     |   8 +-
  dm/host/tests/t_hid.c |   9 ++-
  dm/host/web_apple.m   |  19 +++--
- dm/mac/Launcher.swift |   6 +-
  dm/mac/launcher.c     | 133 +++++++++++++++++++++++++++++---
- 12 files changed, 399 insertions(+), 80 deletions(-)
+ 11 files changed, 396 insertions(+), 77 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
 index aa398f882c3167ca42158d4c5e7ea3d5aabfa4fc..b1e299e977b1859e5e2c15317ff66fafd2f106c0 100644
@@ -806,28 +805,6 @@ index fd97d9077d57e79c12024f70468b07313c370cf6..e5eaea108989f11386b9493a6b33cc60
              NSData *d = [r representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
              if (![d writeToFile:p atomically:YES]) LOG("[RED] webshot: nothing written to %s (%s)", p.UTF8String, e.localizedDescription.UTF8String ?: "-");
          }];
-diff --git a/dm/mac/Launcher.swift b/dm/mac/Launcher.swift
-index 88d9440068d4997689991b547242ee06f1210996..9602b86b986265bde41f922fdf70026fff05728a 100644
---- a/dm/mac/Launcher.swift
-+++ b/dm/mac/Launcher.swift
-@@ -345,14 +345,14 @@ private final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate
-         app.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-         app.addItem(withTitle: "Quit \(name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-         item.submenu = app; menu.addItem(item); NSApp.mainMenu = menu
--        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 660), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-         w.title = name; w.isReleasedWhenClosed = false; w.delegate = self
--        w.contentMinSize = NSSize(width: 520, height: 0)
-+        w.contentMinSize = NSSize(width: 720, height: 0)
-         window = w
-         if let screen = w.screen ?? NSScreen.main {
-             w.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.midX - w.frame.width / 2, y: screen.visibleFrame.maxY))
-         }
--        let host = NSHostingView(rootView: LauncherView(m: model, done: { [weak self] in self?.finish($0) }, fit: { [weak self] in self?.fit($0) }))
-+        let host = NSHostingView(rootView: NXFLauncherView(m: model, done: { [weak self] in self?.finish($0) }, fit: { [weak self] in self?.fit($0) }))
-         host.sizingOptions = []   // the Form's measured scroll content owns the height, including after collapse
-         w.contentView = host
-         host.layoutSubtreeIfNeeded()
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
 index ae7edfbef7c3d38f6c5cd134fa0264169b7ca370..54ee2dbc562169831448a35270509a73a35bae05 100644
 --- a/dm/mac/launcher.c

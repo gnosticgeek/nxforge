@@ -1,5 +1,5 @@
 // Play options: a game's launch settings as the front end offers them (the Play options panel), with presets, and Play itself:
-// the game opens straight in (--no-launcher) with the choices saved for it, so its own settings window stays closed. A run
+// the game opens straight in with the choices saved for it (games have no settings window of their own; --no-launcher keeps older builds' closed). A run
 // can also take choices for that run only: they go in the launch environment, which the game treats as fixed for the run and
 // does not save (DM_ENV_LAUNCH_KEYS, dm/mac/launcher.c).
 import AppKit
@@ -25,13 +25,13 @@ enum PlayTab: String, CaseIterable, Identifiable {
 }
 
 enum PlayOptions {
-    /// The Graphics tab's rows in order, as the game's own settings window groups them (NXFLauncherLayout.graphicsBoxes)
+    /// The Graphics tab's rows in order
     static let graphics = ["DM_FPS_TARGET", "DM_PRESENT_INTERP", "DM_RENDER_SCALE", "DM_DYNAMIC_RESOLUTION", "DM_PRESENT_UPSCALE", "DM_UPSCALER",
                            "DM_SCREEN_ASPECT", "DM_SCREEN_WIDE", "DM_PRESENT_AA", "DM_PIXEL_ART", "DM_PRESENT_EDR", "DM_PRESENT_EDR_STRENGTH",
                            "DM_FOLIAGE", "DM_MODEL_LOD", "DM_SHADOW_CASCADES"]
     /// On General though not level=basic: everyday controls (NXFLauncherLayout.general)
     static let general: Set<String> = ["DM_RUMBLE_GAIN", "DM_RUMBLE_MIN", "DM_STICK_DEADZONE_L", "DM_STICK_DEADZONE_R", "DM_PAD_PRESS_TO_JOIN", "DM_SW2",
-                                       "DM_MOUSE_CAMERA", "DM_MOUSE_CAMERA_SPEED", "DM_MIC"]
+                                       "DM_MOUSE_CAMERA", "DM_MOUSE_CAMERA_SPEED", "DM_MIC", "DM_MIC_DEVICE"]
     /// What a preset sets; every other setting is left as it is
     static let presetKeys = ["DM_FPS_TARGET", "DM_RENDER_SCALE", "DM_PRESENT_UPSCALE", "DM_PRESENT_EDR", "DM_PRESENT_INTERP"]
 
@@ -313,29 +313,20 @@ extension AppModel {
         launch(ref, app: app, name: g?.displayName ?? app.url.deletingPathExtension().lastPathComponent, settings: list, saved: saved, once: once, note: note)
     }
 
-    /// Play through the game's own settings window, as before the front end. (Its cloud save check also runs on a straight-in Play
-    /// from NXForge 0.34.0's player on: launcher.c's --no-launcher calls it without the window.)
-    func playWithOwnWindow(_ r: GameRef) {
-        let (g, b) = resolve(r)
-        guard let app = r.app ?? b?.app, FileManager.default.fileExists(atPath: app) else { return }
-        launch(GameRef(libraryID: r.libraryID, app: app), app: app, name: g?.displayName ?? app.url.deletingPathExtension().lastPathComponent,
-               settings: [], saved: [:], once: [:], note: "Opening the game's own settings window", ownWindow: true)
-    }
-
     /// Start the game: straight in, with `once` in its environment for this run only.
-    func launch(_ ref: GameRef, app: String, name: String, settings list: [LaunchSetting], saved: [String: String], once: [String: String], note: String?, ownWindow: Bool = false) {
+    func launch(_ ref: GameRef, app: String, name: String, settings list: [LaunchSetting], saved: [String: String], once: [String: String], note: String?) {
         Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
         applyCloudSaves(app: app)
         var shown = saved
         for (k, v) in once { shown[k] = v }
         let summary = ([PlayOptions.current(settings: list, values: shown).rawValue] + PlayOptions.summary(settings: list, values: shown).map(\.value)).joined(separator: " · ")
         if frontEnd { launching = Launching(ref: ref, app: app, name: name, note: note, summary: list.isEmpty ? "" : summary) }
-        lastLaunch = (ref, ownWindow)
+        lastLaunch = ref
         // the game's pipeline archive from this Mac's own disk (LocalShaders): there already, or copied first, once
         let source = settings.localShaders ? LocalShaders.source(app: app) : nil
         if let source, LocalShaders.ready(app: app, source: source) == nil {
             if frontEnd { launching?.note = "Copying its shaders to this Mac (\(Disk.gb(source.bytes))), once"; launching?.phase = .preparing }
-            let straight = settings.straightPlay && !ownWindow, held = launching?.id
+            let held = launching?.id
             Task { @MainActor [weak self] in
                 let outcome = await Task.detached(priority: .userInitiated) { LocalShaders.copy(app: app, source: source) }.value
                 guard let self else { return }
@@ -347,18 +338,18 @@ extension AppModel {
                 case .noRoom(let needed, let free): self.showBanner("Shaders left on the game's drive", detail: "Copying them here needs \(Disk.gb(needed)) and would leave under 10 GB free (\(Disk.gb(free)) free now). The game starts as before.", tone: .info)
                 case .failed(let why): self.showBanner("Shaders left on the game's drive", detail: why, tone: .info)
                 }
-                self.open(app: app, name: name, straight: straight, environment: env)
+                self.open(app: app, name: name, environment: env)
             }
             return
         }
         var env = once
         if let source, let dir = LocalShaders.ready(app: app, source: source) { env["DM_PSO_BUNDLE"] = dir.path }
-        open(app: app, name: name, straight: settings.straightPlay && !ownWindow, environment: env)
+        open(app: app, name: name, environment: env)
     }
 
-    private func open(app: String, name: String, straight: Bool, environment: [String: String]) {
+    private func open(app: String, name: String, environment: [String: String]) {
         let cfg = NSWorkspace.OpenConfiguration()
-        if straight { cfg.arguments = ["--no-launcher"] }
+        cfg.arguments = ["--no-launcher"]   // a game built before NXForge 0.55.1 still has its own settings window: keep it closed
         // added to the environment the game starts with; its launcher takes what is set there as fixed for the run
         cfg.environment = environment.merging(Self.frontEndEnvironment) { a, _ in a }
         cfg.activates = true
@@ -470,9 +461,9 @@ extension AppModel {
 
     /// The launch screen's buttons after a game closed while starting
     func retryLaunch() {
-        guard let (ref, own) = lastLaunch else { launching = nil; return }
+        guard let ref = lastLaunch else { launching = nil; return }
         launching = nil
-        if own { playWithOwnWindow(ref) } else { playFromStage(ref) }
+        playFromStage(ref)
     }
 
     func launchFix(_ f: LaunchFailure) {

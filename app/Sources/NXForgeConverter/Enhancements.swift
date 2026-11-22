@@ -22,7 +22,7 @@
 // with the ones switched on, before every launch and the moment a switch changes, whatever opens the game (the front end,
 // Theatre, Finder):
 //   env   → a block of `~/Library/Application Support/nxnative/<title ID>/env.txt`, which the game's launcher reads first
-//           (dm/mac/launcher.c env_file). The settings window shows those settings greyed out, set by the file.
+//           (dm/mac/launcher.c env_file). Play options shows those settings greyed out, set by the file.
 //   dmnt  → master codes `{NXForge enhancement: <name>}` in the engine's `<build>.txt` cheat file. A master always runs, so it
 //           needs no switch in `<build>.enabled`; the Cheats card, the cheats Markdown and Get Cheats leave these entries out.
 //   mods  → the mods are switched on (ModState, the game's "NXForge settings.txt").

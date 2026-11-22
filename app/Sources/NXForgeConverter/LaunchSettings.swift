@@ -1,7 +1,7 @@
-// A built game's launch settings, set from the converter (idea 5): the list is the app's own Resources/dm/launcher.json (what the
-// game's settings window shows, dm/games/settings.py), and the values are where that window keeps them: "launcher.<VARIABLE>" in
-// the game app's preferences (its bundle ID's domain), a string, removed when it is the default (dm/ios/Sources/LauncherSettings.swift,
-// dm/mac/launcher.c). "window.show" off opens the game straight in, with these choices, as "Show this window at launch" does.
+// A built game's launch settings, set from the converter (idea 5): the list is the app's own Resources/dm/launcher.json
+// (dm/games/settings.py), and the values are the game's saved choices: "launcher.<VARIABLE>" in the game app's preferences (its
+// bundle ID's domain), a string, removed when it is the default (dm/ios/Sources/LauncherSettings.swift, dm/mac/launcher.c). The game
+// has no settings window of its own (NXForge 0.55.1 on): it starts straight in with these choices, from here, Finder or the Dock.
 import Foundation
 
 struct LaunchSetting: Decodable, Identifiable, Hashable {
@@ -60,7 +60,11 @@ enum LaunchSettings {
     static func load(app: String) -> [LaunchSetting] {
         guard let d = FileManager.default.contents(atPath: app + "/Contents/Resources/dm/launcher.json"),
               let f = try? JSONDecoder().decode(LaunchSettingsFile.self, from: d) else { return [] }
-        return f.settings
+        guard let mic = f.settings.firstIndex(where: { $0.env == "DM_MIC" }), !f.settings.contains(where: { $0.env == MicrophoneInputs.env }) else { return f.settings }
+        // the input picker the game's old settings window had, after Microphone (MicrophoneInputs)
+        var list = f.settings
+        list.insert(MicrophoneInputs.setting(saved: defaults(app: app)?.string(forKey: "launcher." + MicrophoneInputs.env)), at: mic + 1)
+        return list
     }
 
     static func bundleID(app: String) -> String? {
@@ -83,14 +87,6 @@ enum LaunchSettings {
     static func set(_ s: LaunchSetting, _ v: String, app: String) {
         guard let d = defaults(app: app) else { return }
         if s.isDefault(v) { d.removeObject(forKey: "launcher." + s.env) } else { d.set(v, forKey: "launcher." + s.env) }
-        d.synchronize()
-    }
-
-    /// Show the game's settings window at launch (its own "Show this window at launch")
-    static func showsWindow(app: String) -> Bool { (defaults(app: app)?.object(forKey: "window.show") as? Bool) ?? true }
-    static func setShowsWindow(_ on: Bool, app: String) {
-        guard let d = defaults(app: app) else { return }
-        d.set(on, forKey: "window.show")
         d.synchronize()
     }
 

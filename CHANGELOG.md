@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.55.1 (2026-11-22)
+
+- **Games start straight in, with no settings window of their own** (layer patch no-settings-window, Converter 0.27.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): a built game app no longer opens its General / Graphics / Advanced window before the game, from NXForge.app, Finder or the Dock. Its settings are NXForge.app's Play options (and Quick settings while it runs), which keep the same saved choices the window kept, so nothing chosen is lost. The cloud save check still runs before the game and only asks when both saves changed or iCloud is slow. The window's microphone input picker is now a Play options row under Microphone. A game built before 0.55.1 keeps its window until it is updated (NXForge.app's Play already skipped it).
+
 ## 0.53.0 (2026-11-21)
 
 Builds that look after the Mac's disk, and a cleanup that keeps what it said it would (Converter 0.27.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); layer patch disk-room).

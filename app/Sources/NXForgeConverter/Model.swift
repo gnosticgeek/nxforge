@@ -244,8 +244,8 @@ final class AppModel {
     /// the Play options panel open over the front end, and the launch screen while a game starts
     var playOptions: PlayOptionsState?
     var launching: Launching?
-    /// the last launch, for Try Again on the launch screen: the game, and whether it opened with its own settings window
-    var lastLaunch: (GameRef, Bool)?
+    /// the last launch, for Try Again on the launch screen
+    var lastLaunch: GameRef?
     /// the last checked copy of NXForge's own data (DataBackup), whether one is being made, and whether the last one failed
     var lastDataBackup: Date? = DataBackup.latest()?.manifest.made
     var backupRunning = false
@@ -616,9 +616,9 @@ final class AppModel {
     func openApp(_ app: String) {
         Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
         applyCloudSaves(app: app)
-        // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
+        // straight in, with the choices saved for the game (--no-launcher: a game built before 0.55.1 still has a settings window of its own)
         let cfg = NSWorkspace.OpenConfiguration()
-        if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
+        cfg.arguments = ["--no-launcher"]
         var env = AppModel.frontEndEnvironment
         // the copy of its pipeline archive on this Mac, when a Play from the front end has made one (LocalShaders)
         if settings.localShaders, let s = LocalShaders.source(app: app), let dir = LocalShaders.ready(app: app, source: s) { env["DM_PSO_BUNDLE"] = dir.path }

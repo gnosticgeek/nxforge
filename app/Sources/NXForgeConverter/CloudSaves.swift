@@ -142,7 +142,7 @@ extension AppModel {
     }
 
     /// At the converter's start and after a build, with the switch on: a game built or changed since gets the folder. With it off,
-    /// nothing is touched, so a game's own Cloud saves folder (chosen in its settings window) stays.
+    /// nothing is touched, so a game's own Cloud saves folder (chosen in its settings window before NXForge 0.55.1) stays.
     func syncCloudSavesIfOn() {
         guard settings.cloudSavesAll, settings.cloudSavesFolder != nil else { return }
         Task.detached(priority: .utility) {

@@ -1,0 +1,271 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge <nxforge@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 00:23:51 +0000
+Subject: no-settings-window: NXForge's game apps start straight into the game;
+ NXForge.app sets the choices, the cloud save check stays
+
+---
+ dm/mac/launcher.c                  | 31 ++++++++++++++----------------
+ dm/mac/pack_app.py                 | 12 ++++++------
+ dm/tools/tests/test_nsp_mac_app.py | 10 +++++-----
+ docs/development.md                |  4 ++--
+ docs/frontends.md                  |  2 +-
+ docs/playing.md                    |  4 ++--
+ docs/settings.md                   | 16 +++++----------
+ 7 files changed, 35 insertions(+), 44 deletions(-)
+
+diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
+index 9664f2357795c066124653df21f73057de61126f..e30ecab98e46616e822d086d694a05f5ac12a1ef 100644
+--- a/dm/mac/launcher.c
++++ b/dm/mac/launcher.c
+@@ -10,9 +10,10 @@
+ // replaces a variable already set), as the iOS app reads Documents/env.txt and dm/env.txt. Then the player's saved choices: launcher.<VAR> strings in the app's preferences domain (its bundle ID), which a
+ // front end or a settings window writes, each checked against the bundle's settings (Info.plist DMSettings, from launcher.json) and used only for a variable still unset; DM_SAVED_CHOICES=0 ignores them.
+ // So the order is: the launch environment, the player's env.txt, the bundle's, saved choices, the host's tested defaults (docs/frontends.md, Saved choices).
+-// Before the host starts, the settings window (dm/mac/Launcher.swift dm_mac_launcher, linked in by pack_app.py) runs in this process and puts the player's settings into the environment; it keeps
+-// what the launch environment and the env files set (DM_ENV_LAUNCH_KEYS, DM_ENV_FILE_KEYS). DM_LAUNCHER=0 or --no-launcher (open <app> --args --no-launcher) starts the game without the window,
+-// with the saved choices; so does "Show at launch" turned off.
++// NXForge: no settings window. The game's settings are chosen in NXForge.app (Play options, the in-game sidebar), which writes the saved choices; the app always starts straight
++// into the game with them. Only the cloud save check runs before the host (dm_mac_save_check, dm/mac/nxforge/launcher_save_check.swift, with upstream's SaveCheck from Launcher.swift):
++// nothing is shown unless the cloud's file is slow to come or the two saves need the player's pick. DM_LAUNCHER=0 skips the check too. --no-launcher (what NXForge.app passes, for
++// apps built before this) changes nothing.
+ #include <CoreFoundation/CoreFoundation.h>
+ #include <copyfile.h>
+ #include <ctype.h>
+@@ -36,8 +37,7 @@
+ #include "save_sync.h"
+ 
+ extern char **environ;
+-int dm_mac_launcher(void);   // Launcher.swift: 1 = Play (the settings are in the environment), 0 = the player quit, 2 = no window (apply the saved choices here)
+-int dm_mac_save_check(void);   // NXForge (dm/mac/nxforge/launcher_window.swift): the cloud save check alone, for --no-launcher: 2 = go on, 0 = the player quit
++int dm_mac_save_check(void);   // NXForge (dm/mac/nxforge/launcher_save_check.swift): the cloud save check, with no settings window: 2 = go on, 0 = the player quit
+ int dm_mac_microphone_consent(void);
+ static pid_t g_child;
+ static char *g_file_keys, *g_launch_keys;   // the variables the env files set, and the settings the launch environment set (DM_ENV_FILE_KEYS, DM_ENV_LAUNCH_KEYS)
+@@ -203,7 +203,7 @@ static void saved_choices(void) {   // after the env files, before the bundle's
+     }
+ }
+ 
+-// NXForge: Restart game takes the choices saved since the game started (a preset chosen in Quick settings writes the window's launcher.<VAR>, as the window does): every setting
++// NXForge: Restart game takes the choices saved since the game started (a preset chosen in Quick settings writes launcher.<VAR>, as NXForge.app's Play options do): every setting
+ // the launch environment or an env file did not set is cleared and read again from the saved choices, so a restart applies them as a new launch would
+ static int key_listed(const char *list, const char *k) {
+     size_t n = strlen(k);
+@@ -227,8 +227,8 @@ static void restart_choices(void) {
+     saved_choices();
+ }
+ 
+-// Cloud saves: the folder chosen in the settings window (Launcher.swift CloudSavesSection, cloudSaves.folder in the app's preferences) becomes DM_SAVE_SYNC
+-// (dm/host/save_sync.h), with or without the window; a DM_SAVE_SYNC the launch environment or an env file set wins. A front end may write the key too (docs/frontends.md, The cloud saves folder)
++// Cloud saves: the folder NXForge.app's Cloud saves switch chose (cloudSaves.folder in the app's preferences) becomes DM_SAVE_SYNC
++// (dm/host/save_sync.h); a DM_SAVE_SYNC the launch environment or an env file set wins. A front end may write the key too (docs/frontends.md, The cloud saves folder)
+ static void cloud_saves_folder(void) {
+     CFStringRef domain = CFBundleGetIdentifier(CFBundleGetMainBundle());
+     if (getenv("DM_SAVE_SYNC") || !domain) return;
+@@ -307,7 +307,7 @@ int main(int argc, char **argv) {
+     int fd = open(log, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+     if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); close(fd); setvbuf(stdout, NULL, _IOLBF, 0); }
+     fprintf(stderr, "launcher: %s (%s), host %s\n", name, id, host);
+-    CFArrayRef rules = setting_rules();   // the settings the launch environment already set: the window shows them, fixed
++    CFArrayRef rules = setting_rules();   // the settings the launch environment already set: fixed for this run (Restart game keeps them)
+     for (CFIndex i = 0; rules && i < CFArrayGetCount(rules); i++) { char env[128]; if (rule_env(CFArrayGetValueAtIndex(rules, i), env, sizeof env) && getenv(env)) add_key(&g_launch_keys, env); }
+     snprintf(p, sizeof p, "%s/env.txt", sup); env_file(p);
+     snprintf(p, sizeof p, "%s/env.txt", dm); env_file(p);
+@@ -326,14 +326,11 @@ int main(int argc, char **argv) {
+     } else unsetenv("DM_GAME_FOLDER");
+     if (!getenv("DM_SAVE")) mkdirs(save);
+     fprintf(stderr, "launcher: save %s\n", getenv("DM_SAVE") ?: save);
+-    setenv("DM_SAVE", save, 0);   // before the window (and after the save moved into the game folder): its cloud-save check compares this save with the cloud's (Launcher.swift SaveCheck)
+-    int window = !(getenv("DM_LAUNCHER") && !strcmp(getenv("DM_LAUNCHER"), "0"));
+-    int no_launcher = 0;   // NXForge: --no-launcher (NXForge's Play) still checks the cloud save; DM_LAUNCHER=0 asks nothing, as before
+-    for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--no-launcher")) no_launcher = 1;
+-    if (no_launcher || !window) fprintf(stderr, "launcher: no settings window (DM_LAUNCHER=0 or --no-launcher)\n");
+-    int shown = no_launcher && window ? dm_mac_save_check() : window ? dm_mac_launcher() : 2;
+-    if (!shown) return 0;   // Quit: no game
+-    if (shown == 2) saved_choices();
++    setenv("DM_SAVE", save, 0);   // before the cloud-save check (and after the save moved into the game folder): it compares this save with the cloud's (Launcher.swift SaveCheck)
++    (void)argc; (void)argv;   // NXForge: no settings window, so --no-launcher has nothing left to skip
++    int check = !(getenv("DM_LAUNCHER") && !strcmp(getenv("DM_LAUNCHER"), "0"));   // DM_LAUNCHER=0 asks nothing, as before
++    if (check && !dm_mac_save_check()) return 0;   // Quit: no game
++    saved_choices();
+     cloud_saves_folder();
+     microphone_at_launch();
+     setenv("DM_ROOT", sup, 0); setenv("DM_ROMFS", romfs, 0); setenv("DM_TEMP", temp, 0);
+diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
+index fa27ed4e656c0b5177ee355a9fb02f78aaa9151b..4149c489f9b64a7f731c12dcdee01110c8d2e59a 100755
+--- a/dm/mac/pack_app.py
++++ b/dm/mac/pack_app.py
+@@ -1,10 +1,10 @@
+ #!/usr/bin/env python3
+-# Pack a self-contained, double-clickable Mac app of a game (the NSP script's --platform mac-app): the launcher (dm/mac/launcher.c, linked here with its settings window,
+-# dm/mac/Launcher.swift, and the iOS launcher's model and rows) as CFBundleExecutable, the Mac host beside it,
++# Pack a self-contained, double-clickable Mac app of a game (the NSP script's --platform mac-app): the launcher (dm/mac/launcher.c, linked here with the cloud save check,
++# dm/mac/nxforge/launcher_save_check.swift and dm/mac/Launcher.swift's SaveCheck; NXForge opens no settings window) as CFBundleExecutable, the Mac host beside it,
+ # and in Contents/Resources what the IPA carries (dm/ios/tools/build_ipa.sh): romfs.img (the RomFS image), control.nacp (the game's control data, which the host finds beside the RomFS: hle_fs.c control_read), msl/<b-chain.img | vk | gl> (the Mac shader libraries, named as in the IPA),
+ # aoc/<index>/ (DLC), pso/ (an NVN game's pipeline archive made offline for this Mac's GPU, dm/gfx/tools/pso_offline.py: the launcher hands it to the host as DM_PSO_BUNDLE),
+ # and dm/ (the rewritten modules and their rewriter tables, nro.tsv, the profile's shader_map.tsv / pso_manifest.tsv / c1_full.tsv / cb_extent.tsv / shader_pairs.tsv / pso_pairs.tsv, font/, env.txt,
+-# launcher.json: the game's launcher settings, dm/games/settings.py, which the settings window and Mac front ends show),
++# launcher.json: the game's launcher settings, dm/games/settings.py, which NXForge.app's Play options show),
+ # plus AppIcon.icns from the game's icon (sips, iconutil) and the Info.plist keys the launcher reads (DMTitleID, DMRomfsMarker, DMLanguage).
+ # romfs.img, msl, aoc and pso are links into the signed data bundles in Contents/PlugIns that hold them (see Data bundles below), so that a pack which changes only the host signs in a second.
+ # The large folders are APFS clones (cp -c) when the app is on the same APFS volume as the build, so they take no space; plain copies otherwise.
+@@ -91,11 +91,11 @@ def min_os(host):   # the host's deployment target (LC_BUILD_VERSION minos): the
+     return m.group(1) if m else '14.0'
+ 
+ 
+-def swift_sources():   # the settings window, with the iOS launcher's model, rows and cloud-save report
+-    return [HERE / 'Launcher.swift', HERE.parent / 'ios/Sources/LauncherSettings.swift', HERE.parent / 'ios/Sources/LauncherRow.swift', HERE.parent / 'ios/Sources/SaveSyncReport.swift', HERE / 'nxforge/launcher_window.swift']
++def swift_sources():   # the cloud save check and microphone consent (Launcher.swift, which needs the iOS launcher's model and rows); NXForge never opens its settings window (launcher.c)
++    return [HERE / 'Launcher.swift', HERE.parent / 'ios/Sources/LauncherSettings.swift', HERE.parent / 'ios/Sources/LauncherRow.swift', HERE.parent / 'ios/Sources/SaveSyncReport.swift', HERE / 'nxforge/launcher_save_check.swift']
+ 
+ 
+-def build_launcher(out, minos, clang, swiftc, sdk):   # launcher.c's main and the host's cloud-save code (its send after the host exits), linked by swiftc with the settings window (no Swift main: -parse-as-library)
++def build_launcher(out, minos, clang, swiftc, sdk):   # launcher.c's main and the host's cloud-save code (its send after the host exits), linked by swiftc with the Swift sources (no Swift main: -parse-as-library)
+     with tempfile.TemporaryDirectory(dir=out.parents[3]) as t:
+         objs = [Path(t) / 'launcher.o', Path(t) / 'save_sync.o']
+         for obj, src in zip(objs, (HERE / 'launcher.c', HERE.parent / 'host/save_sync.c')):
+diff --git a/dm/tools/tests/test_nsp_mac_app.py b/dm/tools/tests/test_nsp_mac_app.py
+index f766fba9b08769ec787f34754ebc59415332b254..4d4324ce884eb61f1640c6d58f2e9ec6173925fa 100644
+--- a/dm/tools/tests/test_nsp_mac_app.py
++++ b/dm/tools/tests/test_nsp_mac_app.py
+@@ -136,7 +136,7 @@ class PackReuse(unittest.TestCase):
+             'pso/gpu-prewarm-00.mtl4a': b'bases', 'pso/gpu-prewarm-00.keys': b'DMPSOIX1', 'pso/prewarm.tsv': b'stamp',   # --prebake's files and their index
+             'env.txt': b'DM_TEST=1', 'split.tsv': b'split', 'icon.jpg': b'jpeg', 'source/launcher.c': b'launcher',
+             'host/romfs_image.h': b'validator', 'host/save_sync.c': b'sync', 'host/save_sync.h': b'sync api', 'tools/romfs.py': b'reader', 'tools/nso_syms.py': b'symbols',
+-            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_window.swift': b'nxf', 'source/nxforge/launcher_slots.inc': b'slots',
++            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_save_check.swift': b'nxf', 'source/nxforge/launcher_slots.inc': b'slots',
+         }
+         for n in pack_app.TABLES: files['profile/' + n] = n.encode()
+         for n, content in files.items(): (t / n).write_bytes(content)
+@@ -221,7 +221,7 @@ class PackReuse(unittest.TestCase):
+         names = ['dmhost', 'patched/main.patched.bin', 'patched/main.fixups.tsv', 'patched/main.gates.tsv', 'patched/main.cuts.tsv',
+                  'patched/main.obs.tsv', 'patched/nro.tsv', 'msl/k.metallib', 'msl/k.json', 'msl/inputs.tsv', 'font/nintendo_ext.ttf',
+                  'pso/gpu.mtl4a', 'pso/prebuilt.tsv', 'pso/rest_pairs.tsv', 'pso/archive.tsv', 'pso/gpu-prewarm-00.mtl4a', 'pso/gpu-prewarm-00.keys', 'pso/prewarm.tsv', 'env.txt', 'icon.jpg', 'source/launcher.c',
+-                 'tools/nso_syms.py', 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_window.swift', 'source/nxforge/launcher_slots.inc',   # the settings window's sources
++                 'tools/nso_syms.py', 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_save_check.swift', 'source/nxforge/launcher_slots.inc',   # the launcher's Swift sources
+                  'host/save_sync.c', 'host/save_sync.h']   # the cloud-save code the launcher links (its send after the host exits)
+         names += ['profile/' + n for n in pack_app.TABLES]
+         for name in names:
+@@ -282,7 +282,7 @@ class PackReuse(unittest.TestCase):
+         self.assertIn(c[c.index('-o') + 1], s)   # launcher.c's object, with its main
+         sync = next(c for c in self.commands if Path(c[0]).name == 'clang' and '-o' in c and c[-1].endswith('save_sync.c'))
+         self.assertIn(sync[sync.index('-o') + 1], s)   # save_sync.c's object: the launcher sends the save once the host has exited
+-        self.assertEqual([Path(x).name for x in s if x.endswith('.swift')], ['Launcher.swift', 'LauncherSettings.swift', 'LauncherRow.swift', 'SaveSyncReport.swift', 'launcher_window.swift'])
++        self.assertEqual([Path(x).name for x in s if x.endswith('.swift')], ['Launcher.swift', 'LauncherSettings.swift', 'LauncherRow.swift', 'SaveSyncReport.swift', 'launcher_save_check.swift'])
+ 
+     def test_selected_file_modes_and_file_additions_and_removals_invalidate(self):
+         self.pack()
+@@ -547,7 +547,7 @@ class PackReuse(unittest.TestCase):
+     def test_missing_selected_inputs_fail_before_reuse_or_partial_creation(self):
+         self.pack()
+         for name in ('dmhost', 'patched/main.fixups.tsv', 'msl/k.metallib', 'romfs/marker', 'pso/prebuilt.tsv', 'env.txt', 'icon.jpg',
+-                     'font', 'aoc', 'profile', 'bin/clang', 'bin/swiftc', 'sdk', 'bin/codesign', 'source/launcher.c', 'source/Launcher.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_window.swift'):
++                     'font', 'aoc', 'profile', 'bin/clang', 'bin/swiftc', 'sdk', 'bin/codesign', 'source/launcher.c', 'source/Launcher.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_save_check.swift'):
+             with self.subTest(name=name):
+                 p = self.tmp / name; hidden = p.with_name(p.name + '.hidden'); p.rename(hidden)
+                 try:
+@@ -721,7 +721,7 @@ class App(unittest.TestCase):
+ 
+     def launch(self, wait=False, app=None, args=(), **env):
+         home = self.tmp / 'home'
+-        e = dict(HOME=str(home), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin', **{'DM_LAUNCHER': '0', **env})   # never the settings window in a test
++        e = dict(HOME=str(home), PATH=f'{self.tmp / "bin"}:/usr/bin:/bin', **{'DM_LAUNCHER': '0', **env})   # no cloud save check in a test
+         if wait: e['STANDIN_WAIT'] = '1'
+         return subprocess.Popen([(app or self.app) / 'Contents/MacOS/nxnative', *args], env=e, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+ 
+diff --git a/docs/development.md b/docs/development.md
+index 25d90fcdb0759f1fe5048be4152edfb6b2fd130a..45d354bbae70886f8f852c3333a34fb985d3a39e 100644
+--- a/docs/development.md
++++ b/docs/development.md
+@@ -608,7 +608,7 @@ The bundle holds what the IPA holds, with the Mac's shader libraries:
+ ```
+ <game name>.app/Contents/
+   Info.plist                 name, version, bundle ID, the profile's app_category, LSSupportsGameMode false (reference/frame-rate.md); NSBluetoothAlwaysUsageDescription for Switch 2 controllers (reference/services.md); DMTitleID, DMRomfsMarker, DMLanguage, DMModuleFiles and DMSettings for the launcher
+-  MacOS/nxnative             the launcher (dm/mac/launcher.c, linked by pack_app.py with swiftc and its settings window: dm/mac/Launcher.swift, LauncherSettings.swift and LauncherRow.swift)
++  MacOS/nxnative             the launcher (dm/mac/launcher.c, linked by pack_app.py with swiftc and the cloud save check: dm/mac/nxforge/launcher_save_check.swift with Launcher.swift's SaveCheck; no settings window)
+   MacOS/dmhost               the Mac host built for the profile
+   Resources/romfs.img        the packed version's RomFS image (a link into PlugIns/GameData.bundle, below)
+   Resources/msl/b-<chain>.img   the Mac shader libraries, reflection JSON and runtime TSV tables, as one file (vk/ or gl/ for a Vulkan or GL game; Resources/msl links into ShaderLibraries.bundle)
+@@ -629,7 +629,7 @@ The shader folder includes only `.metallib`, `.json` (except `_b_build.json`) an
+ 
+ The packer records the rewritten module files and their tables in `DMModuleFiles`, and rejects a module without its fixups table. Before starting the host, the launcher checks that every recorded file is readable and is a regular file, so losing a binary and its table together still produces the missing-data alert. The alert passes the game name and message as AppleScript arguments, preserving quotes and backslashes in game names.
+ 
+-The launcher sets the host's environment from the bundle, as the iOS app's `main.m` does, and runs the host as a child process. The save goes to the game folder, the folder holding the `.app`, as `Saves/save` (`DM_SAVE`), and screenshots and recordings to its `Screenshots` and `Recordings` folders (`DM_GAME_FOLDER`), so everything of a game sits beside it. The first time, a save in `~/Library/Application Support/nxnative/<title ID>/save` is copied there (into a temporary folder beside it, then renamed into place); the old one is never moved or deleted, and when both hold a save the game folder's is used and neither is touched. Where the game folder is no place for them (not writable, an Applications folder, or the read-only copy macOS runs a quarantined app from), or with `DM_GAME_FOLDER=0` in an `env.txt`, the save stays in Application Support and captures go to `~/Pictures/NXForge` and `~/Movies/NXForge`. `pso_user.tsv` (`DM_PSO_USER`, with `pso_archive/` beside it) and temporary files go to `~/Library/Application Support/nxnative/<title ID>/` (`temp/`; that folder is also `DM_ROOT` and the working folder). The host's output goes to `~/Library/Logs/nxnative/<title ID>.log`, and the previous run's is kept as `<title ID>.prev.log`. Environment switches go in `env.txt` in the Application Support folder, then in the bundle's `dm/env.txt` (one `KEY=VALUE` per line). Neither replaces a variable that is already set. Then come the player's saved choices, `launcher.<VAR>` in the app's preferences domain, each checked against `DMSettings` (the values `launcher.json` offers) ([Saved choices](frontends.md#saved-choices)); `DM_SAVED_CHOICES=0` ignores them. Before that, unless `DM_LAUNCHER=0` or `--no-launcher` says otherwise, the launcher shows the settings window in its own process (`dm/mac/Launcher.swift`, drawn from `Resources/dm/launcher.json` with the iOS launcher's model and rows), which puts the player's settings into the environment the host inherits ([The Mac settings window](settings.md#the-mac-settings-window)); the launcher's C and Swift sources and the Swift compiler are in the app's reuse key. Cheat files go in `cheats/` in the Application Support folder ([cheats](cheats.md)). The launcher passes SIGTERM, SIGINT and SIGHUP on to the host and returns the host's exit code. When the bundle's game data is missing, it shows an alert.
++The launcher sets the host's environment from the bundle, as the iOS app's `main.m` does, and runs the host as a child process. The save goes to the game folder, the folder holding the `.app`, as `Saves/save` (`DM_SAVE`), and screenshots and recordings to its `Screenshots` and `Recordings` folders (`DM_GAME_FOLDER`), so everything of a game sits beside it. The first time, a save in `~/Library/Application Support/nxnative/<title ID>/save` is copied there (into a temporary folder beside it, then renamed into place); the old one is never moved or deleted, and when both hold a save the game folder's is used and neither is touched. Where the game folder is no place for them (not writable, an Applications folder, or the read-only copy macOS runs a quarantined app from), or with `DM_GAME_FOLDER=0` in an `env.txt`, the save stays in Application Support and captures go to `~/Pictures/NXForge` and `~/Movies/NXForge`. `pso_user.tsv` (`DM_PSO_USER`, with `pso_archive/` beside it) and temporary files go to `~/Library/Application Support/nxnative/<title ID>/` (`temp/`; that folder is also `DM_ROOT` and the working folder). The host's output goes to `~/Library/Logs/nxnative/<title ID>.log`, and the previous run's is kept as `<title ID>.prev.log`. Environment switches go in `env.txt` in the Application Support folder, then in the bundle's `dm/env.txt` (one `KEY=VALUE` per line). Neither replaces a variable that is already set. Then come the player's saved choices, `launcher.<VAR>` in the app's preferences domain, each checked against `DMSettings` (the values `launcher.json` offers) ([Saved choices](frontends.md#saved-choices)); `DM_SAVED_CHOICES=0` ignores them. Before that, unless `DM_LAUNCHER=0` says otherwise, the launcher runs the cloud save check in its own process (`dm/mac/nxforge/launcher_save_check.swift`, upstream's `SaveCheck`); NXForge's apps show no settings window, since NXForge.app writes the saved choices ([The Mac settings window](settings.md#the-mac-settings-window)); the launcher's C and Swift sources and the Swift compiler are in the app's reuse key. Cheat files go in `cheats/` in the Application Support folder ([cheats](cheats.md)). The launcher passes SIGTERM, SIGINT and SIGHUP on to the host and returns the host's exit code. When the bundle's game data is missing, it shows an alert.
+ 
+ Why the host is a child process: macOS privacy checks (TCC) cover files on removable volumes. A launcher that hands its process over to the host, such as a shell script that `exec`s `dmhost`, got EPERM on every open on the external drive, with no prompt. That happened with ad-hoc and Developer ID signatures alike, and after `tccutil reset`. A compiled launcher as `CFBundleExecutable` that `posix_spawn`s `dmhost`, which sits beside it in `Contents/MacOS`, can read those files. An app that sits on the game drive needs this, and so does an env file that points at files there.
+ 
+diff --git a/docs/frontends.md b/docs/frontends.md
+index 14a3875a8385f899e2f34c54c81d8a42ea083de2..7a1dff1247d6020ac7e9e72a58852f5b2552197a 100644
+--- a/docs/frontends.md
++++ b/docs/frontends.md
+@@ -55,7 +55,7 @@ A built app carries the settings its game supports, as the iPhone app's settings
+ 
+ **A Mac app** is started like any app, or by running its `Contents/MacOS/nxnative` with the chosen settings in its environment (`DM_FPS_TARGET=30`, …). The launcher there runs the host as a child, forwards SIGTERM, SIGINT and SIGHUP to it and exits with its exit code: 0 for a quit (⌘Q, the Home prompt, closing the window), 70 after the alert that macOS stopped running the game's GPU work ([A GPU whose access macOS revoked stops the game](reference/rendering.md#a-gpu-whose-access-macos-revoked-stops-the-game)), 134 for an abort. A variable already in the environment wins; then come `~/Library/Application Support/nxnative/<title ID>/env.txt` and the bundle's `dm/env.txt`, one `KEY=VALUE` per line ([A Mac app](development.md#a-mac-app)). The save is in `save/` in that Application Support folder; the log is `~/Library/Logs/nxnative/<title ID>.log`, the previous run's `<title ID>.prev.log`. The title ID is `DMTitleID` in the app's `Info.plist`.
+ 
+-A Mac app shows its own settings window before the game, drawn from its `launcher.json` and keeping its choices in the same store ([Saved choices](#saved-choices), [The Mac settings window](settings.md#the-mac-settings-window)). It shows a variable the launch environment or an `env.txt` sets as fixed. A front end that draws the settings itself starts the app with `DM_LAUNCHER=0` in its environment (or `--no-launcher` on its command line) to skip the window. The saved choices still apply, so a front end that writes them gets the same game as the window would.
++An NXForge Mac app has no settings window of its own: it starts straight into the game with the saved choices, which NXForge.app (or any front end) writes from its `launcher.json` ([Saved choices](#saved-choices), [The Mac settings window](settings.md#the-mac-settings-window)). A variable the launch environment or an `env.txt` sets is fixed for that run. `--no-launcher` on its command line, which older builds needed to skip their window, is accepted and changes nothing; `DM_LAUNCHER=0` also skips the cloud save check.
+ 
+ A Mac game quits when the player holds a controller's Home button for 2 seconds and confirms with A ([On the Mac](playing.md#on-the-mac)). Its prompt is in English; a front end that shows the player another language passes the texts in `DM_HOME_QUIT_TEXT`, one per line in this order: the hold indicator ("Keep holding to quit"), the title ("Quit <game>?"), the note ("Unsaved progress will be lost."), the quit button and the cancel button. An empty or missing line keeps the English text. The same goes for the prompt that waits when a game asks for more players than have joined (Mac and iOS): `DM_CTRL_PROMPT_TEXT`, one per line, the title ("{min} players wanted"), the hint ("Press a button on each controller to join."), the count ("Players: {joined} of {min}"), the done button and the cancel button; `{min}`, `{max}` and `{joined}` are replaced by the numbers. Whether macOS lets the game have the Home button is the player's Home button setting for apps, which a front end reads itself on macOS 27 (`GCControllerHomeButtonSettingsManager`, while a controller is connected) to tell the player when the system keeps Home.
+ 
+diff --git a/docs/playing.md b/docs/playing.md
+index 9b99136807c1c8ba2fac4fdec143ec8c974d13f3..1533c284e5932eca29c72eed62c120b30bb844c8 100644
+--- a/docs/playing.md
++++ b/docs/playing.md
+@@ -49,7 +49,7 @@ Without them, Miis have no heads, and only the six default Miis are listed ([det
+ 
+ ## On the Mac
+ 
+-A Mac app shows the game's settings in a window before the game starts ([The Mac settings window](settings.md#the-mac-settings-window)). Its `env.txt` is `~/Library/Application Support/nxnative/<title ID>/env.txt`, and its log is `~/Library/Logs/nxnative/<title ID>.log`. [NX2Apple](https://github.com/LNPANDY/NX2Apple)'s library can also start it with the settings you pick there.
++A Mac app starts straight into the game; its settings are in NXForge.app's Play options and in Quick settings (Esc) while it runs ([The Mac settings window](settings.md#the-mac-settings-window)). Its `env.txt` is `~/Library/Application Support/nxnative/<title ID>/env.txt`, and its log is `~/Library/Logs/nxnative/<title ID>.log`. [NX2Apple](https://github.com/LNPANDY/NX2Apple)'s library can also start it with the settings you pick there.
+ 
+ A controller macOS pairs but Apple's controller support does not list, such as an 8BitDo in its own mode (Ultimate 2C Wireless over Bluetooth), is read as a raw HID gamepad, with full analog sticks: it becomes a player at its first button press (a device that only declares a gamepad, such as a keyboard receiver, never presses one and so takes no player), and the log says `controller '<name>' (HID) connected: press a button to play`, then `a button pressed: player N`. The press that joins also reaches the game. A pad Apple's support says it will list gets two seconds to appear there first, so it is never read twice (an Xbox, PlayStation or Nintendo controller is always left to Apple's support); if it never appears, it is read as HID after that wait, and the log says so. Its buttons follow 8BitDo's numbering by default; another maker's pad may number them differently, and the log then says so. `DM_HID_MAP=A=1,B=2,X=4,Y=5` in `env.txt` moves them (here: the printed letters instead of the positions), `DM_HID_LOG=1` logs the number of each button pressed, and `DM_HID_PADS=0` turns this off.
+ 
+@@ -61,7 +61,7 @@ To quit with a controller, hold its Home button (the logo button on an Xbox or P
+ 
+ ### Switch 2 controllers (Mac)
+ 
+-Joy-Con 2 and the Pro Controller 2 do not appear in macOS's Bluetooth settings: they speak Nintendo's own Bluetooth LE protocol. Turn on **Switch 2 controllers** in the game's settings window ([Switch 2 controllers](settings.md#switch-2-controllers)), then:
++Joy-Con 2 and the Pro Controller 2 do not appear in macOS's Bluetooth settings: they speak Nintendo's own Bluetooth LE protocol. Turn on **Switch 2 controllers** in the game's Play options in NXForge.app ([Switch 2 controllers](settings.md#switch-2-controllers)), then:
+ 
+ 1. **Pair a controller once, in the game.** While the game runs, hold the controller's small Sync button until its player lights sweep. The game pairs it and it plays; the log says `paired with this Mac`. A controller paired this way forgets the console it was paired with: pair it there again to use it with one.
+ 2. **From then on, press any button on it** while a game with the setting on is running: it wakes and connects, no Sync needed. A controller woken for a Switch 2 nearby is left alone.
+diff --git a/docs/settings.md b/docs/settings.md
+index 26f261b6fe32f53ba2f273c4bc74756a4d7adc9a..41dfd00ff306bae7c27a53f02c8e48d0261ebcd8 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -253,17 +253,11 @@ Sets every setting back to the game's tested default; **Play** then forgets your
+ 
+ ## The Mac settings window
+ 
+-A Mac app ([A Mac app](development.md#a-mac-app)) shows its settings in a window before the game starts. They are the same settings as on the iPhone, with the same defaults. A header shows the game's icon, name and version over its artwork (the app's `Resources/dm/banner.jpg` or `.png` when it has one, otherwise its icon, enlarged). Under it are three tabs, each with its settings in boxes side by side:
++NXForge's game apps have no settings window: a Mac app ([A Mac app](development.md#a-mac-app)) starts straight into the game. Its settings are chosen in NXForge.app (the game's **Play options**: General, Graphics, Advanced and Enhancements tabs, with Battery, Balanced and Quality presets) and in **Quick settings** while the game runs; both keep them in the app's saved choices, which the app applies at every start, from NXForge.app, Finder or the Dock ([Saved choices](frontends.md#saved-choices)). They are the same settings as on the iPhone, with the same defaults. A setting fixed by an `env.txt` or by the program that started the app is shown greyed out in Play options.
+ 
+-- **General**: the most used settings, when the game has them. **Game** (**Console mode**, **Game language**, **Display mode**), **Controls** (**Game rumble**, **Rumble strength**, **Rumble cutoff**, **Press a button to join**, **Switch 2 controllers**) and **Cloud saves** ([Cloud saves](#cloud-saves)).
+-- **Graphics**: every picture setting. **Resolution** (**Render scale**, **Dynamic resolution**, **Upscaling**, **Game's upscaler**, **Picture shape**, **Anti-aliasing**), **Frame rate** (**Frame rate**, **120 fps frame interpolation**) and **HDR** (**HDR highlights** and its boost).
+-- **Advanced**: the performance settings, in **Pipelines** (**Metal 4 pipelines**, **Pipeline prebuild**, **Encode thread**) and **Display** (**Frame buffering**, **Hold frames when late**, **Performance HUD**), with **Reset to tested defaults** under them.
++Before the game starts, the app still checks its cloud save ([Cloud saves](#cloud-saves)): nothing is shown unless the cloud's file is slow to come or both saves changed, and then it asks which one to keep. `DM_LAUNCHER=0` in the app's `env.txt` (`~/Library/Application Support/nxnative/<title ID>/env.txt`) or in its environment skips that check too (the newer save wins). `DM_SAVED_CHOICES=0` starts with the tested defaults instead of the saved choices.
+ 
+-**Render scale** shows the picture's size in pixels beside the percentage for the chosen **Console mode**, when the game's profile has it (Breath of the Wild: 1600 × 900 docked, 1280 × 720 handheld at 100 %). The window remembers which tab was open. **Frame-rate counter** and **Touch feedback** are only on the iPhone.
+-
+-Click **Play** (or press Return) to start the game. **Quit**, ⌘Q or closing the window ends the app without the game. The app remembers your choices for that game, and a game started without the window, from a front end or with the window turned off, uses them too ([Saved choices](frontends.md#saved-choices)). A setting fixed by an `env.txt` or by the program that started the app is shown greyed out.
+-
+-Turn off **Show at launch** to start the game at once with your choices. Hold Option while the app opens to see the window again. `DM_LAUNCHER=0` in the app's `env.txt` (`~/Library/Application Support/nxnative/<title ID>/env.txt`) or in its environment, or opening it with `open <app> --args --no-launcher`, also skips the window; your choices still apply. `DM_SAVED_CHOICES=0` starts with the tested defaults instead.
++The sections below name settings as Play options shows them.
+ 
+ ### Display mode
+ 
+@@ -275,11 +269,11 @@ Turn off **Show at launch** to start the game at once with your choices. Hold Op
+ 
+ ### Cloud saves folder
+ 
+-**Choose a folder…** picks the iCloud Drive folder the game's save is synced through, the one the iPhone app chose in its launcher's **Cloud saves**, or the game's own folder inside it, named after its title ID ([Cloud saves](#cloud-saves)); **Turn off** stops it. Off by default. macOS may ask once whether the app may open iCloud Drive; if the game log says `this app may not open iCloud Drive`, allow it in System Settings › Privacy & Security › Files and Folders. In an `env.txt`: `DM_SAVE_SYNC=<folder>`, or `DM_SAVE_SYNC=icloud` for iCloud Drive › nxnative Saves; the window then shows it fixed.
++NXForge.app's Settings › **Cloud saves** picks the iCloud Drive folder every game's save is synced through, the one the iPhone app chose in its launcher's **Cloud saves** ([Cloud saves](#cloud-saves)), and writes it into each built game (`cloudSaves.folder`); turning it off stops it. Off by default. macOS may ask once whether the app may open iCloud Drive; if the game log says `this app may not open iCloud Drive`, allow it in System Settings › Privacy & Security › Files and Folders. In an `env.txt`: `DM_SAVE_SYNC=<folder>`, or `DM_SAVE_SYNC=icloud` for iCloud Drive › nxnative Saves.
+ 
+ ## Cloud saves
+ 
+-The Mac app and the iPhone app of one game can share a save through iCloud Drive. Choose the same iCloud Drive folder on both: **Cloud saves** › **Choose a folder…** in the Mac settings window, and **Cloud saves** in the iPhone launcher (any folder, for instance one named **nxnative Saves**). Each game keeps one file there, `<title ID>/save.dmsync`, which holds the whole save.
++The Mac app and the iPhone app of one game can share a save through iCloud Drive. Choose the same iCloud Drive folder on both: **Cloud saves** in NXForge.app's Settings (one folder for every game), and **Cloud saves** in the iPhone launcher (any folder, for instance one named **nxnative Saves**). Each game keeps one file there, `<title ID>/save.dmsync`, which holds the whole save.
+ 
+ When the game starts, it brings the save from iCloud Drive in if only that one changed since the last sync; a few seconds after the game saves, it sends its save if only this one changed. The iPhone app also sends when it goes to the background, and the Mac app once the game has quit. If you played on both without the save getting across in between, **Play** asks which save to keep: each with its date and size, since the newer one is not always the one with more progress (a new game saved a minute later is newer). The one you don't pick is kept, as below. Without the settings screen (the Mac's `DM_LAUNCHER=0`), the newer save wins.
+ 
