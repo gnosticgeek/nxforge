@@ -107,3 +107,11 @@ void front_qs_live_changed(void);
 // Laptop-safe play (nxforge/front_mac_sleep.inc): a save snapshot "Before the Mac slept" when the game saved since the newest snapshot. 1 made, 0 nothing new, -1 no save yet or the
 // copy failed. Waits for the copy (a save is small). Main thread
 int dm_qs_safety_copy(void);
+// Sidebar 0.9.0. Hold to compare: the graphics at their defaults while held, full size as a peek (front_mac_quick_settings.inc qs_compare starts or ends one, dm_qs_compare swaps the
+// settings without saving them; dm_qs_compare_glyph gives the controller's symbol for its button, NULL: the keyboard's C). Search: / gives the sidebar's search field the typing.
+// A quick-save slot's picture: the next frame, 360 pixels tall, at path (.jpg), done(1) on the main thread once written. Main thread
+void front_qs_compare(int on);
+void dm_qs_compare(int on);
+void dm_qs_compare_glyph(const char *symbol);
+void dm_qs_search_focus(void);
+void front_qs_slot_shot(const char *path, void (*done)(int ok));

@@ -2,6 +2,17 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.55.0 (2026-11-22)
+
+Six sidebar improvements (Sidebar 0.9.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)) and the app side of one (Converter 0.27.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)). They need each game app's host rebuilt ("Update" on the game does it).
+
+- **Back to Theatre**: a game started from Theatre has a Theatre button in its sidebar's footer instead of Library, and NXForge comes back to Theatre with the focus on that game (Continue picks it up when Library keeps the game is on).
+- **Search every setting**: a search field beside the page's name (/ or ⌘F) finds any row on any page by its name or what it does ("scanlines", "HDR", "120"), cheats and mods by name too, with each one's value; Return goes to it on its page.
+- **Slot pictures**: each quick-save slot shows the game as it was when the slot was saved.
+- **A status line** under the game's name: how long the game has been open, the time, and the battery.
+- **Hold to compare**: hold the Graphics page's Compare button, C, or a controller's left face button to see the game full size with the default graphics; let go for yours.
+- **The FPS counter stays in sight**: in a right-hand corner it moves beside the open sidebar instead of under it. Space and the arrow keys now type in the sidebar's search fields (the cheats' search too) instead of moving the selection.
+
 ## 0.54.0 (2026-11-21)
 
 Backend streamlining and speed-ups. The engine stays on nxnative c43a1f7a. A game gets the pipelines and the Ocarina changes below at its next build (Ocarina of Time: an Update build is enough, its shader chain is unchanged); nothing else needs a rebuild.
