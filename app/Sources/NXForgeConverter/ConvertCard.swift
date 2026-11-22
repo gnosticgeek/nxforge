@@ -203,6 +203,7 @@ struct ConvertCard: View {
 
     /// "Nintendo Switch · Base game + update", or a Switch 2 game's container
     var kindLine: String {
+        if let s = model.source, s.kind == .gba { return "Game Boy Advance · cartridge\(s.fileBytes > 0 ? String(format: " · %.0f MB", Double(s.fileBytes) / 1048576) : "")" }
         if let s = model.source { return "Nintendo Switch 2 · \(s.form)\(s.romfsBytes > 0 ? String(format: " · %.1f GB", Double(s.romfsBytes) / 1e9) : "")" }
         guard let v = model.validation, !v.files.isEmpty else { return "Nintendo Switch" }
         let roles = v.files.map(\.role)
