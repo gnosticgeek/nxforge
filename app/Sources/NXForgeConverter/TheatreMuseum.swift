@@ -204,7 +204,7 @@ struct MuseumTheme: View {
                             // each shelf's lamp warms up in turn: a third of a second apart
                             let on = min(max((since - 0.25 - 0.35 * Double(i)) / 0.5, 0), 1)
                             MuseumShelf(model: model, console: shelf.console, games: shelf.games, focus: focus, light: light,
-                                        lit: CaseSceneState.ease(on), width: W, rowH: rowH)
+                                        lit: CaseSceneState.ease(on), width: W, rowH: rowH, last: i == shelves.count - 1 && shelves.count > 1)
                                 .frame(width: W * u, height: rowH * u, alignment: .topLeading)
                                 .offset(y: (MuseumLayout.top + Double(i) * rowH) * u)
                                 .zIndex(shelf.games.contains { $0.id == focus?.id } ? 1 : 0)
@@ -327,6 +327,8 @@ struct MuseumShelf: View {
     let lit: Double
     let width: Double
     let rowH: Double
+    /// the bottom shelf: its card goes beside the game, as there is no room under it
+    var last = false
     @Environment(\.tu) private var u
     @Environment(\.accessibilityReduceMotion) private var still
 
@@ -402,9 +404,11 @@ struct MuseumShelf: View {
             // the brass card under the game in focus
             if let k = column, let g = focus, !model.museumLightFocus {
                 let cx = x0 + Double(k - first) * pitch + w / 2
+                let right = cx + w * 0.55 + 140 < width - MuseumLayout.bay
                 MuseumCaption(model: model, game: g)
                     .frame(width: 260 * u)
-                    .position(x: min(max(cx, 150), width - MuseumLayout.bay - 150) * u, y: (floor + 44) * u)
+                    .position(x: last ? (right ? cx + w * 0.55 + 140 : cx - w * 0.55 - 140) * u : min(max(cx, 150), width - MuseumLayout.bay - 150) * u,
+                              y: last ? (floor - h / 2 - 4) * u : (floor + 44) * u)
                     .animation(still ? nil : .spring(duration: 0.3), value: k)
                     .zIndex(3)
             }
