@@ -38,14 +38,14 @@ static _Atomic uint32_t g_keys_kb, g_keys_pad;
 static _Atomic int g_filter, g_scan, g_scale, g_border, g_pixel = DM_PIXEL_AUTO, g_aa, g_upscale, g_edr, g_edr_strength = 50, g_interp, g_aniso, g_colour;
 static _Atomic float g_strength = 0.5f, g_inset;
 static _Atomic int g_dw = 960, g_dh = 640;
-static _Atomic uint64_t g_presents;
+static _Atomic uint64_t g_presents, g_snap_until;
 static double g_times[254]; static int g_times_n, g_times_at; static double g_last_present; static pthread_mutex_t g_times_mu = PTHREAD_MUTEX_INITIALIZER;
 
 static double now_s(void) { static mach_timebase_info_data_t tb; if (!tb.denom) mach_timebase_info(&tb); return (double)mach_absolute_time() * tb.numer / tb.denom * 1e-9; }
 static NSString *opt_key(NSString *what) { return [NSString stringWithFormat:@"DMQuickSettings.%@.%@", what, g_name]; }
 static NSString *pfx_key(NSString *what) { return [NSString stringWithFormat:@"DMPresentFilter.%@.%@", what, g_name]; }
 static BOOL opt_bool(NSString *what, BOOL def) { id v = [NSUserDefaults.standardUserDefaults objectForKey:opt_key(what)]; return v ? [v boolValue] : def; }
-static void toast(NSString *msg) { if (g_snapshot && !g_side) return; dm_qs_toast((__bridge void *)g_view, msg.UTF8String); }
+static void toast(NSString *msg) { dm_qs_toast((__bridge void *)g_view, msg.UTF8String); }
 
 // ---- the picture settings (front.h) ----
 int mtl_present_filter(float *k) { if (k) *k = g_strength; return g_filter; }
@@ -174,7 +174,7 @@ static void draw_into(id<MTLCommandBuffer> cb, id<MTLTexture> target) {
 }
 static void present(void) {   // the game thread
     [g_tex replaceRegion:MTLRegionMake2D(0, 0, GW, GH) mipmapLevel:0 withBytes:g_rgba bytesPerRow:GW * 4];
-    if (g_snapshot) { present_counted(); return; }
+    if (g_snapshot && g_frames < g_snap_until) { present_counted(); return; }   // not shown until the frame the picture is taken at
     @autoreleasepool {
         CGSize want = CGSizeMake(g_dw, g_dh);
         if (!CGSizeEqualToSize(g_layer.drawableSize, want)) g_layer.drawableSize = want;
@@ -268,7 +268,7 @@ static void *game_thread(void *ctx) {
             pthread_mutex_unlock(&g_mu);
         }
         present();
-        if (g_snapshot) { if (g_paused) usleep(2000); continue; }   // as fast as it goes: nobody is watching
+        if (g_snapshot && g_frames < g_snap_until) { next = now_s(); continue; }   // as fast as it goes: nobody is watching
         // 59.73 frames a second, leaning a little on how much sound is waiting so the device never runs dry or behind
         double lean = 0;
         if (g_au && !g_paused) { double fill = nxgba_audio_fill(g), want = nxgba_audio_target(); lean = fmax(-1, fmin(1, (fill - want) / want)) * 0.006; }
@@ -623,7 +623,12 @@ static void snapshot(NSString *out, uint64_t frames) {
                     [side drawInRect:g_side.frame fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:NO hints:nil];
                     [NSGraphicsContext restoreGraphicsState];
                 }
-                BOOL ok = [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:out atomically:YES];
+                // the window as the screen would show it (the sidebar's glass too); the picture made above is the fallback
+                NSTask *t = [NSTask new]; t.executableURL = [NSURL fileURLWithPath:@"/usr/sbin/screencapture"];
+                t.arguments = @[[NSString stringWithFormat:@"-l%ld", (long)g_win.windowNumber], @"-x", @"-o", out];
+                [NSFileManager.defaultManager removeItemAtPath:out error:nil];
+                BOOL ok = [t launchAndReturnError:nil]; if (ok) { [t waitUntilExit]; ok = t.terminationStatus == 0 && [NSFileManager.defaultManager fileExistsAtPath:out]; }
+                if (!ok || getenv("NXGBA_SNAPSHOT_COMPOSITE")) ok = [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:out atomically:YES];
                 pthread_mutex_lock(&g_mu); nxgba_info i; nxgba_get_info(g, &i); pthread_mutex_unlock(&g_mu);
                 printf("{\"snapshot\": %s, \"frames\": %llu, \"native_blocks\": %llu, \"fallback_steps\": %llu, \"paused\": %d, \"state\": %d}\n", ok ? "true" : "false",
                        (unsigned long long)i.frames, (unsigned long long)i.native_blocks, (unsigned long long)i.fallback_steps, (int)g_paused, front_qs_gba_state(1, 0));
@@ -661,17 +666,20 @@ int main(int argc, const char **argv) {
         g_snapshot = getenv("NXGBA_SNAPSHOT") != NULL;
 
         NSApplication *app = [NSApplication sharedApplication]; App *del = [App new]; app.delegate = del;
-        [app setActivationPolicy:g_snapshot ? NSApplicationActivationPolicyProhibited : NSApplicationActivationPolicyRegular];
+        [app setActivationPolicy:g_snapshot ? NSApplicationActivationPolicyAccessory : NSApplicationActivationPolicyRegular];
         if (!metal_start()) { LOG("Metal is not available"); return 1; }
         NSRect r = NSMakeRect(0, 0, 1200, 800);
         NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
-        g_win = g_snapshot ? [[OffscreenWindow alloc] initWithContentRect:r styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO]
+        g_win = g_snapshot ? [[OffscreenWindow alloc] initWithContentRect:r styleMask:style backing:NSBackingStoreBuffered defer:NO]
                            : [[NSWindow alloc] initWithContentRect:r styleMask:style backing:NSBackingStoreBuffered defer:NO];
         g_win.title = g_name; g_win.delegate = del; g_win.releasedWhenClosed = NO; g_win.minSize = NSMakeSize(480, 320); g_win.backgroundColor = NSColor.blackColor;
         g_win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary; g_win.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         g_view = [[GameView alloc] initWithFrame:r]; g_view.wantsLayer = YES; g_win.contentView = g_view;
         settings_apply(); cheats_load();
-        if (g_snapshot) { [g_win setFrameOrigin:NSMakePoint(-30000, -30000)]; }
+        if (g_snapshot) {   // a real window, kept off every screen and never in front
+            g_snap_until = (e = getenv("NXGBA_SNAPSHOT_FRAMES")) ? strtoull(e, NULL, 10) : 600;
+            g_win.ignoresMouseEvents = YES; [g_win setFrameOrigin:NSMakePoint(-30000, -30000)]; [g_win orderFrontRegardless]; g_layer.displaySyncEnabled = NO;
+        }
         else {
             menus(del); [g_win center]; [g_win setFrameAutosaveName:[@"NXGBA." stringByAppendingString:g_id]];
             [g_win makeKeyAndOrderFront:nil]; [g_win makeFirstResponder:g_view]; [app activateIgnoringOtherApps:YES];
@@ -680,7 +688,7 @@ int main(int argc, const char **argv) {
             audio_start(); audio_apply(); fps_counter();
         }
         pthread_t th; pthread_create(&th, NULL, game_thread, NULL);
-        if (g_snapshot) snapshot(@(getenv("NXGBA_SNAPSHOT")), (e = getenv("NXGBA_SNAPSHOT_FRAMES")) ? strtoull(e, NULL, 10) : 600);
+        if (g_snapshot) snapshot(@(getenv("NXGBA_SNAPSHOT")), g_snap_until);
         [app run];
     }
     return 0;
