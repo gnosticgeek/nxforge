@@ -4,6 +4,12 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.11.0 (2026-11-22)
+
+Ships in NXForge 0.58.0.
+
+- **Game Boy Advance games**: General has a Play group (Rewind, Fast forward speed, Fast forward key, Slow motion); Graphics has a Screen filter picker (Off, CRT, LCD grid) in place of the CRT switch, Handheld colours as a choice (Off, GBA, GBA SP) and Frame blending; Around the picture defaults to the glow, which in a GBA game is ambient edges; Controls lists Rewind and Slow motion. Two new functions in `quick_settings_mac.h`, `front_qs_gba_value` and `front_qs_gba_value_set`, carry the settings with several values; the Switch player answers 0 and does nothing. Nothing changes in a Switch game.
+
 ## 0.10.0 (2026-11-22)
 
 Ships in NXForge 0.56.0.

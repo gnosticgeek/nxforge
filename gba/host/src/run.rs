@@ -2,13 +2,15 @@
 //!
 //!   nxgba-run <rom.gba> [--lib game.dylib] [--frames N] [--demo] [--input script] [--sav file]
 //!             [--png out.png] [--sheet out.png [--every K] [--cols C]] [--color raw|lcd]
-//!             [--wav out.wav [--original]] [--state-check] [--misses file] [--json]
+//!             [--wav out.wav [--original]] [--state-check] [--rewind-check] [--misses file] [--json]
 //!
 //! Without --lib the interpreter runs the game (the reference the recompiled run is compared with: --json prints the
 //! last frame's hash either way). --demo taps Start and A now and then, as gba-recomp's build profile does; --input
 //! is a gba-recomp input script ("gba-input v1", then "<frame> <hex mask of buttons up>" lines).
 //! --state-check saves a state half way, runs on, loads it and runs the same frames again: the two runs must end on
-//! the same picture. --wav renders the sound as the player would (Enhanced unless --original) at 48 kHz.
+//! the same picture. --rewind-check keeps 30 s of rewind as the player does (a snapshot every 4 frames), steps back 30
+//! snapshots at the end, runs the same frames again and checks it ends on the same picture; it prints what the snapshots
+//! took. --wav renders the sound as the player would (Enhanced unless --original) at 48 kHz.
 
 use nxgba::NxGba;
 
@@ -140,7 +142,7 @@ fn real_main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (mut rom, mut lib, mut sav, mut png, mut sheet, mut wav, mut input, mut misses) = (None, None, None, None, None, None, None, None);
     let (mut frames, mut every, mut cols, mut color) = (600u64, 0u64, 6usize, 1u32);
-    let (mut demo, mut original, mut state_check, mut json) = (false, false, false, false);
+    let (mut demo, mut original, mut state_check, mut json, mut rewind_check) = (false, false, false, false, false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let mut val = |name: &str| it.next().cloned().ok_or(format!("{name} needs a value"));
@@ -155,10 +157,11 @@ fn real_main() -> Result<(), String> {
             "--wav" => wav = Some(val("--wav")?),
             "--input" => input = Some(load_input(&val("--input")?)?),
             "--misses" => misses = Some(val("--misses")?),
-            "--color" => color = (val("--color")? != "raw") as u32,
+            "--color" => color = match val("--color")?.as_str() { "raw" => 0, "sp" => 2, _ => 1 },
             "--demo" => demo = true,
             "--original" => original = true,
             "--state-check" => state_check = true,
+            "--rewind-check" => rewind_check = true,
             "--json" => json = true,
             other if rom.is_none() && !other.starts_with("--") => rom = Some(other.to_string()),
             other => return Err(format!("unexpected argument {other:?}")),
@@ -192,6 +195,10 @@ fn real_main() -> Result<(), String> {
     let mut renderer = nxgba::audio::Renderer::new(48000.0, !original);
     let mut wanted = 0f64;
     let mut state_hash: Option<(u64, u64)> = None; // (frame the state was taken at, hash at the end of the first pass)
+    if rewind_check {
+        g.rewind_set(30, 4);
+    }
+    let mut rewound: Option<(u64, u64)> = None; // (frame stepped back to, hash at the end of the first pass)
     let mut f = 0u64;
     // frames the high-quality MP2K/GAX/driver mix was the one playing, and when it first and last switched
     let (mut hle_frames, mut hle_first, mut hle_switches, mut was_live) = (0u64, None::<u64>, 0u32, false);
@@ -223,6 +230,36 @@ fn real_main() -> Result<(), String> {
             let mut px = vec![0u8; 240 * 160 * 4];
             nxgba::rgba(&g.machine().bus.framebuffer, &mut px, color);
             shots.push(px);
+        }
+        if rewind_check && f == frames {
+            let h = fb_hash(&g.machine().bus.framebuffer) | 1;
+            match rewound {
+                None => {
+                    let (held, bytes, pushes, ns) = g.rewind.as_ref().map_or((0.0, 0, 0, 0), |r| (r.seconds(), r.bytes, r.pushes, r.push_ns));
+                    eprintln!(
+                        "rewind: {held:.1} s held in {:.1} MB ({:.1} KB a snapshot), {:.3} ms to take one",
+                        bytes as f64 / 1e6,
+                        bytes as f64 / 1e3 / g.rewind.as_ref().map_or(1, |r| r.len().max(1)) as f64,
+                        ns as f64 / 1e6 / pushes.max(1) as f64
+                    );
+                    let t = std::time::Instant::now();
+                    for _ in 0..30 {
+                        if !g.rewind_step() {
+                            return Err("rewind check failed: fewer than 30 snapshots held".into());
+                        }
+                    }
+                    eprintln!("rewind: 30 steps back in {:.3} ms", t.elapsed().as_secs_f64() * 1e3);
+                    f = g.machine().bus.frames;
+                    rewound = Some((f, h));
+                    shots.truncate((f / every.max(1)) as usize);
+                }
+                Some((at, h0)) => {
+                    if h != h0 {
+                        return Err(format!("rewind check failed: the run from frame {at} after stepping back ended on a different picture ({h:016x} against {h0:016x})"));
+                    }
+                    eprintln!("rewind check passed: stepped back to frame {at}, ran on, and the run ended on the same picture");
+                }
+            }
         }
         if state_check && state_hash.is_none() && f == frames / 2 {
             g.state_save(1);
