@@ -12,7 +12,20 @@ enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
 enum StageFilter: String, CaseIterable {
     case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", gba = "GBA", notBuilt = "Not built yet"
     /// the filters that mean something in a collection: Built has no unbuilt games
-    static func shown(_ scope: StageScope) -> [StageFilter] { scope == .built ? allCases.filter { $0 != .notBuilt } : allCases }
+    static func shown(_ scope: StageScope, _ s: Settings) -> [StageFilter] {
+        allCases.filter { f in
+            if scope == .built && f == .notBuilt { return false }
+            return f.console.map(s.shows) ?? true   // a system switched off in Settings has no filter
+        }
+    }
+    var console: Console? {
+        switch self {
+        case .switch2: .switch2
+        case .switch1: .switch1
+        case .gba: .gba
+        default: nil
+        }
+    }
 }
 
 /// A game as the front end shows it: a Library game with its build, or an app built from files outside the games folder.
@@ -81,8 +94,14 @@ enum StageLook {
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options, zl, zr, r3, l3, volUp, volDown }
 
 extension AppModel {
-    /// Every game the front end knows, built ones first, then the most recently played, then by name.
+    /// Every game the front end knows, built ones first, then the most recently played, then by name. A system switched off in
+    /// Settings › Library leaves its games out of everything built on this list (Home, Discover, Theatre and its Museum wall).
     func stageGames() -> [StageGame] {
+        let s = settings
+        return allStageGames().filter { s.shows($0.console) }
+    }
+
+    private func allStageGames() -> [StageGame] {
         let _ = revision
         let builds = libraryBuilds(), plays = Playtime.load()
         var out: [StageGame] = [], apps = Set<String>(), titles = Set<String>()
@@ -150,6 +169,16 @@ extension AppModel {
 
     static func lastPlayed(_ games: [StageGame]) -> StageGame? {
         games.filter { $0.last != nil }.max { ($0.last ?? .distantPast) < ($1.last ?? .distantPast) }
+    }
+
+    /// Settings › Library › Systems: shows a system's games everywhere, or hides them (nothing is deleted). A filter left on a
+    /// hidden system goes back to All.
+    func setSystemShown(_ c: Console, _ on: Bool) {
+        settings.setShows(c, on)
+        if let f = stageFilter.console, !settings.shows(f) { stageFilter = .all }
+        if let f = libraryConsole.console, !settings.shows(f) { libraryConsole = .all }
+        if let f = buildConsole.console, !settings.shows(f) { buildConsole = .all }
+        revision += 1
     }
 
     /// Adds the game to Favourites (Home's shelf starts with them, and Discover has a filter), or takes it off
@@ -316,6 +345,11 @@ extension AppModel {
         case .theatreTilt: flip(&settings.theatreTilt)
         case .theatreCollector: flip(&settings.theatreCollector)
         case .museumLighting: cycle(&settings.museumLighting)
+        case .showSwitch2, .showSwitch1, .showGBA:
+            let c: Console = row == .showSwitch2 ? .switch2 : row == .showSwitch1 ? .switch1 : .gba
+            var on = settings.shows(c)
+            flip(&on)
+            setSystemShown(c, on)
         case .cloudSaves:
             var on = settings.cloudSavesAll
             flip(&on)
@@ -928,7 +962,7 @@ struct StageLibrary: View {
                 scopes
                 Spacer(minLength: 8)
                 HStack(spacing: 8) {
-                    ForEach(StageFilter.shown(model.stageScope), id: \.self) { f in
+                    ForEach(StageFilter.shown(model.stageScope, model.settings), id: \.self) { f in
                         let on = model.stageFilter == f
                         Button { model.stageFilter = f } label: {
                             HStack(spacing: 7) {
@@ -1021,7 +1055,7 @@ struct StageLibrary: View {
                 let n = sc == .built ? all.filter { $0.app != nil }.count : all.count
                 Button {
                     model.stageScope = sc
-                    if !StageFilter.shown(sc).contains(model.stageFilter) { model.stageFilter = .all }
+                    if !StageFilter.shown(sc, model.settings).contains(model.stageFilter) { model.stageFilter = .all }
                 } label: {
                     HStack(spacing: 6) {
                         Text(sc.rawValue).font(.system(size: 13, weight: .semibold))

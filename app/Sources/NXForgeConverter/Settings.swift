@@ -155,6 +155,16 @@ struct Settings: Codable, Equatable {
     var theatreMusicFolder: String?
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
+    /// the systems switched off in Settings › Library (Console raw values): their games and builds are kept but not shown anywhere
+    var hiddenSystems: [String] = []
+
+    /// whether a system's games are shown (Settings › Library › Systems)
+    func shows(_ c: Console) -> Bool { !hiddenSystems.contains(c.rawValue) }
+    /// switches a system's games on or off
+    mutating func setShows(_ c: Console, _ on: Bool) {
+        hiddenSystems.removeAll { $0 == c.rawValue }
+        if !on { hiddenSystems.append(c.rawValue) }
+    }
 
     static let coverSizes: ClosedRange<Double> = 110...280
 
@@ -181,6 +191,7 @@ struct Settings: Codable, Equatable {
         case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
         case theatreLaunch = "theatre_launch", theatreRumble = "theatre_rumble"
         case theatreTilt = "theatre_tilt", theatreCollector = "theatre_collector", completed, museumLighting = "theatre_museum_lighting"
+        case hiddenSystems = "hidden_systems"
     }
 
     init() {}
@@ -257,6 +268,7 @@ struct Settings: Codable, Equatable {
         theatreCollector = (try? c.decodeIfPresent(Bool.self, forKey: .theatreCollector)) ?? true
         museumLighting = (try? c.decodeIfPresent(MuseumLighting.self, forKey: .museumLighting)).flatMap { $0 } ?? .evening
         completed = (try? c.decodeIfPresent([String].self, forKey: .completed)) ?? []
+        hiddenSystems = (try? c.decodeIfPresent([String].self, forKey: .hiddenSystems)) ?? []
         theatreSeen = try? c.decodeIfPresent([String].self, forKey: .theatreSeen)
         theatreMusicFolder = try? c.decodeIfPresent(String.self, forKey: .theatreMusicFolder)
     }

@@ -43,7 +43,12 @@ enum Console: String, CaseIterable {
 }
 
 /// The Builds page's console filter
-enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance" }
+enum ConsoleFilter: String, CaseIterable {
+    case all = "All", switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance"
+    var console: Console? { Console(rawValue: rawValue) }
+    /// the filters for the systems switched on in Settings
+    static func shown(_ s: Settings) -> [ConsoleFilter] { allCases.filter { $0.console.map(s.shows) ?? true } }
+}
 
 @MainActor @Observable
 final class AppModel {
