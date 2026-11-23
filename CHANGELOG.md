@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.60.3 (2026-11-23)
+
+- **No more crunching behind the music after an audio hiccup** (layer patch audren-refill): the game's sound is mixed 5 ms at a time and the player keeps four of those blocks queued for the sound card. After a hiccup had taken the queue down to one block it could stay there for good: the mixer waited at least 4.5 ms between blocks, and wake-ups that came half a millisecond late made it exactly as fast as the card, so every late wake-up after that was a 5 ms gap of silence, about three a second. Tom heard it as crunching in Ocarina of Time's Water Temple; the log shows 25 minutes of it on the MacBook Pro's speakers (1.0 blocks queued instead of 4.0, 20-36 gaps per 2000 blocks), cleared only when the sound moved to AirPods. Now, once fewer than two blocks are queued, the mixer runs 2.5 ms apart until all four are queued again. A simulated run with late wake-ups goes from 0.98 blocks and 32 gaps to 4.00 and none. Any game can hit it. Games get it when they are updated (Update or Convert again; the shader chain is unchanged, so no shader rebuild).
+
 ## 0.60.2 (2026-11-23)
 
 - **The Convert page shows a NUP's real icon, and drops a false warning** (Converter 0.29.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): `scripts/source_info.py` saves the icon packed in a NUP (`NXF_ICON_DIR`) so the page has it before any build, and it no longer warns "no base game in this NUP" when the update carries its own code and RomFS, which is the whole game as packers write it (Mario Kart World 1.8.0's 23.5 GB update). The build log still prints that line. App and helper script only, no engine change.
