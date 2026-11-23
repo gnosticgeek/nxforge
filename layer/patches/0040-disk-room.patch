@@ -114,10 +114,10 @@ index 2626e88c7b80c7175641db24b55a5b0b2cab0456..560adb10324b7d7a88ca114a8c344ea3
          old = self.root / 'NXForge/metallib'
          for target in ('mac', 'ios'):
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 4b39b57032365096cba6c4f9a8c0480a8856cff9..4b5957a4418f3ee8697b80692dfad5cc01aef25b 100755
+index 088e8718c491e0be03cda82448e11191067a1cb6..065349ff6c4fe6745ca065f148272df12a19a1d8 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3402,10 +3402,14 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+@@ -3401,10 +3401,14 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
  PSO_BASE_JOBS = int(os.environ.get('DM_PSO_BASE_JOBS') or 1)   # NXForge: metal-tt runs at a time for the pipeline archive's batches of bases (pso_offline.py --base-jobs)
  
  
@@ -133,7 +133,7 @@ index 4b39b57032365096cba6c4f9a8c0480a8856cff9..4b5957a4418f3ee8697b80692dfad5cc
      them in the build folder, NXFORGE_SCRATCH=<folder> names another place. Only temporary files: every cache and output stays in the build folder"""
      import atexit
      want = environ.get('NXFORGE_SCRATCH', '')
-@@ -3417,6 +3421,11 @@ def scratch_folder(work, gid, environ=os.environ):
+@@ -3416,6 +3420,11 @@ def scratch_folder(work, gid, environ=os.environ):
              if can_clone(work): return None
          except OSError: return None
          d = Path.home() / 'Library/Caches/NXForge/scratch' / gid

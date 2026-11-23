@@ -8,12 +8,13 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
  dm/tools/lint_c_baseline.tsv         |  3 +--
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
+ dm/tools/tests/test_nso_match.py     |  2 +-
  dm/tools/tests/test_regress.py       | 14 +++++++-------
  dm/tools/tests/test_triage_report.py |  8 +++++---
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 25 +++++++++++++++----------
- 9 files changed, 58 insertions(+), 29 deletions(-)
+ 10 files changed, 59 insertions(+), 30 deletions(-)
 
 diff --git a/dm/gfx/tests/t_zero_depth.m b/dm/gfx/tests/t_zero_depth.m
 index 854ffc481eebd29493e9ef2f23fd8248a396f1e6..8c0583d25564a5b393740abf267b93f5d5cb9ac8 100644
@@ -86,6 +87,19 @@ index d21d22802d418e5322f60850d42f699a5b999d42..293e6e93c6f59de41fd0ee86a352b397
              self.assertIn(folder, report)
  
      def test_home_redacted(self):
+diff --git a/dm/tools/tests/test_nso_match.py b/dm/tools/tests/test_nso_match.py
+index 679e33f86c6b1efdaccb1ff14a32fd8f8f0b9be8..49730bd43f8eb9fee47c60d00c1c6040630be56a 100644
+--- a/dm/tools/tests/test_nso_match.py
++++ b/dm/tools/tests/test_nso_match.py
+@@ -427,7 +427,7 @@ class Matching(unittest.TestCase):
+                 f"MATCH_CUTS = {{'main': [{rule!r}]}}\n")
+             for bid, expected_nb in ((known, '1f2003d5'), ('00' * 16, 'e0124091')):
+                 img = bytearray(self.original)
+-                ns = dict(__file__=str(root / 'tools/patch_nso.py'), os=os, glob=glob, importlib=importlib,
++                ns: dict = dict(__file__=str(root / 'tools/patch_nso.py'), os=os, glob=glob, importlib=importlib,
+                           MOD=SimpleNamespace(build_id=bytes.fromhex(bid)), IMG=img, TEXT_END=0x2000, NAME='main', outdir=str(root / f'out_{bid}'))
+                 with patch.dict(os.environ, DM_GAME=gid): exec(code, ns)
+                 self.assertEqual([(c[0], c[1], c[2]) for c in ns['ALIAS_APPLIED']], [(0x108, 'e00317aa', expected_nb)])
 diff --git a/dm/tools/tests/test_regress.py b/dm/tools/tests/test_regress.py
 index 0ba9fdb2c451b00d2b90a28d2c128c2642b677ce..e71617a39dd37aba069d1c77acf3fa39ba8de9be 100644
 --- a/dm/tools/tests/test_regress.py

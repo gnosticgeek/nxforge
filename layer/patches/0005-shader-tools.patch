@@ -9,7 +9,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/gfx/tests/test_dmsh_logic.py               |   1 +
  dm/gfx/tools/c1_guard.py                      |  22 ++--
  dm/gfx/tools/cb_extent.py                     |  10 +-
- dm/gfx/tools/dmsh_build.py                    |  78 ++++++++++---
+ dm/gfx/tools/dmsh_build.py                    |  80 ++++++++++---
  dm/gfx/tools/dmsh_mtlcache.py                 |  76 ++++++++++--
  dm/gfx/tools/dmsh_pch.py                      |  52 ++++++++-
  dm/gfx/tools/own_compilers.py                 |  41 ++++++-
@@ -22,7 +22,7 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  dm/tools/tests/test_pso_offline.py            |  54 ++++++++-
  dm/tools/tests/test_shader_pch.py             |  16 ++-
  dm/tools/tests/test_shader_toolchain_cache.py |  64 +++++++++-
- 17 files changed, 594 insertions(+), 88 deletions(-)
+ 17 files changed, 595 insertions(+), 89 deletions(-)
 
 diff --git a/dm/gfx/tests/test_dmsh_ampere_mem.py b/dm/gfx/tests/test_dmsh_ampere_mem.py
 index e9500a30fbfe21162b41acd3e61e056ef8439cfe..06a6705770ccbf478875197afe1ad67bae841293 100644
@@ -131,7 +131,7 @@ index 54207b2d99064e2e2d17ddbb6b19a61809754e6c..bc68ddf8b4c7e8e3393ea22eaa53e4ac
  
  
 diff --git a/dm/gfx/tools/dmsh_build.py b/dm/gfx/tools/dmsh_build.py
-index e156e3cac840262e5bf09b23987d1e9da97c13a9..beb485a38a8f4b426fed86c69c4b8155ab7a8f94 100644
+index e156e3cac840262e5bf09b23987d1e9da97c13a9..77b1619ca1708210507f154cc93031b258638c74 100644
 --- a/dm/gfx/tools/dmsh_build.py
 +++ b/dm/gfx/tools/dmsh_build.py
 @@ -7,7 +7,7 @@
@@ -263,6 +263,15 @@ index e156e3cac840262e5bf09b23987d1e9da97c13a9..beb485a38a8f4b426fed86c69c4b8155
      if j['stage'] == 'ps': src = dmsh_rewrite.frag_z_snap(src)[0]   # gl_FragCoord.z against a depth of its own surface (see frag_z_snap)
      try: src = dmsh_rewrite.uniform_tests(src)   # a uniform word tested against constants read by a volatile load per test, so the front end folds no switch (see uniform_tests)
      except ValueError as e: return 'uniform tests rewrite failed', str(e)[:160], None
+@@ -958,7 +991,7 @@ def finish(key, w, j, c1):
+         src, full = dmsh_entry.vs_depth(src); open(msl, 'w').write(full + capture)
+     fu = dmsh_entry.fs_uint(src) if j['stage'] == 'ps' else None   # the typed-output entry point (see fs_uint); the analysis below uses the source with only main0
+     shared = dmsh_side.shared_body(src) if fu else None   # it calls main0's body; fs_uint gives none for a main0 whose shape it does not know
+-    if shared: plain = src; open(msl, 'w').write(shared + fu)
++    if shared and fu: plain = src; open(msl, 'w').write(shared + fu)   # NXForge: fu is set when shared is (lint_python)
+     else: fu = None
+     try: binds = dmsh_reflect.reflect(key, mesh['kind'] if mesh else j['stage'], src, res)   # before the compile: a pixel shader's readable-tile version needs its texture slots (ps_libraries)
+     except ValueError as e: return 'reflection failed', str(e)[:160], None
 @@ -1026,6 +1059,7 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
          _m = OUT_KEY.match(_n)
          if _m and owned_output(_m.group(1)): os.unlink(os.path.join(_d, _n))
@@ -344,7 +353,7 @@ index e156e3cac840262e5bf09b23987d1e9da97c13a9..beb485a38a8f4b426fed86c69c4b8155
        f'{PULL_STATS["unit"]} vertex shaders\' libraries cut from one compile (dmsh_side.vs_unit), {PULL_STATS["unit failed"]} compiled each from its own source instead')
  print('mesh libraries (<vertex>_<geometry>_m3, dmsh_mesh.py): ' + (', '.join(f'{k} {v}' for k, v in MESH_STATS.items()) or 'none'))
  print(MTL.summary())
-+print(MTL.prune(), flush=True)
++if isinstance(MTL, dmsh_mtlcache.Cache): print(MTL.prune(), flush=True)   # NXForge: no cache to prune for a sources-only build
  for lvl in [k for k in st if k != 'ok']:
      for e, n in collections.Counter(r[2] for r in res if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
  ok = [r[3] for r in res if r[1] == 'ok']
