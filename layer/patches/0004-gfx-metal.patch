@@ -23,7 +23,7 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/tests/t_dispatch_zero.m     |   2 +-
  dm/gfx/tests/t_dlss_mfx.m          |   2 +-
  dm/gfx/tests/t_present_crop.m      | 118 ++++
- dm/gfx/tests/t_present_rescue.m    |  30 +-
+ dm/gfx/tests/t_present_rescue.m    |  31 +-
  dm/gfx/tests/t_pso_depth_stencil.m |   2 +-
  dm/gfx/tests/t_pso_msaa.m          |   2 +-
  dm/gfx/tests/t_pso_pending.m       |   2 +-
@@ -32,7 +32,7 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/tests/t_tg_spill.m          |   2 +-
  dm/gfx/tests/t_upscaler_mfx.m      |   2 +-
  dm/gfx/tests/t_view_swizzle.m      |   2 +-
- 27 files changed, 1309 insertions(+), 143 deletions(-)
+ 27 files changed, 1310 insertions(+), 143 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index 184057a1c38bdf625378a8206b15b83689dff097..23f1345705a9016228ef101ffb575360fe30092a 100644
@@ -2609,10 +2609,18 @@ index 10e45f577e3a476d10d1599b02e880137ce69119..a33e72bacc3a009bcb28d6b3adfedd38
          smallD.storageMode=MTLStorageModePrivate;smallD.usage=MTLTextureUsageRenderTarget;
          id<MTLTexture> small=[g_dev newTextureWithDescriptor:smallD];int whole[4]={0},invalidCrop[4]={63,0,2,2};
 diff --git a/dm/gfx/tests/t_present_rescue.m b/dm/gfx/tests/t_present_rescue.m
-index 47b5a18b45dce8e4d491d218af006074c86b8d49..a23c0df3e5e44409fa376eabe01f6a59ab02c77c 100644
+index 47b5a18b45dce8e4d491d218af006074c86b8d49..690d80e9c1379d951143f1f8c0208af504258ea0 100644
 --- a/dm/gfx/tests/t_present_rescue.m
 +++ b/dm/gfx/tests/t_present_rescue.m
-@@ -132,22 +132,18 @@ static void startup_rescue(void) {
+@@ -26,6 +26,7 @@
+ @interface RescueUpdate : NSObject
+ @property CFTimeInterval targetTimestamp;
+ @property CFTimeInterval targetPresentationTimestamp;
++@property(nonatomic, strong) id<CAMetalDrawable> drawable;   // NXForge: the callback asks the drawable's texture about frame interpolation (nxf_fi_callback_ok); none here
+ @end
+ @implementation RescueUpdate
+ @end
+@@ -132,22 +133,18 @@ static void startup_rescue(void) {
      CHECK("rescue releases a link published after the last enqueue", link.invalidated && !g_link && !g_link_owns_layer);
      g_link_started = 0; g_link = nil; test_fullscreen = test_screen_hz = 0;
  }
@@ -2643,7 +2651,7 @@ index 47b5a18b45dce8e4d491d218af006074c86b8d49..a23c0df3e5e44409fa376eabe01f6a59
      for (int lat = 1; lat <= 2; lat++) for (int variable = 0; variable <= 1; variable++) for (int full = 0; full <= 1; full++) {
          g_present_latency = lat; test_variable_refresh = variable; test_fullscreen = full; link_sync();
          CHECK("DM_PRESENT_LATENCY wins for every screen and window mode", link.preferredFrameLatency == lat);
-@@ -173,7 +169,8 @@ static void latency(void) {   // Only variable-refresh fullscreen needs the late
+@@ -173,7 +170,8 @@ static void latency(void) {   // Only variable-refresh fullscreen needs the late
      g_present_latency = 0; test_fullscreen = test_variable_refresh = 0; link_sync(); g_link = nil; g_link_started = 0;
  }
  static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except in fullscreen on a fixed-rate screen, where it stays at 60 Hz and the present interval paces the 30.
@@ -2653,7 +2661,7 @@ index 47b5a18b45dce8e4d491d218af006074c86b8d49..a23c0df3e5e44409fa376eabe01f6a59
      SilentDisplayLink *link = [SilentDisplayLink new]; g_link = link; g_link_started = 1;
      g_link_drain_on = 0;   // standing frames not drained (DM_PRESENT_DRAIN=0, iOS): a window keeps the 30 Hz link
      link_sync(); CHECK("a window at 30 fps takes the 30 Hz link", g_link_mode == 3 && link.preferredFrameRateRange.preferred == 30 && mtl_link_rate() == 30);
-@@ -187,10 +184,11 @@ static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except i
+@@ -187,10 +185,11 @@ static void thirty(void) {   // A 30 fps target runs the link at 30 Hz, except i
      test_variable_refresh = 0; link_sync(); CHECK("with the drain fixed-rate fullscreen at 30 fps keeps the 60 Hz link", g_link_mode == 1);
      test_fullscreen = 0; link_sync(); CHECK("with the drain, back in a window: the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60);
      test_game_fps = 60; link_sync(); CHECK("60 fps in a window: the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60);
@@ -2667,7 +2675,7 @@ index 47b5a18b45dce8e4d491d218af006074c86b8d49..a23c0df3e5e44409fa376eabe01f6a59
      SilentDisplayLink *link = [SilentDisplayLink new]; g_link = link; g_link_started = 1;
      link_sync(); CHECK("a window on a 120 Hz variable-refresh screen keeps the 60 Hz link", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
      test_fullscreen = 1; link_sync();
-@@ -211,7 +209,7 @@ static void vrr120(void) {   // 60 fps in fullscreen on a variable-refresh scree
+@@ -211,7 +210,7 @@ static void vrr120(void) {   // 60 fps in fullscreen on a variable-refresh scree
      test_game_fps = 60; link_sync(); CHECK("back at 60 fps: the 120 Hz link", g_link_mode == 2);
      test_fullscreen = 0; link_sync(); CHECK("leaving fullscreen: the 60 Hz link again", g_link_mode == 1 && link.preferredFrameRateRange.preferred == 60 && mtl_link_rate() == 60);
      g_dm_present_link = 2; link_sync(); CHECK("DM_PRESENT_LINK=2 keeps the 120 Hz link in a window", g_link_mode == 2 && test_match_fps == 120);

@@ -219,14 +219,14 @@ index 7a0222334907cbedb0a778e558677abeed091343..bc8f10df63ff93800ed6a04bd466af42
 +    return float4(srgb_decode(t.sample(s, clamp(in.uv * c.rect.zw + c.rect.xy, c.edge.xy, c.edge.zw)).rgb), 1);
 +}
 diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
-index 290151da81d9c0fd8a401e178df6795876cd7723..5503e3544623ab185aa35bb1f0b34805ee25f7dd 100644
+index 290151da81d9c0fd8a401e178df6795876cd7723..c8e759313f6b587cd7dc453f23dd3d13ac99da0a 100644
 --- a/dm/gfx/nvn/dmsh_chain.h
 +++ b/dm/gfx/nvn/dmsh_chain.h
 @@ -1,3 +1,3 @@
  // Generated file (dm/gfx/tools/dmsh_chain.py --header): the B shader library translation chain version this source tree expects (default options), one for every game;
  // the host loads only <library dir>/b-<V>/. Run dmsh_chain.py --header after changing the chain's tools and commit this file with the change
 -#define DMSH_CHAIN "c1a4ab6ac3c4"
-+#define DMSH_CHAIN "010a9f9f7546"
++#define DMSH_CHAIN "910b3f8eaae9"
 diff --git a/dm/gfx/nvn/hdr.c b/dm/gfx/nvn/hdr.c
 new file mode 100644
 index 0000000000000000000000000000000000000000..2efbcd2df3cd54291bae36eecadc2b22f44f9345
