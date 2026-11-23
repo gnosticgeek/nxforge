@@ -530,7 +530,47 @@ final class AppModel {
 
     /// Build the chosen game, or with plan only say what a build would reuse and redo (--plan).
     /// scratch: the build folder is emptied first, so every step runs again (scratchAsked asks first).
+    /// A real build first fetches and, when a newer NXForge release is out, moves the engine to it (Engine.update), so a build
+    /// never uses an engine the app only learnt was old at its last update check (launch, or an hour ago). Skipped for --plan,
+    /// an engine with local changes, one on upstream nxnative (Get Upstream Now) or on a branch, and when the check fails
+    /// (offline): the build then goes ahead on the engine it has, as before.
     func build(rebuild: String? = nil, plan: Bool = false, scratch: Bool = false) {
+        guard !plan, let repo = env?.repo, let e = engine, !e.dirty, e.local == nil, !engineBusy, !run.running,
+              ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil
+        else { startBuild(rebuild: rebuild, plan: plan, scratch: scratch); return }
+        engineBusy = true
+        let before = engineMessage
+        engineMessage = (true, "Checking for a newer engine…")
+        Task.detached {
+            var note: String?
+            let check = try? Engine.checkUpdates(repo)
+            if let u = check, u.count > 0, let release = u.release {
+                do { try Engine.update(repo); note = "NXForge: updated the engine to \(release) before building." }
+                catch { note = "NXForge: \(release) is out but the engine could not update (\(error)); building on the engine it has." }
+            }
+            let ver = Engine.current(repo)
+            let updated = note
+            let found = updated == nil ? nil : try? Engine.checkUpdates(repo)
+            await MainActor.run {
+                self.engineBusy = false
+                if let note = updated {
+                    self.engine = ver
+                    self.engineUpdate = found.flatMap { $0.count > 0 ? $0 : nil }
+                    self.engineMessage = (true, "Updated to \(ver?.short ?? "the newest")")
+                    self.verified = VerifiedGames.load(self.env?.repo)
+                    self.costCache = [:]
+                    self.revision += 1
+                    self.refreshSidebarStatus()
+                } else {
+                    self.engineMessage = check?.count == 0 ? (true, "Up to date") : before
+                }
+                self.startBuild(rebuild: rebuild, plan: plan, scratch: scratch)
+                if let note = updated { self.run.log.insert(note, at: 0) }
+            }
+        }
+    }
+
+    private func startBuild(rebuild: String?, plan: Bool, scratch: Bool) {
         guard let env, let dir = settings.gameDir, let folder = gameFolder else { return }
         let keys = needsKeys ? settings.keys : nil
         if needsKeys && keys == nil { _ = ensureKeys(); return }

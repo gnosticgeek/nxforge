@@ -4,6 +4,12 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.29.2 (2026-11-23)
+
+Shipped in NXForge 0.60.1.
+
+- **Builds use the newest engine.** Build, Rebuild, Rebuild all and scheduled builds first fetch the engine's releases (a few seconds, "Checking for a newer engine…") and, when a newer `vX.Y.Z` is out, fast-forward the engine to it, then build; the build log's first line says so. Until now a build used whatever the checkout held, which only moved when Updates was pressed or at launch with Update automatically on, and the hourly re-check only ran when the window came back to the front. Skipped for a build plan, an engine with local changes, one on upstream nxnative (Get Upstream Now) or on a branch, and when GitHub can't be reached: the build then goes ahead on the engine it has.
+
 ## 0.29.1 (2026-11-23)
 
 Shipped in NXForge 0.59.1.
