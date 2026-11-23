@@ -1,6 +1,7 @@
 // What the window shows about the game in a folder: its name and icon, from the last conversion's output
 // (the extracted control data's icon.jpg, the app's CFBundleName), else the name a NUP's control data or its profile gives
-// (SourceInfo), else the base NSP's or the .nup's file name.
+// (SourceInfo), else the base NSP's or the .nup's file name. With no build folder (the clean-up removes it), a NUP's icon is
+// the one source_info.py saved from the container.
 import Foundation
 
 struct GameInfo: Hashable {
@@ -18,6 +19,7 @@ struct GameInfo: Hashable {
             let icons = ((try? fm.contentsOfDirectory(atPath: ex)) ?? []).map { URL(fileURLWithPath: "\(ex)/\($0)/icon.jpg") }.filter { fm.fileExists(atPath: $0.path) }
             return icons.max { (mtime($0) ?? .distantPast) < (mtime($1) ?? .distantPast) }
         }
+        let sourceIcon = source?.icon.flatMap { fm.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil }
         let fromApp = Engine.apps(in: dir).first.flatMap { a -> String? in
             (NSDictionary(contentsOfFile: a.app + "/Contents/Info.plist")?["CFBundleName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         }
@@ -28,7 +30,7 @@ struct GameInfo: Hashable {
             guard n.contains("000]") || !n.contains("[") else { return nil }
             return String(n.components(separatedBy: " [")[0]).trimmingCharacters(in: .whitespaces)
         }.first
-        return GameInfo(name: fromApp ?? fromSource ?? fromNSP ?? dir.url.lastPathComponent, icon: icon)
+        return GameInfo(name: fromApp ?? fromSource ?? fromNSP ?? dir.url.lastPathComponent, icon: icon ?? sourceIcon)
     }
 
     private static func mtime(_ u: URL) -> Date? {

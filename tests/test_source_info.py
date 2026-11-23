@@ -49,11 +49,29 @@ class Nup(unittest.TestCase):
         self.write(main=nso(0x07))
         self.assertFalse(source_info.info(self.path)['zbic'])
 
-    def test_no_base_is_noted(self):
+    def test_no_base_whole_update_is_not_noted(self):   # an update with its own code and RomFS is the whole game as packers write it (Mario Kart World 1.8.0's)
         self.write(base=False)
         i = source_info.info(self.path)
         self.assertFalse(i['base'])
+        self.assertEqual(i['notes'], [])
+
+    def test_no_base_update_without_romfs_is_noted(self):
+        code = {'exefs': t.version()['exefs']}
+        t.write_nup(self.path, [(1, t.TID, t.VER, code, b'')], update_flags=1)
+        i = source_info.info(self.path)
+        self.assertFalse(i['base'])
         self.assertIn('no base game', i['notes'][0])
+
+    def test_icon_saved_for_the_converter(self):   # shown on the Convert page before any build (the clean-up removes extract/'s icon.jpg)
+        self.write()
+        self.assertIsNone(source_info.info(self.path)['icon'])   # no NXF_ICON_DIR: nothing written
+        icons = self.dir.parent / 'icons'
+        with unittest.mock.patch.dict('os.environ', {'NXF_ICON_DIR': str(icons)}):
+            first, again = source_info.info(self.path)['icon'], source_info.info(self.path)['icon']
+        self.assertEqual(first, again)
+        self.assertEqual(Path(first).parent, icons)
+        self.assertTrue(Path(first).name.startswith('040074A01BF12000-') and first.endswith('.jpg'))
+        self.assertEqual(Path(first).read_bytes(), b'\xff\xd8 icon')   # the base game's, as t.META carries it
 
     def test_packages_win_over_the_nup(self):
         self.write()
