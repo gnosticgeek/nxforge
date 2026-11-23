@@ -194,6 +194,9 @@ struct ConverterApp: App {
             // NXC_EDGES=small or large; NXC_SAVER=1 the screensaver; NXC_VOLUME=<0-100> the volume card
             if let m = env["NXC_THEATREMENU"] { model.theatreMenu = (m == "edges" ? TheatreMenuRow.edges : TheatreMenuRow.leave).rawValue }
             if let f = env["NXC_FILTER"] { model.theatreFilter = TheatreFilter(key: f) }
+            // the Museum wall: NXC_LIGHT=<Classic, Daylight, Evening, Neon, Lights out>; NXC_MUSEUMLIGHT=1 the focus on its lighting switch
+            if let l = env["NXC_LIGHT"].flatMap({ n in MuseumLighting.allCases.first { $0.rawValue.lowercased() == n.lowercased() } }) { model.settings.museumLighting = l }
+            if env["NXC_MUSEUMLIGHT"] != nil { model.museumLightFocus = true }
             if let e = env["NXC_EDGES"], let v = TheatreEdges(rawValue: e.capitalized) { model.settings.theatreEdges = v }
             if env["NXC_SAVER"] != nil { model.theatreSaver = true }
             if let v = env["NXC_VOLUME"].flatMap(Int.init) { model.theatreMuted = false; model.settings.theatreVolume = v; model.theatreVolumeTick += 1 }

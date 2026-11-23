@@ -315,6 +315,7 @@ extension AppModel {
         case .theatreRumble: flip(&settings.theatreRumble)
         case .theatreTilt: flip(&settings.theatreTilt)
         case .theatreCollector: flip(&settings.theatreCollector)
+        case .museumLighting: cycle(&settings.museumLighting)
         case .cloudSaves:
             var on = settings.cloudSavesAll
             flip(&on)
