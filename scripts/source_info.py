@@ -85,7 +85,8 @@ def save_icon(data, tid):
     the clean-up removes): <NXF_ICON_DIR>/<title ID>-<first 12 hex of its SHA-256>.jpg (or .png), written once. None without NXF_ICON_DIR or an icon"""
     out = os.environ.get('NXF_ICON_DIR')
     if not out or not data or not pack_nup.image(data): return None
-    f = Path(out) / f'{tid:016X}-{hashlib.sha256(data).hexdigest()[:12]}.{"png" if data[:4] == b"\x89PNG" else "jpg"}'
+    ext = 'png' if data[:4] == b'\x89PNG' else 'jpg'
+    f = Path(out) / f'{tid:016X}-{hashlib.sha256(data).hexdigest()[:12]}.{ext}'
     try:
         if not f.is_file():
             f.parent.mkdir(parents=True, exist_ok=True)
