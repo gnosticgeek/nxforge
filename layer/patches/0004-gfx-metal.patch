@@ -16,7 +16,7 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/nvn/nvn_owner.m             |   2 +
  dm/gfx/tests/Makefile              |  37 +-
  dm/gfx/tests/t_compute_loops.m     |  10 +-
- dm/gfx/tests/t_cpu_tex.m           |  34 +-
+ dm/gfx/tests/t_cpu_tex.m           |  36 +-
  dm/gfx/tests/t_dispatch_barrier.m  |  10 +-
  dm/gfx/tests/t_dispatch_own.m      |   2 +-
  dm/gfx/tests/t_dispatch_pipeline.m |  12 +-
@@ -32,7 +32,7 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  dm/gfx/tests/t_tg_spill.m          |   2 +-
  dm/gfx/tests/t_upscaler_mfx.m      |   2 +-
  dm/gfx/tests/t_view_swizzle.m      |   2 +-
- 27 files changed, 1307 insertions(+), 143 deletions(-)
+ 27 files changed, 1309 insertions(+), 143 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index 184057a1c38bdf625378a8206b15b83689dff097..23f1345705a9016228ef101ffb575360fe30092a 100644
@@ -2288,10 +2288,10 @@ index c1ae331c98f82648341aa303d97e4e09f3832e2d..07e3efad87248b0f0dabfb032acf61b0
      mtl_pool_del(mem); mtl_drain(); free(mem);
      printf("t_compute_loops: %d checks, %d failed\n", checks, failed); return failed != 0;
 diff --git a/dm/gfx/tests/t_cpu_tex.m b/dm/gfx/tests/t_cpu_tex.m
-index c922d8f3c6f4f70ed45e887b2996fb5efc633182..12bd2002e3b77d60fc479319fb014c8647e5c1c2 100644
+index c922d8f3c6f4f70ed45e887b2996fb5efc633182..73512ff0764666319b4b796e98b41eb9afcc8122 100644
 --- a/dm/gfx/tests/t_cpu_tex.m
 +++ b/dm/gfx/tests/t_cpu_tex.m
-@@ -116,6 +116,38 @@ static void finalized_upload(int write_after_record) {
+@@ -116,6 +116,40 @@ static void finalized_upload(int write_after_record) {
      CHECK(!tex_cpu_written(&snap), "pool finalization drops retired CPU classification");
      defer_drain(); munmap(mem,len);
  }
@@ -2317,8 +2317,10 @@ index c922d8f3c6f4f70ed45e887b2996fb5efc633182..12bd2002e3b77d60fc479319fb014c86
 +    CHECK(first && first.width == 4, "the packaged texture resolves");
 +    id held = tex_get(serial);
 +    CHECK([held isKindOfClass:[NvPkg class]], "its table entry is an NvPkg");
-+    pthread_mutex_lock(&g_cpu_tex_mu); nvn_hm_del(&g_cpu_tex, &serial); pthread_mutex_unlock(&g_cpu_tex_mu);   // the serial leaves the set, its entry stays (cpu_unc_drop between its deletes and its tex_put)
-+    CHECK(!tex_cpu_written(serial), "the serial is no longer CPU-written");
++    pthread_mutex_lock(&g_cpu_tex_mu);   // the serial leaves its pool's sets, its entry stays (cpu_unc_drop between its deletes and its tex_put)
++    { cpu_pool *cp = cpu_pool_get(((tex_t *)&tex)->pool, 0); if (cp && nvn_hm_del(&cp->live, &serial)) g_cpu_tex_n--; if (cp) nvn_hm_del(&cp->retired, &serial); }
++    pthread_mutex_unlock(&g_cpu_tex_mu);
++    CHECK(!tex_cpu_written((const tex_t *)&tex), "the serial is no longer CPU-written");
 +    id<MTLTexture> again = tex_mtl((const tex_t *)&tex);
 +    CHECK(again && ![(id)again isKindOfClass:[NvPkg class]], "tex_mtl does not hand out the NvPkg");
 +    CHECK(again && again.width == 4 && again.height == 4, "it hands out the entry's texture");
@@ -2330,7 +2332,7 @@ index c922d8f3c6f4f70ed45e887b2996fb5efc633182..12bd2002e3b77d60fc479319fb014c86
  // nvnMemoryPoolFinalize on a game thread while the submit thread walks the texture IDs (pool_gpu, holding g_rmu): the finalize dropped the pool's CPU-written classification before it
  // marked the pool's IDs gone, so a walk in between found a live ID, a pool still set and a texture no longer CPU-written, and tex_mtl_ handed out its packaged entry (an NvPkg) as the
  // texture: "-[NvPkg buffer]: unrecognized selector" in tex_by_id (Ocarina of Time, reference/nvn-objects.md). Here the test holds g_rmu as the walk does while another thread finalizes
-@@ -446,6 +478,6 @@ int main(int argc, const char **argv) { @autoreleasepool {
+@@ -446,6 +480,6 @@ int main(int argc, const char **argv) { @autoreleasepool {
      own.serial = 900002; mtl_tex_init(&own); moved = own; own.magic = 0; mtl_tex_release(&moved);
      CHECK(!own_tex_live(moved.serial), "a copy outliving the object it was initialized in ends the texture");
      retired_classification(); pool_index(); descriptor_replacement();
