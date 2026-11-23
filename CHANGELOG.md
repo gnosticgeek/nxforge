@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.60.1 (2026-11-23)
+
+- **A rebuild always uses the newest engine** (Converter 0.29.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Build and Rebuild now check GitHub first and, when a newer NXForge release is out, move the engine to it before the build starts. Before, the engine only moved when Updates was pressed (or at launch with Update automatically on), so a game rebuilt after 0.60.0 came out, with NXForge open since before it, was built on 0.58.2 again. App only, no engine change.
+
 ## 0.60.0 (2026-11-23)
 
 - **The engine moves to the newest nxnative** (upstream `7d38c8e0`, 215 commits past the last pin `c43a1f7a`). For Ocarina of Time: at a 30 fps cap the dynamic resolution no longer drops to its lowest size whenever a frame would not fit 60 fps (#1954); a 40 fps cap on 120 Hz screens such as a MacBook Pro's (the frame step in ticks of 1/120 s); the taller 16:10 picture's cameras updated in place (Vert+); upstream's own Render scale (0.5 to 1.0). For Mario Kart World: 1.8.0 registered with its shader coverage. Also: pauses and window switches no longer step the frame hold up or play back at double speed (#3174), Switch Pro Controllers' HD rumble and a passive stick fallback, 8BitDo Ultimate 2 rumble, USB Xbox One controllers, the task-payload spill for shaders past Metal's 16 KB, memory trimming under pressure, and several replay speed-ups. Games need a full rebuild to pick the engine up.
