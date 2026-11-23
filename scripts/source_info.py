@@ -3,10 +3,14 @@
 # layout), the two ways Switch 2 games come. Reads only the container's index and a few small files (main.npdm, the main module's NSO header, the NACP); nothing is unpacked.
 # Prints one JSON object: {"kind": "nup" | "dump", "source": the path to give build_ipa_from_nsp.py, "folder": where <title ID>_build and the app go, "title_id", "name", "base": bool,
 #   "updates": [versions], "dlc": count, "romfs_bytes": the newest version's RomFS, uncompressed, "file_bytes": the .nup's size or the dump's files (a dump's two are -1 with NXF_SOURCE_SIZES=0, the quick read), "zbic": whether the newest main module
-#   has ZBIC segments (system 22.0.0 on: needs the zbic package), "zbic_installed", "profile": the dm/games profile's name or null, "notes": [...]}
+#   has ZBIC segments (system 22.0.0 on: needs the zbic package), "zbic_installed", "profile": the dm/games profile's name or null, "notes": [...],
+#   "icon": a NUP's own icon, saved as <NXF_ICON_DIR>/<title ID>-<hash>.jpg|png, or null (no NXF_ICON_DIR, a dump folder, or no icon in the container)}
+# A NUP without a base game is noted (pack_nup.NO_BASE) only when its update lacks its own code or RomFS: an update that carries both is the whole game
+# as packers write it (pack_nup.py's header: every such NUP measured so far, and Mario Kart World 1.8.0's 23.5 GB update, which builds and runs), and the
+# Converter lists it as "Update as the whole game". The build log still says NO_BASE, for the rare update that holds only what changed.
 # Exit 1 with {"error": "..."} when the path is neither (a folder of NSPs is the Converter's own check, with prod.keys).
 # Usage: source_info.py <game.nup | folder>
-import json, os, struct, sys
+import hashlib, json, os, struct, sys
 from pathlib import Path
 from typing import Any
 
@@ -60,7 +64,8 @@ def from_nup(path):
         app, base, vers, dlc = pack_nup.scan(n)
         k = vers[max(vers)] if vers else base
         if k is None: raise Fail(f'{path.name}: no base game and no update')
-        notes = [] if base is not None else [pack_nup.NO_BASE]
+        whole = k.exefs != pack_nup.NO_DIR and k.romfs != pack_nup.NO_DIR   # the update carries its own code and RomFS
+        notes = [] if base is not None or whole else [pack_nup.NO_BASE]
         try: romfs = n.tree_bytes(pack_nup.romfs_of(k, base))
         except pack_nup.Error as e: romfs = 0; notes.append(str(e))
         main = n.child(k.exefs, b'main') if k.exefs != pack_nup.NO_DIR else None
@@ -72,7 +77,21 @@ def from_nup(path):
         meta.update(k.meta())
         name = nacp_name(meta.get(pack_nup.T_NACP))
         return dict(kind='nup', source=str(path), folder=str(path.parent), title_id=f'{app:016X}', name=name, base=base is not None, updates=sorted(vers), dlc=len(dlc),
-                    romfs_bytes=romfs, file_bytes=path.stat().st_size, zbic=zb, notes=notes)
+                    romfs_bytes=romfs, file_bytes=path.stat().st_size, zbic=zb, notes=notes, icon=save_icon(meta.get(pack_nup.T_ICON), app))
+
+
+def save_icon(data, tid):
+    """The container's icon as a file the Converter can show before any build (its icon otherwise comes from the build folder's extract/, which
+    the clean-up removes): <NXF_ICON_DIR>/<title ID>-<first 12 hex of its SHA-256>.jpg (or .png), written once. None without NXF_ICON_DIR or an icon"""
+    out = os.environ.get('NXF_ICON_DIR')
+    if not out or not data or not pack_nup.image(data): return None
+    f = Path(out) / f'{tid:016X}-{hashlib.sha256(data).hexdigest()[:12]}.{"png" if data[:4] == b"\x89PNG" else "jpg"}'
+    try:
+        if not f.is_file():
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f.name + '.part'); tmp.write_bytes(data); tmp.replace(f)
+    except OSError: return None   # no icon is better than no game
+    return str(f)
 
 
 def tree_bytes(d, inner=()):
@@ -179,7 +198,7 @@ def from_dump(folder):
         file_bytes = sizes[str(folder)]
         romfs_bytes = sizes[str(romfs)] if inside else tree_bytes(romfs)[str(romfs)] if romfs else 0
     return dict(kind='dump', source=str(folder), folder=str(folder), title_id=f'{app:016X}', name='', base=base is not None, updates=sorted(vers), dlc=len(dlc),
-                romfs_bytes=romfs_bytes, file_bytes=file_bytes, zbic=zb, notes=[])
+                romfs_bytes=romfs_bytes, file_bytes=file_bytes, zbic=zb, notes=[], icon=None)
 
 
 def info(path):

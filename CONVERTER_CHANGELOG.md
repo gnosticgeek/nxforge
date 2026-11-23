@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.29.3 (2026-11-23)
+
+Shipped in NXForge 0.60.2.
+
+- **A NUP's icon on the Convert page.** The game's icon came only from the last build's working folder, which "Clean up build files" removes, so a rebuilt NUP game showed the gamepad placeholder. The icon packed in the NUP is now saved to `~/Library/Caches/NXForge/icons` when the game is read and shown until a build has its own.
+- **No false "no base game" warning.** A NUP holding only an update whose code and RomFS are both inside it (Mario Kart World 1.8.0) is the whole game, listed as "Update as the whole game"; the orange line now shows only when the update is missing its code or RomFS.
+
 ## 0.29.2 (2026-11-23)
 
 Shipped in NXForge 0.60.1.

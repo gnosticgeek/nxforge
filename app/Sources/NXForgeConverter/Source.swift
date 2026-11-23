@@ -22,9 +22,11 @@ struct SourceInfo: Decodable, Hashable {
     var zbicInstalled: Bool
     var profile: String?
     var notes: [String]
+    /// a NUP's own icon, saved under Disk.cacheDir/icons by the script (NXF_ICON_DIR): the Convert page's icon before any build
+    var icon: String?
 
     enum CodingKeys: String, CodingKey {
-        case kind, source, folder, name, base, updates, dlc, zbic, profile, notes
+        case kind, source, folder, name, base, updates, dlc, zbic, profile, notes, icon
         case titleID = "title_id", romfsBytes = "romfs_bytes", fileBytes = "file_bytes", zbicInstalled = "zbic_installed"
     }
 
@@ -81,7 +83,7 @@ enum Source {
         guard FileManager.default.fileExists(atPath: repo + "/" + helper) else {
             return .failure(ConverterError("this engine has no \(helper): update the engine to build a .nup or a dump folder"))
         }
-        guard let r = run(py, ["-u", repo + "/" + helper, p], env: ["PATH": env.path, "NXF_SOURCE_SIZES": quick ? "0" : "1"], cwd: repo) else { return .failure(ConverterError("cannot start \(py)")) }
+        guard let r = run(py, ["-u", repo + "/" + helper, p], env: ["PATH": env.path, "NXF_SOURCE_SIZES": quick ? "0" : "1", "NXF_ICON_DIR": Disk.cacheDir + "/icons"], cwd: repo) else { return .failure(ConverterError("cannot start \(py)")) }
         let data = Data(r.out.split(separator: "\n").last.map(String.init)?.utf8 ?? "".utf8)
         if let e = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String { return .failure(ConverterError(e)) }
         guard r.ok, let info = try? JSONDecoder().decode(SourceInfo.self, from: data) else {

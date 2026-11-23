@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.60.2 (2026-11-23)
+
+- **The Convert page shows a NUP's real icon, and drops a false warning** (Converter 0.29.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): `scripts/source_info.py` saves the icon packed in a NUP (`NXF_ICON_DIR`) so the page has it before any build, and it no longer warns "no base game in this NUP" when the update carries its own code and RomFS, which is the whole game as packers write it (Mario Kart World 1.8.0's 23.5 GB update). The build log still prints that line. App and helper script only, no engine change.
+
 ## 0.60.1 (2026-11-23)
 
 - **A rebuild always uses the newest engine** (Converter 0.29.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): Build and Rebuild now check GitHub first and, when a newer NXForge release is out, move the engine to it before the build starts. Before, the engine only moved when Updates was pressed (or at launch with Update automatically on), so a game rebuilt after 0.60.0 came out, with NXForge open since before it, was built on 0.58.2 again. App only, no engine change.
