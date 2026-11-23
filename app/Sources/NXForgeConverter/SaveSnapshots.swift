@@ -199,7 +199,7 @@ enum SaveSnapshots {
         let inv = try known ?? inventory(loc.parts)
         try fm.createDirectory(atPath: loc.snapshots, withIntermediateDirectories: true)
         try enoughSpace(loc.snapshots, for: inv)
-        let id = snapshotID()
+        let id = snapshotID(in: loc.snapshots)
         let stage = "\(loc.snapshots)/.making-\(UUID().uuidString)"
         defer { try? fm.removeItem(atPath: stage) }
         try copyChecked(inv, from: loc.parts, to: stage + "/data")
@@ -221,12 +221,16 @@ enum SaveSnapshots {
         return try snapshot(loc, reason: .afterPlay, inventory: inv)
     }
 
-    /// "2026-11-05 21.44.42 3f9a": the time it was made and four random characters, so two in one second differ.
-    private static func snapshotID() -> String {
+    /// "2026-11-05 21.44.42 3f9a": the time it was made and four random characters, so two in one second differ. Four characters can still
+    /// repeat within a second (CI's automaticSnapshotsArePruned did, 2026-11-18), so a name already in the folder is drawn again.
+    private static func snapshotID(in folder: String) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd HH.mm.ss"
-        return f.string(from: Date()) + " " + String(UUID().uuidString.prefix(4)).lowercased()
+        while true {
+            let id = f.string(from: Date()) + " " + String(UUID().uuidString.prefix(4)).lowercased()
+            if !FileManager.default.fileExists(atPath: folder + "/" + id) { return id }
+        }
     }
 
     static let encoder: JSONEncoder = {
@@ -352,7 +356,7 @@ enum SaveSnapshots {
         guard !inv.files.isEmpty else { throw ConverterError("there is no save in it: no files") }
         try fm.createDirectory(atPath: loc.snapshots, withIntermediateDirectories: true)
         try enoughSpace(loc.snapshots, for: inv)
-        let id = snapshotID()
+        let id = snapshotID(in: loc.snapshots)
         let stage = "\(loc.snapshots)/.making-\(UUID().uuidString)"
         defer { try? fm.removeItem(atPath: stage) }
         try copyChecked(inv, from: parts, to: stage + "/data")
