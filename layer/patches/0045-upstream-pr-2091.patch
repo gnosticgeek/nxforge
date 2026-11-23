@@ -48,7 +48,7 @@ index aa87b79c2f805dec795e39a506b8c5337d421bf7..5dfbebeeafc8b0028984329ba047cb25
  - [Repository patches missing under bracketed paths](../../../docs/reference/rewriter.md#repository-patches-missing-under-bracketed-paths): resolved, a build in a folder named with brackets lost this game's frame-step stubs and cuts without an error.
  - [Retired pool buffers pile up while a game submits nothing](../../../docs/reference/memory.md#retired-pool-buffers-pile-up-while-a-game-submits-nothing): out of focus GPU allocated went from 11 to 20 GB in 12 s with swap following (PR #1392); the likely cause of a session that stayed frozen after a window switch. Not reproduced on the village-deck route (2026-11-09, M6): 40 s out of focus, during the load or standing on the deck, made no pool deletions at all, so the scene that remakes a virtual pool's runs out of focus is still to be found.
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index b72ae92a0e8f4e4f9f8425c7dc1b17ebd08fb111..78d437a0da5436b50d76f55b8b3f6c623123b596 100644
+index 422c5b737f12cf80f83a527579d3b105900c7919..cee968b8609c2089febd931776d3b7cbfb63c09e 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
 @@ -3098,7 +3098,7 @@ static void fstep_tick(const win_t *o, int c) {

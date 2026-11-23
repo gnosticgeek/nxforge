@@ -105,7 +105,7 @@ index 24af68e699d23b96e01dcbdd20c19a632b413a79..08ef6c30b50a0b9951a52c02f5eaf207
           f'#define DM_GAME_PAD_LAYOUT {("simple", "full", "touch").index(pl)}',
           f'#define DM_GAME_OPMODE {int(om == "console")}',
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 78d437a0da5436b50d76f55b8b3f6c623123b596..4a814cd306e71568f128d25567e0ca7643edd16d 100644
+index cee968b8609c2089febd931776d3b7cbfb63c09e..ecc0b386cb9842526229c8d0d09fcdc54e6a030e 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
 @@ -3454,7 +3454,9 @@ _Static_assert(sizeof(map_req) == 0x28, "NVNmappingRequest");
@@ -178,7 +178,7 @@ index 78d437a0da5436b50d76f55b8b3f6c623123b596..4a814cd306e71568f128d25567e0ca76
  // whether its content may have changed since an upload (a mapping in its range newer than gen, or a physical page behind it written after the dirty-page stamp), and the write
  // protection of the physical pages behind it (taken before an upload, as for any packaged texture)
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 015e5364ac7f20647d212141097d3c5e27454e8c..c5ac37b20a796f82042e037833667e42ac6e5c91 100644
+index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03e5ce92b7 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -1534,14 +1534,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,

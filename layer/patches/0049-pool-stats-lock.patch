@@ -10,7 +10,7 @@ Subject: pool-stats-lock: the power line reads the pool tables' buffers under
  1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index c5ac37b20a796f82042e037833667e42ac6e5c91..b06b264c3bc367746b352e89e1cc47db9aa85901 100644
+index a25e8da226f7074a1828635606f85b03e5ce92b7..3228932fbeecadda06dffc14355c6d1890c512cd 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -14007,7 +14007,10 @@ static id<MTLBuffer> pool_patch_take(const pool_snap *q) {

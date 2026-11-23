@@ -45,7 +45,7 @@ index bba28d04a401f097cea3daa2e145c148ce647345..3d48cc57d6cfa70444249adb6115f5b0
  DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
  DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index d6ab71453c2c9b976877398cc94f7c305a4446ec..b72ae92a0e8f4e4f9f8425c7dc1b17ebd08fb111 100644
+index 802ee73ef20439e61de152870c070fd02fdaf665..422c5b737f12cf80f83a527579d3b105900c7919 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
 @@ -2148,6 +2148,7 @@ static int link_wait(const win_t *o, uint64_t timeout_ns);
@@ -65,7 +65,7 @@ index d6ab71453c2c9b976877398cc94f7c305a4446ec..b72ae92a0e8f4e4f9f8425c7dc1b17eb
      dm_fps_lock_tick();   // after the frame step: at 120 fps the target follows the hold just decided
      static uint64_t prev_in, prev_out, prev_pass, prev_draw;
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 3ead637b0a83a3fa1540617683d408ac9f13f0b1..22d6e6272d85c2eb2c05f2903b260dc492e14dfe 100644
+index 5076d412022b12c515f0f892a7a508a4c2f06710..c9e030935a7d1165f6cb323f52886944b81f650f 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -206,6 +206,7 @@ static void ext_retire(NSArray *textures);
