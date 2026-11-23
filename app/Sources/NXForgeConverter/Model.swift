@@ -549,10 +549,11 @@ final class AppModel {
                 catch { note = "NXForge: \(release) is out but the engine could not update (\(error)); building on the engine it has." }
             }
             let ver = Engine.current(repo)
-            let found = note == nil ? nil : try? Engine.checkUpdates(repo)
+            let updated = note
+            let found = updated == nil ? nil : try? Engine.checkUpdates(repo)
             await MainActor.run {
                 self.engineBusy = false
-                if let note {
+                if let note = updated {
                     self.engine = ver
                     self.engineUpdate = found.flatMap { $0.count > 0 ? $0 : nil }
                     self.engineMessage = (true, "Updated to \(ver?.short ?? "the newest")")
@@ -564,7 +565,7 @@ final class AppModel {
                     self.engineMessage = check?.count == 0 ? (true, "Up to date") : before
                 }
                 self.startBuild(rebuild: rebuild, plan: plan, scratch: scratch)
-                if let note { self.run.log.insert(note, at: 0) }
+                if let note = updated { self.run.log.insert(note, at: 0) }
             }
         }
     }
