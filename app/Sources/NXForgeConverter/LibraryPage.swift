@@ -9,14 +9,14 @@ import AppKit
 import SwiftUI
 
 extension AppModel {
-    func consoleOK(_ g: LibraryGame) -> Bool { libraryConsole == .all || g.console.rawValue == libraryConsole.rawValue }
+    func consoleOK(_ g: LibraryGame) -> Bool { settings.shows(g.console) && (libraryConsole == .all || g.console.rawValue == libraryConsole.rawValue) }
 
     /// The games the Library shows now: filtered, searched and sorted as chosen.
     func libraryShown(_ builds: [String: LibraryBuild]) -> [LibraryGame] {
         let sorted = librarySorted(builds)
         // grouped: the Switch 2 section first, each in the chosen order, so the arrow keys walk the games as shown
         guard libraryGrouped else { return sorted }
-        return sorted.filter { $0.console == .switch2 } + sorted.filter { $0.console != .switch2 }
+        return sorted.filter { $0.console == .switch2 } + sorted.filter { $0.console == .switch1 } + sorted.filter { $0.console == .gba }
     }
 
     /// The Library in a Switch 2 section and a Switch one: chosen, and both consoles on show.
@@ -87,7 +87,7 @@ struct LibraryPage: View {
 
     var body: some View {
         let builds = model.libraryBuilds()
-        let all = model.library?.games ?? []
+        let all = (model.library?.games ?? []).filter { model.settings.shows($0.console) }   // a system switched off in Settings is left out
         let games = model.libraryShown(builds)
         ScrollViewReader { proxy in
             ScrollView {
@@ -292,7 +292,10 @@ struct LibraryPage: View {
 
     /// The status column's word and colour
     func statusWord(_ g: LibraryGame, _ b: LibraryBuild?) -> (String, Color) {
-        guard let b else { return ("Not built yet", StageLook.soft) }
+        guard let b else {
+            if model.buildFailures[g.folder] != nil { return ("Build failed", Color(red: 1, green: 0.55, blue: 0.45)) }
+            return ("Not built yet", StageLook.soft)
+        }
         if model.isPlaying(app: b.app) { return ("Playing now", Color(red: 0.38, green: 0.65, blue: 0.98)) }
         if model.outdated(b) { return ("Older engine", .orange) }
         return ("Built", Color(red: 0.29, green: 0.87, blue: 0.50))
@@ -509,7 +512,7 @@ struct LibraryPage: View {
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.16)))
             BoxMenu {
                 Picker("Platform", selection: $model.libraryConsole) {
-                    ForEach(ConsoleFilter.allCases, id: \.self) { c in Text("\(c.rawValue) (\(all.filter { c == .all || $0.console.rawValue == c.rawValue }.count))").tag(c) }
+                    ForEach(ConsoleFilter.shown(model.settings), id: \.self) { c in Text("\(c.rawValue) (\(all.filter { c == .all || $0.console.rawValue == c.rawValue }.count))").tag(c) }
                 }
                 .pickerStyle(.inline)
             } label: { menuLabel("Platform", model.libraryConsole.rawValue) }
@@ -689,8 +692,9 @@ struct LibraryPage: View {
     func sections(_ games: [LibraryGame]) -> [LibrarySection] {
         guard model.libraryGrouped else { return [LibrarySection(title: "", games: games)] }
         let two = games.filter { $0.console == .switch2 }
-        let one = games.filter { $0.console != .switch2 }
-        return [LibrarySection(title: Console.switch2.rawValue, games: two), LibrarySection(title: Console.switch1.rawValue, games: one)].filter { !$0.games.isEmpty }
+        let one = games.filter { $0.console == .switch1 }
+        let gba = games.filter { $0.console == .gba }
+        return [LibrarySection(title: Console.switch2.rawValue, games: two), LibrarySection(title: Console.switch1.rawValue, games: one), LibrarySection(title: Console.gba.rawValue, games: gba)].filter { !$0.games.isEmpty }
     }
 
     func revealPath(_ g: LibraryGame) -> String { g.shared ? "\(g.path)/\(g.files.first ?? "")" : g.path }

@@ -137,5 +137,16 @@ class Rules(unittest.TestCase):
         self.assertTrue(any('BACKLOG.md' in p for p in rc.lint(LOG, 'nothing here')))
 
 
+class NewestTags(unittest.TestCase):
+    def test_newest_dated_entry_of_each_changelog(self):
+        logs = {c.log: LOG.replace('0.8.0', '0.2.0').replace('0.7.1', '0.1.0') for c in rc.COMPONENTS.values()}
+        self.assertEqual(rc.newest_tags(LOG, logs), ['v0.8.0', 'sidebar-v0.2.0', 'converter-v0.2.0'])
+
+    def test_unreleased_top_is_skipped(self):
+        logs = {c.log: LOG for c in rc.COMPONENTS.values()}
+        tags = rc.newest_tags('# Changelog\n\n## Unreleased\n\n- Soon.\n' + LOG.split('# Changelog', 1)[1], logs)
+        self.assertEqual(tags[0], 'v0.8.0')
+
+
 if __name__ == '__main__':
     unittest.main()

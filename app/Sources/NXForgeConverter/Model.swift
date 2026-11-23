@@ -28,16 +28,27 @@ enum BuildSort: String, CaseIterable { case newest = "Newest first", oldest = "O
 
 /// Which console a build's game is for: Switch 2 title IDs start 04 (0400486024DEC000), Switch ones 01.
 enum Console: String, CaseIterable {
-    case switch2 = "Switch 2", switch1 = "Switch"
+    case switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance"
+
+    /// "Nintendo Switch 2", "Game Boy Advance"
+    var fullName: String { self == .gba ? rawValue : "Nintendo \(rawValue)" }
+
+    static func of(titleID t: String) -> Console { GBA.isTitleID(t) ? .gba : t.hasPrefix("04") ? .switch2 : .switch1 }
 
     static func of(_ b: BuildRecord) -> Console {
-        if let t = VerifiedGames.titleID(ofApp: b.app) { return t.hasPrefix("04") ? .switch2 : .switch1 }
+        if GBA.isGame(b.gameDir) { return .gba }
+        if let t = VerifiedGames.titleID(ofApp: b.app) { return of(titleID: t) }
         return Source.isNupFile(b.gameDir) || b.gameFiles == "NUP container" ? .switch2 : .switch1
     }
 }
 
 /// The Builds page's console filter
-enum ConsoleFilter: String, CaseIterable { case all = "All", switch2 = "Switch 2", switch1 = "Switch" }
+enum ConsoleFilter: String, CaseIterable {
+    case all = "All", switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance"
+    var console: Console? { Console(rawValue: rawValue) }
+    /// the filters for the systems switched on in Settings
+    static func shown(_ s: Settings) -> [ConsoleFilter] { allCases.filter { $0.console.map(s.shows) ?? true } }
+}
 
 @MainActor @Observable
 final class AppModel {
@@ -112,6 +123,7 @@ final class AppModel {
     var detailsTask: Task<Void, Never>?
     /// a look at the games folder for new games is under way (rescanIfFolderChanged)
     @ObservationIgnored var folderCheckRunning = false
+    @ObservationIgnored var gbaScanRunning = false
     /// games a scan found that the one before did not have, waiting for their names to be read (lookUpNewGames)
     @ObservationIgnored var newGameIDs = Set<String>()
     var mountObserver: NSObjectProtocol?
@@ -167,11 +179,24 @@ final class AppModel {
     /// Theatre (Theatre.swift): the front end full screen on a TV; its theme, the game in focus, Cinema's row, the Theatre menu's
     /// row while it is open, a TV's offer, the screen it is on, and when a button was last pressed (the carousel turns on by itself)
     var theatre = false
-    var theatreTheme: TheatreTheme = .carousel
+    var theatreTheme: TheatreTheme = .showcase
+    /// Showcase's layout: the carousel or the fan (ShowcaseLayout)
+    var showcaseLayout: ShowcaseLayout = .carousel
     var theatreFocus: String?
     var theatreRow = 0
+    /// the Museum wall (TheatreMuseum.swift): the lighting switch has the focus, and the place each shelf was left at
+    var museumLightFocus = false
+    var museumColumns: [String: Int] = [:]
     var theatreMenu: Int?
     var theatreOffer: TVScreen?
+    /// the newest slower session per game, by title ID (SessionCheck.swift)
+    var sessionChecks: [String: SessionCheck] = SessionChecks.load()
+    /// games an engine update made buildable, announced and not yet built or dismissed (NewlyPlayable.swift)
+    var newlyPlayable: [PlayableArrival] = []
+    /// what Spotlight was last given (Links.swift indexSpotlight): the games' ids, names and apps
+    @ObservationIgnored var spotlightStamp = ""
+    /// bumped when Open at login is switched, so Settings reads the login item again (LoginItem)
+    var loginItemTick = 0
     var theatreScreen: CGDirectDisplayID?
     var theatreTouched = Date()
     /// Trailer: the trailer has the room (Watch), and its sound is off (S)
@@ -191,6 +216,12 @@ final class AppModel {
     var theatreConfetti = 0
     var theatreSpinning = false
     var theatreCurtain: TheatreCurtain?
+    /// the case in the hand (TheatreUnbox.swift)
+    var theatreUnbox: TheatreUnbox?
+    /// the booklet open over the case in the hand (TheatreBooklet.swift)
+    var booklet: BookletState?
+    /// the launch being started is Continue from the console (its card is in the slot already)
+    @ObservationIgnored var theatreFromConsole = false
     /// the window's frame before Theatre moved it to the TV, whether Theatre put it in full screen, and the Mac kept awake
     @ObservationIgnored var theatreSavedFrame: NSRect?
     @ObservationIgnored var theatreMadeFullScreen = false
@@ -228,8 +259,8 @@ final class AppModel {
     /// the Play options panel open over the front end, and the launch screen while a game starts
     var playOptions: PlayOptionsState?
     var launching: Launching?
-    /// the last launch, for Try Again on the launch screen: the game, and whether it opened with its own settings window
-    var lastLaunch: (GameRef, Bool)?
+    /// the last launch, for Try Again on the launch screen
+    var lastLaunch: GameRef?
     /// the last checked copy of NXForge's own data (DataBackup), whether one is being made, and whether the last one failed
     var lastDataBackup: Date? = DataBackup.latest()?.manifest.made
     var backupRunning = false
@@ -257,6 +288,8 @@ final class AppModel {
     var batchActivity: NSObjectProtocol?
     /// the summary a failed build's notification copies (Copy error summary)
     var lastErrorSummary: String?
+    /// each game folder's last failed build, kept until one succeeds, so the game says why after a restart (BuildFailures)
+    var buildFailures: [String: FailedBuild] = BuildFailures.load()
     var playObservers: [NSObjectProtocol] = []
     /// each running game's memory samples, the task taking them, and the card shown when a game quits (PlayExtras)
     var playStats: [pid_t: PlayStats] = [:]
@@ -297,6 +330,7 @@ final class AppModel {
         recheck()
         watchMounts()
         watchGamesFolder()
+        scanGBA()
         trackPlay()
         watchActive()
         watchLaunch()
@@ -306,11 +340,13 @@ final class AppModel {
         restoreBatchQueue()
         if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { backUpDataIfDue() }
         if settings.gameDir != nil { validate() }
+        Task { [weak self] in try? await Task.sleep(for: .seconds(8)); self?.indexSpotlight() }
         // back from Terminal after a Fix: check again, so a fixed tool turns green without pressing Run checks
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.recheckUpdatesIfStale()
                 self?.revision += 1   // builds deleted elsewhere (Finder, nxforge clean) stop showing as ready
+                self?.indexSpotlight()
                 if self?.settings.folderCheck != .manual { self?.rescanIfFolderChanged() }   // games filed into the games folder while NXForge was in the back
                 if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { self?.backUpDataIfDue() }
                 guard let self, self.fixPending, !self.checking else { return }
@@ -351,7 +387,7 @@ final class AppModel {
             let verified = VerifiedGames.load(e.repo)
             await MainActor.run {
                 let repoChanged = self.env?.repo != e.repo
-                self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date()
+                self.checks = c; self.env = e; self.identities = ids; self.engine = ver; self.verified = verified; self.checking = false; self.lastChecked = Date(); self.checkNewlyPlayable()
                 // a NUP or a dump is read by the engine's Python: check it again now that it is known (zbic may just have been installed)
                 if !self.needsKeys { self.validate() }
                 if repoChanged { self.measure() }   // the game's profile (GameNeeds) is in the engine checkout
@@ -467,7 +503,7 @@ final class AppModel {
             let note = available.flatMap { Engine.upstreamNote(repo, target: $0.ref) }
             let target = found?.ref
             await MainActor.run {
-                self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note
+                self.engineMessage = msg; self.engine = ver; self.engineBusy = false; self.updateNote = note; self.verified = VerifiedGames.load(self.env?.repo); self.checkNewlyPlayable()
                 self.engineUpdate = available
                 self.lastUpdateCheck = Date()
                 self.revision += 1
@@ -499,7 +535,7 @@ final class AppModel {
         let keys = needsKeys ? settings.keys : nil
         if needsKeys && keys == nil { _ = ensureKeys(); return }
         if !plan, let d = diskNeed, d.short, rebuildQueue.isEmpty, batchCurrent == nil,
-           !confirm("Build with too little free space?", "\(d.text). The converter stops the build if free space drops below \(Disk.gb(Disk.stopBelow)); the steps it finished are kept for the next try. Storage lists what can be deleted.", action: "Build Anyway") { return }
+           !confirm("Build with too little free space?", "\(d.text). If free space runs low the converter clears old app copies and other things it can make again, and if a disk still drops below \(Disk.gb(Disk.stopBelow)) it pauses the build until there is room. Storage lists what can be deleted.", action: "Build Anyway") { return }
         let name = game?.name ?? ""
         let out = settings.outDir.flatMap { $0 == folder || name.isEmpty ? nil : "\($0)/\(name.replacingOccurrences(of: ":", with: " - ").replacingOccurrences(of: "/", with: " - ")).app" }
         let bytes = gameBytes
@@ -507,7 +543,7 @@ final class AppModel {
         run.start(Job(gameDir: dir, keys: keys, sign: settings.signIdentity, env: env, rebuild: plan ? nil : rebuild, out: plan ? (rebuild ?? out) : out,
                       keepBackup: settings.keepBackups, reuseCache: plan || settings.reuseCache, scratch: scratch && !plan, cleanup: settings.cleanup,
                       gameFiles: source?.describe, plan: plan, gameBytes: bytes), expected: exp)
-        if !plan { watchDisk(Disk.watched(gameDir: folder, outDir: settings.outDir)) }
+        if !plan { watchDisk(Disk.watched(gameDir: folder, outDir: settings.outDir), folder: folder) }
     }
 
     /// Rebuild the chosen game from scratch, once confirmed: its build folder is emptied, so the game is unpacked and its shaders
@@ -524,25 +560,74 @@ final class AppModel {
     /// The game's size in bytes: a Switch 2 game's files as source_info.py read them, else the packages in the folder.
     var gameBytes: Int64 { source.map { max($0.fileBytes, $0.romfsBytes, 0) } ?? gameFolder.map(Estimates.gameBytes) ?? 0 }
 
-    /// While the build runs, every 15 s: warn when a volume it writes to gets low, and stop it before one fills up (the stage in
-    /// progress is lost; the finished ones are reused by the next build).
-    private func watchDisk(_ paths: [String]) {
+    /// While the build runs, every 15 s (5 s once space is low): when a volume it writes to gets under Disk.warnBelow, clear what
+    /// can be made again (MakeRoom, at most every five minutes); under Disk.stopBelow, pause the build instead of losing the
+    /// step it is on, and let it carry on by itself once Disk.resumeAbove is free again.
+    private func watchDisk(_ paths: [String], folder: String) {
         diskWatch?.cancel()
         diskWarning = nil
         diskWatch = Task { [weak self] in
+            var cleared: Date?
+            var told = false
             while !Task.isCancelled {
                 guard let self, self.run.running else { return }
-                let low = await Task.detached { Disk.lowest(paths) }.value
+                var low = await Task.detached { Disk.lowest(paths) }.value
                 guard self.run.running else { return }
-                if let low, low.free < Disk.stopBelow {
-                    let name = Disk.volumeName(low.path)
-                    self.diskWarning = nil
-                    self.run.stop(because: "Stopped: not enough space, only \(Disk.gb(low.free)) left on \(name). Free up space (Storage lists what can go), then build again: the finished steps are reused.")
-                    return
+                if self.run.paused, self.run.held { try? await Task.sleep(for: .seconds(5)); continue }
+                if self.run.paused {
+                    if let l = low, l.free >= Disk.resumeAbove {
+                        self.run.resume()
+                        self.diskWarning = nil
+                        self.run.log.append("NXForge: \(Disk.gb(l.free)) free on \(Disk.volumeName(l.path)) again, the build carries on.")
+                        self.showBanner("The build carries on", detail: "\(Disk.gb(l.free)) free on \(Disk.volumeName(l.path)).", tone: .success, symbol: "play.fill")
+                        told = false
+                    } else if let l = low {
+                        self.diskWarning = "Paused: only \(Disk.gb(l.free)) left on \(Disk.volumeName(l.path)). Free up \(Disk.gb(Disk.resumeAbove - l.free)) or more (Storage shows what can go) and the build carries on by itself, or Stop it."
+                    }
+                    try? await Task.sleep(for: .seconds(5))
+                    continue
                 }
-                self.diskWarning = low.flatMap { $0.free < Disk.warnBelow ? "Free space is low: \(Disk.gb($0.free)) left on \(Disk.volumeName($0.path)). The build stops by itself below \(Disk.gb(Disk.stopBelow))." : nil }
-                try? await Task.sleep(for: .seconds(15))
+                if let l = low, l.free < Disk.warnBelow, cleared.map({ Date().timeIntervalSince($0) > 300 }) ?? true {
+                    cleared = Date()
+                    let env = self.env
+                    let playing = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.standardizedFileURL.path })
+                    let r = await Task.detached { MakeRoom.run(building: folder, playing: playing, env: env, watch: paths) }.value
+                    self.run.log.append("NXForge: " + r.line)
+                    low = await Task.detached { Disk.lowest(paths) }.value
+                    guard self.run.running else { return }
+                }
+                if let l = low, l.free < Disk.stopBelow, self.run.pause() {
+                    let name = Disk.volumeName(l.path)
+                    self.run.log.append("NXForge: paused, only \(Disk.gb(l.free)) left on \(name). It carries on once \(Disk.gb(Disk.resumeAbove)) is free.")
+                    self.diskWarning = "Paused: only \(Disk.gb(l.free)) left on \(name). Free up space (Storage shows what can go) and the build carries on by itself, or Stop it."
+                    if !told { told = true; self.notifyPaused(name, free: l.free) }
+                    continue
+                }
+                self.diskWarning = low.flatMap { $0.free < Disk.warnBelow ? "Free space is low: \(Disk.gb($0.free)) left on \(Disk.volumeName($0.path)). If it drops under \(Disk.gb(Disk.stopBelow)) the build pauses until there is room." : nil }
+                try? await Task.sleep(for: .seconds((low?.free ?? .max) < Disk.warnBelow ? 5 : 15))
             }
+        }
+    }
+
+    /// A notification, so a build paused while nobody watches the window is noticed.
+    private func notifyPaused(_ volume: String, free: Int64) {
+        guard settings.notify, Bundle.main.bundleIdentifier != nil else { return }
+        let c = UNMutableNotificationContent()
+        c.title = "Build paused: \(volume) is nearly full"
+        c.body = "Only \(Disk.gb(free)) left. Free up some space and the build carries on by itself."
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "nxforge-disk-pause", content: c, trigger: nil))
+    }
+
+    /// Pause the build where it stands (every process of it is stopped, nothing is lost), or let it carry on.
+    func pauseBuild() {
+        guard run.running else { return }
+        if run.paused {
+            guard run.held else { return }   // paused for a full disk: it carries on by itself once there is room
+            run.resume()
+            run.log.append("NXForge: the build carries on.")
+        } else if run.pause() {
+            run.held = true
+            run.log.append("NXForge: paused. Resume carries on from this point.")
         }
     }
 
@@ -561,9 +646,9 @@ final class AppModel {
     func openApp(_ app: String) {
         Enhancements.apply(app: app)   // what the game's switched-on enhancements need, files edited by hand included
         applyCloudSaves(app: app)
-        // straight in, with the choices saved for the game (a setting); its settings window otherwise, as the game has it set
+        // straight in, with the choices saved for the game (--no-launcher: a game built before 0.56.1 still has a settings window of its own)
         let cfg = NSWorkspace.OpenConfiguration()
-        if settings.straightPlay { cfg.arguments = ["--no-launcher"] }
+        cfg.arguments = ["--no-launcher"]
         var env = AppModel.frontEndEnvironment
         // the copy of its pipeline archive on this Mac, when a Play from the front end has made one (LocalShaders)
         if settings.localShaders, let s = LocalShaders.source(app: app), let dir = LocalShaders.ready(app: app, source: s) { env["DM_PSO_BUNDLE"] = dir.path }
@@ -742,6 +827,7 @@ final class AppModel {
         diskWatch?.cancel(); diskWatch = nil; diskWarning = nil
         if run.planning { return }   // a preview: it stays on Convert, with its plan
         if case .failure(let e) = r { lastErrorSummary = errorSummary(e.description) }
+        if run.ipa == nil { rememberOutcome(r) }
         if run.ipa != nil { ipaEnded(r); return }
         if batchCurrent != nil { batchBuildEnded(r) }
         let name = game?.name ?? "The game"
@@ -751,7 +837,7 @@ final class AppModel {
             switch r {
             case .success(let msg):
                 if run.ipa != nil { c.title = "\(name)'s IPA is ready"; c.body = msg; c.categoryIdentifier = Notify.ipa; c.userInfo = ["path": run.ipa ?? ""] }
-                else { c.title = "\(name) is ready"; c.body = "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
+                else { c.title = "\(name) is ready"; c.body = run.app.map(GBA.isApp) == true ? "Converted\(took)." : "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
             case .failure(let e):
                 c.title = e.description.hasPrefix("Stopped: only") ? "Build stopped: disk almost full" : "Build failed"; c.body = e.description
                 if e.description != "stopped" { c.categoryIdentifier = Notify.failed }
@@ -773,6 +859,24 @@ final class AppModel {
             measure()
             queueMessage = "Rebuild all stopped at \(game?.name ?? "a game"): its build failed."
             rebuildQueue = []
+        }
+    }
+
+    /// Keeps a failed build's reason with its game folder (a Stop asked for is not a failure), and drops it once a build succeeds.
+    func rememberOutcome(_ r: Result<String, ConverterError>) {
+        guard let dir = settings.gameDir else { return }
+        let folder = Source.folder(of: dir)
+        switch r {
+        case .success:
+            BuildFailures.clear(folder: folder)
+            buildFailures[folder] = nil
+        case .failure(let e) where e.description == "stopped":
+            return
+        case .failure(let e):
+            let d = BuildDiagnosis.diagnose(error: e.description, log: run.log)
+            let f = FailedBuild(title: d.title, fix: d.fix, error: e.description, at: Date(), log: run.logFile)
+            BuildFailures.record(f, folder: folder)
+            buildFailures[folder] = f
         }
     }
 
@@ -885,12 +989,12 @@ final class AppModel {
         let p = NSOpenPanel()
         p.canChooseDirectories = true
         p.canChooseFiles = true
-        p.allowedContentTypes = [.folder] + (gameExtensions.sorted() + ["nup"]).compactMap { UTType(filenameExtension: $0) }
+        p.allowedContentTypes = [.folder] + (gameExtensions.sorted() + ["nup"] + GBA.extensions.sorted()).compactMap { UTType(filenameExtension: $0) }
         p.allowsMultipleSelection = false
-        p.message = "Choose the game's folder or a game file (.nsp, .xci, .nsz, .xcz), or a Switch 2 game's .nup file or dump folder"
+        p.message = "Choose the game's folder or a game file (.nsp, .xci, .nsz, .xcz), a Switch 2 game's .nup file or dump folder, or a Game Boy Advance game (.gba, or a .zip holding one)"
         if let start { p.directoryURL = Source.folder(of: start).url }
         guard p.runModal() == .OK, let u = p.url else { return nil }
-        return Source.isDir(u.path) || Source.isNupFile(u.path) ? u.path : u.deletingLastPathComponent().path
+        return Source.isDir(u.path) || Source.isNupFile(u.path) || GBA.isGame(u.path) ? u.path : u.deletingLastPathComponent().path
     }
 
     /// Asks on a sheet over the window in front (HIG: alerts about a window's work attach to it), waiting for the answer.

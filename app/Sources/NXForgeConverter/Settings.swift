@@ -48,6 +48,8 @@ struct Settings: Codable, Equatable {
     var defaultKeys: String?
     /// the Library page's root: every game under it is listed (a drive or a share, such as /Volumes/Gaming/roms/switch)
     var gamesRoot: String?
+    /// the Game Boy Advance games folder (cartridge files side by side); nil = a folder named gba beside the games folder, when there is one (GBA.root)
+    var gbaRoot: String?
     /// how often the games folder is looked at for new games, in front or not, and whether coming to the front looks too
     var folderCheck: FolderCheck = .ten
     var appearance: Appearance = .system
@@ -95,8 +97,6 @@ struct Settings: Codable, Equatable {
     var lastLibraryFocus: String?
     /// the front end (Stage): what the window opens on, and how Play behaves there
     var startIn: StartIn = .home
-    /// Play opens the game straight in, with its saved Play options (--no-launcher); off: its own settings window as it is set
-    var straightPlay = true
     /// the first Play of a game shows its Play options once
     var firstPlayOptions = true
     /// on battery, a run takes the Battery preset without saving it
@@ -120,8 +120,12 @@ struct Settings: Codable, Equatable {
     /// the front end's covers as the games' square shop art instead of boxes: more to a row, and the same shape as Discover's
     var squareCovers = false
     /// Theatre's theme, and what happens when a TV is plugged in (Theatre.swift)
-    var theatreTheme: TheatreTheme = .carousel
+    var theatreTheme: TheatreTheme = .showcase
+    /// Showcase's layout, the carousel or the fan
+    var showcaseLayout: ShowcaseLayout = .carousel
     var theatreOnTV: TheatreOnTV = .ask
+    /// a controller's Home button brings NXForge to the front on Theatre while it is behind other apps (ControllerNav.home)
+    var homeOpensTheatre = true
     /// Theatre's picture inset for a TV that crops its edges, how long until the screensaver, the trailer's volume (0 to 100),
     /// and where Theatre was left: the game in focus and the filter (TheatreFilter.key), so it reopens there
     var theatreEdges: TheatreEdges = .full
@@ -134,17 +138,39 @@ struct Settings: Codable, Equatable {
     var theatreSounds = true
     var theatreMusic = true
     var theatreTimeOfDay = true
+    /// how a game starts on Theatre: its card into the console, or the lights going down
+    var theatreLaunch: TheatreLaunch = .card
+    /// the controller rumbles as a case snaps open and a card clicks home
+    var theatreRumble = true
+    /// the case in the hand leans with the controller (CaseTilt)
+    var theatreTilt = true
+    /// hours stickers, wear and the COMPLETED stamp on Theatre's cases (CaseKeepsake)
+    var theatreCollector = true
+    /// the Museum wall's light (MuseumLighting)
+    var museumLighting: MuseumLighting = .evening
+    /// the games stamped COMPLETED (StageGame.favoriteKey)
+    var completed: [String] = []
     var theatreSeen: [String]?
     /// a folder of MP3 or Opus files Theatre plays in the background (TheatreMusic)
     var theatreMusicFolder: String?
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
+    /// the systems switched off in Settings › Library (Console raw values): their games and builds are kept but not shown anywhere
+    var hiddenSystems: [String] = []
+
+    /// whether a system's games are shown (Settings › Library › Systems)
+    func shows(_ c: Console) -> Bool { !hiddenSystems.contains(c.rawValue) }
+    /// switches a system's games on or off
+    mutating func setShows(_ c: Console, _ on: Bool) {
+        hiddenSystems.removeAll { $0 == c.rawValue }
+        if !on { hiddenSystems.append(c.rawValue) }
+    }
 
     static let coverSizes: ClosedRange<Double> = 110...280
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
-        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root", folderCheck = "folder_check"
+        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root", gbaRoot = "gba_root", folderCheck = "folder_check"
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
@@ -153,16 +179,19 @@ struct Settings: Codable, Equatable {
         case autoUpdate = "auto_update", skippedUpdate = "skipped_update"
         case libraryCoverSize = "library_cover_size", libraryGroupByConsole = "library_group_by_console", recentSources = "recent_sources"
         case lastPage = "last_page", lastBuild = "last_build", lastLibraryFocus = "last_library_focus"
-        case startIn = "start_in", straightPlay = "straight_play", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
+        case startIn = "start_in", firstPlayOptions = "first_play_options", batteryPreset = "battery_preset"
         case returnToLibrary = "return_to_library", downloadCovers = "download_covers", downloadHeroes = "download_heroes", downloadStoreInfo = "download_store_info", favorites
         case mediaInGameFolder = "media_in_game_folder"
         case localShaders = "local_shaders"
         case sessionRecap = "session_recap", lightWhilePlaying = "light_while_playing"
         case squareCovers = "square_covers"
-        case theatreTheme = "theatre_theme", theatreOnTV = "theatre_on_tv"
+        case theatreTheme = "theatre_theme", showcaseLayout = "theatre_showcase_layout", theatreOnTV = "theatre_on_tv", homeOpensTheatre = "home_opens_theatre"
         case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
         case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
+        case theatreLaunch = "theatre_launch", theatreRumble = "theatre_rumble"
+        case theatreTilt = "theatre_tilt", theatreCollector = "theatre_collector", completed, museumLighting = "theatre_museum_lighting"
+        case hiddenSystems = "hidden_systems"
     }
 
     init() {}
@@ -178,6 +207,7 @@ struct Settings: Codable, Equatable {
         outDir = try c.decodeIfPresent(String.self, forKey: .outDir)
         defaultKeys = try c.decodeIfPresent(String.self, forKey: .defaultKeys)
         gamesRoot = try c.decodeIfPresent(String.self, forKey: .gamesRoot)
+        gbaRoot = try c.decodeIfPresent(String.self, forKey: .gbaRoot)
         folderCheck = (try? c.decodeIfPresent(FolderCheck.self, forKey: .folderCheck)) ?? .ten
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? .system
         notify = (try? c.decodeIfPresent(Bool.self, forKey: .notify)) ?? true
@@ -205,7 +235,6 @@ struct Settings: Codable, Equatable {
         lastBuild = try? c.decodeIfPresent(String.self, forKey: .lastBuild)
         lastLibraryFocus = try? c.decodeIfPresent(String.self, forKey: .lastLibraryFocus)
         startIn = (try? c.decodeIfPresent(StartIn.self, forKey: .startIn)) ?? .home
-        straightPlay = (try? c.decodeIfPresent(Bool.self, forKey: .straightPlay)) ?? true
         firstPlayOptions = (try? c.decodeIfPresent(Bool.self, forKey: .firstPlayOptions)) ?? true
         batteryPreset = (try? c.decodeIfPresent(Bool.self, forKey: .batteryPreset)) ?? true
         returnToLibrary = (try? c.decodeIfPresent(Bool.self, forKey: .returnToLibrary)) ?? true
@@ -218,8 +247,13 @@ struct Settings: Codable, Equatable {
         sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true
         lightWhilePlaying = (try? c.decodeIfPresent(Bool.self, forKey: .lightWhilePlaying)) ?? true
         squareCovers = (try? c.decodeIfPresent(Bool.self, forKey: .squareCovers)) ?? false
-        theatreTheme = (try? c.decodeIfPresent(TheatreTheme.self, forKey: .theatreTheme)) ?? .carousel
+        theatreTheme = (try? c.decodeIfPresent(TheatreTheme.self, forKey: .theatreTheme)) ?? .showcase
+        // a settings file from before Showcase: its Carousel or Fan theme is the layout to open on
+        let savedTheme = (try? c.decodeIfPresent(String.self, forKey: .theatreTheme)).flatMap { $0 }
+        showcaseLayout = (try? c.decodeIfPresent(ShowcaseLayout.self, forKey: .showcaseLayout)).flatMap { $0 }
+            ?? savedTheme.flatMap { ShowcaseLayout.saved(theme: $0) } ?? .carousel
         theatreOnTV = (try? c.decodeIfPresent(TheatreOnTV.self, forKey: .theatreOnTV)) ?? .ask
+        homeOpensTheatre = (try? c.decodeIfPresent(Bool.self, forKey: .homeOpensTheatre)) ?? true
         theatreEdges = (try? c.decodeIfPresent(TheatreEdges.self, forKey: .theatreEdges)) ?? .full
         theatreSaver = (try? c.decodeIfPresent(TheatreSaver.self, forKey: .theatreSaver)) ?? .five
         theatreVolume = min(max((try? c.decodeIfPresent(Int.self, forKey: .theatreVolume)) ?? 100, 0), 100)
@@ -228,6 +262,13 @@ struct Settings: Codable, Equatable {
         theatreSounds = (try? c.decodeIfPresent(Bool.self, forKey: .theatreSounds)) ?? true
         theatreMusic = (try? c.decodeIfPresent(Bool.self, forKey: .theatreMusic)) ?? true
         theatreTimeOfDay = (try? c.decodeIfPresent(Bool.self, forKey: .theatreTimeOfDay)) ?? true
+        theatreLaunch = (try? c.decodeIfPresent(TheatreLaunch.self, forKey: .theatreLaunch)) ?? .card
+        theatreRumble = (try? c.decodeIfPresent(Bool.self, forKey: .theatreRumble)) ?? true
+        theatreTilt = (try? c.decodeIfPresent(Bool.self, forKey: .theatreTilt)) ?? true
+        theatreCollector = (try? c.decodeIfPresent(Bool.self, forKey: .theatreCollector)) ?? true
+        museumLighting = (try? c.decodeIfPresent(MuseumLighting.self, forKey: .museumLighting)).flatMap { $0 } ?? .evening
+        completed = (try? c.decodeIfPresent([String].self, forKey: .completed)) ?? []
+        hiddenSystems = (try? c.decodeIfPresent([String].self, forKey: .hiddenSystems)) ?? []
         theatreSeen = try? c.decodeIfPresent([String].self, forKey: .theatreSeen)
         theatreMusicFolder = try? c.decodeIfPresent(String.self, forKey: .theatreMusicFolder)
     }

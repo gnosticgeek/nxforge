@@ -2,11 +2,26 @@
 // opens and quits (NXC_PAGE=library, builds, storage or toolchain for another page; NXC_AUTOBUILD=1 builds the chosen
 // folder first, NXC_CONFIRM=1 puts a delete confirmation over it), for checking the layout without a screen capture.
 import AppKit
+import CoreSpotlight
 import SwiftUI
 import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    private var headless: NSObjectProtocol?
     func applicationDidFinishLaunching(_ n: Notification) {
+        // NXC_HEADLESS=1 (with NXC_SNAPSHOT): no Dock icon, never in front, and its window kept off every screen, so a picture
+        // can be taken while the Mac is in use (`screencapture -l` still sees the window)
+        if ProcessInfo.processInfo.environment["NXC_HEADLESS"] != nil, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] != nil {
+            NSApp.setActivationPolicy(.accessory)
+            headless = NotificationCenter.default.addObserver(forName: NSWindow.didUpdateNotification, object: nil, queue: .main) { n in
+                MainActor.assumeIsolated {
+                    guard let w = n.object as? NSWindow, w.frame.origin.x > -20000 else { return }
+                    w.ignoresMouseEvents = true
+                    w.setFrameOrigin(NSPoint(x: -30000, y: w.frame.origin.y))
+                }
+            }
+            return
+        }
         // run straight from the build folder (not a bundle), the process must ask to be a regular app
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
@@ -51,8 +66,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         MainActor.assumeIsolated { AppModel.shared?.dockMenu() }
     }
     /// A game folder dropped on the Dock icon (Info.plist lists folders as a document type)
+    /// or an nxforge:// link (Links.swift): a Shortcut's Open URLs, `open nxforge://play/zelda`
     func application(_ app: NSApplication, open urls: [URL]) {
-        MainActor.assumeIsolated { AppModel.shared?.openDropped(urls) }
+        MainActor.assumeIsolated {
+            guard let m = AppModel.shared else { return }
+            let links = urls.filter { $0.scheme?.lowercased() == GameLink.scheme }
+            for u in links { m.openLink(u) }
+            if links.isEmpty { m.openDropped(urls) }
+        }
+    }
+    /// A game picked in Spotlight (Links.swift indexSpotlight): its page
+    func application(_ app: NSApplication, continue activity: NSUserActivity, restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        guard activity.activityType == CSSearchableItemActionType, let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return false }
+        MainActor.assumeIsolated { AppModel.shared?.openSpotlight(id) }
+        return true
     }
 }
 
@@ -125,6 +152,7 @@ struct ConverterApp: App {
                 Button("Rebuild All on Older Engines") { model.rebuildAll() }.disabled(model.run.running || !model.allOK || model.outdatedBuilds.isEmpty)
                 Button("Build iPhone and iPad IPA…") { model.buildIPA() }.keyboardShortcut("b", modifiers: [.command, .option]).disabled(!model.ready)
                 Divider()
+                Button(model.run.held ? "Resume Build" : "Pause Build") { model.pauseBuild() }.keyboardShortcut("p", modifiers: [.command, .option]).disabled(!model.run.running || (model.run.paused && !model.run.held))
                 Button("Stop Build…") { model.stopBuild() }.keyboardShortcut(".").disabled(!model.run.running)
             }
             CommandGroup(after: .sidebar) {
@@ -151,11 +179,13 @@ struct ConverterApp: App {
         if let p = env["NXC_PAGE"], let page = Page.allCases.first(where: { $0.rawValue.lowercased() == p }) { model.frontEnd = false; model.page = page }
         // NXC_STAGE=home, library, game, back, options, settings, launch, box, gallery or manual: the front end on that screen (game and the ones
         // after it: the first built game's)
-        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=carousel, cinema, gallery or trailer, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
+        // NXC_STAGE=theatre: Theatre (NXC_THEATRE=showcase, carousel, fan, cinema, shutter or trailer: carousel and fan are Showcase's layouts, NXC_GAME's game in focus; NXC_THEATREMENU=1 its menu); NXC_OFFER=<name>: the TV offer
         if env["NXC_STAGE"] == "theatre" {
             try? await Task.sleep(for: .seconds(2))
             model.enterTheatre(on: nil)
-            model.theatreTheme = TheatreTheme(rawValue: (env["NXC_THEATRE"] ?? "").capitalized) ?? .carousel
+            let theme = (env["NXC_THEATRE"] ?? "").capitalized
+            model.theatreTheme = TheatreTheme(rawValue: theme) ?? .showcase
+            if let l = theme == "Spines" ? .shelf : ShowcaseLayout.saved(theme: theme) { model.showcaseLayout = l }
             // Trailer: NXC_WATCH=1 its Watch; sound off while snapshotting
             model.theatreWatch = env["NXC_WATCH"] != nil
             model.theatreMuted = true
@@ -164,6 +194,9 @@ struct ConverterApp: App {
             // NXC_EDGES=small or large; NXC_SAVER=1 the screensaver; NXC_VOLUME=<0-100> the volume card
             if let m = env["NXC_THEATREMENU"] { model.theatreMenu = (m == "edges" ? TheatreMenuRow.edges : TheatreMenuRow.leave).rawValue }
             if let f = env["NXC_FILTER"] { model.theatreFilter = TheatreFilter(key: f) }
+            // the Museum wall: NXC_LIGHT=<Classic, Daylight, Evening, Neon, Lights out>; NXC_MUSEUMLIGHT=1 the focus on its lighting switch
+            if let l = env["NXC_LIGHT"].flatMap({ n in MuseumLighting.allCases.first { $0.rawValue.lowercased() == n.lowercased() } }) { model.settings.museumLighting = l }
+            if env["NXC_MUSEUMLIGHT"] != nil { model.museumLightFocus = true }
             if let e = env["NXC_EDGES"], let v = TheatreEdges(rawValue: e.capitalized) { model.settings.theatreEdges = v }
             if env["NXC_SAVER"] != nil { model.theatreSaver = true }
             if let v = env["NXC_VOLUME"].flatMap(Int.init) { model.theatreMuted = false; model.settings.theatreVolume = v; model.theatreVolumeTick += 1 }
@@ -179,7 +212,34 @@ struct ConverterApp: App {
                 model.theatreMoment = TheatreMoment(kind: kind, game: id)
             }
             if env["NXC_CONFETTI"] != nil { model.theatreConfetti = 1 }
-            if let t = env["NXC_CURTAIN"].flatMap(Double.init), let id = model.theatreFocus { model.theatreCurtain = TheatreCurtain(game: id, frozen: t) }
+            // (NXC_LAUNCH=lights for the lights going down, else the card's way in; NXC_CONSOLE=1 Continue from the console)
+            if let t = env["NXC_CURTAIN"].flatMap(Double.init), let id = model.theatreFocus {
+                let console = env["NXC_CONSOLE"] != nil
+                model.theatreCurtain = TheatreCurtain(game: id, frozen: t, style: env["NXC_LAUNCH"] == "lights" ? .lights : .card, fromConsole: console)
+            }
+            // NXC_UNBOX=held or open: the case in the hand, held still (NXC_TURN=<eighths of a turn>)
+            if let b = env["NXC_UNBOX"], let id = model.theatreFocus {
+                var box = TheatreUnbox(game: id)
+                box.frozen = true
+                box.stage = b == "open" ? .open : .held
+                box.steps = env["NXC_TURN"].flatMap(Int.init) ?? 0
+                model.theatreUnbox = box
+                // NXC_BOOKLET=<opening>: its booklet open there (NXC_LEAF=<0 to 1>: the leaf that far over on its way to it)
+                // (NXC_MANUAL=<a PDF>: that as the game's manual)
+                if let n = env["NXC_BOOKLET"].flatMap(Int.init), let g = model.unboxedGame {
+                    if let m = env["NXC_MANUAL"] { GameManual.found[g.coverKey] = .some(URL(fileURLWithPath: m)) }
+                    if model.settings.downloadStoreInfo { StoreInfoStore.shared.load(key: g.coverKey, titleID: g.titleID, name: g.name) }
+                    try? await Task.sleep(for: .seconds(1.5))
+                    model.openBooklet(g)
+                    if var b = model.booklet {
+                        b.frozen = true
+                        b.spread = min(max(n, 0), b.spreads - 1)
+                        b.from = b.spread
+                        if let l = env["NXC_LEAF"].flatMap(Double.init), b.spread > 0 { b.from = b.spread - 1; b.held = l }
+                        model.booklet = b
+                    }
+                }
+            }
         }
         if let n = env["NXC_OFFER"] { model.theatreOffer = TVScreen(id: 0, name: n) }
         if let st = env["NXC_STAGE"], st != "theatre" {
@@ -234,8 +294,11 @@ struct ConverterApp: App {
         }
         // NXC_CONVERT=<part of a name>: that Game Files game on the Convert page (settings are not saved while it is set);
         // NXC_OPTIONS=1 opens Build options, NXC_FOCUS=<part of a name> focuses a Game Files row
-        if let n = env["NXC_CONVERT"], let g = model.library?.games.first(where: { $0.displayName.localizedCaseInsensitiveContains(n) }) {
-            model.setGameDir(g.path)
+        if let n = env["NXC_CONVERT"] {
+            // a game the folder look at launch is still finding (the Game Boy Advance folder on a share): wait for it a little
+            let find = { model.library?.games.first(where: { $0.displayName.localizedCaseInsensitiveContains(n) }) }
+            for _ in 0..<60 where find() == nil { try? await Task.sleep(for: .milliseconds(500)) }
+            if let g = find() { model.setGameDir(g.path) }
             try? await Task.sleep(for: .seconds(3))
         }
         if let n = env["NXC_FOCUS"], let g = model.library?.games.first(where: { $0.displayName.localizedCaseInsensitiveContains(n) }) { model.libraryFocus = g.id }
@@ -287,8 +350,38 @@ struct ConverterApp: App {
             try? await Task.sleep(for: .seconds(1))
         }
         if env["NXC_AUTOBUILD"] != nil {
-            while !model.ready && model.run.result == nil { try? await Task.sleep(for: .milliseconds(300)) }
+            // not ready after two minutes: say why in <NXC_SNAPSHOT>.why.txt and give up
+            let asked = Date()
+            while !model.ready && model.run.result == nil {
+                try? await Task.sleep(for: .milliseconds(300))
+                if Date().timeIntervalSince(asked) > 120 {
+                    let failing = (model.checks ?? []).filter { !$0.ok }.map(\.name).joined(separator: ", ")
+                    let why = "game: \(model.settings.gameDir ?? "none"), library games: \(model.library?.games.count ?? -1), checks failing: \(failing.isEmpty ? "none" : failing), checking: \(model.checking), validating: \(model.validating), valid: \(model.valid), validation: \(String(describing: model.validation))"
+                    try? why.write(toFile: out + ".why.txt", atomically: true, encoding: .utf8)
+                    exit(2)
+                }
+            }
             model.build()
+            // NXC_PAUSE=<seconds in>,<seconds held>: Pause that long into the build, a picture of it at <NXC_SNAPSHOT>.paused.png
+            // and the processes' states at <NXC_SNAPSHOT>.paused.txt, then Resume
+            if let p = env["NXC_PAUSE"]?.split(separator: ",").compactMap({ Double($0) }), p.count == 2 {
+                try? await Task.sleep(for: .seconds(p[0]))
+                model.pauseBuild()
+                try? await Task.sleep(for: .seconds(p[1] / 2))
+                if let w = NSApp.windows.first(where: { $0.contentView != nil }), let v = w.contentView?.superview ?? w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".paused.png"))
+                }
+                let ps = Process(); ps.executableURL = URL(fileURLWithPath: "/bin/ps"); ps.arguments = ["-axo", "pid,ppid,stat,etime,command"]
+                let pipe = Pipe(); ps.standardOutput = pipe
+                if (try? ps.run()) != nil {
+                    let all = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                    let mine = all.split(separator: "\n").filter { $0.contains("gba_build.py") || $0.contains("build.py") || $0.contains("clang") || $0.contains("recomp") }.map { String($0.prefix(160)) }
+                    try? (["paused: \(model.run.paused), stage: \(model.run.stage.name), detail: \(model.run.stage.detail)"] + mine).joined(separator: "\n").write(toFile: out + ".paused.txt", atomically: true, encoding: .utf8)
+                }
+                try? await Task.sleep(for: .seconds(p[1] / 2))
+                model.pauseBuild()
+            }
             // a successful build clears its result as it hands the app to Builds, so wait for the run to end instead
             try? await Task.sleep(for: .seconds(1))
             while model.run.running { try? await Task.sleep(for: .milliseconds(300)) }
@@ -296,7 +389,7 @@ struct ConverterApp: App {
         }
         // the window can be ordered out for a moment when the app starts behind another one: bring it back rather than give up
         guard let w = NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first(where: { $0.contentView != nil }) else { exit(1) }
-        if !w.isVisible { NSApp.unhide(nil); w.orderFrontRegardless(); try? await Task.sleep(for: .seconds(1)) }
+        if !w.isVisible, env["NXC_HEADLESS"] == nil { NSApp.unhide(nil); w.orderFrontRegardless(); try? await Task.sleep(for: .seconds(1)) }
         // NXC_WINSIZE=<w>x<h>: the window at that size, e.g. a short one to check that the Settings panel scrolls
         if let sz = env["NXC_WINSIZE"]?.split(separator: "x").compactMap({ Double($0) }), sz.count == 2 {
             w.setContentSize(NSSize(width: sz[0], height: sz[1])); try? await Task.sleep(for: .seconds(1))

@@ -10,9 +10,22 @@ enum StageTab: String, CaseIterable { case home = "Home", discover = "Discover" 
 /// Discover's two collections: every game in the games folder, or only the ones built and playable on this Mac
 enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
 enum StageFilter: String, CaseIterable {
-    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", notBuilt = "Not built yet"
+    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", gba = "GBA", notBuilt = "Not built yet"
     /// the filters that mean something in a collection: Built has no unbuilt games
-    static func shown(_ scope: StageScope) -> [StageFilter] { scope == .built ? allCases.filter { $0 != .notBuilt } : allCases }
+    static func shown(_ scope: StageScope, _ s: Settings) -> [StageFilter] {
+        allCases.filter { f in
+            if scope == .built && f == .notBuilt { return false }
+            return f.console.map(s.shows) ?? true   // a system switched off in Settings has no filter
+        }
+    }
+    var console: Console? {
+        switch self {
+        case .switch2: .switch2
+        case .switch1: .switch1
+        case .gba: .gba
+        default: nil
+        }
+    }
 }
 
 /// A game as the front end shows it: a Library game with its build, or an app built from files outside the games folder.
@@ -81,8 +94,14 @@ enum StageLook {
 enum PadKey { case left, right, up, down, a, b, x, y, l, r, menu, options, zl, zr, r3, l3, volUp, volDown }
 
 extension AppModel {
-    /// Every game the front end knows, built ones first, then the most recently played, then by name.
+    /// Every game the front end knows, built ones first, then the most recently played, then by name. A system switched off in
+    /// Settings › Library leaves its games out of everything built on this list (Home, Discover, Theatre and its Museum wall).
     func stageGames() -> [StageGame] {
+        let s = settings
+        return allStageGames().filter { s.shows($0.console) }
+    }
+
+    private func allStageGames() -> [StageGame] {
         let _ = revision
         let builds = libraryBuilds(), plays = Playtime.load()
         var out: [StageGame] = [], apps = Set<String>(), titles = Set<String>()
@@ -100,7 +119,7 @@ extension AppModel {
         for (t, b) in builds where !apps.contains(b.app) && !titles.contains(t) {
             let rec = plays[t] ?? plays[b.app]
             out.append(StageGame(id: b.app, ref: GameRef(libraryID: nil, app: b.app), name: b.app.url.deletingPathExtension().lastPathComponent,
-                                 console: b.record.map { Console.of($0) } ?? (t.hasPrefix("04") ? .switch2 : .switch1), titleID: t, icon: nil, app: b.app,
+                                 console: b.record.map { Console.of($0) } ?? Console.of(titleID: t), titleID: t, icon: nil, app: b.app,
                                  version: nil, last: rec?.last, total: rec?.total ?? 0, outdated: outdated(b), game: nil))
         }
         // two copies of one game under different title IDs (a second dump, another region) are one cover: the built one, else the first
@@ -135,6 +154,7 @@ extension AppModel {
         case .favorites: out = out.filter(\.favorite)
         case .switch2: out = out.filter { $0.console == .switch2 }
         case .switch1: out = out.filter { $0.console == .switch1 }
+        case .gba: out = out.filter { $0.console == .gba }
         case .notBuilt: out = out.filter { $0.app == nil }
         }
         let q = stageSearch.trimmingCharacters(in: .whitespaces)
@@ -149,6 +169,16 @@ extension AppModel {
 
     static func lastPlayed(_ games: [StageGame]) -> StageGame? {
         games.filter { $0.last != nil }.max { ($0.last ?? .distantPast) < ($1.last ?? .distantPast) }
+    }
+
+    /// Settings › Library › Systems: shows a system's games everywhere, or hides them (nothing is deleted). A filter left on a
+    /// hidden system goes back to All.
+    func setSystemShown(_ c: Console, _ on: Bool) {
+        settings.setShows(c, on)
+        if let f = stageFilter.console, !settings.shows(f) { stageFilter = .all }
+        if let f = libraryConsole.console, !settings.shows(f) { libraryConsole = .all }
+        if let f = buildConsole.console, !settings.shows(f) { buildConsole = .all }
+        revision += 1
     }
 
     /// Adds the game to Favourites (Home's shelf starts with them, and Discover has a filter), or takes it off
@@ -290,7 +320,6 @@ extension AppModel {
         case .returnToLibrary: flip(&settings.returnToLibrary)
         case .sessionRecap: flip(&settings.sessionRecap)
         case .lightWhilePlaying: flip(&settings.lightWhilePlaying)
-        case .straightPlay: flip(&settings.straightPlay)
         case .firstPlayOptions: flip(&settings.firstPlayOptions)
         case .batteryPreset: flip(&settings.batteryPreset)
         case .localShaders: flip(&settings.localShaders)
@@ -302,13 +331,25 @@ extension AppModel {
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
         case .mediaInGameFolder: flip(&settings.mediaInGameFolder)
         case .theatreTheme: cycle(&settings.theatreTheme); theatreTheme = settings.theatreTheme
+        case .showcaseLayout: cycle(&settings.showcaseLayout); showcaseLayout = settings.showcaseLayout
         case .theatreOnTV: cycle(&settings.theatreOnTV)
+        case .homeOpensTheatre: flip(&settings.homeOpensTheatre); ControllerNav.shared.background(settings.homeOpensTheatre)
         case .theatreEdges: settings.theatreEdges = settings.theatreEdges.step(d)
         case .theatreSaver: cycle(&settings.theatreSaver)
         case .theatreVolume: if !toggle { settings.theatreVolume = min(max(settings.theatreVolume + d * 10, 0), 100); theatreVolumeTick += 1 }
         case .theatreSounds: flip(&settings.theatreSounds)
         case .theatreMusic: flip(&settings.theatreMusic)
         case .theatreTimeOfDay: flip(&settings.theatreTimeOfDay)
+        case .theatreLaunch: cycle(&settings.theatreLaunch)
+        case .theatreRumble: flip(&settings.theatreRumble)
+        case .theatreTilt: flip(&settings.theatreTilt)
+        case .theatreCollector: flip(&settings.theatreCollector)
+        case .museumLighting: cycle(&settings.museumLighting)
+        case .showSwitch2, .showSwitch1, .showGBA:
+            let c: Console = row == .showSwitch2 ? .switch2 : row == .showSwitch1 ? .switch1 : .gba
+            var on = settings.shows(c)
+            flip(&on)
+            setSystemShown(c, on)
         case .cloudSaves:
             var on = settings.cloudSavesAll
             flip(&on)
@@ -468,7 +509,7 @@ struct StageActions: View {
             } else {
                 let st = model.status(g)
                 Button { model.fix(g) } label: { Label(st.action, systemImage: st.actionSymbol).padding(.horizontal, 8) }
-                    .buttonStyle(StageButton(primary: true, height: height, glow: tint)).disabled(st == .notBuilt && (model.run.running || model.batchRunning))
+                    .buttonStyle(StageButton(primary: true, height: height, glow: tint)).disabled(st.buildable && (model.run.running || model.batchRunning))
                     .help(st.detail)
             }
             if showDetails {
@@ -644,7 +685,6 @@ struct StageView: View {
             if let g = detail { GameKeyArt(game: g, banner: true, bannerBottom: bannerBottom).id(g.id).transition(.opacity) }
             else if model.stageTab == .home, let g = focus { GameKeyArt(game: g, coverFallback: false).id(g.id).transition(.opacity) }
             VStack(spacing: 0) {
-                if detail == nil { StageTopBar(model: model) }
                 Group {
                     if let g = detail {
                         StageGamePage(model: model, game: g)
@@ -691,9 +731,9 @@ struct StageView: View {
         .animation(.easeInOut(duration: 0.25), value: model.caseViewer?.game.id)
         .animation(.easeInOut(duration: 0.25), value: model.manual?.id)
         .animation(.easeInOut(duration: 0.25), value: model.gameDetail)
-        .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .navigationTitle("NXForge")
+        // Discover's search, in the window's toolbar (TopBar.swift): typing on Home goes to Discover
+        .searchable(text: $model.stageSearch, placement: .toolbar, prompt: "Search games")
+        .onChange(of: model.stageSearch) { _, q in if !q.isEmpty, model.stageTab == .home { model.stageTab = .discover } }
         .focusable()
         .focused($keys)
         .focusEffectDisabled()
@@ -723,129 +763,6 @@ struct StageView: View {
         let covers: String = games.map { $0.coverKey }.joined(separator: "|")
         let flags: String = [model.settings.downloadCovers, model.settings.downloadHeroes, model.settings.squareCovers].map { $0 ? "1" : "0" }.joined()
         return covers + flags
-    }
-}
-
-struct StageTopBar: View {
-    @Bindable var model: AppModel
-    @Namespace private var marks
-
-    var body: some View {
-        // the logo at the left, the Home / Library / Converter switch in the middle, the rest at the right
-        HStack(spacing: 14) {
-            HStack(spacing: 9) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().interpolation(.high).frame(width: 26, height: 26)
-                    .shadow(color: .black.opacity(0.4), radius: 4, y: 2).accessibilityHidden(true)
-                Text("NXForge").font(.system(size: 18, weight: .heavy)).fontWidth(.expanded).tracking(-0.4)
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity)
-            HStack(spacing: 4) {
-                ForEach(StageTab.allCases, id: \.self) { t in
-                    tab(t.rawValue, on: model.frontEnd && model.stageTab == t) { model.showStage(t) }
-                }
-                tab("Saves", on: !model.frontEnd && model.page == .saves) { model.showConverter(); model.page = .saves }
-                    .help("Every game's saves, and Cloud saves for all of them")
-                tab("Converter", on: !model.frontEnd && model.page != .saves) {
-                    if model.frontEnd || model.page == .saves { model.showConverter(); if model.page == .saves { model.page = model.converterPage } }
-                }
-                    .help("Convert, Game Files, Builds, Storage, Toolchain and Updates")
-            }
-            .padding(4)
-            .glassEffect(.regular, in: .capsule)
-            .animation(.spring(duration: 0.32), value: model.stageTab)
-            .layoutPriority(1)
-            // the right side; where it is too narrow for every label, Theatre and the controller show as icons only
-            ViewThatFits(in: .horizontal) {
-                right(compact: false)
-                right(compact: true)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .padding(.horizontal, 40).padding(.top, 6).padding(.bottom, 10)
-        // under the converter's bar, a hairline between it and the page's own tabs
-        .overlay(alignment: .bottom) {
-            if !model.frontEnd && model.page != .saves { Rectangle().fill(.white.opacity(0.10)).frame(height: 1).padding(.horizontal, 32) }
-        }
-    }
-
-    func right(compact: Bool) -> some View {
-            HStack(spacing: 14) {
-            Spacer(minLength: 0)
-            // Theatre: full screen for a TV (⇧⌘F)
-            Button { model.enterTheatre() } label: {
-                Group {
-                    if compact { Image(systemName: "tv").font(.system(size: 14, weight: .semibold)).frame(width: 36, height: 36) }
-                    else { Label("Theatre", systemImage: "tv").font(.callout.weight(.semibold)).lineLimit(1).fixedSize().padding(.horizontal, 12).frame(height: 36) }
-                }
-                .contentShape(.capsule)
-            }
-            .buttonStyle(.plain).glassEffect(.regular.interactive(), in: .capsule)
-            .help("Theatre: your games full screen on a TV, driven by a controller (⇧⌘F)").accessibilityLabel("Theatre")
-            if let pad = GCController.controllers().first?.vendorName {
-                Group {
-                    if compact { Image(systemName: "gamecontroller").font(.system(size: 14, weight: .medium)).frame(width: 36, height: 36) }
-                    else { Label(pad, systemImage: "gamecontroller").font(.callout.weight(.medium)).lineLimit(1).fixedSize().padding(.horizontal, 12).frame(height: 36) }
-                }
-                .foregroundStyle(StageLook.soft).glassEffect(.regular, in: .capsule).help(pad)
-            }
-            if let s = search {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(StageLook.soft)
-                    TextField(s.prompt, text: s.text).textFieldStyle(.plain).frame(width: 170)
-                    if !s.text.wrappedValue.isEmpty {
-                        Button { s.text.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StageLook.faint) }
-                            .buttonStyle(.plain).accessibilityLabel("Clear Search")
-                    }
-                }
-                .padding(.horizontal, 14).frame(height: 36).glassEffect(.regular, in: .capsule)
-            }
-            refresh
-            round("arrow.up.left.and.arrow.down.right", "Full Screen") { model.toggleFullScreen() }
-            round("slider.horizontal.3", "Settings") { model.openSettings() }
-            }
-    }
-
-    /// Refresh: scans the games folder again now (NXForge also looks every 10 minutes and when it comes to the front); new games
-    /// get their art and details. The arrow turns while it scans.
-    var refresh: some View {
-        Button { model.scanLibrary() } label: {
-            Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .semibold))
-                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: model.libraryScanning)
-                .frame(width: 36, height: 36)
-                .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
-        }
-        .buttonStyle(.plain)
-        .disabled(model.libraryScanning || model.settings.gamesRoot == nil)
-        .help(model.libraryScanning ? "Looking through \(model.settings.gamesRoot?.tildePath ?? "the games folder")…"
-              : "Refresh the library: look for new games now (also every 10 minutes), and fetch their artwork and details (⌥⌘R)")
-        .accessibilityLabel(model.libraryScanning ? "Refreshing Library" : "Refresh Library")
-    }
-
-    /// The one search field, for whichever list is on screen: the covers, the converter's game files or its builds.
-    var search: (prompt: String, text: Binding<String>)? {
-        if model.frontEnd { return model.stageTab == .discover ? ("Search games", $model.stageSearch) : nil }
-        // the converter's Game Files and Builds have their own search fields
-        return nil
-    }
-
-    func tab(_ title: String, on: Bool, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            Text(title).font(.system(size: 14, weight: .semibold)).padding(.horizontal, 16).frame(height: 30)
-                .foregroundStyle(on ? Color.black : Color(white: 0.92))
-                .background { if on { Capsule().fill(convertAccent).matchedGeometryEffect(id: "tab", in: marks) } }
-                .contentShape(.capsule)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
-    }
-
-    func round(_ symbol: String, _ label: String, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            Image(systemName: symbol).font(.system(size: 14, weight: .semibold)).frame(width: 36, height: 36)
-                .glassEffect(.regular.interactive(), in: .circle).contentShape(.circle)
-        }
-        .buttonStyle(.plain).help(label).accessibilityLabel(label)
     }
 }
 
@@ -966,6 +883,7 @@ struct StageHome: View {
                     Text("Your games").font(.system(size: 26, weight: .heavy)).tracking(-0.4)
                     Text("\(games.filter { $0.app != nil }.count) ready").font(.system(size: 16, weight: .medium)).foregroundStyle(StageLook.soft)
                     Spacer()
+                    NewlyPlayablePill(model: model)
                     if let w = week, w.seconds > 0, geo.size.width > 900 { WeekStrip(week: w).padding(.trailing, 14) }
                     if games.filter({ $0.app != nil }).count > 1 {
                         Button { model.pickRandom(games) } label: {
@@ -1044,7 +962,7 @@ struct StageLibrary: View {
                 scopes
                 Spacer(minLength: 8)
                 HStack(spacing: 8) {
-                    ForEach(StageFilter.shown(model.stageScope), id: \.self) { f in
+                    ForEach(StageFilter.shown(model.stageScope, model.settings), id: \.self) { f in
                         let on = model.stageFilter == f
                         Button { model.stageFilter = f } label: {
                             HStack(spacing: 7) {
@@ -1124,6 +1042,7 @@ struct StageLibrary: View {
         case .favorites: pool.filter(\.favorite).count
         case .switch2: pool.filter { $0.console == .switch2 }.count
         case .switch1: pool.filter { $0.console == .switch1 }.count
+        case .gba: pool.filter { $0.console == .gba }.count
         case .notBuilt: pool.filter { $0.app == nil }.count
         }
     }
@@ -1136,7 +1055,7 @@ struct StageLibrary: View {
                 let n = sc == .built ? all.filter { $0.app != nil }.count : all.count
                 Button {
                     model.stageScope = sc
-                    if !StageFilter.shown(sc).contains(model.stageFilter) { model.stageFilter = .all }
+                    if !StageFilter.shown(sc, model.settings).contains(model.stageFilter) { model.stageFilter = .all }
                 } label: {
                     HStack(spacing: 6) {
                         Text(sc.rawValue).font(.system(size: 13, weight: .semibold))
@@ -1189,9 +1108,8 @@ struct StageGameMenu: View {
         if g.app != nil {
             Button("Play") { model.playFromStage(g.ref) }
             Button("Play Options…") { model.openPlayOptions(g.ref) }
-            Button("Play with the Game's Own Settings Window") { model.playWithOwnWindow(g.ref) }
         } else if g.game != nil {
-            if game.app == nil { let st = model.status(game); Button(st.action) { model.fix(game) }.disabled(st == .notBuilt && (model.run.running || model.batchRunning)) }
+            if game.app == nil { let st = model.status(game); Button(st.action) { model.fix(game) }.disabled(st.buildable && (model.run.running || model.batchRunning)) }
         }
         Divider()
         Button("View Box") { model.openCaseViewer(g) }

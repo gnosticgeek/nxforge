@@ -6,7 +6,7 @@ import Foundation
 struct Diagnosis: Equatable {
     enum Code: String, CaseIterable {
         case stopped, diskFull, thirtyTwoBit, keys, folderBusy, gameFiles, language, metalToolchain, xcode, dotnet, python,
-             missingTool, engine, memory, permission, gameStopped, rewriter, shaders, signing, unknown
+             missingTool, engine, memory, permission, gameStopped, rewriter, profileTables, shaders, signing, unknown
     }
     let code: Code
     /// one line: what went wrong, in plain words
@@ -42,7 +42,7 @@ enum BuildDiagnosis {
              fix: "Keep one game per folder: its base game (.nsp or .xci) and the updates and DLC you want, with the names they were dumped with. The error says which file is missing.", page: .convert),
         Rule(code: .language, phrases: ["unknown game language", "the game has no "],
              title: "The game does not have the language chosen for it",
-             fix: "Choose one of the languages the error lists, or the game's default, in the game's settings window."),
+             fix: "Choose one of the languages the error lists, or the game's default, in the game's Play options."),
         Rule(code: .metalToolchain, phrases: ["metal compiler does not run", "metal toolchain", "cannot execute tool 'metal'", "unable to find utility \"metal\""],
              title: "The Metal shader compiler is not installed",
              fix: "Install it on the Toolchain page (Fix beside Metal toolchain), or run xcodebuild -downloadComponent MetalToolchain, then build again.", page: .toolchain),
@@ -74,6 +74,11 @@ enum BuildDiagnosis {
         Rule(code: .rewriter, phrases: ["patch_nso.py exit code"],
              title: "The code rewriter could not convert the game's program",
              fix: "This game version may need a profile change. Copy error summary and report it with the game and its version."),
+        // before .shaders: its message says "shader" too, but building again the same way stops the same way (Switch Sports, 2026-11-21)
+        Rule(code: .profileTables, phrases: ["split shader tables differ from game profile"],
+             title: "The engine's list of this game's shaders does not match your game files",
+             fix: "Usually the engine's profile for this game is out of date. Check Updates for a newer engine, then build again: the steps that finished are reused. If it still stops, your copy may be a different version from the one NXForge supports; Copy error summary and report it with the game's version.",
+             page: .updates),
         Rule(code: .shaders, phrases: ["shader", "dmsh_", "metallib", ".metal:"],
              title: "A shader step failed",
              fix: "Build again with Reuse cached build steps off in Settings. If it fails the same way, Copy error summary and report it with the game's version."),

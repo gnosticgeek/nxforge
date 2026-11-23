@@ -10,6 +10,9 @@
                                         (.github/workflows/release.yml).
   release_check.py tag TAG              Prints what a tag releases, as "<changelog> <version> <title>": vX.Y.Z is NXForge,
                                         sidebar-vX.Y.Z the in-game sidebar, converter-vX.Y.Z the NXForge Converter app.
+  release_check.py newest               Prints the tag of each changelog's newest dated entry, one per line (vX.Y.Z,
+                                        sidebar-vX.Y.Z, converter-vX.Y.Z): what the release workflow tags after a release
+                                        PR merges, when the tag is not there yet.
 
 The sidebar (Quick settings) and the Converter each have their own version and tags (UPSTREAM.md, Versions): a Swift
 constant (SIDEBAR_VERSION in dm/host/quick_settings_mac.swift, CONVERTER_VERSION in
@@ -183,9 +186,19 @@ def notes(version: str, changelog: str) -> str | None:
     return None
 
 
+def newest_tags(changelog: str, logs: dict[str, str]) -> list[str]:
+    """The tag of each changelog's newest dated entry: NXForge's first, then each component's (an Unreleased top is skipped)."""
+    out = []
+    for prefix, text in [('', changelog)] + [(c.prefix, logs[c.log]) for c in COMPONENTS.values()]:
+        top = next((e for e in entries(text)[0] if e.version and e.day), None)
+        if top:
+            out.append(f'{prefix}v{top.version}')
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('command', choices=['lint', 'check', 'notes', 'tag'])
+    ap.add_argument('command', choices=['lint', 'check', 'notes', 'tag', 'newest'])
     ap.add_argument('version', nargs='?',
                     help='X.Y.Z or vX.Y.Z (NXForge), sidebar-vX.Y.Z (the sidebar), converter-vX.Y.Z (the Converter)')
     for name in COMPONENTS:
@@ -195,6 +208,9 @@ def main(argv: list[str] | None = None) -> int:
     changelog, backlog = read('CHANGELOG.md'), read('BACKLOG.md')
     comp, version = component_of(a.version or '')
     comp = comp or next((c for n, c in COMPONENTS.items() if getattr(a, n)), None)
+    if a.command == 'newest':
+        print('\n'.join(newest_tags(changelog, {c.log: read(c.log) for c in COMPONENTS.values()})))
+        return 0
     if a.command != 'lint' and not re.fullmatch(r'\d+\.\d+\.\d+', version):
         ap.error(f'{a.command} needs a version X.Y.Z')
     log_name = comp.log if comp else 'CHANGELOG.md'

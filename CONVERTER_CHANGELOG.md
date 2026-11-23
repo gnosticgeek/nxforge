@@ -4,6 +4,118 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.29.1 (2026-11-23)
+
+Shipped in NXForge 0.59.1.
+
+- **Switch systems on and off.** Settings › Library › Systems has a switch for Nintendo Switch 2, Nintendo Switch and Game Boy Advance, all on to start. A system switched off disappears everywhere: Home, Discover (its filter goes too), Theatre and the Museum wall (its shelf goes), and the Converter's Game Files and Builds pages (and their Platform menus). Nothing is deleted: the games, builds and saves stay where they are, and switching the system back on brings them all back. A filter left on a hidden system goes back to All. Kept in settings.json as `hidden_systems`. A controller can flip them like any other Settings switch.
+- Tests for the default, reading the setting back and the filters a hidden system loses.
+
+## 0.29.0 (2026-11-22)
+
+Shipped in NXForge 0.59.0.
+
+- **Museum wall, a sixth Theatre theme.** Your games in a walnut cabinet under a brass "Museum wall" plate, one shelf a console: Switch 2 at the top, Switch under it, Game Boy Advance at the foot. Switch and Switch 2 games stand as their cases, Game Boy Advance games as their cartridges. At the end of each shelf the console stands on a walnut plinth (drawn in the app), with a brass plaque under it: "Nintendo Switch · 9 games · 3 hours". A brass picture light hangs over each shelf and they come on one after another as the room opens. The game in focus lifts out of its row and glows in the lamp's colour, with a brass card under it giving its name, its year (from the store's details) and what A does; on the bottom shelf the card sits beside it. Left and right go along a shelf, which slides to keep the game in sight (a shelf you leave keeps its place); up and down go from shelf to shelf; up from the top shelf reaches the lighting switch at the top right, where left and right choose Classic, Daylight, Evening, Neon (each shelf lit in its console's colour) or Lights out (only the game in focus lit). Everything else works as on the other themes: A plays, Y picks the case up, X Play options, L and R the filter, ZL and ZR the theme. It is in the Theatre menu and Settings › Theatre › Theme, with Settings › Theatre › Museum lighting. Code: `TheatreMuseum.swift`.
+- For checks: `NXC_THEATRE=museum`, with `NXC_LIGHT=<lighting>` and `NXC_MUSEUMLIGHT=1` (the focus on the lighting switch).
+- Tests for the shelves' order, the arrows along and between shelves, the window that follows the focus, the plaque's words and the year.
+
+## 0.28.1 (2026-11-22)
+
+Shipped in NXForge 0.56.1.
+
+- **No more game settings window.** Game apps built from 0.56.1 start straight into the game, so the Settings switch "Play goes straight into the game" and the cover menu's "Play with the Game's Own Settings Window" are gone, as is the game page's "Show the game's settings window at launch". Play still passes `--no-launcher`, so a game built earlier keeps its window closed too. The window's microphone input picker is a Play options row (General, under Microphone, while it is on): System Default stores nothing, a device stores its UID in `launcher.DM_MIC_DEVICE` as the window did. Code: `MicrophoneInputs.swift`, `LaunchSettings.load`.
+
+## 0.28.0 (2026-11-22)
+
+Shipped in NXForge 0.56.0.
+
+- **Game Boy Advance games.** Settings › Library has a Game Boy Advance folder (a folder named `gba` beside the Switch games folder is found by itself). Its `.gba` files and `.zip` files holding one are listed in the Library under Game Boy Advance, by the name and game code in the cartridge's header (a few hundred bytes of each file are read, so a folder on a share lists quickly). The folder is looked at when NXForge starts and with every look at the games folder, without a scan of the Switch folder. Convert runs `scripts/gba_build.py` with the same steps list, log, time left, menu bar progress and notifications as a Switch build; no keys are asked for. The app and its build folder go in `NXForge Builds/<game>` in the folder apps are saved to, or in Documents when the cartridges are on a share. The build keeps its C and object files, which is what makes Convert again quick, unless clean-up is set to Remove build cache. Code: `GBA.swift`, `Source.swift`, `Converter.swift`.
+- **Port details on the game page.** For a converted Game Boy Advance game: how much of its code was translated, how many entry points were left to the interpreter, the trial run's frame rate and pictures, the save type, and each step's time. Cheats and mods cards are hidden there (cheats are a text file, [gba/README.md](gba/README.md)).
+- **Pause and Resume a build.** A Pause button beside Stop on the Convert page, the build strip and the menu bar item, and Build › Pause Build (⌥⌘P), hold a build where it is: every process of it is stopped, nothing is lost, and the time it waited is left out of the time left. Resume carries on from the same point. It works for Switch builds too. A build NXForge paused itself for a full disk still carries on by itself; one paused by hand waits for Resume.
+- Game Boy Advance games count as a console of their own: a Game Boy Advance filter in the Library, on Home and in Theatre, and "Game Boy Advance" where a game's console is named.
+- For checks: `NXC_AUTOBUILD` with `NXC_PAUSE=<seconds in>,<seconds held>` pauses and resumes a build with no window and writes what was running; a build that never becomes ready writes why and ends.
+## 0.27.1 (2026-11-22)
+
+Shipped in NXForge 0.55.0.
+
+- **Back to Theatre from a game.** A game started from Theatre is told so (`NXFORGE_FRONT_END_PAGE=theatre`), so its sidebar (Sidebar 0.9.0) offers Theatre instead of Library; when it says so, NXForge stays in Theatre with the focus on that game instead of opening the game's page. Code: `PlayOptions.swift`.
+
+## 0.27.0 (2026-11-21)
+
+Shipped in NXForge 0.53.0.
+
+- **Make room, then pause, instead of stopping.** While a build runs and a disk it writes to has under 12 GB free, the converter clears what can be made again (other games' stopped-build scratch, pipeline copies of games not running, and `nxforge clean --only app-backups,old-logs,gpuarchiver`), at most every five minutes, and logs what went. Under 3 GB the build is paused (SIGSTOP on the script and every process under it) rather than stopped, the Convert page and menu bar say so with how much to free, a notification is sent, and the build carries on by itself at 6 GB free; Stop lets it go first. The wait is left out of the stage's elapsed time and time left. Code: `MakeRoom.swift`, `BuildRun.pause()`/`resume()`, `AppModel.watchDisk`.
+- **Storage › Forgotten.** Big files NXForge did not make a place for: game packages and unfinished downloads in Downloads (hidden folders too, four levels down), items `nxforge clean` holds, and a stopped build's scratch. Safe ones (an unfinished download, a copy of a games-folder file by name and size, a held item, scratch) can be deleted with Undo as usual; others say where they are. The shared cache row no longer counts what is listed on its own. Code: `Forgotten.swift`.
+
+## 0.26.0 (2026-11-21)
+
+Shipped in NXForge 0.52.0.
+
+- **Tilt the case.** With a case in your hand on Theatre, leaning the controller leans the case, and the light on its sleeve moves with it. There is nothing to set up: wherever you have been holding the controller is its rest, and a lean held for a few seconds comes slowly back upright. Only for controllers that tell a Mac how they are held; NXForge switches the sensors on while the case is up and off again after. Settings › Theatre › Tilt turns it off.
+- **Collector touches.** A case you have played for an hour or more carries a round sticker with its hours. After five hours its sleeve begins to wear: pale edges and fine scratches, the game's own and the same every time, all there by sixty hours. R with the case in your hand brings a COMPLETED stamp down on the cover, with a thud and a knock in the controller, and R again takes it off; the booklet's Your copy page says so too. The sticker, stamp and wear show on the case in your hand, on the launch, and on the case in front on the Shelf. Settings › Theatre › Collector touches turns them off (the stamps you gave are kept).
+- **Wallet, a fifth Theatre theme.** Your built games as their game cards (grey for Switch, red for Switch 2) in a zip-up card wallet lying open: two halves of twelve pockets, twenty-four cards to a page. The arrows move from pocket to pocket and the card in focus stands up out of its sleeve; going past a page's edge turns to the next page of cards. A, X, Y, the filter on L and R and everything else work as on the other themes. It is in the Theatre menu, on ZL and ZR, and in Settings › Theatre › Theme.
+- Tests for the new settings, the sticker and wear, the lean and its limits, the wallet's moves across pockets and pages, and the stamp's sound.
+
+## 0.25.0 (2026-11-21)
+
+Shipped in NXForge 0.51.0.
+
+- **A booklet for every game.** With a case in your hand on Theatre, X opens its booklet: two pages either side of a spine, left and right (or A) turn a leaf over it, with a soft paper sound and a tap in the controller, and B closes it. A game with a manual (a PDF beside its files, or one added on its page) has the manual as its booklet, and Y there opens it in the manual viewer to zoom in. A game without one gets a booklet NXForge makes from what it knows: the store's description set as pages, up to six of its screenshots, a page on what Quick settings does while you play, and Your copy (how long you have played, how many sittings, first and last played, publisher, release date, players, genre, version and size). The booklet now shows in every open case's lid, with the manual's first page as its cover when there is one. The made booklet needs Settings › Artwork › Download store details for its words and pictures; without them it is shorter.
+- **Shelf, Showcase's third layout.** Your games stand spine out along a shelf, with their real spine art, and the game in focus is drawn out of the row and turned to face you. Left and right run along the shelf, the right stick turns the case in front, and up and down step through Carousel, Fan and Shelf. Settings › Theatre › Showcase layout and the Theatre menu have it too.
+- Tests for the booklet's pages (a manual first, an even number of made pages, long text broken between sentences, which pages face each other), the shelf's layout and the page-turn sound.
+
+## 0.24.0 (2026-11-21)
+
+Shipped in NXForge 0.50.0.
+
+- **Pick up the box.** On any Theatre theme Y lifts the game in focus out as its case, in three dimensions: the right stick turns it freely, left and right turn it an eighth at a time, and the light slides over its sleeve. A opens it on its spine: the game card sits in its clip (grey for Switch, red for Switch 2, the game's icon as its label) and a booklet is in the lid when the game has a manual (X reads it). B shuts the case, and B again puts it back. Y there opens the game's page, which Y opened before; the themes' hints now say Pick up.
+- **The card goes into the console.** A with the case open lifts the card out and drops it into a console under the screen; it clicks home, the console's light comes on and fills the room, and the game comes up out of it. A on a theme plays the whole thing by itself, in about three seconds while the game is already starting. Settings › Theatre › When a game starts chooses between Game card and Lights down (the box opening into light, as before). With Reduce Motion the room only dims.
+- **Rumble and new sounds.** A small knock in the controller as a case snaps open or shut and a firmer one as the card clicks home, on controllers that can rumble on a Mac (Settings › Theatre › Rumble). The case's catches, the card leaving its clip and the card going home each have a sound, made in the app like Theatre's others.
+- **The console on the top bar.** Theatre's NXFORGE wordmark is drawn as the console, with the card of the built game you played last standing in its slot, its light on, and the game's name beside it. The Theatre menu's first row, Continue, starts that game: the card is in the console already, so it only clicks down.
+- **Pictures without a window.** `NXC_HEADLESS=1` with `NXC_SNAPSHOT` keeps the app out of the Dock and its window off every screen, so a picture can be taken (`screencapture -l`) while the Mac is in use. `NXC_UNBOX=held|open` shows the case in the hand, and `NXC_CURTAIN=<s>` the card's launch at that moment (`NXC_LAUNCH=lights` for the old one, `NXC_CONSOLE=1` from the console).
+
+## 0.23.0 (2026-11-21)
+
+Shipped in NXForge 0.49.0.
+
+- **Add Code Mod.** The Enhancements card, sheet and Play options tab have Add Code Mod…: choose a `.pchtxt` or `.ips` file from a mod's exefs folder and each of its parts becomes an enhancement with its own switch, added switched off, marked with the build it is for (one for another version says so and stays off). A part its file had disabled says so. An enhancement file's ```` ```pchtxt ```` block is read the same way.
+- **Home opens Theatre.** A controller's Home button brings NXForge forward into Theatre from behind other apps, never over a running game. Settings › Theatre: "Home button opens Theatre" (on) and "Open NXForge at login".
+- **Newly playable.** Home shows a line when games in your folder became buildable since you last looked (an engine update, a newer verified list), with Build Tonight, Build Now and a way to dismiss it. A notification says the same when the app is behind.
+- **A check after every session.** After a game quits, its session is compared with its own earlier ones (`scripts/perf_check.py`). When it ran slower, the recap and the game page show why in a line and a button for the one change that should help.
+- **Links and Spotlight.** `nxforge://play/<name or title ID>`, `nxforge://game/…`, `nxforge://theatre`, `home`, `discover` and `saves` open the app there; built games are indexed in Spotlight and open on their page.
+- **Before the Mac slept.** Save snapshots made by a game before sleep or on a low battery (Sidebar 0.8.0) show with that reason and are pruned on their own.
+
+## 0.22.13 (2026-11-21)
+
+Shipped in NXForge 0.48.13.
+
+- **A failed build keeps its reason.** The Convert page shows a failed build's diagnosis and log only while the app stays open; once it quit (an update, a restart) the game went back to "Not built yet" with nothing to say a build had stopped, or why. Each game folder's last failed build is now kept in `failed-builds.json` (Application Support) until a build of it succeeds: Home, Theatre, the game page and Game Files show **Build failed**, with the reason, when it happened and what to do in the status line and the button's help, and the button says Build Again. A Stop you asked for is not kept. Code: `BuildFailures.swift`, `GameStatus.swift`.
+- **The profile's shader list check has its own diagnosis.** "The split shader tables differ from game profile ..." was read as "A shader step failed" with the advice to build again without the cache, which stops the same way. It now says the engine's list of the game's shaders does not match the game files, usually an out-of-date profile, and points to Updates.
+
+## 0.22.12 (2026-11-21)
+
+Shipped in NXForge 0.48.12.
+
+- **A native top bar.** The bar across the top of the window was a row of separate large glass pills under the window's buttons; it is now a real macOS toolbar on the same row as them, so the pages start higher. "NXForge" is the window's title at the left, Home, Discover, Saves and Converter are a segmented switch in the middle, Theatre, Refresh and Settings (now a gear) share one Liquid Glass group, and search is the system's search field, which folds to a magnifier in a narrow window and is there on Home and Discover (typing on Home goes to Discover). The Full Screen button is gone: the window's green button and ⌃⌘F do it, as in every Mac app; the connected controller's name moved into Theatre's help tag. The toolbar steps aside wherever a page fills the window (a game's page, the launch screen, the box, gallery and manual viewers, Theatre). Code: `TopBar.swift`.
+
+## 0.22.11 (2026-11-21)
+
+Shipped in NXForge 0.48.11.
+
+- **Theatre's genre filter works**: L and R now step through only the genres of the games the theme shows (the built ones on Showcase, Cinema and Shutter; every game on Trailer), so each genre shows just its own games. Before, genres that only unbuilt games are in were stops too, and choosing one showed every built game under the genre's name. A genre chosen on Trailer that no built game is in reads All games on the other themes, and comes back on Trailer.
+
+## 0.22.10 (2026-11-21)
+
+Shipped in NXForge 0.48.10.
+
+- **Shutter**, a new Theatre theme to Tom's mock-up: the games' wide art cut into slanted panels like the blades of a shutter. The game in focus is the wide panel in the middle with a pink accent bar along its foot; the neighbours are narrow, a little darker, named in bold italics. Left and right slide the panels along (a list of seven or more goes round, a shorter one stops at its ends); a click on a panel brings it to the middle. The top bar has the NXFORGE wordmark, the filter between L and R, and "Shutter" beside the clock; the foot has the game's name, big, over "Switch · genre · players ✓ Built · time played", the coral main button (Continue, Play or the step the game needs), Details, Play options, and Theme, Menu and Leave between accent rules. ZL and ZR step through Showcase, Cinema, Shutter and Trailer, and it is in the Theatre menu and Settings › Theatre › Theme. Sounds are the quiet ticks, the right stick does nothing here, and the music folder plays as on Showcase and Cinema.
+
+## 0.22.9 (2026-11-21)
+
+Shipped in NXForge 0.48.9.
+
+- **Showcase**: Theatre's Carousel and Fan themes are now one theme, Showcase, with two layouts of the same boxes, Carousel and Fan. Up and down on a controller switch layout on Theatre (the game in focus, the filter and the music stay as they are); the Theatre menu's Showcase row switches it with left and right, and Settings › Theatre has a "Showcase layout" row. The top bar reads "Showcase · Fan". ZL and ZR now step through three themes: Showcase, Cinema and Trailer. A saved Carousel or Fan theme (or the older Gallery and Shelf) opens Showcase on that layout. Sounds stay the quiet ticks, the right stick still only turns the box in front, and the music folder keeps playing on Showcase as before (off only on Trailer).
+
 ## 0.22.8 (2026-11-20)
 
 Shipped in NXForge 0.48.8.

@@ -16,27 +16,32 @@ import SwiftUI
 import WebKit
 
 enum TheatreTheme: String, Codable, CaseIterable {
-    case carousel = "Carousel", fan = "Fan", cinema = "Cinema", trailer = "Trailer"
+    case showcase = "Showcase", cinema = "Cinema", shutter = "Shutter", trailer = "Trailer", wallet = "Wallet", museum = "Museum"
 
-    /// Shelf (0.19.0 only) became Gallery, and Gallery (to 0.48) became Fan: the covers side by side
+    /// Carousel and Fan (to 0.48.8) became Showcase's two layouts (Fan had been Gallery, and Gallery Shelf); anything else
+    /// unknown is Showcase too
     init(from decoder: Decoder) throws {
         let s = try decoder.singleValueContainer().decode(String.self)
-        self = TheatreTheme(rawValue: s) ?? (s == "Shelf" || s == "Gallery" ? .fan : .carousel)
+        self = TheatreTheme(rawValue: s) ?? .showcase
     }
     var note: String {
         switch self {
-        case .carousel: "A turning ring of your boxes"
+        case .showcase: "Your boxes as a carousel, a fan or a shelf, ↑ ↓ to switch"
         case .cinema: "Big art, rows like a TV app"
-        case .fan: "Your boxes fanned out, scrolling sideways"
+        case .shutter: "Slanted panels of art, the game in focus wide"
         case .trailer: "The trailer fills the room"
+        case .wallet: "Your game cards in their wallet"
+        case .museum: "Your collection on a lit wall, a shelf a console"
         }
     }
     var symbol: String {
         switch self {
-        case .carousel: "rotate.3d"
+        case .showcase: "rotate.3d"
         case .cinema: "film"
-        case .fan: "rectangle.stack"
+        case .shutter: "rectangle.split.3x1"
         case .trailer: "play.rectangle"
+        case .wallet: "wallet.bifold"
+        case .museum: "building.columns"
         }
     }
 }
@@ -113,6 +118,32 @@ enum TheatreFilter: Hashable {
         }
     }
 
+    /// Whether a game is in the filter, given its genres
+    func matches(_ g: StageGame, genres: (StageGame) -> [String]) -> Bool {
+        switch self {
+        case .all: true
+        case .favourites: g.favorite
+        case .recent: Self.isRecent(g)
+        case .genre(let x): genres(g).contains(x)
+        }
+    }
+
+    /// The stops L and R walk for these games: All games, then Favourites and Recently played when any of them are, then each
+    /// genre one of them is in. Only the games the theme shows count, so no stop comes up empty.
+    static func stops(_ games: [StageGame], genres: (StageGame) -> [String]) -> [TheatreFilter] {
+        var out: [TheatreFilter] = [.all]
+        if games.contains(where: \.favorite) { out.append(.favourites) }
+        if games.contains(where: { isRecent($0) }) { out.append(.recent) }
+        out += DiscoverSource.order(Set(games.flatMap(genres))).map { .genre($0) }
+        return out
+    }
+
+    /// The filter in use for these games: this one when any of them is in it, else All games (a genre only unbuilt games are in,
+    /// chosen on Trailer, is All games on Showcase), so a filter never shows every game under its own name
+    func inUse(_ games: [StageGame], genres: (StageGame) -> [String]) -> TheatreFilter {
+        self == .all || games.contains(where: { matches($0, genres: genres) }) ? self : .all
+    }
+
     /// Recently played: played in the last 30 days
     static let recentDays = 30.0
     static func isRecent(_ g: StageGame, now: Date = Date()) -> Bool {
@@ -136,9 +167,10 @@ struct TheatreFact: Hashable {
 
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case carousel, fan, cinema, trailer, shuffle, edges, settings, leave
+    case resume, showcase, cinema, shutter, trailer, wallet, museum, shuffle, edges, settings, leave
     var title: String {
         switch self {
+        case .resume: "Continue"
         case .shuffle: "What Should I Play?"
         case .edges: "TV Edges"
         case .settings: "Settings"
@@ -148,14 +180,16 @@ enum TheatreMenuRow: Int, CaseIterable {
     }
     var theme: TheatreTheme? {
         switch self {
-        case .carousel: .carousel
+        case .showcase: .showcase
         case .cinema: .cinema
-        case .fan: .fan
+        case .shutter: .shutter
         case .trailer: .trailer
-        case .shuffle, .edges, .settings, .leave: nil
+        case .wallet: .wallet
+        case .museum: .museum
+        case .resume, .shuffle, .edges, .settings, .leave: nil
         }
     }
-    static func row(_ t: TheatreTheme) -> TheatreMenuRow { allCases.first { $0.theme == t } ?? .carousel }
+    static func row(_ t: TheatreTheme) -> TheatreMenuRow { allCases.first { $0.theme == t } ?? .showcase }
 }
 
 /// A screen that looks like a TV
@@ -252,17 +286,19 @@ extension AppModel {
         frontEnd = true
         theatreMenu = nil
         theatreTheme = settings.theatreTheme
+        showcaseLayout = settings.showcaseLayout
         theatreTouched = Date()
         theatreSaver = false
         // where Theatre was left: its filter, and the game in focus (else the one played last)
         theatreFilter = TheatreFilter(key: settings.theatreFilter)
-        if !theatreFilters().contains(theatreFilter) { theatreFilter = .all }
         if theatreFocus == nil {
             let games = theatreGames()
             theatreFocus = games.first { $0.id == settings.theatreLastGame }?.id ?? Self.lastPlayed(games)?.id ?? games.first?.id
         }
         theatreSpinning = false
         theatreCurtain = nil
+        theatreUnbox = nil
+        booklet = nil
         theatre = true
         // a new arrival's spotlight, else welcome back on the game played last (TheatreDelight.swift)
         theatreOpeningMoment()
@@ -299,6 +335,9 @@ extension AppModel {
         theatreMoment = nil
         theatreSpinning = false
         theatreCurtain = nil
+        theatreUnbox = nil
+        booklet = nil
+        TheatreRumble.shared.rest()
         TheatreMusic.shared.stop()
         rememberTheatreFocus()
         if let a = theatreActivity { ProcessInfo.processInfo.endActivity(a); theatreActivity = nil }
@@ -316,50 +355,43 @@ extension AppModel {
 
     /// The games on Theatre: the built ones (every game when none is built) in the filter, favourites first, then the ones played
     /// lately (newest first), then as the front end orders them
-    func theatreGames() -> [StageGame] {
+    func theatreGames() -> [StageGame] { theatreList(theatrePool(.showcase)) }
+
+    /// The games a theme picks from: Trailer every game, built or not; the others the built ones (every game when none is built)
+    func theatrePool(_ theme: TheatreTheme? = nil) -> [StageGame] {
         let games = stageGames()
+        if (theme ?? theatreTheme) == .trailer { return games }
         let built = games.filter { $0.app != nil }
-        return theatreOrder(theatreFiltered(built.isEmpty ? games : built))
+        return built.isEmpty ? games : built
     }
 
-    /// Favourites first, then the games played in the last 30 days (the newest first), then the rest in the order given;
-    /// Recently played is newest first throughout
-    func theatreOrder(_ games: [StageGame]) -> [StageGame] {
+    /// The filter in use for these games (TheatreFilter.inUse)
+    func theatreFilter(in games: [StageGame]) -> TheatreFilter { theatreFilter.inUse(games, genres: discover.genres(of:)) }
+
+    /// The filter the chip names: the one in use for the theme's games
+    var theatreShownFilter: TheatreFilter { theatreFilter(in: theatrePool()) }
+
+    /// The games in the filter, in Theatre's order: favourites first, then the games played in the last 30 days (the newest
+    /// first), then the rest in the order given; Recently played is newest first throughout
+    func theatreList(_ games: [StageGame]) -> [StageGame] {
+        let f = theatreFilter(in: games)
+        let list = games.filter { f.matches($0, genres: discover.genres(of:)) }
         let now = Date()
         let byLast: (StageGame, StageGame) -> Bool = { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }
-        if theatreFilter == .recent { return games.sorted(by: byLast) }
-        let favs = games.filter(\.favorite)
-        let recent = games.filter { !$0.favorite && TheatreFilter.isRecent($0, now: now) }.sorted(by: byLast)
-        let rest = games.filter { !$0.favorite && !TheatreFilter.isRecent($0, now: now) }
+        if f == .recent { return list.sorted(by: byLast) }
+        let favs = list.filter(\.favorite)
+        let recent = list.filter { !$0.favorite && TheatreFilter.isRecent($0, now: now) }.sorted(by: byLast)
+        let rest = list.filter { !$0.favorite && !TheatreFilter.isRecent($0, now: now) }
         return favs + recent + rest
     }
 
-    /// The games in the filter; when it holds none of these (a favourite unbuilt, say), all of them, so Theatre is never empty
-    func theatreFiltered(_ games: [StageGame]) -> [StageGame] {
-        let out: [StageGame]
-        switch theatreFilter {
-        case .all: return games
-        case .favourites: out = games.filter(\.favorite)
-        case .recent: out = games.filter { TheatreFilter.isRecent($0) }
-        case .genre(let g): out = games.filter { discover.genres(of: $0).contains(g) }
-        }
-        return out.isEmpty ? games : out
-    }
-
-    /// The stops L and R walk: All games, then Favourites and Recently played when there are any, then each genre your games are in
-    func theatreFilters() -> [TheatreFilter] {
-        let games = stageGames()
-        var out: [TheatreFilter] = [.all]
-        if games.contains(where: \.favorite) { out.append(.favourites) }
-        if games.contains(where: { TheatreFilter.isRecent($0) }) { out.append(.recent) }
-        out += discover.shelves(games).map { .genre($0) }
-        return out
-    }
+    /// The stops L and R walk, for the games the theme shows (TheatreFilter.stops)
+    func theatreFilters() -> [TheatreFilter] { TheatreFilter.stops(theatrePool(), genres: discover.genres(of:)) }
 
     func stepTheatreFilter(_ d: Int) {
         let all = theatreFilters()
         guard all.count > 1 else { return }
-        let i = all.firstIndex(of: theatreFilter) ?? 0
+        let i = all.firstIndex(of: theatreShownFilter) ?? 0
         theatreFilter = all[(i + d + all.count) % all.count]
         theatreRow = 0
         theatreWatch = false
@@ -419,7 +451,8 @@ extension AppModel {
         let all = stageGames()
         // the games drive away (or nothing built yet): every game, so Theatre still has rows
         let built = all.contains { $0.app != nil } ? all.filter { $0.app != nil } : all
-        if theatreFilter != .all { return [TheatreRow(title: theatreFilter.title, games: theatreOrder(theatreFiltered(built)))] }
+        let filter = theatreFilter(in: built)
+        if filter != .all { return [TheatreRow(title: filter.title, games: theatreList(built))] }
         var rows: [TheatreRow] = []
         let recent = built.filter { $0.last != nil }.sorted { ($0.last ?? .distantPast) > ($1.last ?? .distantPast) }
         if !recent.isEmpty { rows.append(TheatreRow(title: "Continue playing", games: Array(recent.prefix(12)))) }
@@ -449,12 +482,19 @@ extension AppModel {
 
     /// Trailer's strip: the games in the filter, built or not, favourites first, then the ones played lately, then as the front
     /// end orders them (built, recently played, by name)
-    func trailerGames() -> [StageGame] { theatreOrder(theatreFiltered(stageGames())) }
+    func trailerGames() -> [StageGame] { theatreList(theatrePool(.trailer)) }
 
     func setTheatreTheme(_ t: TheatreTheme) {
         theatreTheme = t
         theatreWatch = false
+        museumLightFocus = false
         if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { settings.theatreTheme = t }
+    }
+
+    /// Showcase's layout: the carousel or the fan, the same games and the same game in focus
+    func setShowcaseLayout(_ l: ShowcaseLayout) {
+        showcaseLayout = l
+        if ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil { settings.showcaseLayout = l }
     }
 
     /// A controller's button, or its key, on Theatre
@@ -468,6 +508,11 @@ extension AppModel {
         // a moment's card goes at any button, which then does what it does (A plays the game the card is about)
         if theatreMoment != nil, k != .r3, k != .volUp, k != .volDown { theatreMoment = nil }
         let covered = stageSettings || viewerOpen || launching != nil || playOptions != nil || gameDetail != nil || caseViewer != nil
+        // the case in the hand: its own buttons (the booklet and the game's page opened from it work as on the front end)
+        if theatreUnbox != nil, !covered, theatreMenu == nil, k != .r3, k != .volUp, k != .volDown {
+            if booklet != nil { bookletPad(k) } else { unboxPad(k) }
+            return
+        }
         // Theatre's sound (the trailer, the game's music, the clicks): the right stick's press mutes; - and = set the volume (the
         // stick itself only turns the box in front, so pushing it never changes the volume)
         switch k {
@@ -475,12 +520,16 @@ extension AppModel {
         case .volUp, .volDown: if !covered, theatreMenu == nil { stepTheatreVolume(k == .volUp ? 10 : -10) }; return
         default: break
         }
-        if let i = theatreMenu {
-            let rows = TheatreMenuRow.allCases
+        if let row = theatreMenu {
+            let rows = theatreMenuRows()
+            let i = rows.firstIndex { $0.rawValue == row } ?? 0
             switch k {
-            case .up: if i > 0 { theatreCue(.step) }; theatreMenu = max(i - 1, 0)
-            case .down: if i < rows.count - 1 { theatreCue(.step) }; theatreMenu = min(i + 1, rows.count - 1)
-            case .left, .right: if rows[i] == .edges { settings.theatreEdges = settings.theatreEdges.step(k == .left ? -1 : 1) }
+            case .up: if i > 0 { theatreCue(.step) }; theatreMenu = rows[max(i - 1, 0)].rawValue
+            case .down: if i < rows.count - 1 { theatreCue(.step) }; theatreMenu = rows[min(i + 1, rows.count - 1)].rawValue
+            case .left, .right:
+                if rows[i] == .edges { settings.theatreEdges = settings.theatreEdges.step(k == .left ? -1 : 1) }
+                // left and right on Showcase's row choose its layout, and pick the theme too
+                if rows[i] == .showcase { setTheatreTheme(.showcase); setShowcaseLayout(showcaseLayout.step(k == .left ? -1 : 1)); theatreCue(.theme) }
             case .a: pickTheatreMenu(rows[i])
             case .b, .menu: theatreMenu = nil
             default: break
@@ -493,16 +542,28 @@ extension AppModel {
         if covered { stagePad(k); return }
         let focus: StageGame?
         switch theatreTheme {
-        case .carousel, .fan, .trailer:
+        case .showcase, .shutter, .trailer:
             let games = theatreTheme == .trailer ? trailerGames() : theatreGames()
             focus = theatreFocused(games)
             if k == .down, theatreTheme == .trailer { theatreWatch = true; return }
+            // up and down: Showcase's next layout (the carousel, the fan, the shelf)
+            if k == .up || k == .down, theatreTheme == .showcase { setShowcaseLayout(showcaseLayout.step(k == .up ? -1 : 1)); theatreCue(.theme); return }
             if (k == .left || k == .right), !games.isEmpty {
                 let i = games.firstIndex { $0.id == focus?.id } ?? 0
                 theatreFocus = games[(i + (k == .left ? -1 : 1) + games.count) % games.count].id
-                if games.count > 1 { theatreCue(theatreTheme == .carousel || theatreTheme == .fan ? .turn : .step) }
+                if games.count > 1 { theatreCue(theatreTheme == .showcase ? .turn : .step) }
                 return
             }
+        case .wallet:
+            // the arrows go from pocket to pocket, and over a page's edge to the next page of cards
+            let games = theatreGames()
+            focus = theatreFocused(games)
+            if [.left, .right, .up, .down].contains(k) { walletPad(k, games: games, focus: focus); return }
+        case .museum:
+            // along a shelf and from shelf to shelf; up from the top one reaches the lighting switch, which has left and right
+            let games = theatreGames()
+            focus = theatreFocused(games)
+            if museumLightFocus || [.left, .right, .up, .down].contains(k) { museumPad(k, games: games, focus: focus); return }
         case .cinema:
             let rows = theatreRows()
             guard !rows.isEmpty else { focus = nil; break }
@@ -525,7 +586,8 @@ extension AppModel {
         case .a:
             // plays it, or does the step that stops it from playing (docs/ux.md); the place is kept for next time
             if let g = focus { theatreFocus = g.id; rememberTheatreFocus(); fix(g) }
-        case .y: if let g = focus { caseFlipped = false; gameDetail = g.ref }
+        // the case comes up into the hand (its page is Y again from there)
+        case .y: if let g = focus { pickUpCase(g) }
         case .x: if let g = focus, g.app != nil { openPlayOptions(g.ref) }
         // L and R: the filter; ZL and ZR: the theme
         case .l, .r: stepTheatreFilter(k == .l ? -1 : 1); theatreCue(.step)
@@ -543,10 +605,16 @@ extension AppModel {
         }
     }
 
+    /// The menu's rows: Continue only when a game's card is in the console
+    func theatreMenuRows() -> [TheatreMenuRow] {
+        TheatreMenuRow.allCases.filter { $0 != .resume || consoleGame() != nil }
+    }
+
     func pickTheatreMenu(_ r: TheatreMenuRow) {
         theatreMenu = nil
         switch r {
-        case .carousel, .fan, .cinema, .trailer: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
+        case .resume: theatreUnbox = nil; booklet = nil; continueFromConsole()
+        case .showcase, .cinema, .shutter, .trailer, .wallet, .museum: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
         case .shuffle: shuffleTheatre()
         // A steps the edges round and keeps the menu up, so the corners stay in view
         case .edges:
@@ -702,15 +770,15 @@ struct TheatreView: View {
         }
         // the lights go down as a game starts from Theatre, and the launch screen comes up under the box's light
         .onChange(of: model.launching?.id) { old, new in
-            if old == nil, new != nil, let l = model.launching { model.theatreLightsDown(l) }
+            if old == nil, new != nil, let l = model.launching, model.theatreCurtain == nil { model.theatreLightsDown(l) }
         }
         .task(id: model.theatreCurtain?.id) {
             guard let c = model.theatreCurtain else { revealed = true; return }
             revealed = false
             if c.frozen != nil { return }
-            try? await Task.sleep(for: .seconds(TheatreCurtain.reveal))
+            try? await Task.sleep(for: .seconds(c.reveal))
             revealed = true
-            try? await Task.sleep(for: .seconds(TheatreCurtain.length - TheatreCurtain.reveal))
+            try? await Task.sleep(for: .seconds(c.length - c.reveal))
             if model.theatreCurtain?.id == c.id { model.theatreCurtain = nil }
         }
         // the focused game's music, once the focus rests on it (not on Trailer, which has its own sound)
@@ -748,7 +816,7 @@ struct TheatreView: View {
                     continue
                 }
                 guard idle > wait, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil, model.launching == nil,
-                      model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil else { continue }
+                      model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil, model.theatreUnbox == nil else { continue }
                 model.theatreWatch = false
                 model.theatreSaver = true
             }
@@ -758,7 +826,7 @@ struct TheatreView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
                 guard model.theatreTheme == .trailer, !model.theatreWatch, !model.theatreSaver, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
-                      model.launching == nil, model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil, NSApp.isActive,
+                      model.launching == nil, model.playOptions == nil, !model.viewerOpen, model.caseViewer == nil, model.theatreUnbox == nil, NSApp.isActive,
                       Date().timeIntervalSince(model.theatreTouched) > 6, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { continue }
                 model.theatreWatch = true
             }
@@ -767,8 +835,8 @@ struct TheatreView: View {
         .task(id: "idle") {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard !still, model.theatreTheme == .carousel, !model.theatreSaver, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
-                      model.launching == nil, model.playOptions == nil, !model.viewerOpen, NSApp.isActive,
+                guard !still, model.theatreTheme == .showcase, model.showcaseLayout == .carousel, !model.theatreSaver, model.theatreMenu == nil, !model.stageSettings, model.gameDetail == nil,
+                      model.launching == nil, model.playOptions == nil, !model.viewerOpen, model.theatreUnbox == nil, NSApp.isActive,
                       Date().timeIntervalSince(model.theatreTouched) > 12, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { continue }
                 let games = model.theatreGames()
                 guard games.count > 1, let i = games.firstIndex(where: { $0.id == model.theatreFocused(games)?.id }) else { continue }
@@ -794,10 +862,12 @@ struct TheatreView: View {
 
     @ViewBuilder var stage: some View {
         switch model.theatreTheme {
-        case .carousel: CarouselTheme(model: model).transition(.opacity)
+        case .showcase: ShowcaseTheme(model: model).transition(.opacity)
         case .cinema: CinemaTheme(model: model).transition(.opacity)
+        case .shutter: ShutterTheme(model: model).transition(.opacity)
         case .trailer: TrailerTheme(model: model).transition(.opacity)
-        case .fan: FanTheme(model: model).transition(.opacity)
+        case .wallet: WalletTheme(model: model).transition(.opacity)
+        case .museum: MuseumTheme(model: model).transition(.opacity)
         }
     }
 
@@ -811,6 +881,10 @@ struct TheatreView: View {
             }
             .padding(24)
             .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+        if let b = model.theatreUnbox, model.theatreCurtain == nil {
+            TheatreUnboxView(model: model, unbox: b).id(b.id)
+            if let k = model.booklet { TheatreBookletView(model: model, state: k).id(k.id) }
         }
         if let s = model.caseViewer { CaseViewer(model: model, state: s).id(s.game.id).transition(.opacity) }
         if let g = model.gallery { GalleryViewer(model: model, state: g).id(g.id).transition(.opacity) }
@@ -834,20 +908,30 @@ struct TheatreTopBar: View {
     var pill = true
     @Environment(\.tu) private var u
 
+    /// the theme's name, and on Showcase its layout: "Showcase · Fan"
+    var title: String {
+        guard theme == .showcase, let model else { return theme.rawValue }
+        return "\(theme.rawValue)  ·  \(model.showcaseLayout.rawValue)"
+    }
+
     var body: some View {
         HStack {
-            HStack(spacing: 0) {
-                Text("NX").font(.system(size: 22 * u, weight: .heavy))
-                Text("FORGE").font(.system(size: 22 * u, weight: .light))
+            if let model {
+                TheatreConsoleMark(model: model, ink: ink)
+            } else {
+                HStack(spacing: 0) {
+                    Text("NX").font(.system(size: 22 * u, weight: .heavy))
+                    Text("FORGE").font(.system(size: 22 * u, weight: .light))
+                }
+                .tracking(7 * u).opacity(0.9)
             }
-            .tracking(7 * u).opacity(0.9)
             Spacer()
             if pill {
-                Text(theme.rawValue.uppercased()).font(.system(size: 16 * u, weight: .semibold)).tracking(2.4 * u)
+                Text(title.uppercased()).font(.system(size: 16 * u, weight: .semibold)).tracking(2.4 * u)
                     .padding(.horizontal, 16 * u).frame(height: 38 * u)
                     .background(ink.opacity(0.10), in: .capsule).overlay(Capsule().strokeBorder(ink.opacity(0.16), lineWidth: 1))
             } else {
-                Text(theme.rawValue).font(.system(size: 26 * u, weight: .medium))
+                Text(title).font(.system(size: 26 * u, weight: .medium))
             }
             TimelineView(.everyMinute) { t in
                 HStack(spacing: 10 * u) {
@@ -873,11 +957,11 @@ struct TheatreFilterChip: View {
     var body: some View {
         let all = model.theatreFilters()
         if all.count > 1 {
-            let i = all.firstIndex(of: model.theatreFilter) ?? 0
+            let i = all.firstIndex(of: model.theatreShownFilter) ?? 0
             HStack(spacing: 14 * u) {
                 TheatreHints(model: model, light: ink != .white).glyph("L")
                 VStack(spacing: 2 * u) {
-                    Text(model.theatreFilter.title).font(.system(size: 20 * u, weight: .semibold)).lineLimit(1)
+                    Text(model.theatreShownFilter.title).font(.system(size: 20 * u, weight: .semibold)).lineLimit(1)
                     // a dot a filter while there are few; with many genres a row of dots is only noise, so "3 of 17"
                     if all.count <= 8 {
                         HStack(spacing: 5 * u) {
@@ -894,9 +978,9 @@ struct TheatreFilterChip: View {
             }
             .padding(.horizontal, 16 * u).padding(.vertical, 8 * u)
             .background(ink.opacity(0.08), in: .capsule)
-            .animation(.easeInOut(duration: 0.25), value: model.theatreFilter)
+            .animation(.easeInOut(duration: 0.25), value: model.theatreShownFilter)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Filter: \(model.theatreFilter.title), L and R change it")
+            .accessibilityLabel("Filter: \(model.theatreShownFilter.title), L and R change it")
         }
     }
 }
@@ -923,7 +1007,7 @@ struct TheatreHints: View {
             if let g = focus {
                 // the same word as the main button: Continue, Play, or the step that stops it playing (docs/ux.md, Status words)
                 hint("A", model.theatreAction(g), filled: true)
-                hint("Y", "Details")
+                hint("Y", "Pick up")
                 if g.app != nil { hint("X", "Options") }
             }
             if filters, model.theatreFilters().count > 1 { hint("L", "R", "Filter") }
@@ -962,22 +1046,22 @@ struct TheatreMenu: View {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { model.theatreMenu = nil }
             VStack(alignment: .leading, spacing: 8 * u) {
                 Text("Theatre").font(.system(size: 40 * u, weight: .bold)).padding(.bottom, 14 * u)
-                ForEach(TheatreMenuRow.allCases, id: \.self) { r in
+                ForEach(model.theatreMenuRows(), id: \.self) { r in
                     let on = r.rawValue == focus
                     let current = r.theme == model.theatreTheme
                     Button { model.pickTheatreMenu(r) } label: {
                         HStack(spacing: 18 * u) {
                             Image(systemName: icon(r)).font(.system(size: 24 * u, weight: .semibold)).frame(width: 34 * u)
                             VStack(alignment: .leading, spacing: 3 * u) {
-                                Text(r.title).font(.system(size: 26 * u, weight: .semibold))
+                                Text(r == .resume ? "Continue \(model.consoleGame()?.name ?? "")" : r.title).font(.system(size: 26 * u, weight: .semibold)).lineLimit(1)
                                 if let n = note(r) { Text(n).font(.system(size: 17 * u)).foregroundStyle(on ? Color.black.opacity(0.6) : StageLook.faint) }
                             }
                             Spacer()
                             if current { Image(systemName: "checkmark").font(.system(size: 22 * u, weight: .bold)) }
-                            if r == .edges {
+                            if r == .edges || r == .showcase {
                                 HStack(spacing: 10 * u) {
                                     Image(systemName: "chevron.left").opacity(on ? 1 : 0)
-                                    Text(model.settings.theatreEdges.title).font(.system(size: 20 * u, weight: .semibold)).monospacedDigit()
+                                    Text(r == .edges ? model.settings.theatreEdges.title : model.showcaseLayout.rawValue).font(.system(size: 20 * u, weight: .semibold)).monospacedDigit()
                                     Image(systemName: "chevron.right").opacity(on ? 1 : 0)
                                 }
                             }
@@ -988,7 +1072,7 @@ struct TheatreMenu: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    if r == .trailer || r == .edges { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.vertical, 8 * u) }
+                    if r == .resume || r == .trailer || r == .edges { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.vertical, 8 * u) }
                 }
             }
             .padding(40 * u)
@@ -1003,7 +1087,9 @@ struct TheatreMenu: View {
 
     func icon(_ r: TheatreMenuRow) -> String {
         switch r {
-        case .carousel, .fan, .cinema, .trailer: r.theme?.symbol ?? ""
+        case .resume: "play.fill"
+        case .showcase: model.showcaseLayout.symbol
+        case .cinema, .shutter, .trailer, .wallet, .museum: r.theme?.symbol ?? ""
         case .shuffle: "dice"
         case .edges: "rectangle.dashed"
         case .settings: "gearshape"
@@ -1013,7 +1099,9 @@ struct TheatreMenu: View {
 
     func note(_ r: TheatreMenuRow) -> String? {
         switch r {
-        case .carousel, .fan, .cinema, .trailer: r.theme?.note
+        case .resume: "Its card is still in the console"
+        case .showcase: "Your boxes as a carousel, a fan or a shelf: ← → here, ↑ ↓ on Theatre"
+        case .cinema, .shutter, .trailer, .wallet, .museum: r.theme?.note
         case .shuffle: "Spin the shelf and land on a game (L3)"
         case .edges: "Can you see all four corners? ← → to inset the picture"
         case .settings: nil
@@ -1099,7 +1187,7 @@ struct CarouselTheme: View {
             LinearGradient(stops: [.init(color: .clear, location: 0.66), .init(color: .black.opacity(0.85), location: 0.9), .init(color: .black, location: 1)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
             VStack(spacing: 0) {
-                TheatreTopBar(theme: .carousel, model: model)
+                TheatreTopBar(theme: .showcase, model: model)
                 Spacer()
                 if let g = focus {
                     VStack(spacing: 14 * u) {
@@ -1485,7 +1573,7 @@ struct CinemaTheme: View {
                         .padding(.horizontal, 34 * u).frame(height: 64 * u).background(.white, in: .rect(cornerRadius: 14 * u))
                 }
                 .buttonStyle(.plain)
-                Button { model.theatrePad(.y) } label: { ghost("Details") }.buttonStyle(.plain)
+                Button { model.theatrePad(.y) } label: { ghost("Pick up") }.buttonStyle(.plain)
                 if g.app != nil { Button { model.theatrePad(.x) } label: { ghost("Play options") }.buttonStyle(.plain) }
             }
             .padding(.top, 28 * u)
@@ -1697,7 +1785,7 @@ struct TrailerTheme: View {
                     }
                     .buttonStyle(.plain)
                     Button { model.theatrePad(.y) } label: {
-                        HStack(spacing: 10 * u) { TheatreHints(model: model).glyph("Y"); Text("Details") }
+                        HStack(spacing: 10 * u) { TheatreHints(model: model).glyph("Y"); Text("Pick up") }
                             .font(.system(size: 21 * u, weight: .semibold))
                             .padding(.horizontal, 22 * u).frame(height: 54 * u)
                             .overlay(RoundedRectangle(cornerRadius: 12 * u).strokeBorder(.white.opacity(0.4), lineWidth: 1.5 * u))

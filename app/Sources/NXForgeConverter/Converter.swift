@@ -2,6 +2,7 @@
 // (stage, step, progress, stage_end, say: docs/development.md), then checks the app's signature.
 import Foundation
 import Observation
+import Darwin
 
 struct Job {
     /// the game as chosen: a folder, or a .nup file (Source)
@@ -32,6 +33,8 @@ struct Job {
 
     /// the folder holding the game's files, where <id>_build, the lock and the app go
     var folder: String { Source.folder(of: gameDir) }
+    /// a Game Boy Advance cartridge file (GBA.swift): scripts/gba_build.py converts it
+    var gba: Bool { GBA.isGame(gameDir) }
     /// the game files' size, recorded so other games' first builds can be estimated from this one
     var gameBytes: Int64 = 0
 }
@@ -114,8 +117,14 @@ final class BuildRun {
     var lastActivity: Date?
     /// seconds each stage should take (Estimates.expected), for the time left
     var expected: [String: Double] = [:]
-    /// why the converter stopped the build itself (free space ran low), shown instead of "stopped"
+    /// why the converter stopped the build itself, shown instead of "stopped"
     var stopNote: String?
+    /// paused by the converter while a disk it writes to is nearly full: the script and everything it started are stopped where
+    /// they stand (SIGSTOP), and carry on (SIGCONT) once there is room (Model.watchDisk)
+    var paused = false
+    var pausedAt: Date?
+    /// paused by the person (Pause on the Convert page or the build strip): only they let it carry on
+    var held = false
     /// the converter's own log of the build in <id>_build/logs, once it ends
     var logFile: String?
     private var process: Process?
@@ -156,6 +165,7 @@ final class BuildRun {
                 if let a = self.activity { ProcessInfo.processInfo.endActivity(a); self.activity = nil }
                 self.running = false
                 self.process = nil
+                self.paused = false; self.pausedAt = nil; self.held = false
                 if case .failure(let e) = r, e.description == "stopped", let note = self.stopNote { self.result = .failure(ConverterError(note)) } else { self.result = r }
                 self.onChange?()
             }
@@ -168,8 +178,56 @@ final class BuildRun {
         stage = Stage(); done = []; log = []; app = nil; ipa = nil; backup = nil; result = nil; planning = false; plan = []; stopNote = nil; logFile = nil; startedAt = nil; stageStartedAt = nil
     }
 
-    /// Ask the script to stop as Ctrl-C would (it ends the stage and exits with 130).
-    func cancel() { process?.interrupt() }
+    /// Ask the script to stop as Ctrl-C would (it ends the stage and exits with 130); a paused build is let go first, so it can.
+    func cancel() {
+        if paused { resume() }
+        process?.interrupt()
+    }
+
+    /// Stop the build where it stands, every process of it, until resume(). False when there is nothing to pause.
+    @discardableResult
+    func pause() -> Bool {
+        guard running, !paused, let p = process, p.isRunning else { return false }
+        Self.signalTree(p.processIdentifier, SIGSTOP)
+        paused = true; pausedAt = Date()
+        onChange?()
+        return true
+    }
+
+    /// Let a paused build carry on; the time it waited is left out of its stage's elapsed time and time left.
+    func resume() {
+        guard paused else { return }
+        if let p = process { Self.signalTree(p.processIdentifier, SIGCONT) }
+        if let t = pausedAt {
+            let waited = Date().timeIntervalSince(t)
+            stageStartedAt = stageStartedAt?.addingTimeInterval(waited); startedAt = startedAt?.addingTimeInterval(waited)
+        }
+        paused = false; pausedAt = nil; held = false; lastActivity = Date()
+        onChange?()
+    }
+
+    /// A process and every process under it (children of children too), the process first.
+    nonisolated static func tree(_ root: pid_t) -> [pid_t] {
+        var out = [root], i = 0
+        while i < out.count {
+            var buf = [pid_t](repeating: 0, count: 1024)
+            let n = Int(proc_listchildpids(out[i], &buf, Int32(buf.count * MemoryLayout<pid_t>.size)))
+            for c in buf.prefix(max(0, min(n, buf.count))) where c > 0 && !out.contains(c) { out.append(c) }
+            i += 1
+        }
+        return out
+    }
+
+    /// SIGSTOP from the top down (the script first, so it starts nothing new; a second pass takes what it started meanwhile);
+    /// SIGCONT from the bottom up.
+    nonisolated static func signalTree(_ root: pid_t, _ sig: Int32) {
+        if sig == SIGSTOP {
+            var done = Set<pid_t>()
+            for _ in 0..<2 { for p in tree(root) where done.insert(p).inserted { kill(p, SIGSTOP) } }
+        } else {
+            for p in tree(root).reversed() { kill(p, sig) }
+        }
+    }
 
     /// Stop the build for a reason of the converter's own (low disk space): the failure then says why.
     func stop(because note: String) {
@@ -190,6 +248,7 @@ final class BuildRun {
         defer { ProcessInfo.processInfo.endActivity(activity) }
         let say: (String) -> Void = { m in DispatchQueue.main.async { r.flushLog(); r.log.append(m); r.onChange?() } }
         do {
+            if job.gba { try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true) }
             let lock = try FolderLock(job.folder)
             defer { lock.release() }
             guard let repo = job.env.repo else { throw ConverterError("no NXForge engine checkout") }
@@ -374,6 +433,14 @@ final class BuildRun {
         p.executableURL = URL(fileURLWithPath: py)
         let tree = Layer.tree(repo)
         var args = ["-u", tree + "/" + scriptPath, job.gameDir, "--platform", job.ios ? "ios" : "mac-app", "--progress", "json"]
+        if job.gba {
+            // a Game Boy Advance cartridge: its own script (in the checkout, not the engine tree), its app and build folder in the game's own folder (GBA.home)
+            try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true)
+            args = ["-u", repo + "/" + GBA.helper, job.gameDir, "--progress", "json", "--home", job.folder, "--name", GBA.cleanName(job.gameDir)]
+            if let o = job.rebuild { args += ["-o", o] }   // else in the game's own folder, with its build folder and media
+            if job.scratch || !job.reuseCache { args.append("--fresh") }
+            if job.cleanup == .all { args.append("--cleanup") }   // the C and object files are what makes Convert again quick: only "all" removes them
+        } else {
         if let k = job.keys { args += ["-k", k] }
         if job.plan { args.append("--plan") }
         if !job.ios, let id = job.sign { args += ["--mac-sign", id] }
@@ -383,8 +450,9 @@ final class BuildRun {
             try? FileManager.default.createDirectory(atPath: (w as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
             args += ["--work-dir", w]
         }
+        }
         p.arguments = args
-        p.currentDirectoryURL = URL(fileURLWithPath: tree)
+        p.currentDirectoryURL = URL(fileURLWithPath: job.gba ? repo : tree)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = job.env.path
         env["PYTHONUNBUFFERED"] = "1"

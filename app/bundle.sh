@@ -61,6 +61,10 @@ cat > "$app/Contents/Info.plist" <<EOF
     <key>LSHandlerRank</key><string>Alternate</string>
     <key>CFBundleTypeExtensions</key><array><string>nup</string></array>
   </dict></array>
+  <key>CFBundleURLTypes</key><array><dict>
+    <key>CFBundleURLName</key><string>org.nxforge.link</string>
+    <key>CFBundleURLSchemes</key><array><string>nxforge</string></array>
+  </dict></array>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
   <key>NSHighResolutionCapable</key><true/>

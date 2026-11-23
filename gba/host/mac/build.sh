@@ -1,0 +1,20 @@
+#!/bin/bash
+# Build the Game Boy Advance player (gba/build/nxgba-player): gba_front_mac.m, NXForge's sidebar (the same Swift file
+# the Switch player builds) and the host library (cargo build --release in gba/host; scripts/gba_engine.py build does both).
+set -euo pipefail
+cd "$(dirname "$0")"
+ROOT=../../..; OUT=$ROOT/gba/build; QS=$ROOT/layer/files/dm/host; MIN=${MACOS_MIN:-26.0}
+mkdir -p "$OUT"
+SDK=$(xcrun --show-sdk-path)
+# the Switch player's MMPX shader (Pixel art › Smooth edges), as a C string the player compiles at start
+sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$/\\n"/' "$ROOT/layer/files/dm/gfx/msl/pixel_art.metal" > "$OUT/pixel_art_metal.inc"
+if [ ! -f "$OUT/quick_settings_mac.o" ] || [ "$QS/quick_settings_mac.swift" -nt "$OUT/quick_settings_mac.o" ] || [ "$QS/quick_settings_mac.h" -nt "$OUT/quick_settings_mac.o" ] || [ front.h -nt "$OUT/quick_settings_mac.o" ]; then
+  swiftc -O -target arm64-apple-macos$MIN -parse-as-library -module-name dmquick -import-objc-header "$QS/quick_settings_mac.h" -Xcc -I. \
+    -c "$QS/quick_settings_mac.swift" -o "$OUT/quick_settings_mac.o"
+fi
+clang -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -target arm64-apple-macos$MIN -I. -I.. -I"$QS" -I"$OUT" gba_front_mac.m "$OUT/quick_settings_mac.o" ../target/release/libnxgba.a -lcompression \
+  -framework Cocoa -framework Metal -framework QuartzCore -framework GameController -framework AudioToolbox -framework CoreAudio -framework IOKit -framework Security \
+  -L"$SDK/usr/lib/swift" -L"$(dirname "$(xcrun -f swiftc)")/../lib/swift/macosx" -Wl,-rpath,/usr/lib/swift -Wl,-dead_strip -o "$OUT/nxgba-player"
+# the symbol table is half the file and nothing reads it at run time (crash reports keep addresses)
+strip "$OUT/nxgba-player"
+echo "built $OUT/nxgba-player"

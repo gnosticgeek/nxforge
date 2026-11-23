@@ -45,9 +45,14 @@ struct TheatreCurtain: Equatable, Identifiable {
     let game: String
     let start = Date()
     var frozen: Double? = nil
+    /// the card into the console, or the box opening into light (Settings › Theatre › When a game starts)
+    var style: TheatreLaunch = .lights
+    /// the card's sequence begins this far in: the case is open in the hand already, or the card is in the console
+    var offset = 0.0
+    var fromConsole = false
     /// when the launch screen comes up under the light, and when the light has gone
-    static let reveal = 1.75
-    static let length = 2.35
+    var reveal: Double { style == .card ? CaseSceneState.reveal - offset : 1.75 }
+    var length: Double { style == .card ? CaseSceneState.length - offset : 2.35 }
 }
 
 /// The time of day Theatre's light follows (Settings › Theatre › Light follows the time of day)
@@ -160,7 +165,7 @@ extension AppModel {
             let r = cinemaRow(rows)
             return (rows[r].games, r)
         case .trailer: return (trailerGames(), nil)
-        case .carousel, .fan: return (theatreGames(), nil)
+        case .showcase, .shutter, .wallet, .museum: return (theatreGames(), nil)
         }
     }
 
@@ -232,10 +237,11 @@ extension AppModel {
         TheatreSound.shared.play(c)
     }
 
-    func theatreCueLater(_ c: TheatreSound.Cue, after s: Double) {
+    func theatreCueLater(_ c: TheatreSound.Cue, after s: Double, rumble: TheatreRumble.Knock? = nil) {
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(s))
+            try? await Task.sleep(for: .seconds(max(s, 0)))
             self?.theatreCue(c)
+            if let rumble { self?.theatreRumble(rumble) }
         }
     }
 
@@ -244,8 +250,33 @@ extension AppModel {
         guard theatre, l.failure == nil else { return }
         let g = stageGames().first { $0.isRef(l.ref) }
         theatreMoment = nil
-        theatreCurtain = TheatreCurtain(game: g?.id ?? "")
-        theatreCue(.launch)
+        // the card's way in needs the game (and motion); else the lights go down as before
+        guard settings.theatreLaunch == .card, let g, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            theatreUnbox = nil
+            theatreFromConsole = false
+            theatreCurtain = TheatreCurtain(game: g?.id ?? "")
+            theatreCue(.launch)
+            return
+        }
+        // from the open case in the hand the card lifts straight out; from the console it is there already
+        let open = theatreUnbox?.game == g.id && theatreUnbox?.stage == .open
+        let console = theatreFromConsole && !open
+        let offset = open ? CaseSceneState.cardLifts : console ? CaseSceneState.fromConsole : 0
+        theatreFromConsole = false
+        theatreCurtain = TheatreCurtain(game: g.id, style: .card, offset: offset, fromConsole: console)
+        theatreUnbox = nil
+        if offset == 0 {
+            theatreCue(.lift)
+            theatreCueLater(.caseOpen, after: CaseSceneState.opens, rumble: .snap)
+        }
+        if !console { theatreCueLater(.cardOut, after: CaseSceneState.cardLifts - offset) }
+        theatreCueLater(.cardIn, after: CaseSceneState.clicks - offset - 0.06, rumble: .click)
+    }
+
+    /// The controller's knock, when Settings has it on (never while snapshotting)
+    func theatreRumble(_ k: TheatreRumble.Knock) {
+        guard theatre, settings.theatreRumble, ProcessInfo.processInfo.environment["NXC_SNAPSHOT"] == nil else { return }
+        TheatreRumble.shared.play(k)
     }
 }
 
@@ -256,7 +287,8 @@ extension AppModel {
 @MainActor
 final class TheatreSound {
     static let shared = TheatreSound()
-    enum Cue: CaseIterable { case step, turn, theme, open, launch, chime, spin, land }
+    /// lift, caseOpen, caseClose, cardOut and cardIn are the case in the hand's (TheatreUnbox.swift)
+    enum Cue: CaseIterable { case step, turn, theme, open, launch, chime, spin, land, lift, caseOpen, caseClose, cardOut, cardIn, page, stamp }
 
     private var engine: AVAudioEngine?
     private var players: [AVAudioPlayerNode] = []
@@ -323,6 +355,12 @@ enum TheatreSynth {
         case .chime: 0.30
         case .spin: 0.22
         case .land: 0.36
+        case .lift: 0.20
+        case .caseOpen, .caseClose: 0.42
+        case .cardOut: 0.26
+        case .cardIn: 0.6
+        case .page: 0.2
+        case .stamp: 0.5
         }
     }
 
@@ -337,7 +375,50 @@ enum TheatreSynth {
         case .launch: thunk()
         case .chime: bells([1046.5, 1318.5, 1568.0, 2093.0], gap: 0.075, ring: 0.55)
         case .land: bells([783.99, 1174.66], gap: 0.1, ring: 0.7)
+        case .lift: tok(330, length: 0.14)
+        // a plastic case: two catches letting go a moment apart (shutting, the other way round and lower)
+        case .caseOpen: snaps([(0, 1900, 0.7), (0.045, 2600, 1)], length: 0.2)
+        case .caseClose: snaps([(0, 1500, 1), (0.038, 1100, 0.6)], length: 0.2)
+        case .cardOut: snaps([(0, 3200, 0.8)], length: 0.09)
+        // the card sliding down and its catch: a light tick, then a firmer click with a little weight under it
+        case .cardIn: mix(snaps([(0, 2800, 0.45), (0.07, 2100, 1)], length: 0.36), knock(at: 0.07, length: 0.36))
+        // a leaf going over: two light flicks of paper, no rush of air
+        case .page: snaps([(0, 1250, 0.5), (0.06, 900, 0.35)], length: 0.16)
+        // a rubber stamp coming down: a soft thud with a little slap on top
+        case .stamp: mix(snaps([(0, 700, 0.5)], length: 0.3), knock(at: 0, length: 0.3))
         }
+    }
+
+    /// short plastic snaps: each a quick high sine and a breath of noise, `at` seconds in
+    static func snaps(_ hits: [(at: Double, hz: Double, level: Double)], length: Double) -> [Float] {
+        var noise = Noise()
+        return (0..<Int(length * rate)).map { i in
+            let t = Double(i) / rate
+            let n = noise.next()
+            var v = 0.0
+            for h in hits {
+                let s = t - h.at
+                guard s >= 0 else { continue }
+                v += (sin(2 * .pi * h.hz * s) * exp(-s / 0.0035) * 0.6 + n * exp(-s / 0.0016) * 0.45 + sin(2 * .pi * h.hz * 0.31 * s) * exp(-s / 0.012) * 0.3) * h.level * fadeIn(s, 0.0006)
+            }
+            return Float(tanh(v) * fadeOut(t, length, 0.03))
+        }
+    }
+
+    /// a small weight landing: a low tone that falls away at once
+    static func knock(at: Double, length: Double) -> [Float] {
+        var phase = 0.0
+        return (0..<Int(length * rate)).map { i in
+            let t = Double(i) / rate, s = t - at
+            guard s >= 0 else { return 0 }
+            phase += 2 * .pi * (70 + 90 * exp(-s / 0.03)) / rate
+            return Float(sin(phase) * exp(-s / 0.06) * 0.55 * fadeIn(s, 0.002) * fadeOut(t, length, 0.05))
+        }
+    }
+
+    /// two sounds on top of each other, soft-limited
+    static func mix(_ a: [Float], _ b: [Float]) -> [Float] {
+        (0..<max(a.count, b.count)).map { i in tanh((i < a.count ? a[i] : 0) + (i < b.count ? b[i] : 0)) }
     }
 
     /// a short tick: a quick sine with a breath of noise at its start
@@ -665,9 +746,8 @@ struct TheatreMomentCard: View {
     /// where the game stands across the screen, on the themes where it stands in one place
     var beamX: CGFloat? {
         switch model.theatreTheme {
-        case .carousel: width / 2
-        case .fan: width / 2
-        case .cinema, .trailer: nil
+        case .showcase, .shutter: width / 2
+        case .cinema, .trailer, .wallet, .museum: nil
         }
     }
 
@@ -817,7 +897,11 @@ struct TheatreLightsDown: View {
         GeometryReader { geo in
             TimelineView(.animation(paused: curtain.frozen != nil)) { ctx in
                 let t = curtain.frozen ?? ctx.date.timeIntervalSince(curtain.start)
-                scene(t: t, game: g, tint: tint, size: geo.size)
+                if curtain.style == .card, let g, !still {
+                    card(t: t + curtain.offset, game: g, size: geo.size)
+                } else {
+                    scene(t: t, game: g, tint: tint, size: geo.size)
+                }
             }
         }
         .allowsHitTesting(false)
@@ -830,12 +914,40 @@ struct TheatreLightsDown: View {
         return 1 + (s + 1) * pow(c - 1, 3) + s * pow(c - 1, 2)
     }
 
+    /// The card's way in (TheatreUnbox.swift): the case comes forward and opens, the card drops into the console, its light fills
+    /// the room. From the open case in the hand the room is dark already.
+    @ViewBuilder func card(t: Double, game: StageGame, size: CGSize) -> some View {
+        let s = cardState(t)
+        let tint = CoverArt.tint(game)
+        let out = Self.ease((t - CaseSceneState.reveal) / (CaseSceneState.length - CaseSceneState.reveal - 0.05))
+        ZStack {
+            Color.black.opacity((curtain.fromConsole ? 0.88 : 0.88 + 0.06 * s.away) * s.room)
+            RadialGradient(colors: [tint.opacity(0.36 * s.room), tint.opacity(0.08 * s.room), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 820 * u)
+            TheatreCaseScene(game: game, state: s, keep: model.keepsake(game), manual: GameManual.find(game), u: u)
+        }
+        .frame(width: size.width, height: size.height)
+        .opacity(1 - out)
+    }
+
+    /// The scene at `t`: from the open case the room is dark and the console up already; from the console they come in quickly
+    func cardState(_ t: Double) -> CaseSceneState {
+        var s = CaseSceneState.launch(t, consoleOnly: curtain.fromConsole)
+        if curtain.fromConsole {
+            s.room = Self.ease((t - curtain.offset) / 0.3)
+            s.console = s.room
+        } else if curtain.offset > 0 {
+            s.room = 1
+            s.console = 1
+        }
+        return s
+    }
+
     @ViewBuilder func scene(t: Double, game: StageGame?, tint: Color, size: CGSize) -> some View {
         let dim = Self.ease(t / 0.45)
         let fly = Self.backOut((t - 0.1) / 0.8)
         let open = Self.ease((t - 0.85) / 0.55)
         let bloom = Self.ease((t - 1.15) / 0.6)
-        let out = Self.ease((t - TheatreCurtain.reveal) / (TheatreCurtain.length - TheatreCurtain.reveal - 0.05))
+        let out = Self.ease((t - curtain.reveal) / (curtain.length - curtain.reveal - 0.05))
         let boxW = (240 + 190 * fly) * u, boxH = boxW / CoverSource.aspect
         ZStack {
             Color.black.opacity(0.93 * dim)

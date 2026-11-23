@@ -3,6 +3,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import simd
 import Testing
 @testable import NXForgeConverter
 
@@ -281,6 +282,7 @@ import Testing
         ("[RED] no base game NSP found in /Games/Mario (title ID 010015100B514000)", .gameFiles),
         ("[RED] patch_nso.py exit code 1 on main (full output: x.log)", .rewriter),
         ("[RED] dmsh_build.py exit code 2 (full output: x.log)", .shaders),
+        ("[RED] the split shader tables differ from game profile 04008E001F098000's:\nshader_map.tsv: 154 row(s) only in the profile", .profileTables),
         ("another build of this folder is running (process 412); wait for it to finish", .folderBusy),
         ("signature check failed: code object is not signed at all", .signing),
         ("stopped", .stopped),
@@ -1398,7 +1400,7 @@ import Testing
 
     @Test func frontEndSettingsDefault() throws {
         let s = try JSONDecoder().decode(Settings.self, from: Data(#"{"start_in": "Converter", "battery_preset": false}"#.utf8))
-        #expect(s.startIn == .converter && !s.batteryPreset && s.straightPlay && s.returnToLibrary && s.downloadCovers)
+        #expect(s.startIn == .converter && !s.batteryPreset && s.returnToLibrary && s.downloadCovers)
     }
 }
 
@@ -1779,6 +1781,19 @@ import Testing
         #expect(TypeSelectBuffer.first(["Mario", "The Legend of Zelda", "Zelda II"], prefix: "leg", title: { $0 }) == "The Legend of Zelda")
     }
 
+    @Test func failedBuildIsTold() {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxc-failed-\(UUID().uuidString)").path
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let g = LibraryGame(kind: .dump, path: dir, name: "Switch Sports", fileCount: 1, bytes: 1, base: true, updates: 0, dlc: 0)
+        let f = FailedBuild(title: "A shader step failed", fix: "Build again.", error: "x", at: Date(), log: nil)
+        let st = GameStatus.of(app: nil, game: g, keys: { _ in nil }, failure: { $0 == dir ? f : nil })
+        #expect(st == .buildFailed(f))
+        #expect(st.buildable && !st.playable && st.text == "Build failed" && st.action == "Build Again")
+        #expect(GameStatus.of(app: nil, game: g, keys: { _ in nil }) == .notBuilt)
+        #expect(GameStatus.of(app: "/x.app", game: g, keys: { _ in nil }, failure: { _ in f }) == .ready)
+    }
+
     @Test func offlineDriveIsNamed() {
         #expect(GameStatus.offlineVolume("/Volumes/NoSuchDrive-\(UUID().uuidString)/roms/Game") != nil)
         #expect(GameStatus.offlineVolume("/Users/tom/Games/Game") == nil)
@@ -1914,6 +1929,28 @@ import Testing
         #expect(TheatreFilter.genre("Platformer").title == "Platformers")
     }
 
+    @Test func theatreFiltersOnlyOfferGenresTheGamesAreIn() {
+        func game(_ id: String, built: Bool, fav: Bool = false) -> StageGame {
+            var g = StageGame(id: id, ref: GameRef(app: "/\(id).app"), name: id, console: .switch1, app: built ? "/\(id).app" : nil)
+            g.favorite = fav
+            return g
+        }
+        let book = ["cup": ["Run and gun", "Action"], "dd": ["Beat 'em up"], "golf": ["Golf", "Sports"], "tetris": ["Puzzle"]]
+        let genres: (StageGame) -> [String] = { book[$0.id] ?? ["Other"] }
+        let all = [game("cup", built: true), game("dd", built: true, fav: true), game("golf", built: false), game("tetris", built: false)]
+        let built = all.filter { $0.app != nil }
+        // the built games' genres only: no Puzzles or Sports stop that would show every built game
+        let stops = TheatreFilter.stops(built, genres: genres)
+        #expect(stops == [.all, .favourites, .genre("Action"), .genre("Run and gun"), .genre("Beat 'em up")])
+        // Trailer shows unbuilt games too, so their genres are stops there
+        #expect(TheatreFilter.stops(all, genres: genres).contains(.genre("Puzzle")))
+        // a genre picks only its games
+        #expect(built.filter { TheatreFilter.genre("Beat 'em up").matches($0, genres: genres) }.map(\.id) == ["dd"])
+        // a genre none of these games is in (chosen on Trailer) is All games here, not every game under the genre's name
+        #expect(TheatreFilter.genre("Puzzle").inUse(built, genres: genres) == .all)
+        #expect(TheatreFilter.genre("Action").inUse(built, genres: genres) == .genre("Action"))
+    }
+
     @Test func recentlyPlayedIsTheLastThirtyDays() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         func game(_ daysAgo: Double?) -> StageGame {
@@ -2001,11 +2038,43 @@ import Testing
         #expect(abs(s.first!) < 0.05 && abs(s.last!) < 0.05)
     }
 
-    @Test func galleryAndShelfBecomeTheFan() throws {
-        for (saved, theme) in [("Gallery", TheatreTheme.fan), ("Shelf", .fan), ("Fan", .fan), ("Cinema", .cinema), ("rubbish", .carousel)] {
+    @Test func carouselAndFanBecomeShowcase() throws {
+        for (saved, theme) in [("Carousel", TheatreTheme.showcase), ("Fan", .showcase), ("Gallery", .showcase), ("Shelf", .showcase),
+                               ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
             #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
         }
-        #expect(!TheatreTheme.allCases.map(\.rawValue).contains("Gallery"))
+        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer", "Wallet", "Museum"])
+        #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Shutter\"".utf8)) == .shutter)
+    }
+
+    @Test func anOldThemeOpensShowcaseOnItsLayout() throws {
+        func load(_ json: String) throws -> Settings { try JSONDecoder().decode(Settings.self, from: Data(json.utf8)) }
+        for (saved, layout) in [("Carousel", ShowcaseLayout.carousel), ("Fan", .fan), ("Gallery", .fan), ("Shelf", .fan), ("Cinema", .carousel)] {
+            #expect(try load(#"{"theatre_theme": "\#(saved)"}"#).showcaseLayout == layout)
+        }
+        // a saved layout wins, and it survives a round trip
+        var s = try load(#"{"theatre_theme": "Carousel", "theatre_showcase_layout": "Fan"}"#)
+        #expect(s.theatreTheme == .showcase && s.showcaseLayout == .fan)
+        s.showcaseLayout = .carousel
+        #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).showcaseLayout == .carousel)
+        #expect(ShowcaseLayout.carousel.step(1) == .fan && ShowcaseLayout.fan.step(1) == .shelf && ShowcaseLayout.shelf.step(1) == .carousel)
+        #expect(ShowcaseLayout.carousel.step(-1) == .shelf && ShowcaseLayout.fan.step(-1) == .carousel)
+    }
+
+    @Test func shutterLaysPanelsEitherSideOfTheMiddle() {
+        #expect(ShutterLayout.places(index: 0, count: 0).isEmpty)
+        // a short list stops at its ends
+        #expect(ShutterLayout.places(index: 0, count: 3).map(\.d) == [0, 1, 2])
+        #expect(ShutterLayout.places(index: 2, count: 3).map(\.game) == [0, 1, 2])
+        // a long one goes round: the first game has the last ones on its left
+        let p = ShutterLayout.places(index: 0, count: 10)
+        #expect(p.map(\.game) == [7, 8, 9, 0, 1, 2, 3] && p.map(\.d) == Array(-3...3))
+        #expect(Set(p.map(\.game)).count == p.count)
+        // the middle is wide, the neighbours sit either side without touching
+        #expect(ShutterLayout.centre(0) == 0 && ShutterLayout.centre(-1) == -ShutterLayout.centre(1))
+        #expect(ShutterLayout.centre(1) - ShutterLayout.narrow / 2 - ShutterLayout.wide / 2 == ShutterLayout.gap)
+        #expect(ShutterLayout.centre(2) - ShutterLayout.centre(1) == ShutterLayout.narrow + ShutterLayout.gap)
+        #expect(ShutterLayout.opacity(ShutterLayout.reach) == 0 && ShutterLayout.opacity(2) == 1)
     }
 
     @Test func fanDrawsTheBoxesNearTheFront() {
@@ -2036,6 +2105,67 @@ import Testing
         s.theatreSounds = false; s.theatreMusic = false; s.theatreTimeOfDay = false; s.theatreSeen = ["a", "b"]; s.theatreMusicFolder = "/Music/Theatre"
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
         #expect(!back.theatreSounds && !back.theatreMusic && !back.theatreTimeOfDay && back.theatreSeen == ["a", "b"] && back.theatreMusicFolder == "/Music/Theatre")
+    }
+}
+
+@Suite struct TheatreCaseInTheHand {
+    @Test func launchSettingsDefaultToTheCardAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreLaunch == .card && old.theatreRumble)
+        var s = Settings()
+        s.theatreLaunch = .lights; s.theatreRumble = false
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back.theatreLaunch == .lights && !back.theatreRumble)
+    }
+
+    @Test func theCardGoesHomeBeforeTheLightComesUp() {
+        // each part of the launch begins after the one before it, and the launch screen comes up once the room is full of light
+        let c = CaseSceneState.self
+        #expect(c.opens < c.cardLifts && c.cardLifts < c.cardFlies && c.cardFlies < c.cardSeats && c.cardSeats < c.clicks && c.clicks <= c.blooms && c.blooms < c.reveal && c.reveal < c.length)
+        let start = c.launch(0), mid = c.launch(c.cardFlies), end = c.launch(c.reveal)
+        #expect(start.open == 0 && start.cardFly == 0 && start.bloom == 0)
+        #expect(mid.open == 1 && mid.cardOut > 0.4 && mid.cardSeat == 0 && mid.lit == 0)
+        #expect(end.cardSeat == 1 && end.lit == 1 && end.bloom > 0.4)
+        // from the open case, and from the console, the sequence starts part of the way in and is that much shorter
+        let open = TheatreCurtain(game: "g", style: .card, offset: c.cardLifts)
+        #expect(abs(open.length - (c.length - c.cardLifts)) < 1e-9 && open.reveal > 0 && open.reveal < open.length)
+        let console = TheatreCurtain(game: "g", style: .card, offset: c.fromConsole, fromConsole: true)
+        #expect(console.reveal > 0.5 && c.launch(c.fromConsole, consoleOnly: true).cardSeat == 0)
+        let lights = TheatreCurtain(game: "g")
+        #expect(lights.style == .lights && lights.reveal == 1.75 && lights.length == 2.35)
+    }
+
+    @Test func aBoxShowsOnlyTheFacesTurnedToTheCamera() {
+        let d = 2000.0
+        func seen(_ m: Solid.Matrix) -> Set<Solid.BoxSide> {
+            Set(Solid.box(width: 372, height: 602, depth: 37).filter { Solid.facing(m * $0.matrix, distance: d) > 0.001 }.map(\.side))
+        }
+        #expect(seen(Solid.identity) == [.front])
+        #expect(seen(Solid.turnY(.pi)) == [.back])
+        // turned to its right, the spine (its left side) comes into view beside the front
+        #expect(seen(Solid.turnY(0.5)) == [.front, .left])
+        #expect(seen(Solid.turnY(-0.5)) == [.front, .right])
+        #expect(seen(Solid.turnX(0.4)).contains(.bottom))
+    }
+
+    @Test func theLidSwingsTowardsYouOnItsSpine() {
+        // the lid's far edge, a case's width from the hinge: half open it is nearer the camera, fully open it lies to the left
+        func edge(_ open: Double) -> SIMD3<Double> { Solid.point(Solid.turnY(-open * 176 * .pi / 180), 372, 0, 0) }
+        #expect(edge(0.5).z > 300)
+        #expect(edge(1).x < -365 && edge(1).z > 0)
+        // nearer the camera is bigger on screen
+        #expect(Solid.onScreen(SIMD3(100, 0, 500), distance: 2000).x > 100)
+        #expect(Solid.onScreen(SIMD3(100, 0, -500), distance: 2000).x < 100)
+    }
+
+    @Test(arguments: TheatreRumble.Knock.allCases)
+    func knocksAreShortAndInRange(_ k: TheatreRumble.Knock) {
+        #expect(!k.taps.isEmpty && k.taps.allSatisfy { $0.at >= 0 && $0.at < 0.3 && $0.intensity > 0 && $0.intensity <= 1 && $0.sharpness >= 0 && $0.sharpness <= 1 })
+    }
+
+    @Test func continueIsOnTheMenuOnlyWithACardInTheConsole() {
+        #expect(TheatreMenuRow.allCases.first == .resume)
+        #expect(TheatreMenuRow.row(.shutter) == .shutter && TheatreMenuRow.resume.theme == nil)
     }
 }
 
@@ -2272,5 +2402,462 @@ import Testing
         #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).folderCheck == .manual)
         #expect(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)).folderCheck == .ten)
         #expect(FolderCheck.manual.seconds == nil && FolderCheck.hour.seconds == 3600)
+    }
+}
+
+@Suite struct GameLinks {
+    struct G { let name: String; let id: String?; let built: Bool }
+    let games = [G(name: "The Legend of Zelda™: Ocarina of Time", id: "0400486024DEC000", built: true),
+                 G(name: "The Legend of Zelda: Breath of the Wild", id: "01007EF00011E000", built: false),
+                 G(name: "Mario Kart World", id: "0400C3F00006E000", built: true),
+                 G(name: "Mario Kart 8 Deluxe", id: "0100152000022000", built: false),
+                 G(name: "Pokémon™ Legends: Z-A", id: nil, built: false)]
+    func find(_ q: String) -> String? { GameLink.find(q, in: games, name: \.name, titleID: \.id, built: \.built)?.name }
+
+    @Test func linksNameAnActionAndAGame() {
+        #expect(GameLink.parse(URL(string: "nxforge://play/mario%20kart")!)?.game == "mario kart")
+        #expect(GameLink.parse(URL(string: "nxforge://play?game=Zelda")!)?.action == "play")
+        #expect(GameLink.parse(URL(string: "nxforge://play?game=Zelda")!)?.game == "Zelda")
+        #expect(GameLink.parse(URL(string: "nxforge://theatre")!)?.game == nil)
+        #expect(GameLink.parse(URL(string: "https://example.com/play")!) == nil)
+    }
+
+    @Test func aFewWordsFindTheGame() {
+        #expect(find("0400c3f00006e000") == "Mario Kart World")
+        #expect(find("mario kart 8") == "Mario Kart 8 Deluxe")
+        #expect(find("mario kart") == "Mario Kart World")          // two start with it: the built one
+        #expect(find("zelda") == "The Legend of Zelda™: Ocarina of Time")
+        #expect(find("breath wild") == "The Legend of Zelda: Breath of the Wild")
+        #expect(find("pokemon za") == "Pokémon™ Legends: Z-A")
+        #expect(find("metroid") == nil)
+        #expect(find("  ") == nil)
+    }
+
+    @Test func homeOpensTheatreIsKeptAndOnByDefault() throws {
+        #expect(Settings().homeOpensTheatre)
+        var s = Settings(); s.homeOpensTheatre = false
+        #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s)).homeOpensTheatre == false)
+        #expect(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)).homeOpensTheatre)
+    }
+}
+
+@Suite struct NewlyPlayableGames {
+    @Test func levelsFollowTheProfileAndTheList() {
+        #expect(NewlyPlayable.level(profile: false, result: nil) == 0)
+        #expect(NewlyPlayable.level(profile: true, result: nil) == 1)
+        #expect(NewlyPlayable.level(profile: true, result: "boots") == 2)
+        #expect(NewlyPlayable.level(profile: true, result: "plays") == 3)
+        #expect(NewlyPlayable.level(profile: true, result: "broken") == 0)
+    }
+
+    @Test func onlyARiseForAKnownUnbuiltGameIsAnArrival() {
+        let old = ["A": 0, "B": 1, "C": 0, "D": 2, "E": 3]
+        let now: [(titleID: String, name: String, level: Int, built: Bool)] = [
+            ("A", "Alpha", 1, false),    // a profile arrived
+            ("B", "Beta", 1, false),     // no change
+            ("C", "Gamma", 3, true),     // plays now, but built already
+            ("D", "Delta", 3, false),    // boots → plays
+            ("E", "Epsilon", 0, false),  // went down
+            ("F", "Zeta", 3, false),     // new to the games folder
+        ]
+        let a = NewlyPlayable.arrivals(old: old, now: now)
+        #expect(a.map(\.titleID) == ["D", "A"])
+        #expect(a[0].what == "plays now")
+        #expect(NewlyPlayable.headline(a) == "2 of your games can be built now")
+        #expect(NewlyPlayable.headline([a[1]]) == "Alpha can be built now")
+    }
+}
+
+@Suite struct SessionChecking {
+    static let json = #"""
+    [{"log": "/x/0100000000010000.log", "title_id": "0100000000010000", "ended": 1795000000, "build": "abc", "chain": "d4f", "fullscreen": true, "screen": "own",
+      "upscale": "metalfx", "fps_hold": "", "thermal_max": 1, "low_power": false, "battery": true, "covered": 0, "held2": 40, "held3": 2, "players": 1, "exit": "",
+      "frames": 90000, "on_time": 91.2, "gpu_p50": 15.1, "gpu_p95": 18.0, "footprint_mb": 6100, "causes": ["GPU-bound"], "usual": 98.4, "sessions": 5, "verdict": "slower"}]
+    """#
+    func setting(_ json: String) throws -> LaunchSetting { try JSONDecoder().decode(LaunchSetting.self, from: Data(json.utf8)) }
+
+    @Test func readsTheChecksJSON() throws {
+        let c = try #require(SessionChecks.decode(Data(Self.json.utf8)).first)
+        #expect(c.slower && c.titleID == "0100000000010000" && c.held == 42 && c.battery && c.frames == 90000)
+        #expect(c.numbers == "91 % of frames on time, usually 98 %")
+        #expect(c.why.hasPrefix("The graphics chip was at its limit"))
+        #expect(SessionChecks.decode(Data("nonsense".utf8)).isEmpty)
+    }
+
+    @Test func theFixIsTheCheapestChangeLeft() throws {
+        let c = try #require(SessionChecks.decode(Data(Self.json.utf8)).first)
+        let interp = try setting(#"{"env":"DM_PRESENT_INTERP","kind":"choice","label":"Frame interpolation","default":"off","options":[["off","Off"],["on","On"]]}"#)
+        let up = try setting(#"{"env":"DM_PRESENT_UPSCALE","kind":"choice","label":"MetalFX upscaling","default":"metalfx","options":[["off","Off"],["metalfx","MetalFX"]]}"#)
+        let scale = try setting(#"{"env":"DM_RENDER_SCALE","kind":"range","label":"Render scale","default":"1.00","min":0.5,"max":2,"step":0.25}"#)
+        let all = [interp, up, scale]
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_INTERP": "on"])?.env == "DM_PRESENT_INTERP")
+        #expect(SessionChecks.fix(c, settings: all, values: [:]) == SessionFix(label: "Turn Off MetalFX", env: "DM_PRESENT_UPSCALE", value: "off"))
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_UPSCALE": "off"]) == SessionFix(label: "Lower Render Scale to 75 %", env: "DM_RENDER_SCALE", value: "0.75"))
+        #expect(SessionChecks.fix(c, settings: all, values: ["DM_PRESENT_UPSCALE": "off", "DM_RENDER_SCALE": "0.50"]) == nil)
+        var low = c; low.lowPower = true
+        #expect(SessionChecks.fix(low, settings: all, values: [:]) == nil)
+        #expect(low.why.hasPrefix("Low Power Mode"))
+        var fine = c; fine.verdict = "smooth"
+        #expect(SessionChecks.fix(fine, settings: all, values: [:]) == nil)
+    }
+}
+
+@Suite struct CodeModFiles {
+    static let pch = """
+    # Some Game 60 FPS [0100ABCD01234000] v1.2.0
+    @nsobid-AABBCCDDEEFF00112233445566778899AABBCCDD
+    @flag print_values
+    @flag offset_shift 0x100
+
+    // [60 FPS]
+    @enabled
+    00123450 1F2003D5
+    00123458 E0031F2A C0035FD6 // two words
+    0012346C 2A
+
+    // Disable DOF
+    @disabled
+    00200000 "ab"
+
+    @stop
+    00999999 FFFFFFFF
+    """
+
+    @Test func pchtxtSectionsBuildAndOffsets() {
+        let m = CodeMods.parsePchtxt(Self.pch)
+        #expect(m.build == "AABBCCDDEEFF0011")
+        #expect(m.heading == "Some Game 60 FPS [0100ABCD01234000] v1.2.0")
+        #expect(m.sections.map(\.title) == ["60 FPS", "Disable DOF"])
+        #expect(m.sections.map(\.enabled) == [true, false])
+        // offset_shift 0x100: the offsets are addresses in main already
+        #expect(m.sections[0].writes == [CodeWrite(address: 0x123450, bytes: [0x1F, 0x20, 0x03, 0xD5]),
+                                         CodeWrite(address: 0x123458, bytes: [0xE0, 0x03, 0x1F, 0x2A, 0xC0, 0x03, 0x5F, 0xD6]),
+                                         CodeWrite(address: 0x12346C, bytes: [0x2A])])
+        #expect(m.sections[1].writes == [CodeWrite(address: 0x200000, bytes: [0x61, 0x62, 0])])
+    }
+
+    @Test func pchtxtWithoutShiftCountsFromTheFile() {
+        let m = CodeMods.parsePchtxt("@nsobid-0011223344556677\n@enabled\n00000200 AABB\n@little-endian\n00000300 AABB\n")
+        #expect(m.sections.count == 1)
+        #expect(m.sections[0].writes == [CodeWrite(address: 0x100, bytes: [0xAA, 0xBB]), CodeWrite(address: 0x200, bytes: [0xBB, 0xAA])])
+    }
+
+    @Test func storesAreLittleEndianWords() {
+        let lines = CodeMods.dmnt([CodeWrite(address: 0x123450, bytes: [0x1F, 0x20, 0x03, 0xD5, 0xAA, 0xBB, 0xCC])])
+        #expect(lines == ["04000000 00123450 D503201F", "02000000 00123454 0000BBAA", "01000000 00123456 000000CC"])
+    }
+
+    @Test func ipsRecordsAndRuns() {
+        var d = Data("PATCH".utf8)
+        d.append(contentsOf: [0x00, 0x02, 0x00, 0x00, 0x02, 0xDE, 0xAD])           // 0x200: DE AD
+        d.append(contentsOf: [0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x03, 0x7F])     // 0x300: 7F three times
+        d.append(contentsOf: Array("EOF".utf8))
+        #expect(CodeMods.parseIPS(d) == [CodeWrite(address: 0x100, bytes: [0xDE, 0xAD]), CodeWrite(address: 0x200, bytes: [0x7F, 0x7F, 0x7F])])
+        var w = Data("IPS32".utf8)
+        w.append(contentsOf: [0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x42])
+        w.append(contentsOf: Array("EEOF".utf8))
+        #expect(CodeMods.parseIPS(w) == [CodeWrite(address: 0x0100_0000, bytes: [0x42])])
+        #expect(CodeMods.parseIPS(Data("hello".utf8)) == nil)
+        #expect(CodeMods.parseIPS(Data("PATCH".utf8) + Data([0, 2, 0, 0, 9])) == nil)   // cut short
+    }
+
+    @Test func aCodeModBecomesEnhancementsSwitchedOff() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxf-codemod-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let src = dir.appending(path: "AABBCCDDEEFF0011.pchtxt")
+        try Data(Self.pch.utf8).write(to: src)
+        let folder = dir.appending(path: "enhancements")
+        let r = try CodeMods.add(src, folder: folder, titleID: "0100ABCD01234000", build: "AABBCCDDEEFF0011")
+        #expect(r.names == ["60 FPS", "Disable DOF"])
+        #expect(r.note == nil)
+        let list = Enhancements.load(folder: folder)
+        #expect(list.count == 2)
+        let fps = try #require(list.first { $0.name == "60 FPS" })
+        #expect(!fps.on)
+        #expect(fps.builds == ["AABBCCDDEEFF0011"])
+        #expect(fps.kinds == ["Game code"])
+        #expect(fps.patch.first == "04000000 00123450 D503201F")
+        #expect(fps.patch.count == 4)
+        // the same file again adds nothing new
+        try CodeMods.add(src, folder: folder, titleID: "0100ABCD01234000", build: "AABBCCDDEEFF0011")
+        #expect(Enhancements.load(folder: folder).count == 2)
+        // another build: added, with a note
+        let other = try CodeMods.add(src, folder: dir.appending(path: "other"), titleID: "0100ABCD01234000", build: "FFFFFFFFFFFFFFFF")
+        #expect(other.note?.contains("another version") == true)
+    }
+
+    @Test func aPchtxtBlockInAnEnhancementFile() throws {
+        let text = "---\nnxforge_enhancement: 1\nname: \"Sixty\"\non: true\n---\n# Sixty\n\nRuns at 60.\n\n```pchtxt\n@nsobid-0011223344556677AA\n@flag offset_shift 0x100\n@enabled\n00001000 1F2003D5\n@disabled\n00002000 1F2003D5\n```\n"
+        let e = try #require(Enhancements.parse(text, file: "sixty.md"))
+        #expect(e.patch == ["04000000 00001000 D503201F"])
+        #expect(e.builds == ["0011223344556677"])
+        #expect(e.summary == "Runs at 60.")
+    }
+
+    @Test func aModWithoutTitlesTakesItsFoldersName() {
+        #expect(CodeMods.fallbackName(URL(fileURLWithPath: "/mods/60 FPS/exefs/AABBCCDDEEFF0011.ips")) == "60 FPS")
+        #expect(CodeMods.fallbackName(URL(fileURLWithPath: "/mods/Steady frame rate.pchtxt")) == "Steady frame rate")
+    }
+}
+
+/// A paused build stops every process of it and lets them all go again (BuildRun.signalTree, MakeRoom's pause).
+@Suite struct PauseTree {
+    func state(_ pid: pid_t) -> String {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/ps"); p.arguments = ["-o", "state=", "-p", "\(pid)"]
+        let out = Pipe(); p.standardOutput = out
+        try? p.run(); p.waitUntilExit()
+        return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @Test func childrenAreStoppedAndResumed() throws {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh"); p.arguments = ["-c", "sleep 30 & sleep 30 & wait"]
+        try p.run()
+        defer { BuildRun.signalTree(p.processIdentifier, SIGCONT); for c in BuildRun.tree(p.processIdentifier) { kill(c, SIGKILL) } }
+        var tree: [pid_t] = []
+        for _ in 0..<50 { tree = BuildRun.tree(p.processIdentifier); if tree.count >= 3 { break }; usleep(20_000) }
+        #expect(tree.count == 3 && tree.first == p.processIdentifier)
+        BuildRun.signalTree(p.processIdentifier, SIGSTOP)
+        usleep(100_000)
+        for pid in tree { #expect(state(pid).hasPrefix("T")) }
+        BuildRun.signalTree(p.processIdentifier, SIGCONT)
+        usleep(100_000)
+        for pid in tree { #expect(!state(pid).hasPrefix("T")) }
+    }
+}
+
+@Suite struct ForgottenFiles {
+    @Test func aCopyInTheGamesFolderIsSafeAndAnOnlyCopyIsNot() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "forgotten-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let big = Data(count: 1)
+        let staging = root.appending(path: ".staging/Game Update"), games = root.appending(path: "games/Switch 1/Game")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: games, withIntermediateDirectories: true)
+        try big.write(to: staging.appending(path: "update.nsp")); try big.write(to: games.appending(path: "update.nsp"))
+        let index = Forgotten.packageIndex(root.appending(path: "games").path)
+        #expect(index.contains("update.nsp|1"))
+        let found = Forgotten.bigFiles(root.appending(path: ".staging").path)
+        #expect(found.isEmpty)   // under the size worth a row
+    }
+}
+
+@Suite struct TheatreBookletsAndTheShelf {
+    @Test func aManualIsTheBookletWhenThereIsOne() {
+        let p = Booklet.pages(manualPages: 5, about: ["Words"], excerpt: nil, shots: [])
+        #expect(p == (0..<5).map { BookletPage.manual($0) })
+        // a manual that cannot be read counts for nothing: the made booklet instead
+        #expect(Booklet.pages(manualPages: 0, about: [], excerpt: nil, shots: []).first == .cover)
+    }
+
+    @Test func aMadeBookletHasACoverABackAndAnEvenNumberOfPages() {
+        let shots = (1...9).map { URL(fileURLWithPath: "/s/\($0).jpg") }
+        for about in [[], ["Short."], Array(repeating: String(repeating: "A sentence of words. ", count: 30), count: 9)] {
+            for pictures in [[], Array(shots.prefix(1)), Array(shots.prefix(3)), shots] {
+                let p = Booklet.pages(manualPages: nil, about: about, excerpt: "An excerpt.", shots: pictures)
+                #expect(p.first == .cover && p.last == .back && p.count % 2 == 0)
+                #expect(p.contains(.playing) && p.contains(.facts))
+                #expect(p.filter { if case .about = $0 { true } else { false } }.count <= Booklet.aboutPages)
+                let shown = p.reduce(0) { n, page in if case .shots(let u) = page { n + u.count } else { n } }
+                #expect(shown == min(pictures.count, Booklet.shots))
+            }
+        }
+        // with no description, the store's one line stands in for it
+        let p = Booklet.pages(manualPages: nil, about: [], excerpt: "An excerpt.", shots: [])
+        #expect(p.contains(.about(first: true, paragraphs: ["An excerpt."])))
+    }
+
+    @Test func longWordsBreakBetweenSentencesAndFillPages() {
+        let long = String(repeating: "One sentence here. ", count: 100)
+        let pages = Booklet.fill([long, "Short."], limit: 400)
+        #expect(pages.count > 3)
+        for page in pages { for p in page { #expect(p.count <= 400 && (p.hasSuffix(".") || p.hasSuffix("!"))) } }
+        #expect(pages.flatMap { $0 }.joined(separator: " ").split(separator: " ").count == long.split(separator: " ").count + 1)
+        #expect(Booklet.fill(["  ", ""], limit: 400).isEmpty)
+    }
+
+    @Test func pagesFaceEachOtherAcrossTheSpine() {
+        // eight pages: the cover alone, three pairs, the back alone
+        #expect(Booklet.spreads(8) == 5)
+        #expect(Booklet.left(0) == nil && Booklet.right(0, pages: 8) == 0)
+        #expect(Booklet.left(1) == 1 && Booklet.right(1, pages: 8) == 2)
+        #expect(Booklet.left(4) == 7 && Booklet.right(4, pages: 8) == nil)
+        // an odd manual ends on a pair
+        #expect(Booklet.spreads(5) == 3 && Booklet.left(2) == 3 && Booklet.right(2, pages: 5) == 4)
+    }
+
+    @Test func theShelfsLayoutsStepRound() {
+        #expect(ShowcaseLayout.allCases == [.carousel, .fan, .shelf])
+        #expect(ShowcaseLayout.shelf.step(-1) == .fan)
+        // the shelf's own name, and the old Shelf theme's (which became the fan)
+        #expect(ShowcaseLayout(rawValue: "Shelf") == .shelf && ShowcaseLayout.saved(theme: "Shelf") == .fan)
+    }
+
+    @Test func theCaseInFrontComesOutOfTheRowAndTurns() {
+        let l = ShelfLayout.self
+        #expect(l.pull(0) == 1 && l.pull(1) == 0 && l.pull(-3) == 0)
+        #expect(abs(l.yaw(0) - l.turn) < 1e-9 && abs(l.yaw(2) - .pi / 2) < 1e-9)
+        // the row runs out evenly either side, with room for the case in front, and never doubles back as it slides
+        #expect(l.x(0) == 0 && l.x(-2) == -l.x(2))
+        #expect(abs(l.x(1) - (l.gap + l.pitch / 2)) < 1e-9 && abs(l.x(3) - l.x(2) - l.pitch) < 1e-9)
+        var last = l.x(-4)
+        for i in stride(from: -3.9, through: 4, by: 0.1) { #expect(l.x(i) > last); last = l.x(i) }
+        #expect(l.gap > l.width * (1 + l.grow) / 2)
+        #expect(l.shown(index: 0, count: 0) == nil && l.shown(index: 2, count: 100) == 0...(2 + l.reach))
+        #expect(l.light(0) == 1 && l.light(40) >= 0.45)
+    }
+
+    @Test func aPageTurnHasItsSound() {
+        #expect(!TheatreSynth.samples(.page).isEmpty && TheatreSynth.samples(.page).allSatisfy { abs($0) <= 1 })
+    }
+}
+
+@Suite struct TheatreKeepsakesTiltAndWallet {
+    @Test func theNewSettingsDefaultOnAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreTilt && old.theatreCollector && old.completed.isEmpty)
+        var s = Settings()
+        s.theatreTilt = false; s.theatreCollector = false; s.completed = ["0100AAAA00000000"]
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(!back.theatreTilt && !back.theatreCollector && back.completed == ["0100AAAA00000000"])
+        #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Wallet\"".utf8)) == .wallet)
+        #expect(TheatreMenuRow.row(.wallet) == .wallet)
+    }
+
+    @Test func aCaseShowsItsHoursAndItsWear() {
+        #expect(CaseKeepsake(hours: 0.4).sticker == nil && CaseKeepsake(hours: 0.4).plain)
+        #expect(CaseKeepsake(hours: 12.7).sticker == 12 && !CaseKeepsake(hours: 0, completed: true).plain)
+        #expect(CaseKeepsake(hours: 2).wear == 0 && CaseKeepsake(hours: 500).wear == 1)
+        let half = CaseKeepsake(hours: (CaseKeepsake.wearFrom + CaseKeepsake.wornAt) / 2).wear
+        #expect(abs(half - 0.5) < 1e-9)
+        // a game's scratches are its own, and the same every time
+        var a = Scuffs(seed: "0100AAAA00000000"), b = Scuffs(seed: "0100AAAA00000000"), c = Scuffs(seed: "0100BBBB00000000")
+        let x = (0..<8).map { _ in a.next() }, y = (0..<8).map { _ in b.next() }, z = (0..<8).map { _ in c.next() }
+        #expect(x == y && x != z && x.allSatisfy { (0..<1).contains($0) })
+    }
+
+    @Test func theCaseLeansWithTheControllerAndNoFurther() {
+        let flat = SIMD3<Double>(0, 0, -1)
+        #expect(CaseTilt.lean(gravity: flat, rest: flat) == SIMD2(0, 0))
+        // right side down turns the case to the right; top edge down tips it away; a big lean stops at the most
+        #expect(CaseTilt.lean(gravity: SIMD3(0.2, 0, -0.98), rest: flat).x > 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(-0.2, 0.1, -0.97), rest: flat).x < 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(0, 0.2, -0.98), rest: flat).y > 0)
+        #expect(CaseTilt.lean(gravity: SIMD3(1, -1, 0), rest: flat) == SIMD2(CaseTilt.most.x, -CaseTilt.most.y))
+    }
+
+    @Test func theWalletsArrowsGoFromPocketToPocketAndOverThePage() {
+        let l = WalletLayout.self
+        #expect(l.perPage == 24 && l.pages(0) == 1 && l.pages(24) == 1 && l.pages(25) == 2)
+        // along a row, and up and down, within a page of 60 cards
+        #expect(l.move(from: 0, dx: 1, count: 60) == 1 && l.move(from: 9, dx: -1, count: 60) == 8)
+        #expect(l.move(from: 1, dy: 1, count: 60) == 9 && l.move(from: 17, dy: -1, count: 60) == 9)
+        #expect(l.move(from: 1, dy: -1, count: 60) == 1 && l.move(from: 17, dy: 1, count: 60) == 17)
+        // over the right edge to the same row of the next page, and back
+        #expect(l.move(from: 15, dx: 1, count: 60) == 32 && l.move(from: 32, dx: -1, count: 60) == 15)
+        // the last page is short: its rows end early, and going on comes round to the first page
+        #expect(l.move(from: 39, dx: 1, count: 60) == 56 && l.move(from: 47, dx: 1, count: 60) == 59)
+        #expect(l.move(from: 59, dx: 1, count: 60) == 8 && l.move(from: 0, dx: -1, count: 60) == 55)
+        #expect(l.move(from: 51, dy: 1, count: 60) == 59 && l.move(from: 59, dy: 1, count: 60) == 59)
+        // one short page
+        #expect(l.move(from: 4, dx: 1, count: 5) == 0 && l.move(from: 0, dx: -1, count: 5) == 4 && l.move(from: 2, dy: 1, count: 5) == 2)
+        #expect(l.move(from: 0, dx: 1, count: 0) == 0 && l.move(from: 0, dx: 1, count: 1) == 0)
+        // every pocket is inside the wallet, the two halves either side of the fold
+        for s in 0..<l.perPage {
+            let p = l.place(slot: s)
+            #expect(abs(p.x) + l.cardWidth / 2 <= l.width / 2 && abs(p.y) + l.cardHeight / 2 <= l.height / 2)
+            #expect(abs(p.x) - l.cardWidth / 2 >= l.spine / 2)
+        }
+        #expect(l.place(slot: 3).x < 0 && l.place(slot: 4).x > 0)
+    }
+
+    @Test func theStampHasItsSound() {
+        #expect(!TheatreSynth.samples(.stamp).isEmpty && TheatreSynth.samples(.stamp).allSatisfy { abs($0) <= 1 })
+    }
+}
+
+@Suite struct TheatreMuseumWall {
+    func game(_ id: String, _ c: Console, hours: Double = 0) -> StageGame {
+        StageGame(id: id, ref: GameRef(app: "/Apps/\(id).app"), name: id, console: c, app: "/Apps/\(id).app", total: hours * 3600)
+    }
+
+    @Test func itIsATheme() throws {
+        #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Museum\"".utf8)) == .museum)
+        #expect(TheatreMenuRow.row(.museum) == .museum && TheatreMenuRow.museum.theme == .museum)
+        #expect(Settings().museumLighting == .evening)
+        #expect(MuseumLighting.allCases.map(\.rawValue) == ["Classic", "Daylight", "Evening", "Neon", "Lights out"])
+        #expect(MuseumLighting.lightsOut.step(1) == .classic && MuseumLighting.classic.step(-1) == .lightsOut)
+        #expect(MuseumLighting.lightsOut.lampStrength == 0)
+    }
+
+    @Test func aShelfAConsoleSwitch2First() {
+        let games = [game("a", .switch1), game("b", .gba), game("c", .switch2), game("d", .switch1)]
+        let s = MuseumLayout.shelves(games)
+        #expect(s.map(\.console) == [.switch2, .switch1, .gba])
+        #expect(s[1].games.map(\.id) == ["a", "d"])
+        #expect(MuseumLayout.shelves(games.filter { $0.console == .switch1 }).count == 1)
+    }
+
+    @Test func theArrowsGoAlongAndBetweenShelves() {
+        let counts = [3, 8, 2]
+        // along a shelf, stopping at its ends
+        #expect(MuseumLayout.move(shelf: 1, column: 0, dx: -1, dy: 0, counts: counts)! == (1, 0))
+        #expect(MuseumLayout.move(shelf: 1, column: 7, dx: 1, dy: 0, counts: counts)! == (1, 7))
+        #expect(MuseumLayout.move(shelf: 1, column: 3, dx: 1, dy: 0, counts: counts)! == (1, 4))
+        // down to a shorter shelf lands on its last game; down from the last shelf stays
+        #expect(MuseumLayout.move(shelf: 1, column: 6, dx: 0, dy: 1, counts: counts)! == (2, 1))
+        #expect(MuseumLayout.move(shelf: 2, column: 1, dx: 0, dy: 1, counts: counts)! == (2, 1))
+        // up from the top shelf is the lighting switch
+        #expect(MuseumLayout.move(shelf: 0, column: 1, dx: 0, dy: -1, counts: counts) == nil)
+    }
+
+    @Test func theWindowKeepsTheFocusInSight() {
+        #expect(MuseumLayout.first(column: 0, count: 20, visible: 7) == 0)
+        #expect(MuseumLayout.first(column: 10, count: 20, visible: 7) == 7)
+        #expect(MuseumLayout.first(column: 19, count: 20, visible: 7) == 13)
+        #expect(MuseumLayout.first(column: 4, count: 5, visible: 7) == 0)
+        for c in 0..<20 {
+            let f = MuseumLayout.first(column: c, count: 20, visible: 7)
+            #expect(f <= c && c < f + 7)
+        }
+        // seven Switch cases fit a 16:9 screen's shelf, as in the mock-up
+        let h = MuseumLayout.caseHeight(row: MuseumLayout.rowHeight(count: 3, height: 1080))
+        #expect(MuseumLayout.visible(width: 1920 - 2 * MuseumLayout.side, caseWidth: h * MuseumLayout.caseRatio) >= 7)
+        // one shelf does not fill the room: it stands in the middle at a shelf's height
+        #expect(MuseumLayout.rowHeight(count: 1, height: 1080) == 380)
+        #expect(MuseumLayout.cabinetTop(count: 1, height: 1080) > MuseumLayout.top)
+        #expect(MuseumLayout.cabinetTop(count: 3, height: 1080) == MuseumLayout.top)
+    }
+
+    @Test func thePlaqueAndTheCard() {
+        #expect(MuseumLayout.stats([game("a", .switch1, hours: 100), game("b", .switch1, hours: 46)]) == "2 games  ·  146 hours")
+        #expect(MuseumLayout.stats([game("a", .gba)]) == "1 game  ·  not played yet")
+        #expect(MuseumLayout.stats([game("a", .gba, hours: 0.5)]) == "1 game  ·  30 min")
+        #expect(MuseumLayout.year("20/10/2023") == "2023")
+        #expect(MuseumLayout.year(nil) == nil && MuseumLayout.year("soon") == nil)
+    }
+}
+
+
+@Suite struct HiddenSystems {
+    @Test func everySystemShownByDefaultAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(Console.allCases.allSatisfy(old.shows))
+        var s = Settings()
+        s.setShows(.gba, false); s.setShows(.switch2, false); s.setShows(.gba, false)
+        #expect(s.hiddenSystems == ["Switch 2", "Game Boy Advance"])
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(!back.shows(.gba) && !back.shows(.switch2) && back.shows(.switch1))
+        s.setShows(.gba, true)
+        #expect(s.shows(.gba) && s.hiddenSystems == ["Switch 2"])
+    }
+
+    @Test func aHiddenSystemHasNoFilter() {
+        var s = Settings()
+        s.setShows(.gba, false)
+        #expect(!StageFilter.shown(.owned, s).contains(.gba) && StageFilter.shown(.owned, s).contains(.switch1))
+        #expect(StageFilter.shown(.built, s) == [.all, .favorites, .switch2, .switch1])
+        #expect(ConsoleFilter.shown(s) == [.all, .switch2, .switch1])
+        #expect(ConsoleFilter.shown(Settings()) == ConsoleFilter.allCases)
     }
 }

@@ -15,6 +15,15 @@ enum GameStatus: Equatable {
     case driveOffline(String)
     /// the folder the library found the game in is gone
     case filesMissing
+    /// its last build stopped, and why (BuildFailures); building again is the fix
+    case buildFailed(FailedBuild)
+
+    /// Build is the step that fixes it (Not built yet, or a build that failed)
+    var buildable: Bool {
+        if case .notBuilt = self { return true }
+        if case .buildFailed = self { return true }
+        return false
+    }
 
     var playable: Bool { self == .ready }
 
@@ -26,6 +35,7 @@ enum GameStatus: Equatable {
         case .keysNeeded: "Keys needed"
         case .driveOffline: "Drive offline"
         case .filesMissing: "Files missing"
+        case .buildFailed: "Build failed"
         }
     }
 
@@ -36,6 +46,7 @@ enum GameStatus: Equatable {
         case .keysNeeded: "key.fill"
         case .driveOffline: "externaldrive.badge.xmark"
         case .filesMissing: "questionmark.folder.fill"
+        case .buildFailed: "exclamationmark.triangle.fill"
         }
     }
 
@@ -47,6 +58,8 @@ enum GameStatus: Equatable {
         case .keysNeeded: "Building a Switch game needs your prod.keys. Choose it once and NXForge uses it for every build."
         case .driveOffline(let d): "Its files are on \(d), which is not connected. Connect it and the game is back."
         case .filesMissing: "The folder the library found it in has gone. Scan the library again, or put the files back."
+        case .buildFailed(let f):
+            "Its last build (\(f.at.formatted(date: .abbreviated, time: .shortened))) failed. \(f.title). \(f.fix)"
         }
     }
 
@@ -58,13 +71,14 @@ enum GameStatus: Equatable {
         case .keysNeeded: "Choose Keys…"
         case .driveOffline: "Check Again"
         case .filesMissing: "Scan Again"
+        case .buildFailed: "Build Again"
         }
     }
 
     var actionSymbol: String {
         switch self {
         case .ready: "play.fill"
-        case .notBuilt: "hammer.fill"
+        case .notBuilt, .buildFailed: "hammer.fill"
         case .keysNeeded: "key.fill"
         case .driveOffline, .filesMissing: "arrow.clockwise"
         }
@@ -78,7 +92,7 @@ enum GameStatus: Equatable {
         case .ready: Color(red: 0.29, green: 0.87, blue: 0.50)
         case .notBuilt: Color(white: 0.62)
         case .keysNeeded: Color(red: 0.98, green: 0.75, blue: 0.14)
-        case .driveOffline, .filesMissing: Color(red: 1, green: 0.55, blue: 0.45)
+        case .driveOffline, .filesMissing, .buildFailed: Color(red: 1, green: 0.55, blue: 0.45)
         }
     }
 
@@ -92,7 +106,8 @@ enum GameStatus: Equatable {
     }
 
     /// A game's status from what is on disk (cheap: a few file checks)
-    static func of(app: String?, game: LibraryGame?, keys: (String) -> String?, fm: FileManager = .default) -> GameStatus {
+    static func of(app: String?, game: LibraryGame?, keys: (String) -> String?, failure: (String) -> FailedBuild? = { _ in nil },
+                   fm: FileManager = .default) -> GameStatus {
         if app != nil { return .ready }
         guard let g = game else { return .notBuilt }
         if !fm.fileExists(atPath: g.path) {
@@ -100,20 +115,21 @@ enum GameStatus: Equatable {
             return .filesMissing
         }
         if g.kind == .packages, keys(g.folder) == nil { return .keysNeeded }
+        if let f = failure(g.folder) { return .buildFailed(f) }
         return .notBuilt
     }
 }
 
 extension AppModel {
     func status(_ g: StageGame) -> GameStatus {
-        GameStatus.of(app: g.app, game: g.game, keys: { [self] in keysFile(for: $0) })
+        GameStatus.of(app: g.app, game: g.game, keys: { [self] in keysFile(for: $0) }, failure: { [self] in buildFailures[$0] })
     }
 
     /// Play on a game that cannot play yet: the step that fixes what stops it.
     func fix(_ g: StageGame) {
         switch status(g) {
         case .ready: playFromStage(g.ref)
-        case .notBuilt: playFromStage(g.ref)
+        case .notBuilt, .buildFailed: playFromStage(g.ref)
         case .keysNeeded:
             // the same question a build asks; once a keys file is saved the game shows as Not built yet, and Build goes on
             if chooseKeysForBuild() { revision += 1; showBanner("Keys saved", detail: "\(g.name) can be built now.", tone: .success) }

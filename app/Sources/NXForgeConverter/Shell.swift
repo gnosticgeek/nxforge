@@ -65,7 +65,8 @@ final class ControllerNav {
     func start(_ model: AppModel) {
         guard self.model == nil else { return }
         self.model = model
-        GCController.shouldMonitorBackgroundEvents = false
+        // behind other apps only the Home button is listened to (home), when its setting is on
+        GCController.shouldMonitorBackgroundEvents = model.settings.homeOpensTheatre
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] n in
             let c = n.object as? GCController
@@ -82,6 +83,32 @@ final class ControllerNav {
         })
         for c in GCController.controllers() { attach(c) }
         GCController.startWirelessControllerDiscovery {}
+    }
+
+    /// Whether buttons reach NXForge while it is behind other apps: only Home acts there (every other press waits in accept)
+    func background(_ on: Bool) { GCController.shouldMonitorBackgroundEvents = on }
+
+    /// Home: Theatre, from anywhere. In front it opens Theatre as Menu does; behind other apps it brings NXForge forward
+    /// first, unless a game NXForge knows is the app in front (its own Home opens Quick settings).
+    private func home() {
+        guard let m = model, !m.controllerTest else { return }
+        if NSApp.isActive {
+            if Self.mayAct(), !m.theatre { m.enterTheatre() }
+            return
+        }
+        guard m.settings.homeOpensTheatre, NSApp.modalWindow == nil else { return }
+        if let front = NSWorkspace.shared.frontmostApplication, Self.isGame(front, playing: Set(m.playing.keys)) { return }
+        NSApp.unhide(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        m.mainWindow?.makeKeyAndOrderFront(nil)
+        if !m.theatre { m.enterTheatre() }
+    }
+
+    /// A game in front keeps its Home button: one NXForge saw start, or any app with nxnative's host inside (started from Finder)
+    static func isGame(_ a: NSRunningApplication, playing: Set<pid_t>) -> Bool {
+        if playing.contains(a.processIdentifier) { return true }
+        guard let b = a.bundleURL else { return false }
+        return FileManager.default.fileExists(atPath: b.appending(path: "Contents/MacOS/dmhost").path)
     }
 
     private func attach(_ c: GCController) {
@@ -157,6 +184,9 @@ final class ControllerNav {
         // Theatre: the left stick's press spins for a game to play
         if let l3 = pad.leftThumbstickButton { key(l3, .l3) { _ in } }
         key(pad.buttonMenu, .menu) { $0.enterTheatre() }
+        pad.buttonHome?.pressedChangedHandler = { [weak self] _, _, pressed in
+            MainActor.assumeIsolated { if pressed { self?.home() } }
+        }
         // − (Options / View): Favourites on the front end
         if let o = pad.buttonOptions { key(o, .options) { _ in } }
         // the right stick turns the box on screen (CaseModelView)

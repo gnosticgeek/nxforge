@@ -1,4 +1,4 @@
-// Theatre's Fan theme (0.48.2): the games' boxes fanned out like a hand of cards from a point below the screen, the game in
+// The fan, one of Theatre's Showcase layouts (ShowcaseTheme; it was a theme of its own, 0.48.2 to 0.48.8): the games' boxes fanned out like a hand of cards from a point below the screen, the game in
 // focus upright in the middle, lifted out of the fan and lit, the rest leaning away to either side and falling into shadow.
 // Left and right scroll the fan sideways (it swings round its pivot), the right stick turns the box in front to see its edge,
 // and a click on a box brings it to the middle. It took the Gallery theme's place.
@@ -33,7 +33,7 @@ struct FanTheme: View {
             LinearGradient(stops: [.init(color: .clear, location: 0.68), .init(color: .black.opacity(0.85), location: 0.9), .init(color: .black, location: 1)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
             VStack(spacing: 0) {
-                TheatreTopBar(theme: .fan, model: model)
+                TheatreTopBar(theme: .showcase, model: model)
                 Spacer()
                 if let g = focus {
                     VStack(spacing: 14 * u) {

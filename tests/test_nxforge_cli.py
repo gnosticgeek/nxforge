@@ -109,6 +109,44 @@ class CleanTest(Fake):
         self.assertEqual(len(notes), 2)
         self.assertEqual(sum(1 for a in calls if a[:2] == ('worktree', 'list')), 1)
 
+    def git_repo(self, d, remote=None):   # a real repository with one commit; with remote, pushed to it (so its commit is on a remote branch)
+        import subprocess
+        def g(*a): subprocess.run(['git', '-C', str(d), *a], check=True, capture_output=True)
+        d.mkdir(parents=True, exist_ok=True); g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't')
+        (d / 'f').write_text('x'); g('add', 'f'); g('commit', '-qm', 'one')
+        if remote:
+            subprocess.run(['git', 'init', '-q', '--bare', str(remote)], check=True); g('remote', 'add', 'origin', str(remote)); g('push', '-q', 'origin', 'main'); g('fetch', '-q')
+        return g
+
+    def test_nested_checkout_with_unpushed_work_keeps_the_worktree(self):
+        main = self.home / 'Development/NXForge'; g = self.git_repo(main, self.home / 'remote.git')
+        wt = self.home / 'Development/NXForge-x'; g('worktree', 'add', '-q', '--detach', str(wt), 'main')
+        ctx = nx.context(); ctx['repo'] = str(main); ctx['_checkouts'] = [main, wt]
+        self.assertEqual(nx.worktree_state(ctx, wt)[:2], (True, 'clean and pushed'))
+        (main / '.git/info/exclude').write_text('tree/\n')   # as NXForge's .gitignore does
+        tree = wt / 'tree'; tg = self.git_repo(tree)   # an engine tree with a commit pushed nowhere
+        ok, why, _ = nx.worktree_state(ctx, wt)
+        self.assertFalse(ok); self.assertIn('tree inside it has', why)
+        head = nx.git(tree, 'rev-parse', 'HEAD'); gd = Path(nx.git(tree, 'rev-parse', '--absolute-git-dir'))
+        (gd / 'nxforge-layer').write_text(f'stamp {head}\n')   # as layer.py assemble left it: made again from the layer
+        self.assertTrue(nx.worktree_state(ctx, wt)[0])
+        (tree / 'g').write_text('y'); tg('add', 'g'); tg('commit', '-qm', 'work')   # committed after the assemble: work
+        self.assertFalse(nx.worktree_state(ctx, wt)[0])
+
+    def test_build_cache_is_held_then_deleted(self):
+        t = time.time() - 72 * 3600; os.utime(self.build, (t, t))
+        for p in self.build.rglob('*'): os.utime(p, (t, t))
+        res = nx.clean(['build-cache'], ctx=nx.context(idle_hours=1))
+        ext = next(i for i in res['categories']['build-cache']['items'] if i['path'].endswith('/extract'))
+        self.assertTrue(ext['deleted'] and Path(ext['held']).is_dir()); self.assertFalse((self.build / 'extract').exists())
+        self.assertIn(Path(ext['held']).name, [h['name'] for h in nx.held()])
+        nx.restore(Path(ext['held']).name)
+        self.assertTrue((self.build / 'extract/v0/x').is_file()); self.assertNotIn(Path(ext['held']).name, [h['name'] for h in nx.held()])
+        res = nx.clean(['build-cache'], ctx=nx.context(idle_hours=0))
+        self.assertTrue(nx.held())
+        nx.clean([], empty_held=True)
+        self.assertEqual(nx.held(), []); self.assertFalse((self.build / 'extract').exists())
+
     def test_gpuarchiver_one_item(self):
         idle = [write(self.home / f'gpu/gpuarchiver-{i}/r', age=2 * 3600).parent for i in range(3)]
         for d in idle: t = time.time() - 2 * 3600; os.utime(d, (t, t))

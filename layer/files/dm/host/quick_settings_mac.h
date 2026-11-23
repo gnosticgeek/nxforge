@@ -36,6 +36,10 @@ void dm_qs_input(int pad, const char *ok, const char *back, const char *prev, co
 void front_qs_screenshot(void);
 void front_qs_record(void);
 int front_qs_recording(void);
+// Instant replay (capture_mac.m): whether it is on, the switch (saved for this game), and saving the last 30 seconds to the Recordings folder (a toast says where)
+int front_qs_replay(void);
+void front_qs_replay_set(int on);
+void front_qs_replay_save(void);
 // Restart game: whether this launch can (the app's launcher started it), and doing it (the host quits as ⌘Q does and the launcher starts it again). Main thread
 int front_qs_can_restart(void);
 void front_qs_restart(void);
@@ -48,6 +52,9 @@ void dm_qs_nav(int cmd);
 void front_qs_assign(int action, int pad);
 int front_qs_assigning(void);
 void front_qs_controls_reload(void);
+// Players (nxforge/front_mac_players.inc): player p's controller (0 nobody, 1 one that can trade places, 2 one that cannot; its name into name), and trading two players (1: done)
+int front_qs_player(int p, char *name, int cap);
+int front_qs_player_swap(int a, int b);
 // Where captures go (front_mac.m): the folder of the next screenshot (0) or recording (1); whether this game has a folder of its own; choose one (NULL: back to the default,
 // Screenshots / Recordings in the game folder). Main thread
 const char *front_qs_capture_folder(int video);
@@ -97,3 +104,26 @@ void dm_qs_peek_glyph(const char *symbol);
 void front_qs_settings_reapply(void);
 // A setting the present pass shows changed (filter, HDR, MetalFX, …): while the game is paused under the sidebar, it draws its picture again for a moment so the change shows. Main thread
 void front_qs_live_changed(void);
+// Laptop-safe play (nxforge/front_mac_sleep.inc): a save snapshot "Before the Mac slept" when the game saved since the newest snapshot. 1 made, 0 nothing new, -1 no save yet or the
+// copy failed. Waits for the copy (a save is small). Main thread
+int dm_qs_safety_copy(void);
+// A Game Boy Advance game's player (gba/host/mac/gba_front_mac.m; 0 and nothing in the Switch player, front_mac_quick_settings.inc): whether this is one; its switches
+// (which 0 Enhanced audio, 1 bass lift, 2 wider stereo, 3 the handheld screen's colours), kept per game; its save states (slot 1 to 3; op 0 whether the slot holds one,
+// 1 save, 2 load); and a line on what Enhanced audio does for this game. Main thread
+int front_qs_gba(void);
+int front_qs_gba_opt(int which);
+void front_qs_gba_opt_set(int which, int on);
+int front_qs_gba_state(int slot, int op);
+const char *front_qs_gba_sound(void);
+// Sidebar 0.11.0: a GBA game's settings with several values, kept per game: 0 Handheld colours (0 off, 1 GBA, 2 GBA SP), 1 Frame blending (0, 1), 2 Rewind
+// (seconds kept, 0 off), 3 Fast forward speed (2, 3, 4, 8; 0 as fast as it goes), 4 Fast forward key (0 hold, 1 press to switch), 5 Slow motion (percent). Main thread
+int front_qs_gba_value(int which);
+void front_qs_gba_value_set(int which, int v);
+// Sidebar 0.9.0. Hold to compare: the graphics at their defaults while held, full size as a peek (front_mac_quick_settings.inc qs_compare starts or ends one, dm_qs_compare swaps the
+// settings without saving them; dm_qs_compare_glyph gives the controller's symbol for its button, NULL: the keyboard's C). Search: / gives the sidebar's search field the typing.
+// A quick-save slot's picture: the next frame, 360 pixels tall, at path (.jpg), done(1) on the main thread once written. Main thread
+void front_qs_compare(int on);
+void dm_qs_compare(int on);
+void dm_qs_compare_glyph(const char *symbol);
+void dm_qs_search_focus(void);
+void front_qs_slot_shot(const char *path, void (*done)(int ok));

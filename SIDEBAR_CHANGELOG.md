@@ -4,6 +4,40 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.11.0 (2026-11-22)
+
+Ships in NXForge 0.58.0.
+
+- **Game Boy Advance games**: General has a Play group (Rewind, Fast forward speed, Fast forward key, Slow motion); Graphics has a Screen filter picker (Off, CRT, LCD grid) in place of the CRT switch, Handheld colours as a choice (Off, GBA, GBA SP) and Frame blending; Around the picture defaults to the glow, which in a GBA game is ambient edges; Controls lists Rewind and Slow motion. Two new functions in `quick_settings_mac.h`, `front_qs_gba_value` and `front_qs_gba_value_set`, carry the settings with several values; the Switch player answers 0 and does nothing. Nothing changes in a Switch game.
+
+## 0.10.0 (2026-11-22)
+
+Ships in NXForge 0.56.0.
+
+- **The sidebar in Game Boy Advance games.** The same sidebar is built into NXForge's Game Boy Advance player ([gba/README.md](gba/README.md)). There, General has a Sound group (Enhanced audio, Bass lift, Wider stereo) and Save states (three, kept at once and loaded at once, in place of the quick-save slots, which restart a Switch game); Graphics has Handheld colours in place of the image quality group (render scale, MetalFX and the like mean nothing for a 240 x 160 picture); Controls lists the handheld's buttons. The filters, scaling, border, volume, cheats and the rest are the ones Switch games have. A player says it is the Game Boy Advance one through five new functions in `quick_settings_mac.h` (`front_qs_gba` and the ones beside it); the Switch player answers no, and nothing changes in a Switch game.
+## 0.9.0 (2026-11-21)
+
+Ships in NXForge 0.55.0.
+
+- **Theatre** (a game NXForge started from Theatre: `NXFORGE_FRONT_END_PAGE=theatre`): the footer's Library button is a Theatre button (a TV), and NXForge comes back to Theatre with the focus on the game instead of opening its page. With Library keeps the game on, Theatre's Continue picks the game up where it was.
+- **Search every setting**: a field beside the page's name; / or ⌘F give it the typing. It finds every row of every page by its name, by words for what it does (scanlines finds the CRT filter, 120 frame interpolation, HDR the HDR highlights) and by its page, and every cheat (a folded section's too) and mod by name. Each result shows its page and its value now; up and down move through them, Return or a click goes to the row on its page with it selected. Changing page clears the search.
+- **Slot pictures**: saving a quick-save slot keeps a small picture of the game at that moment beside the slot's save (`save-slots/<n>/shot.jpg`, 640×360); the General page shows it on each slot's row. A paused game draws its picture once more for it, its clock still stopped (`front_qs_slot_shot`, `capture_picture_to` in `capture_mac.m`).
+- **Status line** under the game's name: how long the game has been open this time, the time, and the Mac's charge (orange from 20 % on the battery; its help says the time left).
+- **Hold to compare** (Graphics): while the Compare button, C or a controller's left face button is held, the picture shows full size and running, as a peek, with the graphics settings at their defaults (CRT off, MetalFX on, no anti-aliasing or HDR highlights, Auto pixel art, Fit, black bars); let go and yours are back. Nothing is saved. The legend shows "Hold to compare" on the Graphics page when there is room.
+- **The FPS counter beside the panel**: in a right-hand corner it sat under the open sidebar; it now moves to the panel's left edge while the sidebar is up and goes back to its corner when it closes or fades for a peek.
+- **Typing in a search field**: Space and the left and right arrow keys reach the field (the cheats' search and the new one) instead of choosing or changing the selected row; up, down and Return still move through the results. The key monitor's hook is `qs_key` (`front_mac_quick_settings.inc`), in patch `0001-host-player`.
+
+## 0.8.0 (2026-11-21)
+
+Ships in NXForge 0.49.0.
+
+- **Instant replay** (Capture): a switch keeps the last 30 seconds of the game as presented, with sound, encoded in memory (H.264, 1920x1080; about 50 MB). Save the last 30 seconds, ⇧⌘L, the Capture menu or a controller's Capture button held writes them to the Recordings folder without a second encode. Off by default: while on, every frame is drawn once more and encoded.
+- **The Capture button**: a press takes a screenshot, held for half a second it saves the replay.
+- **Players** (Controls): the players by controller name, and Make player 1. Rumble and motion follow the trade. Original Joy-Cons keep the player they joined as.
+- **Around the picture** (Graphics): Black, Glow (the picture itself, blurred and dimmed) or Game art (the wide art or box front NXForge keeps in the game's media folder) in the bars beside a picture that does not fill the window. Saved per game; `around_the_picture` in the settings file.
+- **Save battery** (General, on a Mac with a battery): unplugged, the game pauses while another app is in front and after ten minutes without input (not during a movie), and runs again when you are back. The row says the charge and macOS's estimate of the time left.
+- **Laptop-safe play**: sleep, a closed lid or 4 % battery pause the game with the sidebar up and copy its save to a snapshot first; 10 % shows a message.
+
 ## 0.7.1 (2026-11-15)
 
 Ships in NXForge 0.38.1.

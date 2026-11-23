@@ -106,12 +106,38 @@ void front_qs_screenshot(void) {
         dispatch_async(dispatch_get_main_queue(), ^{ if (was && g_menu_open) qs_pause(1); dm_qs_captures_changed(); });
         toast(path ? [@"Screenshot saved to " stringByAppendingString:where(path)] : err); });
 }
+// A quick-save slot's picture (Sidebar 0.9.0): the game as it is now, small, beside the slot's save (quick_settings_mac.swift SaveSlots). A paused game draws its picture once
+// more for it (front_qs_live_changed's redraw, its clock still stopped); done on the main thread, ok 0 when no frame came
+void front_qs_slot_shot(const char *path, void (*done)(int ok)) {
+    capture_picture_to(@(path), 360, ^(NSString *p, NSString *err) { (void)err; dispatch_async(dispatch_get_main_queue(), ^{ done(p != nil); }); });
+    front_qs_live_changed();
+}
 void front_qs_record(void) {
     if (capture_recording()) { capture_record_stop(); toast(@"Saving the recording…"); return; }
     capture_record_start(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Recording saved to " stringByAppendingString:where(path)] : err); if (g_menu_open) { dm_qs_refresh(); dm_qs_captures_changed(); } });
     if (capture_recording()) toast(@"Recording — Shift-Command-R stops");
 }
 int front_qs_recording(void) { return capture_recording(); }
+// The Game Boy Advance player's rows (quick_settings_mac.h): none in a Switch game
+int front_qs_gba(void) { return 0; }
+int front_qs_gba_opt(int which) { (void)which; return 0; }
+void front_qs_gba_opt_set(int which, int on) { (void)which; (void)on; }
+int front_qs_gba_state(int slot, int op) { (void)slot; (void)op; return 0; }
+const char *front_qs_gba_sound(void) { return ""; }
+int front_qs_gba_value(int which) { (void)which; return 0; }
+void front_qs_gba_value_set(int which, int v) { (void)which; (void)v; }
+// Instant replay (capture_mac.m): the sidebar's switch (saved per game, off unless turned on) and Save the last 30 seconds (the Capture menu's ⇧⌘L, or a controller's
+// Capture button held: front_mac_pad_nav.inc)
+int front_qs_replay(void) { return capture_replay_on(); }
+void front_qs_replay_set(int on) {
+    [NSUserDefaults.standardUserDefaults setBool:on != 0 forKey:opt_key(@"replay")];
+    if (capture_replay_set(on) != (on != 0)) toast(@"Instant replay could not start");
+}
+void front_qs_replay_save(void) {
+    if (!capture_replay_on()) { toast(@"Instant replay is off: turn it on in the sidebar's Capture page"); return; }
+    toast(@"Saving the last 30 seconds…");
+    capture_replay_save(DM_GAME_NAME, ^(NSString *path, NSString *err) { toast(path ? [@"Replay saved to " stringByAppendingString:where(path)] : err); if (path) dm_qs_captures_changed(); });
+}
 // Restart game (Quick settings, for the settings that apply at the next launch): the app's launcher (dm/mac/launcher.c) names a file in DM_LAUNCHER_RESTART; the host makes it
 // and quits as ⌘Q does, and the launcher, finding the file, starts the host again with the same environment. A bare dmhost has no launcher and no restart
 int front_qs_can_restart(void) { const char *e = getenv("DM_LAUNCHER_RESTART"); return e && *e; }
@@ -170,7 +196,7 @@ static void qs_pause_when_aside(int tries) {
 int front_qs_paused(void) { return g_paused; }
 // Hold to peek (Sidebar 0.5.0): while held, the sidebar fades out, the picture slides back to the whole window and the game runs (a paused game shows nothing new), its input still
 // released, so the player sees what a graphics change did at full size; let go and the sidebar comes back, the picture slides aside and the game pauses again when that is on.
-// The header's eye button (quick_settings_mac.swift), P (qs_peek_key) or a controller's top face button (front_mac_pad_nav.inc pad_nav) hold it; g_peek is there
+// The header's eye button (quick_settings_mac.swift), P (qs_key) or a controller's top face button (front_mac_pad_nav.inc pad_nav) hold it; g_peek is there
 static void qs_peek(int on) {
     if (!g_menu_open || !g_opts.view) on = 0;
     if (on == g_peek) return;
@@ -183,16 +209,32 @@ static void qs_peek(int on) {
         inset_to(w < W ? (float)(w / W) : 0);
         if (qs_pause_wanted()) qs_pause_when_aside(0);
     }
+    if (g_opts.fpsLabel) [g_opts fpsCounter];   // the counter back in its corner while the sidebar has faded
     dm_qs_peeked(on);
 }
 void front_qs_peek(int on) { qs_peek(on != 0); }
-// P held while the sidebar is up (front_mac.m's key monitor): a peek. Not while a text field (the cheats' search) takes the typing
-static BOOL qs_peek_key(NSEvent *e) {
-    if (e.keyCode != 35) return NO;   // P
-    if (e.type == NSEventTypeKeyUp) { if (!g_peek) return NO; qs_peek(0); return YES; }
-    if ((e.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption)) || [g_win.firstResponder isKindOfClass:NSText.class]) return NO;
-    if (!e.isARepeat) qs_peek(1);
-    return YES;
+// Hold to compare (Sidebar 0.9.0): while held (the Graphics page's Compare button, C, or a controller's left face button) the game shows full size, as a peek, with the graphics
+// settings at their defaults (no CRT, MetalFX on, no HDR, …), so the player sees what their changes do; let go and theirs are back. quick_settings_mac.swift dm_qs_compare
+// swaps the settings without saving them; g_compare (front_mac_pad_nav.inc) says one is held
+static void qs_compare(int on) {
+    if (!g_menu_open || !g_opts.view) on = 0;
+    if (on == g_compare) return;
+    g_compare = on; dm_qs_compare(on);
+}
+void front_qs_compare(int on) { qs_compare(on != 0); }
+// Keys while the sidebar is up (front_mac.m's key monitor, before its arrow keys): 1 taken here, -1 for the sidebar's text field (the search, the cheats' search) as it is, 0 the
+// monitor's own handling (arrows, Return, Tab move the selection). P held peeks, C held compares, / starts a search. While a text field has the typing, Space and the left and right
+// arrows are the field's (up, down and Return still move through the search's results)
+static int qs_key(NSEvent *e) {
+    BOOL typing = [g_win.firstResponder isKindOfClass:NSText.class];
+    if (e.keyCode == 35 && e.type == NSEventTypeKeyUp && g_peek && !g_compare) { qs_peek(0); return 1; }   // P let go
+    if (e.keyCode == 8 && e.type == NSEventTypeKeyUp && g_compare) { qs_compare(0); return 1; }   // C let go
+    if (typing) return e.keyCode == 49 || e.keyCode == 123 || e.keyCode == 124 ? -1 : 0;
+    if (e.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption)) return 0;
+    if (e.keyCode == 35) { if (e.type == NSEventTypeKeyDown && !e.isARepeat && !g_compare) qs_peek(1); return 1; }   // P
+    if (e.keyCode == 8) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) qs_compare(1); return 1; }   // C
+    if (e.keyCode == 44) { if (e.type == NSEventTypeKeyDown) dm_qs_search_focus(); return 1; }   // /
+    return 0;
 }
 // Library keeps the game (the sidebar's Library button, quick_settings_mac.swift quitToLibrary): the game pauses at once whatever Pause the game says and the app hides, so the
 // NXForge library comes to the front with the game where it was; the library's Resume brings the app back (NSRunningApplication activate), and then the sidebar is as it was left:
@@ -288,7 +330,9 @@ void front_qs_defaults_use(void) {
     [self.fpsLabel sizeToFit];
     int c = (int)MIN(MAX([NSUserDefaults.standardUserDefaults integerForKey:opt_key(@"fpsPos")], 0), 3);
     NSSize b = gv.bounds.size, s = self.fpsLabel.frame.size; s.width += 24;   // room for wider readings
-    self.fpsLabel.frame = NSMakeRect(c & 1 ? b.width - s.width - 12 : 12, c & 2 ? 10 : b.height - s.height - 10, s.width, s.height);
+    // A right-hand corner while the sidebar is up: beside the panel instead of under it (Sidebar 0.9.0), back in the corner when it closes or fades for a peek
+    CGFloat right = g_menu_open && !g_peek && self.view.superview == gv ? NSMinX(self.view.frame) + 6 : b.width - 12;
+    self.fpsLabel.frame = NSMakeRect(c & 1 ? right - s.width : 12, c & 2 ? 10 : b.height - s.height - 10, s.width, s.height);
     self.fpsLabel.alignment = c & 1 ? NSTextAlignmentRight : NSTextAlignmentLeft;
     self.fpsLabel.autoresizingMask = (c & 1 ? NSViewMinXMargin : NSViewMaxXMargin) | (c & 2 ? NSViewMaxYMargin : NSViewMinYMargin);
 }
@@ -308,7 +352,7 @@ void front_qs_defaults_use(void) {
         self.view.frame = NSMakeRect(gv.bounds.size.width - w, 0, w, gv.bounds.size.height);
         if (settings_file_changed() && settings_file_read(settings_file_path(), 0)) { settings_apply(0); settings_file_write(); toast(@"Settings file read again"); }   // edited while the game ran
         dm_qs_opened(g_open_by_pad); dm_qs_refresh();
-        [gv addSubview:self.view]; g_menu_open = 1;
+        [gv addSubview:self.view]; g_menu_open = 1; if (self.fpsLabel) [self fpsCounter];
         inset_to(w < gv.bounds.size.width ? (float)(w / gv.bounds.size.width) : 0);   // a sidebar as wide as the window covers the game instead
         input_release(); dm_focus_set(2);   // as when the window loses focus: nothing stays held, and a game that pauses for the HOME menu pauses
         qs_volume_apply();
@@ -316,8 +360,9 @@ void front_qs_defaults_use(void) {
         LOG("front end: Quick settings open");
     } else {
         qs_pause(0);
+        if (g_compare) qs_compare(0);   // the player's own graphics again before the sidebar goes
         if (g_peek) { g_peek = 0; self.view.alphaValue = 1; dm_qs_peeked(0); }
-        [self.view removeFromSuperview]; g_menu_open = 0; inset_to(0); g_pad_quiet = 1; g_assign = -1; qs_volume_apply();
+        [self.view removeFromSuperview]; g_menu_open = 0; if (self.fpsLabel) [self fpsCounter]; inset_to(0); g_pad_quiet = 1; g_assign = -1; qs_volume_apply();
         [g_win makeFirstResponder:g_win.contentView];
         if (g_win.isKeyWindow) { input_resume(); dm_focus_set(1); }   // otherwise the window's becoming key resumes them
         LOG("front end: Quick settings closed");
@@ -336,6 +381,7 @@ void front_qs_defaults_use(void) {
 }
 - (void)screenshot:(id)sender { (void)sender; front_qs_screenshot(); }
 - (void)record:(id)sender { (void)sender; front_qs_record(); if (g_menu_open) dm_qs_refresh(); }
+- (void)replaySave:(id)sender { (void)sender; front_qs_replay_save(); }
 - (void)slotSave:(NSMenuItem *)it { dm_qs_slot_save((int)it.tag); }
 - (void)slotLoad:(NSMenuItem *)it { dm_qs_slot_load((int)it.tag); }
 - (void)menuIn:(NSMenu *)bar {
@@ -352,7 +398,8 @@ void front_qs_defaults_use(void) {
     NSMenu *cm = [[NSMenu alloc] initWithTitle:@"Capture"];   // ⇧⌘S and ⇧⌘R: ⌘ shortcuts never reach the game
     [[bar addItemWithTitle:@"Capture" action:nil keyEquivalent:@""] setSubmenu:cm];
     NSMenuItem *sh = [cm addItemWithTitle:@"Take Screenshot" action:@selector(screenshot:) keyEquivalent:@"s"], *rc = [cm addItemWithTitle:@"Start Recording" action:@selector(record:) keyEquivalent:@"r"];
-    for (NSMenuItem *x in @[sh, rc]) { x.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; x.target = self; }
+    NSMenuItem *rp = [cm addItemWithTitle:@"Save the Last 30 Seconds" action:@selector(replaySave:) keyEquivalent:@"l"];   // Instant replay; says so when it is off
+    for (NSMenuItem *x in @[sh, rc, rp]) { x.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift; x.target = self; }
     // Quick-save slots (quick_settings_mac.swift SaveSlots): ⌘1–⌘3 save the game's save into a slot, ⌥⌘1–⌥⌘3 load one (pressed twice; the game restarts)
     NSMenu *sm = [[NSMenu alloc] initWithTitle:@"Save Slots"];
     [[bar addItemWithTitle:@"Save Slots" action:nil keyEquivalent:@""] setSubmenu:sm];
@@ -389,6 +436,7 @@ static void settings_apply(int start) {
     // but only the launch environment and env.txt fix it (env_fixed): a Restart game, which starts with the same environment, keeps a change the sidebar made
     if (!env_fixed("DM_PRESENT_UPSCALE")) { NSString *u = [d stringForKey:@"launcher.DM_PRESENT_UPSCALE"]; mtl_present_upscale_set(u ? [u isEqualToString:@"metalfx"] : 1); }
     if (!env_fixed("DM_PRESENT_AA")) mtl_present_aa_set([d objectForKey:opt_key(@"aa")] ? (int)[d integerForKey:opt_key(@"aa")] : DM_PAA_OFF);
+    if (capture_replay_on() != [d boolForKey:opt_key(@"replay")]) capture_replay_set([d boolForKey:opt_key(@"replay")]);   // Instant replay: off unless saved on
     // EDR highlights: off unless this game's saved choice says on; strength 50 % unless saved (present_edr.inc)
     if (!env_fixed("DM_PRESENT_EDR")) mtl_present_edr_set([d boolForKey:opt_key(@"edr")]);
     if (!env_fixed("DM_PRESENT_EDR_STRENGTH")) mtl_present_edr_strength_set([d objectForKey:opt_key(@"edrStrength")] ? (int)lround([d doubleForKey:opt_key(@"edrStrength")] * 100) : 50);
@@ -397,6 +445,16 @@ static void settings_apply(int start) {
     // Pixel art: auto (on once the picture shows a steady pixel grid) unless this game's saved choice says otherwise (pixel_art.inc)
     if (!env_fixed("DM_PIXEL_ART")) mtl_present_pixel_set([d objectForKey:opt_key(@"pixel")] ? (int)[d integerForKey:opt_key(@"pixel")] : DM_PIXEL_AUTO);
     if (!getenv("DM_PRESENT_SCALE")) mtl_present_scale_set([d objectForKey:opt_key(@"scale")] ? (int)[d integerForKey:opt_key(@"scale")] : DM_PSCALE_FIT);
+    // Border fill (border_fill.inc): black bars unless this game's saved choice says glow or art. The art is the game's wide art, else its box front, from the media
+    // folder NXForge keeps beside the app ("media", or "<App> media" in a folder shared by several apps), else a banner in the app itself; none: art is glow
+    if (!getenv("DM_PRESENT_BORDER")) mtl_present_border_set((int)[d integerForKey:opt_key(@"border")]);
+    { NSString *app = NSBundle.mainBundle.bundlePath, *dir = app.stringByDeletingLastPathComponent, *own = app.lastPathComponent.stringByDeletingPathExtension, *art = nil;
+      NSMutableArray<NSString *> *tries = [NSMutableArray array];
+      for (NSString *m in @[@"media", [own stringByAppendingString:@" media"]]) for (NSString *n in @[@"wide-art.jpg", @"wide-art.png", @"cover-front.jpg", @"cover-front.png"])
+          [tries addObject:[[dir stringByAppendingPathComponent:m] stringByAppendingPathComponent:n]];
+      for (NSString *n in @[@"dm/banner.jpg", @"dm/banner.png"]) [tries addObject:[(NSBundle.mainBundle.resourcePath ?: app) stringByAppendingPathComponent:n]];
+      for (NSString *f in tries) if (!art && [NSFileManager.defaultManager fileExistsAtPath:f]) art = f;
+      mtl_present_border_art(art.fileSystemRepresentation); }
     qs_volume_apply();
     if (!getenv("DM_PRESENT_SCANLINE")) mtl_present_scanline_set([d objectForKey:pfx_key(@"scanline")] ? (int)[d integerForKey:pfx_key(@"scanline")] : 0);
     if (!start && g_opts) [g_opts fpsCounter];

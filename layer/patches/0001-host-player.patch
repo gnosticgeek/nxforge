@@ -13,17 +13,16 @@ Subject: host-player: Mac player: sidebar hooks, controls, launcher, volume,
  dm/host/hle.h         |   2 +
  dm/host/hle_audio.c   |  12 +++
  dm/host/hle_hid.c     |   8 +-
- dm/host/tests/t_hid.c |   9 ++-
+ dm/host/tests/t_hid.c |   8 +-
  dm/host/web_apple.m   |  19 +++--
- dm/mac/Launcher.swift |   6 +-
  dm/mac/launcher.c     | 133 +++++++++++++++++++++++++++++---
- 12 files changed, 399 insertions(+), 80 deletions(-)
+ 11 files changed, 396 insertions(+), 76 deletions(-)
 
 diff --git a/dm/gfx/gl/hle_gl.m b/dm/gfx/gl/hle_gl.m
-index aa398f882c3167ca42158d4c5e7ea3d5aabfa4fc..b1e299e977b1859e5e2c15317ff66fafd2f106c0 100644
+index 5c51e15276b0a3d463ae4317e7707fa1d0e3fc42..9153fde6b155105581a339656d93e5bd71d28e59 100644
 --- a/dm/gfx/gl/hle_gl.m
 +++ b/dm/gfx/gl/hle_gl.m
-@@ -710,7 +710,7 @@ static id<MTLSamplerState> samp_state(const samp_p *p, const tex_t *t) {
+@@ -752,7 +752,7 @@ static id<MTLSamplerState> samp_state(const samp_p *p, const tex_t *t) {
      d.lodMinClamp = k.lo; d.lodMaxClamp = k.hi;   // GL_TEXTURE_MIN_LOD / MAX_LOD within the levels the texture has
      d.sAddressMode = wrap_of(k.ws); d.tAddressMode = wrap_of(k.wt); d.rAddressMode = wrap_of(k.wr);
      d.borderColor = k.b == 2.f ? MTLSamplerBorderColorOpaqueWhite : k.b == 1.f ? MTLSamplerBorderColorOpaqueBlack : MTLSamplerBorderColorTransparentBlack;
@@ -32,7 +31,7 @@ index aa398f882c3167ca42158d4c5e7ea3d5aabfa4fc..b1e299e977b1859e5e2c15317ff66faf
      d.lodBias = k.bias;   // added to the level of detail a sample computes, as GL adds the texture's (Metal 4: macOS and iOS 26, the host's minimum)
      if (k.cmp) d.compareFunction = (MTLCompareFunction)(k.cmp - GL_NEVER);
      id<MTLSamplerState> s = [g_dev newSamplerStateWithDescriptor:d];
-@@ -1471,14 +1471,21 @@ GLB(glClear, void, GLbitfield mask) {
+@@ -1596,14 +1596,21 @@ static void clear_quad(int bits, const GLfloat *color, unsigned cmask) {
              if (nc < 16) { ck[nc] = key; cache[nc++] = pso; }
          }
          if (!pso) return;
@@ -61,10 +60,10 @@ index aa398f882c3167ca42158d4c5e7ea3d5aabfa4fc..b1e299e977b1859e5e2c15317ff66faf
          [e setViewport:(MTLViewport){0, 0, P.w, P.h, 0, 1}];
          int sc[4] = {0, 0, (int)P.w, (int)P.h};
 diff --git a/dm/gfx/vk/hle_vk.m b/dm/gfx/vk/hle_vk.m
-index 0c066d992b7cbf83eff02adbf0f2d681be87a20e..0fe37ac4cfb49fcc99ed023c439d59b9bc6197fe 100644
+index 367f10778c8feb5a0e71104f8a9628192ed5274a..c41befe0b1781402642e7a1a0163ae333f213243 100644
 --- a/dm/gfx/vk/hle_vk.m
 +++ b/dm/gfx/vk/hle_vk.m
-@@ -904,7 +904,8 @@ VKB(vkCreateSampler, VkResult, VkDevice d, const VkSamplerCreateInfo *ci, const
+@@ -906,7 +906,8 @@ VKB(vkCreateSampler, VkResult, VkDevice d, const VkSamplerCreateInfo *ci, const
          sd.magFilter = ci->magFilter == VK_FILTER_LINEAR ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
          sd.mipFilter = ci->mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
          sd.sAddressMode = addr_mode(ci->addressModeU); sd.tAddressMode = addr_mode(ci->addressModeV); sd.rAddressMode = addr_mode(ci->addressModeW);
@@ -74,7 +73,7 @@ index 0c066d992b7cbf83eff02adbf0f2d681be87a20e..0fe37ac4cfb49fcc99ed023c439d59b9
          if (ci->compareEnable) sd.compareFunction = (MTLCompareFunction)ci->compareOp;   // VkCompareOp and MTLCompareFunction share their values
          sd.borderColor = ci->borderColor >= VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE ? MTLSamplerBorderColorOpaqueWhite :
                           ci->borderColor >= VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK ? MTLSamplerBorderColorOpaqueBlack : MTLSamplerBorderColorTransparentBlack;
-@@ -1689,7 +1690,7 @@ static void query_record(subq_t *s, VkQueryPool pool, uint32_t idx, int64_t slot
+@@ -1695,7 +1696,7 @@ static void query_record(subq_t *s, VkQueryPool pool, uint32_t idx, int64_t slot
      s->writes[s->nwrites++] = (query_write){pool, idx, slot};
  }
  static void occ_start(rs_t *s) {
@@ -84,7 +83,7 @@ index 0c066d992b7cbf83eff02adbf0f2d681be87a20e..0fe37ac4cfb49fcc99ed023c439d59b9
      query_record(q, s->aq, s->aq_first, q->nvis);
      [s->re setVisibilityResultMode:MTLVisibilityResultModeCounting offset:q->nvis * 8]; q->nvis++;
 diff --git a/dm/host/Makefile b/dm/host/Makefile
-index fea687b5aa23d66777fc846550fa358b5dc3bea8..53e8981a7a704f8ad0c25a6d1b43eeae18d0dc6b 100644
+index 066ae32652c29ced3d9eea27c8bed47d0166765b..c08228130bac54d9a988e7f2b508ee3b9cc4b3cc 100644
 --- a/dm/host/Makefile
 +++ b/dm/host/Makefile
 @@ -23,7 +23,7 @@ ifeq ($(filter -j%,$(MAKEFLAGS)),)
@@ -113,8 +112,8 @@ index fea687b5aa23d66777fc846550fa358b5dc3bea8..53e8981a7a704f8ad0c25a6d1b43eeae
  # lists the headers its source read (-MMD; -MP: a removed header is no error), so an edit rebuilds the objects that include it and the link; the Makefile (CFLAGS, these lines)
  # rebuilds them all. The generated headers come first (order-only: the dependency files name them for the sources that read them). The NSP script builds gen/<id>/dmhost and takes it
  HOST_CFLAGS = $(CFLAGS) -I../gfx/nvn/include -I$(dir $(MSL_H)) -I../third_party/vulkan-headers/include -I$(dir $(GAME_H)) -I$(VPX) -I$(DAV1D)/include -I../third_party/stb_vorbis -fobjc-arc
--HOST_FRAMEWORKS = -framework Cocoa -framework WebKit -framework UserNotifications -framework QuartzCore -framework Metal -framework MetalFX -framework GameController -framework CoreBluetooth -framework IOBluetooth -framework CoreHaptics -framework IOKit -framework AudioToolbox -framework CoreAudio -framework AVFAudio -framework CoreFoundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers
-+HOST_FRAMEWORKS = -framework SwiftUI -framework AVFoundation -framework Cocoa -framework WebKit -framework UserNotifications -framework QuartzCore -framework Metal -framework MetalFX -framework GameController -framework CoreBluetooth -framework IOBluetooth -framework CoreHaptics -framework IOKit -framework AudioToolbox -framework CoreAudio -framework AVFAudio -framework CoreFoundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers
+-HOST_FRAMEWORKS = -framework Cocoa -framework WebKit -framework UserNotifications -framework QuartzCore -framework Metal -framework MetalFX -framework GameController -framework CoreBluetooth -framework IOBluetooth -framework CoreHaptics -framework IOKit -framework IOUSBHost -framework AudioToolbox -framework CoreAudio -framework AVFAudio -framework CoreFoundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers
++HOST_FRAMEWORKS = -framework SwiftUI -framework AVFoundation -framework Cocoa -framework WebKit -framework UserNotifications -framework QuartzCore -framework Metal -framework MetalFX -framework GameController -framework CoreBluetooth -framework IOBluetooth -framework CoreHaptics -framework IOKit -framework IOUSBHost -framework AudioToolbox -framework CoreAudio -framework AVFAudio -framework CoreFoundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers
  HOST_SRC = $(SRC) $(GFX)
  ifneq ($(filter ../%,$(filter-out ../gfx/%,$(HOST_SRC))),)
  $(error host sources outside dm/host and dm/gfx need an object rule: $(filter ../%,$(filter-out ../gfx/%,$(HOST_SRC))))
@@ -130,7 +129,7 @@ index fea687b5aa23d66777fc846550fa358b5dc3bea8..53e8981a7a704f8ad0c25a6d1b43eeae
  ifneq ($(strip $(GAME)),)
  -include $(HOST_OBJ:.o=.d)
 diff --git a/dm/host/front.h b/dm/host/front.h
-index 7f3b2303a57ee1a432e112605943a566ad3b8c03..abbcca72bbf88570ea92f9abc5afe58870646bd0 100644
+index 8365fc70a8eccda9a5283e9ec3e6800091f37e55..26fe69d86292b23a0355dd1f2d829364382667e0 100644
 --- a/dm/host/front.h
 +++ b/dm/host/front.h
 @@ -1,5 +1,6 @@
@@ -140,18 +139,18 @@ index 7f3b2303a57ee1a432e112605943a566ad3b8c03..abbcca72bbf88570ea92f9abc5afe588
  #include <stdlib.h>
  // Metal reads HUD switches when the first device is made. Called before host preload and again after the launcher applies its settings; explicit environment values win.
  static inline void front_hud_env(void) {
-@@ -15,6 +16,7 @@ void front_run(void (*guest)(void));
- void *front_metal_layer(void);
- // The highest refresh rate of the screen the game is shown on in Hz, 0 = not known (front_mac.m: the window's screen; front_ios.m: the game view's screen, 60 in Low Power Mode). Any thread
+@@ -17,6 +18,7 @@ void *front_metal_layer(void);
  int front_screen_max_fps(void);
+ // The screen's native refresh rate before front_screen_match temporarily switched it to a lower fixed rate in fullscreen (front_mac.m; on iOS, same as front_screen_max_fps). Any thread
+ int front_screen_capable_fps(void);
 +int front_fullscreen(void);   // 1 while the window is in fullscreen (Mac; 0 elsewhere)
  // The pixel size of the display the game is shown on: on the Mac the window's screen in its current mode (the main display before the window is up) (a scaled Retina mode's pixels), an iPhone's or iPad's screen (nativeBounds).
  // Returns 0 and leaves w, h alone when not known (no front end: graphics unit tests). Any thread
  int front_display_pixels(int *w, int *h);
-@@ -23,6 +25,75 @@ int front_screen_variable_refresh(void);
- // The frame rate the display link paces the game at (60, 30, 120; nvn_mtl.m link_sync): in fullscreen, a screen whose refresh rate is not a multiple of it is switched, while the game runs,
- // to a mode of the same size whose rate is, and back when the window leaves fullscreen or that screen (front_mac.m; none on iOS). Called from the present thread
+@@ -27,6 +29,75 @@ int front_screen_variable_refresh(void);
  void front_screen_match(int fps);
+ // Whether startup fullscreen or a screen mode switch is still settling, so the display link waits before starting (front_mac.m; none on iOS). Any thread
+ int front_screen_settling(void);
 +// Present filter (implemented by the graphics backend, nvn_mtl.m; set by the Mac front end's Graphics menu and panel, or DM_PRESENT_FILTER / DM_PRESENT_FILTER_STRENGTH): how the game picture
 +// is drawn into the window, taken at every present. Strength 0 to 1. Any thread
 +enum { DM_PFX_OFF, DM_PFX_SHARPEN, DM_PFX_PIXEL, DM_PFX_CRT, DM_PFX_LOTTES, DM_PFX_LCD, DM_PFX_N };   // in the order they were added: the saved choice is the number
@@ -224,7 +223,7 @@ index 7f3b2303a57ee1a432e112605943a566ad3b8c03..abbcca72bbf88570ea92f9abc5afe588
  // The shape of the picture the game presents (nvn_mtl.m present_now, present_shape: the layer's, not the crop's, w x h), called when its width / height changes: the front end
  // lays the picture out in that shape instead of 16:9, so a profile with screen_aspect under DM_SCREEN_ASPECT (1920x1344) fills a 1.43:1 screen and touches map onto the picture
  // as drawn. Before the first call the picture is 16:9. Called from the present thread; the front end switches to its main thread and does not block
-@@ -76,10 +147,16 @@ void front_save_failed(int err);
+@@ -80,10 +151,16 @@ void front_save_failed(int err);
  
  // GPU lost (called by the graphics backend's nvn_mtl.m gpu_lost_check, once): the first command buffer came back MTL4CommandQueueErrorAccessRevoked, so macOS runs none of the process's GPU work
  // any more and nothing is drawn again. By then presents have stopped and the game's waits for the GPU are released, so the game runs on with nothing on screen until the front end ends it.
@@ -243,7 +242,7 @@ index 7f3b2303a57ee1a432e112605943a566ad3b8c03..abbcca72bbf88570ea92f9abc5afe588
  // thread. front_web_open: dir = the folder the document path is relative to (an HtmlDocument's html-document), path = the document path with its query, callback = the URL prefix whose
  // loading ends the page (exit reason 3, the URL as the last URL), hidden = loaded without being shown until front_web_show. 0 = opened; -1 = no web view (no window): the caller's
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b449c27a52 100644
+index 9f0cc6d9112ca6b20bc0b8a5755da99af11a3f37..3da88d677312189a8a5ea61eed1deebb676883f1 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -1,12 +1,13 @@
@@ -275,7 +274,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
  #include "hle.h"
  #include "pad_slots.h"
  #include "haptics_apple.h"
-@@ -36,6 +41,9 @@ static void merge_rumble_to(void (*sink)(const dm_haptic_state *));
+@@ -37,6 +42,9 @@ static void merge_rumble_to(void (*sink)(const dm_haptic_state *));
  #include "user_select_mac.h"
  #include <signal.h>
  #include <math.h>
@@ -285,7 +284,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
  #include <sys/stat.h>
  
  static CAMetalLayer *g_layer;
-@@ -43,8 +51,14 @@ static uint64_t g_btn;
+@@ -44,8 +52,14 @@ static uint64_t g_btn;
  static int g_w, g_a, g_s, g_d;
  static int g_rl, g_ru, g_rr, g_rd;   // arrow keys pressed with Shift held: the right stick (each goes back up as it went down, whatever Shift does meanwhile)
  static int g_input_on = 1;   // main thread: the game window is key, so its keyboard, mouse and controllers reach the game (input_release / input_resume)
@@ -298,21 +297,21 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
 +static _Atomic int g_fullscreen;   // the window is in fullscreen (set on NSWindowDidEnter/ExitFullScreenNotification); the present path does without the display link there, or sets its latency (nvn_mtl.m link_sync)
 +int front_fullscreen(void) { return g_fullscreen; }
  static _Atomic int g_screen_fps;   // the window's screen's maximumFramesPerSecond, kept up to date when the window moves to another screen
+ static _Atomic int g_screen_native_fps;   // the screen's own rate before front_screen_match temporarily switched it in fullscreen
  int front_screen_max_fps(void) { return g_screen_fps; }
- static _Atomic CGDirectDisplayID g_screen_id;   // the window's screen (screen_refresh); 0 until the window is up, then the main display stands in
-@@ -62,11 +76,9 @@ static void screen_refresh(NSScreen *screen) {   // main thread: refresh capabil
-     g_screen_id = [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue];
-     g_screen_variable_refresh = screen.minimumRefreshInterval > 0 && screen.maximumRefreshInterval > screen.minimumRefreshInterval;
+@@ -79,11 +93,9 @@ static void screen_refresh(NSScreen *screen) {   // main thread: refresh capabil
+         g_screen_native_fps = g_screen_fps;
+     }
  }
 -static _Atomic int g_fullscreen;   // the window is in fullscreen (set when it has entered and when it has left)
  // The software keyboard input box is up (front_text_input). The game window is not key then, which is not a focus change the game should see: on hardware the inline keyboard is drawn inside
  // the game, which keeps its focus, and ShowKeyboard's applet sends its own out-of-focus / in-focus pair (DM_APPLET). Monster Hunter Rise dropped the hunter's name after the round trip and asked again. Main thread only
  static int g_text_box;
 -int front_fullscreen(void) { return g_fullscreen; }   // nvn_mtl.m link_latency: frame latency 2 in variable-refresh fullscreen
- // The screen's refresh rate matched to the game's frame rate in fullscreen (front_screen_match, from PR #79; DM_SCREEN_MATCH=0 turns it off). 60 fps on a 144 Hz screen cannot be paced
- // evenly: the display link counts a tick on the refresh nearest each 1/60 s slot (nvn_mtl.m link_range), so frames stay up 2 and 3 refreshes in turn (13.9 / 20.8 ms) and Apple's HUD shows
- // the frame interval jumping between them. In fullscreen, a screen whose rate is not a multiple of the game's switches to the mode of the same size with the highest rate that is (144 → 120 Hz
-@@ -149,15 +161,25 @@ static void push(void) {
+ // Whether the screen is still settling at start, so the display link waits before starting (nvn_mtl.m link_sync): fullscreen was asked for at launch (DM_FULLSCREEN) and has not been
+ // entered yet (at most 5 s), a fullscreen match request is still queued on the main thread, or this host switched a screen's mode under 1 s ago. Started before, the link ran into
+ // the mode switch fullscreen brings (silences up to 500 ms, a rescue, and a minute at 20-30 fps on a ROG XG27AQNGV). The present thread shows frames meanwhile
+@@ -237,15 +249,25 @@ static void push(void) {
      int32_t rx = (g_rr - g_rl) * 32767, ry = (g_ru - g_rd) * 32767;
      dm_input_set(g_btn, lx, ly, rx, ry);
  }
@@ -347,7 +346,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
  }
  // fn held with a letter: the arrow and function keys carry the same modifier flag, so the key must be a letter for this to be a Globe shortcut
  static int fn_shortcut(NSEvent *e) {
-@@ -168,22 +190,24 @@ static ctrl_prompt g_cp; static int g_cp_confirm, g_cp_cancel;   // the controll
+@@ -256,22 +278,24 @@ static ctrl_prompt g_cp; static int g_cp_confirm, g_cp_cancel;   // the controll
  static int cp_poll(void);
  static void on_key(NSEvent *e, int down) {
      if (!g_input_on) return;
@@ -376,7 +375,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
  
  // Physical controllers (GameController) go to dm_pad_set_player, mapped as the iPhone's (DmGamepad.m read_pad, same layout); player 1's is ORed with the keyboard, a stick takes
  // whichever is deflected more (hle_hid.c). DM_KEYS uses player 1's path, so player 1's controller touched during a script takes it over.
-@@ -194,6 +218,7 @@ static pad_slots g_slots;
+@@ -282,6 +306,7 @@ static pad_slots g_slots;
  static GCController *g_held[DM_PLAYERS];   // the controller of each slot, kept alive while it holds it (the slot table keys on its pointer)
  static int g_merge, g_kbd_own;
  static int32_t pad_axis(float v) { return (int32_t)(fmaxf(-1.f, fminf(1.f, v)) * DM_STICK_MAX); }
@@ -384,7 +383,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
  // A controller's state for player p, GameController or raw HID: a pressed button or a stick past 15% hides the pointer (cursor_hide_for_input), a resting stick's drift does not
  static void pad_set(int p, uint64_t m, int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
      const int32_t dead = DM_STICK_MAX * 15 / 100;
-@@ -213,13 +238,16 @@ static void pad_read(GCExtendedGamepad *g) {
+@@ -310,13 +335,16 @@ static void pad_read(GCExtendedGamepad *g) {
      hq_poll(); if (hq_blocks_input(g_hq.phase)) return;
      int p = g_merge ? 0 : pad_slot_of(&g_slots, (__bridge const void *)g.controller);
      if (p < 0 && (!g_press_to_join || pad_gc_unread(g.controller))) return;   // a controller read from its HID reports: GameController's controller of it stays unread
@@ -407,23 +406,23 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
      K(g.dpad.left, DM_BTN_LEFT); K(g.dpad.up, DM_BTN_UP); K(g.dpad.right, DM_BTN_RIGHT); K(g.dpad.down, DM_BTN_DOWN);
      #undef K
      if (p < 0) {   // DM_PAD_PRESS_TO_JOIN=1: it joins at its first button
-@@ -229,6 +257,7 @@ static void pad_read(GCExtendedGamepad *g) {
+@@ -326,6 +354,7 @@ static void pad_read(GCExtendedGamepad *g) {
      if (cp_poll()) return;   // the controller applet's prompt has the controllers (front_ctrl_support)
      if (m) merge_rumble_to(NULL);   // DM_PAD_MERGE: a button on this controller takes player 1's rumble back from a Switch 2 pad or Joy-Cons read from HID
      dm_haptics_apple_controller(p, g.controller);
 +    if (g_pad_quiet) { if (m) { dm_pad_set_player(p, 0, 0, 0, 0, 0); return; } g_pad_quiet = 0; }
-     pad_set(p, m, pad_axis(g.leftThumbstick.xAxis.value), pad_axis(g.leftThumbstick.yAxis.value), pad_axis(g.rightThumbstick.xAxis.value), pad_axis(g.rightThumbstick.yAxis.value));
- }
- // Home and Capture: without this macOS takes them as system gestures (Home opens the Games app). Capture has no function in the host, Home quits when it is held (hq_poll).
-@@ -237,6 +266,7 @@ static void pad_keep_system_buttons(GCController *c) {
+     int32_t st[4] = {pad_axis(g.leftThumbstick.xAxis.value), pad_axis(g.leftThumbstick.yAxis.value), pad_axis(g.rightThumbstick.xAxis.value), pad_axis(g.rightThumbstick.yAxis.value)};
+     if ([g.controller.productCategory isEqualToString:@"Switch Pro Controller"] && !pad_gc_unread(g.controller)) {
+         int nz[2] = {pro_gc_stick_nonzero(g.controller, 0), pro_gc_stick_nonzero(g.controller, 1)};
+@@ -339,6 +368,7 @@ static void pad_keep_system_buttons(GCController *c) {
      for (NSString *b in @[GCInputButtonHome, GCInputButtonShare]) c.physicalInputProfile.buttons[b].preferredSystemGestureState = GCSystemGestureStateDisabled;
      c.extendedGamepad.buttonHome.pressedChangedHandler = ^(GCControllerButtonInput *b, float v, BOOL down) { (void)b; (void)v; (void)down; if (g_input_on) hq_poll(); };
  }
 +#include "nxforge/front_mac_pad_nav.inc"   // NXForge (thin-fork plan): kept out of upstream's file so merges meet one line
  static const char *pad_name(GCController *c) { return c.vendorName.UTF8String ?: "?"; }
  static void npad_name(int p, char *out, size_t cap) { uint32_t id = dm_player_npad(p); if (id == 0x20) snprintf(out, cap, "handheld"); else snprintf(out, cap, "%u", id); }
- // The players' raw HID motion source follows the controllers (gone: one just removed, still listed): a Pro Controller's or a DualShock 4's, each model counted on its own
-@@ -274,7 +304,7 @@ static void pads_changed(GCController *gone) {
+ // The players' raw HID motion and Pro stick fallback follow the controllers (gone: one just removed, still listed): a Pro Controller's or a DualShock 4's, each model counted on its own
+@@ -393,7 +423,7 @@ static void pads_changed(GCController *gone) {
          for (GCController *c in GCController.controllers) if (jc1_gc_unread(c)) pad_keep_system_buttons(c);   // read from HID (pad_jc1_mac.h), a lone Joy-Con's too (no extended gamepad profile)
          for (GCController *c in GCController.controllers) if (c.extendedGamepad && c != gone) {
              if (jc1_gc_unread(c)) { c.extendedGamepad.valueChangedHandler = nil; continue; }
@@ -432,7 +431,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
              dm_motion_attach(c, 0);   // every controller is player 1: the last one moved drives its six-axis sensor
              pad_read(c.extendedGamepad);
          }
-@@ -304,8 +334,8 @@ static void pads_changed(GCController *gone) {
+@@ -423,8 +453,8 @@ static void pads_changed(GCController *gone) {
          }
          int p = pad_slot_take(&g_slots, (__bridge const void *)c, pad_name(c));
          if (p < 0) { LOG("controller '%s' connected: all %d players are taken, not used", pad_name(c), DM_PLAYERS); continue; }
@@ -443,7 +442,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
          dm_motion_attach(c, p);
          npad_name(p, nb, sizeof nb); LOG("controller '%s' connected: player %d (npad %s)%s", pad_name(c), p + 1, nb, c.motion.hasRotationRate ? ", with motion (gyro)" : "");
          pad_read(c.extendedGamepad);
-@@ -510,12 +540,12 @@ static NSTimer *g_hq_timer;   // while Home is held: the time runs on without a
+@@ -662,12 +692,12 @@ static NSTimer *g_hq_timer;   // while Home is held: the time runs on without a
  static NSView *g_hq_hold, *g_hq_prompt; static CAShapeLayer *g_hq_ring;
  static char g_hq_text[HQ_TEXTS][256];
  static void hq_start(void) {
@@ -458,7 +457,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
  }
  // The Home button setting for apps (macOS 27), once, when the first controller is there (GameController reads it only while one is connected): "system" in the log
  // explains a hold that does nothing, since the system keeps Home whatever the host asks. A front end reads the setting itself (GCControllerHomeButtonSettingsManager)
-@@ -716,12 +746,14 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
+@@ -872,12 +902,14 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
  - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self fitDrawable]; }
  @end
  
@@ -473,7 +472,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
  
  typedef struct { void (*fn)(void); } guest_arg;
  static void *guest_tramp(void *p) {
-@@ -732,6 +764,18 @@ static void *guest_tramp(void *p) {
+@@ -888,6 +920,18 @@ static void *guest_tramp(void *p) {
  
  // Metal reads MTL_HUD_ENABLED when the process makes its first device, which can be before the window: set from DM_METAL_HUD before main (set in front_run, the HUD did not show)
  __attribute__((constructor)) static void hud_env(void) { front_hud_env(); }
@@ -492,15 +491,15 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
  
  // ---------- Cheats: the menu and the panel (hle_cheats.c holds every state; these only show it and call it) ----------
  
-@@ -1581,6 +1625,7 @@ static NSArray<NSURL *> *found_cheat_files(NSString *build) {
- void front_run(void (*guest)(void)) {
-     // A game: tell macOS its work is latency-critical, so the system does not trade its frame time for power while the frame rate is capped
-     static id activity; activity = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"game"];
-+    (void)activity;   // held for the process's life, never read
+@@ -1739,6 +1783,7 @@ void front_run(void (*guest)(void)) {
+     static id<NSObject> game_activity;
+     if (!game_activity)
+         game_activity = [NSProcessInfo.processInfo beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"game"];
++    (void)game_activity;   // held for the process's life, never read
      if (!getenv("DM_WINDOW")) {
          kern_return_t kr;
          int role_status = front_windowless_role(getenv("DM_WINDOWLESS_ROLE"), &kr);
-@@ -1591,6 +1636,7 @@ void front_run(void (*guest)(void)) {
+@@ -1749,6 +1794,7 @@ void front_run(void (*guest)(void)) {
          return;
      }
      @autoreleasepool {
@@ -508,7 +507,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
          [NSApplication sharedApplication];
          [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
          NSRect r = NSMakeRect(0, 0, 1280, 720);
-@@ -1601,6 +1647,7 @@ void front_run(void (*guest)(void)) {
+@@ -1759,6 +1805,7 @@ void front_run(void (*guest)(void)) {
          // Fullscreen: without FullScreenPrimary the green button only zooms the window. The present path already scales
          // the game picture to fit the drawable with black bars around it, so fullscreen keeps the game's aspect ratio.
          win.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
@@ -516,7 +515,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
          NSView *v = win.contentView = [[DmGameView alloc] initWithFrame:r];
          v.wantsLayer = YES;
          g_layer = [CAMetalLayer layer];
-@@ -1641,6 +1688,8 @@ void front_run(void (*guest)(void)) {
+@@ -1799,6 +1846,8 @@ void front_run(void (*guest)(void)) {
              dispatch_async(dispatch_get_main_queue(), ^{ [g_cheats_menu showPanel:nil]; });
          [[bar addItemWithTitle:@"Window" action:nil keyEquivalent:@""] setSubmenu:wm];
          [wm addItemWithTitle:@"Enter Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"].keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagCommand;
@@ -525,7 +524,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
          NSApp.mainMenu = bar;
          const char *fs = getenv("DM_FULLSCREEN");   // 1 (or any value but 0): start in fullscreen; 0, the settings window's Window, or unset: a window
          if (fs && strcmp(fs, "0")) {
-@@ -1667,6 +1716,22 @@ void front_run(void (*guest)(void)) {
+@@ -1826,6 +1875,22 @@ void front_run(void (*guest)(void)) {
                  (void)n; want = 0; entering = 0; g_fs_failed = nil; }];   // startup succeeded: later manual refusals have no startup request to retry
              dispatch_async(dispatch_get_main_queue(), enter);
          }
@@ -548,7 +547,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
          for (NSNotificationName nm in @[GCControllerDidConnectNotification, GCControllerDidDisconnectNotification])
              [NSNotificationCenter.defaultCenter addObserverForName:nm object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
                  GCController *c = n.object; int conn = n.name == GCControllerDidConnectNotification;
-@@ -1679,7 +1744,17 @@ void front_run(void (*guest)(void)) {
+@@ -1838,7 +1903,17 @@ void front_run(void (*guest)(void)) {
          [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent *(NSEvent *e) {
              if (e.window != win) return e;   // Only swallow keys for the game window; other windows such as the software keyboard input box receive typing as usual
              if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
@@ -556,7 +555,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
              if (e.type == NSEventTypeKeyDown && fn_shortcut(e)) return e;   // fn (Globe) + a letter is the system's (fn+F full screen, GitHub issue #873), not the game's F
 +            if (e.keyCode == 53) { if (e.type == NSEventTypeKeyDown && !e.isARepeat) [opts toggle:nil]; return nil; }   // Esc: the Quick settings sidebar (no game button is on it)
 +            if (g_menu_open) {   // the arrow keys, Return and Space move through the sidebar as a controller does; other keys go to its controls
-+                if (qs_peek_key(e)) return nil;   // NXForge: P held peeks at the game (front_mac_quick_settings.inc)
++                { int k = qs_key(e); if (k) return k > 0 ? nil : e; }   // NXForge: P peeks, C compares, / searches; a text field keeps its typing (front_mac_quick_settings.inc)
 +                int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK
 +                        : e.keyCode == 48 ? (e.modifierFlags & NSEventModifierFlagShift ? NAV_PREV : NAV_NEXT) : 0;   // Tab / Shift-Tab: the next / previous page
 +                if (!nav) return e;
@@ -566,7 +565,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
              if (!e.isARepeat) on_key(e, e.type == NSEventTypeKeyDown);
              return nil;   // Swallow it to avoid the system beep
          }];
-@@ -1698,7 +1773,7 @@ void front_run(void (*guest)(void)) {
+@@ -1859,7 +1934,7 @@ void front_run(void (*guest)(void)) {
          // another app taking the key window during an unattended run read as a hang (no frame after the last focus change)
          static int keep = -1; if (keep < 0) keep = getenv("DM_FOCUS_KEEP") && atoi(getenv("DM_FOCUS_KEEP"));
          [nc addObserverForName:NSWindowDidResignKeyNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); if (!win.miniaturized && !g_text_box && !keep) dm_focus_set(2); }];
@@ -575,7 +574,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
          [nc addObserverForName:NSWindowDidMiniaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; input_release(); dm_focus_set(3); dm_audio_suspend(1); dm_gfx_suspend(1); }];
          [nc addObserverForName:NSWindowDidDeminiaturizeNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; dm_gfx_suspend(0); dm_audio_suspend(0); dm_focus_set(2); }];
          display_awake(win.isKeyWindow);   // the window may have become key (makeKeyAndOrderFront above) before these observers were installed
-@@ -1793,28 +1868,23 @@ int front_text_input(const char *title, const char *sub, const char *guide, cons
+@@ -1954,28 +2029,23 @@ int front_text_input(const char *title, const char *sub, const char *guide, cons
      return 1;
  }
  
@@ -610,7 +609,7 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
          };
          NSWindow *win = g_win;
          if (!(win.styleMask & NSWindowStyleMaskFullScreen)) { tell(); return; }
-@@ -1823,3 +1893,20 @@ void front_gpu_lost(void) {
+@@ -1984,3 +2054,20 @@ void front_gpu_lost(void) {
          [win toggleFullScreen:nil];
      });
  }
@@ -632,10 +631,10 @@ index d80024f7676653b169f77450725ea2f20dde8784..a93fc6f260256c86ce981c3492ac92b4
 +                                                 "Please report it on GitHub with python3 scripts/bug_report.py %@, which collects the log.", @(DM_GAME_ID)]);
 +}
 diff --git a/dm/host/hle.h b/dm/host/hle.h
-index 892a334574aebda38cb2adbae136bd08eb286ecc..69661a7ed7320c01702d8af68cd87ecce38c85bc 100644
+index 37430fffb196c2af6b2dfb7fde0b62aa13f035df..5f116b65f16185763ecda5ad9c8c342277c7853c 100644
 --- a/dm/host/hle.h
 +++ b/dm/host/hle.h
-@@ -30,6 +30,8 @@ void dm_thread_service_request(void);   // an HLE call that is a blocking servic
+@@ -51,6 +51,8 @@ void dm_thread_service_request(void);   // an HLE call that is a blocking servic
  uint64_t guest_ns(void);              // Guest clock (hle_os.c; does not advance while frozen, guest_clock_freeze)
  int dm_detclock_enabled(void);
  uint64_t dm_guest_frame(void);        // Incremented each time the host presents a frame; unaffected by machine load
@@ -643,9 +642,9 @@ index 892a334574aebda38cb2adbae136bd08eb286ecc..69661a7ed7320c01702d8af68cd87ecc
 +uint64_t dm_focus_in_since(void);    // now_ns() at its most recent entry into focus (hle_oe.c)
  void guest_clock_freeze(int on);
  void dm_movie_active(int active);   // iOS movie decoder recovery waits for activation
- void guest_clock_freeze_for(int reason, int on);   // Freeze by reason (1 background, 2 system keyboard); see hle_os.c
+ void guest_clock_freeze_for(int reason, int on);   // Freeze by reason (0 tick hold, 1 background, 2 system keyboard, 3 NVN prepare, 4 NVN archive init); see hle_os.c
 diff --git a/dm/host/hle_audio.c b/dm/host/hle_audio.c
-index d704ee64c310587ff515471b36ab97d6d2a4b880..9566db2f1d61bdfe3dabf2ff1b3d156e97eeb364 100644
+index 4919f5a23689483584ce60923cc1474dcb374471..57112471496810b1813e5d8dfe9d2e057702df66 100644
 --- a/dm/host/hle_audio.c
 +++ b/dm/host/hle_audio.c
 @@ -4,6 +4,7 @@
@@ -656,7 +655,7 @@ index d704ee64c310587ff515471b36ab97d6d2a4b880..9566db2f1d61bdfe3dabf2ff1b3d156e
  #include <AudioToolbox/AudioToolbox.h>
  #include <TargetConditionals.h>
  #include <dispatch/dispatch.h>
-@@ -173,6 +174,12 @@ static void pull_device(aout *a, uint8_t *dst, uint64_t bytes) {
+@@ -207,6 +208,12 @@ static void pull_device(aout *a, uint8_t *dst, uint64_t bytes) {
      }
  }
  
@@ -668,8 +667,8 @@ index d704ee64c310587ff515471b36ab97d6d2a4b880..9566db2f1d61bdfe3dabf2ff1b3d156e
 +void dm_audio_tap_set(void (*fn)(void *ctx, const int16_t *pcm, uint32_t frames, int ch), void *ctx) { atomic_store(&g_tap_fn, NULL); atomic_store(&g_tap_ctx, ctx); atomic_store(&g_tap_id, -1); atomic_store(&g_tap_fn, fn); }
  static _Atomic uint64_t g_render_calls;   // Cumulative sound card callbacks (lifecycle verification: must keep growing after resume)
  uint64_t dm_audio_render_calls(void) { return atomic_load_explicit(&g_render_calls, memory_order_relaxed); }
- static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioTimeStamp *ts, UInt32 bus, UInt32 frames, AudioBufferList *bl) {
-@@ -195,6 +202,11 @@ static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioT
+ static unsigned queued_pcm_blocks(const aout *a) {
+@@ -234,6 +241,11 @@ static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioT
          memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize);
      } else {
          pull_device(a, bl->mBuffers[0].mData, bl->mBuffers[0].mDataByteSize);
@@ -682,7 +681,7 @@ index d704ee64c310587ff515471b36ab97d6d2a4b880..9566db2f1d61bdfe3dabf2ff1b3d156e
      }
      return noErr;
 diff --git a/dm/host/hle_hid.c b/dm/host/hle_hid.c
-index 1b8aa822974dc99d151912bef92a82370a8bbccf..1e42b74277b6d8c18925b4f4c3b19c232d64b24e 100644
+index 6cd029d5a9ae3759ecb212d3c8454489c3087bc4..54983e5860c23f8edfc9b7cf3e2e9549c5864d68 100644
 --- a/dm/host/hle_hid.c
 +++ b/dm/host/hle_hid.c
 @@ -228,7 +228,10 @@ void hid_keys_init(void) {
@@ -705,8 +704,8 @@ index 1b8aa822974dc99d151912bef92a82370a8bbccf..1e42b74277b6d8c18925b4f4c3b19c23
                  if (!strncmp(line, "program ", 8)) { void dm_oe_execute(int index, const void *param, size_t n); LOG("DM_CTL: oe::ExecuteProgram(%d)", atoi(line + 8)); dm_oe_execute(atoi(line + 8), NULL, 0); continue; }
                  if (!strncmp(line, "webshot ", 8)) { void front_web_shot(const char *path); front_web_shot(line + 8); continue; }
                  if (!strncmp(line, "shot ", 5)) { dm_gfx_shot_at(1, line + 5); LOG("DM_CTL: screenshot of the next frame → %s", line + 5); continue; }
-@@ -251,6 +255,8 @@ static void *ctl_main(void *arg) {
-                 if (!strcmp(line, "restop")) { void dm_gfx_restop(void); dm_gfx_restop(); continue; }   // what the residency set holds (nvn_mtl.m res_top)
+@@ -252,6 +256,8 @@ static void *ctl_main(void *arg) {
+                 if (!strcmp(line, "memtrim")) { void dm_gfx_memtrim(void); dm_gfx_memtrim(); continue; }   // a memory pressure trim at the next submission, as a warn asks on iOS (nvn_mtl.m mem_trim)
                  if (!strncmp(line, "addr ", 5)) { void dm_gfx_addr_note(uint64_t a, char *note, size_t n); char note[600]; uint64_t a = strtoull(line + 5, NULL, 16);   // what the host knows of a guest address
                      dm_gfx_addr_note(a, note, sizeof note); LOG("DM_CTL: addr %#llx:%s", (unsigned long long)a, note[0] ? note : " nothing known"); continue; }
 +                if (!strcmp(line, "poolstat")) { void dm_gfx_poolstat(void); dm_gfx_poolstat(); continue; }   // texture storage inside the resident memory pools (nvn_mtl.m)
@@ -715,20 +714,20 @@ index 1b8aa822974dc99d151912bef92a82370a8bbccf..1e42b74277b6d8c18925b4f4c3b19c23
                  if (!strncmp(line, "bufsnap ", 8)) {   // bufsnap <shader key> <hex address> <bytes> <path>: guest memory as the GPU left it right after that shader's next dispatch (nvn_mtl.m dm_gfx_bufsnap)
                      void dm_gfx_bufsnap(const char *key, uint64_t a, size_t n, const char *path); char key[32] = {0}, path[512] = {0}; unsigned long long a = 0, n = 0;
 diff --git a/dm/host/tests/t_hid.c b/dm/host/tests/t_hid.c
-index 0137ff57f592b3832a45de7b5966faa949bce2dd..d369f6011a34122c758dcd13f6d74486c3209a30 100644
+index ce6b73410cd475e5a3666abc0a23c89919df4af9..97ee8243e43652a1b06da8c42acb0752f3d02f22 100644
 --- a/dm/host/tests/t_hid.c
 +++ b/dm/host/tests/t_hid.c
-@@ -72,6 +72,9 @@ void dm_gfx_texlist(int target) { (void)target; }
- // the guest address space (hle_svc.c): the unit test has none, so every stack is a host stack and the big-stack take-overs (the controller applet) run on it directly (hle_bigstack.c)
+@@ -74,6 +74,9 @@ void dm_gfx_texlist(int target) { (void)target; }
  int dm_guest_as_contains(uintptr_t a) { (void)a; return 0; }
  void dm_gfx_restop(void) {}
+ void dm_gfx_memtrim(void) {}
 +void dm_gfx_poolstat(void) {}
 +void dm_gfx_texstat(void) {}
 +void dm_focus_set(int st) { (void)st; }   // DM_CTL "focus"
  void dm_gfx_texraw(uint64_t serial, const char *path) { (void)serial; (void)path; }
  void dm_ctl_peek(uint64_t a, int n) { (void)a; (void)n; }
  void crash_dump_now(const char *why) { (void)why; }
-@@ -368,12 +371,12 @@ static void t_vibration(void) {
+@@ -381,12 +384,13 @@ static void t_vibration(void) {
      h_hid_SendVib(&h[0], &v);
      CHECK(dm_haptics_actual(0, 0).amplitude_low == 0, "a value before routing is not retained");
      dm_haptics_route(0, 1); dm_haptics_route(1, 1);
@@ -738,8 +737,8 @@ index 0137ff57f592b3832a45de7b5966faa949bce2dd..d369f6011a34122c758dcd13f6d74486
 +    CHECK(vibration_calls == 1 && vibration[0].motor[0].amplitude_low == 0.25f, "a startup handle reaches a controller that connects later");
      CHECK(h_hid_VibPermit() && h_hid_VibHandles(h, 2, &id, STYLE_FULLKEY) == 2, "two vibration motors available");
      CHECK(h[0] == 3 && h[1] == 0x10003, "SDK vibration handle bytes: style 3, npad 0, motors 0 and 1");
-     CHECK(!h_hid_VibHandles(h, 2, &id, STYLE_HANDHELD), "wrong controller style gets no motors");
--    CHECK(!h_hid_VibHandles(h, 2, &(uint32_t){2}, STYLE_FULLKEY), "disconnected player gets no motors");
+     CHECK(h_hid_VibHandles(hh, 2, &id, STYLE_HANDHELD) == 2 && hh[0] == 4 && !h_hid_VibMounted(&hh[0]),
+           "handles use the requested style even when the connected style differs");
 +    CHECK(!h_hid_VibHandles(h, 2, &(uint32_t){DM_PLAYERS}, STYLE_FULLKEY), "an npad id past the players gets no motors");
      CHECK(h_hid_VibHandles(h, 1, &id, STYLE_FULLKEY) == 1, "handle count respects caller capacity");
      h_hid_SendVib(&h[0], &v); h_hid_VibActual(&got, &h[0]);
@@ -806,30 +805,8 @@ index fd97d9077d57e79c12024f70468b07313c370cf6..e5eaea108989f11386b9493a6b33cc60
              NSData *d = [r representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
              if (![d writeToFile:p atomically:YES]) LOG("[RED] webshot: nothing written to %s (%s)", p.UTF8String, e.localizedDescription.UTF8String ?: "-");
          }];
-diff --git a/dm/mac/Launcher.swift b/dm/mac/Launcher.swift
-index 88d9440068d4997689991b547242ee06f1210996..9602b86b986265bde41f922fdf70026fff05728a 100644
---- a/dm/mac/Launcher.swift
-+++ b/dm/mac/Launcher.swift
-@@ -345,14 +345,14 @@ private final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate
-         app.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-         app.addItem(withTitle: "Quit \(name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-         item.submenu = app; menu.addItem(item); NSApp.mainMenu = menu
--        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 660), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-         w.title = name; w.isReleasedWhenClosed = false; w.delegate = self
--        w.contentMinSize = NSSize(width: 520, height: 0)
-+        w.contentMinSize = NSSize(width: 720, height: 0)
-         window = w
-         if let screen = w.screen ?? NSScreen.main {
-             w.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.midX - w.frame.width / 2, y: screen.visibleFrame.maxY))
-         }
--        let host = NSHostingView(rootView: LauncherView(m: model, done: { [weak self] in self?.finish($0) }, fit: { [weak self] in self?.fit($0) }))
-+        let host = NSHostingView(rootView: NXFLauncherView(m: model, done: { [weak self] in self?.finish($0) }, fit: { [weak self] in self?.fit($0) }))
-         host.sizingOptions = []   // the Form's measured scroll content owns the height, including after collapse
-         w.contentView = host
-         host.layoutSubtreeIfNeeded()
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index ae7edfbef7c3d38f6c5cd134fa0264169b7ca370..54ee2dbc562169831448a35270509a73a35bae05 100644
+index 509b1f2e5064adb15f91e27327ceb2d69e98b507..949e69ea83a95ad1711d82fa964ea23218c41beb 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
 @@ -2,16 +2,22 @@
@@ -1002,7 +979,7 @@ index ae7edfbef7c3d38f6c5cd134fa0264169b7ca370..54ee2dbc562169831448a35270509a73
      snprintf(p, sizeof p, "%s/msl", res); setenv("DM_MSL_DIR", p, 0);
      snprintf(p, sizeof p, "%s/font", dm); setenv("DM_FONT_DIR", p, 0);
      snprintf(p, sizeof p, "%s/shader_map.tsv", dm); if (!stat(p, &st)) setenv("DM_NVN_SHMAP", p, 0);
-@@ -243,13 +348,21 @@ int main(int argc, char **argv) {
+@@ -250,13 +355,21 @@ int main(int argc, char **argv) {
      sigemptyset(&sa.sa_mask);
      sigaction(SIGTERM, &sa, NULL); sigaction(SIGINT, &sa, NULL); sigaction(SIGHUP, &sa, NULL);
      char *host_argv[] = {host, dm, NULL};

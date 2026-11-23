@@ -18,11 +18,11 @@
 //   ```
 //
 // Three kinds of block, any mix of them: ```env (launch settings, one KEY=VALUE a line), ```dmnt (an Atmosphère code: a
-// frame-rate patch and the like) and ```mods (the names of mod folders, one a line, from the game's mods). What NXForge does
+// frame-rate patch and the like; a ```pchtxt block, a code mod as IPSwitch writes it, becomes the same: CodeMods.swift) and ```mods (the names of mod folders, one a line, from the game's mods). What NXForge does
 // with the ones switched on, before every launch and the moment a switch changes, whatever opens the game (the front end,
 // Theatre, Finder):
 //   env   → a block of `~/Library/Application Support/nxnative/<title ID>/env.txt`, which the game's launcher reads first
-//           (dm/mac/launcher.c env_file). The settings window shows those settings greyed out, set by the file.
+//           (dm/mac/launcher.c env_file). Play options shows those settings greyed out, set by the file.
 //   dmnt  → master codes `{NXForge enhancement: <name>}` in the engine's `<build>.txt` cheat file. A master always runs, so it
 //           needs no switch in `<build>.enabled`; the Cheats card, the cheats Markdown and Get Cheats leave these entries out.
 //   mods  → the mods are switched on (ModState, the game's "NXForge settings.txt").
@@ -91,7 +91,7 @@ enum Enhancements {
            let end = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }) {
             lines = Array(lines[(end + 1)...])
         }
-        var fence: String?, para: [String] = [], summaryDone = false
+        var fence: String?, para: [String] = [], summaryDone = false, pch: [String] = []
         for raw in lines {
             let s = raw.trimmingCharacters(in: .whitespaces)
             if s.hasPrefix("```") {
@@ -104,6 +104,7 @@ enum Enhancements {
                 switch f {
                 case "env": e.env.append(s)
                 case "dmnt": e.patch.append(s)
+                case "pchtxt": pch.append(s)
                 case "mods", "mod": e.mods.append(s)
                 default: break
                 }
@@ -112,6 +113,12 @@ enum Enhancements {
             // the summary: the first paragraph of text, headings left out
             if s.isEmpty || s.hasPrefix("#") { if !para.isEmpty { summaryDone = true }; continue }
             if !summaryDone { para.append(s) }
+        }
+        if !pch.isEmpty {
+            // a code mod as IPSwitch writes it (CodeMods.swift): its switched-on parts, as the stores the engine runs
+            let mod = CodeMods.parsePchtxt(pch.joined(separator: "\n"))
+            e.patch += CodeMods.dmnt(mod.sections.filter(\.enabled).flatMap(\.writes))
+            if e.builds.isEmpty, let b = mod.build { e.builds = [b] }
         }
         e.summary = para.joined(separator: " ")
         return e

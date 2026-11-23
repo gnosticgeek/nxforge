@@ -1,0 +1,266 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 20 Nov 2026 15:02:00 +0000
+Subject: build-speed: --cleanup shaders keeps the shader work for the next
+ build; the compilers' temporary files leave a build folder that is not on
+ APFS (NXFORGE_SCRATCH); pso_offline.py --base-jobs / --scratch
+
+---
+ dm/gfx/tools/pso_offline.py   | 47 +++++++++++++++++++++++---------
+ scripts/build_ipa_from_nsp.py | 50 ++++++++++++++++++++++++++++-------
+ 2 files changed, 74 insertions(+), 23 deletions(-)
+
+diff --git a/dm/gfx/tools/pso_offline.py b/dm/gfx/tools/pso_offline.py
+index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6616c5c60 100644
+--- a/dm/gfx/tools/pso_offline.py
++++ b/dm/gfx/tools/pso_offline.py
+@@ -45,7 +45,7 @@
+ #   --os-min: the archives' system (default: for iOS the SDK's major version, e.g. 27.0; for macOS the major version this Mac runs, since the Mac app is built for the Mac that builds it).
+ #   A device opens only an archive of its own major version (macOS 27.2 refused archives made for 26.0 and 26.6 and opened those for 27.0 and 27.2), and builds the bases itself
+ #   otherwise: the SDK's version on a Mac whose system is older than its Xcode's SDK (macOS 26.6 with Xcode 27.1) left that Mac without them (GitHub issue #673)
+-import argparse, concurrent.futures, contextlib, filecmp, hashlib, json, os, shutil, struct, subprocess, sys, time
++import argparse, concurrent.futures, contextlib, filecmp, hashlib, json, os, shutil, struct, subprocess, sys, threading, time
+ from pathlib import Path
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
+@@ -346,6 +346,16 @@ def space_needed(bases):   # what metal-tt is let start with, an estimate: its t
+     return max(2 << 30, bases * (96 << 10))
+ 
+ 
++# NXForge: metal-tt's temporary files and the libraries it reads (real_libraries) in a folder of their own when the work folder is on a slow volume for small files (--scratch:
++# the build script names one on the startup disk when the build folder is not on APFS; an exFAT drive creates and removes a file about ten times slower, and a batch of 1000
++# bases copies about 2000 libraries and leaves 1000 .airp files). One folder per batch, by the batch's own path, so batches that run together (--base-jobs) stay apart
++SCRATCH = None
++def tmp_of(work):
++    if SCRATCH is None: return Path(work)
++    d = Path(SCRATCH) / hashlib.sha256(str(Path(work).resolve()).encode()).hexdigest()[:16]; d.mkdir(parents=True, exist_ok=True)
++    return d
++
++
+ def clear_temporaries(work):   # what a failed or killed metal-tt leaves in its TMPDIR (the work folder): translate-*, *.airp, multiple-functions-input-*.metallib
+     for f in [*work.glob('translate-*'), *work.glob('*.airp'), *work.glob('multiple-functions-input-*.metallib')]:
+         shutil.rmtree(f) if f.is_dir() else f.unlink(missing_ok=True)
+@@ -388,16 +398,17 @@ def os_min_default(platform):
+ def compile_archive(js, part, work, arch, platform, osmin, count):
+     """One compiler invocation, with its temporaries on the work volume. Never publish a failed output."""
+     part.unlink(missing_ok=True)
+-    clear_temporaries(work)
+-    need, free = space_needed(count), vol_space.free_bytes(work)
++    tmp = tmp_of(work)
++    clear_temporaries(tmp)
++    need, free = space_needed(count), min(vol_space.free_bytes(work), vol_space.free_bytes(tmp))
+     if free < need: sys.exit(f'[RED] pso_offline: {free / 2**30:.1f} GB free on the volume of {work}, metal-tt needs about {need / 2**30:.0f} GB for {count} bases: free some space and run again')
+     cmd = ['xcrun', '-sdk', sdk(platform), 'metal-tt', '-arch', arch, f'-{platform}-version-min', osmin, str(js), '-o', str(part)]
+     log_path = work / f'metal-tt.{arch}.log'
+     with log_path.open('w') as log:
+-        r = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=dict(os.environ, TMPDIR=str(work)))
++        r = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=dict(os.environ, TMPDIR=str(tmp)))
+     if r.returncode or not part.is_file() or not part.stat().st_size:
+-        free = shutil.disk_usage(work).free   # what was really left as it failed, not what APFS could still free
+-        clear_temporaries(work); part.unlink(missing_ok=True)
++        free = min(shutil.disk_usage(work).free, shutil.disk_usage(tmp).free)   # what was really left as it failed, not what APFS could still free
++        clear_temporaries(tmp); part.unlink(missing_ok=True)
+         text = f'[RED] pso_offline: metal-tt failed for {arch} (exit {r.returncode})'
+         if free < 1 << 30: sys.exit(f'{text} ({free / 2**30:.1f} GB free on the volume of {work} when it failed: likely out of disk space): {log_path.read_text()[-2000:]}')
+         raise CompileFailed(f'{text}: {log_path.read_text()[-2000:]}')   # with room on the volume: the caller looks for the pipelines it stops on (compile_isolating)
+@@ -490,7 +501,7 @@ def real_libraries(lib_dir, bases, work, computes=()):
+     cuts = cut_entries(lib_dir, bases, computes)
+     folder = os.path.isdir(lib_dir)
+     if folder and not cuts: return lib_dir
+-    real = Path(work) / 'libraries'; shutil.rmtree(real, ignore_errors=True); real.mkdir(parents=True)
++    real = tmp_of(work) / 'libraries'; shutil.rmtree(real, ignore_errors=True); real.mkdir(parents=True)
+     for name in sorted({lib for vl, _, fl, _ in bases for lib in (vl, fl)} | {lib for lib, _ in computes}):
+         if folder: (real / f'{name}.metallib').symlink_to(Path(lib_dir).resolve() / f'{name}.metallib'); continue
+         with romfs.open(os.path.join(lib_dir, f'{name}.metallib'), 'rb') as f, open(real / f'{name}.metallib', 'wb') as o: shutil.copyfileobj(f, o)
+@@ -499,7 +510,7 @@ def real_libraries(lib_dir, bases, work, computes=()):
+     return real
+ 
+ 
+-def clear_real_libraries(work): shutil.rmtree(Path(work) / 'libraries', ignore_errors=True)
++def clear_real_libraries(work): shutil.rmtree(tmp_of(work) / 'libraries', ignore_errors=True)
+ 
+ 
+ def compile_batch(lib_dir, bases, work, arch, platform, osmin, toolchain, computes=()):
+@@ -561,7 +572,7 @@ def groups_of(bases, computes, batch_size, compute_size=COMPUTE_BATCH):
+     return groups
+ 
+ 
+-def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain, batch_size, computes=(), jobs=1, compute_size=COMPUTE_BATCH):
++def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain, batch_size, computes=(), jobs=1, compute_size=COMPUTE_BATCH, base_jobs=1):
+     """Limit compiler input size, then combine every completed group into the usual single archive.
+ 
+     This bounds input count, not memory: a single pipeline can still exceed Apple's compiler resources.
+@@ -596,9 +607,16 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
+         print(f'pso_offline: {arch}: batch {index}/{total}: ready ({"reused" if reused else "compiled"})', flush=True)
+         fb, fc = read_failed(work / f'batches.{arch}' / name, arch); failed[0].extend(fb); failed[1].extend(fc)
+         return piece
+-    for n, (index, group) in enumerate(sorted(bgroups.items()), 1):
+-        one(n, f'{index:05d}', [by_key[k] for k in group], [])
+-        state['batches'][str(index)] = {'members': group, 'key': (root / f'{index:05d}' / f'key.{arch}').read_text().strip()}; save()
++    def base(n, index, group):   # NXForge: base_jobs batches of bases at a time (--base-jobs); each is recorded as it finishes, so a stopped run keeps the finished ones
++        if stopped.is_set(): return   # a batch failed: those under way finish, none starts (as the sequential run stops at the first failure)
++        try: one(n, f'{index:05d}', [by_key[k] for k in group], [])
++        except BaseException: stopped.set(); raise
++        with record:
++            state['batches'][str(index)] = {'members': group, 'key': (root / f'{index:05d}' / f'key.{arch}').read_text().strip()}; save()
++    record, stopped = threading.Lock(), threading.Event()
++    with concurrent.futures.ThreadPoolExecutor(max(1, base_jobs)) as pool:
++        futures = [pool.submit(base, n, index, group) for n, (index, group) in enumerate(sorted(bgroups.items()), 1)]
++    for f in futures: f.result()   # the first failure, once every batch under way has finished
+     # the newest batches first: a base a later batch compiled again comes before the dead entry of its old library
+     pieces = [root / f'{i:05d}' / f'{arch}.mtl4a' for i in sorted(map(int, state['batches']), reverse=True)]
+     with concurrent.futures.ThreadPoolExecutor(max(1, jobs)) as pool:   # a failed group stops the build once the others under way have finished (their pieces stay cached)
+@@ -913,10 +931,13 @@ def main(argv=None):
+     ap.add_argument('--manifest', action='append', help='pso_manifest.tsv: its C rows first (default: the profile\'s)')
+     ap.add_argument('--no-compute', action='store_true', help='no compute pipelines, the bases alone')
+     ap.add_argument('--jobs', type=int, default=JOBS, help=f'metal-tt runs at a time for the compute pipelines (default {JOBS}, half the logical CPUs)')
++    ap.add_argument('--base-jobs', type=int, default=int(os.environ.get('DM_PSO_BASE_JOBS') or 1), help='NXForge: metal-tt runs at a time for the batches of bases (default 1, or DM_PSO_BASE_JOBS; each run takes about 2 GB)')
++    ap.add_argument('--scratch', default=os.environ.get('DM_PSO_SCRATCH'), help='NXForge: a folder for metal-tt\'s temporary files and library copies, when the work folder\'s volume is slow for small files (default: DM_PSO_SCRATCH, else the work folder)')
+     ap.add_argument('--prewarm-host', help='a Mac host built from this checkout for this profile (make -C dm/host GAME=<id>): its prebuild tool makes the prewarm lists\' R and M rows\' '
+                                            'pipelines from these libraries, and metal-tt compiles them for each --gpu (<arch>-prewarm-<NN>.mtl4a with its index); without it there are none')
+     a = ap.parse_args(argv)
+     _DIGESTS.clear()   # one run's view of the libraries
++    global SCRATCH; SCRATCH = Path(a.scratch) if a.scratch else None
+     if a.batch_size < 0: ap.error('--batch-size must be zero or positive')
+     if a.game:
+         sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'games')); import game
+@@ -978,7 +999,7 @@ def main(argv=None):
+         part = work / f'{arch}.mtl4a.partial'; part.unlink(missing_ok=True)
+         t1 = time.time(); print(f'pso_offline: {arch}: metal-tt, {len(bases)} bases, {len(computes)} compute pipelines (minutes) ...', flush=True)
+         if a.batch_size and len(groups_of(bases, computes, a.batch_size)) > 1:
+-            fb, fc = compile_batches(lib_dir, bases, work, part, arch, a.platform, osmin, tv, a.batch_size, computes, a.jobs)
++            fb, fc = compile_batches(lib_dir, bases, work, part, arch, a.platform, osmin, tv, a.batch_size, computes, a.jobs, base_jobs=a.base_jobs)
+         else:
+             fb, fc = compile_isolating(lib_dir, bases, computes, js, part, work, arch, a.platform, osmin)
+         write_failed(work, arch, fb, fc); failed_bases += fb; failed_computes += fc
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191067a1cb6 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -3308,8 +3308,9 @@ def cleanup(mode, work, versions, pkg_ver, survey=None, everything=False):
+         if p.exists() or p.is_symlink(): gone.append(p.relative_to(work.parent)); rmtree(p)
+     before = free_gb(work)
+     if everything:
++        keep = ('logs', 'profile', 'run') + ((SHADER, 'pso') if mode == 'shaders' else ())   # NXForge 'shaders': the shader work stays (the per-shader cache, the libraries, the pipeline archive's batches)
+         for p in sorted(work.iterdir()):
+-            if p.name not in ('logs', 'profile', 'run'): drop(p)
++            if p.name not in keep and not (mode == 'shaders' and p.name.startswith('._') and p.name[2:] in keep): drop(p)
+     else:
+         for p in sorted(ex.iterdir()) if ex.is_dir() else []:
+             if p.name not in versions: drop(p)
+@@ -3320,7 +3321,8 @@ def cleanup(mode, work, versions, pkg_ver, survey=None, everything=False):
+     freed = max(free_gb(work) - before, 0)
+     if gone: say(f'cleanup ({mode}): deleted {", ".join(str(p) for p in gone)}; {freed:.1f} GB freed')
+     else: say(f'cleanup ({mode}): nothing to delete')
+-    if everything: say('cleanup: the next build extracts the game and compiles its shaders again; it needs the NSPs and prod.keys as before')
++    if everything and mode == 'shaders': say('cleanup: the next build extracts the game again and reuses its shaders and pipeline archive while they are unchanged; it needs the NSPs and prod.keys as before')
++    elif everything: say('cleanup: the next build extracts the game and compiles its shaders again; it needs the NSPs and prod.keys as before')
+ 
+ 
+ MTL_ARCH_M = '''#import <Metal/Metal.h>
+@@ -3357,6 +3359,7 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+     PROG.add(1); PROG.stage('Pipeline archive', step=f'{arch} (metal-tt, minutes when its inputs changed)')
+     out = work / 'pso/mac'
+     cmd = [py, repo / 'dm/gfx/tools/pso_offline.py', '--game', g.id, '--msl', lib, '--out', out, '--work', work / 'pso/mac-work', '--gpu', arch, '--platform', 'macos']
++    if PSO_BASE_JOBS > 1: cmd += ['--base-jobs', str(PSO_BASE_JOBS)]
+     if not g.table('pso_pairs.tsv').is_file() and (work / SHADER / 'pso_pairs.tsv').is_file():   # the split's copy, as the app gets it (--pso-pairs)
+         cmd += ['--pairs', g.table('shader_pairs.tsv'), '--pairs', work / SHADER / 'pso_pairs.tsv']
+     if PLAN is not None:   # pso_offline.py --check: how many bases a run would compile (exit 3), nothing written
+@@ -3380,7 +3383,7 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+             if pso['batches'] is None: pso['batches'] = int(m[1]) - 1
+         elif m := re.search(r'batch (\d+)/(\d+): ready', ln):
+             i, n = int(m[1]), int(m[2]); b = n if pso['batches'] is None else min(pso['batches'], n)
+-            if i <= b: PROG.set(step='compiling the batches', done=i, total=b, unit='batches')
++            if i <= b: pso['based'] = pso.get('based', 0) + 1; PROG.set(step='compiling the batches', done=i if PSO_BASE_JOBS < 2 else pso['based'], total=b, unit='batches')   # NXForge: batches that run together finish out of order
+             else: pso['ready'] += 1; PROG.set(step='compiling the compute pipelines', done=pso['ready'], total=n - b, unit='groups')
+         elif ': merging ' in ln: PROG.set(step='merging the batches')
+         elif ': metal-tt, ' in ln: PROG.set(step='compiling (one batch)')
+@@ -3395,6 +3398,30 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+     return out
+ 
+ 
++PSO_BASE_JOBS = int(os.environ.get('DM_PSO_BASE_JOBS') or 1)   # NXForge: metal-tt runs at a time for the pipeline archive's batches of bases (pso_offline.py --base-jobs)
++
++
++def scratch_folder(work, gid, environ=os.environ):
++    """NXForge: where the shader compiles' and metal-tt's short-lived files go when the build folder is on a volume without APFS clones (an exFAT game drive: it creates and removes
++    a small file about ten times slower than the startup disk, and a shader build makes several per shader): ~/Library/Caches/NXForge/scratch/<title ID>, emptied when the build
++    starts and removed when it ends. None when the build folder is on APFS (its own tmp.noindex is as fast, and stays on the volume the user chose). NXFORGE_SCRATCH=off keeps
++    them in the build folder, NXFORGE_SCRATCH=<folder> names another place. Only temporary files: every cache and output stays in the build folder"""
++    import atexit
++    want = environ.get('NXFORGE_SCRATCH', '')
++    if want == 'off' or sys.platform != 'darwin': return None
++    if want: d = Path(os.path.expanduser(want)) / gid
++    else:
++        try:
++            work.mkdir(parents=True, exist_ok=True)
++            if can_clone(work): return None
++        except OSError: return None
++        d = Path.home() / 'Library/Caches/NXForge/scratch' / gid
++    try: rmtree(d); d.mkdir(parents=True)
++    except OSError: return None
++    atexit.register(shutil.rmtree, d, True)
++    return d
++
++
+ def drop_prewarm(pso):   # the prewarm pipelines in an archive folder, with their indexes (.keys) and stamp: an earlier build's, when this one makes none
+     for old in pso.glob('*-prewarm-*'): old.unlink()
+     (pso / 'prewarm.tsv').unlink(missing_ok=True)
+@@ -3583,8 +3610,8 @@ def parse_args(argv):
+     ap.add_argument('-l', '--language', help='game language, a code or a name: ja, fr, de, es, it, nl, pt, ru, ko, zh-Hans, zh-Hant, en-GB, fr-CA, es-419, pt-BR, pl, th, Japanese, ... (default: the LANGUAGE setting, else English); '
+                     'it must be one the game supports, which the console lists')
+     ap.add_argument('--keep-extracted', action=argparse.BooleanOptionalAction, help='keep the extracted game files after the IPA is built, for the next build (default: the KEEP_EXTRACTED setting, on)')
+-    ap.add_argument('--cleanup', choices=('off', 'unused', 'all'), help='after a successful build: off = keep <id>_build as it is; unused = delete what this build did not use (other versions\' extracted files and '
+-                    'rewritten modules, *.partial folders, tmp/, the survey of a game that has a profile now); all = an IPA or a Mac app only: also every other file in <id>_build but logs/ and profile/, '
++    ap.add_argument('--cleanup', choices=('off', 'unused', 'shaders', 'all'), help='after a successful build: off = keep <id>_build as it is; unused = delete what this build did not use (other versions\' extracted files and '
++                    'rewritten modules, *.partial folders, tmp/, the survey of a game that has a profile now); shaders (NXForge) = an IPA or a Mac app only: also the extracted game files and every other file in <id>_build but logs/, profile/ and the shader work (shader.noindex/, pso/), so the next build extracts again and reuses its shaders; all = an IPA or a Mac app only: also every other file in <id>_build but logs/ and profile/, '
+                     'so the next build starts from the NSPs again. Never the NSPs, prod.keys or the game\'s save (default: the CLEANUP setting, off)')
+     ap.add_argument('--work-dir', help='the game\'s build folder, used as it is (default: the WORK_DIR setting, else <title ID>_build in the NSP folder); the extracted files, shader cache and temporary files live there, and the IPA or Mac app defaults to the folder holding it')
+     ap.add_argument('--env-file', help='environment switches for a diagnostic build (one KEY=VALUE per line)')
+@@ -3777,15 +3804,15 @@ def main(args=None):
+     if prepare_xcode and not keep: raise BuildError('--prepare-xcode requires --keep-extracted: Xcode builds from the extracted files')
+     if args.xcode_workspace and not prepare_xcode: raise BuildError('--xcode-workspace requires --prepare-xcode')
+     clean = args.cleanup or CLEANUP
+-    if clean not in ('off', 'unused', 'all'): raise BuildError(f'CLEANUP / --cleanup must be off, unused or all: {clean}')
+-    if clean == 'all' and (prepare_xcode or (mac and not mac_pack)): raise BuildError(f'--cleanup all deletes the extracted files, which {"the Xcode project builds" if prepare_xcode else "a Mac-only build runs"} from: use --cleanup unused')
++    if clean not in ('off', 'unused', 'shaders', 'all'): raise BuildError(f'CLEANUP / --cleanup must be off, unused, shaders or all: {clean}')
++    if clean in ('shaders', 'all') and (prepare_xcode or (mac and not mac_pack)): raise BuildError(f'--cleanup {clean} deletes the extracted files, which {"the Xcode project builds" if prepare_xcode else "a Mac-only build runs"} from: use --cleanup unused')
+     romfs_mode = args.romfs or ROMFS
+     if romfs_mode not in ('bundle', 'separate'): raise BuildError(f'ROMFS / --romfs must be bundle or separate: {romfs_mode}')
+     if romfs_mode == 'separate' and mac: raise BuildError(f'--romfs separate keeps the game files off the iPhone app: it cannot be combined with --platform {platform}, which runs from the extracted files')
+     if romfs_mode == 'separate' and not keep: raise BuildError('--romfs separate requires --keep-extracted: the image must remain available for the one-time transfer to the phone')
+     shader_files = SHADER_FILES if args.shader_files is None else args.shader_files
+     if shader_files and (mac or prepare_xcode): raise BuildError('SHADER_FILES / --shader-files shapes the IPA for install tools that cannot copy a large file: it cannot be combined with ' + (f'--platform {platform}' if mac else '--prepare-xcode, which Xcode installs'))
+-    if romfs_mode == 'separate' and clean == 'all': raise BuildError('--cleanup all deletes the extracted RomFS image that --romfs separate copies to the phone: use --cleanup unused')
++    if romfs_mode == 'separate' and clean in ('shaders', 'all'): raise BuildError(f'--cleanup {clean} deletes the extracted RomFS image that --romfs separate copies to the phone: use --cleanup unused')
+     nsp_dir = Path(os.path.expanduser(args.nsp_dir or NSP_DIR or ask('NSP folder: ', 'the NSP folder'))).resolve()
+     if not nsp_dir.exists(): raise BuildError(f'not a folder: {nsp_dir}')
+     nup = nup_file(nsp_dir)   # a NUP file given in place of the folder: its folder is the NSP folder (the build folder and the IPA go there)
+@@ -3895,6 +3922,9 @@ def main(args=None):
+     xlate = repo / 'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate'
+     # DM_GAME picks the profile; DM_ROOT / WORK point at <id>_build: the tools' default paths and temporary directories all stay inside it
+     env.update(DM_GAME=g.id, DM_ROOT=str(work), WORK=str(work / TMP))
++    if PLAN is None and (scratch := scratch_folder(work, g.id, env)) is not None:   # NXForge: the compilers' temporary files off a slow game drive (the run folders under tmp.noindex stay)
++        (scratch / 'tmp').mkdir(); env.update(WORK=str(scratch / 'tmp'), DM_PSO_SCRATCH=str(scratch / 'pso'))
++        say(f'temporary files of the shader compiles: {scratch} (the build folder is not on an APFS volume)')
+     logs = work / 'logs'
+     global STAGE_TIMES; STAGE_TIMES = logs / 'stage_times.json'
+     move_to_noindex(work, 'shader', SHADER)
+@@ -4064,7 +4094,7 @@ def main(args=None):
+         rmtree(work / TMP)
+         say(f'done: {out_ipa} ({tree_size(out_ipa)[1] / 2**30:.1f} GB); '
+             f'open it from Finder. Its save goes to Saves/ beside it (~/Library/Application Support/nxnative/{app:016X}/ where that folder is not writable), its log to ~/Library/Logs/nxnative/{app:016X}.log')
+-        if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir, clean == 'all')
++        if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir, clean in ('shaders', 'all'))
+         if seen_shaders: say('a partial shader library: where a shader is missing, the log says so in red and the draw goes without it. Run this script again with --seen-shaders to add what the log names, or without it for the whole map')
+         report_profile_status(g, reg, pkg_ver, derived, provisional, 'Mac app', patched)
+         return
+@@ -4141,7 +4171,7 @@ def main(args=None):
+     if not keep:
+         for d in [ex] + [r['ex'] for r in programs.values()]: say(f'deleting the extracted game files: {d}'); rmtree(d)
+     say(f'done: {out_ipa} ({out_ipa.stat().st_size / 2**30:.1f} GB)')
+-    if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir, clean == 'all')
++    if clean != 'off': cleanup(clean, work, versions, pkg_ver, survey_dir, clean in ('shaders', 'all'))
+     if separate: say_push_romfs(romfs, bundle_id)
+     report_profile_status(g, reg, pkg_ver, derived, provisional, patched=patched)
+ 

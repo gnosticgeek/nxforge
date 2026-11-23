@@ -1,0 +1,114 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Sat, 21 Nov 2026 22:02:15 +0000
+Subject: played-pipelines: a rebuilt Mac app bundles the pipelines its player
+ built at a draw
+
+--prebake made only the profile's prewarm list (pso_manifest.tsv), so after a
+rebuild (a shader chain change) the pipelines a player's sessions had built
+mid-play were compiled at a draw again. The R and M rows of the player's
+pso_user.tsv (~/Library/Application Support/nxnative/<id>/, the launcher's
+DM_PSO_USER) now join the list in the work folder (pso/played_manifest.tsv);
+the profile's file is untouched. NXFORGE_PLAYED_PIPELINES=off leaves them out.
+---
+ dm/tools/tests/test_nsp_played_pipelines.py | 53 +++++++++++++++++++++
+ scripts/build_ipa_from_nsp.py               | 19 ++++++++
+ 2 files changed, 72 insertions(+)
+ create mode 100644 dm/tools/tests/test_nsp_played_pipelines.py
+
+diff --git a/dm/tools/tests/test_nsp_played_pipelines.py b/dm/tools/tests/test_nsp_played_pipelines.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..31193ac724f3a93984443dfd15a8c40155503882
+--- /dev/null
++++ b/dm/tools/tests/test_nsp_played_pipelines.py
+@@ -0,0 +1,53 @@
++"""NSP script, NXForge: the player's own pipeline list (pso_user.tsv) joins the profile's prewarm list for --prebake (played_pipelines). No game files needed."""
++import importlib.util
++import os
++from pathlib import Path
++import shutil
++import tempfile
++import types
++import unittest
++from unittest import mock
++
++REPO = Path(__file__).resolve().parents[3]
++spec = importlib.util.spec_from_file_location('build_ipa_from_nsp', REPO / 'scripts/build_ipa_from_nsp.py')
++assert spec and spec.loader
++nsp = importlib.util.module_from_spec(spec); spec.loader.exec_module(nsp)
++
++PROFILE = '# list\nR\taaa\nC\tbbb\n'
++USER = 'S\tshader\nR\taaa\nR\tccc\nM\tddd\nR\tccc\n'
++
++
++class Played(unittest.TestCase):
++    def setUp(self):
++        self.tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.tmp)
++        self.home, self.work = self.tmp / 'home', self.tmp / 'X_build'
++        self.user = self.home / 'Library/Application Support/nxnative/0100ABCD00000000/pso_user.tsv'
++        self.user.parent.mkdir(parents=True); self.work.mkdir()
++        self.g, self.manifest = types.SimpleNamespace(id='0100ABCD00000000'), self.tmp / 'pso_manifest.tsv'
++        self.manifest.write_text(PROFILE)
++        p = mock.patch.object(Path, 'home', return_value=self.home); p.start(); self.addCleanup(p.stop)
++        q = mock.patch.object(nsp, 'say', lambda *a, **k: None); q.start(); self.addCleanup(q.stop)
++
++    def test_new_rows_are_added_once(self):
++        self.user.write_text(USER)
++        text, path = nsp.played_pipelines(self.g, PROFILE, self.manifest, self.work)
++        self.assertEqual(path, self.work / 'pso/played_manifest.tsv')
++        self.assertEqual(path.read_text(), text)
++        self.assertTrue(text.startswith(PROFILE))
++        added = [ln for ln in text[len(PROFILE):].splitlines() if not ln.startswith('#')]
++        self.assertEqual(added, ['R\tccc', 'M\tddd'])
++        self.assertEqual(self.manifest.read_text(), PROFILE)   # the profile's own list is left alone
++
++    def test_nothing_played(self):
++        self.assertEqual(nsp.played_pipelines(self.g, PROFILE, self.manifest, self.work), (PROFILE, self.manifest))
++        self.user.write_text('S\tonly shaders\nR\taaa\n')
++        self.assertEqual(nsp.played_pipelines(self.g, PROFILE, self.manifest, self.work), (PROFILE, self.manifest))
++
++    def test_off(self):
++        self.user.write_text(USER)
++        with mock.patch.dict(os.environ, {'NXFORGE_PLAYED_PIPELINES': 'off'}):
++            self.assertEqual(nsp.played_pipelines(self.g, PROFILE, self.manifest, self.work), (PROFILE, self.manifest))
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index 065349ff6c4fe6745ca065f148272df12a19a1d8..fbfd5b3ce2778b7cfc333632aba4c3539b449c5d 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -3436,6 +3436,24 @@ def drop_prewarm(pso):   # the prewarm pipelines in an archive folder, with thei
+     (pso / 'prewarm.tsv').unlink(missing_ok=True)
+ 
+ 
++def played_pipelines(g, text, manifest, work):
++    """NXForge: the pipelines this Mac's player built at a draw (the R and M rows of ~/Library/Application Support/nxnative/<id>/pso_user.tsv, the launcher's DM_PSO_USER) join the
++    profile's prewarm list for --prebake, so a rebuilt app has them in its bundle instead of compiling them mid-play again. Rows the profile already lists are not repeated; the list
++    goes in the work folder (the profile's own file is left as it is). NXFORGE_PLAYED_PIPELINES=off: the profile's list alone, as nxnative builds it. Returns (text, manifest path)"""
++    if os.environ.get('NXFORGE_PLAYED_PIPELINES', '').lower() in ('0', 'off', 'no', 'false'): return text, manifest
++    user = Path.home() / 'Library/Application Support/nxnative' / g.id / 'pso_user.tsv'
++    try: played = user.read_text(errors='replace').splitlines() if user.is_file() else []
++    except OSError: played = []
++    have = set(text.splitlines())
++    extra = list(dict.fromkeys(ln for ln in played if ln.startswith(('R\t', 'M\t')) and ln not in have))
++    if not extra: return text, manifest
++    merged = text + ('' if not text or text.endswith('\n') else '\n') + f'# NXForge: {len(extra):,} pipelines this Mac\'s player built at a draw ({user})\n' + ''.join(f'{ln}\n' for ln in extra)
++    out = work / 'pso/played_manifest.tsv'; out.parent.mkdir(parents=True, exist_ok=True)
++    if not out.is_file() or out.read_text() != merged: out.write_text(merged)
++    say(f'prewarm pipelines: {len(extra):,} more that this Mac\'s player built at a draw (NXFORGE_PLAYED_PIPELINES=off leaves them out)')
++    return merged, out
++
++
+ def mac_prebake(py, repo, work, msl, g, host, pso, env, logs):
+     """PLATFORM 'mac-app', --prebake (on by default): what the app's first start would still build after the pipeline archive, made here and added to the archive folder pso, so the first
+     start finds it (nvn_mtl.m pso_bundle_open_prewarm) instead of building it before the first frame: the prewarm list's pipelines (pso_manifest.tsv: the R rows' bases with a vertex layout,
+@@ -3449,6 +3467,7 @@ def mac_prebake(py, repo, work, msl, g, host, pso, env, logs):
+     if pso is None: return pso   # no pair archive (none for this Mac's GPU, or --gpu none): the app has no bundle to put them in
+     manifest = g.table('pso_manifest.tsv')
+     text = manifest.read_text() if manifest.is_file() else ''
++    text, manifest = played_pipelines(g, text, manifest, work)
+     rows = sum(ln.startswith(('R\t', 'M\t')) for ln in text.splitlines())
+     def none(why):   # the app goes without them: none of an earlier build's stay in pso (pso_offline.py leaves an architecture's there)
+         say(why); drop_prewarm(pso); return pso

@@ -1,0 +1,367 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: cocoman93 <353537723+cocoman93@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 13:48:14 +0000
+Subject: upstream-pr-2091: a one-off frame after a loading screen no longer
+ steps the frame step up
+
+nxnative PR #2091 (cocoman93, open): a frame whose cost is above every hold and that follows
+a run of 30 frames on time starts a grace with no trial, so Ocarina of Time keeps the 60 fps
+hold as Kokiri Forest appears after loading a save instead of dropping to 30 fps for about
+a second.
+
+NXForge on top: it sits beside NXForge's stall grace (fstep-stall); a stall or a frame the
+caller names as settling keeps its own grace and is not counted as a one-off frame too. The
+summary line counts both. t_fstep: 150 checks pass (Linux clang), including the PR's own and
+a split of the "three 83 ms frames" check into after a run on time (a one-off frame now) and
+after a late frame (steps up as before).
+
+Co-authored-by: cocoman93 <cocoman93@users.noreply.github.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_016qteK5CgJi2GrwbMox94av
+---
+ dm/games/0400486024DEC000/README.md |  2 +
+ dm/gfx/nvn/hle_nvn.c                | 10 +++-
+ dm/gfx/nvn/nvn_fstep.h              | 31 +++++++++--
+ dm/gfx/tests/t_fstep.c              | 86 +++++++++++++++++++++++++++--
+ docs/agents/symptoms.md             |  8 +--
+ docs/reference/frame-rate.md        |  9 +++
+ 6 files changed, 129 insertions(+), 17 deletions(-)
+
+diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
+index aa87b79c2f805dec795e39a506b8c5337d421bf7..5dfbebeeafc8b0028984329ba047cb2543abf3d4 100644
+--- a/dm/games/0400486024DEC000/README.md
++++ b/dm/games/0400486024DEC000/README.md
+@@ -96,6 +96,7 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+ - **Alias takeover cost on current main:** Measured separately from the other changes of [PR #2677](https://github.com/seedds/nxnative/pull/2677), against `8d62601f` on an M4 Pro (14 CPU cores, 20 GPU cores, 48 GB, macOS 27.2.1). A CPU fixture retains one 16 MiB RGBA8 alias through a live serial and repeatedly takes over the same storage as R32F. Two processes per side, interleaved, each with seven batches of 10,000 takeovers after warm-up: per-process median elapsed time 4.29 / 4.71 us before, 1.64 / 1.52 us after. The held entry stays in all four processes. This measures only [the repeated overlap checks](../../../docs/reference/frame-rate.md#a-storage-takeover-looked-at-a-spared-entry-once-per-64-kb-cell); it does not establish a game frame-rate gain. Separate headless bridge runs against the same main, two per variant, remain at 60.0 fps in settled frames 3000-4999 on both sides; they establish no alias-only frame-rate gain.
+ - Resolved: 25-40 ms frames while the GPU sat idle with the next command buffer committed, 51-75 per 2,700 in a bad run: [the GPU idles with the next command buffer already committed](../../../docs/reference/frame-rate.md#the-gpu-idles-with-the-next-command-buffer-already-committed). What holds Metal's submission queue in the kernel is still unknown.
+ - Resolved: with guest files on, about half the launches on 16 GB Macs fell into a state where the driver wired memory tens of thousands of times a second: 23-36 fps in Link's room on an M4 (10 runs of 20), 13.6 fps median on Kokiri Forest's route on an M2 at a 30 fps cap (5 of 5, [issue #2751](https://github.com/seedds/nxnative/issues/2751)). With the residency sets named on each command buffer instead of attached to the queues, in none of 20 and none of 4: [the driver wires memory tens of thousands of times a second with residency sets on the queues](../../../docs/reference/frame-rate.md#the-driver-wires-memory-tens-of-thousands-of-times-a-second-with-residency-sets-on-the-queues). Why the two routes differ is open. Issues #2277, #2213 and #2629 report slow states like it on other Macs; whether they are this one is not checked.
++- Resolved: about a second at 30 fps as Kokiri Forest appears after loading a save, the frame step stepping to hold 2 on the scene's first frames: [a one-off frame after a loading screen steps the frame step up](../../../docs/reference/frame-rate.md#a-one-off-frame-after-a-loading-screen-steps-the-frame-step-up). The two long frames themselves remain (109-125 ms).
+ - Resolved: Kakariko Village at 30-70 ms a frame with 1,502 `background render pipeline creation failed … MDB_MAP_FULL` lines after a compacting prewarm of 40,000 rows put 8,693 bases into one archive period: [Metal's archiver store filled by one flush period](../../../docs/reference/rendering.md#metals-archiver-store-filled-by-one-flush-period).
+ - The title movie's network took 14.8 ms of compute a frame here (median from frame 3,000), so the title held 60 fps with almost nothing to spare, and slower GPUs fell below it: [issue 1375](https://github.com/seedds/nxnative/issues/1375), 35 ms on an M1 Max. Since [HMMA chains keep their matrices in the SIMD-group](../../../docs/reference/shaders.md#hmma-chains-keep-their-matrices-in-the-simd-group), 11.4 ms, and the GPU span 11.9 ms instead of 15.6 (26.7 → 18.9 ms of compute on an M4 with 8 GPU cores). Not measured on an M1 Max since.
+ - [Extended products behind spirv-cross's optnone helper](../../../docs/reference/shaders.md#extended-products-behind-spirv-crosss-optnone-helper): measured with `scripts/bench.py` on an M4 Pro with a 20-core GPU (2026-11-09), three runs a variant, medians, each variant with its own warmed pipeline archive and no red lines. Main `c78d7375` (chain `89f44f9b6bb0`) against [PR #1741](https://github.com/seedds/nxnative/pull/1741)'s literal-only rewrite (`e82b21a8fa3b`) and the overloads (`a5eef48f7122`). On `kokiri-deck` (default settings), GPU time was 15.55 / 15.54 / 14.76 ms, frame rate 54.0 / 55.6 / 59.1 fps, and frames over 1.5 vsyncs 210 / 149 / 29 in the 45 s window. On `title-movie` (empty save, `DM_OPMODE=1 DM_UPSCALER=game DM_PRESENT_UPSCALE=off`), GPU time was 12.96 / 12.48 / 12.44 ms, and all three held 60 fps. The shots match. On the PR author's M1 Pro, the title movie went from 26.57 to 28.40 fps with the literal-only rewrite. Not measured on the iPhone.
+@@ -458,6 +459,7 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+ - [A HID entry that sends nothing counted as a second pad](../../../docs/reference/services.md#a-hid-entry-that-sends-nothing-counted-as-a-second-pad): resolved in the host's tests, not run on the game: the second entry of that Pro Controller (USB location 0, `0x10000003` to its calibration request) no longer counts as a pad, so the pad stays one player read by GameController ([issue #2237](https://github.com/seedds/nxnative/issues/2237)).
+ - [Compute bindings prepare texture copies before the dispatch encoder](../../../docs/reference/rendering.md#compute-bindings-prepare-texture-copies-before-the-dispatch-encoder): resolved, `DM_NVN_DISPATCH_OWN=1` (since removed; `DM_NVN_PASSGPU` takes the same path) crashed in the Metal driver (`AGX::ComputeContext::prepareForEnqueue`) during the Kokiri Forest load ([issue #1743](https://github.com/seedds/nxnative/issues/1743)); on an M2 Pro 5 of 5 runs crashed before the fix and 3 of 3 loaded the forest after it.
+ - [A fixed frame step plays in slow motion on a slow Mac](../../../docs/reference/frame-rate.md#a-fixed-frame-step-plays-in-slow-motion-on-a-slow-mac): the frame-ratio division.
++- [A one-off frame after a loading screen steps the frame step up](../../../docs/reference/frame-rate.md#a-one-off-frame-after-a-loading-screen-steps-the-frame-step-up): resolved, about a second at 30 fps after loading a save in Kokiri Forest.
+ - [Frame-step stubs placed by their function](../../../docs/reference/rewriter.md#frame-step-stubs-placed-by-their-function)
+ - [Repository patches missing under bracketed paths](../../../docs/reference/rewriter.md#repository-patches-missing-under-bracketed-paths): resolved, a build in a folder named with brackets lost this game's frame-step stubs and cuts without an error.
+ - [Retired pool buffers pile up while a game submits nothing](../../../docs/reference/memory.md#retired-pool-buffers-pile-up-while-a-game-submits-nothing): out of focus GPU allocated went from 11 to 20 GB in 12 s with swap following (PR #1392); the likely cause of a session that stayed frozen after a window switch. Not reproduced on the village-deck route (2026-11-09, M6): 40 s out of focus, during the load or standing on the deck, made no pool deletions at all, so the scene that remakes a virtual pool's runs out of focus is still to be found.
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index 422c5b737f12cf80f83a527579d3b105900c7919..cee968b8609c2089febd931776d3b7cbfb63c09e 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -3098,7 +3098,7 @@ static void fstep_tick(const win_t *o, int c) {
+     const char *kwhy; int kmin = fstep_hz() / c, kmax = fstep_kmax(c, &kwhy), k0 = g_fs.k;   // at 120 fps a late frame must step down whatever fps_hold says: the game steps by the target
+     int kmin0 = g_fs.kmin, probe0 = g_fs.probe;
+     int fixed = dm_fps_state ? (int)__atomic_load_n((uint32_t *)(dm_fps_state + 0x24), __ATOMIC_RELAXED) : 0;
+-    uint64_t probes0 = g_fs.probes, failed0 = g_fs.failed;
++    uint64_t probes0 = g_fs.probes, failed0 = g_fs.failed, oneoffs0 = g_fs.oneoffs;
+     // A screen whose rate is not a multiple of 60 (144, 165 Hz) shows the link's 1/60 s ticks on their nearest refreshes (nvn_mtl.m link_range), so a frame on time can show for one
+     // refresh more than its hold: a cheap 50 ms frame shows 54.5 ms at 165 Hz, which counted as late kept the hold at 20 fps for good
+     int hz = front_screen_max_fps(), lr = mtl_link_rate(); g_fs.shown_slack = hz > lr && hz % lr && mtl_link_active() ? (double)fstep_hz() / hz : 0;
+@@ -3152,6 +3152,10 @@ static void fstep_tick(const win_t *o, int c) {
+         LOG("[nvn] frame step: hold %d → %d %s at present %llu (%s; cost %.2f, GPU %.2f%s)%s", k0, g_fs.k, fps_high() || t120 ? "ticks of 1/120 s" : "vsyncs", (unsigned long long)o->presents,
+             fixed ? "the game's own step" : kmin0 == FSTEP_OWN ? "the game's own step ended" : kmin != kmin0 ? "the cap changed" : g_fs.k > k0 ? (g_fs.up_idle ? "30 late frames, some with the GPU idle" : "3 late frames") : g_fs.probes != probes0 ? why : "trial", cost, gpu, held, ++nlog == 40 ? "; further changes only counted below" : "");
+     }
++    static int noneoff;   // nvn_fstep.h one-off frames: their own 20 lines, so a game with many loads keeps the hold and probe lines
++    if (g_fs.oneoffs != oneoffs0 && noneoff < 20)
++        LOG("[nvn] frame step: a one-off frame (cost %.2f, GPU %.2f vsyncs) starts a grace of %d frames at present %llu%s", cost, gpu, FSTEP_GRACE, (unsigned long long)o->presents,
++            ++noneoff == 20 ? "; further ones only counted in the summary lines" : "");
+     if (probe0 == 1 && g_fs.probe != 1 && !fixed && nlog < 40) {   // whether the controller raised the clock for the shorter deadline, and the GPU time it measured there
+         char gm[96] = "";
+         if (g_fg.pn >= FSTEP_GPU_PN) snprintf(gm, sizeof gm, "; GPU %.2f at hold %d after its grace", g_fg.post, kmin);   // set against the longer hold before and after it (nvn_fgpu.ratio_at)
+@@ -3169,9 +3173,9 @@ static void fstep_tick(const win_t *o, int c) {
+                     (vs - v0) / ups, (t - t0) / 1e9, (vs - v0) / ups / ((t - t0) / 1e9), (unsigned long long)held[2], (unsigned long long)held[3], (unsigned long long)held[4], (unsigned long long)held[6],
+                     (unsigned long long)g_fs.late, (unsigned long long)g_fs.paid, g_fs.dropped, (unsigned long long)g_fs.ups, (unsigned long long)g_fs.downs, (unsigned long long)g_fs.probes, (unsigned long long)g_fs.failed, (unsigned long long)g_fs.stalls,
+                     (unsigned long long)drain_n, drain_cut / v, c, kmax, kwhy, fn);
+-        else if (t0) LOG("[nvn] frame step: game time %.2f s in %.2f s (%.3f of real time); held 1 / 2 / 3 vsyncs %llu / %llu / %llu frames, %llu late, %llu vsyncs paid back, %.0f dropped, %llu up / %llu down (%llu probes, %llu failed trials), %llu stalls; standing-frame drains taken out of %llu frames (%.1f vsyncs); cap %d fps, hold at most %d vsyncs: %s%s",
++        else if (t0) LOG("[nvn] frame step: game time %.2f s in %.2f s (%.3f of real time); held 1 / 2 / 3 vsyncs %llu / %llu / %llu frames, %llu late, %llu vsyncs paid back, %.0f dropped, %llu up / %llu down (%llu probes, %llu failed trials, %llu one-off frames), %llu stalls; standing-frame drains taken out of %llu frames (%.1f vsyncs); cap %d fps, hold at most %d vsyncs: %s%s",
+                     (vs - v0) / ups, (t - t0) / 1e9, (vs - v0) / ups / ((t - t0) / 1e9), (unsigned long long)held[1], (unsigned long long)held[2], (unsigned long long)held[3],
+-                    (unsigned long long)g_fs.late, (unsigned long long)g_fs.paid, g_fs.dropped, (unsigned long long)g_fs.ups, (unsigned long long)g_fs.downs, (unsigned long long)g_fs.probes, (unsigned long long)g_fs.failed, (unsigned long long)g_fs.stalls,
++                    (unsigned long long)g_fs.late, (unsigned long long)g_fs.paid, g_fs.dropped, (unsigned long long)g_fs.ups, (unsigned long long)g_fs.downs, (unsigned long long)g_fs.probes, (unsigned long long)g_fs.failed, (unsigned long long)g_fs.oneoffs, (unsigned long long)g_fs.stalls,
+                     (unsigned long long)drain_n, drain_cut / v, c, kmax, kwhy, fn);
+         t0 = t; v0 = vs; memset(held, 0, sizeof held); drain_n = drain_cut = 0;
+     }
+diff --git a/dm/gfx/nvn/nvn_fstep.h b/dm/gfx/nvn/nvn_fstep.h
+index a9d4e0f118ad86a18a6bf005afba3ab416f19cee..1e0029bcd365c3a75510f2036c25aaa24b508436 100644
+--- a/dm/gfx/nvn/nvn_fstep.h
++++ b/dm/gfx/nvn/nvn_fstep.h
+@@ -44,6 +44,14 @@
+ // the caller then shows each frame at the next vsync after its hold instead (a 60 Hz link that holds each frame its k vsyncs), 33.3 or 50 ms and never 66.7, still never faster
+ // than the cap. fine ends after FSTEP_HOLD_MAX vsyncs with no such late frame (a scene that fits again; a late frame now and then does not flap the link), when the hold may rise
+ // again (the cap rose) and while the game fixes its own step.
++// A one-off frame is a frame no hold absorbs (its cost above kmax) that follows a run of FSTEP_RUN frames on time, while a step up is possible and no trial runs: a load's
++// first frames, an upload burst, whose frames after it run on clocks still set for the cheap frames before it. It starts FSTEP_GRACE frames whose lateness does not step the
++// hold up (a grace with no trial, never renewed; no fit trial starts in it), and the debt pays them back. When the grace ends, the average a step up needs (over) starts over,
++// as at a hold change: the grace's late frames are not the rate of the scene after it. Not at 120 fps, where no step pays a debt back and a late frame is slow motion. With
++// present snapshots the screen's verdict comes 8 presents late (hle_nvn.c), so the last late frames after one may still step up there. Ocarina of Time after loading a save:
++// the scene's first frames, about 14 after the load's GPU-heavy frame, came three late in a row, and their lateness passed the average, so the hold stepped to 2, where the
++// GPU time fell back to 15-19 ms and then rose to 24-34 ms with the same work (likely a clock lowered for the longer hold) until the GPU-slowed probe 30-31 frames later.
++// The grace covers late frames within FSTEP_GRACE frames of the one-off frame (there the last came 2 before it ended): a longer fade or a slower ramp falls back to the average.
+ #pragma once
+ #include <math.h>
+ #include <stdint.h>
+@@ -59,7 +67,7 @@
+ #define FSTEP_DEBT_MAX 15.0   // debt kept at most (0.25 s): the rest of a long stall (a load) is dropped, not replayed
+ #define FSTEP_HOLD0 60.0      // vsyncs since the last step up before a trial: 1 s, doubled after each failed trial up to 8 s
+ #define FSTEP_HOLD_MAX 480.0
+-#define FSTEP_GRACE 30        // a probe's first frames, whose lateness neither fails it nor counts toward a step up (the controller lowered the clock within 10 frames of a step to 30)
++#define FSTEP_GRACE 30        // a probe's first frames, and the frames from a one-off frame, whose lateness neither fails a probe nor counts toward a step up (the controller lowered the clock within 10 frames of a step to 30)
+ #define FSTEP_SAME 1.1        // the cost at the longer hold against the cost that held kmin: at most this much is the same scene (BotW at hold 2: 1.0–1.07 times its hold-1 GPU time)
+ // The grace is renewed (nvn_fstep.ramp) while the probe's frames keep getting cheaper: a controller that raises the clock slowly is still raising it. macOS raises the GPU clock
+ // of a game that misses its deadline at 85–100% GPU occupancy by about 100 MHz a second (Breath of the Wild on an M5 Pro: 338 → 432 MHz over a 33-frame probe, GPU 24.8 → 18.5 ms,
+@@ -86,7 +94,7 @@ typedef struct {
+     double debt;              // real time the game is behind, in vsyncs
+     int late_run, fit_run, trial;   // late frames in a row; frames in a row whose cost fits k − 1; frames left of a trial at k − 1 (0 = none)
+     int sgrace;               // frames left of the grace after a stall (FSTEP_STALL or settle), whose lateness does not count toward a step up, fine mode, or trial completion
+-    int probe, grace;         // 1: the trial in progress is a probe; 2: a probe held and its run at kmin has not ended yet; frames left of the probe's grace
++    int probe, grace;         // 1: the trial in progress is a probe; 2: a probe held and its run at kmin has not ended yet; frames left of the probe's or the one-off frame's grace
+     int ramp;                 // set by the caller (kept): 1 = a probe's grace is renewed while its frames keep getting cheaper (FSTEP_RAMP; the host's DM_FSTEP_PROBE_RAMP)
+     double pa, pb; int plate, ptotal;   // the current grace window: the cost of its first and second halves (sums), its late frames; grace frames this probe has taken in all
+     double hold, since;       // vsyncs a trial waits for after a step up; vsyncs since the last step up
+@@ -114,7 +122,8 @@ typedef struct {
+     int smax;                 // set by the caller: the largest step the game takes (its stub's STEP_MAX; 0 = FSTEP_MAX)
+     int no_payback;           // set by the caller: 1 = the game does not take the step (120 fps: it steps by its target), so three late frames raise the hold whatever the average
+     int fine; double fine_ok; // 1 = frames are late at kmax, shown at the next vsync after their hold; vsyncs since the last late frame while fine (FSTEP_HOLD_MAX ends it)
+-    uint64_t late, paid, ups, downs, failed, probes, fines, stalls; double dropped;   // statistics for the log (fines: times fine was set; stalls: pauses, window changes, or >= FSTEP_STALL)
++    int ontime_run;           // frames on time in a row, counted up to FSTEP_RUN (a one-off frame must follow a full one)
++    uint64_t late, paid, ups, downs, failed, probes, fines, stalls, oneoffs; double dropped;   // statistics for the log (fines: times fine was set; stalls: pauses, window changes, or >= FSTEP_STALL; oneoffs: one-off frames after a run on time)
+ } nvn_fstep;
+ 
+ // A drain of frames standing in the display link's queue in a frame's time (hle_nvn.c fstep_tick, g_fs_drain; nvn_link_drain.h): the acquire waited extra link ticks while the
+@@ -158,7 +167,7 @@ static inline int nvn_fstep_next(nvn_fstep *s, double shown, double cost, int km
+     int scr = s->screen; s->screen = 0;
+     if (fixed > 0) {   // the game's own step: speed is right by construction, nothing to pay back
+         s->k = s->step = fixed < smax ? fixed : smax;
+-        s->debt = 0; s->late_run = s->ilate_run = s->fit_run = s->trial = s->probe = s->grace = s->sgrace = s->tpend = 0; s->run = 0; s->fine = 0;
++        s->debt = 0; s->late_run = s->ilate_run = s->fit_run = s->trial = s->probe = s->grace = s->sgrace = s->tpend = 0; s->run = 0; s->fine = 0; s->ontime_run = 0;
+         s->kmin = FSTEP_OWN;   // when it ends, k starts again from kmin
+         return s->step;
+     }
+@@ -185,10 +194,20 @@ static inline int nvn_fstep_next(nvn_fstep *s, double shown, double cost, int km
+     s->kmin = kmin;
+     int idle = gpu_on && gpu < gpu_idle;   // nothing drawn: a late frame is load or startup work, not the scene's cost
+     int late = scr ? scr == 2 : shown > held + late_by + s->shown_slack || cost > held + late_by, grace = s->grace > 0;
++    // A one-off frame (see the top): its cost above kmax, after FSTEP_RUN frames on time, a step up possible (not with fps_hold off, where kmax is kmin), no trial in
++    // progress (a probe has one), not at 120 fps. Its grace has no trial and is not renewed (the ramp rule below is the probes'). The probe accounting (pa, pb, plate, ptotal)
++    // is not reset for it: the next probe resets it. !grace matters only with screen verdicts, where a frame above kmax can be on time and the run go on
++    // NXForge: a stall (FSTEP_STALL, a frame the caller names as settling) has its own grace below and is not a one-off frame too
++    if (cost > kmax + FSTEP_LATE && s->ontime_run >= FSTEP_RUN && s->k < kmax && !grace && !s->trial && (s->per_vsync ? s->per_vsync : 1) == 1
++        && !settle && shown < FSTEP_STALL) { s->grace = FSTEP_GRACE; grace = 1; s->oneoffs++; }
++    s->ontime_run = late ? 0 : s->ontime_run < FSTEP_RUN ? s->ontime_run + 1 : FSTEP_RUN;
+     if (grace && !cap_probe && !stall) {   // the completed frame at the old cap (or a stall) does not consume or skew the new hold's grace
+         if (s->grace > FSTEP_GRACE / 2) s->pa += cost; else s->pb += cost;
+         s->plate += late; s->ptotal++;
+-        if (!--s->grace && s->ramp && s->plate && s->ptotal + FSTEP_GRACE <= FSTEP_PROBE_MAX && s->pb <= (1 - FSTEP_RAMP) * s->pa) { s->grace = FSTEP_GRACE; s->pa = s->pb = 0; s->plate = 0; }   // still getting cheaper: another window
++        if (!--s->grace) {
++            if (s->probe != 1) { s->over_sum = 0; s->over_i = 0; memset(s->over, 0, sizeof s->over); }   // a one-off frame's grace ended: the average starts over (see the top)
++            else if (s->ramp && s->plate && s->ptotal + FSTEP_GRACE <= FSTEP_PROBE_MAX && s->pb <= (1 - FSTEP_RAMP) * s->pa) { s->grace = FSTEP_GRACE; s->pa = s->pb = 0; s->plate = 0; }   // still getting cheaper: another window
++        }
+     }
+     // A late frame with the GPU idle neither counts toward the 3 nor ends their run; FSTEP_RUN late frames in a row step up whatever the GPU (a CPU-heavy scene, not a load)
+     if (late) { if (!stall) s->late++; s->late_run = grace || sgrace ? 0 : s->late_run + !idle; s->ilate_run = grace || sgrace ? 0 : s->ilate_run + 1; s->fit_run = 0; } else s->late_run = s->ilate_run = 0;
+@@ -239,7 +258,7 @@ static inline int nvn_fstep_next(nvn_fstep *s, double shown, double cost, int km
+     if (s->k >= kmax && (s->late_run >= 3 || s->ilate_run >= FSTEP_RUN)) { if (!s->fine) s->fines++; s->fine = 1; s->fine_ok = 0; }
+     else if (s->fine) { if (!sgrace) s->fine_ok = late && !idle ? 0 : s->fine_ok + dt; if (s->k < kmax || s->fine_ok >= hold_max) s->fine = 0; }
+     if (!late) s->fit_run = s->k > kmin && fitc <= FSTEP_FIT * (s->k - q) ? s->fit_run + 1 : 0;
+-    if (s->fit_run >= FSTEP_RUN && s->since >= s->hold && !s->trial) { s->k -= q; s->downs++; s->trial = FSTEP_RUN; s->fit_run = 0; }
++    if (s->fit_run >= FSTEP_RUN && s->since >= s->hold && !s->trial && !s->grace) { s->k -= q; s->downs++; s->trial = FSTEP_RUN; s->fit_run = 0; }   // !grace: a one-off frame's (a probe's has its trial)
+     else if ((slow || nvn_fstep_same(s) || (nvn_fstep_unpaced(s) && s->since >= s->uhold)) && s->k > kmin && s->since >= s->hold && !s->trial) {   // probe: straight to kmin, so the controller sees the whole deadline
+         s->uprobe = !slow && !nvn_fstep_same(s);
+         s->k = kmin; s->downs++; s->probes++; s->trial = FSTEP_RUN; s->probe = 1; s->grace = FSTEP_GRACE; s->fit_run = s->late_run = s->ilate_run = 0; s->pa = s->pb = 0; s->plate = s->ptotal = 0;   // urun ends with the next frame at kmin (kept for the caller's log)
+diff --git a/dm/gfx/tests/t_fstep.c b/dm/gfx/tests/t_fstep.c
+index f07c78995fa42fb2f69a4bbfda936426a90b18d0..ce62a991d4db15045b242f5d610168c629fc8b88 100644
+--- a/dm/gfx/tests/t_fstep.c
++++ b/dm/gfx/tests/t_fstep.c
+@@ -245,11 +245,12 @@ int main(void) {
+         for (int i = 0; i < 1200; i++) { double gp = i < 600 || m.s.k == 1 ? 0.03 : 0.17, w = i < 600 ? 0.5 : 1.3; m.slow = nvn_fstep_gpu_slowed(&g, gp, &m.s, 1); slowed |= m.slow; run(&m, 1, w, 1, 3, 0); }
+         check(m.s.k == 2 && !slowed && m.s.probes == 0, "GPU 0.03 → 0.17 under CPU lag: a GPU at 3 ms is not called slowed, no probe");
+     }
+-    {   // Ocarina of Time on a Mac: GPU 0.75 at hold 1, an area's load steps to 3, where the clock falls: 1.3 with a frame of 2.0 in every 12 (no 30 frames in a row fit hold 2), and 1.0 at hold 2
++    {   // Ocarina of Time on a Mac: GPU 0.75 at hold 1, an area's load steps to 3, where the clock falls: 1.3 with a frame of 2.0 in every 12 (no 30 frames in a row fit hold 2), and 1.0 at hold 2.
++        // One late frame 25 frames before the load: the load follows no run of FSTEP_RUN frames on time, so it is no one-off frame (nvn_fstep.h) and steps to 3, as this case needs
+         sim m = {0}; nvn_fgpu g = {0}; int at1 = 0, at3 = 0, at2 = 0;
+         for (int i = 0; i < 3000; i++) {
+             int k = m.s.k ? m.s.k : 1;
+-            double w = i < 600 ? 0.75 : i < 603 ? 3.4 : k == 3 ? (i % 12 ? 1.3 : 2.0) : k == 2 ? 1.0 : at1++ < 20 ? 1.0 : 0.75;
++            double w = i == 575 ? 1.2 : i < 600 ? 0.75 : i < 603 ? 3.4 : k == 3 ? (i % 12 ? 1.3 : 2.0) : k == 2 ? 1.0 : at1++ < 20 ? 1.0 : 0.75;
+             at3 += i >= 603 && k == 3; at2 += i >= 603 && k == 2;
+             m.slow = nvn_fstep_gpu_slowed(&g, i >= 600 && i < 603 ? 0.75 : w, &m.s, 1);   // the load's late frames are the CPU's
+             run(&m, 1, w, 1, 3, 0);
+@@ -257,7 +258,7 @@ int main(void) {
+         snprintf(b, sizeof b, "frames over the fit at hold 3 (OoT): a trial to 2, a probe to 1 (k %d, failed %llu, %d frames at hold 3, %d at hold 2)", m.s.k, (unsigned long long)m.s.failed, at3, at2);
+         check(m.s.k == 1 && m.s.probes == 1 && m.s.failed == 0 && at3 <= 40 && at2 <= 70, b);
+         sim c = {0};   // a mean that does not fit hold 2 keeps hold 3
+-        run(&c, 600, 0.75, 1, 3, 0); run(&c, 3, 3.4, 1, 3, 0);
++        run(&c, 575, 0.75, 1, 3, 0); run(&c, 1, 1.2, 1, 3, 0); run(&c, 24, 0.75, 1, 3, 0); run(&c, 3, 3.4, 1, 3, 0);
+         for (int i = 0; i < 2400; i++) run(&c, 1, i % 12 ? 1.92 : 2.0, 1, 3, 0);
+         check(c.s.k == 3 && c.s.downs == 0, "  a mean of 1.93 at hold 3 does not fit hold 2: no trial");
+     }
+@@ -610,7 +611,9 @@ int main(void) {
+         check(h.s.k == 2 && n == FSTEP_GRACE + 3, b);
+         // Long frames below FSTEP_STALL still step up as before
+         sim l = {0}; run(&l, 600, 0.9, 1, 3, 0); run(&l, 3, 5.0, 1, 3, 0);
+-        check(l.s.k == 3 && l.s.ups == 1 && l.s.stalls == 0, "  three 83 ms frames in a row are not stalls: they step up as before");
++        check(l.s.k == 1 && l.s.ups == 0 && l.s.stalls == 0 && l.s.oneoffs == 1, "  three 83 ms frames in a row after a run on time are not stalls: a one-off frame and its grace (nxnative PR #2091)");
++        sim l2 = {0}; run(&l2, 600, 0.9, 1, 3, 0); run(&l2, 1, 1.3, 1, 3, 0); run(&l2, 3, 5.0, 1, 3, 0);
++        check(l2.s.k == 3 && l2.s.ups == 1 && l2.s.stalls == 0 && l2.s.oneoffs == 0, "  the same right after a late frame (no run on time): they step up as before");
+         // 120 fps (per_vsync = 2, no_payback = 1): same 133 ms real-time threshold
+         sim f = {0}; f.s.per_vsync = 2; f.s.no_payback = 1; run(&f, 240, 0.7, 1, 2, 0); run(&f, 3, 10, 1, 2, 0);
+         check(f.s.k == 2 && f.s.stalls == 0, "  120 fps: 83 ms frames are not stalls");
+@@ -759,6 +762,81 @@ int main(void) {
+         snprintf(b, sizeof b, "  two failed probes from 6 ticks give the hold-6 ratio %.2f (%d probes) and it decides (%.2f)", r.ratio_at[2][6], r.ratio_n[2][6], nvn_fgpu_ratio(&r));
+         check(r.ratio_n[2][6] >= FSTEP_GPU_FAILS && r.ratio_at[2][6] > 1.9 && r.ratio_at[2][6] < 2.1 && nvn_fgpu_ratio(&r) > 1.9, b);
+     }
++    for (int ramp = 0; ramp <= 1; ramp++) {   // A one-off frame (nvn_fstep.h): no hold absorbs it (cost above kmax), and it follows a run of frames on time; ramp 1 is the host's default
++        // Ocarina of Time's first frames after loading a save (replay, M4 Max, in vsyncs): a loading screen at 0.01, the load's GPU-heavy frame and its long frame (here one frame
++        // of 7.4 = 123 ms), 13 cheap frames, then the scene's first frames 2.1, a 6.5 = 108 ms upload frame and frames of 0.9-2.4 while their cost falls. Before, those three late
++        // frames passed the average and stepped the hold up (to 2 in the game, to 3 here, where a frame's cost is its time) until a probe about 30 frames later
++        static const double burst[] = {7.4, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 2.1, 6.5, 2.4, 2.2, 1.7, 2.3, 1.9, 2.1, 1.3, 1.2, 1.1, 1.3, 1.1, 1.0, 0.9};
++        sim m = {0}; m.s.ramp = ramp; run(&m, 600, 0.01, 1, 3, 0);
++        int kmax_seen = 1; for (size_t i = 0; i < sizeof burst / sizeof *burst; i++) { run(&m, 1, burst[i], 1, 3, 0); if (m.s.k > kmax_seen) kmax_seen = m.s.k; }
++        run(&m, 600, 0.75, 1, 3, 0); if (m.s.k > kmax_seen) kmax_seen = m.s.k;
++        snprintf(b, sizeof b, "ramp %d: one-off frame after a loading screen, then the clock rises: hold 1 throughout (k max %d, ups %llu, one-off frames %llu)", ramp, kmax_seen, (unsigned long long)m.s.ups, (unsigned long long)m.s.oneoffs);
++        check(kmax_seen == 1 && m.s.ups == 0 && m.s.k == 1 && m.s.oneoffs == 1, b);
++        snprintf(b, sizeof b, "  game time %.1f against real time %.1f (debt %.2f, dropped %.1f)", m.game, m.real, m.s.debt, m.s.dropped);
++        check(m.real - m.game - m.s.debt - m.s.dropped > -1.01 && m.real - m.game - m.s.debt - m.s.dropped < 1.01, b);
++        // When the grace ends the average starts over: three frames 0.3 late right after it are not a rate, though the grace's late frames are still within FSTEP_RUN of them
++        sim a = {0}; a.s.ramp = ramp; run(&a, 600, 0.01, 1, 3, 0); run(&a, 1, 7.4, 1, 3, 0); run(&a, 13, 0.25, 1, 3, 0); run(&a, 13, 2.0, 1, 3, 0);
++        run(&a, FSTEP_GRACE - 27, 0.9, 1, 3, 0); int g = a.s.grace; run(&a, 3, 1.3, 1, 3, 0); run(&a, 60, 0.9, 1, 3, 0);
++        snprintf(b, sizeof b, "  three late frames right after the grace: the average starts over, hold 1 (grace %d before, ups %llu)", g, (unsigned long long)a.s.ups);
++        check(g == 0 && a.s.ups == 0 && a.s.k == 1, b);
++        // The scene after the one-off frame really needs hold 2: it steps up once the grace is over and the new average shows it (0.5 a frame: 7 frames past FSTEP_LATE ×
++        // FSTEP_RUN), and the grace is not renewed
++        sim h = {0}; h.s.ramp = ramp; run(&h, 600, 0.01, 1, 3, 0); run(&h, 1, 7.4, 1, 3, 0);
++        int at = -1; for (int i = 0; i < 200 && at < 0; i++) { run(&h, 1, 1.5, 1, 3, 0); if (h.s.k == 2) at = i; }
++        run(&h, 600, 1.5, 1, 3, 0);
++        snprintf(b, sizeof b, "  a scene after the one-off frame that needs hold 2 gets it after one grace (frame %d, k %d, ups %llu)", at, h.s.k, (unsigned long long)h.s.ups);
++        check(at >= FSTEP_GRACE - 1 && at <= FSTEP_GRACE + 7 && h.s.k == 2 && h.s.ups == 1, b);
++        // Every frame above kmax (a device far too slow): only the first follows a run on time, so the hold still reaches kmax, one grace later at most
++        sim d = {0}; d.s.ramp = ramp; run(&d, 120, 0.5, 1, 3, 0);
++        at = -1; for (int i = 0; i < 200 && at < 0; i++) { run(&d, 1, 4.5, 1, 3, 0); if (d.s.k == 3) at = i; }
++        snprintf(b, sizeof b, "  every frame above kmax: hold 3 within one grace (frame %d, one-off frames %llu)", at, (unsigned long long)d.s.oneoffs);
++        check(at >= 0 && at <= FSTEP_GRACE + 3 && d.s.oneoffs == 1, b);
++        // A borderline scene with a spike every 30 frames, each right after one frame on time: only the first spike follows a run of FSTEP_RUN on time, so the hold steps up after
++        // one grace and the frames the new average needs (with one after any frame on time, every spike started a new grace and the scene stayed late at hold 1)
++        sim p = {0}; p.s.ramp = ramp; run(&p, 600, 0.5, 1, 3, 0);
++        at = -1; for (int r = 0, i = 0; r < 10; r++) { run(&p, 1, 4.0, 1, 3, 0); if (p.s.k > 1 && at < 0) at = i; i++; for (int j = 0; j < 28; j++, i++) { run(&p, 1, 1.2, 1, 3, 0); if (p.s.k > 1 && at < 0) at = i; } run(&p, 1, 0.5, 1, 3, 0); i++; }
++        snprintf(b, sizeof b, "  spikes every 30 frames, each after a frame on time, in a scene late at hold 1: one one-off frame, a step up after its grace (frame %d, one-off frames %llu)", at, (unsigned long long)p.s.oneoffs);
++        check(at >= FSTEP_GRACE - 1 && at <= 2 * FSTEP_RUN && p.s.oneoffs == 1, b);
++    }
++    {   // Where the rule does not apply. 120 fps (per_vsync 2, kmax 2): no step pays a debt back there, so a frame of 2.4 ticks after frames on time steps down to 60 as before
++        sim m = {0}; m.s.per_vsync = 2; m.s.no_payback = 1; run(&m, 120, 0.7, 1, 2, 0); run(&m, 1, 2.4, 1, 2, 0); run(&m, 3, 1.6, 1, 2, 0);
++        snprintf(b, sizeof b, "120 fps: none, a late run still steps down to 60 (k %d, one-off frames %llu)", m.s.k, (unsigned long long)m.s.oneoffs);
++        check(m.s.k == 2 && m.s.oneoffs == 0, b);
++        // fps_hold off (kmax = kmin): the hold cannot step up, so a frame above kmax is not one either (and logs nothing)
++        sim f = {0}; run(&f, 600, 0.5, 1, 1, 0); run(&f, 1, 4.0, 1, 1, 0); run(&f, 60, 1.3, 1, 1, 0);
++        snprintf(b, sizeof b, "  kmax = kmin (fps_hold off): none (k %d, one-off frames %llu)", f.s.k, (unsigned long long)f.s.oneoffs);
++        check(f.s.k == 1 && f.s.oneoffs == 0, b);
++        // A frame above every hold but kmax: 2.5 vsyncs after frames on time is late, not a one-off frame
++        sim e = {0}; run(&e, 120, 0.5, 1, 3, 0); run(&e, 1, 2.5, 1, 3, 0);
++        snprintf(b, sizeof b, "  a frame of 2.5 vsyncs (below kmax 3): none (one-off frames %llu)", (unsigned long long)e.s.oneoffs);
++        check(e.s.oneoffs == 0, b);
++        // The game's own step: frames under it are no run on time, so a costly frame right after it ends is not one
++        sim x = {0}; run(&x, 120, 0.5, 1, 3, 0); run(&x, 60, 0.5, 1, 3, 2); run(&x, 1, 4.0, 1, 3, 0);
++        snprintf(b, sizeof b, "  a costly frame right after the game's own step: none (one-off frames %llu)", (unsigned long long)x.s.oneoffs);
++        check(x.s.oneoffs == 0, b);
++        // A trial at k - 1 in progress: a frame above kmax is not one, and the trial is judged as before
++        sim t = {0}; run(&t, 120, 0.5, 1, 3, 0); run(&t, 30, 1.5, 1, 3, 0); run(&t, 600, 1.5, 1, 3, 0); run(&t, 30, 0.6, 1, 3, 0);
++        int trial = t.s.trial; run(&t, 1, 4.0, 1, 3, 0);
++        snprintf(b, sizeof b, "  a trial in progress: none (trial %d before, one-off frames %llu)", trial, (unsigned long long)t.s.oneoffs);
++        check(trial > 0 && t.s.oneoffs == 0, b);
++        // Present snapshots at hold 2, 25 frames into a run that fits hold 1: a costly frame shown on time starts a grace, and no fit trial starts inside it (it would run
++        // there with its late frames neither failing it nor stepping up)
++        sim q = {0}; for (int i = 0; i < 200; i++) { q.s.screen = 1; nvn_fstep_next(&q.s, 1.0, 0.5, 1, 3, 0, 0); }
++        for (int i = 0; i < 3; i++) { q.s.screen = 2; nvn_fstep_next(&q.s, 1.0, 1.5, 1, 3, 0, 0); }
++        for (int i = 0; i < 30; i++) { q.s.screen = 1; nvn_fstep_next(&q.s, 2.0, 1.5, 1, 3, 0, 0); }
++        for (int i = 0; i < 25; i++) { q.s.screen = 1; nvn_fstep_next(&q.s, 2.0, 0.5, 1, 3, 0, 0); }
++        int k0 = q.s.k, fr = q.s.fit_run; q.s.screen = 1; nvn_fstep_next(&q.s, 2.0, 4.0, 1, 3, 0, 0);
++        for (int i = 0; i < 4; i++) { q.s.screen = 1; nvn_fstep_next(&q.s, 2.0, 0.5, 1, 3, 0, 0); }
++        snprintf(b, sizeof b, "  snapshots: no fit trial inside a one-off frame's grace (k %d → %d, fit run %d, one-off frames %llu, trial %d)", k0, q.s.k, fr, (unsigned long long)q.s.oneoffs, q.s.trial);
++        check(k0 == 2 && fr >= 25 && q.s.oneoffs == 1 && q.s.k == 2 && q.s.trial == 0, b);
++        // Present snapshots: the screen shows a costly frame on time, so the run on time goes on; a second one inside the first one's grace starts no grace of its own
++        sim n = {0}; for (int i = 0; i < 600; i++) { n.s.screen = 1; n.next = nvn_fstep_next(&n.s, 1.0, 0.5, 1, 3, 0, 0); }
++        n.s.screen = 1; n.next = nvn_fstep_next(&n.s, 1.0, 4.0, 1, 3, 0, 0);
++        for (int i = 0; i < 5; i++) { n.s.screen = 1; n.next = nvn_fstep_next(&n.s, 1.0, 0.5, 1, 3, 0, 0); }
++        int left = n.s.grace; n.s.screen = 1; n.next = nvn_fstep_next(&n.s, 1.0, 4.0, 1, 3, 0, 0);
++        snprintf(b, sizeof b, "  snapshots: a second costly frame inside the grace does not renew it (one-off frames %llu, grace %d → %d)", (unsigned long long)n.s.oneoffs, left, n.s.grace);
++        check(n.s.oneoffs == 1 && n.s.grace == left - 1, b);
++    }
+     printf("== %d checks, %d failed ==\n", checks, fail);
+     return fail != 0;
+ }
+diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
+index 33df54b7176e16c34204e285a19a98700e671b0a..8a9208e395911f8a1f55eec48eafd228b77d5320 100644
+--- a/docs/agents/symptoms.md
++++ b/docs/agents/symptoms.md
+@@ -9,7 +9,6 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - package identification stops with `ValueError: subsection not found` in `pfs0_names`, or LibHac reports `ResultFsPathNotFound` opening the last file of an NSP. → [PFS0 file-name table missing its final NUL](../reference/packing.md#pfs0-file-name-table-missing-its-final-nul)
+ - `no base game, only update packages: pack the base game and its update into one NUP`, even when the update carries the complete game's files (issue #1195). → [A NUP with complete standalone updates stops at "no base game"](../reference/packing.md#a-nup-with-complete-standalone-updates-stops-at-no-base-game)
+ - packing a registered build from a derived profile on a multi-build game prints `[RED] this Mac app uses <ver> (<disp>), which game profile <id> was not brought up on (...): its settings, with this version's own shaders; every module is a registered build`, naming `<ver>` among the registered builds. Or, when a profile registers an update whose shaders are not in `shader_versions` and both the base and update are present, the build stays non-derived and packs `shader_versions`' shader libraries into the update instead of the update's own shaders. → [A registered update with its own shader tables is reported red or packed with another version's shaders](../reference/packing.md#a-registered-update-with-its-own-shader-tables-is-reported-red-or-packed-with-another-versions-shaders)
+-- the build prints `[RED] this Mac app uses v917504 (1.8.0), which game profile 0400C3F00006E000 was not brought up on (v0 1.0.0, v917504 1.8.0): its settings, with this version's own shaders; every module is a registered build`, naming the version among the registered ones. → [A registered update packed with its own shader tables is reported as one the profile was not brought up on](../reference/packing.md#a-registered-update-packed-with-its-own-shader-tables-is-reported-as-one-the-profile-was-not-brought-up-on)
+ - `[RED] a NUP packs only a game with a profile, and <title ID> has none: the survey that makes a provisional profile reads NSPs`, or the same line for a dump folder (issue #1265). A folder holding `exefs/` and `romfs/` directly, or only `updates/<version>/`, was not taken for a dump at all: the script asks for `prod.keys`, then stops with `no NSP with a readable title ID`. → [A NUP or a dump of a game with no profile stops before the survey](../reference/packing.md#a-nup-or-a-dump-of-a-game-with-no-profile-stops-before-the-survey)
+ - the game reloads one asset for ever: a background loader takes about a core and the process several (Ocarina of Time: 412% CPU on the Mac, `OptimizeChangeBanc` and `ParallelDecompThread` busy all session, one model and its texture opened about 22 times a second). Or, from the NSP script: `vN: K file(s) whose bytes do not start as their names promise (a .zs file that is not a zstd stream), so the game files are damaged`, then the files. → [A damaged file in a NUP or a dump has no hash to fail](../reference/packing.md#a-damaged-file-in-a-nup-or-a-dump-has-no-hash-to-fail)
+ - `pack_nup.py`, or the NSP script on a NUP, ends in a Python traceback (`RecursionError` in `tree_bytes`) instead of a `[RED]` line. → [A NUP whose folder contains itself](../reference/packing.md#a-nup-whose-folder-contains-itself)
+@@ -62,8 +61,8 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - a game's shader libraries are slow to copy or delete: Skyward Sword HD's `b-<chain>/` held 12,064 files for 2,470 shaders, a third of its build folder's files, and each `regress.py` chain build held another set. A tar would not do: the host reads these files at every run. → [Shader libraries take a file per shader variant](../reference/packing.md#shader-libraries-take-a-file-per-shader-variant)
+ - the Mac app logs `[RED] shader library …/Contents/Resources/msl/b-<chain> (a folder or a .img file) does not exist` and then `failed to load shader`. Its `msl/` holds `b-<chain>.img.img`, and its `Info.plist` records `DMChain` as `<chain>.img`. → [A Mac app packed with the library's image names it `b-<chain>.img.img`](../reference/packing.md#a-mac-app-packed-with-the-librarys-image-names-it-b-imgimg)
+ - a game's build folder holds tens of thousands of small files while its shaders build, and keeps them when the build stops: Octopath Traveler 0's `_build`, stopped in its compile, held 68,230 files (38,376 in `tmp/dmsh_*`, 29,757 in `shader/cache/b-<chain>/`), against 105 once a build finished. Every later build made another `tmp/dmsh_*` beside the old one. → [A shader build leaves a file per shader output while it runs or after a stop](../reference/packing.md#a-shader-build-leaves-a-file-per-shader-output-while-it-runs-or-after-a-stop)
+-- after a shader build on a nearly full drive (one `[RED] the shader compile cache … cannot be written` line), the library image lacks some outputs of a shader that built: the host finds no reflection or library for it. → [A full drive during a shader build drops finished outputs from the library](../reference/packing.md#a-full-drive-during-a-shader-build-drops-finished-outputs-from-the-library)
+ - `mds_stores` and `mdworker_shared` keep the Mac busy during and after a build: after a full Ocarina of Time build, `mds_stores` stayed at 100 to 156% CPU for more than 40 minutes with nothing else running, and `mdfind` found the build folder's `.metal` sources. → [Spotlight indexes the files a shader build writes](../reference/packing.md#spotlight-indexes-the-files-a-shader-build-writes)
++- after a shader build on a nearly full drive (one `[RED] the shader compile cache … cannot be written` line), the library image lacks some outputs of a shader that built: the host finds no reflection or library for it. → [A full drive during a shader build drops finished outputs from the library](../reference/packing.md#a-full-drive-during-a-shader-build-drops-finished-outputs-from-the-library)
+ - a game's `<id>-work` folder is too slow to count: Tears of the Kingdom's held 8,893,028 files and 509 GB, and its count ran past ten minutes. → [A work folder holds millions of small files](../reference/packing.md#a-work-folder-holds-millions-of-small-files)
+ - the NSP script stops at the shader split of a registered profile with `[RED] 13744 file(s) could not be read, their shaders are left out (first: AI/FileEntry/FileEntry.Product.100.byml.zs: CalledProcessError: Command ['zstd', '-d', '-c', '-q', '…/extract/v0/RomFS.img/AI/…'] returned non-zero exit status 1.)`. → [The zstd command given a path inside the image](../reference/packing.md#the-zstd-command-given-a-path-inside-the-image)
+ - an iPhone build of Super Mario 3D All-Stars with `--work-dir` (as NX2Apple runs the script) builds every program, then stops at the app build with `[RED] missing RomFS marker 'MovieData/BgMovieGalaxy.mp4' in <work dir>/extract/v393216/RomFS.img` and `FAIL: no RomFS at …`. → [Under `--work-dir` the programs of one game overwrote each other's RomFS](../reference/packing.md#under---work-dir-the-programs-of-one-game-overwrote-each-others-romfs)
+@@ -257,12 +256,12 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - on an iPhone the app is ended by the system (a jetsam event: no crash report, no `[dm] CRASH` line) once its footprint reaches the limit: about 6 GB on a 12 GB iPhone with the increased memory limit (6,143 MiB measured in LiveContainer), 3.3 GB without it. The log stops mid-frame. → [iOS ends the app once the guest's touched pages reach its memory limit](../reference/memory.md#ios-ends-the-app-once-the-guests-touched-pages-reach-its-memory-limit)
+ - on an iPad (12 GB limit) the log's start line says `[mem] guest memory: memory pool 9.00 GB, room to the memory limit 11.97 GB, DM_GUEST_FILE unset: anonymous`, the footprint climbs over a long session (8.14 GB at 186 s, 10.64 at 1,255 s, 11.94 at 1,711 s), the `memory limit … MB` lines' room falls under 100 MB, and the log stops mid-line: a jetsam kill. The same game with the guest in files stays near 4.2 GB on an 8 GB iPhone. → [The guest stayed anonymous when its pool fitted the room but the host's memory did not](../reference/memory.md#the-guest-stayed-anonymous-when-its-pool-fitted-the-room-but-the-hosts-memory-did-not)
+ - with the guest in files on an iPad, `[RED] [mem] guest file: 5.0 GB free on its disk, under 5.0: stopping the game` after a few minutes of play. The files held 6.6 GB on disk (`allocated on disk` in the `[mem] guest file` line) while the heap was 6.2 GB and the alias region had 2.5 GB mapped, though mapped up to +3.8 GB. The disk's free space went from 12.0 to 5.0 GB, almost all of it the files. → [Guest files keep the blocks of memory the game gave back](../reference/memory.md#guest-files-keep-the-blocks-of-memory-the-game-gave-back)
++- on an iPad (iPad17,3, M5, 12 GB; Metal's `recommendedMaxWorkingSetSize` 8,192 MB) The Legend of Zelda: Ocarina of Time runs at about 22 ms a frame up to the first area load after a save, then logs `GPU out of memory: the residency set holds 9124 objects, 8259 MB` (textures 2,007 MB, shared buffers 5,852 MB, private buffers 400 MB) with `kIOGPUCommandBufferCallbackErrorOutOfMemory`; frames take 120-300 ms of GPU and come out pink or broken. In handheld mode it gets further and fails at 8,219 MB, 27 MB over. The guest memory was in files (`DM_GUEST_FILE=1`, footprint 3.4-3.7 GB), so this is the GPU working set, not the footprint. PR #1369 reports the same wall at the first 3D load on an iPhone. → [What fills a Switch 2 game's GPU working set (Ocarina of Time on an iPad)](../reference/memory.md#what-fills-a-switch-2-games-gpu-working-set-ocarina-of-time-on-an-ipad)
+ - a startup sweep can read a null alias bitmap in `guest_file_sweep`. The watcher's earlier dirty-page scan can also read the guest memory layout before initialization finishes. → [The guest-file watcher could start before guest memory was ready](../reference/memory.md#the-guest-file-watcher-could-start-before-guest-memory-was-ready)
+ - with the guest's memory in files, the game stops presenting for good while sound plays on: a black screen, or the last picture held. A `DM_CTL` `dump` shows the encode thread in the kernel under `res_commit ← gmem_map` (`iokit_user_client_trap` or `IOGPUResourceGroupUpdateResources`), the main fence completed, and at times guest threads at the same guest instruction, loads and stores, dump after dump. On the M1 iPad, Ocarina of Time froze at the title movie (frame 1614) in one run and walking in Link's house (frame ~4755) in another, with 7.6 GB of headroom and 1.6 GB resident: not memory pressure. The app cannot be started again until the device restarts. → [The residency commit froze over the guest's files](../reference/memory.md#the-residency-commit-froze-over-the-guests-files)
+ - on an 8 GB iPhone 17 running Ocarina of Time, hundreds of megabytes of shader-code pools stay resident and wired in the raw pool table, starving the guest's file-backed pages: 14–17 fps in Kokiri Forest, 117 ms average frames with 27 ms of GPU, and 6,000–15,600 page-ins every 10 s. → [Shader-code pools wired by the raw pool table](../reference/memory.md#shader-code-pools-wired-by-the-raw-pool-table)
+ - on an 8 GB iPhone 17 walking from Hyrule Field into Kakariko Village, Ocarina of Time's residency set reached 3.9 GB (wired memory 5.7 GB of 7.67 GB, 147 MB free). `DM_CTL restop` showed its 305 MB physical render-target pool (`0x18c`) wired whole in the residency set even though the GPU only reads its render targets through Metal textures. → [GPU-only render-target physical pool wired whole by texture addresses and small lookups](../reference/memory.md#gpu-only-render-target-physical-pool-wired-whole-by-texture-addresses-and-small-lookups)
+ - on an 8 GB iPhone 17 walking across area transitions (Hyrule Field into Kakariko Village), Ocarina of Time accumulated 0.6–1.0 GB of Metal copies of uploaded textures from areas the player had left and up to 123 MB of re-upload spares, triggering OS memory-pressure warnings and `proc-thrashing` termination at 67 MB free / 5.56 GB wired while `os_proc_available_memory` still reported 2.7 GB. → [Idle uploaded textures, re-upload spares, and memory-pressure trims](../reference/memory.md#idle-uploaded-textures-re-upload-spares-and-memory-pressure-trims)
+-- on an iPad (iPad17,3, M5, 12 GB; Metal's `recommendedMaxWorkingSetSize` 8,192 MB) The Legend of Zelda: Ocarina of Time runs at about 22 ms a frame up to the first area load after a save, then logs `GPU out of memory: the residency set holds 9124 objects, 8259 MB` (textures 2,007 MB, shared buffers 5,852 MB, private buffers 400 MB) with `kIOGPUCommandBufferCallbackErrorOutOfMemory`; frames take 120-300 ms of GPU and come out pink or broken. In handheld mode it gets further and fails at 8,219 MB, 27 MB over. The guest memory was in files (`DM_GUEST_FILE=1`, footprint 3.4-3.7 GB), so this is the GPU working set, not the footprint. PR #1369 reports the same wall at the first 3D load on an iPhone. → [What fills a Switch 2 game's GPU working set (Ocarina of Time on an iPad)](../reference/memory.md#what-fills-a-switch-2-games-gpu-working-set-ocarina-of-time-on-an-ipad)
+ - a Switch 2 game goes past Metal's recommended working set while its first 3D scene loads: `Insufficient Memory` command buffer errors, then a hung Mac. Ocarina of Time on a 16 GB Mac: 12 GB and more wired, once a kernel panic in `IOGPUGroupMemory.cpp` at 14.7 GB wired. → [Memory pools nothing gave an address to stay out of the raw pool table](../reference/memory.md#memory-pools-nothing-gave-an-address-to-stay-out-of-the-raw-pool-table)
+ - a game whose shaders read texture handles from memory wires far past the working set while a scene loads, with `Insufficient Memory` errors or a panic, and stutters when new textures stream in. With a limit on how many it makes, surfaces in shadow go near black instead. → [Shaders report which textures they read through a pool](../reference/memory.md#shaders-report-which-textures-they-read-through-a-pool)
+ - memory pools that hold only shader code are in the residency set, though no shader reads them. In The Great Ace Attorney Chronicles, three shared buffers, about 5 MB: chunks of its 1,000 MB pool (`DM_CTL` `restop`: shared buffers 241 MB at 30 s, 236 MB with the fix). → [Pools that hold shader code made resident to key the shaders](../reference/memory.md#pools-that-hold-shader-code-made-resident-to-key-the-shaders)
+@@ -698,6 +697,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - on a Mac whose GPU clock barely follows the hold, a scene that costs a little under a vsync stays at 30 fps for good once a heavier moment or a load steps it up, though it held 60 before and would hold it again: `frame step: hold 1 → 2` and then no `hold 2 → 1` line, few or no probes, and the `held 1 / 2 / 3 vsyncs` counts all at 2. GPU time is the same at either hold, about 0.86–1.0 vsyncs (14.5–16.7 ms). Ocarina of Time on an M4 Pro at full resolution, GPU p50 15.0 ms: 48.1 fps, holding 2 vsyncs much of the time; its castle town market at a mean of 0.86 vsyncs: 30 fps for the rest of the scene after its load. → [A scene that fits hold 1 kept at 30 fps by the fit's margin](../reference/frame-rate.md#a-scene-that-fits-hold-1-kept-at-30-fps-by-the-fits-margin)
+ - after a pause (window out of focus, minimized, or backgrounded), a fullscreen switch, or an uncovered window, a frame-step game runs at double speed for a quarter second (`15 vsyncs paid back` per pause) and can briefly drop to 20 or 30 fps (or flip a 30 fps cap to its 60 Hz `fine` link); the log shows `frame step: hold 1 → 3` or `1 → 2` right after `oe focus state → 1` or `front end: window visible`. → [A pause or a window switch steps the hold up or pays back fast](../reference/frame-rate.md#a-pause-or-a-window-switch-steps-the-hold-up-or-pays-back-fast)
+ - after a pause of about 2 s or more, one frame of 130–300 ms, then the game runs as before; the long-frame line shows the time inside the residency set commit with the submit thread off the CPU (`submit 152.9 ms wall / 9.6 CPU …, off CPU 143.3; residency commits 143.4 ms`) and a first GPU time well above the scene's (26–67 ms for 15). Pauses of 1.2–1.9 s show neither. → [The first frame after a pause waits for the GPU](../reference/frame-rate.md#the-first-frame-after-a-pause-waits-for-the-gpu)
++- after a loading screen, a game that holds 60 fps runs at 30 fps for about a second as its scene appears; the log shows `frame step: hold 1 → 2 vsyncs at present … (3 late frames; cost 7.25, GPU 1.40; …)` a few presents into the scene, then 30-31 presents later `hold 2 → 1 … (probe, GPU 5.05-5.57× its time at hold 1)`. The `[longframe]` lines show the load's long frame (about 123 ms) and, about 14 frames later, the scene's first frames late three in a row (36, 108 and 40 ms in one run); at hold 2 the frames take 33 ms, their GPU time first back at 15-19 ms and then 24-34 ms with the same draws, where the scene takes about 15 ms at hold 1. → [A one-off frame after a loading screen steps the frame step up](../reference/frame-rate.md#a-one-off-frame-after-a-loading-screen-steps-the-frame-step-up)
+ - a game whose profile has a frame step (`FRAME_STEP` in its `patches.py`) runs at double speed when packed from another update; the log has no `frame step in whole vsyncs` line, and the frame counter shows 60. → [A derived profile drops the frame step its build lacks](../reference/frame-rate.md#a-derived-profile-drops-the-frame-step-its-build-lacks)
+ - a fixed-step game runs at double speed (or slow motion at 30) after `DM_FPS_TARGET` is set, in `Documents/env.txt` or the launcher, on a build its profile's frame step stubs and limiter rows do not know. → [A present cap applies only with a frame step or an engine limit the host writes](../reference/frame-rate.md#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)
+ - a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick. → [A present interval that is the game's only limit, in display mode](../reference/frame-rate.md#a-present-interval-that-is-the-games-only-limit-in-display-mode)
+@@ -1035,8 +1035,8 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - after the game renders at another resolution for a while (a pause menu, a resolution switch) and comes back, a render target it loads instead of clearing holds non-finite or random pixels, in a screen-shaped region that opaque draws wipe away and transparent ones keep; bloom spreads them into a strobing glow. A non-finite scan (`DM_NVN_MAGSCAN`) counts about a million of them in the first pass back. → [A resolution family member reads another size's compressed blocks as garbage](../reference/rendering.md#a-resolution-family-member-reads-another-sizes-compressed-blocks-as-garbage)
+ - an engine's effects pass draws (hundreds of draws, instances that follow the weapon) and nothing appears: particles, beams, decals, muzzle flashes, the laser sight and the spiderweb sprites are all missing, while the scene, lighting, HUD and bloom are right. The pass's colour target is never bound, sampled or copied by any later pass. Metro 2033 Redux: `DM_CTL texlist` showed ser 2630 (640x360, `RGBA8_SRGB`, 4 samples) and ser 2611 (1280x720, `RGBA8_SRGB`, 1 sample) over one pool storage, `0x3c0000` bytes each, with different `mtl=` pointers. → [A 4-sample target over a single-sample image's pool storage](../reference/rendering.md#a-4-sample-target-over-a-single-sample-images-pool-storage)
+ - while a game's dynamic resolution moves, the residency set's `added` count in the `residency set up to frame` lines stays at hundreds of MB per 300 frames from the shared-texture site, and frames stutter. On a 16 GB Mac, wired memory and swap follow, with p95 frame times near 100 ms. Ocarina of Time after 04419bc2, which freed its dynamic resolution from its floor (GitHub issue #1831). → [Render targets that move with the dynamic resolution get new Metal memory each time](../reference/rendering.md#render-targets-that-move-with-the-dynamic-resolution-get-new-metal-memory-each-time)
+-- on an iPhone the game is ended for memory (a jetsam event, iOS ends the app once the guest's touched pages reach its memory limit) at an area load, with the guest memory already in files. On the Mac, `footprint` shows most of the process as `Owned physical footprint (unmapped) (graphics)`: Ocarina of Time reached 6.36 GB of footprint stepping into the village, 4.4 GB of it Metal memory, the phone's limit being about 6.1 GB. → [Render targets drawn over stayed while their texture objects lived](../reference/rendering.md#render-targets-drawn-over-stayed-while-their-texture-objects-lived)
+ - GPU memory far above what the game's render target pools hold: on a 16 GB Mac (Metal's working set about 10.7 GB) or an iPad the residency set reaches the working set, frames take 100 ms and more, and command buffers fail or the submissions block in the kernel. `restop` shows thousands of render targets, many over the same pool offsets under other descriptions. → [A GPU-only pool's render targets share its memory](../reference/rendering.md#a-gpu-only-pools-render-targets-share-its-memory)
++- on an iPhone the game is ended for memory (a jetsam event, iOS ends the app once the guest's touched pages reach its memory limit) at an area load, with the guest memory already in files. On the Mac, `footprint` shows most of the process as `Owned physical footprint (unmapped) (graphics)`: Ocarina of Time reached 6.36 GB of footprint stepping into the village, 4.4 GB of it Metal memory, the phone's limit being about 6.1 GB. → [Render targets drawn over stayed while their texture objects lived](../reference/rendering.md#render-targets-drawn-over-stayed-while-their-texture-objects-lived)
+ - the whole picture came out darker and more saturated on the Mac and the iPhone: comparing with a Switch screenshot, every channel at every level equalled the Switch value decoded from sRGB once more (0.55 → 0.26, 0.75 → 0.52). → [Render-target views that change the format](../reference/rendering.md#render-target-views-that-change-the-format)
+ - whenever a Switch 2 game's NDSR upscaler runs, the upscaled 3D scene is solid red with black specks, and the UI drawn over it has its red channel gone (white text cyan, skin teal): menus whose scene is not upscaled look right. The log has `[RED] render target view format 0xb cannot be attached (base texture Metal format 93 was created without the format-view usage): drawing in the base format` once. → [A render-target view of another class: the texture is upgraded, not drawn in its base format](../reference/rendering.md#a-render-target-view-of-another-class-the-texture-is-upgraded-not-drawn-in-its-base-format)
+ - a movie (or another picture the game converts each frame) does not show: the screen keeps the last 3D frame while the decoder delivers every picture. A pass dump shows a pass writing one serial and the composite sampling another serial of the same size, the two Metal formats `RGBA8Unorm` (70) and `RGBA8Unorm_sRGB` (71). → [Textures of an sRGB / linear pair over the same storage](../reference/rendering.md#textures-of-an-srgb--linear-pair-over-the-same-storage)
+diff --git a/docs/reference/frame-rate.md b/docs/reference/frame-rate.md
+index e056f36527f9740ad6fe2c300b4a21ecd2cb5105..3c75a017eb202c526d832b7827c5a1218ff137e6 100644
+--- a/docs/reference/frame-rate.md
++++ b/docs/reference/frame-rate.md
+@@ -148,6 +148,15 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
+ - **Fix:** `DM_NVN_PAUSE_WARM` (`pause_warm_start` in `nvn_mtl.m`, Mac only): while no frame has been presented for 0.4 s, a 64-byte buffer fill twice a second keeps the GPU powered, for up to 2 minutes of a pause; it does nothing while frames are presented. `0` turns it off.
+ - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (Mac M4 Pro: pauses of 2.5, 5.8 and 35 s, 126–178 ms in the commit).
+ 
++### A one-off frame after a loading screen steps the frame step up
++
++- **Symptom:** after a loading screen, a game that holds 60 fps runs at 30 fps for about a second as its scene appears; the log shows `frame step: hold 1 → 2 vsyncs at present … (3 late frames; cost 7.25, GPU 1.40; …)` a few presents into the scene, then 30-31 presents later `hold 2 → 1 … (probe, GPU 5.05-5.57× its time at hold 1)`. The `[longframe]` lines show the load's long frame (about 123 ms) and, about 14 frames later, the scene's first frames late three in a row (36, 108 and 40 ms in one run); at hold 2 the frames take 33 ms, their GPU time first back at 15-19 ms and then 24-34 ms with the same draws, where the scene takes about 15 ms at hold 1.
++- **Cause:** three late frames in a row step the hold up when the last `FSTEP_RUN` (30) frames at the hold average more than `FSTEP_LATE` late, each counted at most `FSTEP_SHORT_MAX` (2) vsyncs; the scene's first three frames alone pass that (about 4.5 vsyncs against 3), so they read as a rate although they belong to the load. At hold 2 the GPU time falls back to the scene's own and then rises again with the same work until the GPU-slowed probe, likely a clock lowered for the longer hold (the clock itself was not measured).
++- **Fix:** `nvn_fstep.h` takes a frame whose cost is above kmax + `FSTEP_LATE` and that follows a run of `FSTEP_RUN` frames on time for a one-off frame, while a step up is possible (`k < kmax`: not with `fps_hold off`, where kmax is kmin), no trial is in progress (a probe has one), and not at 120 fps (`per_vsync` 2), where no step pays a debt back and a late frame is slow motion. It starts `FSTEP_GRACE` (30) frames whose lateness does not step the hold up: a grace with no trial, never renewed (the ramp rule stays the probes'), in which no fit trial starts. When it ends, the average a step up needs starts over, as at a hold change, so the grace's late frames do not count toward a step up after it either. The debt pays the late frames back, so game time stays real time. In Ocarina of Time the one-off frame is the load's GPU-heavy frame just before its long frame (79 ms of GPU, which the next present reports as a cost of 4.7-4.8 vsyncs, after the loading screen's frames on time), and its grace covers the long frame and the scene's first frames. It covers only late frames within `FSTEP_GRACE` frames of the one-off frame: in the measured runs the scene's last late frame came 2 frames before the grace ended, so a longer fade or a slower GPU ramp falls back to the average and steps up as before, at most about a grace later. A scene that stays late steps up once the grace is over and the new average shows it; a device too slow for every frame follows a run on time only once, so it reaches its hold one grace later. `fstep_tick` logs `frame step: a one-off frame (cost …, GPU … vsyncs) starts a grace of 30 frames at present …` (20 lines at most, apart from the 40 of the hold and probe changes) and counts them in the game-time summary.
++- **Check:** `make -C dm/gfx/tests GAME=0400486024DEC000 t_fstep && dm/gfx/tests/t_fstep`, each case with the probe ramp off and on (the host's default): the frames measured after loading a save (the load modelled as one 7.4-vsync frame, 13 frames on time, then 2.1, 6.5 and 2.4 among frames of 0.9-2.3 while the cost falls to 0.75) keep hold 1 with game time equal to real time, and step up without the rule; three frames late by 0.3 vsyncs right after the grace keep hold 1 (they step up without the reset of the average). A scene after the one-off frame that needs hold 2 gets it after the grace (frame 35); frames all above kmax reach hold 3 within one grace (frame 32); a late scene with a 4-vsync spike every 30 frames, each right after one frame on time, has one one-off frame and steps up at frame 35. None for a frame of 2.5 vsyncs (below kmax), right after the game's own step, at 120 fps, with kmax equal to kmin, or during a trial; with present snapshots a second costly frame shown on time inside the grace does not renew it, and a run that fits the shorter hold starts no fit trial inside it. Each condition of the rule, removed alone, fails a check. The two hold-3 cases of [single frames over the fit keep a longer hold](#single-frames-over-the-fit-keep-a-longer-hold) put one late frame 25 frames before their load, so that the load is not a one-off frame and still reaches hold 3.
++- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) on a Mac (M4 Max, window), loading a save in Kokiri Forest. In a replay of the same walk, three runs each with hosts built from the same tree (main `4b10c73f` with three open changes that do not touch the frame step), the 110 frames from the load's long frame had 30-31 frames at hold 2 and took 2.58-2.60 s, GPU 20.3-21.6 ms over frames 10-45; with the rule none at hold 2, 2.12-2.15 s, GPU 15.1 ms, and no step up, though 11-12 frames of the fade are still late at hold 1 (18-41 ms). The two long frames themselves remain (109-125 ms each). Without the reset of the average the runs gave the same (2.10-2.13 s): this game does not need it, `t_fstep` covers it.
++- **Note:** not measured with present snapshots (Breath of the Wild), where the screen's verdict comes 8 presents late, so the last late frames after a one-off frame may still step up there (no worse than before). During the grace at hold 1 the GPU reference of hold 1 (`nvn_fgpu`) also takes the frames' slow-clock times, late ones included; with a low clock lasting longer than the grace, that can delay the GPU-slowed probe (a model, not seen in a game).
++
+ ### A derived profile drops the frame step its build lacks
+ 
+ - **Symptom:** a game whose profile has a frame step (`FRAME_STEP` in its `patches.py`) runs at double speed when packed from another update; the log has no `frame step in whole vsyncs` line, and the frame counter shows 60.

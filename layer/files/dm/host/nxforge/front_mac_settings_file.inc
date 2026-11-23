@@ -11,6 +11,7 @@ static const char *const sf_filter[] = {"off", "sharpen", "pixel", "crt", "lotte
 static const char *const sf_lines[] = {"auto", "1", "2", "3", "4", "5", "6", "7", "8"};
 static const char *const sf_aa[] = {"off", "fxaa"};
 static const char *const sf_size[] = {"fit", "stretch", "pixel-perfect"};   // DM_PSCALE_*
+static const char *const sf_border[] = {"black", "glow", "art"};   // front.h DM_PBORDER_*
 static const char *const sf_interp[] = {"off", "on", "auto"};   // front.h mtl_present_interp
 static const char *const sf_pixel[] = {"off", "sharp", "smooth", "auto"};   // front.h DM_PIXEL_*
 static const char *const sf_corner[] = {"top-left", "top-right", "bottom-left", "bottom-right"};
@@ -25,10 +26,12 @@ static const sf_entry g_sf[] = {
     {"hdr_highlights", "edr", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"hdr_strength", "edrStrength", 0, SF_PERCENT, NULL, 0, 1, "50"},
     {"picture_size", "scale", 0, SF_PICK, sf_size, 3, 1, "fit"},
+    {"around_the_picture", "border", 0, SF_PICK, sf_border, 3, 1, "black"},
     {"pixel_art", "pixel", 0, SF_PICK, sf_pixel, 4, 1, "auto"},
     {"volume", "volume", 0, SF_PERCENT, NULL, 0, 1, "100"},
     {"muted", "muted", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"pause_while_open", "pauseOpen", 0, SF_BOOL, NULL, 0, 1, "on"},
+    {"save_battery", "batterySaver", 0, SF_BOOL, NULL, 0, 1, "on"},
     {"quieter_while_open", "duckOpen", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"fps_counter", "fps", 0, SF_BOOL, NULL, 0, 1, "off"},
     {"fps_corner", "fpsPos", 0, SF_PICK, sf_corner, 4, 1, "top-left"},
@@ -38,6 +41,7 @@ static const sf_entry g_sf[] = {
     {"mods_on", "mods", 0, SF_LIST, NULL, 0, 0, ""},
     {"mod_order", "modOrder", 0, SF_LIST, NULL, 0, 0, ""},
     {"capture_folder", "captureDir", 0, SF_TEXT, NULL, 0, 0, ""},
+    {"instant_replay", "replay", 0, SF_BOOL, NULL, 0, 1, "off"},
 };
 enum { SF_N = sizeof g_sf / sizeof g_sf[0] };
 static const char *const sf_action[] = {"a", "b", "x", "y", "left_stick_press", "right_stick_press", "l", "r", "zl", "zr", "plus", "minus", "dpad_left", "dpad_up", "dpad_right",

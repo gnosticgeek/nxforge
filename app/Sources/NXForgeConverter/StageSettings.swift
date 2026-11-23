@@ -45,10 +45,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 /// left and right change the row, A flips a switch (AppModel.stepSetting).
 enum StageSettingRow: Int, CaseIterable {
     case startIn, returnToLibrary, sessionRecap, lightWhilePlaying
-    case straightPlay, firstPlayOptions, batteryPreset, localShaders
-    case folderCheck, squareCovers, groupByConsole
+    case firstPlayOptions, batteryPreset, localShaders
+    case folderCheck, showSwitch2, showSwitch1, showGBA, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
-    case theatreTheme, theatreOnTV, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreMusic, theatreTimeOfDay
+    case theatreTheme, museumLighting, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
     case cloudSaves, snapshotAfterPlay, saveBackupPush
     case notify, openAfterBuild, keepBackups, reuseCache
     case autoUpdate
@@ -56,10 +56,10 @@ enum StageSettingRow: Int, CaseIterable {
     var section: SettingsSection {
         switch self {
         case .startIn, .returnToLibrary, .sessionRecap, .lightWhilePlaying: .general
-        case .straightPlay, .firstPlayOptions, .batteryPreset, .localShaders: .playing
-        case .folderCheck, .squareCovers, .groupByConsole: .library
+        case .firstPlayOptions, .batteryPreset, .localShaders: .playing
+        case .folderCheck, .showSwitch2, .showSwitch1, .showGBA, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
-        case .theatreTheme, .theatreOnTV, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreMusic, .theatreTimeOfDay: .theatre
+        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector, .museumLighting: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
         case .notify, .openAfterBuild, .keepBackups, .reuseCache: .building
         case .autoUpdate: .updates
@@ -395,7 +395,6 @@ struct StageSettings: View {
 
     var playing: [SettingsGroup] {
         let rows: [SettingsRowSpec] = [
-            toggle("Play goes straight into the game", "Uses each game's saved Play options and still checks its cloud save. Its own settings window stays closed.", $model.settings.straightPlay, .straightPlay),
             toggle("Show Play options the first time", "A game you have not played yet opens its options once before it starts.", $model.settings.firstPlayOptions, .firstPlayOptions),
             toggle("Battery preset on battery", "Unplugged, a run takes the Battery preset (lowest frame rate, 75 % render scale) for the options still on the game's default. A choice you saved for a game, such as its frame rate, is kept.", $model.settings.batteryPreset, .batteryPreset),
             toggle("Keep shaders on this Mac", "A game on another drive has its compiled shaders copied here once, so it starts sooner and uses less memory. Not done when it would leave under 10 GB free.", $model.settings.localShaders, .localShaders),
@@ -410,15 +409,25 @@ struct StageSettings: View {
                 button(model.settings.gamesRoot == nil ? "Choose…" : "Change…") { model.chooseGamesRoot() }.disabled(model.libraryScanning)
                 button(model.libraryScanning ? "Refreshing…" : "Refresh") { model.scanLibrary() }.disabled(model.libraryScanning || model.settings.gamesRoot == nil)
             },
+            row("Game Boy Advance folder", "Your Game Boy Advance games: .gba files, or .zip files holding one each, side by side. Left unset, a folder named gba beside the games folder is used.") {
+                path(GBA.root(model.settings)?.tildePath, none: "Not chosen", width: 200)
+                button(model.settings.gbaRoot == nil ? "Choose…" : "Change…") { model.chooseGBARoot() }.disabled(model.libraryScanning)
+            },
             row("Look for new games", "How often NXForge looks at the games folder, in front or not, and scans when a game was added or removed. It also looks each time it comes to the front. Manual leaves it to Refresh.", .folderCheck) {
                 segmented($model.settings.folderCheck, FolderCheck.allCases, width: 290) { $0.rawValue }
             },
+        ]
+        let shown = { (c: Console) in Binding(get: { model.settings.shows(c) }, set: { model.setSystemShown(c, $0) }) }
+        let systems: [SettingsRowSpec] = [
+            toggle("Nintendo Switch 2", "Switch 2 games on Home, in Discover, on Theatre and its Museum wall, and on the Converter's pages. Off hides them; nothing is deleted.", shown(.switch2), .showSwitch2),
+            toggle("Nintendo Switch", "Switch games everywhere in NXForge. Off hides them; their files, builds and saves stay as they are.", shown(.switch1), .showSwitch1),
+            toggle("Game Boy Advance", "Game Boy Advance games everywhere in NXForge. Off hides them; their files, builds and saves stay as they are.", shown(.gba), .showGBA),
         ]
         let look: [SettingsRowSpec] = [
             toggle("Square covers", "Shows each game's square shop art instead of its box on Home and in Discover: smaller, so more fit in a row. The same as Discover's square button.", $model.settings.squareCovers, .squareCovers),
             toggle("Group Game Files by console", "The Converter's Game Files page in a Switch 2 section and a Switch one.", $model.settings.libraryGroupByConsole, .groupByConsole),
         ]
-        return [SettingsGroup(rows: folder), SettingsGroup(caption: "How games are shown", rows: look)]
+        return [SettingsGroup(rows: folder), SettingsGroup(caption: "Systems", rows: systems), SettingsGroup(caption: "How games are shown", rows: look)]
     }
 
     var artwork: [SettingsGroup] {
@@ -440,16 +449,28 @@ struct StageSettings: View {
     var theatre: [SettingsGroup] {
         let theme = Binding(get: { model.settings.theatreTheme }, set: { model.settings.theatreTheme = $0; model.theatreTheme = $0 })
         let volume = Binding(get: { Double(model.settings.theatreVolume) }, set: { model.settings.theatreVolume = Int($0.rounded()); model.theatreVolumeTick += 1 })
+        let homeOpens = Binding(get: { model.settings.homeOpensTheatre }, set: { model.settings.homeOpensTheatre = $0; ControllerNav.shared.background($0) })
+        let atLogin = Binding(get: { LoginItem.on }, set: { LoginItem.set($0); model.loginItemTick += 1 })
+        _ = model.loginItemTick
         let screen: [SettingsRowSpec] = [
             row("Theatre", "Your games full screen, for the sofa and a controller. Also ⇧⌘F. B leaves it.") {
                 button(model.theatre ? "Leave Theatre" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }
             },
-            row("Theme", "Carousel turns a ring of your boxes; Cinema shows big art with rows like a TV app; Gallery shows three covers on a quiet wall; Trailer plays the game's trailer. ZL and ZR switch them on Theatre.", .theatreTheme) {
-                segmented(theme, TheatreTheme.allCases, width: 300) { $0.rawValue }
+            row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Shutter shows slanted panels of art; Trailer plays the game's trailer; Wallet shows your game cards in their wallet; Museum shows your collection on a lit wall, a shelf a console. ZL and ZR switch them on Theatre.", .theatreTheme) {
+                segmented(theme, TheatreTheme.allCases, width: 560) { $0.rawValue }
+            },
+            row("Museum lighting", "The Museum wall's light: Classic, Daylight, Evening, Neon (each shelf in its console's colour) or Lights out (only the game in focus lit). Up from the top shelf, then left and right, changes it on Theatre.", .museumLighting) {
+                segmented($model.settings.museumLighting, MuseumLighting.allCases, width: 420) { $0.rawValue }
+            },
+            row("Showcase layout", "Carousel turns a ring of your boxes; Fan spreads them like a hand of cards; Shelf stands them spine out. Up and down switch them on Theatre.", .showcaseLayout) {
+                segmented($model.settings.showcaseLayout, ShowcaseLayout.allCases, width: 330) { $0.rawValue }
+                    .onChange(of: model.settings.showcaseLayout) { _, l in model.showcaseLayout = l }
             },
             row("When a TV is plugged in", "Ask offers Theatre when a controller is connected too; Always opens it straight away.", .theatreOnTV) {
                 segmented($model.settings.theatreOnTV, TheatreOnTV.allCases, width: 240) { $0.rawValue }
             },
+            toggle("Home button opens Theatre", "Press Home on a controller while NXForge is behind other apps and it comes to the front on Theatre. In a game, Home still opens the game's Quick settings.", homeOpens, .homeOpensTheatre),
+            toggle("Open NXForge at login", "NXForge starts with the Mac, so the Home button and a plugged-in TV can open Theatre without the keyboard.", atLogin),
             row("TV edges", "Some TVs crop the edges of the picture. If Theatre's clock or buttons are cut off, inset the picture.", .theatreEdges) {
                 segmented($model.settings.theatreEdges, TheatreEdges.allCases, width: 240) { $0.title }
             },
@@ -458,11 +479,12 @@ struct StageSettings: View {
             },
         ]
         let sound: [SettingsRowSpec] = [
-            row("Volume", "Of everything Theatre plays: its sounds, a game's music and trailers. The right stick sets it on Theatre, and its press mutes.", .theatreVolume) {
+            row("Volume", "Of everything Theatre plays: its sounds, a game's music and trailers. - and = set it on Theatre, and the right stick's press mutes.", .theatreVolume) {
                 Slider(value: volume, in: 0...100, step: 10).frame(width: 190).tint(.white).accessibilityLabel("Theatre volume")
                 Text("\(model.settings.theatreVolume) %").font(.system(size: 12.5, weight: .medium)).monospacedDigit().foregroundStyle(StageLook.soft).frame(width: 46, alignment: .trailing)
             },
-            toggle("Sounds", "A soft tick for each step, a quiet tick as the Carousel or Fan turns and a thunk on launch.", $model.settings.theatreSounds, .theatreSounds),
+            toggle("Sounds", "A soft tick for each step, a quiet tick as the Showcase turns, a snap as a case opens and a click as a card goes home.", $model.settings.theatreSounds, .theatreSounds),
+            toggle("Rumble", "The controller gives a small knock as a case snaps open and a firmer one as a game card clicks into the console. Only on controllers that can rumble on a Mac.", $model.settings.theatreRumble, .theatreRumble),
             toggle("Music", "Plays your music folder in the background (not in Trailer); a game with its own music.m4a or .mp3 in its media folder plays that while it is in focus.", $model.settings.theatreMusic, .theatreMusic),
             row("Music folder", "MP3 or Opus files (and M4A, FLAC, WAV), shuffled through in turn.") {
                 path(model.settings.theatreMusicFolder?.tildePath, none: "None chosen", width: 220)
@@ -472,6 +494,11 @@ struct StageSettings: View {
                 }
             },
             toggle("Light follows the time of day", "A cooler, brighter room in the morning, a warm evening, and a dimmer one after 10 pm.", $model.settings.theatreTimeOfDay, .theatreTimeOfDay),
+            row("When a game starts", "Game card: its case opens and the card drops into the console under the screen. Lights down: the box opens and its light fills the room.", .theatreLaunch) {
+                segmented($model.settings.theatreLaunch, TheatreLaunch.allCases, width: 240) { $0.rawValue }
+            },
+            toggle("Tilt", "The case in your hand leans as you lean the controller. Only on controllers that tell a Mac how they are held.", $model.settings.theatreTilt, .theatreTilt),
+            toggle("Collector touches", "A sticker with the hours you have played, wear on the cases you play most, and a COMPLETED stamp you add with R when a case is in your hand.", $model.settings.theatreCollector, .theatreCollector),
         ]
         return [SettingsGroup(rows: screen), SettingsGroup(caption: "Sound and light", rows: sound)]
     }

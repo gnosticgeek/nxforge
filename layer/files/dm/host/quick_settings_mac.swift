@@ -9,13 +9,14 @@
 // from what this launch runs, and the footer counts and names those. General: pause while open, quieter while open, a save backup (the Converter's save snapshots, same format),
 // the settings file (front_mac_settings_file.inc: the settings as text beside the game) and my defaults for every game
 import AppKit
+import IOKit.ps
 import AVFoundation
 import GameController
 import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.7.1"
+let SIDEBAR_VERSION = "0.11.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -24,6 +25,21 @@ private let cornerNames = ["Top left", "Top right", "Bottom left", "Bottom right
 private let anisoSteps = [0, 2, 4, 8, 16]   // front.h mtl_aniso_set: 0 is the game's own
 private let anisoDefault = 16               // front_mac.m graphics_start: 16x until a choice is saved
 private let sizeNames = ["Fit", "Stretch", "Pixel-perfect"]   // front.h DM_PSCALE_*, in that order
+private let borderNames = ["Black", "Glow", "Game art"]   // front.h DM_PBORDER_*, in that order
+private let borderFixed = env["DM_PRESENT_BORDER"] != nil
+// A Game Boy Advance game's settings with several values (front_qs_gba_value): what each offers, in order, and its default
+struct GbaChoice: Hashable { let v: Int, name: String; init(_ v: Int, _ name: String) { self.v = v; self.name = name } }
+private let gbaChoices: [[GbaChoice]] = [
+    [GbaChoice(0, "Off"), GbaChoice(1, "GBA"), GbaChoice(2, "GBA SP")],                                          // 0 Handheld colours
+    [GbaChoice(0, "Off"), GbaChoice(1, "On")],                                                          // 1 Frame blending
+    [GbaChoice(0, "Off"), GbaChoice(10, "10 seconds"), GbaChoice(30, "30 seconds"), GbaChoice(60, "1 minute")],          // 2 Rewind
+    [GbaChoice(2, "2×"), GbaChoice(3, "3×"), GbaChoice(4, "4×"), GbaChoice(8, "8×"), GbaChoice(0, "As fast as it goes")],          // 3 Fast forward speed
+    [GbaChoice(0, "Hold"), GbaChoice(1, "Press to switch")],                                            // 4 Fast forward key
+    [GbaChoice(25, "25%"), GbaChoice(50, "50%"), GbaChoice(75, "75%")],                                          // 5 Slow motion
+]
+private let gbaDefaults = [0, 0, 30, 4, 0, 50]
+private let gbaFilters = [0, Int(DM_PFX_CRT), Int(DM_PFX_LCD)]   // a GBA game's Screen filter: off, CRT, LCD grid
+private let gbaFilterNames = [0: "Off", Int(DM_PFX_CRT): "CRT", Int(DM_PFX_LCD): "LCD grid"]
 private let scaleFixed = env["DM_PRESENT_SCALE"] != nil
 private let aaNames = ["Off", "FXAA"]   // front.h DM_PAA_*, in that order
 private let interpNames = ["Off", "On", "Auto"]   // front.h mtl_present_interp, in that order
@@ -133,8 +149,8 @@ private func presetValue(_ p: Preset, _ s: LaunchRow) -> String {
 // Every setting the sidebar or the settings window keeps for this game is in the user defaults under these prefixes (the page shown is not a setting)
 private let sessionPrefixes = ["DMQuickSettings.", "DMPresentFilter.", "launcher.", "nxforge.mirror."]
 private let sessionNames = ["fps": "FPS counter", "fpsPos": "Counter corner", "fpsMs": "Milliseconds", "frameTimes": "Record frame times", "mods": "Mods", "modOrder": "Mod load order",
-                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
-                            "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size",
+                            "volume": "Volume", "muted": "Mute", "duckOpen": "Quieter sound", "pauseOpen": "Pause the game", "keepLibrary": "Library keeps the game", "replay": "Instant replay", "batterySaver": "Save battery", "aniso": "Anisotropic filtering", "aa": "Anti-aliasing",
+                            "edr": "HDR highlights", "edrStrength": "Brightness boost", "interp": "Frame interpolation", "pixel": "Pixel art", "scale": "Picture size", "border": "Around the picture",
                             "keys": "Keyboard controls", "keyNames": "Keyboard controls", "pad": "Controller buttons", "padNames": "Controller buttons", "captureDir": "Capture folder",
                             "mode": "CRT filter", "strength": "CRT strength", "scanline": "Line size", "DM_PRESENT_UPSCALE": "MetalFX upscaling"]
 // The settings window's own variables the sidebar keeps under its names too (front_mac_launcher_sync.inc): listed once, by the sidebar's name
@@ -156,24 +172,41 @@ private let pages: [(tab: String, title: String, icon: String)] = [("General", "
 private let pGeneral = 0, pGraphics = 1, pPerformance = 2, pCapture = 3, pMods = 4, pCheats = 5, pControls = 6
 // What the controller and keyboard selection can be on (dm_qs_nav)
 enum Nav: Hashable {
-    case shot, record, fpsQuick, volume, mute, tab(Int)
+    case shot, record, fpsQuick, volume, mute, tab(Int), replay, replaySave
     case undoSession, preset(Int)
-    case pauseOpen, duckOpen, keepLibrary, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
-    case fullscreen, scale, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
+    case pauseOpen, duckOpen, keepLibrary, batterySaver, backup, backupShow, slotSave(Int), slotLoad(Int), settingsShow, settingsOpen, defaultsSave, defaultsUse
+    case fullscreen, scale, border, pixel, crt, strength, scanlines, upscale, aa, aniso, edr, edrStrength, resetGraphics
     case fps, corner, fpsMs, interp, frameTimes, frameTimesFolder, resetPerformance
     case capture(String), captureCopy, captureOpen, captureReveal, showFolder, changeFolder, defaultFolder
     case mod(String), modUp(String), modDown(String), modsOpen, modsRefresh
     case section(String), cheat(Int), cheatsAllOff, cheatsRestore, cheatsOpen, cheatsRefresh
-    case key(Int), pad(Int), resetControls
+    case key(Int), pad(Int), resetControls, playerFirst(Int)
     case restart, resume, library, quit
+    case gbaOpt(Int), stateSave(Int), stateLoad(Int)   // a Game Boy Advance game's sound switches and save states
+    case gbaValue(Int)   // and its settings with several values (gbaChoices)
     /// A setting with a value: left and right change it
     var isValue: Bool {
         switch self {
-        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .fullscreen, .scale, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
+        case .gbaOpt, .gbaValue: return true
+        case .volume, .pauseOpen, .duckOpen, .keepLibrary, .batterySaver, .replay, .fullscreen, .scale, .border, .pixel, .crt, .strength, .scanlines, .upscale, .aa, .aniso, .edr, .edrStrength, .fps, .fpsQuick, .interp, .corner, .fpsMs, .frameTimes, .mod, .cheat: return true
         default: return false
         }
     }
 }
+// Search every setting (Sidebar 0.9.0): a row the search found, the page it is on, and a word on where it sits there
+struct SearchHit: Hashable { let nav: Nav; let title: String; let page: Int; let detail: String }
+/// Words that find a row by what it does, beside its own name (a search for "scanlines" finds the CRT filter, "120" frame interpolation)
+private let searchWords: [Nav: String] = [
+    .crt: "scanlines retro tv old filter shader", .strength: "crt", .scanlines: "crt scanline rows", .upscale: "metalfx sharp upscale resolution scaler", .aa: "fxaa jaggies edges smooth",
+    .aniso: "texture sharp angle", .edr: "hdr xdr bright glow", .edrStrength: "hdr bright", .scale: "stretch fit integer pixel perfect aspect size", .border: "bars blur glow art letterbox",
+    .pixel: "2d sprites sharp smooth mmpx", .fullscreen: "window", .fps: "frame rate counter", .corner: "fps counter", .fpsMs: "fps frame time", .interp: "120 hz smooth promotion",
+    .frameTimes: "performance stutter", .pauseOpen: "pause menu", .duckOpen: "volume sound quiet", .keepLibrary: "theatre suspend resume", .batterySaver: "power laptop unplugged",
+    .backup: "save snapshot copy", .replay: "clip record 30 seconds", .replaySave: "clip replay", .showFolder: "screenshots recordings captures", .changeFolder: "screenshots recordings captures",
+    .resetGraphics: "defaults", .resetPerformance: "defaults", .resetControls: "defaults keys buttons remap", .defaultsSave: "every game", .undoSession: "undo revert",
+    .gbaValue(0): "colour color correction lcd palette backlit sp", .gbaValue(1): "ghosting flicker interframe blend transparency", .gbaValue(2): "rewind back undo time",
+    .gbaValue(3): "fast forward turbo speed", .gbaValue(4): "fast forward toggle hold", .gbaValue(5): "slow motion speed",
+    .settingsShow: "text file", .cheatsAllOff: "cheats", .modsOpen: "mods folder", .cheatsOpen: "cheats folder", .playerFirst(1): "controller swap",
+]
 struct Cheat: Identifiable {
     let id: Int, name: String, why: String, note: String, kind: Int32, on: Bool, flags: Int32, section: String
     var master: Bool { kind == 1 }
@@ -273,7 +306,7 @@ enum SaveBackup {
 // slot in the launcher's DM_LAUNCHER_SLOT_LOAD file and restarts the game: the launcher swaps the slot in with the host stopped (dm/mac/nxforge/launcher_slots.inc).
 // <save's folder>/save-slots/<n>/{manifest.json, data/save, data/save_device}: the snapshots' layout, so a slot can be copied into save-snapshots/ by hand and restored there
 struct SlotManifest: Codable { var schema = 1; var slot: Int; var titleID: String; var created: Date; var gameSaved: Date?; var inventory: BackupInventory }
-struct SlotInfo: Equatable { var created: Date; var gameSaved: Date? }
+struct SlotInfo: Equatable { var created: Date; var gameSaved: Date?; var shot: NSImage? }   // shot: the game as it was when the slot was saved (Sidebar 0.9.0)
 enum SaveSlots {
     static let count = 3
     static let changed = Notification.Name("NXForgeSaveSlotsChanged")
@@ -285,7 +318,9 @@ enum SaveSlots {
               m.schema == 1, m.slot == n, m.titleID == String(cString: front_qs_title_id()).uppercased() else { return nil }
         return m
     }
-    static func info(_ n: Int) -> SlotInfo? { manifest(n).map { SlotInfo(created: $0.created, gameSaved: $0.gameSaved) } }
+    static func info(_ n: Int) -> SlotInfo? { manifest(n).map { SlotInfo(created: $0.created, gameSaved: $0.gameSaved, shot: shotPath(n).flatMap { NSImage(contentsOfFile: $0) }) } }
+    /// The slot's picture: the game on screen when the slot was saved (front_qs_slot_shot), beside its save; the launcher's load takes only data/
+    static func shotPath(_ n: Int) -> String? { path(n).map { $0 + "/shot.jpg" } }
     /// The newest file's modification time under the save parts in dir: when the game last saved what is there
     private static func newest(_ roots: [String]) -> Date? {
         let fm = FileManager.default; var best: Date?
@@ -336,9 +371,51 @@ enum SaveSlots {
     }
 }
 private func ago(_ d: Date) -> String { d.formatted(.relative(presentation: .named)) }
+/// When this run of the game started (the host process's own start time), for the header's status line
+private let sessionStart: Date = {
+    var kp = kinfo_proc(), size = MemoryLayout<kinfo_proc>.stride, mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    guard sysctl(&mib, 4, &kp, &size, nil, 0) == 0, kp.kp_proc.p_un.__p_starttime.tv_sec > 0 else { return Date() }
+    let t = kp.kp_proc.p_un.__p_starttime
+    return Date(timeIntervalSince1970: TimeInterval(t.tv_sec) + TimeInterval(t.tv_usec) / 1_000_000)
+}()
 private var slotBusy = false
 private var slotArmed: (slot: Int, at: Date)?
 /// The Save Slots menu and its shortcuts (front_mac_quick_settings.inc): save now, a toast when done. Main thread
+// The Mac's battery for the General page's Save battery row: its charge, whether the Mac runs on it, and macOS's own estimate of the time left (0 while it still works that out)
+enum BatteryNow {
+    static func read() -> (percent: Int, onBattery: Bool, minutes: Int)? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(), let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for src in list {
+            guard let d = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue() as? [String: Any], d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
+                  let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
+            let on = d[kIOPSPowerSourceStateKey] as? String == kIOPSBatteryPowerValue, left = d[kIOPSTimeToEmptyKey] as? Int ?? 0
+            return (cur * 100 / max, on, on && left > 0 ? left : 0)
+        }
+        return nil
+    }
+    static func line(_ b: (percent: Int, onBattery: Bool, minutes: Int)) -> String {
+        if !b.onBattery { return "Plugged in now, at \(b.percent) %" }
+        if b.minutes <= 0 { return "On the battery now, at \(b.percent) %" }
+        let h = b.minutes / 60, m = b.minutes % 60
+        return "On the battery now, at \(b.percent) %: about \(h > 0 ? "\(h) h \(m) min" : "\(m) min") left at this rate"
+    }
+}
+// Laptop-safe play (nxforge/front_mac_sleep.inc): before the Mac sleeps or its battery runs out, a snapshot of the committed save, unless the newest snapshot is already newer than
+// everything in the save. The Converter lists it as "Before the Mac slept" and prunes it with its other automatic snapshots
+@_cdecl("dm_qs_safety_copy")
+public func dm_qs_safety_copy() -> Int32 {
+    guard let save = SaveBackup.save else { return -1 }
+    let fm = FileManager.default; var newest: Date?
+    for root in [save, save + "_device"] {
+        guard let walk = fm.enumerator(atPath: root) else { continue }
+        for case let rel as String in walk {
+            if let d = (try? fm.attributesOfItem(atPath: "\(root)/\(rel)"))?[.modificationDate] as? Date, newest.map({ d > $0 }) ?? true { newest = d }
+        }
+    }
+    guard let newest else { return -1 }
+    if let last = SaveBackup.latest(), last >= newest { return 0 }
+    do { _ = try SaveBackup.make(reason: "beforeSleep"); return 1 } catch { return -1 }
+}
 @_cdecl("dm_qs_slot_save")
 public func dm_qs_slot_save(_ n: Int32) {
     let n = Int(n)
@@ -349,7 +426,9 @@ public func dm_qs_slot_save(_ n: Int32) {
         DispatchQueue.main.async {
             slotBusy = false
             switch r {
-            case .success(let m): front_qs_toast_text("Slot \(n) saved: the game's save from \(m.gameSaved.map(ago) ?? "now")")
+            case .success(let m):
+                front_qs_toast_text("Slot \(n) saved: the game's save from \(m.gameSaved.map(ago) ?? "now")")
+                if let p = SaveSlots.shotPath(n) { front_qs_slot_shot(p) { _ in NotificationCenter.default.post(name: SaveSlots.changed, object: nil) } }   // its picture, a moment later
             case .failure(let e): front_qs_toast_text("Slot \(n) not saved: \((e as? SaveBackup.Failure)?.text ?? e.localizedDescription)")
             }
             NotificationCenter.default.post(name: SaveSlots.changed, object: nil)
@@ -404,6 +483,7 @@ final class QuickSettings: ObservableObject {
     @Published var volume = 1.0
     @Published var muted = false
     @Published var recording = false
+    @Published var replay = false   // Instant replay: the last 30 s are kept in memory (capture_mac.m)
     @Published var shotDir = ""
     @Published var upscale = false   // MetalFX where the picture is shown larger than the game renders it
     @Published var aa = 0            // the present's anti-aliasing (DM_PAA_*)
@@ -415,12 +495,42 @@ final class QuickSettings: ObservableObject {
     @Published var aniso = 0      // the chosen anisotropic filtering floor (0: the game's own)
     @Published var anisoRun = 0   // the one this launch took
     @Published var scale = 0      // picture size (DM_PSCALE_*)
+    @Published var border = 0     // what shows around a picture that does not fill the window (DM_PBORDER_*)
     @Published var pixel = Int(DM_PIXEL_AUTO)   // pixel art chosen (DM_PIXEL_*)
     @Published var pixelActive = 0                // the mode in effect now (auto: off until the game shows pixel art)
     @Published var pixelGrid: (w: Float, h: Float, s: Float)?   // the art's own size and texels per art pixel, while a grid holds
     @Published var fullscreen = false
     @Published var pauseOpen = true   // pause the game while the sidebar is up
     @Published var duckOpen = false   // quieter sound while it is up
+    // A Game Boy Advance game (gba/host/mac/gba_front_mac.m): its sound switches (Enhanced audio, bass lift, wider stereo), the handheld screen's colours, and whether each save state holds one
+    let gba = front_qs_gba() != 0
+    @Published var gbaOpts = [true, false, false, false]
+    @Published var gbaStates = [false, false, false]
+    func setGbaOpt(_ i: Int, _ on: Bool) { gbaOpts[i] = on; front_qs_gba_opt_set(Int32(i), on ? 1 : 0) }
+    func gbaState(_ n: Int, load: Bool) { _ = front_qs_gba_state(Int32(n), load ? 2 : 1); refreshGba() }
+    func refreshGba() {
+        guard gba else { return }
+        gbaOpts = (0..<4).map { front_qs_gba_opt(Int32($0)) != 0 }; gbaStates = (1...3).map { front_qs_gba_state(Int32($0), 0) != 0 }
+        gbaValues = gbaChoices.indices.map { Int(front_qs_gba_value(Int32($0))) }
+    }
+    @Published var gbaValues = gbaDefaults
+    func setGbaValue(_ i: Int, _ v: Int) { gbaValues[i] = v; front_qs_gba_value_set(Int32(i), Int32(v)) }
+    /// One step along a setting's choices (left / right), or round to the first after the last (activate)
+    func stepGbaValue(_ i: Int, _ d: Int, wrap: Bool = false) {
+        let c = gbaChoices[i], at = c.firstIndex { $0.v == gbaValues[i] } ?? 0
+        setGbaValue(i, c[wrap ? (at + d + c.count) % c.count : min(max(at + d, 0), c.count - 1)].v)
+    }
+    func gbaName(_ i: Int) -> String { gbaChoices[i].first { $0.v == gbaValues[i] }?.name ?? "\(gbaValues[i])" }
+    /// A GBA game's Screen filter, a step along off, CRT, LCD grid
+    func stepGbaFilter(_ d: Int, wrap: Bool = false) {
+        guard !filterFixed else { return }
+        let at = gbaFilters.firstIndex(of: filter) ?? 0
+        setFilter(gbaFilters[wrap ? (at + d + gbaFilters.count) % gbaFilters.count : min(max(at + d, 0), gbaFilters.count - 1)], strength)
+    }
+    var borderDefault: Int { gba ? Int(DM_PBORDER_GLOW) : 0 }   // a GBA game's slim bars glow with its edge colours unless chosen otherwise
+    @Published var batterySaver = true   // on the battery, a game nobody is playing pauses (nxforge/front_mac_battery.inc)
+    @Published var battery: (percent: Int, onBattery: Bool, minutes: Int)? = nil   // nil: a Mac without a battery
+    @Published var players: [Player] = []   // the controllers by player, for the Controls page
     @Published var keepLibrary = true // Library pauses and keeps the game (front_qs_suspend) instead of ending it
     @Published var paused = false
     @Published var lastBackup: Date?
@@ -448,6 +558,13 @@ final class QuickSettings: ObservableObject {
     @Published var assigning = -1
     @Published var peeking = false        // a peek is held (front_qs_peek): the sidebar has faded
     @Published var peekGlyph: String?     // the controller's symbol for the peek button (its top face button)
+    @Published var comparing = false      // a compare is held (dm_qs_compare): the graphics at their defaults meanwhile
+    @Published var compareGlyph: String?  // the controller's symbol for the compare button (its left face button)
+    @Published var search = ""            // Search every setting: what is typed (empty: the page as usual)
+    @Published var searchFocused = false  // the search field has the typing (/, ⌘F, a click)
+    /// Where the footer's Library button goes: Theatre when NXForge started the game from it (NXFORGE_FRONT_END_PAGE), else the library
+    let toTheatre = env["NXFORGE_FRONT_END_PAGE"] == "theatre"
+    var place: String { toTheatre ? "Theatre" : "Library" }
     private var baseline: [String: NSObject] = [:]   // Undo this session: the stored settings when the sidebar was first made
     private var cheatsBaseline: [Int: Bool] = [:]
     @Published var keyNames: [String] = keyDefaults
@@ -480,13 +597,15 @@ final class QuickSettings: ObservableObject {
         if let e = env["DM_FRAME_TIMES"] { frameTimes = (Int(e) ?? 0) != 0 } else { frameTimes = d.bool(forKey: optKey("frameTimes")) }
         wanted = d.stringArray(forKey: optKey("mods")) ?? []
         volume = d.object(forKey: optKey("volume")) == nil ? 1 : d.double(forKey: optKey("volume")); muted = d.bool(forKey: optKey("muted"))
-        recording = front_qs_recording() != 0
+        recording = front_qs_recording() != 0; replay = front_qs_replay() != 0
+        refreshGba()
         pauseOpen = d.object(forKey: optKey("pauseOpen")) == nil ? true : d.bool(forKey: optKey("pauseOpen")); duckOpen = d.bool(forKey: optKey("duckOpen"))
         keepLibrary = d.object(forKey: optKey("keepLibrary")) == nil ? true : d.bool(forKey: optKey("keepLibrary"))
+        batterySaver = d.object(forKey: optKey("batterySaver")) == nil ? true : d.bool(forKey: optKey("batterySaver")); battery = BatteryNow.read(); readPlayers()
         paused = front_qs_paused() != 0; fullscreen = front_qs_fullscreen() != 0
         assigning = Int(front_qs_assigning())
         anisoRun = Int(mtl_aniso()); aniso = env["DM_ANISO"] != nil || d.object(forKey: optKey("aniso")) == nil ? anisoRun : d.integer(forKey: optKey("aniso"))   // unsaved: front_mac.m's 16x
-        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale()); pixel = Int(mtl_present_pixel()); refreshPixel()
+        upscale = mtl_present_upscale() != 0; aa = Int(mtl_present_aa()); scale = Int(mtl_present_scale()); border = Int(mtl_present_border()); pixel = Int(mtl_present_pixel()); refreshPixel()
         edr = mtl_present_edr() != 0; edrStrength = Double(mtl_present_edr_strength()) / 100; edrHeadroom = mtl_present_edr_headroom(); interp = Int(mtl_present_interp()); interpActive = mtl_present_interp_active() != 0
         shotDir = String(cString: front_qs_capture_folder(0)); recDir = String(cString: front_qs_capture_folder(1)); customDir = front_qs_capture_custom() != 0
         settingsPath = String(cString: front_qs_settings_path()); defaultsExist = front_qs_defaults_exist() != 0
@@ -627,18 +746,23 @@ final class QuickSettings: ObservableObject {
     var pixelNote: String {
         if envFixed("DM_PIXEL_ART") { return "Set by DM_PIXEL_ART for this run" }
         if pixelActive == 0 { return pixel == Int(DM_PIXEL_AUTO) ? "Auto: turns on by itself when the game draws pixel art" : "Off: the picture as the settings below make it" }
-        let paused = "MetalFX, anti-aliasing, HDR highlights and frame interpolation wait while it is on."
+        let paused = gba ? "" : "MetalFX, anti-aliasing, HDR highlights and frame interpolation wait while it is on."
         guard let g = pixelGrid else { return "On: this scene has no pixel grid, so the picture is scaled sharply. " + paused }
         return "On: the art is \(Int(g.w.rounded()))×\(Int(g.h.rounded())), every pixel the same size" + (pixelActive == Int(DM_PIXEL_SMOOTH) ? ", diagonals smoothed. " : ". ") + paused
     }
     var pixelPaused: Bool { pixelActive != 0 }
     func setScale(_ n: Int) { guard !scaleFixed else { return }; scale = n; mtl_present_scale_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("scale")) }
+    func setBorder(_ n: Int) { guard !borderFixed else { return }; border = n; mtl_present_border_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("border")) }
     func toggleFullscreen() { front_qs_fullscreen_toggle() }
-    var graphicsChanged: Bool { pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || edr || abs(edrStrength - 0.5) > 0.001 }
+    var graphicsChanged: Bool {
+        if gba { return pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || scale != 0 || border != borderDefault || gbaValues[0] != 0 || gbaValues[1] != 0 }
+        return pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || border != 0 || edr || abs(edrStrength - 0.5) > 0.001
+    }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
-        setUpscale(true); setScale(0); setPixel(Int(DM_PIXEL_AUTO))
+        setUpscale(true); setScale(0); setBorder(borderDefault); setPixel(Int(DM_PIXEL_AUTO))
+        if gba { setGbaValue(0, 0); setGbaValue(1, 0) }
         if !envFixed("DM_PRESENT_AA") { setAA(0) }
         setEDR(false); setEDRStrength(0.5)
         if env["DM_ANISO"] == nil { setAniso(anisoDefault) }
@@ -685,6 +809,7 @@ final class QuickSettings: ObservableObject {
     // Sound: the volume and mute are saved, and front_mac.m sets the game's gain from them (quieter while the sidebar is up when that is on)
     func setVolume(_ v: Double) { volume = v; muted = false; UserDefaults.standard.set(v, forKey: optKey("volume")); UserDefaults.standard.set(false, forKey: optKey("muted")); front_qs_volume_apply() }
     func setMuted(_ on: Bool) { muted = on; UserDefaults.standard.set(on, forKey: optKey("muted")); front_qs_volume_apply() }
+    func setBatterySaver(_ on: Bool) { batterySaver = on; UserDefaults.standard.set(on, forKey: optKey("batterySaver")) }
     func setKeepLibrary(_ on: Bool) { keepLibrary = on; UserDefaults.standard.set(on, forKey: optKey("keepLibrary")) }
     func setDuck(_ on: Bool) { duckOpen = on; UserDefaults.standard.set(on, forKey: optKey("duckOpen")); front_qs_volume_apply() }
     func setPauseOpen(_ on: Bool) { pauseOpen = on; front_qs_pause_set(on ? 1 : 0); paused = front_qs_paused() != 0 }
@@ -761,7 +886,23 @@ final class QuickSettings: ObservableObject {
     func openCapture() { if let p = picked { NSWorkspace.shared.open(URL(fileURLWithPath: p)) } }
     func revealCapture() { if let p = picked { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) } }
     func record() { front_qs_record(); recording = front_qs_recording() != 0 }
+    func setReplay(_ on: Bool) { front_qs_replay_set(on ? 1 : 0); replay = front_qs_replay() != 0 }
     func assign(_ i: Int, pad: Bool) { front_qs_assign(Int32(i), pad ? 1 : 0); assigning = Int(front_qs_assigning()) }
+    /// Who plays (front_mac_players.inc): each player with a controller, by its name; canMove false for Joy-Cons, which keep the player they joined as
+    struct Player: Identifiable { let slot: Int; let name: String; let canMove: Bool; var id: Int { slot } }
+    func readPlayers() {
+        var out: [Player] = []
+        for p in 0..<8 {
+            var name = [CChar](repeating: 0, count: 64)
+            let k = front_qs_player(Int32(p), &name, 64)
+            if k > 0 { out.append(Player(slot: p, name: String(cString: name), canMove: k == 1)) }
+        }
+        if out.map(\.id) != players.map(\.id) || out.map(\.name) != players.map(\.name) { players = out }
+    }
+    func makeFirst(_ p: Int) {
+        guard front_qs_player_swap(Int32(p), 0) != 0 else { return }
+        readPlayers(); front_qs_toast_text("\(players.first { $0.slot == 0 }?.name ?? "That controller") is player 1 now")
+    }
     func resetControls() {
         for k in ["keys", "keyNames", "pad", "padNames"] { UserDefaults.standard.removeObject(forKey: optKey(k)) }
         front_qs_controls_reload(); refresh()
@@ -841,6 +982,145 @@ final class QuickSettings: ObservableObject {
         front_qs_toast_text("Settings put back as the game started")
     }
 
+    // Hold to compare (Sidebar 0.9.0): the live graphics settings at their defaults while held, put back on release, nothing saved; the picture full size meanwhile, as a peek
+    /// Something on the Graphics page differs from its default, so a compare shows a difference
+    var compareOffered: Bool { (filter != 0 && !filterFixed) || (scanline != 0 && crtOn) || (!upscale && !upscaleFixed) || (aa != 0 && !envFixed("DM_PRESENT_AA")) || (edr && !envFixed("DM_PRESENT_EDR"))
+        || (pixel != Int(DM_PIXEL_AUTO) && !envFixed("DM_PIXEL_ART")) || (scale != 0 && !scaleFixed) || (border != 0 && !borderFixed) }
+    func compare(_ on: Bool) {
+        guard on != comparing else { return }
+        comparing = on
+        if on {
+            if !filterFixed { mtl_present_filter_set(0, Float(strength)) }
+            if !upscaleFixed { mtl_present_upscale_set(1) }
+            if !envFixed("DM_PRESENT_AA") { mtl_present_aa_set(0) }
+            if !envFixed("DM_PRESENT_EDR") { mtl_present_edr_set(0) }
+            if !envFixed("DM_PIXEL_ART") { mtl_present_pixel_set(Int32(DM_PIXEL_AUTO)) }
+            if !scaleFixed { mtl_present_scale_set(0) }
+            if !borderFixed { mtl_present_border_set(0) }
+            front_qs_peek(1); front_qs_toast_text(compareOffered ? "Defaults: let go to see your settings" : "Your graphics are the defaults")
+        } else {
+            mtl_present_filter_set(Int32(filter), Float(strength)); mtl_present_upscale_set(upscale ? 1 : 0); mtl_present_aa_set(Int32(aa)); mtl_present_edr_set(edr ? 1 : 0)
+            mtl_present_pixel_set(Int32(pixel)); mtl_present_scale_set(Int32(scale)); mtl_present_border_set(Int32(border))
+            front_qs_peek(0)
+        }
+    }
+
+    // Search every setting (Sidebar 0.9.0): every row of every page by its name, the words it answers to and its page, the cheats (folded sections too) and mods by name.
+    // Up and down move through what it found, Return goes to that row on its page; a row on the quick bar is always in sight, so it is left out
+    func searchTitle(_ n: Nav) -> String? {
+        switch n {
+        case .replay: return "Instant replay"
+        case .replaySave: return "Save the last 30 seconds"
+        case .undoSession: return "Put it all back"
+        case .preset(let i): return Preset(rawValue: i).map { "\($0.name) preset" }
+        case .pauseOpen: return "Pause the game"
+        case .duckOpen: return "Quieter sound"
+        case .keepLibrary: return "Library keeps the game"
+        case .batterySaver: return "Save battery"
+        case .backup: return "Back up save now"
+        case .slotSave(let i): return "Save to slot \(i)"
+        case .slotLoad(let i): return "Load slot \(i)"
+        case .settingsShow: return "Settings file"
+        case .defaultsSave: return "Make these my defaults"
+        case .defaultsUse: return "Use my defaults"
+        case .fullscreen: return "Full screen"
+        case .scale: return "Picture size"
+        case .border: return "Around the picture"
+        case .pixel: return "Pixel art"
+        case .crt: return "CRT filter"
+        case .strength: return "CRT strength"
+        case .scanlines: return "Line size"
+        case .upscale: return "MetalFX upscaling"
+        case .aa: return "Anti-aliasing"
+        case .aniso: return "Anisotropic filtering"
+        case .edr: return "HDR highlights"
+        case .edrStrength: return "Brightness boost"
+        case .resetGraphics: return "Reset graphics"
+        case .fps: return "Show FPS"
+        case .corner: return "Counter position"
+        case .fpsMs: return "Show milliseconds"
+        case .interp: return "Frame interpolation"
+        case .frameTimes: return "Record frame times"
+        case .frameTimesFolder: return "Show frame times"
+        case .resetPerformance: return "Reset performance"
+        case .showFolder: return "Capture folder"
+        case .changeFolder: return "Change capture folder"
+        case .mod(let n): return "Mod: \(n)"
+        case .modsOpen: return "Open mods folder"
+        case .cheat(let id): return cheats.first { $0.id == id }?.name
+        case .cheatsAllOff: return "Turn all cheats off"
+        case .cheatsRestore: return "Restore saved cheats"
+        case .cheatsOpen: return "Open cheats folder"
+        case .key(let i): return "\(actionNames[i]) (keyboard)"
+        case .pad(let i): return "\(actionNames[i]) (controller)"
+        case .resetControls: return "Reset controls"
+        case .playerFirst(let p): return "Make player \(p + 1) player 1"
+        default: return nil
+        }
+    }
+    /// The row's value now, shown beside it in the results
+    func searchValue(_ n: Nav) -> String? {
+        func onOff(_ b: Bool) -> String { b ? "On" : "Off" }
+        switch n {
+        case .pauseOpen: return onOff(pauseOpen)
+        case .duckOpen: return onOff(duckOpen)
+        case .keepLibrary: return onOff(keepLibrary)
+        case .batterySaver: return onOff(batterySaver)
+        case .replay: return onOff(replay)
+        case .fullscreen: return onOff(fullscreen)
+        case .scale: return sizeNames[safe: scale]
+        case .border: return borderNames[safe: border]
+        case .pixel: return pixelNames[pixel]
+        case .crt: return gba ? gbaFilterNames[filter] : onOff(crtOn)
+        case .gbaValue(let i): return gbaName(i)
+        case .strength: return "\(Int((strength * 100).rounded()))%"
+        case .upscale: return onOff(upscale)
+        case .aa: return aaNames[safe: aa]
+        case .aniso: return aniso == 0 ? "Game default" : "\(aniso)x"
+        case .edr: return onOff(edr)
+        case .edrStrength: return "\(Int((edrStrength * 100).rounded()))%"
+        case .fps: return onOff(fps)
+        case .corner: return cornerNames[safe: corner]
+        case .fpsMs: return onOff(fpsMs)
+        case .interp: return interpNames[safe: interp]
+        case .frameTimes: return onOff(frameTimes)
+        case .mod(let n): return onOff(wanted.contains(n))
+        case .cheat(let id): return cheats.first { $0.id == id }.map { onOff($0.on || $0.master) }
+        case .key(let i): return keyNames[safe: i]
+        case .pad(let i): return padNames[safe: i]
+        default: return nil
+        }
+    }
+    var searchHits: [SearchHit] {
+        let words = search.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return [] }
+        var out: [SearchHit] = [], seen: Set<Nav> = []
+        for p in pages.indices {
+            var navs = pageRows(p).flatMap { $0 }
+            if p == pCheats {   // every cheat, a folded section's too, and not the section headings
+                navs = cheats.filter { !$0.label }.map { Nav.cheat($0.id) } + navs.filter { if case .cheat = $0 { return false }; if case .section = $0 { return false }; return true }
+            }
+            for n in navs where !seen.contains(n) {
+                guard let t = searchTitle(n) else { continue }
+                var detail = pages[p].title
+                if case .cheat(let id) = n, let c = cheats.first(where: { $0.id == id }), !c.section.isEmpty { detail += " › \(c.section)" }
+                let hay = [t, detail, searchWords[n] ?? ""].joined(separator: " ")
+                guard words.allSatisfy({ hay.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }) else { continue }
+                seen.insert(n); out.append(SearchHit(nav: n, title: t, page: p, detail: detail))
+                if out.count >= 40 { return out }
+            }
+        }
+        return out
+    }
+    /// Go to a row the search found: its page, the row selected and in sight, a folded cheats section opened, the search put away
+    func goTo(_ h: SearchHit) {
+        if case .cheat(let id) = h.nav, let c = cheats.first(where: { $0.id == id }) { folded.remove(c.section) }
+        search = ""; searchFocused = false
+        if let w = sharedHost?.window, w.firstResponder is NSText { w.makeFirstResponder(w.contentView) }   // the typing back to the game view, so keys move the selection again
+        setPage(h.page)
+        DispatchQueue.main.async { self.sel = h.nav }   // after the page is drawn, so the scroll finds it
+    }
+
     // What applies at the next launch: one count for the footer and the names under it, the same test as each row's tag
     var anisoPending: Bool { env["DM_ANISO"] == nil && aniso != anisoRun }
     var frameTimesPending: Bool { env["DM_FRAME_TIMES"] == nil && frameTimes != (frameTimesNow != nil) }
@@ -870,7 +1150,7 @@ final class QuickSettings: ObservableObject {
         if keepLibrary, let fe = frontEndApp {
             libraryArmed = false; front_qs_suspend()
             DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.gameSuspended"), object: Bundle.main.bundlePath, userInfo: ["pid": "\(getpid())"], deliverImmediately: true)
-            DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: nil, deliverImmediately: true)
+            DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: toTheatre ? ["place": "theatre"] : nil, deliverImmediately: true)
             let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
             NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: fe), configuration: cfg) { _, err in
                 if let err { fputs("quick settings: Library could not open NXForge at \(fe): \(err.localizedDescription)\n", stderr) }
@@ -878,7 +1158,7 @@ final class QuickSettings: ObservableObject {
             }
             return
         }
-        DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: nil, deliverImmediately: true)
+        DistributedNotificationCenter.default().postNotificationName(Notification.Name("org.nxforge.showGame"), object: Bundle.main.bundlePath, userInfo: toTheatre ? ["place": "theatre"] : nil, deliverImmediately: true)
         guard let fe = frontEndApp else { NSApp.terminate(nil); return }
         let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: fe), configuration: cfg) { _, err in
@@ -892,13 +1172,15 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + [[Nav.backup, Nav.backupShow]] + (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] } + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
-        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.pixel], [.crt]] + (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : []) + [[.resetGraphics]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + (gba ? (2...5).map { [Nav.gbaValue($0)] } + (0..<3).map { [Nav.gbaOpt($0)] } : []) + [[Nav.backup, Nav.backupShow]] + (gba ? (1...3).map { [Nav.stateSave($0), Nav.stateLoad($0)] } : (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] }) + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+        case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (gba ? (filter != 0 ? [[.strength]] : []) + (crtOn ? [[.scanlines]] : []) + [[.gbaValue(0)], [.gbaValue(1)]]
+                : (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : [])) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
         case pCapture:
             let shots = captures.map { Nav.capture($0.path) }
-            return (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
+            return [[Nav.replay]] + (replay ? [[Nav.replaySave]] : []) + (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
                 + [[.showFolder, .changeFolder]] + (customDir ? [[.defaultFolder]] : [])
+        case pMods where gba: return []
         case pMods: return mods.map { [.mod($0), .modUp($0), .modDown($0)] } + [[.modsOpen, .modsRefresh]]
         case pCheats:
             var r: [[Nav]] = cheatsSafe ? [[.cheatsRestore]] : []
@@ -907,21 +1189,23 @@ final class QuickSettings: ObservableObject {
                 r += g.rows.filter { !$0.label }.map { [.cheat($0.id)] }
             }
             return r + (cheatsOn > 0 ? [[.cheatsAllOff]] : []) + [[.cheatsOpen, .cheatsRefresh]]
-        case pControls: return actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
+        case pControls where gba: return []
+        case pControls: return players.filter { $0.slot > 0 && $0.canMove && players.first?.canMove != false }.map { [Nav.playerFirst($0.slot)] } + actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
         default: return []
         }
     }
     var rows: [[Nav]] {
-        var r: [[Nav]] = [[.shot, .record, .fpsQuick], [.mute, .volume], pages.indices.map { .tab($0) }] + pageRows(page)
+        var r: [[Nav]] = [[.shot, .record, .fpsQuick], [.mute, .volume], pages.indices.map { .tab($0) }] + (search.isEmpty ? pageRows(page) : searchHits.map { [$0.nav] })
         if restartCount > 0 && canRestart { r.append([.restart]) }
         return r + [frontEndApp == nil ? [.resume, .quit] : [.resume, .library, .quit]]
     }
-    var firstOnPage: Nav { pageRows(page).first?.first ?? .tab(page) }
-    func setPage(_ p: Int) { page = p; UserDefaults.standard.set(p, forKey: optKey("page")); if p == pCapture { refreshCaptures() } }
+    var firstOnPage: Nav { search.isEmpty ? pageRows(page).first?.first ?? .tab(page) : searchHits.first?.nav ?? .tab(page) }
+    func setPage(_ p: Int) { if p != page && !search.isEmpty { search = "" }; page = p; UserDefaults.standard.set(p, forKey: optKey("page")); if p == pCapture { refreshCaptures() } }
     func turnPage(_ d: Int) { setPage((page + d + pages.count) % pages.count); sel = firstOnPage }
     func nav(_ cmd: Int32) {
         if cmd == 6 { close(); return }
         if cmd == 7 || cmd == 8 { turnPage(cmd == 8 ? 1 : -1); return }
+        if cmd == 5 && !search.isEmpty, let h = searchHits.first(where: { $0.nav == sel }) ?? (sel == nil ? searchHits.first : nil) { goTo(h); return }   // Return on a result
         let rs = rows
         guard let cur = sel, let ri = rs.firstIndex(where: { $0.contains(cur) }), let ci = rs[ri].firstIndex(of: cur) else { sel = firstOnPage; return }
         switch cmd {
@@ -943,12 +1227,17 @@ final class QuickSettings: ObservableObject {
         switch n {
         case .pauseOpen: setPauseOpen(d > 0)
         case .duckOpen: setDuck(d > 0)
+        case .gbaOpt(let i): setGbaOpt(i, d > 0)
+        case .gbaValue(let i): stepGbaValue(i, d)
         case .keepLibrary: setKeepLibrary(d > 0)
+        case .replay: setReplay(d > 0)
+        case .batterySaver: setBatterySaver(d > 0)
         case .fullscreen: if (d > 0) != fullscreen { toggleFullscreen() }
         case .scale: setScale(min(max(scale + d, 0), sizeNames.count - 1))
+        case .border: setBorder(min(max(border + d, 0), borderNames.count - 1))
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[min(max(i + d, 0), pixelOrder.count - 1)]) }
-        case .crt: setCRT(d > 0)
-        case .strength: if crtOn { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
+        case .crt: if gba { stepGbaFilter(d) } else { setCRT(d > 0) }
+        case .strength: if crtOn || (gba && filter != 0) { setFilter(filter, min(max(strength + 0.05 * Double(d), 0), 1)) }
         case .scanlines: if crtOn { setScanline(min(max(scanline + d, 0), 8)) }
         case .upscale: setUpscale(d > 0)
         case .edr: setEDR(d > 0)
@@ -970,12 +1259,19 @@ final class QuickSettings: ObservableObject {
         switch n {
         case .shot: front_qs_screenshot()
         case .record: record()
+        case .replay: setReplay(!replay)
+        case .replaySave: front_qs_replay_save()
         case .fps, .fpsQuick: setFps(!fps)
         case .mute, .volume: setMuted(!muted)
         case .tab(let i): setPage(i); sel = firstOnPage
         case .pauseOpen: setPauseOpen(!pauseOpen)
         case .duckOpen: setDuck(!duckOpen)
+        case .gbaOpt(let i): setGbaOpt(i, !gbaOpts[i])
+        case .gbaValue(let i): stepGbaValue(i, 1, wrap: true)
+        case .stateSave(let n): gbaState(n, load: false)
+        case .stateLoad(let n): gbaState(n, load: true)
         case .keepLibrary: setKeepLibrary(!keepLibrary)
+        case .batterySaver: setBatterySaver(!batterySaver)
         case .undoSession: undoSession()
         case .preset(let i): if let p = Preset(rawValue: i) { choosePreset(p) }
         case .backup: backup()
@@ -988,8 +1284,9 @@ final class QuickSettings: ObservableObject {
         case .defaultsUse: useDefaults()
         case .fullscreen: toggleFullscreen()
         case .scale: setScale((scale + 1) % sizeNames.count)
+        case .border: setBorder((border + 1) % borderNames.count)
         case .pixel: if let i = pixelOrder.firstIndex(of: pixel) { setPixel(pixelOrder[(i + 1) % pixelOrder.count]) }
-        case .crt: setCRT(!crtOn)
+        case .crt: if gba { stepGbaFilter(1, wrap: true) } else { setCRT(!crtOn) }
         case .scanlines: if crtOn { setScanline((scanline + 1) % 9) }
         case .upscale: setUpscale(!upscale)
         case .edr: setEDR(!edr)
@@ -1024,6 +1321,7 @@ final class QuickSettings: ObservableObject {
         case .key(let i): assign(i, pad: false)
         case .pad(let i): assign(i, pad: true)
         case .resetControls: resetControls()
+        case .playerFirst(let p): makeFirst(p)
         case .restart: restart()
         case .resume: close()
         case .library: quitToLibrary()
@@ -1051,7 +1349,8 @@ final class QuickSettings: ObservableObject {
             }
         } else { r.append(Hint(caps: [Cap(symbol: nil, text: pad ? "▲▼" : "↑↓")], text: "Move")) }
         r += [Hint(caps: [back], text: "Close"), Hint(caps: turn, text: "Page")]
-        // Hold to peek where the line has room (no selection, or one with a single hint): else the eye button's help says it
+        // Hold to peek where the line has room (no selection, or one with a single hint): else the eye button's help says it. On the Graphics page with something to compare, Hold to compare
+        if r.count <= 3 && page == pGraphics && search.isEmpty && compareOffered && !gba { return r + [Hint(caps: [pad ? Cap(symbol: compareGlyph, text: "Y") : Cap(symbol: nil, text: "C")], text: "Hold to compare")] }
         return r.count <= 3 ? r + [Hint(caps: [pad ? Cap(symbol: peekGlyph, text: "X") : Cap(symbol: nil, text: "P")], text: "Hold to peek")] : r
     }
 }
@@ -1132,6 +1431,7 @@ struct QuickSettingsView: View {
     @ObservedObject var m: QuickSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var compact = false   // a short window: tighter spacing
+    @FocusState private var searchFocus: Bool
     private var motion: Animation? { reduceMotion ? nil : .snappy }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1141,12 +1441,17 @@ struct QuickSettingsView: View {
             Divider().padding(.horizontal, 22)
             ScrollViewReader { proxy in ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(pages[m.page].title).font(.title3.bold()).id("top")
-                    pageBody
+                    HStack(spacing: 10) {
+                        Text(m.search.isEmpty ? pages[m.page].title : "Search").font(.title3.bold()).lineLimit(1)
+                        Spacer(minLength: 8)
+                        searchField
+                    }.id("top")
+                    if m.search.isEmpty { pageBody } else { searchResults }
                 }.padding(.horizontal, 22).padding(.vertical, 14).frame(maxWidth: .infinity, alignment: .leading)
             }.scrollIndicators(.automatic)
             .onChange(of: m.sel) { _, s in if let s { withAnimation(motion) { proxy.scrollTo(s, anchor: .center) } } }
-            .onChange(of: m.page) { _, _ in proxy.scrollTo("top", anchor: .top) } }
+            .onChange(of: m.page) { _, _ in proxy.scrollTo("top", anchor: .top) }
+            .onChange(of: m.search) { _, _ in proxy.scrollTo("top", anchor: .top) } }
             Divider().padding(.horizontal, 22)
             footer.padding(.horizontal, 22).padding(.top, compact ? 8 : 12).padding(.bottom, compact ? 10 : 14)
         }
@@ -1174,11 +1479,67 @@ struct QuickSettingsView: View {
                 }
                 Text(GameLook.name ?? m.game).font(.system(size: compact ? 20 : 24, weight: .heavy)).tracking(-0.5).lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                statusLine
             }
             Spacer(minLength: 8)
             peekButton
             Button(action: m.close) { Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 22, height: 22) }
                 .modifier(GlassButton(prominent: false)).buttonBorderShape(.circle).controlSize(.large).help("Close (Esc)")
+        }
+    }
+    // Under the game's name (Sidebar 0.9.0): how long this run has been going, the time, and the Mac's battery where it has one; each minute
+    private var statusLine: some View {
+        TimelineView(.everyMinute) { ctx in
+            let mins = Int(ctx.date.timeIntervalSince(sessionStart) / 60), b = BatteryNow.read()
+            HStack(spacing: 10) {
+                Label(mins < 1 ? "Just started" : mins < 60 ? "\(mins) min" : "\(mins / 60) h \(mins % 60) min", systemImage: "hourglass").help("How long the game has been open this time")
+                Label(ctx.date.formatted(date: .omitted, time: .shortened), systemImage: "clock")
+                if let b {
+                    Label("\(b.percent)%", systemImage: !b.onBattery ? "battery.100percent.bolt" : b.percent > 80 ? "battery.100percent" : b.percent > 55 ? "battery.75percent"
+                          : b.percent > 30 ? "battery.50percent" : b.percent > 10 ? "battery.25percent" : "battery.0percent")
+                        .foregroundStyle(b.onBattery && b.percent <= 20 ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary)).help(BatteryNow.line(b))
+                }
+            }.font(.caption.monospacedDigit()).foregroundStyle(.secondary).labelStyle(StatusLabel()).lineLimit(1)
+        }
+    }
+    // Search every setting: a field beside the page's name (/ or ⌘F give it the typing); while it holds words the page shows what they find
+    private var searchField: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
+            TextField("Search", text: $m.search).textFieldStyle(.plain).font(.callout).focused($searchFocus)
+            if !m.search.isEmpty {
+                Button { m.search = ""; m.searchFocused = false } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).help("Clear the search")
+            }
+        }
+        .padding(.horizontal, 9).padding(.vertical, 5).frame(width: 168)
+        .background(.white.opacity(searchFocus ? 0.12 : 0.07), in: .capsule).overlay(Capsule().stroke(.white.opacity(searchFocus ? 0.25 : 0.1)))
+        .background { Button("") { dm_qs_search_focus() }.keyboardShortcut("f", modifiers: .command).opacity(0).allowsHitTesting(false).accessibilityHidden(true) }
+        .help("Search every setting (/ or ⌘F)")
+        .onChange(of: m.searchFocused) { _, v in if searchFocus != v { searchFocus = v } }
+        .onChange(of: searchFocus) { _, v in if m.searchFocused != v { m.searchFocused = v } }
+    }
+    @ViewBuilder private var searchResults: some View {
+        let hits = m.searchHits
+        if hits.isEmpty {
+            Text("Nothing matches “\(m.search)”. Try a setting's name, or what it does (scanlines, HDR, 120).").font(.callout).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(hits, id: \.self) { h in
+                    Button { withAnimation(motion) { m.goTo(h) } } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: pages[h.page].icon).frame(width: 22).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(h.title).font(.body.weight(.medium)).lineLimit(1)
+                                Text(h.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            if let v = m.searchValue(h.nav) { Text(v).font(.callout).foregroundStyle(.secondary).lineLimit(1) }
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 6).padding(.horizontal, 8).background(.white.opacity(0.05), in: .rect(cornerRadius: 10)).contentShape(.rect)
+                    }.buttonStyle(.plain).nav(m, h.nav)
+                }
+                Text("Return goes to the selected one on its page.").font(.caption).foregroundStyle(.tertiary)
+            }
         }
     }
     // Hold to peek with the pointer: pressed, the sidebar fades and the game shows whole; let go and it is back (front_qs_peek)
@@ -1242,9 +1603,9 @@ struct QuickSettingsView: View {
         case pGraphics: graphics
         case pPerformance: performance
         case pCapture: capture
-        case pMods: mods
+        case pMods: if m.gba { Text("Game Boy Advance games have no mods folder. Cheats are on the next page.").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) } else { mods }
         case pCheats: cheats
-        default: controls
+        default: if m.gba { gbaControls } else { controls }
         }
     }
     private func subhead(_ t: String) -> some View { Text(t.uppercased()).font(.caption.weight(.semibold)).kerning(0.8).foregroundStyle(.secondary).padding(.top, 2) }
@@ -1253,9 +1614,45 @@ struct QuickSettingsView: View {
         Button { withAnimation(motion) { action() } } label: { Label(title, systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
             .modifier(GlassButton(prominent: false)).controlSize(.large).disabled(!enabled).padding(.top, 4).nav(m, n)
     }
+    private func gbaPicker(_ i: Int, _ title: String, _ line: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Row(title: title, changed: m.gbaValues[i] != gbaDefaults[i]) {
+                Picker(title, selection: Binding(get: { m.gbaValues[i] }, set: { v in withAnimation(motion) { m.setGbaValue(i, v) } })) {
+                    ForEach(gbaChoices[i], id: \.v) { Text($0.name).tag($0.v) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize()
+            }.nav(m, .gbaValue(i))
+            note(line)
+        }
+    }
+    private func gbaRow(_ i: Int, _ title: String, on: String, off: String?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Row(title: title, changed: m.gbaOpts[i] != (i == 0)) {
+                Toggle(title, isOn: Binding(get: { m.gbaOpts[i] }, set: { m.setGbaOpt(i, $0) })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .gbaOpt(i))
+            note(m.gbaOpts[i] ? on : (off ?? on))
+        }
+    }
+    // Hold to compare (Sidebar 0.9.0): held with the pointer, C, or a controller's left face button, the game shows full size with the default graphics; let go for yours
+    private var compareButton: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(m.comparing ? "Showing the defaults" : "Hold to compare with defaults", systemImage: m.comparing ? "eye.fill" : "rectangle.split.2x1")
+                .font(.body.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 8)
+                .glassEffect(.regular.interactive(), in: .capsule).contentShape(.capsule).opacity(m.compareOffered ? 1 : 0.45)
+                .gesture(DragGesture(minimumDistance: 0).onChanged { _ in if !m.comparing { front_qs_compare(1) } }.onEnded { _ in front_qs_compare(0) })
+                .accessibilityLabel("Compare with the default graphics").accessibilityAddTraits(.isButton).padding(.top, 6)
+            note(m.compareOffered ? "Hold it, C, or a controller's left face button: the game full size with the default graphics until you let go"
+                 : "Your graphics are the defaults, so there is nothing to compare")
+        }
+    }
     private func slotRow(_ n: Int) -> some View {
         let info = m.slots[n - 1], armed = m.slotArmedNow == n
         return HStack(spacing: 10) {
+            Group {   // the game on screen when the slot was saved (Sidebar 0.9.0)
+                if let img = info?.shot { Image(nsImage: img).resizable().interpolation(.medium).aspectRatio(contentMode: .fill) }
+                else { Rectangle().fill(.white.opacity(0.06)).overlay(Text("\(n)").font(.callout.weight(.semibold)).foregroundStyle(.tertiary)) }
+            }
+            .frame(width: 64, height: 36).clipShape(.rect(cornerRadius: 6)).overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.12)))
+            .help(info?.shot != nil ? "The game when this slot was saved" : "")
             VStack(alignment: .leading, spacing: 1) {
                 Text("Slot \(n)").font(.body.weight(.medium))
                 Text(info.map { "Game saved \(($0.gameSaved ?? $0.created).formatted(.relative(presentation: .named)))" } ?? "Empty").font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -1289,7 +1686,26 @@ struct QuickSettingsView: View {
                 Row(title: "Library keeps the game", changed: !m.keepLibrary) {
                     Toggle("Library keeps the game", isOn: Binding(get: { m.keepLibrary }, set: { m.setKeepLibrary($0) })).toggleStyle(.switch).labelsHidden()
                 }.nav(m, .keepLibrary)
-                note(m.keepLibrary ? "Library pauses the game and keeps it, so Resume in NXForge picks up where you left off. It still uses its memory" : "Library ends the game, as Quit does")
+                note(m.keepLibrary ? "\(m.place) pauses the game and keeps it, so \(m.toTheatre ? "Continue" : "Resume") in NXForge picks up where you left off. It still uses its memory" : "\(m.place) ends the game, as Quit does")
+            }
+            if let b = m.battery {
+                subhead("On the battery").padding(.top, 6)
+                Row(title: "Save battery", changed: !m.batterySaver) {
+                    Toggle("Save battery", isOn: Binding(get: { m.batterySaver }, set: { m.setBatterySaver($0) })).toggleStyle(.switch).labelsHidden()
+                }.nav(m, .batterySaver)
+                note((m.batterySaver ? "Unplugged, the game pauses while another app is in front, and after ten minutes without a button" : "The game keeps running when you leave it, plugged in or not")
+                     + ". " + BatteryNow.line(b))
+            }
+            if m.gba {
+                subhead("Play").padding(.top, 6)
+                gbaPicker(2, "Rewind", m.gbaValues[2] == 0 ? "Off" : "Hold R, or the left trigger, to step back through the last \(m.gbaName(2).lowercased()) of play at twice the speed")
+                gbaPicker(3, "Fast forward", "Space, the right trigger or the right stick; the sound plays faster too")
+                gbaPicker(4, "Fast forward key", m.gbaValues[4] == 1 ? "A press turns fast forward on, the next turns it off" : "Fast while held")
+                gbaPicker(5, "Slow motion", "Hold F, or the controller's left face button: the game and its sound at \(m.gbaValues[5])%")
+                subhead("Sound").padding(.top, 6)
+                gbaRow(0, "Enhanced audio", on: "The music is mixed again at 48 kHz with smooth sample and channel edges, so it loses the handheld's hiss and ringing. " + String(cString: front_qs_gba_sound()), off: "The sound as the handheld's own mixer made it")
+                gbaRow(1, "Bass lift", on: "A little more low end, for speakers larger than the handheld's", off: nil)
+                gbaRow(2, "Wider stereo", on: "The left and right channels a little further apart", off: nil)
             }
             subhead("Save").padding(.top, 6)
             HStack(spacing: 10) {
@@ -1302,11 +1718,27 @@ struct QuickSettingsView: View {
                 else if let d = m.lastBackup { Text("Last backup \(d.formatted(.relative(presentation: .named))). The NXForge Converter's Builds page restores it (Save snapshots).").foregroundStyle(.secondary) }
                 else { Text("A checked copy of this game's save, kept beside it; the NXForge Converter's Builds page restores it.").foregroundStyle(.secondary) }
             }.font(.caption).fixedSize(horizontal: false, vertical: true)
+            if m.gba {
+                subhead("Save states").padding(.top, 6)
+                ForEach(1...3, id: \.self) { n in
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("State \(n)").font(.body.weight(.medium))
+                            Text(m.gbaStates[n - 1] ? "Holds this run's moment" : "Empty").font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        Button { m.gbaState(n, load: false) } label: { Label("Save", systemImage: "square.and.arrow.down").frame(maxWidth: 80) }.modifier(GlassButton(prominent: false)).nav(m, .stateSave(n))
+                        Button { m.gbaState(n, load: true) } label: { Label("Load", systemImage: "arrow.counterclockwise").frame(maxWidth: 110) }.modifier(GlassButton(prominent: false)).disabled(!m.gbaStates[n - 1]).nav(m, .stateLoad(n))
+                    }.controlSize(.large)
+                }
+                Text("A save state is this exact moment, saved and loaded at once: ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too. States last until you quit the game; the game's own save is kept as always.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
             subhead("Quick-save slots").padding(.top, 6)
             ForEach(1...SaveSlots.count, id: \.self) { n in slotRow(n) }
-            Text(SaveSlots.canLoad ? "A slot keeps the game's own save as it last saved it (not this exact moment). Loading restarts the game from that save; ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too."
+            }
+            if !m.gba { Text(SaveSlots.canLoad ? "A slot keeps the game's own save as it last saved it (not this exact moment). Loading restarts the game from that save; ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too."
                  : "A slot keeps the game's own save as it last saved it. Loading one needs the game opened from its app, which restarts it.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             if !m.settingsPath.isEmpty {
                 subhead("Settings file").padding(.top, 6)
                 Text(tilde(m.settingsPath)).font(.callout).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
@@ -1371,6 +1803,16 @@ struct QuickSettingsView: View {
             note(scaleFixed ? "Set by DM_PRESENT_SCALE for this run" : m.scale == 1 ? "Fills the window; the picture may look wider or taller than the game draws it"
                  : m.scale == 2 ? (m.pixelGrid != nil && m.pixelPaused ? "Each art pixel the same whole number of screen pixels, counted on the art's own grid, with a border"
                                    : "Each game pixel the same whole number of screen pixels: crisp pixel art, with a border") : "The game's shape, with black bars where the window is wider or taller")
+            // Around the picture (border_fill.inc): the picture or the game's art, blurred, where the window is wider or taller than the picture, in place of black bars
+            Row(title: "Around the picture", changed: m.border != m.borderDefault) {
+                Picker("Around the picture", selection: Binding(get: { m.border }, set: { m.setBorder($0) })) {
+                    ForEach(borderNames.indices, id: \.self) { Text(borderNames[$0]).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(borderFixed)
+            }.nav(m, .border)
+            note(borderFixed ? "Set by DM_PRESENT_BORDER for this run" : m.scale == 1 ? "Nothing to fill while the picture is stretched over the window"
+                 : m.border == 1 && m.gba ? "Ambient edges: the game's own colours at each edge glow softly into the bars"
+                 : m.border == 1 ? "The picture itself, blurred and dimmed, where there would be black bars" : m.border == 2 ? "The game's art, blurred and dimmed, where there would be black bars (the glow when the game has none)"
+                 : "Black bars where the window is wider or taller than the picture")
             // Pixel art: sharp, even pixels for 2D games, on the art's own grid where the game enlarged it (pixel_art.inc); auto turns it on where the picture shows pixel art
             Row(title: "Pixel art", changed: m.pixel != Int(DM_PIXEL_AUTO)) {
                 Picker("Pixel art", selection: Binding(get: { m.pixel }, set: { m.setPixel($0) })) {
@@ -1379,6 +1821,23 @@ struct QuickSettingsView: View {
             }.nav(m, .pixel)
             note(m.pixelNote)
             subhead("Look").padding(.top, 6)
+            if m.gba {
+                Row(title: "Screen filter", changed: m.filter != 0) {
+                    Picker("Screen filter", selection: Binding(get: { m.filter }, set: { f in withAnimation(motion) { m.setFilter(f, m.strength) } })) {
+                        ForEach(gbaFilters, id: \.self) { Text(gbaFilterNames[$0] ?? "").tag($0) }
+                    }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(filterFixed)
+                }.nav(m, .crt)
+                note(filterFixed ? "Set by DM_PRESENT_FILTER for this run" : m.crtOn ? "Scanlines and an RGB mask, like an old TV"
+                     : m.filter == Int(DM_PFX_LCD) ? "The handheld's screen up close: dark lines between the pixels and faint colour stripes" : "Off: the picture as the game draws it")
+                if m.filter != 0 {
+                    Row(title: "Strength", changed: abs(m.strength - 0.5) > 0.001) {
+                        HStack(spacing: 10) {
+                            Slider(value: Binding(get: { m.strength }, set: { m.setFilter(m.filter, $0) }), in: 0...1)
+                            Text("\(Int((m.strength * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 42, alignment: .trailing)
+                        }
+                    }.nav(m, .strength)
+                }
+            } else {
             Row(title: "CRT filter", changed: m.crtOn) {
                 Toggle("CRT filter", isOn: Binding(get: { m.crtOn }, set: { on in withAnimation(motion) { m.setCRT(on) } })).toggleStyle(.switch).labelsHidden().disabled(filterFixed)
             }.nav(m, .crt)
@@ -1398,6 +1857,28 @@ struct QuickSettingsView: View {
                 }.nav(m, .scanlines)
                 note("Auto gives about 240 lines; for pixel art, pick the rows one art pixel covers")
             }
+            }
+            if m.gba && m.crtOn {
+                Row(title: "Line size", changed: m.scanline != 0) {
+                    Picker("Line size", selection: Binding(get: { m.scanline }, set: { m.setScanline($0) })) {
+                        Text("Auto").tag(0)
+                        ForEach(1..<9) { Text("\($0) game row\($0 == 1 ? "" : "s")").tag($0) }
+                    }.pickerStyle(.menu).labelsHidden().fixedSize().disabled(env["DM_PRESENT_SCANLINE"] != nil)
+                }.nav(m, .scanlines)
+            }
+            if m.gba {
+                subhead("Screen").padding(.top, 6)
+                gbaPicker(0, "Handheld colours", m.gbaValues[0] == 1 ? "The original GBA's screen: softer and darker, the colours the art was drawn for"
+                          : m.gbaValues[0] == 2 ? "The backlit GBA SP's screen: brighter, a little softer than a modern screen" : "Off: the game's colours as it sends them, as on a modern screen")
+                gbaPicker(1, "Frame blending", m.gbaValues[1] == 1 ? "Each frame half blended with the one before, as the handheld's slow screen did: sprites games flicker for see-through shadows and water look solid again"
+                          : "Off: every frame as the game draws it")
+            } else { imageQuality }
+            if !m.gba { compareButton }   // the Game Boy Advance player has no compare
+            resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
+        }.onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in m.refreshPixel() }   // auto turns on by itself, and the art's grid follows the scene
+    }
+    @ViewBuilder private var imageQuality: some View {
+        Group {
             subhead("Image quality").padding(.top, 6)
             // Upscaling: MetalFX's spatial scaler in place of the bilinear stretch wherever the window or screen is larger than the game's picture
             Row(title: "MetalFX upscaling", changed: !m.upscale) {
@@ -1438,8 +1919,7 @@ struct QuickSettingsView: View {
                  : m.edr && m.pixelPaused ? "Waits while Pixel art is on, which keeps the game's own colours"
                  : m.edrHeadroom <= 1.01 ? "Needs an XDR or HDR screen; this one shows SDR, so the picture stays the same"
                  : "Sun, lava and shiny things glow brighter than white. White HUD text brightens too")
-            resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
-        }.onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in m.refreshPixel() }   // auto turns on by itself, and the art's grid follows the scene
+        }
     }
     private var performance: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1487,6 +1967,16 @@ struct QuickSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Screenshot and Record are at the top of this menu. The picture is saved as you see it, filter included.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            subhead("Instant replay")
+            Row(title: "Instant replay", changed: m.replay) {
+                Toggle("Instant replay", isOn: Binding(get: { m.replay }, set: { m.setReplay($0) })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .replay)
+            if m.replay {
+                Button { front_qs_replay_save() } label: { Label("Save the last 30 seconds", systemImage: "gobackward.30").frame(maxWidth: .infinity) }
+                    .modifier(GlassButton(prominent: false)).controlSize(.large).help("Shift-Command-L, or hold a controller's Capture button").nav(m, .replaySave)
+            }
+            note(m.replay ? "The last 30 seconds are always kept, with sound. Shift-Command-L or a controller's Capture button held saves them; this uses a little of the Mac's power all the time"
+                 : "Keeps the last 30 seconds of play ready to save after something worth keeping happened. A controller's Capture button takes a screenshot; held, it saves the replay")
             subhead("Recent")
             if m.captures.isEmpty { Text("Nothing yet: your screenshots and recordings show here.").font(.callout).foregroundStyle(.tertiary) }
             else {
@@ -1512,7 +2002,7 @@ struct QuickSettingsView: View {
                 Button { m.defaultCaptureFolder() } label: { Label("Use the game folder again", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: false)).controlSize(.large).nav(m, .defaultFolder)
             }
-            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Shift-Command-S takes a screenshot, Shift-Command-R starts and stops a recording, Shift-Command-L saves the last 30 seconds.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
     private func captureTile(_ c: CaptureFile) -> some View {
@@ -1572,12 +2062,41 @@ struct QuickSettingsView: View {
             }.controlSize(.large)
         }
     }
+    private var gbaControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("A Game Boy Advance game's buttons. They are fixed for now.").font(.caption).foregroundStyle(.secondary)
+            subhead("Keyboard").padding(.top, 4)
+            ForEach([("D-pad", "Arrow keys or W A S D"), ("A", "J or X"), ("B", "K or Z"), ("L", "Q"), ("R", "E"), ("Start", "Return"), ("Select", "Tab or Delete"), ("Fast forward", "Space"), ("Rewind", "Hold R"), ("Slow motion", "Hold F"), ("This menu", "Esc")], id: \.0) { r in
+                Row(title: r.0) { Text(r.1).foregroundStyle(.secondary) }
+            }
+            subhead("Controller").padding(.top, 6)
+            ForEach([("D-pad", "D-pad or left stick"), ("A", "Right button"), ("B", "Bottom button"), ("L / R", "Shoulders"), ("Start", "Menu"), ("Select", "Options"), ("Rewind", "Hold the left trigger"), ("Fast forward", "Right trigger, or the right stick pressed"), ("Slow motion", "Hold the left face button"), ("This menu", "Press the left stick, or Home")], id: \.0) { r in
+                Row(title: r.0) { Text(r.1).foregroundStyle(.secondary) }
+            }
+        }
+    }
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Choose a key or button, then press the new one; Esc cancels. A key another button already has swaps with it. Saved for this game.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if !m.keyClash.isEmpty || !m.padClash.isEmpty {
                 Label("\(m.keyClash.count + m.padClash.count) buttons share a key or button with another (marked below). Choose a new one, or Reset controls.", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            if !m.players.isEmpty {
+                subhead("Players").padding(.top, 4)
+                ForEach(m.players) { pl in
+                    Row(title: "Player \(pl.slot + 1)") {
+                        HStack(spacing: 8) {
+                            Text(pl.name).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                            if pl.slot > 0 && pl.canMove && m.players.first?.canMove != false {
+                                Button("Make player 1") { withAnimation(motion) { m.makeFirst(pl.slot) } }.modifier(GlassButton(prominent: false)).nav(m, .playerFirst(pl.slot))
+                            }
+                        }
+                    }
+                }
+                if m.players.count > 1 {
+                    note(m.players.contains { !$0.canMove } ? "Joy-Cons keep the player they joined as: they join in the order their first buttons are pressed" : "Make player 1 trades that controller with player 1's")
+                }
             }
             subhead("Keyboard").padding(.top, 4)
             ForEach(actionNames.indices, id: \.self) { i in Row(title: actionNames[i]) { assignButton(i, pad: false) }.nav(m, .key(i)) }
@@ -1682,9 +2201,10 @@ struct QuickSettingsView: View {
                 Button(action: m.close) { Text("Resume game").font(.headline).frame(maxWidth: .infinity) }
                     .modifier(GlassButton(prominent: true)).controlSize(.extraLarge).keyboardShortcut(.defaultAction).shadow(color: GameLook.colour.opacity(0.45), radius: 14, y: 2).nav(m, .resume)
                 if m.frontEndApp != nil {
-                    Button(action: m.quitToLibrary) { Label(m.libraryArmed ? "Press again" : "Library", systemImage: "square.grid.2x2").frame(minWidth: 96) }
+                    Button(action: m.quitToLibrary) { Label(m.libraryArmed ? "Press again" : m.place, systemImage: m.toTheatre ? "tv" : "square.grid.2x2").frame(minWidth: 96) }
                         .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.libraryArmed ? Color.orange : nil)
-                        .help("Ends the game and goes back to it in NXForge's library. Asks twice.").nav(m, .library)
+                        .help(m.toTheatre ? (m.keepLibrary ? "Pauses the game and goes back to NXForge's Theatre, where Continue picks it up again. Asks twice." : "Ends the game and goes back to NXForge's Theatre. Asks twice.")
+                              : m.keepLibrary ? "Pauses the game and goes back to it in NXForge's library, where Resume picks it up again. Asks twice." : "Ends the game and goes back to it in NXForge's library. Asks twice.").nav(m, .library)
                 }
                 Button(action: m.quit) { Label(m.quitArmed ? "Press again" : "Quit", systemImage: "power").frame(minWidth: 96) }
                     .modifier(GlassButton(prominent: false)).controlSize(.extraLarge).tint(m.quitArmed ? Color.red : nil).help("Ends the game, as ⌘Q does. Asks twice.").nav(m, .quit)
@@ -1754,6 +2274,10 @@ struct FrameGraph: View {
     }
 }
 private func tilde(_ p: String) -> String { (p as NSString).abbreviatingWithTildeInPath }
+extension Array { fileprivate subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil } }
+private struct StatusLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View { HStack(spacing: 3) { configuration.icon.imageScale(.small); configuration.title } }
+}
 private struct DotLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View { HStack(spacing: 5) { configuration.icon.font(.system(size: 6)); configuration.title } }
 }
@@ -1805,13 +2329,14 @@ public func dm_qs_toast_long(_ parent: UnsafeMutableRawPointer, _ msg: UnsafePoi
 public func dm_qs_gpu_memory_low(_ usedMB: UInt64, _ lowMB: UInt64) { shared?.gpuMemoryLow = (usedMB, lowMB) }
 
 private var shared: QuickSettings?
+private weak var sharedHost: NSView?   // the sidebar's view, for giving the search field the typing
 @_cdecl("dm_qs_make")
 public func dm_qs_make(_ game: UnsafePointer<CChar>, _ modsDir: UnsafePointer<CChar>, _ modsRun: UnsafePointer<CChar>?,
                        _ close: @escaping @convention(c) () -> Void, _ fps: @escaping @convention(c) () -> Void) -> UnsafeMutableRawPointer {
     let run = modsRun.map { String(cString: $0).split(separator: "\n").map(String.init) }   // in load order
     let m = QuickSettings(game: String(cString: game), modsDir: String(cString: modsDir), modsRunOrder: run, close: { close() }, fpsChanged: { fps() })
     shared = m
-    let v = NSHostingView(rootView: QuickSettingsView(m: m))
+    let v = NSHostingView(rootView: QuickSettingsView(m: m)); sharedHost = v
     v.sizingOptions = []   // front_mac.m sizes it: the right of the game window, full height
     return Unmanaged.passRetained(v).toOpaque()
 }
@@ -1824,11 +2349,26 @@ public func dm_qs_refresh() { shared?.refresh() }
 @_cdecl("dm_qs_opened")
 public func dm_qs_opened(_ pad: Int32) {
     guard let m = shared else { return }
-    m.quitArmed = false; m.restartArmed = false; m.libraryArmed = false
+    m.quitArmed = false; m.restartArmed = false; m.libraryArmed = false; m.search = ""; m.searchFocused = false
     if pad != 0 { m.pad = true; m.sel = m.firstOnPage } else { m.sel = nil }
 }
 @_cdecl("dm_qs_peeked")
 public func dm_qs_peeked(_ on: Int32) { shared?.peeking = on != 0 }
+@_cdecl("dm_qs_compare")
+public func dm_qs_compare(_ on: Int32) { shared?.compare(on != 0) }
+@_cdecl("dm_qs_compare_glyph")
+public func dm_qs_compare_glyph(_ symbol: UnsafePointer<CChar>?) { shared?.compareGlyph = symbol.map { String(cString: $0) } }
+@_cdecl("dm_qs_search_focus")
+public func dm_qs_search_focus() {
+    shared?.searchFocused = true
+    // SwiftUI's focus does not always reach a field in a hosting view whose window has the game view as first responder: give the field the typing directly too
+    DispatchQueue.main.async { if let h = sharedHost, let f = searchTextField(in: h) { h.window?.makeFirstResponder(f) } }
+}
+private func searchTextField(in v: NSView) -> NSTextField? {
+    if let f = v as? NSTextField, f.isEditable, f.placeholderString == "Search" { return f }
+    for s in v.subviews { if let f = searchTextField(in: s) { return f } }
+    return nil
+}
 @_cdecl("dm_qs_peek_glyph")
 public func dm_qs_peek_glyph(_ symbol: UnsafePointer<CChar>?) { shared?.peekGlyph = symbol.map { String(cString: $0) } }
 @_cdecl("dm_qs_input")

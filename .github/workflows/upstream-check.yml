@@ -51,6 +51,12 @@ jobs:
           python3 scripts/layer.py try 2>&1 | sed '1d; s/^  /- /' >> body.md || true
           {
             echo
+            echo "Upstream work NXForge carries as patches (\`scripts/layer.py carried\`); \"drop at the next update\" means nxnative has it:"
+            echo
+            python3 scripts/layer.py carried 2>&1 | sed 's/^  /- /' || true
+          } >> body.md
+          {
+            echo
             echo "<details><summary>Upstream commits since the pin (newest 30)</summary>"
             echo
             git log --format='- [`%h`](https://github.com/seedds/nxnative/commit/%H) %s (%cs)' -30 "$pin..refs/nxnative/main"

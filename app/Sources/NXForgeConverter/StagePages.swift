@@ -1,7 +1,7 @@
 // The front end's game page (its box in 3D over the game's key art, Play, the preset it starts with, its screenshots, then its save,
 // playtime and build) and the Play options
-// panel that slides over it: presets, then the game's settings in the General, Graphics and Advanced groups of its own
-// settings window.
+// panel that slides over it: presets, then the game's settings in General, Graphics and Advanced groups (the game has no
+// settings window of its own).
 import AppKit
 import SwiftUI
 
@@ -246,12 +246,19 @@ struct GameHeroColumn: View {
             }
             AttentionRows(items: (model.attention[g.id] ?? []).filter { $0.kind != .update })   // the Build line says Older engine
                 .padding(.top, 18)
+            if let app = g.app, model.sessionCheck(app: app) != nil {
+                SessionCheckNote(model: model, app: app, onStage: true)
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(StageLook.card, in: .rect(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(StageLook.edge, lineWidth: 1))
+                    .padding(.top, 10)
+            }
         }
     }
 
     /// "Nintendo Switch · Inti Creates · 20 Mar 2019", or with no store facts, how it stands ("Not played yet")
     var facts: [String] {
-        var out = [game.console == .switch2 ? "Nintendo Switch 2" : "Nintendo Switch"]
+        var out = [game.console.fullName]
         let suspended = model.isSuspended(app: game.app ?? ""), playing = model.isPlaying(app: game.app ?? "")
         // a game not built yet says how it stands in the Build card below, not here
         if game.app == nil {}

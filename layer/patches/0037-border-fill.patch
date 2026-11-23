@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Sat, 21 Nov 2026 17:19:48 +0000
+Subject: border-fill: the picture blurred, or the game's art, around a picture
+ that does not fill the window (DM_PRESENT_BORDER)
+
+---
+ dm/gfx/nvn/nvn_mtl.m  | 3 +++
+ dm/host/front.h       | 6 ++++++
+ docs/env_switches.tsv | 1 +
+ docs/settings.md      | 1 +
+ 4 files changed, 11 insertions(+)
+
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index a20f076c949bb0279b82619a40d531fc4d7776fc..b8ffdbc3ba708c0881ba247c5163946b52d06b98 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -21107,6 +21107,7 @@ static int up_mfx_encode(NvShader *cs) {
+     return 1;
+ }
+ #include "nxforge/pixel_art.inc"   // NXForge: pixel art
++#include "nxforge/border_fill.inc"   // NXForge: the picture blurred, or the game's art, around a picture that does not fill the window
+ // The present pass: src's valid rectangle drawn into dst (the drawable, or a screenshot's texture) as present_encode draws it, through MetalFX first where fx_encode takes it
+ // (fx: the scaler state to use, nil = bilinear). uvb: the pass's crop constants (one buffer per present allocator, written by the CPU)
+ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4], id<MTLBuffer> uvb, fx_state *fx) {
+@@ -21144,6 +21145,7 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+              dst.pixelFormat == MTLPixelFormatRGBA16Float ? "EDR highlights follow it" : "the scaler cannot write it",
+              (unsigned long)dst.width, (unsigned long)dst.height, (unsigned long)dst.pixelFormat, (unsigned long)dst.usage, (unsigned long)up.width, (unsigned long)up.height); }
+     if (up) { tex = up; r[0] = r[1] = 0; r[2] = up.width; r[3] = up.height; fr[0] = fr[1] = 0; fr[2] = up.width; fr[3] = up.height; }   // the scaled picture, the viewport's size: drawn 1:1
++    double bf_aspect = 1; int bf = fx == &g_fx_present && !full && vp.height > 0 ? nxf_bf_prepare(cb, tex, fr, flipped, dst.pixelFormat, vp.width / vp.height, &bf_aspect) : 0;   // NXForge: border fill (border_fill.inc)
+     MTL4RenderPassDescriptor *rp = [MTL4RenderPassDescriptor new];
+     rp.colorAttachments[0].texture = dst;
+     rp.colorAttachments[0].loadAction = full ? MTLLoadActionDontCare : MTLLoadActionClear;
+@@ -21163,6 +21165,7 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+     if (flipped) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
+     pfx_params(uv + 8, &vp, cw, ch); nxf_edr_params(uv + 24, dst.pixelFormat);   // NXForge: EDR highlights (present_edr.inc)
+     at_addr(g_present_args, uvb.gpuAddress, 0, "present table slot", 1);
++    if (bf) nxf_bf_fill(en, dw, dh, bf_aspect, dst.pixelFormat);   // NXForge: the fill first, the picture over it
+     [en setViewport:vp]; [en setRenderPipelineState:pfx_pso()];
+     [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+     m4_end(en);
+diff --git a/dm/host/front.h b/dm/host/front.h
+index 26fe69d86292b23a0355dd1f2d829364382667e0..c4ab5ea28ed7503fca2794900f531f8a4c9b216e 100644
+--- a/dm/host/front.h
++++ b/dm/host/front.h
+@@ -76,6 +76,12 @@ void mtl_present_scanline_set(int rows);
+ enum { DM_PSCALE_FIT, DM_PSCALE_STRETCH, DM_PSCALE_INTEGER, DM_PSCALE_N };   // the saved choice is the number
+ int mtl_present_scale(void);
+ void mtl_present_scale_set(int mode);
++// NXForge: border fill (dm/gfx/nvn/nxforge/border_fill.inc): what the window shows around a picture that does not fill it. Off is black bars; Glow the picture itself, blurred
++// and dimmed; Art the image the front end names (the game's banner; NULL or unreadable: Glow). DM_PRESENT_BORDER=off|glow|art. Any thread
++enum { DM_PBORDER_OFF, DM_PBORDER_GLOW, DM_PBORDER_ART, DM_PBORDER_N };   // the saved choice is the number
++int mtl_present_border(void);
++void mtl_present_border_set(int mode);
++void mtl_present_border_art(const char *path);
+ // The time between the last presents (nvn_mtl.m, up to 254), oldest first, in ms; returns how many. age: ms since the newest (-1: none yet). The sidebar's frame-time graph. Any thread
+ int mtl_present_times(double *ms, int max, double *age);
+ // Frames put on screen so far (nvn_mtl.m, NVN and the Vulkan layer alike; frames the display link merged away are not counted): the front ends' frame-rate counters. Any thread
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 0b31d8d0fdf3e75a2f70c7901ab12a488f914a5b..50b20fb5f3f7ce5a557feafe8609b0b8a9210456 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -348,6 +348,7 @@ DM_PIXEL_GRID	player	`auto` (the default), `off` or `<width>x<height>` (`320x180
+ DM_PREEMPT	switch	`0` / `1` overrides the profile's `core_preempt`: also check already-runnable higher-priority peers on the caller's core after every thread SVC
+ DM_PRELOAD	diagnostic	Set: on the Mac, runs the host's early background loading (`dm_host_preload_start`) as the iOS app does, to exercise that path
+ DM_PRESENT_AA	player	`fxaa` or `off` (the default): FXAA over the game's finished picture before upscaling and the present filter, smoothing jagged edges (small HUD text softens a little); on the Mac the Quick settings sidebar picks it per game, and this wins and is not saved
++DM_PRESENT_BORDER	player	`off` (the default), `glow` or `art`: what the Mac window shows around a picture that does not fill it, in place of black bars: the picture itself blurred and dimmed, or the game's banner art (the glow when it has none). Fixes Quick settings › Graphics › Around the picture for the run (`dm/gfx/nvn/nxforge/border_fill.inc`)
+ DM_PRESENT_DEPTH	switch	`=<n>` (default 1): without the display link (`DM_PRESENT_LINK=0`), the acquire waits until at most n presents queued are not yet on screen or dropped, as the drawables' presented handlers report, so a frame cap the game holds no longer piles frames up in the present queue and the layer's drawables (not with present snapshots); `0` is the Switch's double buffering, which a Mac holds only below the screen's rate (about 40 fps at most at a 60 fps cap). Each 300 shown frames the log gives the time from the game's enqueue to the screen (`present: game enqueue to screen`) and these waits
+ DM_PRESENT_DRAIN	switch	`1` / `0`: whether frames standing in the display link's present queue are drained (the acquire waits them out once, after the game has kept up for 2 s; no frame is dropped), and whether a 30 fps target keeps the 60 Hz display link in a window, where the drain halves a frame's wait for its tick; default on on the Mac, off on iOS
+ DM_PRESENT_EDR	player	`on` or `off` (the default; Mac only): HDR highlights. The window presents in extended linear sRGB (RGBA16Float) and an inverse tone map lifts the brightest parts of the picture (above about 60 % linear) up to the screen's EDR headroom, capped at 4x SDR white; the rest of the picture is unchanged. Needs an HDR or XDR screen to show; on the Mac the settings window (Game › HDR highlights) and the Quick settings sidebar (Graphics › HDR highlights) switch it per game; set by env.txt or the launch environment, this wins and is not saved
+diff --git a/docs/settings.md b/docs/settings.md
+index 28fc049073caeba399fb8d46e0502f827c3ff0d4..b5871d4eac75d189c3e8b29d28e0190a4872588c 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -308,6 +308,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
+ | Cloud saves folder | General › Cloud saves | – | `DM_SAVE_SYNC` | `cloudSaves.folder` |
+ | Picture filter and its strength (Quick settings and the Graphics menu offer off and CRT; the environment also takes the engine's other filters) | – | Graphics › CRT filter, Strength | `DM_PRESENT_FILTER`, `DM_PRESENT_FILTER_STRENGTH` | `DMPresentFilter.mode.<game>`, `DMPresentFilter.strength.<game>` |
+ | Picture size (Fit, Stretch, Pixel-perfect) | – | Graphics › Picture size | `DM_PRESENT_SCALE` (`fit`, `stretch`, `integer`) | `DMQuickSettings.scale.<game>` |
++| Around the picture (Black, Glow, Game art): what fills the room where the window is wider or taller than the picture | – | Graphics › Around the picture | `DM_PRESENT_BORDER` (`off`, `glow`, `art`) | `DMQuickSettings.border.<game>` |
+ | Pixel art (Auto, Off, Sharp pixels, Smooth edges) | Graphics › Pixel art | Graphics › Pixel art | `DM_PIXEL_ART` (`auto`, `off`, `sharp`, `smooth`), `DM_PIXEL_GRID` | `DMQuickSettings.pixel.<game>`; the window's `launcher.DM_PIXEL_ART` follows it (below) |
+ | CRT line size | – | Graphics › Line size | `DM_PRESENT_SCANLINE` | `DMPresentFilter.scanline.<game>` |
+ | Anti-aliasing (FXAA) | Graphics › Resolution › Anti-aliasing | Graphics › Anti-aliasing | `DM_PRESENT_AA` | `DMQuickSettings.aa.<game>`; the window's `launcher.DM_PRESENT_AA` follows it (below) |

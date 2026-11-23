@@ -59,7 +59,7 @@ python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys
 
 The IPA appears in the game's folder. The first build takes 30–60 minutes and needs free disk space of about twice the game's size plus 10 GB; building again is much faster.
 
-To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game to open from Finder, with a settings window before the game (frame rate, render scale, docked or handheld, language, MetalFX upscaling, rumble) and its save in a `Saves` folder beside it. In the game, Esc opens Quick settings: pixel-art scaling, a CRT filter, anisotropic filtering, the frame-rate counter, volume, controls, mods, cheats, screenshots and recordings ([A Mac app](https://github.com/seedds/nxnative/blob/main/docs/development.md#a-mac-app)). All options: [The packing script in detail](https://github.com/seedds/nxnative/blob/main/docs/development.md#the-packing-script-in-detail).
+To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game that starts straight into the game, with its settings (frame rate, render scale, docked or handheld, language, MetalFX upscaling, rumble) in NXForge.app's Play options, and its save in a `Saves` folder beside it. In the game, Esc opens Quick settings: pixel-art scaling, a CRT filter, anisotropic filtering, the frame-rate counter, volume, controls, mods, cheats, screenshots and recordings ([A Mac app](https://github.com/seedds/nxnative/blob/main/docs/development.md#a-mac-app)). All options: [The packing script in detail](https://github.com/seedds/nxnative/blob/main/docs/development.md#the-packing-script-in-detail).
 
 ### Install
 
@@ -68,6 +68,10 @@ Install the IPA on your iPhone or iPad with a sideloading tool such as AltStore,
 Game too big to install? Build again with `--romfs separate`, and run the command the script prints once to copy the game files to your phone ([Quick reinstalls](https://github.com/seedds/nxnative/blob/main/docs/development.md#quick-reinstalls)).
 
 Controls, saves and settings: [Playing](https://github.com/seedds/nxnative/blob/main/docs/playing.md). Known issues are in each [game's note](https://github.com/seedds/nxnative/blob/main/dm/games/README.md#games); there are no amiibo and no online features.
+
+### Game Boy Advance games
+
+NXForge also converts Game Boy Advance games you own into Mac apps: point Settings › Library › Game Boy Advance folder at your `.gba` or `.zip` files, and Convert builds each one. The game's code is translated ahead of time by [gba-recomp](https://github.com/JRickey/gba-recomp) and plays in NXForge's own player with the same Quick settings sidebar, cartridge saves, instant save states and Enhanced audio. No BIOS is needed. [gba/README.md](gba/README.md) has the details.
 
 ### Switch 2 games
 
