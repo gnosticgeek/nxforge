@@ -29,7 +29,7 @@ index 2e8847afd5ebb00be47a82b66f6f14c917cce0cb..bba28d04a401f097cea3daa2e145c148
  DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone. macOS asks for access when you launch with this enabled.	level=basic
  DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 73dbe0f5cf4ec03ab0b95f7c408a82a182506bf1..1e4ab469ca3645d5ac6414a3a94b148caf09307f 100644
+index 9da65ea0283ab0e8875a02b673f920b7ca7c1b06..bf335918a21e180ef9ba62d4f61f474de1deaa1c 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -6,7 +6,7 @@

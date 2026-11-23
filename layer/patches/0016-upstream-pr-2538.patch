@@ -192,7 +192,7 @@ index 3f16f9c37ebe673ec1cd92900490c47341ef21ee..d1317167f675f19462785e9e9bb521b6
      int fstep_t120;            // the frame step stub takes its step in ticks of 1/120 s (the FRAME_STEP_120 capability: state +0x38 120, and 40 fps)
      int movie_native_color_keys; // the movie SDK's MediaData uses the native buffer's colour index directly (MOVIE_NATIVE_COLOR_KEYS)
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 36703bacfce069e3cd7b7a581b4956d2021ad864..39b3cbb88fdd0922ba5040464b4f90e7ea7326dd 100644
+index 3da88d677312189a8a5ea61eed1deebb676883f1..17818bc713da5f4aed222823e00fd51383c841dc 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -933,6 +933,17 @@ __attribute__((constructor)) static void prefs_from_old_id(void) {

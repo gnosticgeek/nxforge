@@ -242,7 +242,7 @@ index 8365fc70a8eccda9a5283e9ec3e6800091f37e55..26fe69d86292b23a0355dd1f2d829364
  // thread. front_web_open: dir = the folder the document path is relative to (an HtmlDocument's html-document), path = the document path with its query, callback = the URL prefix whose
  // loading ends the page (exit reason 3, the URL as the last URL), hidden = loaded without being shown until front_web_show. 0 = opened; -1 = no web view (no window): the caller's
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 9f0cc6d9112ca6b20bc0b8a5755da99af11a3f37..36703bacfce069e3cd7b7a581b4956d2021ad864 100644
+index 9f0cc6d9112ca6b20bc0b8a5755da99af11a3f37..3da88d677312189a8a5ea61eed1deebb676883f1 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -1,12 +1,13 @@
@@ -495,7 +495,7 @@ index 9f0cc6d9112ca6b20bc0b8a5755da99af11a3f37..36703bacfce069e3cd7b7a581b4956d2
      static id<NSObject> game_activity;
      if (!game_activity)
          game_activity = [NSProcessInfo.processInfo beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"game"];
-+    (void)activity;   // held for the process's life, never read
++    (void)game_activity;   // held for the process's life, never read
      if (!getenv("DM_WINDOW")) {
          kern_return_t kr;
          int role_status = front_windowless_role(getenv("DM_WINDOWLESS_ROLE"), &kr);

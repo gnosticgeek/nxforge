@@ -5,28 +5,34 @@ Subject: gfx-metal: Metal backend: present filters, AA, aniso floor, watchdog,
  pool bounds, PSO archive
 
 ---
- dm/gfx/README.md                  |   3 +-
- dm/gfx/msl/present.metal          | 103 +++-
- dm/gfx/nvn/hle_nvn.c              |  56 +-
- dm/gfx/nvn/nvn_dirty.c            |   8 +-
- dm/gfx/nvn/nvn_geometry.inc       |   1 +
- dm/gfx/nvn/nvn_mtl.h              |   1 +
- dm/gfx/nvn/nvn_mtl.m              | 993 +++++++++++++++++++++++++++---
- dm/gfx/nvn/nvn_owner.h            |   2 +
- dm/gfx/nvn/nvn_owner.m            |   2 +
- dm/gfx/tests/Makefile             |  37 +-
- dm/gfx/tests/t_compute_loops.m    |  10 +-
- dm/gfx/tests/t_cpu_tex.m          |  34 +-
- dm/gfx/tests/t_dispatch_barrier.m |  10 +-
- dm/gfx/tests/t_dispatch_own.m     |   2 +-
- dm/gfx/tests/t_dlss_mfx.m         |   2 +-
- dm/gfx/tests/t_present_crop.m     | 118 ++++
- dm/gfx/tests/t_present_rescue.m   |  30 +-
- dm/gfx/tests/t_sbw.m              |  10 +
- dm/gfx/tests/t_tg_spill.m         |   2 +-
- dm/gfx/tests/t_upscaler_mfx.m     |   2 +-
- dm/gfx/tests/t_view_swizzle.m     |   2 +-
- 21 files changed, 1296 insertions(+), 132 deletions(-)
+ dm/gfx/README.md                   |   3 +-
+ dm/gfx/msl/present.metal           | 103 ++-
+ dm/gfx/nvn/hle_nvn.c               |  56 +-
+ dm/gfx/nvn/nvn_dirty.c             |   8 +-
+ dm/gfx/nvn/nvn_geometry.inc        |   1 +
+ dm/gfx/nvn/nvn_mtl.h               |   1 +
+ dm/gfx/nvn/nvn_mtl.m               | 993 ++++++++++++++++++++++++++---
+ dm/gfx/nvn/nvn_owner.h             |   2 +
+ dm/gfx/nvn/nvn_owner.m             |   2 +
+ dm/gfx/tests/Makefile              |  37 +-
+ dm/gfx/tests/t_compute_loops.m     |  10 +-
+ dm/gfx/tests/t_cpu_tex.m           |  34 +-
+ dm/gfx/tests/t_dispatch_barrier.m  |  10 +-
+ dm/gfx/tests/t_dispatch_own.m      |   2 +-
+ dm/gfx/tests/t_dispatch_pipeline.m |  12 +-
+ dm/gfx/tests/t_dispatch_zero.m     |   2 +-
+ dm/gfx/tests/t_dlss_mfx.m          |   2 +-
+ dm/gfx/tests/t_present_crop.m      | 118 ++++
+ dm/gfx/tests/t_present_rescue.m    |  30 +-
+ dm/gfx/tests/t_pso_depth_stencil.m |   2 +-
+ dm/gfx/tests/t_pso_msaa.m          |   2 +-
+ dm/gfx/tests/t_pso_pending.m       |   2 +-
+ dm/gfx/tests/t_pso_warm.m          |   2 +-
+ dm/gfx/tests/t_sbw.m               |  10 +
+ dm/gfx/tests/t_tg_spill.m          |   2 +-
+ dm/gfx/tests/t_upscaler_mfx.m      |   2 +-
+ dm/gfx/tests/t_view_swizzle.m      |   2 +-
+ 27 files changed, 1307 insertions(+), 143 deletions(-)
 
 diff --git a/dm/gfx/README.md b/dm/gfx/README.md
 index 184057a1c38bdf625378a8206b15b83689dff097..23f1345705a9016228ef101ffb575360fe30092a 100644
@@ -2393,6 +2399,64 @@ index 06859fb72784ad54def91d12e6f46e00a992e4a8..0d048f28893d69ae9007eb7d1e500e02
              uint64_t fence = mtl_sub_commit(); CHECK(mtl_wait(fence, 2000000000ull), "dispatch completes"); mtl_drain();
              CHECK(!mtl_last_commit_error(), "no GPU error");
              const uint32_t *out = mem; int pixels = 1, dimensions = 1;
+diff --git a/dm/gfx/tests/t_dispatch_pipeline.m b/dm/gfx/tests/t_dispatch_pipeline.m
+index 7f20247ef360f5df0b04a95af5b77040553662e5..b76de1c3af9596d1837847272cde9542911e9c85 100644
+--- a/dm/gfx/tests/t_dispatch_pipeline.m
++++ b/dm/gfx/tests/t_dispatch_pipeline.m
+@@ -58,10 +58,10 @@ int main(void) { @autoreleasepool {
+     program->sh[5] = retry;
+     compile_error = @"Compilation failed: XPC_ERROR_CONNECTION_INTERRUPTED";
+     IMP original = method_setImplementation(method, (IMP)fail_compute_pipeline);
+-    dispatch(&one);
++    dispatch(&one, NULL);
+     method_setImplementation(method, original);
+     CHECK(compile_attempts == 1 && !retry->cps_failed, "a compiler-service interruption leaves the shader retryable");
+-    dispatch(&one);
++    dispatch(&one, NULL);
+     uint64_t fence = mtl_sub_commit();
+     CHECK(mtl_wait(fence, 5000000000ull), "retry submission completes");
+     mtl_drain();
+@@ -75,8 +75,8 @@ int main(void) { @autoreleasepool {
+     compile_attempts = 0;
+     compile_error = @"Compute pipeline refused";
+     original = method_setImplementation(method, (IMP)fail_compute_pipeline);
+-    dispatch(&one);
+-    dispatch(&one);
++    dispatch(&one, NULL);
++    dispatch(&one, NULL);
+     method_setImplementation(method, original);
+     CHECK(compile_attempts == 1 && refused->cps_failed, "a permanent refusal is cached");
+ 
+@@ -91,14 +91,14 @@ int main(void) { @autoreleasepool {
+     compile_attempts = 0;
+     compile_error = @"Compilation failed: XPC_ERROR_CONNECTION_INTERRUPTED";
+     original = method_setImplementation(method, (IMP)fail_compute_pipeline);
+-    dispatch(&one);
++    dispatch(&one, NULL);
+     method_setImplementation(method, original);
+     CHECK(compile_attempts == 0 && g_nd.pos == 5, "NDVE consumes the layer without asking Metal for its fallback pipeline");
+ 
+     program->sh[5] = shader(function, k_ndve_keys[5]);
+     S.ssbo[5][2].addr = g_nd.w0 + g_ndve_w[5];
+     S.ssbo[5][3].addr = g_nd.w0 + g_ndve_b[5];
+-    dispatch(&one);
++    dispatch(&one, NULL);
+     CHECK(g_nd.pos == 6 && !g_nd.off, "the following layer continues the network in order");
+     fence = mtl_sub_commit();
+     CHECK(mtl_wait(fence, 5000000000ull), "NDVE test submission completes");
+diff --git a/dm/gfx/tests/t_dispatch_zero.m b/dm/gfx/tests/t_dispatch_zero.m
+index 79fa044f5ca9dc538807190d34914179deb26454..2664b004931068b52aa2aa128e635c4513c54e7e 100644
+--- a/dm/gfx/tests/t_dispatch_zero.m
++++ b/dm/gfx/tests/t_dispatch_zero.m
+@@ -13,7 +13,7 @@ int main(void) { @autoreleasepool {
+     const uint32_t dims[][3] = {{0, 8, 1}, {8, 0, 1}, {8, 8, 0}, {0, 0, 1}};
+     for (unsigned i = 0; i < sizeof dims / sizeof *dims; i++) {
+         p_dispatch d = {0}; d.x = dims[i][0]; d.y = dims[i][1]; d.z = dims[i][2];
+-        dispatch(&d);
++        dispatch(&d, NULL);
+         if (g_wr_epoch != writes || g_mdx_epoch != indices || g_cb || g_enc || g_blit) {
+             fprintf(stderr, "FAIL: empty grid changed replay state\n"); return 1;
+         }
 diff --git a/dm/gfx/tests/t_dlss_mfx.m b/dm/gfx/tests/t_dlss_mfx.m
 index 7e778c3f94d9f49237e3c64a870a2a38d556d70c..72a8e7739c7550e5db89d4e23e33192dcd6d4b07 100644
 --- a/dm/gfx/tests/t_dlss_mfx.m
@@ -2610,6 +2674,58 @@ index 47b5a18b45dce8e4d491d218af006074c86b8d49..a23c0df3e5e44409fa376eabe01f6a59
  }
  static void forty(void) {   // 40 fps automatically selects the 120 Hz link (3 ticks = 25 ms) and asks front_screen_match(120); movie/thermal drops to 30/60 and back return to 120 Hz
      reset(); test_fullscreen = 0; test_variable_refresh = 0; test_screen_hz = 120; test_game_fps = 40; g_present_link_env = 0; g_link_drain_on = 0;
+diff --git a/dm/gfx/tests/t_pso_depth_stencil.m b/dm/gfx/tests/t_pso_depth_stencil.m
+index f2835c2bb79d4b50ee5dbecd9fc7454cdc95c6ed..fe9ff977fd3cd8d47a209788e35030151deb9f3c 100644
+--- a/dm/gfx/tests/t_pso_depth_stencil.m
++++ b/dm/gfx/tests/t_pso_depth_stencil.m
+@@ -106,7 +106,7 @@ static void draws(NvProg *p) {
+         CHECK(e != nil, "production pass opens");
+         CHECK(g_pass.dfmt == cases[i].df && g_pass.sfmt == cases[i].sf, "physical formats match literal expected pipeline formats");
+         uint64_t before = g_pb_legacy + g_pb_spec;
+-        id<MTLRenderPipelineState> ps = pso_get_(p, nil); seen[i] = ps;
++        id<MTLRenderPipelineState> ps = (__bridge id<MTLRenderPipelineState>)pso_get_(p, nil); seen[i] = ps;
+         CHECK(ps != nil, "production pipeline lookup succeeds");
+         for (unsigned j = 0; j < i; j++) if (cases[i].color == cases[j].color && cases[i].df == cases[j].df && cases[i].sf == cases[j].sf) {
+             CHECK(ps == seen[j], "returning to an effective format pair reuses its pipeline");
+diff --git a/dm/gfx/tests/t_pso_msaa.m b/dm/gfx/tests/t_pso_msaa.m
+index 5e95e68c579b48b21841632738ebd8f4a57932d9..3225cb5aa572f435a463acd483a89c6015a9d90d 100644
+--- a/dm/gfx/tests/t_pso_msaa.m
++++ b/dm/gfx/tests/t_pso_msaa.m
+@@ -44,7 +44,7 @@ static void pass(NvProg *p, int samples, int color, int a2c, const char *what) {
+     CHECK(e != nil, what);
+     CHECK(g_pass.samples == (uint32_t)samples, "the pass takes its attachments' sample count");
+     uint64_t spec = g_pb_spec;
+-    id<MTLRenderPipelineState> ps = pso_get_(p, nil);
++    id<MTLRenderPipelineState> ps = (__bridge id<MTLRenderPipelineState>)pso_get_(p, nil);
+     CHECK(ps != nil, "the pipeline builds");
+     if (g_comp4) CHECK(g_pb_spec == spec + 1, "the pipeline is specialized from a Metal 4 base (the path under test)");
+     uint32_t n = pso_samples(ps);
+diff --git a/dm/gfx/tests/t_pso_pending.m b/dm/gfx/tests/t_pso_pending.m
+index e64dca48394c44395c140bee966701daedf22757..23afca6a4c0a92c6f010dada8db3e15b21b2fe8c 100644
+--- a/dm/gfx/tests/t_pso_pending.m
++++ b/dm/gfx/tests/t_pso_pending.m
+@@ -470,7 +470,7 @@ static void test_nil_prediction_falls_back_then_predicts(void) {
+     [dev expectAbsentPendingKey:&predicted_key onSubmitterCall:2];
+     g_exec_next = stream; g_sub_serial = 1; g_pp_submit_mark = 0;
+ 
+-    id<MTLRenderPipelineState> got = pso_get_(demand, nil);
++    id<MTLRenderPipelineState> got = (__bridge id<MTLRenderPipelineState>)pso_get_(demand, nil);
+     EXPECT_TRUE("demand compile synchronously falls back after speculative nil", got != nil && (__bridge void *)got == (__bridge void *)[dev resultForCall:2]);
+     EXPECT_TRUE("repeated demanded draw is not queued as duplicate speculation", queue_index(&demand_key) < 0);
+     EXPECT_TRUE("demand compiler call ran on submitter thread", [dev callWasOnSubmitter:2]);
+diff --git a/dm/gfx/tests/t_pso_warm.m b/dm/gfx/tests/t_pso_warm.m
+index 216af48ffde9196872e2d1ab9c22319ecfe7d6e6..9b270e7b9d3b598c849f83277bee55623f22e58a 100644
+--- a/dm/gfx/tests/t_pso_warm.m
++++ b/dm/gfx/tests/t_pso_warm.m
+@@ -119,7 +119,7 @@ static void check_draw(const pso_key *raw, int merged, const uint8_t expected[4]
+     EXPECT("live key finds warmed pipeline", 1, hm_get_id(&g_pso, &live) != nil);
+     uint64_t before = g_pb_spec + g_pb_legacy;
+     NvProg *program = [NvProg new]; program->sh[0] = vs; program->sh[1] = fs;
+-    id<MTLRenderPipelineState> warmed = pso_get_(program, nil);
++    id<MTLRenderPipelineState> warmed = (__bridge id<MTLRenderPipelineState>)pso_get_(program, nil);
+     EXPECT("draw lookup adds no pipeline build", before, g_pb_spec + g_pb_legacy);
+     EXPECT("draw lookup returns a pipeline", 1, warmed != nil);
+     if (!warmed) { g_pso_lmap = NULL; return; }
 diff --git a/dm/gfx/tests/t_sbw.m b/dm/gfx/tests/t_sbw.m
 index f0a5949f1c647cfab7a0e47ea7613d182d31c4c3..f7741f37b6847a392f7a66ca91ad1886df73fd8f 100644
 --- a/dm/gfx/tests/t_sbw.m
