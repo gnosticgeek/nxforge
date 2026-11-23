@@ -90,7 +90,13 @@ enum MuseumLayout {
 
     /// a shelf's height for `count` shelves on a screen `height` tall
     static func rowHeight(count: Int, height: Double) -> Double {
-        (height - top - foot) / Double(max(count, 1))
+        min((height - top - foot) / Double(max(count, 1)), 380)
+    }
+
+    /// where the cabinet's first shelf starts: under the plate, or lower down when one or two shelves do not fill the room
+    static func cabinetTop(count: Int, height: Double) -> Double {
+        let room = height - top - foot
+        return top + max(room - rowHeight(count: count, height: height) * Double(max(count, 1)), 0) / 2
     }
 
     /// a case's height on a shelf `row` tall (a lone shelf does not fill the screen with one huge row of cases)
@@ -194,19 +200,20 @@ struct MuseumTheme: View {
             let W = geo.size.width / u, H = geo.size.height / u
             let shelves = MuseumLayout.shelves(games)
             let rowH = MuseumLayout.rowHeight(count: shelves.count, height: H)
+            let top = MuseumLayout.cabinetTop(count: shelves.count, height: H)
             ZStack(alignment: .topLeading) {
                 MuseumRoom(light: light)
                 TimelineView(.animation(minimumInterval: 1 / 30, paused: frozen)) { ctx in
                     let since = frozen ? 99 : ctx.date.timeIntervalSince(opened)
                     ZStack(alignment: .topLeading) {
-                        MuseumCabinet(light: light, rows: shelves.count, rowH: rowH, width: W)
+                        MuseumCabinet(light: light, rows: shelves.count, rowH: rowH, width: W, top: top)
                         ForEach(Array(shelves.enumerated()), id: \.element.console) { i, shelf in
                             // each shelf's lamp warms up in turn: a third of a second apart
                             let on = min(max((since - 0.25 - 0.35 * Double(i)) / 0.5, 0), 1)
                             MuseumShelf(model: model, console: shelf.console, games: shelf.games, focus: focus, light: light,
-                                        lit: CaseSceneState.ease(on), width: W, rowH: rowH, last: i == shelves.count - 1 && shelves.count > 1)
+                                        lit: CaseSceneState.ease(on), width: W, rowH: rowH, last: i == shelves.count - 1)
                                 .frame(width: W * u, height: rowH * u, alignment: .topLeading)
-                                .offset(y: (MuseumLayout.top + Double(i) * rowH) * u)
+                                .offset(y: (top + Double(i) * rowH) * u)
                                 .zIndex(shelf.games.contains { $0.id == focus?.id } ? 1 : 0)
                         }
                     }
@@ -282,6 +289,7 @@ struct MuseumCabinet: View {
     let rows: Int
     let rowH: Double
     let width: Double
+    var top = MuseumLayout.top
     @Environment(\.tu) private var u
 
     var body: some View {
@@ -290,18 +298,18 @@ struct MuseumCabinet: View {
         ZStack(alignment: .topLeading) {
             // the frame round it all, and the back panel inside
             RoundedRectangle(cornerRadius: 6 * u).fill(.black.opacity(0.5)).blur(radius: 18 * u)
-                .frame(width: (w + 16) * u, height: (h + 30) * u).offset(x: (x0 - 8) * u, y: (MuseumLayout.top - 4) * u)
+                .frame(width: (w + 16) * u, height: (h + 30) * u).offset(x: (x0 - 8) * u, y: (top - 4) * u)
             Walnut(bright: 0.8 * light.wood, vertical: true)
-                .frame(width: w * u, height: (h + 14) * u).offset(x: x0 * u, y: (MuseumLayout.top - 14) * u)
+                .frame(width: w * u, height: (h + 14) * u).offset(x: x0 * u, y: (top - 14) * u)
             ForEach(0..<max(rows, 1), id: \.self) { i in
-                let y = MuseumLayout.top + Double(i) * rowH
+                let y = top + Double(i) * rowH
                 // the back of the shelf: darker toward its top, where the board above shades it
                 LinearGradient(colors: [Color(red: 0.07, green: 0.04, blue: 0.025).opacity(0.95), Color(red: 0.16, green: 0.09, blue: 0.05).opacity(0.75 * light.wood)], startPoint: .top, endPoint: .bottom)
                     .frame(width: (w - 52) * u, height: (rowH - MuseumLayout.board - 10) * u)
                     .offset(x: (x0 + 26) * u, y: (y + 10) * u)
                 board(y: y + rowH - MuseumLayout.board, x: x0 - 8, w: w + 16)
             }
-            board(y: MuseumLayout.top - 22, x: x0 - 8, w: w + 16)
+            board(y: top - 22, x: x0 - 8, w: w + 16)
         }
         .allowsHitTesting(false)
     }

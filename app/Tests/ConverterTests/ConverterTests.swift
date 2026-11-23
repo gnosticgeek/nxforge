@@ -2823,6 +2823,10 @@ import Testing
         // seven Switch cases fit a 16:9 screen's shelf, as in the mock-up
         let h = MuseumLayout.caseHeight(row: MuseumLayout.rowHeight(count: 3, height: 1080))
         #expect(MuseumLayout.visible(width: 1920 - 2 * MuseumLayout.side, caseWidth: h * MuseumLayout.caseRatio) >= 7)
+        // one shelf does not fill the room: it stands in the middle at a shelf's height
+        #expect(MuseumLayout.rowHeight(count: 1, height: 1080) == 380)
+        #expect(MuseumLayout.cabinetTop(count: 1, height: 1080) > MuseumLayout.top)
+        #expect(MuseumLayout.cabinetTop(count: 3, height: 1080) == MuseumLayout.top)
     }
 
     @Test func thePlaqueAndTheCard() {
