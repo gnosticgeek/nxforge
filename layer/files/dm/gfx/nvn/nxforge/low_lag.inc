@@ -21,7 +21,7 @@ void mtl_low_lag_tick(uint64_t start_ns, int k) {
         int was = g_ll.direct, wait = g_ll.wait_next, now = nxf_low_lag_next(&g_ll, (start_ns - prev) / v, gpu, cpu > cpu_prev ? (cpu - cpu_prev) / v : 0, k);
         if (now != was) {
             atomic_store(&g_ll_direct, now);
-            atomic_store(&g_settle, 1);   // the frames around the switch are not what the scene costs (nvn_fstep.h settle)
+            dm_fstep_settle();   // the frames around the switch are not what the scene costs (nvn_fstep.h settle)
             if (now) MLOG("low lag: direct presents (%d frames on time with GPU and CPU under %.2f of a vsync; frame %llu, time %llu)", NXF_LL_RUN, NXF_LL_ENTER, (unsigned long long)f, (unsigned long long)g_ll.ins);
             else MLOG("low lag: back to the display link (%d late frames within %d; frame %llu, after %d direct frames; next try in %d frames)", NXF_LL_BAD, NXF_LL_WIN, (unsigned long long)f, g_ll.calm, wait ? wait : NXF_LL_WAIT0);
         }

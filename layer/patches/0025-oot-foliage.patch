@@ -1,0 +1,185 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: oot-foliage: Ocarina of Time's grass and ground cover can be switched
+ off at its source (DM_FOLIAGE=off, a Grass and ground cover row; on by
+ default)
+
+From brad-n/TVPort 8609a1cb by Brad Norman (MIT), on upstream's frame step rule: state page +0x300 (TVPort's +0xb0 is upstream's wide-screen state here).
+---
+ dm/games/0400486024DEC000/README.md  |  4 +++
+ dm/games/0400486024DEC000/patches.py | 52 +++++++++++++++++++++++++++-
+ dm/games/settings.tsv                |  1 +
+ dm/host/loader.c                     |  6 ++++
+ docs/agents/game-patches.md          |  1 +
+ docs/env_switches.tsv                |  1 +
+ docs/settings.md                     |  4 +++
+ 7 files changed, 68 insertions(+), 1 deletion(-)
+
+diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
+index fce377fe7d0a8d970545c219aae0a783ef38e4ce..2936baca6a87974dc5b8b7da0aa90a4490941ec6 100644
+--- a/dm/games/0400486024DEC000/README.md
++++ b/dm/games/0400486024DEC000/README.md
+@@ -162,6 +162,10 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
+ - Against [PR 1460](https://github.com/seedds/nxnative/pull/1460), which widens the same three sizes at build time (an environment switch of the NSP script's run) together with the output width as a float (`main+0xecbc80`) and the output resolution table (`main+0x3f58540`, its 2560x1440 entry), and no camera: with those two also at 3440 on top of the stubs the pause menu's stretch and the play HUD did not change, so they are not among the stubs; with them and the three camera sites back at the original load, play in Goron City showed the 16:9 view stretched over the wide picture (Link, his shield and the Goron visibly wider), so the cameras are needed there (2026-11-12, words replaced in the rewritten main, one run each).
+ - Stays 16:9 inside the wide picture: three targets made over and over in play, 2560x1440 (format 0x38), 1920x1080 (0x1) and 960x540 (0xd), created from `main+0x3b6345c`; not identified (the picture shows no 16:9 part). Open: handheld mode (`DM_OPMODE=0`) does not follow: the game crops its picture to 1920x1080 in the wide swap chain while the cameras take the wide ratio (a squeezed 16:9 picture in a corner), since its handheld size comes from somewhere the stubs do not reach (not the framework constructor's 1920x1080 at +0xb70, which the stub widens to no effect), so the loader keeps 16:9 in handheld mode. Not checked: cutscenes and movies (a movie is a 16:9 picture), the Deku Tree, a 32:9 screen, the frame rate against 16:9 on a bench route.
+ 
++## Grass and ground cover
++
++`DM_FOLIAGE=off` (the Mac settings' Grass and ground cover row, on by default) turns the game's foliage module off at its source: grass, ferns, clover, the ivy on walls and the moss fuzz on logs. The stub in [`patches.py`](patches.py) (`foliage`, placed by the fingerprint of the module's per-frame calc, `main+0x2c00a40` on v131072) sets the module's own grass and forest disables (+0x141 / +0x142, which its timelines use) and the four per-type hide bits of its debug word (+0x2b1) every frame while state page +0x300 is 1, so the game's own checks skip the foliage draws, the per-type calc and the FoliageShader compute. Cuttable grass and bushes are actors drawn as models and stay. Brad Norman measured it on TVPort (brad-n/TVPort 8609a1cb, MIT) on a Mac mini M2 Pro: the foliage encoders came to about 3.5 ms of GPU a frame (balcony, Link's house) and 0.02 ms with the option, and graphics memory fell about 85 MB (Link's house 1346 → 1256 MB). The state offset differs from TVPort's (+0xb0 there), because upstream's wide-screen stubs use +0xa0 / +0xa4.
++
+ ## Memory
+ 
+ - Loading the same v131072 save into Kokiri Forest outside Link's house peaked at 9.777 GiB of macOS physical footprint on `f76fe0c1` and 9.793 GiB on `de348580` (+16 MiB, +0.16%). Both runs on the 48 GB M4 Pro MacBook Pro (macOS 27.2.1) used the warmed system Metal cache, the same route shader image with conservative uniform-buffer defaults, and frames 2000–3100. Pipeline archives, prewarm and shader prefetch were off. Other shader compiles were active on the Mac in both runs. A second fixed-build run peaked at 9.863 GiB. The matched difference is smaller than that run-to-run spread, so the change in peak footprint is inconclusive for this load. [PR #2714](https://github.com/seedds/nxnative/pull/2714)
+diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
+index a267a6b76d6b6bfbf2400fb6ec2f2b5766461aea..3684e864f83dfddbdb467ad8b9d299d959ba6002 100644
+--- a/dm/games/0400486024DEC000/patches.py
++++ b/dm/games/0400486024DEC000/patches.py
+@@ -3,6 +3,12 @@
+ import struct
+ from nso_asm import ADRP, B, BL
+ 
++
++def cbz_w(frm, to, rt):   # cbz wt, to
++    off = to - frm
++    assert -(1 << 20) <= off < (1 << 20) and off % 4 == 0
++    return 0x34000000 | (((off >> 2) & 0x7FFFF) << 5) | rt
++
+ # The game's frame ratio. Once a frame the function at main+0x6e6be0 (v131072) divides its base rate (60.0, or 30.0 while bit 0 of [x21+0x24f] is set) by the int frame rate at
+ # [x21+0x2c8] (fdiv s8,s1,s0 at +0xe4) and hands the result to the time object (main+0x3b4e300: ratio at +0x10, 1 / ratio at +0x14, round(60 / ratio) at +0x1c), which the game
+ # steps by; the frame's own time never enters it, so a frame that takes two vsyncs at rate 60 plays at half speed. The stub gives the ratio the host's step instead: step × base / unit,
+@@ -44,6 +50,46 @@ def frame_step(ctx):
+     screen_shape(ctx)
+     heap_retry(ctx)
+     screen_wide(ctx)
++    foliage(ctx)
++
++# Foliage off (state +0x300, u32 written by the loader: DM_FOLIAGE=off, 1; 0 = the game's): a quality trade for slower GPUs. Grass, ferns, clover, the moss fur on logs and the
++# other ground cover are game::foliage, one module (its singleton at main+0x4e22540 on v131072; Pack/Foliage.pack, a 248 MB "Foliage Scene Heap") with a class per model type
++# (Turf, Turf1, Moss, Frost, Forest, Stone, Leaf, Flower, impostors ...), whose slot 8 says whether that type is on: the module's per-frame calc, the render list, the draws and
++# the GPU calc node (main+0x2710a0, the FoliageShader compute) all ask it. The grass is drawn by the turf draw lists (main+0x2c022a0 / main+0x2c02820: task 99280b7b, mesh
++# eb021183, fragment 087ef21b) and per-draw callbacks of the generic model renderer. The game turns parts of it off itself: timeline commands set the module's bytes +0x141
++# (grass: the draw lists and the callbacks return before drawing) and +0x142 (the forest), and its debug word +0x2b0 has a hide bit per type in +0x2b1 (bit 0 Turf / Turf1,
++# 1 Moss / Frost, 2 Stone, 3 Forest; 0 in play, read and never written). The stub, at the entry of the module's per-frame calc (main+0x2c00a40, slot 6 of its vtable: x0 is the
++# module; x9..x11, x16 and x17 are free at a function's entry), sets both bytes and the four hide bits every frame while the option is on, so the game's own checks skip the
++# foliage draws, the per-type calc and the foliage compute (FoliageShader f85fe649 and its siblings) from then on, whatever its timelines set. 2 (diagnostics only; the loader
++# never writes it) clears them again, for an A/B inside one run. Nothing else reads the foliage outputs: the fluid simulation the grass samples runs on, and grass cutting is
++# its own module (main+0x563d90)
++def foliage(ctx):
++    base = ctx.others.get('foliage calc')
++    if base is None: return   # not found in this build: the game's foliage
++    here, emit = ctx.here, ctx.emit
++    ctx.site(base, '083040b9')   # ldr w8,[x0,#0x30]
++    start = here()
++    emit(0xb9403008)   # ldr w8,[x0,#0x30]      the original: the module's flags
++    emit(ADRP(16, here(), ctx.state))
++    emit(0xb9430211)   # ldr w17,[x16,#0x300]   1 = off
++    back = here() + 4 * 11
++    emit(cbz_w(here(), back, 17))   # 0: the game's own
++    for w in (0x7100063f,   # cmp w17,#1
++              0x1a9f17e9,   # cset w9,eq           1 = off, 2 = on again (diagnostics)
++              0x39050409,   # strb w9,[x0,#0x141]  grass off (the game's own)
++              0x39050809,   # strb w9,[x0,#0x142]  forest off (the game's own)
++              0xb942b00a,   # ldr w10,[x0,#0x2b0]
++              0x12146d4a,   # and w10,w10,#0xfffff0ff
++              0x4b0903eb,   # neg w11,w9
++              0x12180d6b,   # and w11,w11,#0xf00   the hide bits of Turf / Turf1, Moss / Frost, Stone, Forest
++              0x2a0b014a,   # orr w10,w10,w11
++              0xb902b00a):  # str w10,[x0,#0x2b0]
++        emit(w)
++    assert here() == back
++    emit(B(here(), base + 4))
++    ctx.put(base, [B(base, start)], 'foliage off: the module\'s grass / forest disables and type hide bits set each frame (state +0x300, DM_FOLIAGE=off; 0 = the game\'s)')
++    ctx.capabilities.add('FOLIAGE')
++
+ 
+ # The game's dynamic resolution (game__gfx__DynamicResolutionParam: LoadThreshold, ReduceCounterMax, IncreaseCounterMax and a list of levels, each a ResolutionReduceScale and a
+ # Priority; on v131072 levels 0..9 at 0.75..0.333 of 2048x1152, 1536x864 to 683x384). Its update (main+0x805aa0) reads the frame's GPU load (about 0.2 ms a unit) into +0x8, subtracts
+@@ -529,7 +575,8 @@ MATCH_FRAME_STEP = {'main': [
+                 'wide: camera update A': {'size': 0x1700, 'fingerprints': ['efc2b7111d6387f88960348730d936b4bec9e6d08a19f67bd33e75d752f61df8']},   # main+0x4c48c0
+                 'wide: camera update B': {'size': 0xa40, 'fingerprints': ['876b8ff1dc66ff0cb867028d9043fc71adbfac31acc093d040644550e37ac770']},   # main+0x2e1b960
+                 'wide: camera update C': {'size': 0x638, 'fingerprints': ['755b131403f6a7d8bb991716f403bb482bbcee61ec0dbf2f04421cc74a749166']},   # main+0x2e1c3a0
+-                **screen_shape_functions}},
++                **screen_shape_functions,
++                'foliage calc': {'size': 0x6f8, 'fingerprints': ['34cac4f1d8c1a00d12efcb767c1213da3d6c5d692cb61254da2cb1b926d49891']}}},   # main+0x2c00a40
+ ]}
+ 
+ # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
+@@ -597,6 +644,9 @@ BINDING = [
+     {'what': 'wide screen: the swap chain and frame buffer sizes and the scene cameras\' aspect (DM_SCREEN_WIDE)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
+      'why': "the game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)",
+      'checked': 'v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen\'s edges and the scene at 16:9\'s proportions with more at the sides (2026-11-12)'},
++    {'what': 'foliage off: the foliage module\'s grass / forest disables and type hide bits set each frame (DM_FOLIAGE)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
++     'why': "the foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default",
++     'checked': 'v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags\' readers (turf draw lists, per-draw callbacks, the type classes\' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10)'},
+ ]
+ 
+ # A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index f7580c4b93ef2df31f8d3a5aac0c2fb6d9371850..21627c27eeec4dec564d59d5426b441c89123ec2 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -43,6 +43,7 @@ DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
+ DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.6=MacBook (16:10)?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	fixups:SCREEN_ASPECT	Game	Picture shape	Taller shapes render more pixels and can increase GPU time and heat.
+ DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
+ DM_SCREEN_WIDE	choice	0=16:9 (Switch),16x10=16:10?platform:mac,auto=Auto (match the screen)?platform:mac	0|auto	fixups:SCREEN_WIDE	Game	Aspect ratio	Fills a 16:10 or ultrawide screen instead of showing bars: Auto matches the screen the game opens on. 16:10 shows a little less at the sides, wider screens more.
++DM_FOLIAGE	toggle	on/off	1	fixups:FOLIAGE	Game	Grass and ground cover	Turn off on a slower GPU: grass, ferns, clover and moss are not drawn (about 3.5 ms of GPU a frame in Ocarina of Time). Cut grass and bushes stay.
+ DM_PRESENT_SNAP	toggle	-	DM_GAME_PRESENT_SNAP	gfxapi:nvn	Performance	Frame buffering	Up to one frame more display latency.
+ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
+ DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
+diff --git a/dm/host/loader.c b/dm/host/loader.c
+index 66a515dd3b6da10ad73be2b44f4ae98699884290..af4fc946e561167240e9d17276e437413ee23bef 100644
+--- a/dm/host/loader.c
++++ b/dm/host/loader.c
+@@ -443,6 +443,12 @@ void dm_fps_state_apply(void) {
+     memcpy(dm_fps_state + 0x40, &dyn, sizeof dyn);
+     // A full model heap (Ocarina of Time's patches.py heap_retry): DM_HEAP_RETRY=0 writes 1 at +0x17c, and the game's allocations that found their heap full stay as shipped
+     { const char *hr = getenv("DM_HEAP_RETRY"); if (hr && !strcmp(hr, "0")) { uint32_t off = 1; memcpy(dm_fps_state + 0x17c, &off, 4); LOG("%s: full model heap retry off (DM_HEAP_RETRY=0)", g_fps_mod); } }
++    // Foliage (Ocarina of Time's patches.py foliage, from TVPort 8609a1cb), u32 at +0x300: DM_FOLIAGE=off makes the game's foliage module skip its grass and ground cover (its own
++    // grass / forest disables and type hide bits, set each frame: no foliage draws, calc or compute); on or unset keeps it. 2 (never written here) is the stub's way back on, for diagnostics
++    { const char *fo = getenv("DM_FOLIAGE"); uint32_t foff = fo && !strcmp(fo, "off");
++      if (fo && *fo && strcmp(fo, "on") && strcmp(fo, "off")) LOG("[RED] DM_FOLIAGE=%s: on or off; keeping the foliage", fo);
++      if (foff) LOG("%s: foliage off (DM_FOLIAGE; builds with the stub)", g_fps_mod);
++      memcpy(dm_fps_state + 0x300, &foff, sizeof foff); }
+     // Screen shape: DM_SCREEN_ASPECT, the screen's width / height between 1.3 and 1.77, makes the builds with screen-shape stubs
+     // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
+     // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
+diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
+index 55ebe0c199fe96bbf493cd5ff0decfe6dac73c88..8a4633fa1467ce851c3056827e3cb8d57ffbfb28 100644
+--- a/docs/agents/game-patches.md
++++ b/docs/agents/game-patches.md
+@@ -692,6 +692,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09); 30 fps threshold scaling checked in test_ocarina_drs.py and in play at 30 fps on an M2 Air (PR #1954, 2026-11-16): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (main+0x31d3200, 0xfc8 bytes, one caller main+0x31c00cc); the status ubfx at +0xce4, the store at +0xd48 (the only float store to #0xe5c in main; s0 computed from the update's w0 at +0xd34, never reread from +0xe5c) and the size loop clearing bit 3 of +0xe2c read by disassembly (2026-11-09, 2026-11-23); guard, status and store stubs executed natively on ARM64 in test_ocarina_drs.py: render scale: the 3D views at a fraction of the game's own size (DM_RENDER_SCALE). The game's own view-size update (its test of the dynamic-resolution status and its scale store), found by its function's fingerprint on any build that keeps it; the level function's stub above holds level 0 under a scale
+ - **`game`**, rendering, at goal, checked: v131072 main: one function per fingerprint, free registers read at each site; indexed pane names, classes and dimensions checked against the UIL records. In-place Vert+ projection-object updates (and DM_SCREEN_FOV=off Hor-) executed on ARM64 in test_ocarina_screen_shape.py and verified in Kakariko Village on Mac at 16:9, 16:10 and 4:3 (2026-11-23); 0/3 projection fingerprint matches in TOTK, BOTW and Mario Kart World; physical iPad/iPhone retest pending: screen shape: taller render targets, cameras, Layout2 panes and a 16:9 movie viewport (DM_SCREEN_ASPECT). The game's own display setup, camera, pane and movie code; installed together after every function matches. Indexed pane edits verify the authored name, class and dimensions they use
++- **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags' readers (turf draw lists, per-draw callbacks, the type classes' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10): foliage off: the foliage module's grass / forest disables and type hide bits set each frame (DM_FOLIAGE). The foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default
+ 
+ - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
+ - **function-matched** (`main` of builds without CUTS): movie update cap: 3 pictures a frame, the frame step's largest hold, in place of the limit (2), which also sizes the decoder pipeline: 1 function, 1 cut
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 31a18d23319f0bb796b0172a87c4b6120469342c..64a2b0fcbf55c9cbcab851e597e72bf4f06a70da 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -52,6 +52,7 @@ DM_EXL_TRACE	diagnostic	`=1` logs the first four code words written per view by
+ DM_FD_LOG	diagnostic	`=<seconds>` logs, every that many seconds, the number and kinds of file descriptors the process has open
+ DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
+ DM_FOCUS_KEEP	switch	`1` keeps the game in focus while its Mac window is up, whichever app is active (minimizing still counts); `scripts/regress.py` sets it, so another app taking the key window during a run does not pause a game that stops out of focus
++DM_FOLIAGE	player	`off` turns the game's grass and ground cover off: grass, ferns, clover, the ivy on walls and the moss fuzz on logs (Ocarina of Time: its patches.py foliage stub at the foliage module's per-frame calc sets the module's own grass and forest disables, +0x141 / +0x142, and its per-type hide bits every frame, state page +0x300, so no foliage is drawn, calculated or computed; the ground keeps its texture, and models, cuttable grass and bushes, the house door and everything else still draw); `on` or unset (the default) keeps it. A quality trade for slower GPUs: on a Mac mini M2 Pro at the Apple TV's settings about 3.5 ms less GPU a frame on the balcony and in Link's house (the foliage passes and compute; a paired in-run A/B on the balcony: -3.6 ms) and about 85-90 MB less graphics memory (the foliage textures are never loaded). Only on builds whose rewrite declares the FOLIAGE capability
+ DM_FONT_DIR	path	Folder of the shared-font stand-ins (`standard.ttf`, `nintendo_ext.ttf` with the button icons); the app, the Mac launcher and the NSP script set it
+ DM_FORCE_STRICT	diagnostic	`=1` makes the loader fail on forced-hook entries no module references, instead of only noting them (for checking a mistyped list)
+ DM_FPS	switch	`30` or `60` pins the frame rate the display link and frame pacing aim for; otherwise it follows the game's present interval (60, or 30 when the game asks for 30)
+diff --git a/docs/settings.md b/docs/settings.md
+index dad3368017013b1ce1d31d5c21c8ab1bfa6a5608..bcd311b2379c44b8058338236fbc9a24e841a8ea 100644
+--- a/docs/settings.md
++++ b/docs/settings.md
+@@ -100,6 +100,10 @@ iPhone and iPad. **Automatic**, the default, turns with the device as before: la
+ 
+ Mac, games whose build supports it (Ocarina of Time); the Mac settings window calls it **Aspect ratio**. **Auto (match the screen)**, the default, renders a picture of the main screen's own shape (below a MacBook's notch, so 16:10 there) when it is wider than 16:9 (an ultrawide monitor, 3440x1440 for one): the same view up and down, more of the scene at the sides, and the HUD at the screen's edges; or when it is taller, from 1.3:1 (a MacBook's 16:10): the same height with a little less at the sides, filling the screen without bars. On a 16:9 screen it is the Switch's 16:9 picture, as **16:9**. **16:10** always renders 16:10 (2304x1440 docked). The game's window opens in that shape; choose **Fullscreen** in [Display mode](#display-mode) to fill the screen. The wider picture has about a third more pixels, so it runs a little slower. **Handheld** [console mode](#console-mode) keeps 16:9. In an `env.txt`: `DM_SCREEN_WIDE=auto`, `0`, or a size such as `3440x1440` or `16x10`.
+ 
++### Grass and ground cover
++
++On by default, shown for games whose build has the stub (The Legend of Zelda: Ocarina of Time). Off: the game's grass, ferns, clover, the ivy on walls and the moss on logs are not drawn, calculated or computed, which saves about 3.5 ms of GPU a frame and about 85 MB of graphics memory on a Mac mini M2 Pro. Grass you can cut and bushes stay. Takes effect at the next game start (`DM_FOLIAGE`).
++
+ ### Frame-rate counter
+ 
+ Shows the frames per second at the top left.

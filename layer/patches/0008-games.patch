@@ -13,12 +13,12 @@ Subject: games: Game profiles and notes
  dm/games/0400C3F00006E000/README.md        |   14 +
  dm/games/0400C3F00006E000/game.tsv         |   17 +
  dm/games/0400E88025B1A000/README.md        |    2 +
- dm/games/README.md                         |    5 +-
+ dm/games/README.md                         |    7 +-
  dm/games/profile_guess.py                  |    7 +-
  dm/games/settings.py                       |    1 +
  dm/games/settings.tsv                      |    9 +-
  dm/tools/tests/test_launcher_settings.py   |    2 +-
- 14 files changed, 2983 insertions(+), 9 deletions(-)
+ 14 files changed, 2984 insertions(+), 10 deletions(-)
 
 diff --git a/dm/games/010014E00DB56000/README.md b/dm/games/010014E00DB56000/README.md
 index ef593c948d258d20fcded8b4bb65a5df8c2b7dad..fa111afefdba52e00d42b3497a071049039c52ec 100644
@@ -2963,7 +2963,7 @@ index 1428c47e0a22d45d98a40415a9911c8c26a00b40..4d693eccceb0488ce4b206a93e39f1f5
 +R	346130326538323231646234616337305f62000000000000643364343830306134663737363633335f6200000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c0000004600000000000000000000000000000000000000000000000000000004010000040100000100000000000000ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000220000006900000869000010000000002500001800000000270000200000000011000028000000000000000000000000000000000000000000000000000000000c0000000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 +R	313838393465343137386161366236325f62000000000000343764666663303531623533643134645f6200000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c0000004600000000000000000000000000000000000000000000000000000004010000040100000100000000000000ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000220000006900000869000010000000002500001800000000270000200000000011000028000000000000000000000000000000000000000000000000000000000c0000000000000004000000000000000400000000000000040000000000000004000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 diff --git a/dm/games/0100152000022000/README.md b/dm/games/0100152000022000/README.md
-index b7e5372d0322011b1575fb9bc9c270cd6c5516cb..003c13d2d4683394bc52b8f9c7e3ad7ec6401ca2 100644
+index ed0438f59e6fe2f2e8223ffccdb0cab5f7a539bc..eca405a9760bfa7bdee584193d2732bbbf229364 100644
 --- a/dm/games/0100152000022000/README.md
 +++ b/dm/games/0100152000022000/README.md
 @@ -4,6 +4,8 @@ Updates 4.0.0 (v1441792) and 4.0.1 (v1507328) over the base game, SDK 4.4.0, the
@@ -3009,10 +3009,10 @@ index 0ab5187d572346461006792d2b88c7cc7cae6e45..80c51b24657d15743c36ede7333b1b08
  
  ## Open
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 8a82a04360b3f37dce26cb02f8771462e317f31b..c2cdf07b16d0b03f313b46c2a4a28be7283d527d 100644
+index f0f3c28d358bb3afb4abefc7d33439ccbdf83862..d4089d690db646df49ace95f17dac98b4c2cd290 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
-@@ -67,6 +67,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
+@@ -91,6 +91,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
  - In a run that takes shots, each shot costs its frame 60–100 ms, and `DM_NVN_GPUPROF` and pass dumps slow the frames they cover.
  - Resolved: the castle town market at 9–12 fps on a first visit, with the GPU at 24–26 ms a frame and the main thread busy searching the pipeline archives: [archive searches repeated while the build table is full](../../../docs/reference/frame-rate.md#archive-searches-repeated-while-the-build-table-is-full). Game v131072. On an M5 Mac (macOS 27.0.1, a host near `bd979ced`), CPU translation 113.8 → 6.4 ms a frame and failed searches 9,208 (30.5 s) → 5 per 300 frames, frame p50 107 → 28.5 ms. On an M4 Pro MacBook Pro (24 GB, a host near `1794a35`, real play), failed searches about 49,000 → 5–57 per 300 frames, frame p50 84 → 16–20 ms, main thread 854 → 440–600 ms/s, game time 0.605 → 1.000 of real time. In both, the build table stayed full (384 in flight). Neither is a controlled A/B: the second visits started with the first visit's pipelines prepared (489 more on the M4 Pro), which explains part of the lower GPU time. The drop in failed searches is the change's direct effect.
  - Resolved: frames of 50–170 ms on entering the castle town, in a second run as in the first, with `new pipelines 1` or `0` and the time under `predictions`: [pulling stand-ins made for predicted keys that are never drawn](../../../docs/reference/frame-rate.md#pulling-stand-ins-made-for-predicted-keys-that-are-never-drawn). Game v131072, M4 Pro, the town entry route (headless, `DM_FPS_HOLD=off`): the three predictions of the route 30.8, 104.4 and 54.5 ms → 0.5, 2.0 and 1.4 ms, pulling pipelines made 244 → 1; frames 910, 1458 and 1787 (48, 132 and 71 ms) are no longer long. The long frames left on the route are texture uploads.
@@ -3020,8 +3020,8 @@ index 8a82a04360b3f37dce26cb02f8771462e317f31b..c2cdf07b16d0b03f313b46c2a4a28be7
 +- Resolved: frames of 2.2-4.4 s on entering a new area, four in a 25-minute session: [compute pipelines built on the submit thread at their first dispatch](../../../docs/reference/frame-rate.md#compute-pipelines-built-on-the-submit-thread-at-their-first-dispatch).
  - Resolved: frames of 30–64 ms while walking into the castle town, with `new pipelines 0` and `6 re-uploads, 227.4 MB / 32.0 ms`: the loader fills a 1800x1380x8 R16 array (38.5 MB) and three block-compressed textures over several frames while they are drawn, and each use read the whole texture again, up to 8 times in one submission: [a texture written while it is drawn read whole at every use](../../../docs/reference/frame-rate.md#a-texture-written-while-it-is-drawn-read-whole-at-every-use). Now one look a submission and only the written layers: 25 ms at most there. The single-image textures (3072x2096 BC5, 3056x1152) are still read whole, once a submission (open).
  - Open: frames of 100–650 ms when an area first loads (640 first uploads, 321 MB, in one frame of 294 ms; another 640 ms of submit with 68 MB).
- - `DM_NVN_TBDR=1` was tried and did not help: p95 19 ms on the same walk, against 17.8 (the TBDR mode has since been removed).
-@@ -328,7 +330,9 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+ - Resolved (long-session confirmation on [issue #2507](https://github.com/seedds/nxnative/issues/2507) open): area loads that grew slower over a session (80 ms >30 ms in loads 1–20 to 584–640 ms in loads 121–200, up to 1.5 s, all in `submit+present` with the GPU idle): [packaged-texture and CPU-written tables walked by every memory pool Finalize](../../../docs/reference/nvn-objects.md#packaged-texture-and-cpu-written-tables-walked-by-every-memory-pool-finalize). Both tables are now partitioned by memory pool, with dead packaged-texture entries compacted before growth.
+@@ -455,7 +457,9 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
  - [Freeing a memory pool during a texture ID walk](../../../docs/reference/nvn-objects.md#freeing-a-memory-pool-during-a-texture-id-walk): the `-[NvPkg buffer]: unrecognized selector` crash after a save or a scene change.
  - [Extended products behind spirv-cross's optnone helper](../../../docs/reference/shaders.md#extended-products-behind-spirv-crosss-optnone-helper): 348,587 constant divisions left as unoptimized calls; the Kokiri Forest deck 54.0 → 59.1 fps on an M4 Pro.
  - [HMMA chains keep their matrices in the SIMD-group](../../../docs/reference/shaders.md#hmma-chains-keep-their-matrices-in-the-simd-group): the NDVE movie networks behind the title and the opening, 14.8 → 11.4 ms of compute a frame on this M6.
@@ -3032,7 +3032,7 @@ index 8a82a04360b3f37dce26cb02f8771462e317f31b..c2cdf07b16d0b03f313b46c2a4a28be7
  - [The uniform copy thread's hand-off convoys on its mutex](../../../docs/reference/frame-rate.md#the-uniform-copy-threads-hand-off-convoys-on-its-mutex): resolved. On one host build (M4 Pro) the replay thread spent half its busy samples in `ubc_wait`, 221-333k instructions a draw and 23-57 ms of submit CPU a frame against 38.9k and 7.1 ms with `DM_NVN_UB_COPY_THREAD=0`; about 35 shadows a frame that `um_overlay` writes into are now copied on the submit thread (PR #2078).
  - [The 30 Hz display link in fullscreen on a fixed-rate screen](../../../docs/reference/frame-rate.md#the-30-hz-display-link-in-fullscreen-on-a-fixed-rate-screen): 66.7 ms frames at a 30 fps cap in fullscreen on a MacBook Air M4, with the frame-delta change that applies the cap.
 diff --git a/dm/games/0400C3F00006E000/README.md b/dm/games/0400C3F00006E000/README.md
-index 2b6dba0e911dec40de60e1aa7c5f008a16135e59..063cc8708724de6dce7b71b17cc72fabec689ca3 100644
+index dde1e614b9c31429bc9bd397fb5ac9f4fa37b020..5ad814a3409eaabda8ebb89f0d8fb47542390958 100644
 --- a/dm/games/0400C3F00006E000/README.md
 +++ b/dm/games/0400C3F00006E000/README.md
 @@ -9,6 +9,7 @@ A Switch 2 game. Brought up on the base game (v0), SDK 19.3.3 built for the Swit
@@ -3051,9 +3051,9 @@ index 2b6dba0e911dec40de60e1aa7c5f008a16135e59..063cc8708724de6dce7b71b17cc72fab
  
  ## Rendering
  
-@@ -86,6 +88,16 @@ Game speed: the framework picks each frame's interval, 1 or 2 vsyncs, which the
+@@ -100,6 +102,16 @@ Current-main validation (2026-11-21): on the 16 GB M6, macOS 27.2.1, Xcode 27.2,
  
- The 0.977 window was the host holding frames 3 vsyncs while the stub stepped 2: the stub now declares its largest step, 2, and the host holds and pays back within it ([Frames held longer than the game's largest step](../../../docs/reference/frame-rate.md#frames-held-longer-than-the-games-largest-step)). On an M4 Max (issue [#1823](https://github.com/seedds/nxnative/issues/1823), 2026-11-11, the reporter's numbers) races ran at about 40 fps with the hold and 60 without it (`DM_FPS_HOLD=off`: 1,800 of 1,800 frames at hold 1 per window, 57.5–61 fps, game time 0.99–1.02, about 28% of frames late by a few ms), 6.6 ms of GPU time in the long frames: three near-miss frames in a row stepped to 30 about once a second. The hold now rises only when the frames also fall short of 60 on average ([Three late frames among frames on time raised the hold](../../../docs/reference/frame-rate.md#three-late-frames-among-frames-on-time-raised-the-hold)). The reporter's retest (2026-11-12, `8a5c5e7e`, 144 Hz screen) confirmed it: most windows at 1,800 / 0 / 0, game time 1.003–1.013. Five one-second dips to 30 were left, four of them just after a single long frame of 43–68 ms (693 first texture uploads; shader libraries and a hybrid pipeline; two with nothing listed). A stall now no longer counts toward that average ([A lone stall among near-misses raised the hold](../../../docs/reference/frame-rate.md#a-lone-stall-among-near-misses-raised-the-hold), resolved in `t_fstep` with the reporter's numbers; not retested on the M4 Max). Open: the stalls themselves. At two of the rises the logged cost was 0.42–0.48 vsyncs on the stall's own present, which suggests the time went to the acquire's wait rather than the game's work, if `[longframe]`'s frame numbers match the presents.
+ A separate 200-second run reused the warmed pipeline archive and alternated `DM_NVN_SUB_STREAM=ab` every 300 frames (`DM_AB=300`), with no native sampler. It passed the route at frame 11,503, with no 500 ms hitch dump after the first 100 seconds. The largest frame in that interval was 397.16 ms with streaming off. This does not reproduce or explain the original 2.9-second event. In the 150-190 s window, discarding each phase's first 75 frames, both modes had a 16.65-16.66 ms median at the 60 fps target; one alternating run across changing race scenes is not a new measurement of the author's uncapped gains.
  
 +Late frames are not held (`fps_hold off`, NXForge). With the default hold, three frames 16 to 28% over budget (19 to 21 ms, the submit thread blocked, often while the Mac swaps) raised the hold to 2 or 3 vsyncs, and the probes back to 1 failed for seconds: a 27-minute session on an M4 Pro (24 GB, 2026-11-09) played at 30 or 20 fps for about 40 s in 16 stretches, once 11 s on end. With `DM_FPS_HOLD=off` the next session (66 minutes) had no 5-second window under 47 fps apart from three where the window was covered, and a slow frame shows as a single hitch while the frame step's paid-back vsyncs keep the game time.
 +
@@ -3068,21 +3068,22 @@ index 2b6dba0e911dec40de60e1aa7c5f008a16135e59..063cc8708724de6dce7b71b17cc72fab
  ## Terrain and movies
  
  The flat ground with blocky seams behind the title and the menu was terrain tiles the CPU wrote with no flush, read as zeros: [Uncompressed storage the CPU wrote, in a pool the GPU has not written](../../../docs/reference/nvn-objects.md#uncompressed-storage-the-cpu-wrote-in-a-pool-the-gpu-has-not-written). The title now shows real terrain, with hills, lawns and road edges.
-@@ -173,7 +185,9 @@ Mac regression on the M4 Pro with macOS 27.2.1 and Xcode 27.2, 2026-11-19. Both
+@@ -203,8 +215,10 @@ Mac regression on the M4 Pro with macOS 27.2.1 and Xcode 27.2, 2026-11-19. Both
  - [Compute shared memory past 32 KB](../../../docs/reference/shaders.md#compute-shared-memory-past-32-kb)
  - [Uniform references past the first kilobyte](../../../docs/reference/shaders.md#uniform-references-past-the-first-kilobyte)
  - [A control section's words read as a BAHS entry](../../../docs/reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry) (resolved, [issue #1592](https://github.com/seedds/nxnative/issues/1592)): `cs_lib.bin` 74, `797e77c2ec4341c5` at `agl_common.sharcb#BAHS@0x5c778`, was no shader. Dropping it and its fact reduced the index of the next 69 `cs_lib.bin` rows (`agl_common`, `agl_ndsr`, `agl_technique_pfx`, gsys `common`) by one, as in the reporter's base-game split. The full [v0 split](#shaders) confirms the removal. [1.8.0](#180) also has false entries outside control sections.
 +- [Samples that do not overlap on Apple's M1: the border branch and the coordinate NaN select](../../../docs/reference/shaders.md#samples-that-do-not-overlap-on-apples-m1-the-border-branch-and-the-coordinate-nan-select)
  - [SDK 19's decoder forms](../../../docs/reference/movies.md#sdk-19s-decoder-forms)
+ - [Registered decoder buffers signalled before a picture was decoded](../../../docs/reference/movies.md#registered-decoder-buffers-signalled-before-a-picture-was-decoded) (post-race 3604 abort in 1.0.0, [PR #3173](https://github.com/seedds/nxnative/pull/3173))
  - [A version without one of the profile's modules stops the host at boot](../../../docs/reference/packing.md#a-version-without-one-of-the-profiles-modules-stops-the-host-at-boot)
 +- [GPU timestamps per submission segment](../../../docs/reference/frame-rate.md#gpu-timestamps-per-submission-segment)
  - [The controller applet waits for players](../../../docs/reference/services.md#the-controller-applet-waits-for-players) (1.8.0, pull request #1596; GitHub issue #1640: the player screen closed when the second controller had not pressed yet)
  - 1.8.0, by pull request #1116: [The camera through the graphics system](../../../docs/reference/services.md#the-camera-through-the-graphics-system), [Layer HDR metadata](../../../docs/reference/services.md#layer-hdr-metadata), the SDK 21 forms in [The Joy-Con mouse pointer](../../../docs/reference/services.md#the-joy-con-mouse-pointer) and [GameChat at boot](../../../docs/reference/services.md#gamechat-at-boot)
 diff --git a/dm/games/0400C3F00006E000/game.tsv b/dm/games/0400C3F00006E000/game.tsv
-index 30a5e554f944558468ebe9a17812e7e4ee196865..10f143d53ee49bfef2e5bd9927a9029c18dd9056 100644
+index 1a53c308e48e127ed56937a835f3e1dd9a997a0e..a3be031bc7f2816230e2dffc6d4221c62fcfc16d 100644
 --- a/dm/games/0400C3F00006E000/game.tsv
 +++ b/dm/games/0400C3F00006E000/game.tsv
-@@ -32,14 +32,31 @@ mem_reserve	0x320000000
+@@ -33,14 +33,31 @@ mem_reserve	0x320000000
  mem_alias	0x100000000
  mem_stack	0x10000000
  app_pool	0x240000000
@@ -3115,10 +3116,10 @@ index 30a5e554f944558468ebe9a17812e7e4ee196865..10f143d53ee49bfef2e5bd9927a9029c
 +# race goes from 33.4–33.6 to 42.2–42.3 fps docked (main 777a5f6c); a faster GPU stays at full size
 +gpu_timestamps	segment
 diff --git a/dm/games/0400E88025B1A000/README.md b/dm/games/0400E88025B1A000/README.md
-index 8618aaa3908141af0ed8256a4bef0bd98cb03bae..a29446f776d08df4b4e4b1b634d07905be31818c 100644
+index 257ac71627719539b52c860d5c8d004e1cb856d2..5d85a5a73f55924284f19d33e2561eedf7c6855b 100644
 --- a/dm/games/0400E88025B1A000/README.md
 +++ b/dm/games/0400E88025B1A000/README.md
-@@ -41,6 +41,8 @@ DLSS alpha control (2026-11-17, M6, macOS 27.2, Xcode 27.2): a fresh save, `DM_K
+@@ -70,6 +70,8 @@ DLSS alpha control (2026-11-17, M6, macOS 27.2, Xcode 27.2): a fresh save, `DM_K
  - [SDK 21's OutputStream on a virtual output device](../../../docs/reference/audio.md#sdk-21s-outputstream-on-a-virtual-output-device) and [SDK 21's hardware Opus decoder manager](../../../docs/reference/audio.md#sdk-21s-hardware-opus-decoder-manager): its voice and music.
  - [GameChat queries from the title screen (SDK 21)](../../../docs/reference/services.md#gamechat-queries-from-the-title-screen-sdk-21): a null read in `nn::chat::GetChattingUid`.
  - [The camera commands of SDK 21's own camera module](../../../docs/reference/services.md#the-camera-commands-of-sdk-21s-own-camera-module): the game's own camera module, a console with no camera plugged in.
@@ -3128,26 +3129,28 @@ index 8618aaa3908141af0ed8256a4bef0bd98cb03bae..a29446f776d08df4b4e4b1b634d07905
  - [A GPU copy into a texture uploaded from its storage uploaded all of it again](../../../docs/reference/nvn-objects.md#a-gpu-copy-into-a-texture-uploaded-from-its-storage-uploaded-all-of-it-again): 7.6 s and 10 s frames at the prologue's scene changes; measured on a build of our fork, not on `main`.
  - [The graphics scale does not follow the operation mode](../../../docs/reference/services.md#the-graphics-scale-does-not-follow-the-operation-mode): the 768x432 scene docked; measured on a build of the PR author's fork, not on `main`.
 diff --git a/dm/games/README.md b/dm/games/README.md
-index 6d62941dc334b8a6e6afb271005d41fad85daa9e..9bf1ba491106f3cd49ef613b731417bec9a57efa 100644
+index d4a328b6a9de3dcd62e2946945af6b348815ea25..12620f8c82e1c4f45a8cb79332c91fa4212c72f1 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -120,6 +120,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
- | [Hades II](0100A00019DE0000/README.md) | `0100A00019DE0000` | 1.0.141667 (and base game) | 20.5.15 (base game: 19.3.9) | Supergiant Games' engine | NVN |
- | [Hollow Knight](0100633007D48000/README.md) | `0100633007D48000` | 1.5.12620 | 20.5.21 | Unity 6000.0.61f1 IL2CPP, FMOD | NVN |
- | [Hollow Knight: Silksong](010013C00E930000/README.md) | `010013C00E930000` | 1.0.30000 | 20.5.8 | Unity 6000.0.50f1 IL2CPP | NVN |
+@@ -129,6 +129,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+ | [Hades II](0100A00019DE0000/README.md) | `0100A00019DE0000` | 1.0.141667 (and base game) | 20.5.15 (base game: 19.3.9) | Supergiant Games' engine | NVN | — |
+ | [Hollow Knight](0100633007D48000/README.md) | `0100633007D48000` | 1.5.12620 | 20.5.21 | Unity 6000.0.61f1 IL2CPP, FMOD | NVN | — |
+ | [Hollow Knight: Silksong](010013C00E930000/README.md) | `010013C00E930000` | 1.0.30000 | 20.5.8 | Unity 6000.0.50f1 IL2CPP | NVN | — |
 +| [Horizon Chase 2](0100001019F6E000/README.md) | `0100001019F6E000` | 1.6.9 | 14.3.1 | Unreal Engine 4, FMOD | NVN |
- | [Hyrule Warriors: Age of Calamity](01002B00111A2000/README.md) | `01002B00111A2000` | 1.3.0 | 9.6.0 | Koei Tecmo's KTGL | NVN |
- | [Hyrule Warriors: Age of Imprisonment](04003F40232DE000/README.md) | `04003F40232DE000` | v196608 (Switch 2) | 20.5.15 (Ounce) | Koei Tecmo's KTGL | NVN2 |
- | [Hyrule Warriors: Definitive Edition](0100AE00096EA000/README.md) | `0100AE00096EA000` | 1.0.1 | 3.5.1 | Koei Tecmo's KTGL | NVN |
-@@ -144,6 +145,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
- | [Metroid Dread](010093801237C000/README.md) | `010093801237C000` | 2.1.0 | 11.4.3 | MercurySteam's engine | NVN |
- | [Metroid Prime 4: Beyond](010019A01E2F2000/README.md) | `010019A01E2F2000` | 1.1.0 | 19.3.15 | Retro Studios' engine | NVN |
- | [Metroid Prime Remastered](010012101468C000/README.md) | `010012101468C000` | 1.0.0 (base) | 12.3.1 | Retro Studios' engine | NVN |
-+| [Mina the Hollower](0100DCD01F306000/README.md) | `0100DCD01F306000` | 1.0.5 | 21.4.3 | Yacht Club Games' own | NVN |
- | [Minecraft Dungeons II](0100A7C01B792000/README.md) | `0100A7C01B792000` | 1.1.3.0 | 20.5.15 | Unreal Engine 5, Wwise, Havok | NVN |
- | [Minecraft for Nintendo Switch](0100D71004694000/README.md) | `0100D71004694000` | 1.26.62 | 20.5.14 | RenderDragon, FMOD | Vulkan |
- | [Monster Hunter Rise](0100B04011742000/README.md) | `0100B04011742000` | 16.0.2 | 11.4.3 | Capcom's RE Engine | NVN |
-@@ -255,7 +257,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+ | [Hyrule Warriors: Age of Calamity](01002B00111A2000/README.md) | `01002B00111A2000` | 1.3.0 | 9.6.0 | Koei Tecmo's KTGL | NVN | 60 fps target |
+ | [Hyrule Warriors: Age of Imprisonment](04003F40232DE000/README.md) | `04003F40232DE000` | v196608 (Switch 2) | 20.5.15 (Ounce) | Koei Tecmo's KTGL | NVN2 | — |
+ | [Hyrule Warriors: Definitive Edition](0100AE00096EA000/README.md) | `0100AE00096EA000` | 1.0.1 | 3.5.1 | Koei Tecmo's KTGL | NVN | — |
+@@ -153,7 +154,8 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+ | [Metro 2033 Redux](0100D4900E82C000/README.md) | `0100D4900E82C000` | 1.0.0 (base) | 8.2.0 | 4A Engine | NVN | — |
+ | [Metroid Dread](010093801237C000/README.md) | `010093801237C000` | 2.1.0 | 11.4.3 | MercurySteam's engine | NVN | — |
+ | [Metroid Prime 4: Beyond](010019A01E2F2000/README.md) | `010019A01E2F2000` | 1.1.0 | 19.3.15 | Retro Studios' engine | NVN | — |
+-| [Metroid Prime Remastered](010012101468C000/README.md) | `010012101468C000` | 1.0.0 (base) | 12.3.1 | Retro Studios' engine | NVN | — |
++| [Metroid Prime Remastered](010012101468C000/README.md) | `010012101468C000` | 1.0.0 (base) | 12.3.1 | Retro Studios' engine | NVN |
++| [Mina the Hollower](0100DCD01F306000/README.md) | `0100DCD01F306000` | 1.0.5 | 21.4.3 | Yacht Club Games' own | NVN | — |
+ | [Minecraft Dungeons II](0100A7C01B792000/README.md) | `0100A7C01B792000` | 1.1.3.0 | 20.5.15 | Unreal Engine 5, Wwise, Havok | NVN | 60 fps target, [120 fps option](0100A7C01B792000/README.md#frame-rate) |
+ | [Minecraft for Nintendo Switch](0100D71004694000/README.md) | `0100D71004694000` | 1.26.62 | 20.5.14 | RenderDragon, FMOD | Vulkan | — |
+ | [Monster Hunter Rise](0100B04011742000/README.md) | `0100B04011742000` | 16.0.2 | 11.4.3 | Capcom's RE Engine | NVN | 60 fps target |
+@@ -269,7 +271,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | Key | Meaning |
  |---|---|
  | `title_id`, `program_id` | Identity. `program_id` is what `svcGetInfo(ProgramId)` reports. The game's name is not stored: the NSP script reads it from the NSP's control data (NACP) |
@@ -3156,7 +3159,7 @@ index 6d62941dc334b8a6e6afb271005d41fad85daa9e..9bf1ba491106f3cd49ef613b731417be
  | `ipa`, `app_category` | iOS app: the default IPA file name and the App Store category |
  | `build <ver> <display version> <module>=<build ID>…` | One row per version the game was brought up on. The NSP script builds any version (the base game alone, any update): a registered one from the profile as it is, any other from a profile derived from it (`<id>_build/profile`: the same keys, that version's own shader tables; `derive_profile`), with a red line naming the modules whose build no row registers, which the per-build cuts and host fixes do not reach. The host reports the display version by `main`'s build ID |
  | `package` | The version the profile's tables, prewarm list and notes were made on. The NSP script packs the newest version in the folder (`-p` / `PACKAGE` picks another) |
-@@ -300,6 +302,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+@@ -316,6 +318,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | `draw_barriers` | `full` (the default) / `game`: how draw passes are ordered. `full`: each waits for all earlier GPU work. `game`: by the game's own barriers (NVN asks for one before results of rendering are read), so a pass's vertex work overlaps the previous pass's fragments. Ocarina of Time's GPU time 25 → 18 ms, about 180 full barriers a frame halved. Only a barrier that orders primitives or indirect data waits for all earlier work; a fragment-only one keeps the overlap. Only vertex-stage reads of the previous pass's output without a barrier change order. `DM_NVN_BARRIER` overrides it |
  | `vconv_range` | `on` / `off` (the default): vertex attributes the replay converts on the CPU (integer shader inputs fed float-type formats and the like, `vconv_bind` in `nvn_mtl.m`) are converted only over the vertices each draw reads (first / count, or the smallest and largest index of a direct indexed draw, kept while the index pages stay unwritten) instead of the whole bound range. Age of Calamity binds whole mesh pools: in a battle that was millions of vertices a frame. Indirect draws, per-instance streams and indices with a GPU write queued on them keep the whole range. `DM_NVN_VCONV_CHECK=1` scans the indices again at every reuse and reports differences; `DM_NVN_VCONV_RANGE=0` / `1` overrides it |
  | `shader_key_skip` | `<offset>+<length>` (none by default): control-section bytes every shader key hashes as zeros, in `shader_split.py` (`key_ctl`) and the host (`hle_nvn.c` `keys_hash`), for an engine that shares one control section among shaders that differ only there. Batman: Arkham Knight: `0x770+0x78`, GLSLC's compile information (+0x778..+0x791 and +0x7d0..+0x7e7); without it the game asks for shaders the map does not have, each the control section of one record with the code area of another. It must stay clear of `+0x700..+0x75f`, which the tools read; it is a shader chain input, as every `shader_*` key |
@@ -3165,7 +3168,7 @@ index 6d62941dc334b8a6e6afb271005d41fad85daa9e..9bf1ba491106f3cd49ef613b731417be
  
  ### What the game files decide at every build
 diff --git a/dm/games/profile_guess.py b/dm/games/profile_guess.py
-index 4f5af7ba5460b7af502e1c78c138f3cdf36a82d6..3bd5778f22ed2734c79309c834ebb707965524ca 100644
+index 7ccc5dd9998e4ea53001b9a10961a376292cef4e..4e9db6ddd75ace968803b0aac4f6d2a46d799be8 100644
 --- a/dm/games/profile_guess.py
 +++ b/dm/games/profile_guess.py
 @@ -20,8 +20,10 @@ MAGICS = [(b'UnityFS\0', 'UnityFS'), (b'UnityWeb', 'UnityWeb'), (b'UnityRaw', 'U
@@ -3202,7 +3205,7 @@ index 08c7270ff2c1fc06fdfddd04d2ec877548b96190..05407eeed664f76f9140677a01ad1e2f
          if cond.startswith('fixups:'): return cond[7:] in keys
          if cond.startswith('gfxapi:'): return os.environ.get('GFXAPI', '') == cond[7:]
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index f8b1c585975df1400182c34ff1e2d223141187d7..49cb1e3936e64aa60d782a9df7826e594e4f067c 100644
+index 8cfacbaf85eba28a924a44730f2d731ab13e1cbf..fa2f9336b67d7d2c08f9a744dbd1a81693bc71ff 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -7,7 +7,7 @@
@@ -3214,7 +3217,7 @@ index f8b1c585975df1400182c34ff1e2d223141187d7..49cb1e3936e64aa60d782a9df7826e59
  #             mac-mic: a Mac app whose modules import the supported polling InputStream API;
  #             platform:<ios | mac>: the app's platform (SETTINGS_PLATFORM, ios when unset), for a switch only that platform's front end reads
  #   section   Game, Controls or Performance: a heading on the single settings screen. Rows appear in table order within each section
-@@ -19,8 +19,12 @@ DM_FPS_TARGET	choice	30=30 fps,60=60 fps,120=120 fps?DM_GAME_FPS_MAX==120	DM_GAM
+@@ -19,8 +19,12 @@ DM_FPS_TARGET	choice	30=30 fps,40=40 fps?fixups:FRAME_STEP_120,60=60 fps,120=120
  DM_DYNAMIC_RESOLUTION	toggle	-	0	fixups:DYNAMIC_RESOLUTION	Game	Dynamic resolution	Lets the game lower its resolution under load. Turn off to keep full resolution for the selected console mode.
  DM_RENDER_SCALE	range	0.5:1.0:0.05	1.0	fixups:RENDER_SCALE	Game	Render scale		level=basic
  DM_OPMODE	choice	1=Docked,0=Handheld	DM_GAME_OPMODE	always	Game	Console mode		level=basic
@@ -3228,21 +3231,21 @@ index f8b1c585975df1400182c34ff1e2d223141187d7..49cb1e3936e64aa60d782a9df7826e59
  DM_LANG	choice	languages	build:DM_LANG	languages>1	Game	Game language		level=basic
  DM_FULLSCREEN	choice	0=Window,1=Fullscreen	0	platform:mac	Game	Display mode		level=basic
  DM_PICTURE_FIT	choice	fit=Fit,fill=Fill	fit	platform:ios	Game	Picture	Fill crops the game's 16:9 picture to cover the screen. Health bars, subtitles or maps near the edges can be cut off. A full-screen picture without cropping needs a patch for each game.
-@@ -34,6 +38,7 @@ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and
+@@ -35,6 +39,7 @@ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and
  DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone. macOS asks for access when you launch with this enabled.	level=basic
  DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
- DM_SCREEN_ASPECT	choice	auto=Match screen?platform:ios,1.43=iPhone Duo screen (1.43:1),0=16:9 (Switch)	auto|0	DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
+ DM_SCREEN_ASPECT	choice	auto=Match screen?platform:ios,1.6=MacBook (16:10)?platform:mac,1.43=iPhone Duo screen (1.43:1),0=16:9 (Switch)	auto|0	fixups:SCREEN_ASPECT	Game	Picture shape	Taller shapes render more pixels and can increase GPU time and heat.
 +DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
  DM_PRESENT_SNAP	toggle	-	DM_GAME_PRESENT_SNAP	gfxapi:nvn	Performance	Frame buffering	Up to one frame more display latency.
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
-index 3bc45351e5f3af8b797fcc645fb32a754a15299e..0069eca826718305095ffe09f426e13bb157f017 100644
+index cd959762ebe73699963ef2fce5be3b6f3e0cc124..f99969036eec3ce0d7e7b09b02402883d4018f5e 100644
 --- a/dm/tools/tests/test_launcher_settings.py
 +++ b/dm/tools/tests/test_launcher_settings.py
 @@ -78,7 +78,7 @@ class LauncherSettingsTests(unittest.TestCase):
          self.assertEqual(build(BOTW, 'nvn', 'ios').keys(), ios.keys())   # ios when unset
-         self.assertEqual(set(ios) - set(mac), {'DM_SHOW_FPS', 'DM_TOUCH_HAPTICS', 'DM_PICTURE_FIT'})
+         self.assertEqual(set(ios) - set(mac), {'DM_SHOW_FPS', 'DM_TOUCH_HAPTICS', 'DM_PICTURE_FIT', 'DM_ROTATION'})
          self.assertIn('DM_RUMBLE', mac); self.assertIn('DM_METAL_HUD', mac)
 -        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2'})   # the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
 +        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART'})   # NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)

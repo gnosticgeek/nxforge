@@ -1,0 +1,797 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 22 Nov 2026 10:32:28 +0000
+Subject: mkw-no-lag-kart: Mario Kart World fixes from kingbumi31/no-lag-kart
+
+Ported from kingbumi31/no-lag-kart (MIT, Copyright (c) 2026 seedds; the fork's own commits by
+Bumi), a Mario Kart World 1.8.0 fork of nxnative tuned on a 16 GB M2 Pro. Only what nxnative's
+main at the pin does not already have, in another form or this one:
+
+- A memory pool's Finalize costs what the pool holds (aa3d115b, 9b1f285a): the pool address
+  index is put right by an insertion sort instead of sorted anew; the texture IDs are listed by
+  pool, so a Finalize marks its own IDs gone instead of walking all 131,000; the view cache is
+  walked only for a pool that has sets in it. Their runs: the 50-70 ms freeze once per stretch
+  of track went from 14 of 17 runs to 1 of 12.
+- A sparse texture shares storage only with pools its pool has mapped pages of
+  (nvn_sparse_shares, d67d32a3): the sky's cube map no longer splits its passes, 6 -> 1 a view.
+- Upload sources copied into a resident ring (DM_NVN_UP_COPY, profile key up_copy, 1ec15ff8)
+  instead of a zero-copy buffer made resident per upload: a scene cut's residency work halves,
+  its frame 20-28 ms shorter. Rewritten for up_big_src's staging budget.
+- Mario Kart World's profile: enc_thread on, nvn_cut 8 (new profile key; DM_NVN_CUT still
+  overrides), up_copy 128.
+
+Already in nxnative (left out): the 1.8.0 frame step and its 2-vsync cap, the written-pages
+commit walk, the BAHS control-section row, PRs #2225 #2249 #2328 #2228 #2182, #2091 (0051), and
+face-split draws for the cube filters (what pso_whole, fs_split and DM_NVN_FS_LAYER did).
+Left out on purpose: the streamed submission (the submit path now also snapshots ray-tracing
+structures under the lock), the GPU clock keeper of PR #1847, the host PGO profile, PR #1230
+(rebuilds every shader), the merged warm-up list, DM_OPMODE_MULTI and the timestamp pad.
+
+Tests: t_pool_finalize (new, adapted: the view cache is keyed by Metal texture here) and
+t_copy_alias's sparse_shares case, both from the fork.
+
+Co-authored-by: Bumi <161761416+kingbumi31@users.noreply.github.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_016qteK2nyjB1RLLqWJsbvhn
+---
+ dm/games/0400C3F00006E000/game.tsv |  10 ++
+ dm/games/README.md                 |   2 +
+ dm/games/game.py                   |   6 +
+ dm/gfx/nvn/hle_nvn.c               |  41 ++++++-
+ dm/gfx/nvn/nvn_mtl.m               | 132 +++++++++++++++++++---
+ dm/gfx/tests/Makefile              |   2 +
+ dm/gfx/tests/t_copy_alias.m        |  38 ++++++-
+ dm/gfx/tests/t_direct_upload.m     |   1 +
+ dm/gfx/tests/t_pool_finalize.m     | 169 +++++++++++++++++++++++++++++
+ dm/gfx/tests/t_upload_src.m        |   1 +
+ dm/tools/docs_patches.py           |   4 +
+ docs/env_switches.tsv              |  11 +-
+ 12 files changed, 395 insertions(+), 22 deletions(-)
+ create mode 100644 dm/gfx/tests/t_pool_finalize.m
+
+diff --git a/dm/games/0400C3F00006E000/game.tsv b/dm/games/0400C3F00006E000/game.tsv
+index a3be031bc7f2816230e2dffc6d4221c62fcfc16d..cc00e74549d2f2acdfb80634cc867aa17ccc9f86 100644
+--- a/dm/games/0400C3F00006E000/game.tsv
++++ b/dm/games/0400C3F00006E000/game.tsv
+@@ -61,3 +61,13 @@ fps_hold	off
+ # keeps 2048x1152 however long the GPU takes. Each report takes its segment's GPU start / end: on an M1 Pro the first race's scene steps down to 1328x748 and the
+ # race goes from 33.4–33.6 to 42.2–42.3 fps docked (main 777a5f6c); a faster GPU stays at full size
+ gpu_timestamps	segment
++# From kingbumi31/no-lag-kart (MIT), measured there on a 16 GB M2 Pro with update 1.8.0, console mode, fullscreen:
++# Metal's encoding on a thread of its own: in split screen the replay thread translates up to 11,000 draws a frame, and encoding them itself was 3 ms of the 27 a frame took
++# with four players (a race with one player is unchanged). DM_NVN_ENC_THREAD and the Encode thread setting override it
++enc_thread	on
++# A submission goes to the GPU in segments of 8 draws while the GPU has run out of work (DM_NVN_CUT; default 64), so the GPU starts sooner after the game submits:
++# four players, the heaviest minute, 10 and 38 frames off their step with 64, none with 8
++nvn_cut	8
++# Upload sources are copied into a 128 MB resident ring instead of buffers made resident for each upload (DM_NVN_UP_COPY): a scene cut's residency work halves, its frame
++# 20 to 28 ms shorter
++up_copy	128
+diff --git a/dm/games/README.md b/dm/games/README.md
+index 12620f8c82e1c4f45a8cb79332c91fa4212c72f1..70b9c1cfc95eccb53079b00ee5597ade3a7a6134 100644
+--- a/dm/games/README.md
++++ b/dm/games/README.md
+@@ -296,6 +296,8 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+ | `present_snap` | `on` / `off` (the default): present snapshots by default (`nvn_mtl.m` `mtl_snap_on`, a ring of 2 host textures): each present is copied and the game's swapchain texture is free at once, so the GPU does not idle between frames ([Present snapshots](../../docs/reference/frame-rate.md#present-snapshots-the-games-swapchain-texture-free-at-once)). A setting the game was tested with: the iOS launcher's **Frame buffering** defaults to it, and `DM_PRESENT_SNAP` / `Documents/env.txt` override it. Breath of the Wild sets it on |
+ | `pso_mtl4` | `on` / `off` (the default): on iOS, render pipelines through MTL4Compiler by default, with the pipeline archive, the prepare step, the hybrid pipelines and the prebuild (on by default on the Mac; `DM_PSO_MTL4=1` / `0` overrides). A setting the game was tested with on an iPhone. It also gives the app the [pipeline archive made offline](../../docs/development.md#the-pipeline-archive-made-offline) (`build_ipa.sh` builds it for the `pso_gpu` key's list when present, else for `g18p`, unless `DM_PSO_GPUS` says otherwise). An iOS build carries the pulling libraries (`_bp`) whatever this key says, since the launcher's Metal 4 pipelines toggle can turn the path on. Profiles with `pso_mtl4 off` get no archive unless a build override selects one. Breath of the Wild sets it on |
+ | `pso_gpu` | Optional, whitespace-separated GPU architectures: the ones the [pipeline archive made offline](../../docs/development.md#the-pipeline-archive-made-offline) is made for when the profile also sets `pso_mtl4 on`. The bases are made per GPU family and each family's archive costs its own `metal-tt` run, so a profile names exactly the devices it serves. 1-4 tokens, each alphanumeric, with or without the `applegpu_` prefix (for example `g18p applegpu_g19p`); `none` is not a value. Without this key, `pso_mtl4 on` keeps the A19 / A19 Pro default `g18p`; `pso_mtl4 off` gets no archive. The `DM_PSO_GPUS` switch / the NSP script's `--gpu` overrides the archive selection; this key does not enable Metal 4 pipelines |
++| `nvn_cut` | draws (default `64`; `0` = one command buffer per submission): a submission goes to the GPU in segments of this many draws while the GPU has run out of work (`nvn_mtl.m` `cut_draws`; `DM_NVN_CUT` overrides). Mario Kart World: `8` (kingbumi31/no-lag-kart: four players, the heaviest minute, 10 and 38 frames off their step with 64, none with 8, M2 Pro) |
++| `up_copy` | megabytes (default `0`, off; up to `2048`): upload sources from a large or texture-only pool are copied into a resident ring of this size instead of a zero-copy buffer made resident for each upload (`nvn_mtl.m` `up_copy_src`; `DM_NVN_UP_COPY` overrides). The ring stays wired. Mario Kart World: `128` (a scene cut's residency work halves, its frame 20 to 28 ms shorter on an M2 Pro; kingbumi31/no-lag-kart) |
+ | `enc_thread` | `on` / `off` (the default): on the Mac, Metal encoding on its own thread by default, as on iOS for every game (`nvn_rec.h` `rec_on`; `DM_NVN_ENC_THREAD=1` / `0` and the launcher's Encode thread override it). For a game that waits on its fence every frame, whose submit thread would otherwise also encode before the wait: Need for Speed: Hot Pursuit Remastered's 60 fps frame took 18.1 ms with encoding on the submit thread and 16.7 on its own |
+ | `fps_target` | Frame rate cap of the rewriter's frame step, for builds that have one (`FRAME_STEP` in the profile's `patches.py`: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0, Hyrule Warriors: Age of Calamity 1.3.0, Paper Mario: The Thousand-Year Door 1.0.1, ASTRAL CHAIN 1.0.1), or the engine's own frame limit the host writes into game memory (`hle_fpslock.c`: Monster Hunter Rise 16.0.2, which also needs `present_interval display`; any Unreal Engine 4.2x / 5 build, its `t.MaxFPS` (or `ue_fps_cvar`) and `rhi.SyncInterval` or `nvn.SyncInterval`, found by name by the rewriter, so the game asks for present interval 1 itself, and its fixed frame rate `GEngine->FixedFrameRate`, found by its reflection entry and written while the engine's `bUseFixedFrameRate` is set (DRAGON BALL: Sparking! ZERO's battles, Pikmin 4); Luigi's Mansion 3 1.4.0, its frame limiter's milliseconds per frame, with `present_interval display`; Pokémon Brilliant Diamond 1.3.0, Unity's integer `Application.targetFrameRate`, also with `present_interval display`; EA SPORTS FC 27, Frostbite's simulation rate, found by name on any build, and on 1.8d.310c its frame regulator, also with `present_interval display`; Fire Emblem Fortune's Weave, a target frame rate the game steps by, found by its readers on any build, so the game asks for present interval 1 itself; Monolith's [native interval](../../docs/reference/frame-rate.md#monoliths-native-frame-interval), found from reviewed engine implementations, with required game timing corrections matched separately). `0` (the default): the game's own step. `30` / `60`: the host decides each frame's step in whole vsyncs and keeps the frame on screen that long (`hle_nvn.c` `fstep_tick`, `nvn_fstep.h`): 1 at a 60 cap, 2 when 60 does not hold or at a 30 cap (and while a prerendered movie plays), plus one vsync while the game is behind real time after a late frame. Presents follow that hold instead of the interval the game sets. `DM_FPS_TARGET` overrides it, also from `Documents/env.txt`; the log line `frame step: game time … of real time` checks the game's speed. A derived profile (`derive_profile`) whose `main` has no `FRAME_STEP` stubs, while the profile has them for other builds, gets `fps_target 0`: without the stubs the host would present every vsync and the game would run at double speed. On a main with neither a frame step nor an engine limit the host writes, the host keeps the game's own present interval whatever `fps_target` or `DM_FPS_TARGET` says (`hle_fpslock.c` `dm_fps_lock_engine`), except with `present_interval display`, where the cap is the present interval alone: a game whose only limit is its present interval and that steps by the time that passed (Red Dead Redemption) |
+ | `fps_max` | `60` (the default) or `120`: the highest rate `fps_target` and the player's **Frame rate** take. `120` only for a game with an engine limit the host writes and whose speed was measured at 120 against 60 over the same inputs: the target then follows the frames that fit, 120 or 60 ([120 fps follows the frame step](../../docs/reference/frame-rate.md#120-fps-follows-the-frame-step)). |
+diff --git a/dm/games/game.py b/dm/games/game.py
+index 24af68e699d23b96e01dcbdd20c19a632b413a79..08ef6c30b50a0b9951a52c02f5eaf207b122bc59 100644
+--- a/dm/games/game.py
++++ b/dm/games/game.py
+@@ -182,6 +182,10 @@ def header_one(g):
+         sys.exit(f"{g.id}: pso_gpu takes 1-4 whitespace-separated GPU architectures such as 'g18p applegpu_g19p' (each an optional applegpu_ prefix then an alphanumeric token; there is no none: omit the key for g18p with pso_mtl4 on, or no archive with pso_mtl4 off): {pg}")
+     et = g.get('enc_thread', 'off')   # Metal encoding on its own thread on the Mac by default (nvn_rec.h rec_on; on iOS it is on for every game; DM_NVN_ENC_THREAD overrides): on / off
+     if et not in ('on', 'off'): sys.exit(f'{g.id}: enc_thread must be on or off: {et}')
++    ncu = g.get('nvn_cut', '64')   # draws between the segments a submission is committed in while the GPU waits (nvn_mtl.m cut_draws; DM_NVN_CUT overrides): 0 = one command buffer per submission
++    if not ncu.isdigit() or int(ncu) > 100000: sys.exit(f'{g.id}: nvn_cut must be a number of draws (0 = off): {ncu}')
++    upc = g.get('up_copy', '0')   # megabytes of the resident ring upload sources are copied into (nvn_mtl.m upc_size; DM_NVN_UP_COPY overrides): 0 = off, up to 2048
++    if not upc.isdigit() or int(upc) > 2048: sys.exit(f'{g.id}: up_copy must be megabytes from 0 (off) to 2048: {upc}')
+     cp = g.get('core_preempt', 'off')   # same-core preemption approximation (hle_thread.c): on / off
+     if cp not in ('on', 'off'): sys.exit(f'{g.id}: core_preempt must be on or off: {cp}')
+     aba = g.get('alloc_big_align', 'off')   # nn::mem::StandardAllocator::Allocate aligns blocks of 64 KB or more to 64 KB (hle_os.c; Vanillaware's memory pool storage): on / off
+@@ -263,6 +267,8 @@ def header_one(g):
+          f'#define DM_GAME_PRESENT_SNAP {int(ps == "on")}',
+          f'#define DM_GAME_PSO_MTL4 {int(p4 == "on")}',
+          f'#define DM_GAME_ENC_THREAD {int(et == "on")}',
++         f'#define DM_GAME_NVN_CUT {int(ncu)}',
++         f'#define DM_GAME_UP_COPY {int(upc)}',
+          *([f'#define DM_GAME_SHARED_FONT_TTF {int(sf == "ttf")}'] if g.get('shared_font', '') else []),   # without the key the host decides by the SDK version (hle_sdk16.c)
+          f'#define DM_GAME_PAD_LAYOUT {("simple", "full", "touch").index(pl)}',
+          f'#define DM_GAME_OPMODE {int(om == "console")}',
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index cee968b8609c2089febd931776d3b7cbfb63c09e..ecc0b386cb9842526229c8d0d09fcdc54e6a030e 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -3454,7 +3454,9 @@ _Static_assert(sizeof(map_req) == 0x28, "NVNmappingRequest");
+ enum { VPT_LEAF = 512 };   // a page-table leaf covers 2 MB
+ typedef struct { const uint8_t *phys; uint64_t gen; uint32_t live, shadow; uint64_t wst; } vpte;   // live: may still be under a live GPU buffer (vunmap_defer); shadow: per-run copy in reservation (vshadow_map); wst: last copy-change stamp
+ struct vshadow { uint64_t voff, size; const uint8_t *src; uint8_t *alias_base, *alias; uint64_t alias_len, stamp; uint8_t **snap; uint32_t np; };   // misaligned physical mapping kept as a per-run copy; alias: host RW vm_remap of physical pages (0 SIGSEGV writebacks); snap: lazy per-host-page snapshot allocated only on GPU-written pages
+-struct vpool { const pool_t *pool; uint8_t *base; uint64_t len, size, top; int nrun, taken, alias_reg; struct vrun { uint64_t lo, hi; } *run; vpte **pt; struct vlog_ent *log; _Atomic uint64_t nlog; struct vshadow *sh; int nsh, csh; };   // len: reserved; size: the pool's; top: highest mapped end so far (logged per 128 MB); alias_reg: counted in resource_vis (mtl_sparse_alias_delta)
++struct vpool { const pool_t *pool; uint8_t *base; uint64_t len, size, top; int nrun, taken, alias_reg; struct vrun { uint64_t lo, hi; } *run; vpte **pt; struct vlog_ent *log; _Atomic uint64_t nlog; struct vshadow *sh; int nsh, csh;   // len: reserved; size: the pool's; top: highest mapped end so far (logged per 128 MB); alias_reg: counted in resource_vis (mtl_sparse_alias_delta)
++               struct { uint64_t lo, hi; } *phys; int nphys, cphys, phys_all; };   // phys: the storage of the physical pools it has mapped pages of, kept while it lives (nvn_sparse_shares); phys_all: more than VPHYS_MAX of them
++enum { VPHYS_MAX = 256 };
+ struct vlog_ent { uint64_t off, len; };   // a mapping request: the pool's change log (nvn_sparse_log_read), kept once a placement sparse texture asks for it
+ enum { VLOG_N = 4096 };
+ static struct vpool **g_vp; static int g_nvp, g_cvp;   // the pools with a range of their own, under g_vp_mu
+@@ -3501,7 +3503,7 @@ static void vpool_drop(pool_t *o) {   // caller holds g_vp_mu
+     for (uint64_t l = 0; l < (v->size + (2u << 20) - 1) >> 21; l++) free(v->pt[l]);
+     for (int i = 0; i < g_nvp; i++) if (g_vp[i] == v) { g_vp[i] = g_vp[--g_nvp]; break; }
+     for (int k = 0; k < v->nsh; k++) { atomic_fetch_sub(&g_sh_bytes, v->sh[k].size); vshadow_free(&v->sh[k]); }
+-    free(v->pt); free(v->log); free(v->run); free(v->sh); free(v); o->vp = NULL;
++    free(v->pt); free(v->log); free(v->run); free(v->sh); free(v->phys); free(v); o->vp = NULL;
+ }
+ static void vunmap_run(int all); static int g_nvun;   // the deferred unmaps (below)
+ // Pool finalize: the reservation goes (munmap) with its runs' buffers. The GPU finishes the work submitted so far first: the buffers' deferred release keeps them alive for that
+@@ -3845,6 +3847,15 @@ static int vpool_map(struct vpool *v, const map_req *r) {   // caller holds g_vp
+     if (ph && (!ph->mem || r->poff < 0 || (uint64_t)r->poff + r->size > ph->size)) { LOG("[RED] virtual pool %p: physical pool %p (%#llx bytes, storage %p) cannot supply %#llx+%#llx", (const void *)v->pool, (const void *)ph, (unsigned long long)ph->size, (void *)ph->mem, (unsigned long long)r->poff, (unsigned long long)r->size); return 0; }
+     vpt_set(v, (uint64_t)r->voff, r->size, ph ? ph->mem + r->poff : NULL);
+     if (v->nsh) vshadow_cut(v, (uint64_t)r->voff, (uint64_t)r->voff + r->size);
++    if (ph) {   // the storage this pool's pages can lie in from now on (nvn_sparse_shares)
++        uint64_t lo = (uint64_t)(uintptr_t)ph->mem, hi = lo + ph->size; int k = 0;
++        while (k < v->nphys && !(v->phys[k].lo <= lo && hi <= v->phys[k].hi)) k++;
++        if (k == v->nphys && v->nphys == VPHYS_MAX) v->phys_all = 1;
++        else if (k == v->nphys) {
++            if (v->nphys == v->cphys) { int nc = v->cphys ? 2 * v->cphys : 8; void *np = realloc(v->phys, (size_t)nc * sizeof *v->phys); if (!np) die("sparse pool storage ranges allocation failed"); v->phys = np; v->cphys = nc; }
++            v->phys[v->nphys].lo = lo; v->phys[v->nphys++].hi = hi;
++        }
++    }
+     vm_address_t to = (vm_address_t)(v->base + r->voff);
+     // Not directly vm_remap-able (beyond reservation, or misaligned to host page): misaligned physical sources with host-page-aligned virtual ranges become per-run shadow copies; others stay in the page table only
+     if ((uint64_t)r->voff + r->size > v->len || ((uintptr_t)to | r->size | (uint64_t)r->voff) & (pg - 1) || (ph && (((uintptr_t)ph->mem + (uintptr_t)r->poff) & (pg - 1)))) {
+@@ -4437,6 +4448,32 @@ int nvn_sparse_alias(uint64_t lo, uint64_t hi) {
+     }
+     pthread_mutex_unlock(&g_vp_mu); return r;
+ }
++// Whether two guest ranges can hold the same memory through a sparse pool's page table, their own addresses apart: two ranges in sparse pools may share any page; one in a sparse
++// pool and one outside share memory only where that pool has mapped pages of the physical pool the other lies in (v->phys: the storage of every pool it has mapped from, kept
++// while it lives, so an unmapping takes nothing back); two outside share none. Mario Kart World's sky cube map is a sparse texture: with any sparse pool counted as sharing with
++// every texture, its draws split into 6 passes a view, against 1 (kingbumi31/no-lag-kart d67d32a3, MIT)
++int nvn_sparse_shares(uint64_t alo, uint64_t ahi, uint64_t blo, uint64_t bhi) {
++    if (ahi <= alo || bhi <= blo) return 0;
++    const struct vpool *va = NULL, *vb = NULL; int na = 0, nb = 0, r = 0;
++    pthread_mutex_lock(&g_vp_mu);
++    for (int k = 0; k < g_nvp; k++) { const struct vpool *v = g_vp[k]; uint64_t base = (uint64_t)(uintptr_t)v->base;
++        if (alo < base + v->len && base < ahi) { va = v; na++; }
++        if (blo < base + v->len && base < bhi) { vb = v; nb++; } }
++    if ((na && nb) || na > 1 || nb > 1) r = 1;
++    else if (na || nb) { const struct vpool *v = na ? va : vb; uint64_t lo = na ? blo : alo, hi = na ? bhi : ahi;
++        r = v->phys_all; for (int i = 0; i < v->nphys && !r; i++) r = lo < v->phys[i].hi && v->phys[i].lo < hi; }
++    pthread_mutex_unlock(&g_vp_mu); return r;
++}
++// Whether a guest range can be written through a sparse pool's page table: it lies in a sparse pool, or a sparse pool has mapped pages of the physical pool it lies in (v->phys).
++// An upload that copies the range on the CPU (nvn_mtl.m up_copy_src) must see GPU writes made through either
++int nvn_sparse_reaches(uint64_t lo, uint64_t hi) {
++    if (hi <= lo) return 0;
++    int r = 0; pthread_mutex_lock(&g_vp_mu);
++    for (int k = 0; k < g_nvp && !r; k++) { const struct vpool *v = g_vp[k]; uint64_t base = (uint64_t)(uintptr_t)v->base;
++        r = (lo < base + v->len && base < hi) || v->phys_all;
++        for (int i = 0; i < v->nphys && !r; i++) r = lo < v->phys[i].hi && v->phys[i].lo < hi; }
++    pthread_mutex_unlock(&g_vp_mu); return r;
++}
+ // Textures of a sparse pool, read through its page table (see the sparse pools above): whether a pool is one, a copy of a texture's bytes (unmapped pages read as 0; → bytes not mapped),
+ // whether its content may have changed since an upload (a mapping in its range newer than gen, or a physical page behind it written after the dirty-page stamp), and the write
+ // protection of the physical pages behind it (taken before an upload, as for any packaged texture)
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03e5ce92b7 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -1534,14 +1534,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,
+ }
+ 
+ // Address → pool: the last hit first, then a binary search over indices sorted by start address, and a full linear scan only when that fails (pools overlapping).
+-// The Legend of Zelda: Breath of the Wild keeps about 1760 memory pools alive and every buffer binding of every draw looks one up; the old full scan took about 4% of the submit thread's samples (mtl_gpu_addr 222 / 6 s). Adding / removing pools invalidates the index, which is re-sorted when next used. Caller holds g_mu
+-static int *g_pidx; static int g_pidx_cap;
++// The Legend of Zelda: Breath of the Wild keeps about 1760 memory pools alive and every buffer binding of every draw looks one up; the old full scan took about 4% of the submit thread's samples (mtl_gpu_addr 222 / 6 s). Adding / removing pools invalidates the index, which is put right when next used. Caller holds g_mu
++// The index keeps the order of its last sort: indices past the table's new end leave it, new ones join at its end, and an insertion sort moves the few entries that are out of
++// place (a removed pool's place in the table is taken by the table's last entry, so that one is). Sorting anew took 0.3 ms for the 5,200 to 6,500 pools Mario Kart World keeps,
++// against 10 us, and the game finalizes pools in runs, 8 to 53 in a row as it leaves a stretch of track behind: each removal was followed by the replay's next buffer binding,
++// and a third of the replay's stacks in such a frame were in qsort. An index further out of order than PIDX_MOVES places an entry is sorted anew, as it was every time.
++// From kingbumi31/no-lag-kart (MIT, aa3d115b)
++enum { PIDX_MOVES = 8 };
++static int *g_pidx; static int g_pidx_cap, g_pidx_n; static uint64_t g_pidx_sorts, g_pidx_anew;   // g_pidx_n: the index holds a permutation of 0 .. g_pidx_n - 1
+ static int pidx_cmp(const void *a, const void *b) { uintptr_t x = g_pools[*(const int *)a].lo, y = g_pools[*(const int *)b].lo; return x < y ? -1 : x > y; }
+ static void pidx_sort(void) {
+     if (g_pidx_ok) return;
+     if (g_pidx_cap < g_npool) { g_pidx_cap = g_npool * 2; g_pidx = realloc_or_die(g_pidx, (size_t)g_pidx_cap * sizeof *g_pidx, "the memory pool index"); }
+-    for (int i = 0; i < g_npool; i++) g_pidx[i] = i;
+-    qsort(g_pidx, (size_t)g_npool, sizeof *g_pidx, pidx_cmp); g_pidx_ok = 1;
++    int n = 0;
++    for (int i = 0; i < g_pidx_n; i++) if (g_pidx[i] < g_npool) g_pidx[n++] = g_pidx[i];
++    for (int i = g_pidx_n; i < g_npool; i++) g_pidx[n++] = i;
++    g_pidx_n = n; g_pidx_sorts++;   // n == g_npool
++    long left = (long)PIDX_MOVES * n + 64; int i = 1;
++    for (; i < n && left >= 0; i++) {
++        int v = g_pidx[i], j = i; uintptr_t lo = g_pools[v].lo;
++        while (j > 0 && g_pools[g_pidx[j - 1]].lo > lo) { g_pidx[j] = g_pidx[j - 1]; j--; }
++        g_pidx[j] = v; left -= i - j;
++    }
++    if (i < n) { qsort(g_pidx, (size_t)n, sizeof *g_pidx, pidx_cmp); g_pidx_anew++; }
++    g_pidx_ok = 1;
+ }
+ static int big_new(big_pool *b, uintptr_t lo, uintptr_t hi, uintptr_t end, int reach) {   // caller holds g_mu: a new entry for [lo, end) of the pool, looked up for addresses in [lo, hi)
+     id<MTLBuffer> buf = pool_buf(lo, end);
+@@ -2422,6 +2438,8 @@ static void drw_drained(void) { g_drain_sub = g_sub_serial; g_drain_other = g_wr
+ static int drw_valid(void) { return g_drain_sub == g_sub_serial && !g_drw_over && g_wr_epoch - g_wr_geo == g_drain_other; }
+ static int drw_hits(uint64_t lo, uint64_t n) { for (int i = 0; i < g_ndrw; i++) if (lo < g_drw_hi[i] && g_drw_lo[i] < lo + n) return 1; return 0; }
+ int nvn_sparse_alias(uint64_t lo, uint64_t hi);   // hle_nvn.c: a sparse guest range may alias another pool at a different address
++int nvn_sparse_shares(uint64_t alo, uint64_t ahi, uint64_t blo, uint64_t bhi);   // hle_nvn.c: two guest ranges can hold the same memory through a sparse pool's page table
++int nvn_sparse_reaches(uint64_t lo, uint64_t hi);   // hle_nvn.c: a guest range can be written through a sparse pool's page table
+ static id<MTL4ComputeCommandEncoder> blit_buf(uint64_t rlo, uint64_t rhi, uint64_t wlo, uint64_t whi) {
+     g_wr_epoch++;
+     g_blit_alias = 1;   // before blit_raw, so an encoder it opens starts with alias visibility
+@@ -4179,6 +4197,12 @@ static int up_lost_take(id tex) {   // This texture's upload was dropped: take i
+     if (!tex) return 0; os_unfair_lock_lock(&g_up_lost_lk); int hit = [g_up_lost containsObject:tex]; if (hit) { [g_up_lost removeObject:tex]; atomic_store(&g_up_lost_n, (int)g_up_lost.allObjects.count); atomic_fetch_add(&g_up_lost_redo, 1); } os_unfair_lock_unlock(&g_up_lost_lk); return hit;
+ }
+ static void up_diag(void);
++// The upload source ring (DM_NVN_UP_COPY / profile key up_copy, up_copy_src): bytes handed out so far (monotonic; the ring offset is head % size), the head at the open batch's
++// last copy, and the bytes of the ring whose batches have completed (raised by each batch's completion handler; batches complete in the order they were committed, so a maximum
++// is enough). From kingbumi31/no-lag-kart (MIT, 1ec15ff8)
++static id<MTLBuffer> g_upc_blk; static uint64_t g_upc_head, g_upc_batch_end; static _Atomic uint64_t g_upc_done;
++static _Atomic uint64_t g_upc_n, g_upc_bytes, g_upc_full, g_upc_gpu;   // copies made, their bytes, sources the full ring sent back to a zero-copy buffer, sources a pending GPU write kept zero-copy
++static void upc_done(uint64_t end) { uint64_t d = atomic_load(&g_upc_done); while (d < end && !atomic_compare_exchange_weak(&g_upc_done, &d, end)) {} }
+ static void up_flush(void) {
+     up_owner_check("up_flush");
+     if (!g_up_cb) return;
+@@ -4211,6 +4235,7 @@ static void up_flush(void) {
+     NSArray *dsts = targets.allObjects;
+     static int lost_at = -2; static uint64_t batch_n; if (lost_at == -2) { const char *e = getenv("DM_TEST_UP_LOST"); lost_at = e ? atoi(e) : -1; } int fake_lost = dsts.count && lost_at > 0 && (int)++batch_n == lost_at;
+     MTL4CommitOptions *o = [MTL4CommitOptions new];
++    uint64_t upc_end = g_upc_batch_end;   // the ring bytes this batch's copies reach (up_copy_src)
+     atomic_fetch_add(&g_up_pending, 1);
+     [o addFeedbackHandler:^(id<MTL4CommitFeedback> f) {
+         if (f.error) { MLOG("[RED] upload command buffer execution error: %s", f.error.description.UTF8String); res_top_once(f.error); gpu_lost_check(f.error, "upload"); }
+@@ -4236,6 +4261,7 @@ static void up_flush(void) {
+         } else {
+             up_complete(slot);
+         }
++        upc_done(upc_end);
+     }];
+     res_commit();
+     cb_end(cb, nil);
+@@ -4590,12 +4616,50 @@ static void rb_swap_rows(uint8_t *p, size_t wb, size_t rows, size_t nz, size_t r
+ // nil elsewhere (or if it is refused: the caller looks the address up as usual). The GPU only reads it, so it is made over the pages the upload has just protected, not through pool_buf,
+ // which would make them writable again and the texture count as written at once
+ static uint64_t g_up_src_made;   // source buffers made (t_upload_src)
++// DM_NVN_UP_COPY=<MB> (profile key up_copy; 0: off): the source of such an upload is a copy of the texture's storage in a shared ring of that size, which the residency set holds for
++// good, in place of a zero-copy buffer over its pages. Making those pages resident was the largest part of a scene cut's residency commits in Mario Kart World: the cut to the
++// starting grid with one player made 1,440 source buffers in one frame, 36.9 ms of residency commits for them of 63.7 and about 8 ms making them, in a 131 ms frame (M2 Pro).
++// A copy runs at memory speed. The ring is handed out in order; a copy needs room the batches still running do not hold, else its texture takes a zero-copy buffer as before
++// (counted: g_upc_full), so nothing waits for the GPU here. A texture over a quarter of the ring keeps its zero-copy buffer too. The copy is taken when the upload is encoded,
++// after nvn_dirty_protect: a later write by the game is caught and re-uploaded as before. From kingbumi31/no-lag-kart (MIT, 1ec15ff8)
++static size_t upc_size(void) { static long v = -1; if (v < 0) { const char *e = getenv("DM_NVN_UP_COPY"); v = e ? atol(e) : DM_GAME_UP_COPY; if (v < 0) v = 0; if (v > 2048) v = 2048;
++    if (v) MLOG("upload sources: copied into a %ld MB ring (%s)", v, e ? "DM_NVN_UP_COPY" : "game profile up_copy"); } return (size_t)v << 20; }
++static void upc_copy(uint8_t *dst, const uint8_t *src, size_t n) {   // a large texture's copy in parts on several cores
++    if (n < (8u << 20)) { memcpy(dst, src, n); return; }
++    size_t parts = 4, step = ((n + parts - 1) / parts + 16383) & ~(size_t)16383;
++    dispatch_apply(parts, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^(size_t i) { size_t o = i * step; if (o < n) memcpy(dst + o, src + o, MIN(step, n - o)); });
++}
++static id<MTLBuffer> up_copy_src(uint64_t addr, uint64_t len, uint64_t *off) {
++    size_t cap = upc_size(); uint64_t need = (len + 255u) & ~(uint64_t)255u;
++    if (!cap || !len || need > cap / 4) return nil;
++    // A copy is the storage as the CPU sees it now, where a zero-copy buffer is read when the GPU runs the upload: with a GPU write into it pending in this submission or still
++    // running (a copy over a texture's storage before its first read), the copy would miss it. Those keep the zero-copy buffer (the same test as tex_cpu_wait's, the
++    // own address apart). A sparse pool's page table can reach the storage through other addresses: then any write in flight counts, as tex_cpu_wait counts it
++    uint64_t hi = addr + len;
++    int sp = nvn_sparse_gen() && nvn_sparse_reaches(addr, hi);
++    if (drw_valid() ? drw_hits(addr, len) || (sp && g_ndrw) :
++        pend_hits(addr, len) || g_sbw_over || sbw_hits(addr, hi) || gw_live(addr, hi) || (sp && (g_npend || g_nsbw || g_nsbw_w || g_fence > g_done))) { atomic_fetch_add(&g_upc_gpu, 1); return nil; }
++    if (!g_upc_blk) {
++        g_upc_blk = [g_dev newBufferWithLength:cap options:MTLResourceStorageModeShared];
++        if (!g_upc_blk) { MLOG("[RED] upload sources: no %zu MB ring, zero-copy buffers as before", cap >> 20); setenv("DM_NVN_UP_COPY", "0", 1); return nil; }
++        res_add(g_upc_blk); res_commit();
++    }
++    uint64_t head = g_upc_head, at = head % cap;
++    if (at + need > cap) head += cap - at;   // it does not fit before the ring's end: from its start
++    if (head + need - atomic_load(&g_upc_done) > cap) { atomic_fetch_add(&g_upc_full, 1); return nil; }
++    upc_copy((uint8_t *)g_upc_blk.contents + head % cap, (const uint8_t *)(uintptr_t)addr, (size_t)len);
++    *off = head % cap; g_upc_head = g_upc_batch_end = head + need;
++    atomic_fetch_add(&g_upc_n, 1); atomic_fetch_add(&g_upc_bytes, len);
++    return g_upc_blk;
++}
++void mtl_upc_stats(uint64_t *n, uint64_t *bytes, uint64_t *full) { *n = atomic_load(&g_upc_n); *bytes = atomic_load(&g_upc_bytes); *full = atomic_load(&g_upc_full); }
+ static id<MTLBuffer> up_big_src(uint64_t addr, uint64_t len, uint64_t *off, int may_split) {
+     // Not once the raw memory table holds the whole pool (big_full): the lookup finds that buffer. Ocarina of Time's first scene made 4,664 of these in one batch, 2.1 GB counted against the working set for pages already wired
+     pthread_mutex_lock(&g_mu); int k = big_of(addr), in = k >= 0 && !g_big[k].full;
+     if (k < 0 && len) { int i = pool_find(addr, len); in = i >= 0 && !g_pools[i].res && !addr_meets(g_pools[i].lo, g_pools[i].hi); }
+     pthread_mutex_unlock(&g_mu);
+     if (!in || !len) return nil;
++    { id<MTLBuffer> c = up_copy_src(addr, len, off); if (c) return c; }   // DM_NVN_UP_COPY
+     uintptr_t pg = (uintptr_t)getpagesize(), a = (uintptr_t)addr & ~(pg - 1), b = ((uintptr_t)addr + len + pg - 1) & ~(pg - 1);
+     // The staging budget does not count guest pages. End the batch only between textures so its completion can release those pages without invalidating a source already being assembled.
+     size_t budget = up_src_budget();
+@@ -8179,12 +8243,27 @@ typedef struct { tex_t t; int ok; view_t v; int has_v; void *view; uint64_t view
+                  void *palt[4], *palt_of[4]; uint64_t palt_rid[4];   // palt[k]: the view a texture pool table of layered type k (pool_lk) holds for the ID (pool_fit), apart from alt so slot binds and tables do not take turns
+                  void *alt, *alt_of; uint64_t alt_rid; uint8_t alt_type;   // alt: compatible view used when the shader's declared type differs from view (tex_fit), alt_of = the view it was built from
+                  void *im, *im_of; uint64_t im_rid;                       // im: the view an image slot reads in the shader's pixel class (img_fit), im_of = the view it was built from
+-                 int prev, next, retired, gone; uint64_t transient_sub; uint8_t tt1, sp, evicted;   // prev / next: descriptor index + 1, by texture serial; gone: its memory pool was finalized (treg_drop_pool_views); sp: in g_treg_sp; evicted: idle package freed (pkg_evict_idle)
++                 int prev, next, pprev, pnext, retired, gone; uint64_t transient_sub; uint8_t tt1, sp, evicted;   // prev / next: descriptor index + 1, by texture serial, pprev / pnext: by memory pool; gone: its memory pool was finalized (treg_drop_pool_views); sp: in g_treg_sp; evicted: idle package freed (pkg_evict_idle)
+                  void *stand; uint64_t stand_rid, stand_sum, reg_frame; uint8_t stand_tt1, stand_no;
+                  uint32_t used; } treg_t;   // stand: what its pool table entries hold while its texture is not made (pool_stand; retained), stand_tt1 its texture type + 1, stand_no: it can have none (STAND_NO), or none until a mapping notes its pages (STAND_WAIT); reg_frame: the frame of the registration
+ enum { STAND_NO = 1, STAND_WAIT = 2 };   // treg_t.stand_no: no stand-in while the registration stands; none until a mapping over its pages notes it (treg_sparse_notes)
+ static treg_t *g_treg; static int g_ntreg;
+ static nvn_hmap g_treg_serial = {.klen = 8};   // serial → first registered descriptor index + 1, under g_rmu
++// The IDs registered with a texture of one memory pool, a list as by serial: a pool's Finalize marks them gone. It walked every registered ID for that, under g_rmu, which every
++// draw takes for its textures: 0.75 to 1.2 ms a pool with Mario Kart World's 131,329 IDs, to mark an ID or none, so while the game finalized 50 pools in a row the replay moved
++// one lock hand-over at a time, and that frame took 65 ms. An ID joins its pool's list behind the list's first one, so the table changes only when a list gets or loses its
++// first ID, and the last pool asked for is remembered with its first ID. From kingbumi31/no-lag-kart (MIT, aa3d115b, 9b1f285a)
++static nvn_hmap g_treg_pool = {.klen = 8};   // memory pool object → first registered descriptor index + 1, under g_rmu
++static uint64_t g_treg_pool_lk; static int g_treg_pool_lh;   // the last pool asked for (0: none) and its first ID + 1
++static uint64_t g_treg_pool_seen, g_treg_pool_asks;   // IDs a pool's Finalize looked at; lookups in the table
++static int treg_pool_first(uint64_t pk) {
++    if (g_treg_pool_lk != pk) { g_treg_pool_lk = pk; g_treg_pool_lh = (int)(uintptr_t)nvn_hm_get(&g_treg_pool, &pk); g_treg_pool_asks++; }
++    return g_treg_pool_lh;
++}
++static void treg_pool_set(uint64_t pk, int first) {
++    if (first) nvn_hm_put(&g_treg_pool, &pk, (void *)(uintptr_t)first); else nvn_hm_del(&g_treg_pool, &pk);
++    g_treg_pool_lk = pk; g_treg_pool_lh = first;
++}
+ // Texture ID views are valid for an epoch (view_ser), not for every serial table change: ser_sync takes the notes (own_note) and sends only the IDs registered with a noted serial
+ // down the slow path; a change without a note starts a new epoch, which sends them all (what every g_ser_gen bump did before). A battle map in Fire Emblem: Fortune's Weave changes a
+ // few serials a frame (the per-stage program ring in bind_stages among them), and each change made the next pool walk (pool_gpu) resolve all ~5,000 IDs again, 2 ms a frame.
+@@ -8261,14 +8340,22 @@ static void treg_drop_stand(treg_t *r) {
+     if (r->stand) { defer_obj_unref((__bridge id)r->stand); CFRelease(r->stand); r->stand = NULL; r->stand_rid = 0; g_stand_live--; }
+     r->stand_no = 0;
+ }
+-static void treg_unlink(int id_) {
++static void treg_unlink(int id_) {   // out of its serial's list and out of its pool's
+     treg_t *r = &g_treg[id_];
+-    if (!r->ok || !r->t.serial) return;
+-    if (r->prev) g_treg[r->prev - 1].next = r->next;
+-    else if (r->next) nvn_hm_put(&g_treg_serial, &r->t.serial, (void *)(uintptr_t)r->next);
+-    else nvn_hm_del(&g_treg_serial, &r->t.serial);
+-    if (r->next) g_treg[r->next - 1].prev = r->prev;
+-    r->prev = r->next = 0;
++    if (!r->ok) return;
++    if (r->t.serial) {
++        if (r->prev) g_treg[r->prev - 1].next = r->next;
++        else if (r->next) nvn_hm_put(&g_treg_serial, &r->t.serial, (void *)(uintptr_t)r->next);
++        else nvn_hm_del(&g_treg_serial, &r->t.serial);
++        if (r->next) g_treg[r->next - 1].prev = r->prev;
++        r->prev = r->next = 0;
++    }
++    if (r->t.pool) {
++        if (r->pprev) g_treg[r->pprev - 1].pnext = r->pnext;
++        else treg_pool_set((uint64_t)(uintptr_t)r->t.pool, r->pnext);   // it was its pool's first
++        if (r->pnext) g_treg[r->pnext - 1].pprev = r->pprev;
++        r->pprev = r->pnext = 0;
++    }
+ }
+ static void treg_retire_serial(uint64_t ser) {
+     // Finalize retires the API object, not the descriptor's copied metadata.
+@@ -8391,8 +8478,14 @@ static nvn_hmap g_vc = {.klen = 8};   // the Metal texture's address → vc_set
+ static uint64_t g_vc_hit, g_vc_new;
+ static inline uint64_t vc_addr(id<MTLTexture> t) { return (uint64_t)(uintptr_t)(__bridge void *)t; }
+ static void vc_rows_drop(vc_set *s) { if (s->rows) { defer_obj_release((__bridge id)s->rows); CFRelease(s->rows); s->rows = NULL; s->rows_rid = s->rows_n = 0; } }
++static nvn_hmap g_vc_pools = {.klen = 8};   // memory pool object → how many sets are of its textures: a pool's Finalize walks the cache only for a pool that has some (vc_drop_pool; no-lag-kart aa3d115b)
++static void vc_pool_n(const void *pool, int d) {
++    uint64_t pk = (uint64_t)(uintptr_t)pool; intptr_t n = (intptr_t)nvn_hm_get(&g_vc_pools, &pk) + d;
++    if (n > 0) nvn_hm_put(&g_vc_pools, &pk, (void *)n); else nvn_hm_del(&g_vc_pools, &pk);
++}
+ static void vc_set_free(void *p) {
+     vc_set *s = p;
++    vc_pool_n(s->pool, -1);
+     for (int i = 0; i < VC_WAYS; i++) if (s->view[i]) { defer_obj_unref((__bridge id)s->view[i]); CFRelease(s->view[i]); }
+     vc_rows_drop(s);
+     free(s);
+@@ -8408,7 +8501,7 @@ static vc_set *vc_set_for(id<MTLTexture> base, const void *pool) {   // base's e
+     if (!held) return NULL;
+     if (g_vc.n >= VC_MAX) nvn_hm_clear(&g_vc, vc_set_free);
+     if (!(s = calloc(1, sizeof *s))) return NULL;
+-    s->pool = pool; nvn_hm_put(&g_vc, &a, s);
++    s->pool = pool; nvn_hm_put(&g_vc, &a, s); vc_pool_n(pool, 1);
+     return s;
+ }
+ static void vc_put(id<MTLTexture> base, const void *pool, const vc_key *k, id<MTLTexture> v) {
+@@ -8446,6 +8539,7 @@ void mtl_vc_stats(unsigned *n, uint64_t *hit, uint64_t *made) { os_unfair_lock_l
+ static void tb2_gone_clear(void);
+ static void vc_drop_pool(const void *pool) {   // caller holds g_rmu
+     tb2_gone_clear();
++    uint64_t pk = (uint64_t)(uintptr_t)pool; if (!nvn_hm_get(&g_vc_pools, &pk)) return;
+     for (uint32_t i = 0; i < g_vc.cap;) {   // a deletion shifts later entries back into slot i: look at it again
+         vc_set *s = g_vc.vals[i];
+         if (s && s->pool == pool) { uint64_t a; memcpy(&a, g_vc.keys + (size_t)i * 8, 8); nvn_hm_del(&g_vc, &a); vc_set_free(s); }
+@@ -8566,9 +8660,10 @@ static void treg_gone(treg_t *r) {
+     treg_drop_stand(r);
+ }
+ static void treg_drop_pool_views(const void *pool) {
++    uint64_t pk = (uint64_t)(uintptr_t)pool;
+     os_unfair_lock_lock(&g_rmu);
+     vc_drop_pool(pool);
+-    for (int i = 0; i < g_ntreg; i++) if (g_treg[i].ok && (const void *)g_treg[i].t.pool == pool) treg_gone(&g_treg[i]);
++    for (int k = treg_pool_first(pk); k; k = g_treg[k - 1].pnext) { g_treg_pool_seen++; treg_gone(&g_treg[k - 1]); }   // they stay registered, and listed
+     os_unfair_lock_unlock(&g_rmu);
+ }
+ // Which texture IDs shaders read through a pool (dmsh_reflect.py pool_arrays): a bitmap the shaders set, one bit an ID, which the host folds into g_seen_done at each submission. A handle read from game
+@@ -8670,6 +8765,11 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
+             if (rr->next) g_treg[rr->next - 1].prev = id_ + 1;
+             nvn_hm_put(&g_treg_serial, &t->serial, (void *)(uintptr_t)(id_ + 1));
+         }
++        if (t && t->pool) {   // behind its pool's first ID, or the first itself
++            uint64_t pk = (uint64_t)(uintptr_t)t->pool; int first = treg_pool_first(pk);
++            if (!first) { rr->pprev = rr->pnext = 0; treg_pool_set(pk, id_ + 1); }
++            else { treg_t *f = &g_treg[first - 1]; rr->pprev = first; rr->pnext = f->pnext; if (f->pnext) g_treg[f->pnext - 1].pprev = id_ + 1; f->pnext = id_ + 1; }
++        }
+     }
+     // The scan can remove a gone ID before an identical registration revives it.
+     if ((!same || was_gone) && t && !rr->sp && t->pool && nvn_sparse_pool(t->pool)) {
+@@ -15957,7 +16057,7 @@ static int tex_storage_overlap(const tex_t *a, const tex_t *b) {
+     if (!a->mem || !b->mem) return 0;
+     uint64_t x = (uint64_t)a->mem, y = (uint64_t)b->mem;
+     if (!a->L.size || !b->L.size || a->L.size > UINT64_MAX - x || b->L.size > UINT64_MAX - y) return 1;
+-    return (x < y + b->L.size && y < x + a->L.size) || nvn_sparse_alias(x, x + a->L.size) || nvn_sparse_alias(y, y + b->L.size);
++    return (x < y + b->L.size && y < x + a->L.size) || nvn_sparse_shares(x, x + a->L.size, y, y + b->L.size);
+ }
+ static int g_samples_fb_left;   // draw_samples_rt: a fragment texture that is a colour attachment does not count: fb_prepare answers for it, as for any draw of a pass
+ static const char *g_dsr_why;   // what draw_samples_rt found (the pass dump's split line)
+@@ -19654,7 +19754,7 @@ int mtl_fps_target(void) { static int env = -2; if (env == -2) { const char *e =
+ // Cut only when no encoder is open and no pass is deferred / merged / hoisted; commit this batch's uploads first (later draws use them). The fence signal and completion work stay on the last segment only: the queue executes in commit order and every encoder starts with a queue barrier
+ // A buffer → texture copy is cut after as well, at the next pass boundary whatever the draw count (g_cut_copy, set by copy_b2t). It can run while the host encodes the rest.
+ // The cut starts the already encoded work promptly. Record-time staging handles a source recycled by the CPU before encoding even reaches the copy (hle_nvn.c).
+-static int cut_draws(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_CUT"); v = e ? atoi(e) : 64; MLOG("segmented submission: a segment is submitted between passes every %d draws (DM_NVN_CUT, 0 = off)", v); } return v; }
++static int cut_draws(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_CUT"); v = e ? atoi(e) : DM_GAME_NVN_CUT; MLOG("segmented submission: a segment is submitted between passes every %d draws (%s, 0 = off)", v, e ? "DM_NVN_CUT" : "game profile nvn_cut"); } return v; }
+ static uint64_t g_cut_draw0, g_cuts, g_copy_cuts;
+ // The count starts with the submission (mtl_sub_begin). It used to start at the submission's first sub_cut, which only a render target change reaches (OP_SET_RT): the draws a
+ // submission makes into the target it inherited, before its first target change, were never counted, and the first segment came that many draws late
+diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
+index 1c58141ef98019608b5884712f30288cd6b4ed71..59bf7bd5a6015af002b139d992ef530cd4f91f15 100644
+--- a/dm/gfx/tests/Makefile
++++ b/dm/gfx/tests/Makefile
+@@ -309,6 +309,8 @@ t_file_wire: t_file_wire.m $(MTL_T_DEP)
+ 	clang $(CFLAGS) -fobjc-arc -o $@ t_file_wire.m $(MTL_T_SRC) $(FW)
+ t_gpu_only_addr: t_gpu_only_addr.m $(MTL_T_DEP)
+ 	clang $(CFLAGS) -fobjc-arc -o $@ t_gpu_only_addr.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
++t_pool_finalize: t_pool_finalize.m $(MTL_T_DEP)
++	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_finalize.m $(MTL_T_SRC) $(FW)
+ t_pool_chunks: t_pool_chunks.m $(MTL_T_DEP)
+ 	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_chunks.m $(MTL_T_SRC) $(FW)
+ t_pool_retire: t_pool_retire.m $(MTL_T_DEP)
+diff --git a/dm/gfx/tests/t_copy_alias.m b/dm/gfx/tests/t_copy_alias.m
+index 24254f2b06f7086e0500cd1a2e66af303e5103a3..cd2899e039562c48601ff56dc1abd5387c2d8fd5 100644
+--- a/dm/gfx/tests/t_copy_alias.m
++++ b/dm/gfx/tests/t_copy_alias.m
+@@ -40,6 +40,42 @@ static void separate_buffers(void) {
+     }
+     res_remove(a); res_remove(b); res_remove(io); a = b = nil; munmap(mem, pg);
+ }
++// A texture of a sparse pool shares storage with one outside sparse pools only where its pool has mapped pages of the physical pool the other lies in (tex_storage_overlap)
++static void sparse_shares(void) {
++    const size_t len = 4 * getpagesize();
++    uint8_t *m1 = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0), *m2 = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
++    if (m1 == MAP_FAILED || m2 == MAP_FAILED) abort();
++    pool_t p1, p2, sparse;
++    pool_builder_t pb = {.mem=m1, .size=len, .flags=0x24};
++    CHECK(h_nvnMemoryPoolInitialize((NVNmemoryPool *)&p1, (const NVNmemoryPoolBuilder *)&pb), "first physical pool initialized");
++    pb.mem = m2;
++    CHECK(h_nvnMemoryPoolInitialize((NVNmemoryPool *)&p2, (const NVNmemoryPoolBuilder *)&pb), "second physical pool initialized");
++    pb = (pool_builder_t){.size=DM_GAME_APP_POOL + 2 * len, .flags=0x200};
++    CHECK(h_nvnMemoryPoolInitialize((NVNmemoryPool *)&sparse, (const NVNmemoryPoolBuilder *)&pb), "sparse pool initialized");
++    tex_t ts = {0}, ts2 = {0}, t1 = {0}, t2 = {0};
++    ts.serial = 99901; ts.pool = &sparse; ts.mem = sparse.mem; ts.L.size = len;
++    ts2 = ts; ts2.serial = 99902; ts2.mem = sparse.mem + len;
++    t1.serial = 99903; t1.pool = &p1; t1.mem = m1 + 256; t1.L.size = 1024;
++    t2.serial = 99904; t2.pool = &p2; t2.mem = m2 + 256; t2.L.size = 1024;
++    CHECK(!tex_storage_overlap(&ts, &t1) && !tex_storage_overlap(&t1, &ts), "a sparse pool with nothing mapped shares no storage");
++    map_req one = {.phys=(NVNmemoryPool *)&p1, .size=len};
++    CHECK(h_nvnMemoryPoolMapVirtual((NVNmemoryPool *)&sparse, 1, (const NVNmappingRequest *)&one), "pages of the first pool mapped");
++    CHECK(tex_storage_overlap(&ts, &t1) && tex_storage_overlap(&t1, &ts), "a sparse texture and one in the physical pool its pool has pages of may share storage");
++    CHECK(tex_storage_overlap(&ts2, &t1), "whatever part of the sparse pool it lies in");
++    CHECK(!tex_storage_overlap(&ts, &t2) && !tex_storage_overlap(&t2, &ts), "a sparse texture and one in a pool its pool has no page of share none");
++    CHECK(!tex_storage_overlap(&t1, &t2), "two textures of different physical pools share none");
++    CHECK(tex_storage_overlap(&ts, &ts2), "two textures in sparse pools may share any page");
++    map_req two = {.phys=(NVNmemoryPool *)&p2, .voff=len, .size=len};
++    CHECK(h_nvnMemoryPoolMapVirtual((NVNmemoryPool *)&sparse, 1, (const NVNmappingRequest *)&two), "pages of the second pool mapped");
++    CHECK(tex_storage_overlap(&ts, &t2) && tex_storage_overlap(&t2, &ts), "once the pool has pages of the second pool they may share storage");
++    map_req gone = {.voff=len, .size=len};
++    CHECK(h_nvnMemoryPoolMapVirtual((NVNmemoryPool *)&sparse, 1, (const NVNmappingRequest *)&gone), "those pages unmapped");
++    CHECK(tex_storage_overlap(&ts, &t2), "an unmapping takes nothing back");
++    h_nvnMemoryPoolFinalize((NVNmemoryPool *)&sparse);
++    CHECK(!tex_storage_overlap(&ts, &t2) && !tex_storage_overlap(&ts, &t1), "with the sparse pool finalized its range is one like any other");
++    h_nvnMemoryPoolFinalize((NVNmemoryPool *)&p1); h_nvnMemoryPoolFinalize((NVNmemoryPool *)&p2);
++    munmap(m1, len); munmap(m2, len);
++}
+ static void sparse_copies(void) {
+     const size_t n = 256, len = 4 * getpagesize();
+     uint8_t *mem = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+@@ -116,6 +152,6 @@ static void shader_alias(void) {
+     atomic_fetch_sub(&g_big_n, 1); res_remove(a); res_remove(b); res_remove(io); res_remove(seed); a = b = nil; munmap(mem, pg);
+ }
+ int main(void) { @autoreleasepool {
+-    mtl_init(); separate_buffers(); sparse_copies(); shader_alias();
++    mtl_init(); separate_buffers(); sparse_copies(); sparse_shares(); shader_alias();
+     printf("t_copy_alias: %d checks, %d failed\n", checks, failed); return failed != 0;
+ } }
+diff --git a/dm/gfx/tests/t_direct_upload.m b/dm/gfx/tests/t_direct_upload.m
+index 02b492cb49249ff67a6fa5d70a8e540386be8b5f..433d9aa0c3d7a49f695a428e0014d6d051db6c08 100644
+--- a/dm/gfx/tests/t_direct_upload.m
++++ b/dm/gfx/tests/t_direct_upload.m
+@@ -52,6 +52,7 @@ static void run(int target,unsigned width,unsigned height,unsigned layers,unsign
+     mtl_tex_release(&t);mtl_drain();mtl_alias_drop_pool(&pool);nvn_dirty_remove_range(mem);mtl_pool_del(mem);mtl_drain();free(mem);free(expected);
+ }
+ int main(void){@autoreleasepool{
++    setenv("DM_NVN_UP_COPY", "0", 0);   // the zero-copy sources these checks count and place; a profile with up_copy (Mario Kart World) would copy them into the ring
+     mtl_init();CHECK("direct utility pipeline loads",g_nvn_deswz_gpu&&nvn_deswz_gpu_direct_supported(&(nvn_texdesc){.target=9,.format=NVN_FORMAT_RGBA16F,.width=16,.height=16,.depth=768,.levels=5,.samples=1}));
+     nvn_texdesc d={.target=4,.format=NVN_FORMAT_RGBA16F,.width=16,.height=16,.depth=32,.levels=5};
+     d.format=NVN_FORMAT_RGBA8;CHECK("other formats stay on the bit-copy path",!nvn_deswz_gpu_direct_supported(&d));d.format=NVN_FORMAT_RGBA16F;d.width=65;CHECK("large images retain compression policy",!nvn_deswz_gpu_direct_supported(&d));d.width=16;d.flags=NVN_TEXTURE_FLAGS_LINEAR;CHECK("linear images are excluded",!nvn_deswz_gpu_direct_supported(&d));
+diff --git a/dm/gfx/tests/t_pool_finalize.m b/dm/gfx/tests/t_pool_finalize.m
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d517ad0bf7c257f562d5c380cd34b244f7521ce
+--- /dev/null
++++ b/dm/gfx/tests/t_pool_finalize.m
+@@ -0,0 +1,169 @@
++// From kingbumi31/no-lag-kart (MIT), adapted to NXForge's engine. A memory pool's Finalize costs what the pool holds, and the replay's next pool lookup costs a walk, not a sort (docs/reference/frame-rate.md, "A run of memory pool
++// Finalizes held the replay up"):
++//   - the address index of the pools is put right after a pool is added or removed, and sorted anew only when it is far out of order (pidx_sort)
++//   - the texture IDs registered with a pool's textures are listed by pool: its Finalize marks those gone and looks at no other ID (treg_drop_pool_views)
++//   - the view cache is walked only for a pool that has sets in it (vc_drop_pool)
++#include "../nvn/nvn_mtl.m"
++void *front_metal_layer(void) { return NULL; }
++module_t *module_of(const void *p) { (void)p; return NULL; }
++module_t *g_mod; int g_nmod;
++void svc_thread_dump(void) {}
++uint64_t now_ns(void) { return bp_now(); }
++static int checks, failed;
++#define CHECK(label, c) do { checks++; if (!(c)) { failed++; fprintf(stderr, "FAIL: %s (line %d)\n", label, __LINE__); } } while (0)
++static uint64_t rnd_s = 12345;
++static unsigned rnd(void) { rnd_s = rnd_s * 6364136223846793005ull + 1442695040888963407ull; return (unsigned)(rnd_s >> 33); }
++
++// ---- the address index: NP pools of one page, a page apart
++enum { NP = 5238 };   // as many as Mario Kart World keeps while it drives
++static uint8_t *g_base; static size_t g_page; static char g_live[NP];
++static uint8_t *pool_at(int k) { return g_base + (size_t)k * 2 * g_page; }
++static int index_right(void) {   // sorted by start, every table entry once
++    pthread_mutex_lock(&g_mu);
++    pidx_sort(); int ok = g_pidx_n == g_npool;
++    char *seen = calloc((size_t)g_npool + 1, 1);
++    for (int i = 0; i < g_npool && ok; i++) { int v = g_pidx[i]; ok = v >= 0 && v < g_npool && !seen[v] && (!i || g_pools[g_pidx[i - 1]].lo <= g_pools[v].lo); if (ok) seen[v] = 1; }
++    free(seen);
++    pthread_mutex_unlock(&g_mu);
++    return ok;
++}
++static int finds(int k) {   // pool k is found at its address while it lives and not after, the page after it never
++    uint64_t a = (uint64_t)(uintptr_t)pool_at(k);
++    pthread_mutex_lock(&g_mu);
++    int i = pool_find(a + 64, 256), gap = pool_find(a + g_page + 64, 256);
++    int ok = gap < 0 && (g_live[k] ? i >= 0 && g_pools[i].lo == (uintptr_t)a : i < 0);
++    pthread_mutex_unlock(&g_mu);
++    return ok;
++}
++static void pool_put(int k) { mtl_pool_add(pool_at(k), g_page); g_live[k] = 1; }
++static void pool_take(int k) { mtl_pool_del(pool_at(k)); g_live[k] = 0; }
++static int pick(int live) { int k; do k = (int)(rnd() % NP); while (g_live[k] != live); return k; }
++
++int main(void) { @autoreleasepool {
++    mtl_init();
++    g_page = (size_t)getpagesize();
++    g_base = mmap(NULL, (size_t)NP * 2 * g_page, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0); if (g_base == MAP_FAILED) abort();
++    int *order = malloc(NP * sizeof *order); for (int i = 0; i < NP; i++) order[i] = i;
++    for (int i = NP - 1; i > 0; i--) { int j = (int)(rnd() % (unsigned)(i + 1)), t = order[i]; order[i] = order[j]; order[j] = t; }   // addresses in no order, as an allocator hands them out
++    for (int i = 0; i < NP; i++) pool_put(order[i]);
++    free(order);
++    CHECK("the index of all the pools is sorted and whole", index_right());
++    int ok = 1; for (int i = 0; i < NP; i += 37) ok &= finds(i);
++    CHECK("a pool is found at its address and the page after it is not", ok);
++
++    // One pool goes and the next lookup puts the index right: 200 times, and it is never sorted anew
++    uint64_t anew0 = g_pidx_anew, sorts0 = g_pidx_sorts; ok = 1;
++    for (int n = 0; n < 200; n++) { int k = pick(1); pool_take(k); ok &= finds(k) && finds(pick(1)); }
++    CHECK("after each removal the removed pool is not found and another one is", ok);
++    CHECK("each removal made the next lookup put the index right, once", g_pidx_sorts - sorts0 == 200);
++    CHECK("no removal had the index sorted anew", g_pidx_anew == anew0);
++    CHECK("the index is sorted and whole after the removals", index_right());
++    anew0 = g_pidx_anew; ok = 1;
++    for (int n = 0; n < 200; n++) { int k = pick(0); pool_put(k); ok &= finds(k) && finds(pick(1)); }
++    CHECK("after each addition the new pool is found", ok);
++    CHECK("no addition had the index sorted anew", g_pidx_anew == anew0);
++    CHECK("the index is sorted and whole after the additions", index_right());
++    // Many changes between two lookups: sorted anew, once
++    anew0 = g_pidx_anew;
++    for (int n = 0; n < 1500; n++) pool_take(pick(1));
++    for (int n = 0; n < 1500; n++) pool_put(pick(0));
++    ok = 1; for (int i = 0; i < NP; i += 11) ok &= finds(i);
++    CHECK("after 3,000 changes with no lookup between them every pool is found", ok);
++    CHECK("that index was sorted anew, once", g_pidx_anew == anew0 + 1);
++    CHECK("and is sorted and whole", index_right());
++    {   // what a lookup after one removal costs (printed, not checked): put right, against sorted anew as it was
++        uint64_t right_ns = 0, anew_ns = 0;
++        for (int n = 0; n < 50; n++) {
++            pool_take(pick(1));
++            pthread_mutex_lock(&g_mu); uint64_t t0 = bp_now(); pidx_sort(); right_ns += bp_now() - t0; pthread_mutex_unlock(&g_mu);
++        }
++        pthread_mutex_lock(&g_mu);
++        for (int n = 0; n < 50; n++) { uint64_t t0 = bp_now(); for (int i = 0; i < g_npool; i++) g_pidx[i] = i; qsort(g_pidx, (size_t)g_npool, sizeof *g_pidx, pidx_cmp); anew_ns += bp_now() - t0; }
++        pthread_mutex_unlock(&g_mu);
++        printf("  the index of %d pools after one removal: put right in %.1f us, sorted anew in %.1f us\n", g_npool, right_ns / 50e3, anew_ns / 50e3);
++        for (int n = 0; n < 50; n++) pool_put(pick(0));
++    }
++
++    // ---- texture IDs by pool: registrations, removals and Finalizes at random against a model of what the walk over every ID did
++    enum { NPOOL = 6, NID = 300 };
++    static pool_t pl[NPOOL]; static tex_t tx[NID]; static int m_ok[NID], m_pool[NID], m_gone[NID];
++    uint64_t serial = 1ull << 40; int seen_ok = 1, nfin = 0; ok = 1;
++    for (int step = 0; step < 8000; step++) {
++        unsigned r = rnd() % 100; int id = 1 + (int)(rnd() % (NID - 1));
++        if (r < 60) {   // a texture into the ID: one of some pool, or one time in five the texture it holds again
++            if (!(m_ok[id] && rnd() % 5 == 0)) { tx[id] = (tex_t){0}; tx[id].pool = &pl[rnd() % NPOOL]; tx[id].serial = serial++; tx[id].d.width = tx[id].d.height = 4; }
++            mtl_reg_tex(id, &tx[id], NULL); m_ok[id] = 1; m_pool[id] = (int)(tx[id].pool - pl); m_gone[id] = 0;
++        } else if (r < 75) { mtl_reg_tex(id, NULL, NULL); m_ok[id] = 0; m_gone[id] = 0; }
++        else if (r < 80) {   // a pool's Finalize: its IDs are gone, and it looked at those only
++            int p = (int)(rnd() % NPOOL), want = 0; for (int i = 0; i < NID; i++) if (m_ok[i] && m_pool[i] == p) { want++; m_gone[i] = 1; }
++            uint64_t seen0 = g_treg_pool_seen; mtl_alias_drop_pool(&pl[p]); seen_ok &= g_treg_pool_seen - seen0 == (uint64_t)want; nfin++;
++        } else continue;
++        os_unfair_lock_lock(&g_rmu);
++        for (int i = 1; i < NID && i < g_ntreg; i++) ok &= g_treg[i].ok == m_ok[i] && (!m_ok[i] || g_treg[i].gone == m_gone[i]);
++        os_unfair_lock_unlock(&g_rmu);
++    }
++    CHECK("after every step each ID is registered and gone as the walk over every ID left it", ok);
++    CHECK("each Finalize looked at the IDs of its pool and at no other", seen_ok && nfin > 100);
++    {   // an ID is listed once however often its texture is registered
++        static pool_t once; tex_t t = {0}; t.pool = &once; t.serial = serial++; t.d.width = t.d.height = 4;
++        for (int n = 0; n < 3; n++) mtl_reg_tex(NID, &t, NULL);
++        uint64_t seen0 = g_treg_pool_seen; mtl_alias_drop_pool(&once);
++        CHECK("an ID registered three times with one texture is looked at once", g_treg_pool_seen - seen0 == 1 && g_treg[NID].gone);
++        mtl_reg_tex(NID, &t, NULL);
++        CHECK("registered again, it is not gone", !g_treg[NID].gone);
++        seen0 = g_treg_pool_seen; mtl_alias_drop_pool(&once);
++        CHECK("and its pool's next Finalize finds it", g_treg_pool_seen - seen0 == 1 && g_treg[NID].gone);
++        mtl_reg_tex(NID, NULL, NULL);
++        seen0 = g_treg_pool_seen; mtl_alias_drop_pool(&once);
++        CHECK("an emptied ID is in no pool's list", g_treg_pool_seen == seen0);
++    }
++    {   // registrations of one pool's textures in a row ask the table of the lists once, and once more when the list's first ID goes
++        static pool_t ring; tex_t t = {0}; t.pool = &ring; t.d.width = t.d.height = 4; enum { R0 = 1000, RN = 1000 };
++        uint64_t asks0 = g_treg_pool_asks;
++        for (int n = 0; n < 5 * RN; n++) { t.serial = serial++; mtl_reg_tex(R0 + n % RN, &t, NULL); }   // five times round a ring of 1,000 IDs, a new texture each time
++        CHECK("5,000 registrations of one pool's textures asked the table of the lists once", g_treg_pool_asks - asks0 == 1);
++        uint64_t seen0 = g_treg_pool_seen; mtl_alias_drop_pool(&ring);
++        CHECK("and the pool's Finalize finds the ring's 1,000 IDs", g_treg_pool_seen - seen0 == RN);
++        for (int n = 0; n < RN; n++) mtl_reg_tex(R0 + n, NULL, NULL);
++        seen0 = g_treg_pool_seen; mtl_alias_drop_pool(&ring);
++        CHECK("emptied, none", g_treg_pool_seen == seen0 && !nvn_hm_get(&g_treg_pool, &(uint64_t){(uint64_t)(uintptr_t)&ring}));
++    }
++    {   // as many IDs as Mario Kart World's texture pool has, over 64 pools: a pool with no ID looks at none, a pool with three at three
++        enum { BIG = 131072 }; static pool_t many[64], none, three; tex_t t = {0}; t.d.width = t.d.height = 4;
++        for (int i = NID + 1; i < BIG; i++) { t.pool = &many[i % 64]; t.serial = serial++; mtl_reg_tex(i, &t, NULL); }
++        for (int i = 0; i < 3; i++) { t.pool = &three; t.serial = serial++; mtl_reg_tex(BIG + i, &t, NULL); }
++        uint64_t seen0 = g_treg_pool_seen, t0 = bp_now(); mtl_alias_drop_pool(&none); uint64_t ns = bp_now() - t0;
++        CHECK("the Finalize of a pool with no ID looks at none of 131,072", g_treg_pool_seen == seen0);
++        printf("  the Finalize of a pool with nothing registered, %d IDs registered: %.1f us\n", g_ntreg, ns / 1e3);
++        mtl_alias_drop_pool(&three);
++        CHECK("the Finalize of a pool with three IDs looks at three", g_treg_pool_seen == seen0 + 3 && g_treg[BIG].gone && g_treg[BIG + 1].gone && g_treg[BIG + 2].gone);
++        CHECK("and leaves another pool's IDs", !g_treg[BIG - 1].gone && g_treg[BIG - 1].ok);
++        seen0 = g_treg_pool_seen; mtl_alias_drop_pool(&many[5]);
++        int want = 0, gone = 0, others = 0; for (int i = NID + 1; i < BIG; i++) { if (i % 64 == 5) { want++; gone += g_treg[i].gone; } else others += g_treg[i].gone; }
++        CHECK("a pool with some 2,000 IDs: all of them gone, no other", want > 2000 && gone == want && !others && g_treg_pool_seen - seen0 == (uint64_t)want);
++    }
++
++    // ---- the view cache by pool (sets keyed as vc_set_for keys them, made here without a texture behind them)
++    {
++        uint64_t ka = (uint64_t)(uintptr_t)&pl[0], kb = (uint64_t)(uintptr_t)&pl[1], kc = (uint64_t)(uintptr_t)&pl[2];
++        os_unfair_lock_lock(&g_rmu);
++        unsigned n0 = g_vc.n; uint64_t key = 0x7000000000ull;
++        #define VC_MAKE(p) do { vc_set *s_ = calloc(1, sizeof *s_); s_->pool = (p); uint64_t k_ = key; key += 64; nvn_hm_put(&g_vc, &k_, s_); vc_pool_n((p), 1); } while (0)
++        for (int i = 0; i < 3; i++) VC_MAKE(&pl[0]);
++        for (int i = 0; i < 2; i++) VC_MAKE(&pl[1]);
++        int made = g_vc.n == n0 + 5 && (intptr_t)nvn_hm_get(&g_vc_pools, &ka) == 3 && (intptr_t)nvn_hm_get(&g_vc_pools, &kb) == 2 && !nvn_hm_get(&g_vc_pools, &kc);
++        vc_drop_pool(&pl[2]); int none = g_vc.n == n0 + 5;
++        vc_drop_pool(&pl[0]); int one = g_vc.n == n0 + 2 && !nvn_hm_get(&g_vc_pools, &ka) && (intptr_t)nvn_hm_get(&g_vc_pools, &kb) == 2;
++        nvn_hm_clear(&g_vc, vc_set_free); int all = !g_vc.n && !g_vc_pools.n;
++        os_unfair_lock_unlock(&g_rmu);
++        CHECK("view cache sets are counted by their texture's pool", made);
++        CHECK("the Finalize of a pool with no set leaves the cache", none);
++        CHECK("the Finalize of a pool drops its sets and no other pool's", one);
++        CHECK("clearing the cache clears the counts", all);
++    }
++
++    for (int k = 0; k < NP; k++) if (g_live[k]) pool_take(k);
++    mtl_drain();
++    printf("t_pool_finalize: %d checks, %d failed\n", checks, failed);
++    return failed != 0;
++} }
+diff --git a/dm/gfx/tests/t_upload_src.m b/dm/gfx/tests/t_upload_src.m
+index 4921241e119101a24a369a110f026a8450077320..e4de3b31ba41306edcd9d90e8b5ec0f60b08f0b4 100644
+--- a/dm/gfx/tests/t_upload_src.m
++++ b/dm/gfx/tests/t_upload_src.m
+@@ -56,6 +56,7 @@ static void upload_all(upl *u, int n, uint64_t *made, unsigned *batches) {
+ }
+ 
+ int main(void) { @autoreleasepool {
++    setenv("DM_NVN_UP_COPY", "0", 0);   // the zero-copy sources these checks count and place; a profile with up_copy (Mario Kart World) would copy them into the ring
+     mtl_init();
+     CHECK("GPU deswizzle is available", g_nvn_deswz_gpu);
+     uint8_t *mem = mmap(NULL, POOL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+diff --git a/dm/tools/docs_patches.py b/dm/tools/docs_patches.py
+index 6401bcffccff5d08ea5078131814ff509d578c98..7a8e52502c1f9d1ab7618801124e671493a8f8a2 100644
+--- a/dm/tools/docs_patches.py
++++ b/dm/tools/docs_patches.py
+@@ -115,6 +115,10 @@ SWITCH_BINDING = [
+      'why': 'the replay could find such draws itself, at the cost of a pass split each'}),
+     ('enc_thread', '', {'what': 'Metal encoding on its own thread on the Mac', 'now': 'game', 'goal': 'host', 'purpose': 'frame rate',
+      'why': f'what iOS does for every game: {DEFAULT_SOON}'}),
++    ('nvn_cut', '', {'what': 'draws between the segments a submission is committed in while the GPU waits', 'now': 'game', 'goal': 'host', 'purpose': 'frame rate',
++     'why': 'measured per game (no-lag-kart: Mario Kart World split screen); the default stays 64'}),
++    ('up_copy', '', {'what': 'upload sources copied into a resident ring', 'now': 'game', 'goal': 'host', 'purpose': 'frame rate',
++     'why': 'costs the ring\'s memory, wired for good; measured on Mario Kart World\'s scene cuts'}),
+     ('present_snap', '', {'what': 'present snapshots', 'now': 'game', 'goal': 'host', 'purpose': 'rendering', 'why': f'a setting the game was tested with: {DEFAULT_SOON}'}),
+     ('pso_mtl4', '', {'what': 'MTL4Compiler pipelines on iOS', 'now': 'game', 'goal': 'host', 'purpose': 'rendering', 'why': f'a setting the game was tested with on an iPhone: {DEFAULT_SOON}'}),
+     ('screen_aspect', '', {'what': 'a picture of a taller screen\'s own shape (DM_SCREEN_ASPECT)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1b3ad8c22 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -27,6 +27,7 @@ DM_CHEATS	path	Folder of Atmosphère cheat files: `<folder>/<build ID>.txt` or a
+ DM_CHEATS_ANY_BUILD	switch	`1` loads a cheat file written for another build of the game when it is the only one (its addresses may not fit: for `cheat_anchor.py` checks)
+ DM_CHEATS_DEBUG	diagnostic	Logs every memory write a cheat makes and the cheat file context the menu's "another version" rows come from
+ DM_CHEATS_ON	switch	Comma-separated cheat names turned on at launch, besides the saved per-build enabled states
++DM_CHEATS_POINTER_GUARD	switch	`0` turns off the cheat engine's pointer guard (NXForge): by default a cheat's write that would put a value that is not a guest pointer into a word holding one is refused and logged
+ DM_CHEATS_WINDOW	switch	`1` opens the Mac Cheats panel beside the game from the start
+ DM_CONTROL_NACP	path	The game's control data, `control.nacp` (default: `control.nacp` beside the RomFS, as in the NSP script's extraction folder and the Mac app's Resources); the iOS app sets it to its `dm/control.nacp`. The host answers `fs::GetCacheStorageMax` from it
+ DM_COPY_GAME_RESOURCES	switch	`NO` skips the Xcode build phase that copies the game's resources into the app (`stage_resources.sh`, on by default); `build_ipa.sh` sets it for its unsigned build, which packs them itself
+@@ -41,8 +42,8 @@ DM_DBG_AU_FRAMES	diagnostic	`=<frames>` asks the Mac's Core Audio output for tha
+ DM_DETCLOCK	switch	`=<step ns>`: from the first present on, the guest clock advances a fixed step per present, and the random source uses a fixed seed (replay and test runs). Relative thread sleeps and synchronization timeouts use host time
+ DM_DETCLOCK_PACE	switch	`=1` with `DM_DETCLOCK`: each frame takes at least one clock step of wall time, so background loading keeps up with the fixed clock (used by the screenshot gate)
+ DM_DISPLAY_NAME	switch	Overrides the iOS app's name in `build_ipa.sh` (default the game name in the base NSP's control data)
+-DM_DYNAMIC_RESOLUTION	player	`1` lets the game's own dynamic resolution run, `0` (default) keeps full resolution; only on the builds that declare the DYNAMIC_RESOLUTION capability: NieR:Automata 1.0.3 (its patches.py; scales between 70 and 100 %, `hle_fpslock.c` `k_nier_dr`) and Ocarina of Time (its frame step stub of the level function, state page +0x40: on, it steps one level at a time on the measured load, as the game's own extrapolation from pixel count kept it at its lowest level on Apple GPUs). The launcher's Dynamic resolution
+ DM_DRS_HEADROOM	player	`0` to `30` (percent; `0` or unset keeps the game's threshold): with `DM_DYNAMIC_RESOLUTION=1`, the share of the frame the climb keeps free (Ocarina of Time: its patches.py level stub reads the float at state +0x44, the DRS_HEADROOM capability; NXForge)
++DM_DYNAMIC_RESOLUTION	player	`1` lets the game's own dynamic resolution run, `0` (default) keeps full resolution; only on the builds that declare the DYNAMIC_RESOLUTION capability: NieR:Automata 1.0.3 (its patches.py; scales between 70 and 100 %, `hle_fpslock.c` `k_nier_dr`) and Ocarina of Time (its frame step stub of the level function, state page +0x40: on, it steps one level at a time on the measured load, as the game's own extrapolation from pixel count kept it at its lowest level on Apple GPUs). The launcher's Dynamic resolution
+ DM_EMBED_TAG	path	Set by the iOS app of a game of several programs: the tag of the running program's embedded sections (`p<N>`, `gen_embed.py --tag`)
+ DM_ENTITLEMENTS	path	`=<plist>` gives a prepared Xcode project another entitlements file instead of the Increased Memory Limit one, and the ad-hoc signature of the unsigned IPA's executable carries them; relative paths start at the caller's directory; empty means no entitlements
+ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into the app as `dm/env.txt`, applied at boot; `Documents/env.txt` overrides them
+@@ -70,6 +71,7 @@ DM_FULLSCREEN	player	`1` (any value but `0`) starts the Mac window in fullscreen
+ DM_FULLSCREEN_MENU_BAR	switch	`1` keeps macOS's behaviour in full screen on the Mac: the menu bar and title bar come back when the pointer is at the top of the screen; by default NXForge hides them and the Dock
+ DM_FX_DIRECT	switch	With `DM_PRESENT_UPSCALE=metalfx`, `0` keeps the present pass after MetalFX's spatial scaler; by default the scaler writes the drawable itself when the picture fills it unflipped and the drawable takes the scaler's output (iOS)
+ DM_FX_INPLACE	switch	With `DM_PRESENT_UPSCALE=metalfx`, `0` keeps the copy into MetalFX's input; by default the scaler reads the presented texture itself when the picture is all of it
++DM_FX_MIN_SCALE	switch	`=<factor>` (1 to 8, default 1.4; NXForge): the MetalFX spatial scaler runs only where it enlarges the picture by at least this much, bilinear below it; `1` uses it for any enlargement, upstream's rule
+ DM_GAME	switch	Selects the game profile (a title ID under `dm/games` or `DM_GAMES_DIR`) for the Python tools and the rewriter; there is no default
+ DM_GAMES_DIR	path	Profile folders outside the repository, separated by `:`, searched after `dm/games`; the NSP script points it at a provisional or derived profile
+ DM_GAMES_FIRST	switch	`=1` searches `DM_GAMES_DIR` before `dm/games`, so a provisional or derived profile wins over the game's own (the NSP script's `--provisional`)
+@@ -100,10 +102,10 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
+ DM_GUEST_FILE_PUNCH	switch	`0` keeps the disk blocks of guest memory the game gives back (with `DM_GUEST_FILE=1`); by default they are punched out (`F_PUNCHHOLE`, which also drops the pages): the heap's at once, the alias region's by a sweep every 10 s once they have stayed given back over a whole interval
+ DM_GUEST_FILE_SCAN	diagnostic	`=1` (with `DM_GUEST_FILE=1`): every 30 s a `[mem] guest file scan` line, the dirty guest pages by region (heap, alias, stack, other) and how many of them read all 0
+ DM_GUEST_SPAWN_TEST	diagnostic	`=1` runs a self-test before `nnMain`: a host-started guest thread does SDK malloc / free and locks an `nn::os` mutex, and the result is logged; `=2` also keeps a resident thread
+-DM_HEAP_RETRY	switch	`0`: Ocarina of Time's model rebuild (main+0x4366e0) goes on with a null block when its small model heap is full, as shipped; by default the CPU buffers and GPU memory are tried again in the heap's parents and the default heap (`patches.py` `heap_retry`, Hookshot issue 1697; state page +0x170 / +0x174 the counts, +0x17c the off flag)
+ DM_HDR	player	A game that renders HDR itself (profile `hdr on`: Ocarina of Time): `auto` (its default) tells the game through `vi::QueryDisplayHdrStatus` that the display shows HDR while the Mac window's screen can (potential EDR headroom at least 4: a MacBook Pro's XDR panel reports 16, a Studio Display 1 to 2), and presents the game's HDR10 picture (RGB10A2, PQ, BT.2020) in extended dynamic range, paper white at the screen's SDR white; on a screen without HDR (a Studio Display) the game is told SDR and draws its usual picture. Re-read on every screen change (moving the window, docking, full screen), live both ways; the setting itself is never changed, and each change logs an `[hdr]` line with the potential and current headroom. `0` never HDR, exactly as before. Any other game: `0` by default (`auto` forces the answer, untested). Screenshots stay SDR (tone-mapped). Launcher setting (Mac: HDR)
+ DM_HDR_DUMP	diagnostic	`=1` logs, at the 120th present of the game's HDR10 picture (`=<n>`: the nth), the window texture's size and format and a 64x64 centre patch's code values decoded as PQ (min / max / average, nits and extended sRGB), with the vi answers and the game's layer HDR metadata, to confirm the encoding on hardware (a white HUD near PQ 0.58 = 203 nits)
+ DM_HDR_PAPER_WHITE	switch	`=<nits>` (80 to 1000, default 203, BT.2408): the paper white `vi::QueryDisplayHdrPaperWhite` gives the game under `DM_HDR`, which the present maps to the screen's SDR white (EDR 1.0); the game tone-maps its highlights into peak / paper white (at most 1600 / 203 = 7.9), so a higher value leaves them less room
++DM_HEAP_RETRY	switch	`0`: Ocarina of Time's model rebuild (main+0x4366e0) goes on with a null block when its small model heap is full, as shipped; by default the CPU buffers and GPU memory are tried again in the heap's parents and the default heap (`patches.py` `heap_retry`, Hookshot issue 1697; state page +0x170 / +0x174 the counts, +0x17c the off flag)
+ DM_HID_LOG	diagnostic	`1` logs the HID button usage number of each button pressed on a raw HID gamepad (`pad_hid_mac.h`), to write a `DM_HID_MAP`
+ DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, the Taiko Drum's own numbering on USB `0f0d:00f0`, `pad_hid.h`); Mac only
+ DM_HID_PADS	switch	`0` stops reading raw HID gamepads that GameController does not list, such as an 8BitDo in its own mode (`pad_hid_mac.h`); Mac only
+@@ -190,7 +192,7 @@ DM_NVN_COUNT	diagnostic	`1` counts every NVN call (the counting trampolines) and
+ DM_NVN_CPUPROF	diagnostic	1 records CPU wall/time/instruction totals by renderer operation; off by default.
+ DM_NVN_CSH_PRESCAN	diagnostic	`0` runs the compute-hoist scan at every pass's first draw even when no dispatch follows (as before; for timing)
+ DM_NVN_CS_HOIST	switch	`0` makes a compute dispatch between the draws of a pass end it (on by default: the dispatch runs ahead of the pass when that changes nothing the draws before it read)
+-DM_NVN_CUT	switch	`=<draws>`: the replay commits its command buffer every that many draws, between passes (default 64; `0` one command buffer per submission, except the cut after a buffer-to-texture copy)
++DM_NVN_CUT	switch	`=<draws>`: the replay commits its command buffer every that many draws, between passes (default 64, or the game profile's `nvn_cut`; `0` one command buffer per submission, except the cut after a buffer-to-texture copy)
+ DM_NVN_CUT_BUSY	switch	`=0` / `=1` / `=<N>`: `0`, a segment boundary commits whatever the GPU is doing; `1` (the default), commits only when earlier work on the queue has finished (read from the queue's shared event `g_rx_ev`, or held on the encode thread with `DM_NVN_ENC_THREAD=1`); `<N>` (`>= 2`), commits while fewer than `N` commits are in flight on the queue
+ DM_NVN_DEPTHOVR	diagnostic	`=<fragment shader key prefix>,…`: those draws compare depth with `ALWAYS`; with `DM_NVN_HILITE`, tells "the depth test rejects every fragment" from "nothing rasterizes"
+ DM_NVN_DEPTH_BOUNDS	diagnostic	`0` ignores NVN and Vulkan depth bounds on Apple10+ GPUs (`setDepthTestMinBound:maxBound:`); `ab` alternates with `DM_AB` (on by default on Apple10+ GPUs, inactive on older GPUs)
+@@ -322,6 +324,7 @@ DM_NVN_UNWRITTEN_DC	switch	`0` disables optional stores elided for loaded, uncha
+ DM_NVN_UPLOAD_IDLE_MS	switch	A positive interval in milliseconds enables idle trimming of completed upload staging. Defaults to `0` on all platforms. An explicit `0` keeps the slots and logs their sizes and allocation counts for comparison.
+ DM_NVN_UPLOAD_REUSE	switch	0 keeps the original one-block upload-slot policy; default retains bounded demand-sized primary and overflow buffers after completion.
+ DM_NVN_UPLOAD_SRC_MB	switch	positive MiB budget for an upload batch's zero-copy source buffers over guest memory; default `0` disables it. Flushes between textures; one oversized texture or a sparse gather can exceed the budget.
++DM_NVN_UP_COPY	switch	`=<MB>`: upload sources from a large or texture-only pool are copied into a resident ring of that size instead of a zero-copy buffer made resident for each upload (default the game profile's `up_copy`, 0 = off; up to 2048; `up_copy_src` in `nvn_mtl.m`)
+ DM_NVN_VBUF_CACHE	switch	`0` turns off the cache of resolved vertex stream addresses and vertex argument table writes across draws (on by default), for A/B runs
+ DM_NVN_VCONV_CHECK	diagnostic	`=1` scans the indices again at every reuse of a cached vertex conversion range (`vconv_range`) and reports differences
+ DM_NVN_VCONV_CPU	switch	`=1` converts on the CPU every vertex attribute Metal's fetch cannot read, as before, instead of through the shader's shadow inputs (`<key>_bv`) or its pulling entry (`<key>_bp`)
+@@ -393,6 +396,7 @@ DM_PROGRAM_ID	switch	`=<hex>`: the program ID the host reports from `svcGetInfo(
+ DM_PRO_STICKS	switch	On the Mac, `0` disables the automatic per-stick passive HID fallback for a single Switch Pro-compatible controller whose GameController stick stays zero while report `0x30` moves (`motion_pro_mac.h`, `pad_pro.h`); enabled by default, independent of `DM_MOTION` / `DM_MOTION_HID`
+ DM_PSO_ARCHIVE	path	The folder of the per-game Metal 4 pipeline archive of pipeline bases (default `pso_archive/` beside `pso_user.tsv`); `off` keeps no archive
+ DM_PSO_ARCH_WARM_FLUSH_MS	switch	`=<ms>`: during a prewarm the game plays through (no prepare step) that is not compacting, the timer's flush hands the archive's period over once it is that old, then twice as long each time up to 16 times (default 60000; `0`: no flush until the prewarm ends or the period is full)
++DM_PSO_BASE_JOBS	switch	`=<n>` (default 1; NXForge): how many metal-tt runs build the pipeline archive's batches of bases at a time (`pso_offline.py --base-jobs`)
+ DM_PSO_BUNDLE	path	The pipeline archive made offline (`<GPU architecture>.mtl4a`, `prebuilt.tsv`), read only; the iOS app and Mac launcher set it to their `pso/` folder; `off` ignores it
+ DM_PSO_DEMAND_RECORD	switch	`0`: a pipeline a hybrid draw stands in for goes into `pso_user.tsv` only once built, not when first asked for (default: at once, so the next start's prepare step builds it)
+ DM_PSO_GPUS	switch	`build_ipa.sh`: the GPU architectures, comma-separated, to build the offline pipeline archive for (`none` builds none); unset, a profile with `pso_mtl4 on` gets its `pso_gpu` list or `g18p` when absent; profiles with `pso_mtl4 off` get none
+@@ -411,6 +415,7 @@ DM_PSO_PREPARE	switch	`0` runs the prewarm in the background while the game star
+ DM_PSO_PREPARE_THREADS	switch	`=<n>`: the workers of the prepare step that builds the prewarm lists before the first frame (default: the device's active cores)
+ DM_PSO_PULL_ALL	diagnostic	`=1`: every draw that has a pulling pipeline draws with it, never with the pipeline for its vertex layout
+ DM_PSO_RECORD	path	`=<file>`: appends the shaders and pipelines used in the run to that file, for re-recording the prewarm manifest
++DM_PSO_SCRATCH	path	A folder for metal-tt's temporary files and library copies when the work folder's volume is slow (NXForge; `pso_offline.py --scratch`, set by the build on a slow game drive)
+ DM_PSO_USER	path	The per-device list of shaders and pipelines built on the spot (default: `pso_user.tsv` in the parent of `DM_SAVE`)
+ DM_PSO_WAITLOG	diagnostic	`=1` logs each draw that waited more than 20 ms for its pipeline, with its shader pair and why no stand-in served it
+ DM_QOS_EDGES	switch	`=e1,e2`: the Switch priority edges of `DM_QOS_MAP` (default `44,59`)

@@ -12,3 +12,7 @@ uint64_t now_ns(void) { return 0; }
 uint64_t guest_ns(void) { return 0; }
 void mtl_present_progress(uint64_t *queued, uint64_t *done) { *queued = *done = 0; }
 double mtl_presented_time(uint64_t n) { (void)n; return 0; }
+// the HDR answers hle_vi.c gives (nvn/hdr.c, upstream PR #3009): these checks reach none, so HDR off and the default paper white
+int dm_hdr_paper_white(void) { return 203; }
+int dm_hdr_answer(uint16_t *peak) { if (peak) *peak = 0; return 0; }
+void dm_hdr_meta_set(int which, int a, int b) { (void)which; (void)a; (void)b; }

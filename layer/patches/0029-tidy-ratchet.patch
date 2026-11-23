@@ -1,0 +1,219 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
+ findings in upstream's code silenced on their lines, three counts lowered
+
+---
+ dm/gfx/nvn/hle_nvn.c                  | 8 ++++----
+ dm/gfx/nvn/nvn_mtl.m                  | 9 ++++-----
+ dm/gfx/tests/t_lazy_clear_order.m     | 2 ++
+ dm/gfx/tests/t_present_crop.m         | 4 ++--
+ dm/gfx/tests/t_sparse_shadow.m        | 8 ++++----
+ dm/gfx/tests/t_vk_clear_attachments.m | 2 +-
+ dm/gfx/tests/t_vk_renderdragon.m      | 2 +-
+ dm/host/hle_audio.c                   | 2 +-
+ dm/tools/lint_c_baseline.tsv          | 2 +-
+ 9 files changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
+index 819998476f0406472af1193c3f0bfde41d474765..802ee73ef20439e61de152870c070fd02fdaf665 100644
+--- a/dm/gfx/nvn/hle_nvn.c
++++ b/dm/gfx/nvn/hle_nvn.c
+@@ -288,7 +288,7 @@ typedef struct { uint8_t *mem, *orig; size_t alen; } reback_t;
+ static reback_t *g_reback; static size_t g_nreback, g_creback; static pthread_mutex_t g_reback_mu = PTHREAD_MUTEX_INITIALIZER;
+ static void reback_add(uint8_t *mem, uint8_t *orig, size_t alen) {
+     pthread_mutex_lock(&g_reback_mu);
+-    if (g_nreback == g_creback && !(g_reback = realloc(g_reback, (g_creback = g_creback ? g_creback * 2 : 16) * sizeof *g_reback))) die("reback allocation failed");
++    if (g_nreback == g_creback && !(g_reback = realloc(g_reback, (g_creback = g_creback ? g_creback * 2 : 16) * sizeof *g_reback))) die("reback allocation failed");   // NOLINT(bugprone-suspicious-realloc-usage): die() ends the process when it fails, so no buffer is left to leak
+     g_reback[g_nreback++] = (reback_t){mem, orig, alen};
+     pthread_mutex_unlock(&g_reback_mu);
+ }
+@@ -3657,7 +3657,7 @@ static void vshadow_cut(struct vpool *v, uint64_t lo, uint64_t hi) {   // drop o
+         if (b > hi) piece[np++] = vshadow_slice(&e, hi, b - hi);
+         vshadow_free(&e);
+         for (int k = 0; k < np; k++) {
+-            if (v->nsh == v->csh && !(v->sh = realloc(v->sh, (size_t)(v->csh = v->csh ? 2 * v->csh : 64) * sizeof *v->sh))) die("sparse pool copy table allocation failed");
++            if (v->nsh == v->csh && !(v->sh = realloc(v->sh, (size_t)(v->csh = v->csh ? 2 * v->csh : 64) * sizeof *v->sh))) die("sparse pool copy table allocation failed");   // NOLINT(bugprone-suspicious-realloc-usage): die() ends the process when it fails, so no buffer is left to leak
+             v->sh[v->nsh++] = piece[k];
+             atomic_fetch_add(&g_sh_bytes, piece[k].size);
+         }
+@@ -3690,8 +3690,8 @@ static int vshadow_map(struct vpool *v, const map_req *r, const uint8_t *src) {
+     memcpy(to, src, r->size);
+     uint8_t *abase = NULL; uint64_t alen = 0;
+     uint8_t *alias = vshadow_phys_alias(src, r->size, &abase, &alen);
+-    if (v->nsh == v->csh && !(v->sh = realloc(v->sh, (size_t)(v->csh = v->csh ? 2 * v->csh : 64) * sizeof *v->sh))) die("sparse pool copy table allocation failed");
+-    v->sh[v->nsh++] = (struct vshadow){(uint64_t)r->voff, r->size, src, abase, alias, alen, stamp, NULL, vshadow_npages(src, r->size)};
++    if (v->nsh == v->csh && !(v->sh = realloc(v->sh, (size_t)(v->csh = v->csh ? 2 * v->csh : 64) * sizeof *v->sh))) die("sparse pool copy table allocation failed");   // NOLINT(bugprone-suspicious-realloc-usage): die() ends the process when it fails, so no buffer is left to leak
++    v->sh[v->nsh++] = (struct vshadow){(uint64_t)r->voff, r->size, src, abase, alias, alen, stamp, NULL, vshadow_npages(src, r->size)};   // NOLINT(clang-analyzer-security.ArrayBound): nsh < csh here, the table grown just above when full, which the analyzer does not tie to the realloc
+     for (uint64_t o = 0; o < r->size; o += 0x1000) { vpte *e = (vpte *)vpt_get(v, (uint64_t)r->voff + o); if (e) e->shadow = 1; }
+     vshadow_written(v, (uint64_t)r->voff, (uint64_t)r->voff + r->size);
+     vrun_set(v, (uint64_t)r->voff, (uint64_t)r->voff + r->size, 1);
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index ec79e252be6c8558351edd28760f286323ba75a0..5076d412022b12c515f0f892a7a508a4c2f06710 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -2893,7 +2893,7 @@ void mtl_sub_fill(uint64_t dst, uint64_t n, uint32_t value) {
+ 
+ static void post(post_op o) {
+     if (g_npost == g_postcap) { g_postcap = g_postcap ? g_postcap * 2 : 64; g_post = realloc_or_die(g_post, g_postcap * sizeof *g_post, "the deferred operations"); }
+-    g_post[g_npost++] = o;
++    g_post[g_npost++] = o;   // NOLINT(clang-analyzer-security.ArrayBound): g_npost < g_postcap here, the table grown just above when full
+ }
+ // A submission's visibility buffer, taken from the ring at its first pass that counts samples: most submissions count none (a compute piece, a copy, a piece between two waits),
+ // and one buffer each at their start kept the ring's 8 in flight as the allocators were. The ring holds one for every submission that can be in flight (VIS_RING), so one is
+@@ -7980,7 +7980,7 @@ static NvShader *shader_load(NSString *pc, int stage, int layer) {
+     if (o->rf.has_c1) c1_store(o);
+     NSString *ext = g_cb_ext[[pc hasSuffix:@"_b"] ? [pc substringToIndex:pc.length - 2] : pc];   // bytes each uniform slot can read (cb_len), storage slots never written (sb_ro)
+     for (NSString *f in [ext componentsSeparatedByString:@" "]) { int r = 0, n = 0;
+-        if (sscanf(f.UTF8String, "%d:%d", &r, &n) == 2 && r >= 0 && r < 16 && n > 0) o->cb_ext[r] = (uint32_t)n;
++        if (sscanf(f.UTF8String, "%d:%d", &r, &n) == 2 && r >= 0 && r < 16 && n > 0) o->cb_ext[r] = (uint32_t)n;  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+         else if (sscanf(f.UTF8String, "s%d", &r) == 1 && r >= 0 && r < 32) o->sb_ro |= 1u << r; }
+     return o;
+ }
+@@ -8007,7 +8007,7 @@ static int progpf_first(NSString *pc) {
+ }
+ static NvShader *shader_get(NSString *pc, int stage) {
+     if (!g_shcache) g_shcache = [NSMutableDictionary dictionary];
+-    NvShader *o = g_shcache[pc];
++    NvShader *o = g_shcache[pc];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream bee218d9's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+     if (o) return o;
+     uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
+     if (!o) return nil;
+@@ -21044,10 +21044,9 @@ static int up_mfx_encode(NvShader *cs) {
+     for (int i = 0; i < cs->rf.nb; i++) { int k = cs->rf.b[i].kind; if (k == NVN_RB_TEX && ti < 0) ti = i; else if (k == NVN_RB_IMG && oi < 0) oi = i; else if (k == NVN_RB_TEX || k == NVN_RB_IMG) return 0; }
+     if (ti < 0 || oi < 0) { static int once; if (!once++) MLOG("[RED] upscaler %s: not one texture and one image; the shader draws", cs->key); return 0; }
+     int tin = (int)(bound_tex(5, cs->rf.b[ti].reg) & 0xfffff), tout = cs->rf.b[oi].reg < 32 ? (int)(bound_img(5, cs->rf.b[oi].reg) & 0xfffff) : 0;
+-    tex_t dout = {0}; id<MTLTexture> in, out;
++    id<MTLTexture> in, out;   // NXForge (host_warnings): upstream's unused copy of the output's texture dropped
+     os_unfair_lock_lock(&g_rmu);
+     int ok = tin > 0 && tin < g_ntreg && g_treg[tin].ok && tout > 0 && tout < g_ntreg && g_treg[tout].ok;
+-    if (ok) dout = g_treg[tout].t;
+     in = ok ? tex_by_id(tin) : nil;
+     // The sampled view can be read-only (channel swizzle) even when the image backing is writable.
+     // Use the shader's image binding so its level and slice survive without replacing the backing with a sampled view.
+diff --git a/dm/gfx/tests/t_lazy_clear_order.m b/dm/gfx/tests/t_lazy_clear_order.m
+index c18efff9c16965e0ebd00c04f4e5674c97ed3740..4025816c7993c2ce7ad9e1b41e8331a3759630b7 100644
+--- a/dm/gfx/tests/t_lazy_clear_order.m
++++ b/dm/gfx/tests/t_lazy_clear_order.m
+@@ -13,6 +13,7 @@ static int checks, failed;
+ static uint8_t ops[1024]; static size_t nops;
+ static void *op(uint32_t code, size_t size) { op_hdr h = {code, (uint32_t)(sizeof h + size)}; memcpy(ops + nops, &h, sizeof h); void *a = ops + nops + sizeof h; memset(a, 0, size); nops += h.size; return a; }
+ 
++// NOLINTBEGIN(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): the test's Metal objects are checked by CHECK before use; LLVM 23.1.4's analyzer flags upstream's call
+ int main(void) { @autoreleasepool {
+     mtl_init();
+     id<MTLCommandQueue> queue = [g_dev newCommandQueue];
+@@ -77,3 +78,4 @@ int main(void) { @autoreleasepool {
+     printf("lazy clear order: %d checks, %d failed\n", checks, failed);
+     return failed != 0;
+ } }
++// NOLINTEND(clang-analyzer-nullability.NullablePassedToNonnull)
+diff --git a/dm/gfx/tests/t_present_crop.m b/dm/gfx/tests/t_present_crop.m
+index a33e72bacc3a009bcb28d6b3adfedd38252e9c79..d46cf4bec18312a0234c9f963bb6f6c83d0ec88e 100644
+--- a/dm/gfx/tests/t_present_crop.m
++++ b/dm/gfx/tests/t_present_crop.m
+@@ -36,7 +36,7 @@ static int check_present_resize(id<MTLTexture> src, int w, int h) {
+     id<MTLTexture> out=[g_dev newTextureWithDescriptor:d];res_add(out);res_commit();
+     id<MTL4CommandAllocator> al=[g_dev newCommandAllocator];id<MTL4CommandBuffer> cb=[g_dev newCommandBuffer];id<MTLSharedEvent> ev=[g_dev newSharedEvent];
+     assert(al && ev);
+-    [cb beginCommandBufferWithAllocator:al];int kind=present_encode_m4(cb,src,out,NULL,g_present_uv[0],&g_fx_present);[cb endCommandBuffer];
++    [cb beginCommandBufferWithAllocator:al];int kind=present_encode_m4(cb,src,out,NULL,g_present_uv[0],&g_fx_present);[cb endCommandBuffer];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+     [g_q4 commit:&cb count:1];[g_q4 signalEvent:ev value:1];
+     EXPECT("resize present completes",1,[ev waitUntilSignaledValue:1 timeoutMS:10000]);res_remove(out);return kind;
+ }
+@@ -129,7 +129,7 @@ static void check_external_screenshots(void) {
+     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+     pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 1, 0, 1);
+     [[cb renderCommandEncoderWithDescriptor:pass] endEncoding];
+-    [cb encodeSignalEvent:ready value:1];
++    [cb encodeSignalEvent:ready value:1];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+     // Leave the producer unsubmitted while the external present first reaches readback.
+     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_global_queue(0, 0), ^{ [cb commit]; });
+     uint64_t serial = mtl_ext_tex((__bridge void *)tex);
+diff --git a/dm/gfx/tests/t_sparse_shadow.m b/dm/gfx/tests/t_sparse_shadow.m
+index e2d3b034962156724133c51b06099f3411c8f95b..4fdad585253579327b3f7baaa5a72089d4b24ab2 100644
+--- a/dm/gfx/tests/t_sparse_shadow.m
++++ b/dm/gfx/tests/t_sparse_shadow.m
+@@ -157,7 +157,7 @@ int main(void) {
+     h_nvnCommandBufferAddCommandMemory(&cmd, &cpool, 0, 64 << 10);
+     h_nvnCommandBufferAddControlMemory(&cmd, ctl_mem, sizeof ctl_mem);
+     NVNtextureHandle handles[49];
+-    for (int i = 0; i < 49; i++) handles[i] = (NVNtextureHandle)(i + 100);
++    for (int i = 0; i < 49; i++) handles[i] = (NVNtextureHandle)i + 100;
+     h_nvnCommandBufferBeginRecording(&cmd);
+     h_nvnCommandBufferBindTextures(&cmd, NVN_SHADER_STAGE_FRAGMENT, 0, 49, handles);
+     NVNcommandHandle ch = h_nvnCommandBufferEndRecording(&cmd);
+@@ -165,17 +165,17 @@ int main(void) {
+     memset(S.tex[1], 0, sizeof S.tex[1]);
+     uint8_t *lin = nvn_rec_linear(ch, NULL);
+     mtl_exec(lin); free(lin);
+-    int all49 = 1; for (int i = 0; i < 49; i++) if (S.tex[1][i] != (uint64_t)(i + 100)) all49 = 0;
++    int all49 = 1; for (int i = 0; i < 49; i++) if (S.tex[1][i] != (uint64_t)i + 100) all49 = 0;
+     CHECK("BindTextures 49 handles replayed across split records", all49);
+     // Deferred bind >32 handles: mutate array after recording, before replay
+     h_nvnCommandBufferBeginRecording(&cmd);
+     h_nvnCommandBufferBindTexturesDeferred(&cmd, NVN_SHADER_STAGE_VERTEX, 0, 49, handles);
+     NVNcommandHandle ch_def = h_nvnCommandBufferEndRecording(&cmd);
+-    for (int i = 0; i < 49; i++) handles[i] = (NVNtextureHandle)(i + 500);
++    for (int i = 0; i < 49; i++) handles[i] = (NVNtextureHandle)i + 500;
+     memset(S.tex[0], 0, sizeof S.tex[0]);
+     lin = nvn_rec_linear(ch_def, NULL);
+     mtl_exec(lin); free(lin);
+-    int def49 = 1; for (int i = 0; i < 49; i++) if (S.tex[0][i] != (uint64_t)(i + 500)) def49 = 0;
++    int def49 = 1; for (int i = 0; i < 49; i++) if (S.tex[0][i] != (uint64_t)i + 500) def49 = 0;
+     CHECK("BindTexturesDeferred 49 handles read updated handles at replay", def49);
+ 
+     // 8. Geometry GPU-only scratch pool: reuses multiple blocks across geo_big_reset, trims completed blocks on memory pressure
+diff --git a/dm/gfx/tests/t_vk_clear_attachments.m b/dm/gfx/tests/t_vk_clear_attachments.m
+index 1d184c8775b89ad563c69a432f7cccd406fc436d..26f224e4be7555828675877939ad7ab0f14bb144 100644
+--- a/dm/gfx/tests/t_vk_clear_attachments.m
++++ b/dm/gfx/tests/t_vk_clear_attachments.m
+@@ -73,7 +73,7 @@ static id<MTLBuffer> pixels(VkImage im, uint32_t mip, uint32_t layer, uint32_t b
+     id<MTLBuffer> out = [g_dev newBufferWithLength:w * h * bytes options:MTLResourceStorageModeShared];
+     assert(tex && out);
+     id<MTLBlitCommandEncoder> be = [cb blitCommandEncoder];
+-    [be copyFromTexture:tex sourceSlice:layer sourceLevel:mip sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
++    [be copyFromTexture:tex sourceSlice:layer sourceLevel:mip sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+               toBuffer:out destinationOffset:0 destinationBytesPerRow:w * bytes destinationBytesPerImage:w * h * bytes options:option];
+     [be endEncoding]; [cb commit]; [cb waitUntilCompleted]; assert(cb.status == MTLCommandBufferStatusCompleted); return out;
+ }
+diff --git a/dm/gfx/tests/t_vk_renderdragon.m b/dm/gfx/tests/t_vk_renderdragon.m
+index 83a268d53202f748c1583208b921c056ea5ec5ac..6cc731dc26096fe0a9e7c91691e10edbd3de1ceb 100644
+--- a/dm/gfx/tests/t_vk_renderdragon.m
++++ b/dm/gfx/tests/t_vk_renderdragon.m
+@@ -58,7 +58,7 @@ static id<MTLBuffer> readback(VkCommandBuffer cb, VkImage im) {
+     id<MTLBuffer> out = [g_dev newBufferWithLength:row * extent options:MTLResourceStorageModeShared];
+     assert(out);
+     id<MTLBlitCommandEncoder> be = [rs.cb blitCommandEncoder];
+-    [be copyFromTexture:im->tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
++    [be copyFromTexture:im->tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+               sourceSize:MTLSizeMake(extent, extent, 1) toBuffer:out destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:0];
+     [be endEncoding]; [rs.cb commit]; [rs.cb waitUntilCompleted];
+     assert(rs.cb.status == MTLCommandBufferStatusCompleted);
+diff --git a/dm/host/hle_audio.c b/dm/host/hle_audio.c
+index 57112471496810b1813e5d8dfe9d2e057702df66..971bfe68be9d39596e1c8233a7996e114da33949 100644
+--- a/dm/host/hle_audio.c
++++ b/dm/host/hle_audio.c
+@@ -245,7 +245,7 @@ static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioT
+           void (*tap)(void *, const int16_t *, uint32_t, int) = atomic_load(&g_tap_fn);
+           if (tap) { int want = -1; if (atomic_compare_exchange_strong(&g_tap_id, &want, a->id) || want == a->id) tap(atomic_load(&g_tap_ctx), pcm, n, a->dev_ch); }
+           uint32_t vb = atomic_load_explicit(&g_host_vol, memory_order_relaxed);
+-          if (vb != 0x3f800000u) { float v; memcpy(&v, &vb, 4); for (uint32_t i = 0; i < n * (uint32_t)a->dev_ch; i++) pcm[i] = (int16_t)(pcm[i] * v); } }
++          if (vb != 0x3f800000u) { float v; memcpy(&v, &vb, 4); for (uint32_t i = 0; i < n * (uint32_t)a->dev_ch; i++) pcm[i] = (int16_t)(pcm[i] * v); } }   // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult): pull_device filled the whole buffer just above
+         if (a->mute) memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize);
+     }
+     return noErr;
+diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
+index 7a7420e0c5c5da2cbb0cbc593f3e41a8465a05c9..8c6196f9bad226c804816424282891e00d4f320f 100644
+--- a/dm/tools/lint_c_baseline.tsv
++++ b/dm/tools/lint_c_baseline.tsv
+@@ -24,7 +24,7 @@ dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	4
+-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	14
++dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	13
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
+ dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1

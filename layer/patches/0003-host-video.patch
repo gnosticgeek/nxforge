@@ -4,33 +4,26 @@ Date: Sun, 8 Nov 2026 00:00:00 +0000
 Subject: host-video: Video decoding fixes (VP9 late free, AV1 movies)
 
 ---
- dm/host/hle_codec_video.c     | 100 +++++++++++++++++++++++++++++++---
- dm/host/tests/Makefile        |   5 +-
- dm/host/tests/t_codec_video.c |  67 ++++++++++++++++++++++-
- 3 files changed, 162 insertions(+), 10 deletions(-)
+ dm/host/hle_codec_video.c     | 61 ++++++++++++++++++++++++++++++++---
+ dm/host/tests/Makefile        |  5 ++-
+ dm/host/tests/t_codec_video.c | 42 +++++++++++++++++++++++-
+ 3 files changed, 101 insertions(+), 7 deletions(-)
 
 diff --git a/dm/host/hle_codec_video.c b/dm/host/hle_codec_video.c
-index d205195501b3c1718ac2df4952fb1c8d7d7db316..728bac508343a70f449b4e635e773df279e13149 100644
+index 9b57466fd2a029c856c77d9a9cff7ced3aa1b28c..eca68cf85cbd0ca4293718f736b7af4210e3dcad 100644
 --- a/dm/host/hle_codec_video.c
 +++ b/dm/host/hle_codec_video.c
-@@ -51,11 +51,15 @@ typedef struct {
-     int codec; uint16_t w, h; mavc *avc; uint8_t *csd; size_t csd_n;   // H.264: VideoToolbox and the parameter sets Initialize gave
-     mav1 *av1;   // AV1: VideoToolbox, or dav1d where the chip has no AV1 decoder (hle_movie_av1.c)
-     movie_vt_control vt;
--    struct { cv_pool *pool; uint32_t pidx; int reg, filled; uint32_t gen, filled_gen; uint16_t w, h; int64_t ts; uint8_t eos; } buf[CV_BUFS];
-+    struct { cv_pool *pool; uint32_t pidx; int reg, filled; uint32_t gen, filled_gen; uint16_t w, h; int64_t ts; uint8_t eos, early; } buf[CV_BUFS];   // early: its first handle (generation 0, the "free" one) signalled a sync point event (cv_dec_props)
-     uint32_t fifo[8], fhead, fcount;          // acquirable indices
-     uint32_t pend[CV_BUFS], phead, pcount;    // released, waiting for a picture
+@@ -57,6 +57,9 @@ typedef struct {
+     uint32_t pend[CV_BUFS], phead, pcount;    // registered or released, waiting for a picture
      vpx_image_t *held[CV_HOLD]; int64_t held_ts[CV_HOLD]; uint8_t held_eos[CV_HOLD]; int nheld;
      int eos_pending;
 +    int clk_on, catching; int64_t clk_ts0, clk_last; double clk_t0; uint64_t skipped, restarts, catchups;   // AV1's movie clock (cv_skip_late): a picture's timestamp against the guest clock (NXForge)
 +    uint64_t take_frame, take_wall;   // the presented-frame count and now_ns() when the game last took a picture (cv_pause)
 +    uint64_t refused;   // packets refused with a full queue (3603), for the end-of-stream line
-+    int started; uint64_t late_free;   // Start was called; late "free" signals read as pictures (cv_dec_props)
      // The decoder's thread (cv_worker). The codec state above (vpx, avc, av1) is its own from Initialize to Finalize: it decodes outside mu
      pthread_t th; pthread_cond_t work;         // work: a packet was queued, room for pictures came back, a Stop / Flush or Finalize came
      int quit, busy, reopen;                    // busy: the thread decodes a packet; reopen: a Stop / Flush came, so it makes a new codec state before its next packet
-@@ -113,6 +117,51 @@ static void pool_native_write(cv_pool *p, uint32_t i, const vpx_image_t *im) {
+@@ -114,6 +117,51 @@ static void pool_native_write(cv_pool *p, uint32_t i, const vpx_image_t *im) {
      for (uint32_t y = 0; y < p->h; y++) memcpy(dst + (size_t)y * stride, tmp + (size_t)y * p->w * 4, (size_t)p->w * 4);
      free(tmp);
  }
@@ -82,7 +75,7 @@ index d205195501b3c1718ac2df4952fb1c8d7d7db316..728bac508343a70f449b4e635e773df2
  static int cv_pending(const cv_dec *d) { return d->nheld + (int)d->qcount + d->busy; }   // what the decoder holds for the client: packets not yet decoded and pictures no released buffer has taken (decoder lock held)
  // Pictures and end of stream into the released buffers, in order (decoder lock held). decoded: the decoder's thread calls, with the pictures of the packet it has just decoded:
  // a buffer they go into was waiting for them
-@@ -121,17 +170,18 @@ static void fill(cv_dec *d, int decoded) {
+@@ -122,17 +170,18 @@ static void fill(cv_dec *d, int decoded) {
      while (d->pcount && (d->nheld || d->eos_pending)) {
          uint32_t i = d->pend[d->phead]; d->phead = (d->phead + 1) % CV_BUFS; d->pcount--;
          typeof(d->buf[0]) *b = &d->buf[i];
@@ -103,25 +96,7 @@ index d205195501b3c1718ac2df4952fb1c8d7d7db316..728bac508343a70f449b4e635e773df2
          b->filled = 1; b->filled_gen = b->gen;
          spt_fire(d, i);
      }
-@@ -334,7 +384,7 @@ static Result cv_dec_fin(void *t) {
- static Result cv_dec_reg(void *t, uint32_t i, void *pool, uint32_t pidx) {
-     cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) { LOG("[RED] nn::codec::Register…DecoderBuffer index %u", i); return CV_R(2004); }
-     dm_host_mutex_lock(&d->mu);
--    d->buf[i].pool = pool_of(pool); d->buf[i].pidx = pidx; d->buf[i].reg = 1; d->buf[i].filled = 0; d->buf[i].gen = 0; d->buf[i].filled_gen = 0;
-+    d->buf[i].pool = pool_of(pool); d->buf[i].pidx = pidx; d->buf[i].reg = 1; d->buf[i].filled = 0; d->buf[i].gen = 0; d->buf[i].filled_gen = 0; d->buf[i].early = 0;
-     if (d->fcount < 8) { d->fifo[(d->fhead + d->fcount) % 8] = i; d->fcount++; } else LOG("[RED] nn::codec: acquirable queue full at register %u", i);
-     pthread_mutex_unlock(&d->mu);
-     return 0;
-@@ -348,7 +398,7 @@ static void cv_drop_index(uint32_t *q, uint32_t *head, uint32_t *count, uint32_t
- static Result cv_dec_unreg(void *t, uint32_t i) {   // the buffer leaves the decoder: no longer acquirable, filled or waited for
-     cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) return CV_R(2004);
-     dm_host_mutex_lock(&d->mu);
--    d->buf[i].reg = 0; d->buf[i].filled = 0; d->buf[i].pool = NULL; d->buf[i].gen++;
-+    d->buf[i].reg = 0; d->buf[i].filled = 0; d->buf[i].pool = NULL; d->buf[i].gen++; d->buf[i].early = 0;
-     cv_drop_index(d->fifo, &d->fhead, &d->fcount, 8, i); cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);
-     pthread_mutex_unlock(&d->mu);
-     return 0;
-@@ -362,7 +412,7 @@ static Result cv_dec_reset(void *t, int stop) {
+@@ -368,7 +417,7 @@ static Result cv_dec_reset(void *t, int stop) {
      for (uint32_t k = 0; k < d->qcount; k++) free(d->q[(d->qhead + k) % CV_HOLD].data);
      d->qhead = d->qcount = 0;
      for (int i = 0; i < d->nheld; i++) vpx_img_free(d->held[i]);
@@ -130,15 +105,7 @@ index d205195501b3c1718ac2df4952fb1c8d7d7db316..728bac508343a70f449b4e635e773df2
      d->epoch++; d->reopen = 1;
      movie_vt_cancel(&d->vt);
      cv_stat_sum(d);
-@@ -376,6 +426,7 @@ static Result cv_dec_reset(void *t, int stop) {
- static Result cv_dec_start(void *t) {
-     cv_dec *d = cv_of(t); if (!d) return CV_R(2004);
-     dm_host_mutex_lock(&d->mu);
-+    d->started = 1;
-     if (d->event && cv_pending(d) < CV_READY) hle_signal_system_event(d->event);
-     pthread_mutex_unlock(&d->mu);
-     return 0;
-@@ -497,7 +548,9 @@ static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t s
+@@ -503,7 +552,9 @@ static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t s
      dm_host_mutex_lock(&d->mu);
      uint8_t *copy = NULL;
      if (cv_pending(d) >= CV_HOLD || (size && !(copy = malloc((size_t)size)))) {
@@ -149,69 +116,17 @@ index d205195501b3c1718ac2df4952fb1c8d7d7db316..728bac508343a70f449b4e635e773df2
          if (d->event) hle_clear_system_event(d->event);
          pthread_mutex_unlock(&d->mu); return CV_BUSY;
      }
-@@ -522,7 +575,8 @@ static Result cv_dec_acq(uint32_t *idx, cv_sync *sync, void *t) {
- static void cv_dec_rel(void *t, uint32_t i, cv_sync sync) {
+@@ -529,7 +580,7 @@ static void cv_dec_rel(void *t, uint32_t i, cv_sync sync) {
      (void)sync; cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS || !d->buf[i].reg) { LOG("[RED] nn::codec::Release…DecoderOutputBuffer index %u", i); return; }
      dm_host_mutex_lock(&d->mu);
--    d->buf[i].gen++; d->buf[i].filled = 0;
-+    d->buf[i].gen++; d->buf[i].filled = 0; d->buf[i].early = 0;
+     d->buf[i].gen++; d->buf[i].filled = 0;
+-    cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);   // an unfilled buffer may still sit in pend[]
 +    cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);   // cv_dec_props may have queued it already
      if (d->pcount < CV_BUFS) { d->pend[(d->phead + d->pcount) % CV_BUFS] = i; d->pcount++; }
      if (d->fcount < 8) { d->fifo[(d->fhead + d->fcount) % 8] = i; d->fcount++; } else LOG("[RED] nn::codec: acquirable queue full at release %u", i);
      int before = cv_pending(d);
-@@ -533,6 +587,29 @@ static Result cv_dec_props(uint16_t *w, uint16_t *h, uint16_t *cw, uint16_t *ch,
-     cv_dec *d = cv_of(t); if (!d || i >= CV_BUFS) return CV_R(2004);
-     dm_host_mutex_lock(&d->mu);
-     int ok = d->buf[i].filled;
-+    // Mario Kart World's VP9 player (base game, main+0x19e60c0) registers a buffer, acquires it and arms a sync point event on that first handle, which the host signals at once
-+    // ("free"). Its worker's callback (main+0x19e6f40) recycles the buffer while the player is not started, but once Start has run (player state 3, main+0x70f154) it reads every
-+    // signal as a picture and aborts on any result from the properties (main+0x19e8110). When the worker took that first signal only after Start, the game aborted with 0x1c286f
-+    // (3604) after a race (2026-11-06, the 2560x1440 one-picture decode, about 1 time in 5). So a properties call on a buffer that was never released, whose first handle
-+    // signalled an event, after Start, is that late "free" signal: the buffer goes to the decoder as a release would put it, and takes a waiting picture if there is one;
-+    // with none it reads as an empty picture of the stream's size (blank), and the next picture waits for the game's release of the buffer as usual
-+    if (!ok && d->buf[i].reg && d->buf[i].early && !d->buf[i].gen && d->started) {
-+        d->buf[i].early = 0;
-+        cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);
-+        if (d->pcount < CV_BUFS) { d->pend[(d->phead + d->pcount) % CV_BUFS] = i; d->pcount++; }
-+        int before = cv_pending(d);
-+        fill(d, 0); ready(d, before, 0);
-+        ok = d->buf[i].filled;
-+        if (!ok) {
-+            cv_drop_index(d->pend, &d->phead, &d->pcount, CV_BUFS, i);
-+            d->buf[i].w = d->w; d->buf[i].h = d->h; d->buf[i].ts = 0; d->buf[i].eos = 0;
-+        }
-+        if (d->late_free++ < 4) LOG("[codec] %s decoder %u: buffer %u's first (free) signal was read as a picture after Start: %s", k_cv_name[d->codec], d->id, i,
-+                                    ok ? "it took the waiting picture" : "no picture waiting, an empty one given");
-+        *w = *cw = d->buf[i].w; *h = *ch = d->buf[i].h; *ts = d->buf[i].ts; *eos = d->buf[i].eos != 0;
-+        pthread_mutex_unlock(&d->mu);
-+        return 0;
-+    }
-     if (ok) { *w = *cw = d->buf[i].w; *h = *ch = d->buf[i].h; *ts = d->buf[i].ts; *eos = d->buf[i].eos != 0; }
-     pthread_mutex_unlock(&d->mu);
-     return ok ? 0 : CV_NONE;
-@@ -672,6 +749,12 @@ static bool sync_reached(const cv_sync *s) {
-     pthread_mutex_unlock(&g_cv_mu);
-     return r;
- }
-+static void cv_mark_early(const cv_sync *s) {   // a sync point event armed on a buffer's first handle (signalled at once): see cv_dec_props
-+    dm_host_mutex_lock(&g_cv_mu);
-+    cv_dec *d = s->dec && s->dec <= 16 ? g_cv[s->dec - 1] : NULL;
-+    if (d && s->idx < CV_BUFS) { dm_host_mutex_lock(&d->mu); if (d->buf[s->idx].reg && !d->buf[s->idx].gen) d->buf[s->idx].early = 1; pthread_mutex_unlock(&d->mu); }
-+    pthread_mutex_unlock(&g_cv_mu);
-+}
- HLE_FORCE("_ZN2nn2gs17TryWaitNativeSyncERKNS0_16NativeSyncHandleE", "decoder sync handles are the host's (hle_codec_video.c)", bool, h_gs_trywait, const cv_sync *s) {
-     return sync_reached(s);
- }
-@@ -688,6 +771,7 @@ HLE_FORCE("_ZN2nn6syncpt3sdk21RequestSyncPointEventEPNS1_18SyncPointEventTypeERK
-     spt_unarm(e); hle_clear_system_event(e);
-     SPT(e)->want = *s; SPT(e)->armed = 1;
-     pthread_mutex_lock(&g_spt_mu); int k = 0; while (k < 64 && g_spt[k]) k++; if (k < 64) g_spt[k] = e; pthread_mutex_unlock(&g_spt_mu);
-+    if (s->magic == CV_SYNC && !s->gen) cv_mark_early(s);
-     if (k == 64) { LOG("[RED] nn::syncpt: more than 64 armed events: signalled at once"); hle_signal_system_event(e); return 0; }
-     if (sync_reached(s)) { spt_unarm(e); hle_signal_system_event(e); }
-     return 0;
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 120cda483d487804eb04a4392593bf582473b662..5910033eb158c31e0d581152db7585b6edc94f47 100644
+index 1d30a2a68b804223f8bb0387c8a792df9a05a40b..41d79f1161cecdce60b8a49f644120aff16be01a 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
 @@ -12,13 +12,14 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
@@ -230,7 +145,7 @@ index 120cda483d487804eb04a4392593bf582473b662..5910033eb158c31e0d581152db7585b6
  	$(B)/t_fs $(QUIET)
  	$(B)/t_fs_mutation $(QUIET)
  	TMPDIR="$(abspath $(B))" $(B)/t_fs_commit_list
-@@ -330,6 +331,8 @@ $(B)/t_oe: t_oe.c ../hle_oe.c ../hle.h ../dm.h $(GAME_H) | $(B)
+@@ -344,6 +345,8 @@ $(B)/t_oe: t_oe.c ../hle_oe.c ../hle.h ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_oe.c
  $(B)/t_friends: t_friends.c ../hle_friends.c ../hle.h ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_friends.c
@@ -240,7 +155,7 @@ index 120cda483d487804eb04a4392593bf582473b662..5910033eb158c31e0d581152db7585b6
  	$(CLANG) -O1 -Wno-unused-function -DDM_TEST_HOOKS -I.. $(GINC) -o $@ t_condvar.c t_condvar_stub.c ../hle_thread.c
  $(B)/t_condvar_old: t_condvar.c t_condvar_stub.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)
 diff --git a/dm/host/tests/t_codec_video.c b/dm/host/tests/t_codec_video.c
-index 65c144e0892e77ff97e3c767239d9596fe928100..3f95845d51e9ceb468123a187ac2d0e815e5bd9f 100644
+index 97af107fc60a6b2e2466e9b7e0a34acb31934d81..bf2055621d5c44ab606426ad59d0e8e2b8e17e61 100644
 --- a/dm/host/tests/t_codec_video.c
 +++ b/dm/host/tests/t_codec_video.c
 @@ -50,7 +50,12 @@ static OSStatus vt_test_create(CFAllocatorRef allocator, CMVideoFormatDescriptio
@@ -267,39 +182,7 @@ index 65c144e0892e77ff97e3c767239d9596fe928100..3f95845d51e9ceb468123a187ac2d0e8
  int main(void) {
      bool test_av1 = vt_av1_available();
      if (!test_av1) puts("VideoToolbox lifecycle: hardware AV1 unavailable; AV1 lifecycle cases skipped");
-@@ -357,6 +365,31 @@ int main(void) {
-     for (int i = 0; i < 6; i++) assert(!h_cv_vp9submit(&id, dec, vp9, sizeof vp9, 7000 + i, false));
-     assert(!h_cv_vp9fin(dec) && !cv_of(dec) && !g_ev[ev_slot(ev)].bound);
-     for (int i = 0; i < 3; i += 2) { h_cv_poolfin(pool[i]); assert(!pool_of(pool[i])); }
-+    // Mario Kart World's late "free" signal: a buffer's first handle armed on a sync point event (signalled at once), read as a picture only after Start. Before Start it
-+    // still answers 3604; after Start it takes a waiting picture, or with none reads as an empty picture of the stream's size, and the game's release then works as usual
-+    {   _Alignas(16) static uint8_t dk[0x400], pk[0x40], mk[16 * 16 * 4], ek[0x80];
-+        assert(!h_cv_poolsize(&size, &align, &pref, 1) && !h_cv_pool(pk, mk, size, &pref, 1, 0));
-+        for (int pic = 0; pic < 2; pic++) {   // with a picture waiting, then with none
-+            assert(!h_cv_vp9init2(dk, 0x10000, 16, 16, 1, 1, 3, NULL, 0)); cv_dec *k = cv_of(dk);
-+            assert(!h_spt_create(ek));
-+            assert(!h_cv_vp9reg(dk, 0, pk, 0) && !h_cv_vp9acq(&idx, &sync, dk) && idx == 0 && sync.gen == 0);
-+            assert(!h_spt_request(ek, &sync) && ev_set(ek) && k->buf[0].early);
-+            assert(h_cv_vp9props(&w, &h, &cw, &ch, &ts, &eos, dk, 0) == CV_NONE);   // not started: as before
-+            assert(!h_cv_vp9start(dk));
-+            if (!pic) { assert(!h_cv_vp9submit(&id, dk, vp9, sizeof vp9, 5000, false)); settle(dk); assert(k->nheld == 1); }
-+            w = h = 0; ts = -1;
-+            assert(!h_cv_vp9props(&w, &h, &cw, &ch, &ts, &eos, dk, 0) && w == 16 && h == 16 && !eos && !k->buf[0].early && k->late_free == 1);
-+            if (!pic) assert(ts == 5000 && k->buf[0].filled && k->nheld == 0 && !k->pcount);
-+            else assert(ts == 0 && !k->buf[0].filled && !k->pcount);
-+            // the game releases the buffer: the next picture goes into it and signals its new handle
-+            h_cv_vp9rel(dk, 0, sync); assert(k->pcount == 1 && !h_cv_vp9acq(&idx, &sync, dk) && idx == 0 && sync.gen == 1 && !h_gs_trywait(&sync));
-+            assert(!h_cv_vp9submit(&id, dk, vp9, sizeof vp9, 6000, false)); settle(dk); assert(h_gs_trywait(&sync));
-+            assert(!h_cv_vp9props(&w, &h, &cw, &ch, &ts, &eos, dk, 0) && ts == 6000 && k->late_free == 1);
-+            h_spt_destroy(ek);
-+            assert(!h_cv_vp9fin(dk));
-+        }
-+        h_cv_poolfin(pk);
-+    }
-     // VP8 (libvpx) and H.264 (VideoToolbox) take the same protocol: one released buffer, one key frame, its picture read back red
-     {   _Alignas(16) static uint8_t d8[0x400], p8[0x40], m8[16 * 16 * 4];
-         assert(!h_cv_poolsize(&size, &align, &pref, 1) && !h_cv_pool(p8, m8, size, &pref, 1, 0));
-@@ -484,6 +517,38 @@ int main(void) {
+@@ -519,6 +527,38 @@ int main(void) {
          assert(!(k[BLANK_MAX] = dm_native_image_blank(32, 32)));   // full
          for (int i = 0; i < BLANK_MAX; i++) dm_native_image_blank_free(k[i]);
      }
