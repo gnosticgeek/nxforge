@@ -9,7 +9,7 @@ import AppKit
 import SwiftUI
 
 extension AppModel {
-    func consoleOK(_ g: LibraryGame) -> Bool { libraryConsole == .all || g.console.rawValue == libraryConsole.rawValue }
+    func consoleOK(_ g: LibraryGame) -> Bool { settings.shows(g.console) && (libraryConsole == .all || g.console.rawValue == libraryConsole.rawValue) }
 
     /// The games the Library shows now: filtered, searched and sorted as chosen.
     func libraryShown(_ builds: [String: LibraryBuild]) -> [LibraryGame] {
@@ -87,7 +87,7 @@ struct LibraryPage: View {
 
     var body: some View {
         let builds = model.libraryBuilds()
-        let all = model.library?.games ?? []
+        let all = (model.library?.games ?? []).filter { model.settings.shows($0.console) }   // a system switched off in Settings is left out
         let games = model.libraryShown(builds)
         ScrollViewReader { proxy in
             ScrollView {
@@ -512,7 +512,7 @@ struct LibraryPage: View {
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.16)))
             BoxMenu {
                 Picker("Platform", selection: $model.libraryConsole) {
-                    ForEach(ConsoleFilter.allCases, id: \.self) { c in Text("\(c.rawValue) (\(all.filter { c == .all || $0.console.rawValue == c.rawValue }.count))").tag(c) }
+                    ForEach(ConsoleFilter.shown(model.settings), id: \.self) { c in Text("\(c.rawValue) (\(all.filter { c == .all || $0.console.rawValue == c.rawValue }.count))").tag(c) }
                 }
                 .pickerStyle(.inline)
             } label: { menuLabel("Platform", model.libraryConsole.rawValue) }

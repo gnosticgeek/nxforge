@@ -46,7 +46,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 enum StageSettingRow: Int, CaseIterable {
     case startIn, returnToLibrary, sessionRecap, lightWhilePlaying
     case firstPlayOptions, batteryPreset, localShaders
-    case folderCheck, squareCovers, groupByConsole
+    case folderCheck, showSwitch2, showSwitch1, showGBA, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
     case theatreTheme, museumLighting, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
     case cloudSaves, snapshotAfterPlay, saveBackupPush
@@ -57,7 +57,7 @@ enum StageSettingRow: Int, CaseIterable {
         switch self {
         case .startIn, .returnToLibrary, .sessionRecap, .lightWhilePlaying: .general
         case .firstPlayOptions, .batteryPreset, .localShaders: .playing
-        case .folderCheck, .squareCovers, .groupByConsole: .library
+        case .folderCheck, .showSwitch2, .showSwitch1, .showGBA, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
         case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector, .museumLighting: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
@@ -417,11 +417,17 @@ struct StageSettings: View {
                 segmented($model.settings.folderCheck, FolderCheck.allCases, width: 290) { $0.rawValue }
             },
         ]
+        let shown = { (c: Console) in Binding(get: { model.settings.shows(c) }, set: { model.setSystemShown(c, $0) }) }
+        let systems: [SettingsRowSpec] = [
+            toggle("Nintendo Switch 2", "Switch 2 games on Home, in Discover, on Theatre and its Museum wall, and on the Converter's pages. Off hides them; nothing is deleted.", shown(.switch2), .showSwitch2),
+            toggle("Nintendo Switch", "Switch games everywhere in NXForge. Off hides them; their files, builds and saves stay as they are.", shown(.switch1), .showSwitch1),
+            toggle("Game Boy Advance", "Game Boy Advance games everywhere in NXForge. Off hides them; their files, builds and saves stay as they are.", shown(.gba), .showGBA),
+        ]
         let look: [SettingsRowSpec] = [
             toggle("Square covers", "Shows each game's square shop art instead of its box on Home and in Discover: smaller, so more fit in a row. The same as Discover's square button.", $model.settings.squareCovers, .squareCovers),
             toggle("Group Game Files by console", "The Converter's Game Files page in a Switch 2 section and a Switch one.", $model.settings.libraryGroupByConsole, .groupByConsole),
         ]
-        return [SettingsGroup(rows: folder), SettingsGroup(caption: "How games are shown", rows: look)]
+        return [SettingsGroup(rows: folder), SettingsGroup(caption: "Systems", rows: systems), SettingsGroup(caption: "How games are shown", rows: look)]
     }
 
     var artwork: [SettingsGroup] {

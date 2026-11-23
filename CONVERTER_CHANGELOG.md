@@ -4,6 +4,13 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.29.1 (2026-11-23)
+
+Shipped in NXForge 0.59.1.
+
+- **Switch systems on and off.** Settings › Library › Systems has a switch for Nintendo Switch 2, Nintendo Switch and Game Boy Advance, all on to start. A system switched off disappears everywhere: Home, Discover (its filter goes too), Theatre and the Museum wall (its shelf goes), and the Converter's Game Files and Builds pages (and their Platform menus). Nothing is deleted: the games, builds and saves stay where they are, and switching the system back on brings them all back. A filter left on a hidden system goes back to All. Kept in settings.json as `hidden_systems`. A controller can flip them like any other Settings switch.
+- Tests for the default, reading the setting back and the filters a hidden system loses.
+
 ## 0.29.0 (2026-11-22)
 
 Shipped in NXForge 0.59.0.

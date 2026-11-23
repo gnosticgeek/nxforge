@@ -10,7 +10,8 @@ struct BuildsPage: View {
 
     var builds: [BuildRecord] {
         let _ = model.revision
-        var b = Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) }
+        let s = model.settings
+        var b = Engine.builds().filter { FileManager.default.fileExists(atPath: $0.app) && s.shows(Console.of($0)) }
         let q = model.buildSearch.trimmingCharacters(in: .whitespaces)
         if !q.isEmpty { b = b.filter { TitleMatch.matches(q, [name($0), $0.engine.short]) } }
         switch model.buildConsole {
@@ -144,7 +145,7 @@ struct BuildsPage: View {
             .background(.white.opacity(0.06), in: .capsule)
             .overlay(Capsule().strokeBorder(.white.opacity(0.16)))
             BoxMenu {
-                Picker("Platform", selection: $model.buildConsole) { ForEach(ConsoleFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                Picker("Platform", selection: $model.buildConsole) { ForEach(ConsoleFilter.shown(model.settings), id: \.self) { Text($0.rawValue).tag($0) } }
                     .pickerStyle(.inline)
             } label: { filterLabel("Platform", model.buildConsole.rawValue) }
             .fixedSize()

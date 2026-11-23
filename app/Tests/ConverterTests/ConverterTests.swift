@@ -2838,3 +2838,26 @@ import Testing
     }
 }
 
+
+@Suite struct HiddenSystems {
+    @Test func everySystemShownByDefaultAndReadBack() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(Console.allCases.allSatisfy(old.shows))
+        var s = Settings()
+        s.setShows(.gba, false); s.setShows(.switch2, false); s.setShows(.gba, false)
+        #expect(s.hiddenSystems == ["Switch 2", "Game Boy Advance"])
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(!back.shows(.gba) && !back.shows(.switch2) && back.shows(.switch1))
+        s.setShows(.gba, true)
+        #expect(s.shows(.gba) && s.hiddenSystems == ["Switch 2"])
+    }
+
+    @Test func aHiddenSystemHasNoFilter() {
+        var s = Settings()
+        s.setShows(.gba, false)
+        #expect(!StageFilter.shown(.owned, s).contains(.gba) && StageFilter.shown(.owned, s).contains(.switch1))
+        #expect(StageFilter.shown(.built, s) == [.all, .favorites, .switch2, .switch1])
+        #expect(ConsoleFilter.shown(s) == [.all, .switch2, .switch1])
+        #expect(ConsoleFilter.shown(Settings()) == ConsoleFilter.allCases)
+    }
+}
