@@ -25,7 +25,7 @@ Claude-Session: https://claude.ai/code/session_016qteK3AQaSqMoGPyBgeeFe
  3 files changed, 157 insertions(+), 18 deletions(-)
 
 diff --git a/dm/tools/romfs_image.py b/dm/tools/romfs_image.py
-index 7b28a659a1359145477786431d9f09174ce230c2..054c233f159bb8ec321e41a295a2727ed130adeb 100755
+index 90b8a83e7e8ab2ed038dc626e06f4a0a9f7712e2..ce9132708e5284f81b4a3679a439293a1e20acaa 100755
 --- a/dm/tools/romfs_image.py
 +++ b/dm/tools/romfs_image.py
 @@ -14,7 +14,7 @@
@@ -161,8 +161,8 @@ index 7b28a659a1359145477786431d9f09174ce230c2..054c233f159bb8ec321e41a295a2727e
      return h.hexdigest()
  
  
-@@ -119,12 +218,47 @@ def copy_file(path, out):
-     return n
+@@ -133,12 +232,47 @@ def replace_file(image, key, data):
+         out.seek(0); out.write(HEAD.pack(MAGIC, end + len(data), len(index), image.count))
  
  
 +class Prefetch:
@@ -237,10 +237,10 @@ index 1310dd1d9990b62f9a3ed2a7ab348393dee22625..fc425fc4de914012e1b97e3dbf0fbf08
      """The DLC set replaces Documents/aoc over AFC, and nothing else in the app's data container: devicectl's --remove-existing-content empties the whole
      container (CoreDevice 651.32, docs/reference/packing.md), saves included, so the script never passes it."""
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 120ca5abe3f71e4d40897af5fae4b0d21ccf15af..71659a8469544de018e51083b9877ac48ccb7c51 100755
+index 09191b70ef36ed8578c5ff362814eac8cd50d6ec..d95bc179196796c2700e6bb0dd7695a41ab8aa81 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -318,18 +318,8 @@ def progress_mode(want):   # auto: redraw in a terminal or in Spyder (IPython ha
+@@ -320,18 +320,8 @@ def progress_mode(want):   # auto: redraw in a terminal or in Spyder (IPython ha
      return 'bar' if in_ipython() or (sys.stdout and sys.stdout.isatty()) else 'lines'
  
  

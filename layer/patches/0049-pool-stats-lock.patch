@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Sun, 22 Nov 2026 22:05:47 +0000
+Subject: pool-stats-lock: the power line reads the pool tables' buffers under
+ g_rmu, so a table swapped by the replay thread is not messaged after its
+ release
+
+---
+ dm/gfx/nvn/nvn_mtl.m | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index c5ac37b20a796f82042e037833667e42ac6e5c91..b06b264c3bc367746b352e89e1cc47db9aa85901 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -14007,7 +14007,10 @@ static id<MTLBuffer> pool_patch_take(const pool_snap *q) {
+ // that took, patches copied whole (no spare of their own, none finished, the log past them), the patches' copy and replay time (us); the bytes of the tables' buffers in use and spare
+ void mtl_pool_stats(uint64_t s[POOL_STATS]) {
+     static mach_timebase_info_data_t tb; if (!tb.denom) mach_timebase_info(&tb);
+-    uint64_t used = 0; for (int k = 0; k < POOL_SNAPS; k++) if (g_psnap[k].buf) used += g_psnap[k].buf.length;
++    // The tables are swapped by the replay thread under g_rmu (pool_walk); this runs on the game's present thread. Read unlocked, a table's buffer could be released between the load and
++    // its length (Ocarina of Time, Hall of Fallen Foes: objc_msgSend on a freed buffer here). A try: the power line never waits on the replay, and a busy lock reports the last count
++    static uint64_t used_last; uint64_t used = used_last;
++    if (os_unfair_lock_trylock(&g_rmu)) { used = 0; for (int k = 0; k < POOL_SNAPS; k++) if (g_psnap[k].buf) used += g_psnap[k].buf.length; os_unfair_lock_unlock(&g_rmu); used_last = used; }
+     uint64_t v[POOL_STATS] = {g_stat_pool_builds, (uint64_t)(g_stat_pool_ms * 1000), g_stat_pool_patched, g_stat_pool_kept, g_stat_pool_pchg, g_stat_pool_schg, g_stat_pool_replayed, g_stat_pool_replay_n,
+         g_stat_pool_copied[0], g_stat_pool_copied[1], g_stat_pool_copied[2], g_stat_pool_take_ns * tb.numer / tb.denom / 1000, used, g_pool_spare_bytes};
+     memcpy(s, v, sizeof v);

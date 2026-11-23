@@ -29,10 +29,10 @@ index 854ffc481eebd29493e9ef2f23fd8248a396f1e6..8c0583d25564a5b393740abf267b93f5
          else for (size_t k = 0; k < poison_bytes / 4; k++) ((float *)poison.contents)[k] = .75f;
          id<MTLCommandBuffer> cb = [queue commandBuffer]; id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
-index b9802b1108be60a28ec303c3b55035a1d457caa2..24893170491048b0bc85f7044712ad2264af16d5 100644
+index fcdf220cf38ed0d3632c6f8c8a8f26796fa39fae..7a7420e0c5c5da2cbb0cbc593f3e41a8465a05c9 100644
 --- a/dm/tools/lint_c_baseline.tsv
 +++ b/dm/tools/lint_c_baseline.tsv
-@@ -27,7 +27,6 @@ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	3
+@@ -25,7 +25,6 @@ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	4
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	14
@@ -40,7 +40,7 @@ index b9802b1108be60a28ec303c3b55035a1d457caa2..24893170491048b0bc85f7044712ad22
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
  dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1
-@@ -94,7 +93,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
+@@ -90,7 +89,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
  dm/host/tests/t_fs.c	bugprone-command-processor	2
  dm/host/tests/t_fs.c	clang-analyzer-unix.Stream	1
  dm/host/tests/t_fs_case.c	clang-analyzer-unix.Stream	1
@@ -87,10 +87,10 @@ index d21d22802d418e5322f60850d42f699a5b999d42..293e6e93c6f59de41fd0ee86a352b397
  
      def test_home_redacted(self):
 diff --git a/dm/tools/tests/test_regress.py b/dm/tools/tests/test_regress.py
-index 95fb9c0790110dd3b67f361710041e245bbe6b80..1dd42fb1c1885126a2048bf414f2e2b79ac73934 100644
+index 0ba9fdb2c451b00d2b90a28d2c128c2642b677ce..e71617a39dd37aba069d1c77acf3fa39ba8de9be 100644
 --- a/dm/tools/tests/test_regress.py
 +++ b/dm/tools/tests/test_regress.py
-@@ -478,16 +478,16 @@ class Regress(unittest.TestCase):
+@@ -497,16 +497,16 @@ class Regress(unittest.TestCase):
  
      def test_chain_builds_keep_their_own_cache_without_adopting_players_files(self):
          with tempfile.TemporaryDirectory() as td:
@@ -111,7 +111,7 @@ index 95fb9c0790110dd3b67f361710041e245bbe6b80..1dd42fb1c1885126a2048bf414f2e2b7
                  self.assertEqual(regress.chain_cache(NS(path=new), g), own / 'cas.db')
                  self.assertEqual(regress.chain_cache(NS(path=root / 'revision-from-before'), g), own / 'cas')   # its dmsh_build.py wants a folder
  
-@@ -670,17 +670,17 @@ out = Path(sys.argv[2]) / 'b-v'; out.mkdir(parents=True, exist_ok=True)
+@@ -689,17 +689,17 @@ out = Path(sys.argv[2]) / 'b-v'; out.mkdir(parents=True, exist_ok=True)
  
      def test_chain_key_tracks_shader_package_and_split_pairs(self):
          with tempfile.TemporaryDirectory() as td:
@@ -238,7 +238,7 @@ index be6593ae598aaf40142217bf8142a8e8ab22304e..71d9dfdc4df73b2426f37d137cde0d46
      for d in dirs:
          if d.is_symlink() or not d.is_dir(): continue
 diff --git a/scripts/regress.py b/scripts/regress.py
-index 7ac2537ae2fc7e8c785f79901c8c385fcd9aef52..471f40a5128486aee357e202e5cbd30a28d96908 100644
+index 93d18fd81a2f2baf05b402e7537dd3ebe70fa156..89b3b1d8a9312eeaa00f1137024c7e82e4cef54e 100644
 --- a/scripts/regress.py
 +++ b/scripts/regress.py
 @@ -96,7 +96,7 @@ rfs = shader_lib.romfs
@@ -247,7 +247,7 @@ index 7ac2537ae2fc7e8c785f79901c8c385fcd9aef52..471f40a5128486aee357e202e5cbd30a
  GAMES = Path(os.environ.get('REGRESS_GAMES', ''))
 -HOST_DIRS = ('dm/host', 'dm/gfx', 'dm/gfx/nvn', 'dm/gfx/nvn/include', 'dm/gfx/tex', 'dm/gfx/vk', 'dm/gfx/gl')   # as build_ipa_from_nsp.py: the host's sources and headers
 +HOST_DIRS = ('dm/host', 'dm/host/nxforge', 'dm/gfx', 'dm/gfx/nvn', 'dm/gfx/nvn/nxforge', 'dm/gfx/nvn/include', 'dm/gfx/tex', 'dm/gfx/vk', 'dm/gfx/gl')   # as build_ipa_from_nsp.py: the host's sources and headers
- REWRITER = ('dm/tools/patch_nso.py', 'dm/tools/jump_solver.py', 'dm/tools/nso.py', 'dm/tools/nso_code.py', 'dm/tools/nso_asm.py', 'dm/tools/nso_match.py', 'dm/tools/sdk_patches.py', 'dm/tools/engine_patches.py', 'dm/tools/ue_cvar.py', 'dm/tools/ue_malloc.py', 'dm/tools/ue_region.py', 'dm/tools/ue_ring.py', 'dm/tools/fps_target.py', 'dm/tools/monolith_fps.py', 'dm/tools/loader_census.py', 'dm/tools/ue_fixed_rate.py', 'dm/tools/unity_fps.py', 'dm/tools/unity_bucket.py', 'dm/tools/snowdrop_pools.py')
+ REWRITER = ('dm/tools/patch_nso.py', 'dm/tools/jump_solver.py', 'dm/tools/nso.py', 'dm/tools/mod_layout.py', 'dm/tools/nso_code.py', 'dm/tools/nso_asm.py', 'dm/tools/nso_match.py', 'dm/tools/sdk_patches.py', 'dm/tools/engine_patches.py', 'dm/tools/ue_cvar.py', 'dm/tools/ue_malloc.py', 'dm/tools/ue_region.py', 'dm/tools/ue_ring.py', 'dm/tools/fps_target.py', 'dm/tools/monolith_fps.py', 'dm/tools/loader_census.py', 'dm/tools/ue_fixed_rate.py', 'dm/tools/unity_fps.py', 'dm/tools/unity_bucket.py', 'dm/tools/snowdrop_pools.py')
  HEAVY_EXE = {'clang', 'make', 'xcodebuild', 'ld', 'ld64', 'swift-frontend', 'dotnet', 'metal', 'metal-tt', 'air-tt', 'applegpu-nt', 'dmsh_xlate', 'spirv-cross'}   # jobs that skew a measurement
  HEAVY_PY = r'(dmsh_build|shader_split|own_compilers|patch_nso|vk_shaders)\.py'   # (the shared measuring rule)
 @@ -253,7 +253,8 @@ class Game:
@@ -269,7 +269,7 @@ index 7ac2537ae2fc7e8c785f79901c8c385fcd9aef52..471f40a5128486aee357e202e5cbd30a
              if pairs.is_file(): env['DM_PSO_PAIRS'] = str(pairs)
          return env
  
-@@ -352,10 +353,10 @@ def chain_key(tree, g, tools):
+@@ -354,10 +355,10 @@ def chain_key(tree, g, tools):
      if g.kind == 'nvn':
          v, inp = json.loads(tree.py("import sys, json; sys.path.insert(0, 'dm/gfx/tools'); import dmsh_chain as c; g = c.load_game(); print(json.dumps([c.version(), c.inputs(g)]))", g.env(tree)))
          side = digest([tree.path / 'dm/gfx/tools' / f for f in ('c1_guard.py', 'cb_extent.py', 'dmsh_mtlcache.py', 'dmsh_pch.py', 'own_compilers.py', 'tool_lock.py')] + [tree.path / 'dm/games/game.py'])
@@ -279,10 +279,10 @@ index 7ac2537ae2fc7e8c785f79901c8c385fcd9aef52..471f40a5128486aee357e202e5cbd30a
          pairs = g.profile_dir(tree) / 'pso_pairs.tsv'
 -        if not pairs.is_file(): pairs = g.build / 'shader/pso_pairs.tsv'
 +        if not pairs.is_file(): pairs = shader_dir(g) / 'pso_pairs.tsv'
-         side += digest([pairs])
-     elif g.kind == 'vk':
-         v, inp = digest([tree.path / 'dm/gfx/tools/vk_shaders.py'])[:12], g.ver
-@@ -436,11 +437,15 @@ def chain_cache(tree, g):
+         geo = g.profile_dir(tree) / 'geo_pairs.tsv'   # the vertex / geometry pairs that get mesh libraries (dmsh_chain.mesh_pairs), the split's copy for a profile without one
+         if not geo.is_file(): geo = g.build / 'shader/geo_pairs.tsv'
+         side += digest([pairs] + ([geo] if geo.is_file() else []))
+@@ -440,11 +441,15 @@ def chain_cache(tree, g):
      return game_root(g) / 'cas.db'
  
  
@@ -299,7 +299,7 @@ index 7ac2537ae2fc7e8c785f79901c8c385fcd9aef52..471f40a5128486aee357e202e5cbd30a
      largest = 0
      for p in images:
          try: largest = max(largest, p.stat().st_size)
-@@ -507,9 +512,9 @@ def chain_build_locked(tree, g, a, v, inp, key, out):
+@@ -511,9 +516,9 @@ def chain_build_locked(tree, g, a, v, inp, key, out):
          lib = out / f'b-{v}'
          if not done:
              say(f'  {g.id}: chain {v} (inputs {inp}) of {tree.id}: translating the shaders ({jobs} workers) → {out}')
@@ -311,7 +311,7 @@ index 7ac2537ae2fc7e8c785f79901c8c385fcd9aef52..471f40a5128486aee357e202e5cbd30a
                  rc, paused = run_heavy(command, log, tree.path, env, a, f'{g.id} shader build')
              else:
                  tree_tar.unpack(cas, say)
-@@ -668,7 +673,7 @@ def interface_check(tree, g, out):
+@@ -672,7 +677,7 @@ def interface_check(tree, g, out):
      pipeline, and one refused pipeline fails the whole archive (GitHub issue #283). The entry points are pso_offline's: the reflection's entry (entry_z for a near = 0 game)"""
      lib = chain_lib(out); chain = shader_lib.name_of(lib)[2:]
      prof = g.profile_dir(tree)
@@ -319,8 +319,8 @@ index 7ac2537ae2fc7e8c785f79901c8c385fcd9aef52..471f40a5128486aee357e202e5cbd30a
 +    pairs = [prof / 'shader_pairs.tsv', prof / 'pso_pairs.tsv' if (prof / 'pso_pairs.tsv').is_file() else shader_dir(g) / 'pso_pairs.tsv']
      po = tree.path / 'dm/gfx/tools/pso_offline.py'
      if not po.is_file(): return {'checked': 0, 'note': 'no pso_offline.py in this revision', 'bad': []}
-     mod = load_module('pso_offline_' + tree.id.replace('-', '_'), po)
-@@ -1065,7 +1070,7 @@ def run_env(g, art, route, outdir, a):
+     env = g.env(tree)
+@@ -1077,7 +1082,7 @@ def run_env(g, art, route, outdir, a):
                 DM_WINDOW='1', DM_WINDOW_TOP='1', DM_FOCUS_KEEP='1', DM_AUDIO='0', DM_METAL_HUD='0' if a.no_hud else '1', DM_CTL=str(outdir / 'ctl'), TMPDIR=str(game_root(g) / 'tmp') + '/')
      if g.kind == 'nvn':
          env.update(DM_NVN_SHMAP=str(prof / 'shader_map.tsv'), DM_NVN_TSV=str(outdir / 'frames.tsv'), DM_NVN_TSV_CALLS='0')

@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Tue, 17 Nov 2026 19:55:28 +0000
+Subject: cheat-pointer-guard: a cheat write that would break a pointer is
+ refused (DM_CHEATS_POINTER_GUARD)
+
+---
+ dm/host/hle_cheats.c     |  2 ++
+ dm/host/tests/t_cheats.c | 26 ++++++++++++++++++++++++++
+ 2 files changed, 28 insertions(+)
+
+diff --git a/dm/host/hle_cheats.c b/dm/host/hle_cheats.c
+index e895997d635e8dbb4278cb29648a46209fd1c723..1eca4e422036fb77a0c6a2e99661cd9f6ac8af67 100644
+--- a/dm/host/hle_cheats.c
++++ b/dm/host/hle_cheats.c
+@@ -598,6 +598,7 @@ static void value_text(const cheat_t *c, unsigned width, uint64_t v, char *out,
+ // same way), except a write into the host's key page, which main_write_pages refuses for good. The guest address is
+ // logged as the cheat VM computes it (region base + rel + offset register), which is what the player reads in the cheat
+ // file's own terms. In a dry run the write is described (where, the value there now, the new value) instead
++#include "nxforge/cheat_pointer_guard.inc"   // NXForge: a write that would break a pointer is refused
+ static void cheat_write(cheat_t *c, uint64_t addr, uint64_t len, uint64_t val) {
+     where_t w;
+     if (where_get(addr, len, &w)) { cheat_fail(c, "write", addr, "not mapped"); return; }
+@@ -615,6 +616,7 @@ static void cheat_write(cheat_t *c, uint64_t addr, uint64_t len, uint64_t val) {
+         }
+     }
+     if (w.kind == WH_MAIN && main_write_check(c, addr, len)) return;
++    { uint64_t pw, po; if (nxf_write_breaks_pointer(addr, len, val, &pw, &po)) { nxf_pointer_refusal(c, addr, pw, po); return; } }
+     if (g_dry) {
+         char where[48], now[48], new_[48]; uint64_t cur = 0;
+         addr_name(addr, where, sizeof where);
+diff --git a/dm/host/tests/t_cheats.c b/dm/host/tests/t_cheats.c
+index f7eb1935cdff0050ea6fec126d589be0b63e0eaa..5519f8d0f5f173efce95730c1fa4aa58040f3527 100644
+--- a/dm/host/tests/t_cheats.c
++++ b/dm/host/tests/t_cheats.c
+@@ -645,6 +645,32 @@ int main(void) {
+     rm("1111111111111111.txt"); load_all();
+     CHECK(!dm_cheats_found() && !exists(".cheats-running-0100000000000000"), "a reload that finds no file removes the flag: nothing runs now");
+ 
++    // ---- NXForge pointer guard: a store that would break a pointer is refused, a store over a value goes through ----
++    // Blazing Chrome's lives cheat at boot: its static pointed at another object and the 4-byte store of 0x40140000 (the high half
++    // of the double 5.0) landed on the high half of a heap pointer
++    {
++        uint64_t target = (uint64_t)(uintptr_t)heap + 0x200, five = 0x4014000000000000ull, three = 0x4008000000000000ull;
++        memcpy(heap + 0x100, &target, 8);    // a live pointer
++        memcpy(heap + 0x180, &three, 8);     // the lives, a double 3.0
++        fresh("ptrguard", "[Lives]\n580F0000 00004080\n640F0000 00000000 40140000\n");
++        uint64_t st = (uint64_t)(uintptr_t)heap + 0x104;   // the static points at the pointer's high half (the wrong object)
++        memcpy(img + 0x4080, &st, 8);
++        load_all(); on_and_pass(at("Lives", 0));
++        uint64_t v; memcpy(&v, heap + 0x100, 8);
++        CHECK(v == target && entry("Lives")->fails >= 1 && dm_cheat_on_at(at("Lives", 0)), "pointer guard: a store over a pointer's high half is refused, the cheat stays on");
++        st = (uint64_t)(uintptr_t)heap + 0x184;             // the game sets its object up: the static points at the lives
++        memcpy(img + 0x4080, &st, 8);
++        cheats_pass();
++        memcpy(&v, heap + 0x180, 8);
++        CHECK(v == five, "pointer guard: the same store over a value goes through (3.0 becomes 5.0)");
++        uint64_t other = (uint64_t)(uintptr_t)heap + 0x300;
++        memcpy(heap + 0x100, &target, 8);
++        char t2[256]; snprintf(t2, sizeof t2, "[Redirect]\n08100000 00000100 %08X %08X\n", HI(other), LO(other));
++        fresh("ptrguard2", t2); load_all(); on_and_pass(at("Redirect", 0));
++        memcpy(&v, heap + 0x100, 8);
++        CHECK(v == other, "pointer guard: a store that keeps a pointer a pointer goes through");
++    }
++
+     // ---- Atmosphère's limits in the report ----
+     size_t cap = 0x200 * 9 + 64; char *big = malloc(cap); size_t o = (size_t)snprintf(big, cap, "[Big]\n");
+     for (int k = 0; k < 0x200; k++) o += (size_t)snprintf(big + o, cap - o, "20000000\n");

@@ -1,0 +1,127 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NXForge layer <layer@nxforge.invalid>
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
+ findings in upstream's code silenced on their lines, three counts lowered
+
+---
+ dm/gfx/nvn/nvn_mtl.m                  | 7 +++----
+ dm/gfx/tests/t_lazy_clear_order.m     | 2 ++
+ dm/gfx/tests/t_present_crop.m         | 4 ++--
+ dm/gfx/tests/t_vk_clear_attachments.m | 2 +-
+ dm/gfx/tests/t_vk_renderdragon.m      | 2 +-
+ dm/tools/lint_c_baseline.tsv          | 2 +-
+ 6 files changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
+index ec79e252be6c8558351edd28760f286323ba75a0..3ead637b0a83a3fa1540617683d408ac9f13f0b1 100644
+--- a/dm/gfx/nvn/nvn_mtl.m
++++ b/dm/gfx/nvn/nvn_mtl.m
+@@ -7980,7 +7980,7 @@ static NvShader *shader_load(NSString *pc, int stage, int layer) {
+     if (o->rf.has_c1) c1_store(o);
+     NSString *ext = g_cb_ext[[pc hasSuffix:@"_b"] ? [pc substringToIndex:pc.length - 2] : pc];   // bytes each uniform slot can read (cb_len), storage slots never written (sb_ro)
+     for (NSString *f in [ext componentsSeparatedByString:@" "]) { int r = 0, n = 0;
+-        if (sscanf(f.UTF8String, "%d:%d", &r, &n) == 2 && r >= 0 && r < 16 && n > 0) o->cb_ext[r] = (uint32_t)n;
++        if (sscanf(f.UTF8String, "%d:%d", &r, &n) == 2 && r >= 0 && r < 16 && n > 0) o->cb_ext[r] = (uint32_t)n;  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+         else if (sscanf(f.UTF8String, "s%d", &r) == 1 && r >= 0 && r < 32) o->sb_ro |= 1u << r; }
+     return o;
+ }
+@@ -8007,7 +8007,7 @@ static int progpf_first(NSString *pc) {
+ }
+ static NvShader *shader_get(NSString *pc, int stage) {
+     if (!g_shcache) g_shcache = [NSMutableDictionary dictionary];
+-    NvShader *o = g_shcache[pc];
++    NvShader *o = g_shcache[pc];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge: upstream bee218d9's code, a finding this Mac's LLVM 23.1.4 analyzer makes that upstream's baseline lacks
+     if (o) return o;
+     uint64_t bt = bp_now(); o = shader_load(pc, stage, 0);
+     if (!o) return nil;
+@@ -21044,10 +21044,9 @@ static int up_mfx_encode(NvShader *cs) {
+     for (int i = 0; i < cs->rf.nb; i++) { int k = cs->rf.b[i].kind; if (k == NVN_RB_TEX && ti < 0) ti = i; else if (k == NVN_RB_IMG && oi < 0) oi = i; else if (k == NVN_RB_TEX || k == NVN_RB_IMG) return 0; }
+     if (ti < 0 || oi < 0) { static int once; if (!once++) MLOG("[RED] upscaler %s: not one texture and one image; the shader draws", cs->key); return 0; }
+     int tin = (int)(bound_tex(5, cs->rf.b[ti].reg) & 0xfffff), tout = cs->rf.b[oi].reg < 32 ? (int)(bound_img(5, cs->rf.b[oi].reg) & 0xfffff) : 0;
+-    tex_t dout = {0}; id<MTLTexture> in, out;
++    id<MTLTexture> in, out;   // NXForge (host_warnings): upstream's unused copy of the output's texture dropped
+     os_unfair_lock_lock(&g_rmu);
+     int ok = tin > 0 && tin < g_ntreg && g_treg[tin].ok && tout > 0 && tout < g_ntreg && g_treg[tout].ok;
+-    if (ok) dout = g_treg[tout].t;
+     in = ok ? tex_by_id(tin) : nil;
+     // The sampled view can be read-only (channel swizzle) even when the image backing is writable.
+     // Use the shader's image binding so its level and slice survive without replacing the backing with a sampled view.
+diff --git a/dm/gfx/tests/t_lazy_clear_order.m b/dm/gfx/tests/t_lazy_clear_order.m
+index c18efff9c16965e0ebd00c04f4e5674c97ed3740..4025816c7993c2ce7ad9e1b41e8331a3759630b7 100644
+--- a/dm/gfx/tests/t_lazy_clear_order.m
++++ b/dm/gfx/tests/t_lazy_clear_order.m
+@@ -13,6 +13,7 @@ static int checks, failed;
+ static uint8_t ops[1024]; static size_t nops;
+ static void *op(uint32_t code, size_t size) { op_hdr h = {code, (uint32_t)(sizeof h + size)}; memcpy(ops + nops, &h, sizeof h); void *a = ops + nops + sizeof h; memset(a, 0, size); nops += h.size; return a; }
+ 
++// NOLINTBEGIN(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): the test's Metal objects are checked by CHECK before use; LLVM 23.1.4's analyzer flags upstream's call
+ int main(void) { @autoreleasepool {
+     mtl_init();
+     id<MTLCommandQueue> queue = [g_dev newCommandQueue];
+@@ -77,3 +78,4 @@ int main(void) { @autoreleasepool {
+     printf("lazy clear order: %d checks, %d failed\n", checks, failed);
+     return failed != 0;
+ } }
++// NOLINTEND(clang-analyzer-nullability.NullablePassedToNonnull)
+diff --git a/dm/gfx/tests/t_present_crop.m b/dm/gfx/tests/t_present_crop.m
+index a33e72bacc3a009bcb28d6b3adfedd38252e9c79..d46cf4bec18312a0234c9f963bb6f6c83d0ec88e 100644
+--- a/dm/gfx/tests/t_present_crop.m
++++ b/dm/gfx/tests/t_present_crop.m
+@@ -36,7 +36,7 @@ static int check_present_resize(id<MTLTexture> src, int w, int h) {
+     id<MTLTexture> out=[g_dev newTextureWithDescriptor:d];res_add(out);res_commit();
+     id<MTL4CommandAllocator> al=[g_dev newCommandAllocator];id<MTL4CommandBuffer> cb=[g_dev newCommandBuffer];id<MTLSharedEvent> ev=[g_dev newSharedEvent];
+     assert(al && ev);
+-    [cb beginCommandBufferWithAllocator:al];int kind=present_encode_m4(cb,src,out,NULL,g_present_uv[0],&g_fx_present);[cb endCommandBuffer];
++    [cb beginCommandBufferWithAllocator:al];int kind=present_encode_m4(cb,src,out,NULL,g_present_uv[0],&g_fx_present);[cb endCommandBuffer];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+     [g_q4 commit:&cb count:1];[g_q4 signalEvent:ev value:1];
+     EXPECT("resize present completes",1,[ev waitUntilSignaledValue:1 timeoutMS:10000]);res_remove(out);return kind;
+ }
+@@ -129,7 +129,7 @@ static void check_external_screenshots(void) {
+     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+     pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 1, 0, 1);
+     [[cb renderCommandEncoderWithDescriptor:pass] endEncoding];
+-    [cb encodeSignalEvent:ready value:1];
++    [cb encodeSignalEvent:ready value:1];  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+     // Leave the producer unsubmitted while the external present first reaches readback.
+     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_global_queue(0, 0), ^{ [cb commit]; });
+     uint64_t serial = mtl_ext_tex((__bridge void *)tex);
+diff --git a/dm/gfx/tests/t_vk_clear_attachments.m b/dm/gfx/tests/t_vk_clear_attachments.m
+index 1d184c8775b89ad563c69a432f7cccd406fc436d..26f224e4be7555828675877939ad7ab0f14bb144 100644
+--- a/dm/gfx/tests/t_vk_clear_attachments.m
++++ b/dm/gfx/tests/t_vk_clear_attachments.m
+@@ -73,7 +73,7 @@ static id<MTLBuffer> pixels(VkImage im, uint32_t mip, uint32_t layer, uint32_t b
+     id<MTLBuffer> out = [g_dev newBufferWithLength:w * h * bytes options:MTLResourceStorageModeShared];
+     assert(tex && out);
+     id<MTLBlitCommandEncoder> be = [cb blitCommandEncoder];
+-    [be copyFromTexture:tex sourceSlice:layer sourceLevel:mip sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
++    [be copyFromTexture:tex sourceSlice:layer sourceLevel:mip sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+               toBuffer:out destinationOffset:0 destinationBytesPerRow:w * bytes destinationBytesPerImage:w * h * bytes options:option];
+     [be endEncoding]; [cb commit]; [cb waitUntilCompleted]; assert(cb.status == MTLCommandBufferStatusCompleted); return out;
+ }
+diff --git a/dm/gfx/tests/t_vk_renderdragon.m b/dm/gfx/tests/t_vk_renderdragon.m
+index 83a268d53202f748c1583208b921c056ea5ec5ac..6cc731dc26096fe0a9e7c91691e10edbd3de1ceb 100644
+--- a/dm/gfx/tests/t_vk_renderdragon.m
++++ b/dm/gfx/tests/t_vk_renderdragon.m
+@@ -58,7 +58,7 @@ static id<MTLBuffer> readback(VkCommandBuffer cb, VkImage im) {
+     id<MTLBuffer> out = [g_dev newBufferWithLength:row * extent options:MTLResourceStorageModeShared];
+     assert(out);
+     id<MTLBlitCommandEncoder> be = [rs.cb blitCommandEncoder];
+-    [be copyFromTexture:im->tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
++    [be copyFromTexture:im->tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)  // NOLINT(clang-analyzer-nullability.NullablePassedToNonnull): NXForge (lint_c): upstream c43a1f7a's code, a finding LLVM 23.1.4's analyzer makes that upstream's baseline lacks
+               sourceSize:MTLSizeMake(extent, extent, 1) toBuffer:out destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:0];
+     [be endEncoding]; [rs.cb commit]; [rs.cb waitUntilCompleted];
+     assert(rs.cb.status == MTLCommandBufferStatusCompleted);
+diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
+index 7a7420e0c5c5da2cbb0cbc593f3e41a8465a05c9..8c6196f9bad226c804816424282891e00d4f320f 100644
+--- a/dm/tools/lint_c_baseline.tsv
++++ b/dm/tools/lint_c_baseline.tsv
+@@ -24,7 +24,7 @@ dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	4
+-dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	14
++dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	13
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	2
+ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
+ dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1

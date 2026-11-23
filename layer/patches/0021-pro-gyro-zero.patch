@@ -1,0 +1,120 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 14 Nov 2026 22:46:00 +0000
+Subject: pro-gyro-zero: the Pro Controller's raw gyro learns its zero from a
+ second at rest
+
+Without the pad's stored calibration the raw rate keeps the sensor's offset, and a game that aims by motion drifts (Ocarina of Time: the camera turning slowly left). motion_pro.h takes the mean of a second of stillness as the zero and subtracts it from every sample after, relearning it at the next rest; the log says the values once.
+
+Origin: EmmanueleC's commit 82ab1be7 in Fasen24-AI/swordboiMacNative (MIT).
+---
+ dm/host/motion_pro.h         | 28 +++++++++++++++++++++++++++-
+ dm/host/motion_pro_mac.h     |  3 +++
+ dm/host/tests/t_motion_pro.c |  8 ++++++++
+ docs/reference/services.md   |  1 +
+ 4 files changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/dm/host/motion_pro.h b/dm/host/motion_pro.h
+index e4e73a4ddf612f5c8cd176f0b1265163b4d95482..ee44b98af6406807fe720f19711087a0d667d979 100644
+--- a/dm/host/motion_pro.h
++++ b/dm/host/motion_pro.h
+@@ -2,13 +2,22 @@
+ // Layout / nominal scales: dekuNukem/Nintendo_Switch_Reverse_Engineering, imu_sensor_notes.md. The LSM6DS3's ±2000 dps sensitivity is 70 mdps/count,
+ // not 4000/65536 (61 mdps/count). Factory offsets / sensitivity are not available without SPI commands; never learn an offset from a slow deliberate turn.
+ // Samples follow byte order, 5 ms apart, as in Linux hid-nintendo and the protocol notes. SDL reverses them; hardware confirmation remains open.
++// Gyro zero: the raw rate carries the sensor's offset (tenths of a degree a second), which the Switch takes off with the pad's stored calibration and these passive reports cannot
++// read, so the camera of a game that aims by motion drifted steadily (Ocarina of Time: a slow turn to the left). While the pad lies still for PRO_BIAS_SAMPLES samples (1 s: every
++// axis under PRO_BIAS_MAX, the window's spread under PRO_BIAS_SPREAD, |acc| within 5 % of 1 G and steady within 0.02 G) the window's mean becomes the zero and is taken off every
++// sample after; the next second of stillness replaces it. A turn breaks the window; a slow turn about the vertical that stays under 2 deg/s for a whole second would be learned,
++// and un-learned at the next rest: bounded by PRO_BIAS_MAX, so never a large error
+ #pragma once
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <math.h>
+ 
+ enum { PRO_MOTION_PERIOD_NS = 5000000, PRO_MOTION_STALE_NS = 300000000 };
+-typedef struct { int live, seen; uint8_t counter; uint64_t received; } pro_motion;
++enum { PRO_BIAS_SAMPLES = 200 };
++#define PRO_BIAS_MAX (2.0f * (float)M_PI / 180)      /* a zero this size at most, rad/s */
++#define PRO_BIAS_SPREAD (0.5f * (float)M_PI / 180)   /* the window's min-to-max spread per axis, rad/s */
++typedef struct { int live, seen; uint8_t counter; uint64_t received;
++                 int still, bias_set, bias_logged; float sum[3], lo[3], hi[3], acc0[3], bias[3]; } pro_motion;   // still: samples of the current rest window; bias: the zero taken off
+ typedef struct { float acc[3], rot[3]; uint64_t ns; } pro_motion_sample;
+ // Whether a pad's HID entry has a pad behind it: macOS keeps a Pro Controller in full mode, which sends report 0x30 every 15 ms whether or not anything moves
+ // (bluetooth_hid_notes.md: 60 Hz; the raw motion above lives on it), and a DualShock 4 over Bluetooth streams its 0x11 the same way, so heard is when its last motion report
+@@ -21,6 +30,22 @@ static inline int pro_motion_player(int devices, int controllers, int player) {
+     // GameController has no public per-controller HID identity. Only one physical pad and one GC controller of a model can be paired without guessing.
+     return devices == 1 && controllers == 1 ? player : -1;
+ }
++// One raw sample's rest window: extends it while the pad is still, learns the zero at PRO_BIAS_SAMPLES, resets it on motion; then takes the zero off rot
++static inline void pro_motion_zero(pro_motion *s, const float acc[3], float rot[3]) {
++    float an = sqrtf(acc[0] * acc[0] + acc[1] * acc[1] + acc[2] * acc[2]);
++    int quiet = fabsf(an - 1) < 0.05f;
++    for (int i = 0; i < 3 && quiet; i++) {
++        quiet = fabsf(rot[i]) < PRO_BIAS_MAX;
++        if (quiet && s->still) quiet = fabsf(acc[i] - s->acc0[i]) < 0.02f && rot[i] > s->hi[i] - PRO_BIAS_SPREAD && rot[i] < s->lo[i] + PRO_BIAS_SPREAD;
++    }
++    if (!quiet) s->still = 0;
++    else {
++        if (!s->still) for (int i = 0; i < 3; i++) { s->acc0[i] = acc[i]; s->lo[i] = s->hi[i] = rot[i]; s->sum[i] = 0; }
++        for (int i = 0; i < 3; i++) { s->sum[i] += rot[i]; if (rot[i] < s->lo[i]) s->lo[i] = rot[i]; if (rot[i] > s->hi[i]) s->hi[i] = rot[i]; }
++        if (++s->still == PRO_BIAS_SAMPLES) { for (int i = 0; i < 3; i++) s->bias[i] = s->sum[i] / PRO_BIAS_SAMPLES; s->bias_set = 1; s->still = 0; }
++    }
++    if (s->bias_set) for (int i = 0; i < 3; i++) rot[i] -= s->bias[i];
++}
+ static inline int pro_motion_decode(pro_motion *s, const uint8_t *r, size_t len, uint64_t now, pro_motion_sample out[3]) {
+     if (len < 49 || r[0] != 0x30 || now < 2 * PRO_MOTION_PERIOD_NS) return 0;
+     if (s->seen && (now < s->received || now - s->received > PRO_MOTION_STALE_NS)) *s = (pro_motion){0};
+@@ -38,6 +63,7 @@ static inline int pro_motion_decode(pro_motion *s, const uint8_t *r, size_t len,
+         // Raw axes: x toward shoulders, y left, z out of face; acceleration is specific force. Switch: x right, y forward, gravity down.
+         out[k] = (pro_motion_sample){{v[k][1] * g, -v[k][0] * g, -v[k][2] * g},
+                                     {-v[k][4] * rad, v[k][3] * rad, v[k][5] * rad}, now - (uint64_t)(2 - k) * PRO_MOTION_PERIOD_NS};
++        pro_motion_zero(s, out[k].acc, out[k].rot);
+     }
+     return 3;
+ }
+diff --git a/dm/host/motion_pro_mac.h b/dm/host/motion_pro_mac.h
+index 77f30c1ac5fc2e9dd9678e313983385fd6366abd..ae8f49c718a86ebedddef35fce82fb71bd335c30 100644
+--- a/dm/host/motion_pro_mac.h
++++ b/dm/host/motion_pro_mac.h
+@@ -197,6 +197,9 @@ static void pro_report(void *ctx, IOReturn result, void *sender, IOHIDReportType
+     pro_motion_sample samples[3];
+     int n = m->decode(&d->motion, r, (size_t)len, now, samples);
+     for (int i = 0; i < n; i++) dm_motion_set_hid(g->player, samples[i].acc, samples[i].rot, samples[i].ns);
++    if (d->motion.bias_set && !d->motion.bias_logged) { d->motion.bias_logged = 1;
++        LOG("[hid] Pro Controller raw motion: gyro zero learned from a second at rest: %.2f %.2f %.2f deg/s (taken off every sample from here; relearned at the next rest)",
++            d->motion.bias[0] * 180 / M_PI, d->motion.bias[1] * 180 / M_PI, d->motion.bias[2] * 180 / M_PI); }
+ }
+ static int pro_property(IOHIDDeviceRef hid, CFStringRef key) {
+     CFTypeRef v = IOHIDDeviceGetProperty(hid, key); int n = 0;
+diff --git a/dm/host/tests/t_motion_pro.c b/dm/host/tests/t_motion_pro.c
+index 87001b221d952738659d50a028ac2bc45fd25216..b76e5bd811d48e59d4ff74ecdcc93e0d0553357f 100644
+--- a/dm/host/tests/t_motion_pro.c
++++ b/dm/host/tests/t_motion_pro.c
+@@ -29,6 +29,14 @@ int main(void) {
+     r[1] = 0; assert(pro_motion_decode(&s, r, 49, t + 415000000, out) == 3);   // report counter wrap
+     for (int k = 0; k < 3; k++) word(r, k, 5, 20);
+     r[1]++; assert(pro_motion_decode(&s, r, 49, t + 430000000, out) == 3 && out[2].rot[2] > 0);   // slow turn is not learned as bias
++    // The zero at rest: a second of stillness with a constant offset on the gyro (x +5, y -8, z +10 counts) is taken off; a turn after reads minus that zero
++    pro_motion z = {0}; uint8_t qb[64] = {0x30}; uint64_t tz = 2000000000;
++    for (int k = 0; k < 3; k++) { word(qb, k, 0, 0); word(qb, k, 1, 0); word(qb, k, 2, 4096); word(qb, k, 3, 5); word(qb, k, 4, -8); word(qb, k, 5, 10); }
++    for (int n = 0; n < PRO_BIAS_SAMPLES / 3 + 1; n++) { qb[1]++; tz += 15000000; assert(pro_motion_decode(&z, qb, 49, tz, out) == 3); }
++    assert(z.bias_set && fabsf(out[2].rot[0]) < 1e-5f && fabsf(out[2].rot[1]) < 1e-5f && fabsf(out[2].rot[2]) < 1e-5f);
++    assert(fabsf(z.bias[1] - 5 * .070f * (float)M_PI / 180) < 1e-5f);   // y: raw x (+5) -> Switch y
++    for (int k = 0; k < 3; k++) word(qb, k, 5, 510);   // a turn of 35 deg/s about z, the zero's 0.7 taken off
++    qb[1]++; tz += 15000000; assert(pro_motion_decode(&z, qb, 49, tz, out) == 3 && fabsf(out[2].rot[2] - 500 * .070f * (float)M_PI / 180) < 1e-4f && z.still == 0);
+     assert(pro_motion_player(1, 1, 2) == 2);
+     assert(pro_motion_player(1, 1, -1) == -1 && pro_motion_player(0, 1, 0) == -1);
+     assert(pro_motion_player(2, 1, 0) == -1 && pro_motion_player(1, 2, 0) == -1);
+diff --git a/docs/reference/services.md b/docs/reference/services.md
+index d44edfd62ff2eb40c7a03fcf6e76576a831fdef3..c1800b187c17eca4f3eda6fec3d3da088008c2a4 100644
+--- a/docs/reference/services.md
++++ b/docs/reference/services.md
+@@ -587,6 +587,7 @@ Most service calls can be found before they crash, before the first boot or the
+ - **Fix:** `motion_pro_mac.h` listens nonexclusively to vendor `057E`, product `2009`, without sending commands or changing the driver's configuration. `motion_pro.h` converts the three signed little-endian samples to G and rad/s in the Switch frame; their nominal 5 ms spacing reaches the shared integrator through `dm_motion_set_hid`. Each HID device owns its buffer and decoder. HID, GameController and phone orientations stay separate; usable GameController data wins, otherwise fresh HID data supplies that player's controller motion. Removal, focus loss or ambiguous routing clears only the HID source; 300 ms of silence expires it. `DM_MOTION_HID=0` disables the reader; `DM_MOTION=0` disables all motion.
+ - **Routing limit:** GameController exposes no public per-controller HID identity. Raw motion is enabled only with one physical Pro and one GameController Pro, using that controller's existing player slot (including `DM_KBD_PLAYER=own` / `DM_PAD_MERGE`). Multiple Pros keep their GameController paths; raw data is never assigned to the first controller by guesswork. Each model the reader knows (a table in `motion_pro_mac.h`, with the [DualShock 4](#dualshock-4-over-bluetooth-advertises-motion-but-sends-zeroes)) is paired on its own, so another model connected beside the Pro does not make it ambiguous; under `DM_PAD_MERGE`, where two models share player 1, the first live model in the table keeps it. Every motion report rechecks routing, so a continuously streaming pad takes over when the preferred model has been silent for one second, even without a removal callback; the preferred model takes the player back on its first report. `t_motion_pro_mac` covers both transitions. Synthetic GameController HID devices are excluded with Apple's `GCSyntheticDevice` property.
+ - **Open:** passive reading cannot obtain factory calibration without issuing SPI commands alongside the OS driver (identical pads read from their reports do issue that read, and it works: [Identical controllers that GameController lists as one](#identical-controllers-that-gamecontroller-lists-as-one)). Nominal scales are 4096 counts/G and 70 mdps/count ([protocol research](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/imu_sensor_notes.md)); no automatic bias learning removes slow intentional turns. Sample order follows that research and [Linux hid-nintendo](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-nintendo.c); SDL reverses it. Confirm order, sensitivity, drift and reconnects on hardware before calling the reworked reader device-tested. `t_motion_pro`, `t_motion_pro_mac` and `t_hid` cover decoding, timestamps, ownership, removal, ambiguity and source fallback with synthetic inputs.
++- **Zero at rest:** without the pad's calibration the raw rate keeps the sensor's offset, tenths of a degree a second, and a game that aims by motion drifts steadily (Ocarina of Time: the camera turning slowly left). `motion_pro.h` takes the mean of a second of stillness (every axis under 2 °/s with a spread under 0.5 °/s, |acc| within 5 % of 1 G and steady) as the zero and subtracts it from every sample after, relearning it at the next rest; the log says the values once (`gyro zero learned from a second at rest`). A slow turn about the vertical that stays under 2 °/s for a whole second is learned too, and unlearned at the next rest: never a large error.
+ - **Found on:** [Super Mario Galaxy](../../dm/games/010099C022B96000/README.md), docked pointer on a Pro Controller.
+ 
+ ### Switch Pro Controller stick stays zero in GameController
