@@ -36,7 +36,7 @@ index 8a540c6b6d5bd03c951d6dab9e1492d495653032..c594b5e700b0bb6c8a4ac7ba838c56ec
  - [Unused border corrections retain sample registers](../../../docs/reference/rendering.md#unused-border-corrections-retain-sample-registers): about 1.5 ms of GPU a frame at 1080p ([measurements](#unused-border-corrections)).
  - [A DualSense's microphone over Bluetooth](../../../docs/reference/audio.md#a-dualsenses-microphone-over-bluetooth): not usable on a Mac. GameController reads the controller's mic frames as button presses and sticks, and the Mac's 15 ms Bluetooth polling carries 43 of its 100 frames a second, so the launcher offers the controller's mic only over USB, where its matched USB HID device is selected and unmuted before capture (verified on a DualSense over USB on M5 Pro / macOS 27.2 with #1822's capture; retest on `main`, multi-DualSense hardware, and DualSense Edge remain open).
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index ac4f0d420d114c6c7919d593ba803f4b2b389813..8d64171ec243bf4df3839fe31c900064d83cf341 100644
+index 2f5d250537aa243a1ce205736aaf7e3ce8ea9c09..92ce29711948fd111a7b538e5d40008baf3bf9d4 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -9342,10 +9342,15 @@ static inline int pool_seen_t(int id_, int dtt) {

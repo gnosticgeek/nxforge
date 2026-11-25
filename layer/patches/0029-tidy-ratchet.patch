@@ -7,13 +7,17 @@ Subject: tidy-ratchet: the clang-tidy ratchet on bee218d9: seven analyzer
 ---
  dm/gfx/nvn/hle_nvn.c                  | 2 +-
  dm/gfx/nvn/nvn_mtl.m                  | 9 ++++-----
+ dm/gfx/tests/t_cpuprof.m              | 2 +-
+ dm/gfx/tests/t_image_alias.m          | 3 ++-
  dm/gfx/tests/t_lazy_clear_order.m     | 2 ++
  dm/gfx/tests/t_present_crop.m         | 4 ++--
  dm/gfx/tests/t_vk_clear_attachments.m | 2 +-
+ dm/gfx/tests/t_vk_conv_upload.m       | 2 +-
  dm/gfx/tests/t_vk_renderdragon.m      | 2 +-
+ dm/gfx/vk/hle_vk.m                    | 2 +-
  dm/host/hle_audio.c                   | 2 +-
- dm/tools/lint_c_baseline.tsv          | 2 +-
- 8 files changed, 13 insertions(+), 12 deletions(-)
+ dm/tools/lint_c_baseline.tsv          | 4 +---
+ 12 files changed, 18 insertions(+), 18 deletions(-)
 
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
 index 51b6ed8189c63e844a6086de499de04badfccac3..f894e37dd520f2b7964d194921f51a094a8d2250 100644
@@ -29,7 +33,7 @@ index 51b6ed8189c63e844a6086de499de04badfccac3..f894e37dd520f2b7964d194921f51a09
      pthread_mutex_unlock(&g_reback_mu);
  }
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index e2cd734ad2b71c54a20b866930f38919702a3211..a852f103e6edf8dbb7f9c522b3c7c0d5b466e87d 100644
+index 9dbd74d2c293bbd3cc4f5c4f8f26e0f7ffb6d3ad..cbb3d38fd599cae4a965096184fc2905d5cd997a 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3063,7 +3063,7 @@ static void post(post_op o) {
@@ -71,6 +75,33 @@ index e2cd734ad2b71c54a20b866930f38919702a3211..a852f103e6edf8dbb7f9c522b3c7c0d5
      in = ok ? tex_by_id(tin) : nil;
      // The sampled view can be read-only (channel swizzle) even when the image backing is writable.
      // Use the shader's image binding so its level and slice survive without replacing the backing with a sampled view.
+diff --git a/dm/gfx/tests/t_cpuprof.m b/dm/gfx/tests/t_cpuprof.m
+index 79e6987417bfa81dd99f7fe173e25384a19dbeef..580c042b22755536ce4bbe5c0bc6132247996dbf 100644
+--- a/dm/gfx/tests/t_cpuprof.m
++++ b/dm/gfx/tests/t_cpuprof.m
+@@ -43,7 +43,7 @@ static void log_capture_end(char *buf, size_t cap) {
+     if (dup2(g_saved_stderr, STDERR_FILENO) < 0) abort();
+     close(g_saved_stderr);
+     g_saved_stderr = -1;
+-    rewind(g_cap_file);
++    if (fseek(g_cap_file, 0, SEEK_SET) != 0) abort();
+     size_t n = fread(buf, 1, cap - 1, g_cap_file);
+     buf[n] = '\0';
+     fclose(g_cap_file);
+diff --git a/dm/gfx/tests/t_image_alias.m b/dm/gfx/tests/t_image_alias.m
+index 69d4f11e8bb6a4a6d6e874515289430526b7b911..45dbd97295e2bf6511dce15a828faa4a79b3b6ac 100644
+--- a/dm/gfx/tests/t_image_alias.m
++++ b/dm/gfx/tests/t_image_alias.m
+@@ -306,7 +306,8 @@ static void pool_serials(void) {
+         uint64_t sg=atomic_load(&g_ser_gen);
+         fam_set_valid(o,wh); fam_set_valid(o,0);   // a size switch to the ID's size and away: each notes only the live serial
+         uint64_t notes=atomic_load(&g_ser_gen)-sg;
+-        CHECK(notes==2 && notes<SER_NOTES,"a size round trip notes only the live serial (2 notes), not obsolete serials");
++        CHECK(notes==2 && notes<SER_NOTES,   // NOLINT(misc-redundant-expression): keeps the bound stated should SER_NOTES change
++              "a size round trip notes only the live serial (2 notes), not obsolete serials");
+         // Grow capacity via a burst of live IDs, unregister them all, then insert one new serial: all burst serials must drop immediately without waiting to refill capacity.
+         tex_t burst[BURST];
+         for (int i=0;i<BURST;i++) {
 diff --git a/dm/gfx/tests/t_lazy_clear_order.m b/dm/gfx/tests/t_lazy_clear_order.m
 index c18efff9c16965e0ebd00c04f4e5674c97ed3740..4025816c7993c2ce7ad9e1b41e8331a3759630b7 100644
 --- a/dm/gfx/tests/t_lazy_clear_order.m
@@ -123,6 +154,19 @@ index 1d184c8775b89ad563c69a432f7cccd406fc436d..26f224e4be7555828675877939ad7ab0
                toBuffer:out destinationOffset:0 destinationBytesPerRow:w * bytes destinationBytesPerImage:w * h * bytes options:option];
      [be endEncoding]; [cb commit]; [cb waitUntilCompleted]; assert(cb.status == MTLCommandBufferStatusCompleted); return out;
  }
+diff --git a/dm/gfx/tests/t_vk_conv_upload.m b/dm/gfx/tests/t_vk_conv_upload.m
+index 03bd38cf587e2e6f0ad545ac074239a532114109..bb377c76bd8728b89b7a8cf8732dea9736205ca9 100644
+--- a/dm/gfx/tests/t_vk_conv_upload.m
++++ b/dm/gfx/tests/t_vk_conv_upload.m
+@@ -76,7 +76,7 @@ int main(void) {
+ 
+         void *mapped = NULL;
+         CHECK(h_vkMapMemory(dev, mem, 0, im->size, 0, &mapped) == VK_SUCCESS && mapped, "R4G4 memory mapped");
+-        memset(mapped, 0xA5, im->size);
++        memset(mapped, 0xA5, im->size);   // NOLINT(clang-analyzer-unix.cstring.NullArg): the CHECK above ends the test when the map fails
+ 
+         submit_empty();
+         CHECK(im->conv_synced == 1, "R4G4 marked synced after first submit");
 diff --git a/dm/gfx/tests/t_vk_renderdragon.m b/dm/gfx/tests/t_vk_renderdragon.m
 index 83a268d53202f748c1583208b921c056ea5ec5ac..6cc731dc26096fe0a9e7c91691e10edbd3de1ceb 100644
 --- a/dm/gfx/tests/t_vk_renderdragon.m
@@ -136,6 +180,19 @@ index 83a268d53202f748c1583208b921c056ea5ec5ac..6cc731dc26096fe0a9e7c91691e10edb
                sourceSize:MTLSizeMake(extent, extent, 1) toBuffer:out destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:0];
      [be endEncoding]; [rs.cb commit]; [rs.cb waitUntilCompleted];
      assert(rs.cb.status == MTLCommandBufferStatusCompleted);
+diff --git a/dm/gfx/vk/hle_vk.m b/dm/gfx/vk/hle_vk.m
+index 7baf1ca629dadd3a6ebc52cc7daf0b0bc1515994..2091a29ed7a6ef14080fadd0ff93fa21bb8c797e 100644
+--- a/dm/gfx/vk/hle_vk.m
++++ b/dm/gfx/vk/hle_vk.m
+@@ -807,7 +807,7 @@ VKB(vkCreateImage, VkResult, VkDevice d, const VkImageCreateInfo *ci, const VkAl
+ // swap chain, as the console's driver lets it: ignored, or the swap chain would go on using freed memory
+ VKB(vkDestroyImage, void, VkDevice d, VkImage im, const VkAllocationCallbacks *a) { (void)d; (void)a; if (im && im->swap) return; if (im) { if (im->shadow) conv_remove(im); im->tex = nil; free(im->shadow); free(im); } }
+ VK(vkGetImageMemoryRequirements, void, VkDevice d, VkImage im, VkMemoryRequirements *r) {
+-    (void)d; r->alignment = 4096; r->size = (im->size + 4095) & ~4095ull; r->memoryTypeBits = 7;
++    (void)d; r->alignment = 4096; r->size = (im->size + 4095) & ~4095ull; r->memoryTypeBits = 7;   // NOLINT(clang-analyzer-core.NullDereference): Vulkan requires a valid image here
+ }
+ VK(vkGetImageMemoryRequirements2, void, VkDevice d, const VkImageMemoryRequirementsInfo2 *i, VkMemoryRequirements2 *r) {
+     h_vkGetImageMemoryRequirements(d, i->image, &r->memoryRequirements); dedicated_req(r->pNext);
 diff --git a/dm/host/hle_audio.c b/dm/host/hle_audio.c
 index ce7109a28203a44d5ca807549c811618821e6b55..46e947558f094b31851094ea752b01cd6b99969e 100644
 --- a/dm/host/hle_audio.c
@@ -150,10 +207,25 @@ index ce7109a28203a44d5ca807549c811618821e6b55..46e947558f094b31851094ea752b01cd
      }
      return noErr;
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
-index d5e1d302088d0120fa7f1d2143f6512fc0bcb966..1b7b87acaf290315cdc2f02f638d5a60499efd57 100644
+index d5e1d302088d0120fa7f1d2143f6512fc0bcb966..53686423fa784a279f0d9991f00661ea839b73d9 100644
 --- a/dm/tools/lint_c_baseline.tsv
 +++ b/dm/tools/lint_c_baseline.tsv
-@@ -23,7 +23,7 @@ dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
+@@ -8,14 +8,12 @@ dm/gfx/gl/hle_gl.m	bugprone-suspicious-realloc-usage	2
+ dm/gfx/gl/hle_gl.m	misc-redundant-expression	1
+ dm/gfx/nvn/hle_nvn.c	bugprone-suspicious-memory-comparison	1
+ dm/gfx/nvn/hle_nvn.c	bugprone-suspicious-realloc-usage	5
+-dm/gfx/nvn/hle_nvn.c	clang-analyzer-core.uninitialized.Assign	1
+ dm/gfx/nvn/nvn_border.h	bugprone-suspicious-memory-comparison	1
+ dm/gfx/nvn/nvn_capture.c	bugprone-suspicious-realloc-usage	1
+ dm/gfx/nvn/nvn_capture.c	clang-analyzer-unix.StdCLibraryFunctions	1
+ dm/gfx/nvn/nvn_capture.inc	bugprone-command-processor	1
+ dm/gfx/nvn/nvn_capture.inc	bugprone-suspicious-memory-comparison	2
+ dm/gfx/nvn/nvn_capture.inc	bugprone-suspicious-realloc-usage	7
+-dm/gfx/nvn/nvn_geometry.inc	clang-analyzer-unix.Malloc	1
+ dm/gfx/nvn/nvn_hmap.h	clang-analyzer-unix.cstring.UninitializedRead	2
+ dm/gfx/nvn/nvn_mtl.m	bugprone-misplaced-widening-cast	1
+ dm/gfx/nvn/nvn_mtl.m	bugprone-signed-char-misuse	1
+@@ -23,7 +21,7 @@ dm/gfx/nvn/nvn_mtl.m	bugprone-suspicious-memory-comparison	8
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
  dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	4

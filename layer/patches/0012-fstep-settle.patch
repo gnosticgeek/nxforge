@@ -15,7 +15,7 @@ takes that frame as a stall and does not pay its lateness back. DM_NVN_PAUSE_WAR
  4 files changed, 68 insertions(+)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 43f8f542e3551d3723349ea1a015fa61623fa344..ac4f0d420d114c6c7919d593ba803f4b2b389813 100644
+index 45fc05a3c8ecb043aa29cf837a53c9e64fce0f5e..2f5d250537aa243a1ce205736aaf7e3ce8ea9c09 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -20897,6 +20897,41 @@ static void sub_cut_begin(void) { g_cut_draw0 = g_stat_draw; }

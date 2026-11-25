@@ -178,7 +178,7 @@ index ef12b9eb133d6d6b18f17c51e7bf567a072c875b..6bc92ff2ebb491d3f7b9973a89ab119f
  // whether its content may have changed since an upload (a mapping in its range newer than gen, or a physical page behind it written after the dirty-page stamp), and the write
  // protection of the physical pages behind it (taken before an upload, as for any packaged texture)
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index a0ed1733288666035ce2379aa519a5aece8be27c..22aa6ac35d2c3926ffd711b30bc4e3fe50042b6c 100644
+index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a056b8b9065 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -1701,14 +1701,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,

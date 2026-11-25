@@ -364,7 +364,7 @@ index ca3920acc44140c8042672e88f34d79c077be33a..3e8a574c762c83fd5b99cd9f2dc4775c
  void mtl_set_depth_zero(int on);          // NVN depth mode: 1 = near is 0 (D3D / Metal), 0 = near is -w (GL, NVN's default); picks the vertex shaders' entry point (see shader_load in nvn_mtl.m)
  void mtl_set_origin_lower_left(int on);   // NVN window origin: 1 = lower left (GL, NVN's default), 0 = upper left (D3D / Metal); see nvn_mtl.m
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 35a46287988c4546a7ba15e6fd35949fe28b1df2..5be99be9ec029cea9e455e42699fe1bcd0e59684 100644
+index 35a46287988c4546a7ba15e6fd35949fe28b1df2..e8515e392c03c59304af11a1c9308a7c97f7a8b4 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -3,6 +3,13 @@
@@ -1829,7 +1829,7 @@ index 35a46287988c4546a7ba15e6fd35949fe28b1df2..5be99be9ec029cea9e455e42699fe1bc
  static MTLViewport present_fit(id<MTLTexture> src, const int crop[4], NSUInteger r[4], double dw, double dh) {
      double w, h; present_shape(src, crop, &w, &h);
 -    if (!present_fill_on() || dw <= 0 || dh <= 0) return present_viewport(w, h, dw, dh);
-+    if (!present_fill_on() || dw <= 0 || dh <= 0) MTLViewport vp; if (nxf_present_scale_fit(src, w, h, dw, dh, &vp)) return vp; return present_viewport(w, h, dw, dh);
++    if (!present_fill_on() || dw <= 0 || dh <= 0) { MTLViewport vp; if (nxf_present_scale_fit(src, w, h, dw, dh, &vp)) return vp; return present_viewport(w, h, dw, dh); }   // NXForge: picture size
      present_cover(w, h, r, dw, dh);
      return (MTLViewport){0, 0, dw, dh, 0, 1};
 -}
@@ -2098,7 +2098,7 @@ index 35a46287988c4546a7ba15e6fd35949fe28b1df2..5be99be9ec029cea9e455e42699fe1bc
 +    if (fi_held) {
 +        fi_held = 0; pthread_mutex_unlock(&g_pq_mu);
 +        g_fi_phase = FI_HELD;
-+        @autoreleasepool { present_now(&fi_it.t, fi_it.period, fi_it.frame, fi_ticket, fi_it.crop, fi_it.ev_val, update.drawable, update.targetPresentationTimestamp); }
++        @autoreleasepool { present_now(&fi_it.t, fi_it.period, fi_it.frame, fi_ticket, fi_it.crop, fi_it.ev_val, update.drawable, update.targetPresentationTimestamp, 0); }   // an in-between frame: no latch to record
 +        g_fi_phase = FI_OFF; return;
 +    }
      if (!g_dm_present_link || g_rescue_mode || atomic_load(&g_covered)) { pthread_mutex_unlock(&g_pq_mu); return; }

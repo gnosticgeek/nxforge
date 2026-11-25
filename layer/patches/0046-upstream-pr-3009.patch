@@ -395,7 +395,7 @@ index 0000000000000000000000000000000000000000..9a13c9b39f76a01f55b9c8b3781b2430
 +typedef struct { int std_lo, std_hi, ext_lo, ext_hi, gamut, tone, set; } dm_hdr_meta;
 +void dm_hdr_meta_get(dm_hdr_meta *m);
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 4f9d7caef2837b28b8241aea895fde3bcd3a9830..a0ed1733288666035ce2379aa519a5aece8be27c 100644
+index 292f8715155ae7e8f6922fe2e16cea2b080e8515..39e44de85bb49a3fa30ac651517fc4373e63f4e5 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -53,6 +53,7 @@

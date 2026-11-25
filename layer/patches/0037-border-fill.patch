@@ -12,7 +12,7 @@ Subject: border-fill: the picture blurred, or the game's art, around a picture
  4 files changed, 11 insertions(+)
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 4d8d083ecffaa8a4d838e11318fde40cac2f66bb..4f9d7caef2837b28b8241aea895fde3bcd3a9830 100644
+index 00af926e53369e99825262e8f4ee998beca297a3..292f8715155ae7e8f6922fe2e16cea2b080e8515 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -22503,6 +22503,7 @@ static int up_mfx_encode(NvShader *cs) {

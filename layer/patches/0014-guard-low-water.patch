@@ -28,7 +28,7 @@ index c594b5e700b0bb6c8a4ac7ba838c56ecd22be802..6e059ed0b7804eff8b30ddfd9d77a482
  - This game took the Mac down before the fixes (kernel panic in `IOGPUGroupMemory` at 14.7 GB wired): [raw pool table](../../../docs/reference/memory.md#memory-pools-nothing-gave-an-address-to-stay-out-of-the-raw-pool-table), [textures made only when read](../../../docs/reference/memory.md#shaders-report-which-textures-they-read-through-a-pool), [out-of-memory exit](../../../docs/reference/memory.md#repeated-gpu-out-of-memory-failures-end-the-game).
  - **Base M4 Mac mini, 16 GB.** The full-resolution run recorded a footprint of about 10.5 GB in Kokiri Forest and 12.3–13.5 GB in Hyrule Castle Town. Castle Town logged 7.1–8.3 GB of GPU allocations and 4.5 GB of system swap in use with other apps open. The separate 0.8-tier run with `DM_GUEST_FILE=1` reported a 7.5–9.4 GB footprint. [Full-resolution results](https://github.com/seedds/nxnative/pull/2783) · [Follow-up report](https://github.com/seedds/nxnative/pull/2783#issuecomment-6929249107)
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 8d64171ec243bf4df3839fe31c900064d83cf341..d6af4f7ab9d1aca7ef17d179cb11b8725e086500 100644
+index 92ce29711948fd111a7b538e5d40008baf3bf9d4..0812838bb146b71d197c35e34bf4a0191baf9090 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -882,10 +882,16 @@ static void res_check(id r, const char *what, int reg) {
