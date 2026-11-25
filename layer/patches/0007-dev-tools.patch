@@ -5,16 +5,15 @@ Subject: dev-tools: Bench, regress and bug report tools; lint baselines
 
 ---
  dm/gfx/tests/t_zero_depth.m          |  2 ++
- dm/tools/lint_c_baseline.tsv         |  3 +--
+ dm/tools/lint_c_baseline.tsv         |  2 +-
  dm/tools/tests/test_bench.py         |  7 +++++++
  dm/tools/tests/test_bug_report.py    |  3 ++-
- dm/tools/tests/test_nso_match.py     |  2 +-
  dm/tools/tests/test_regress.py       | 14 +++++++-------
  dm/tools/tests/test_triage_report.py |  8 +++++---
  scripts/bench.py                     | 21 +++++++++++++++++----
  scripts/bug_report.py                |  4 ++--
  scripts/regress.py                   | 25 +++++++++++++++----------
- 10 files changed, 59 insertions(+), 30 deletions(-)
+ 9 files changed, 58 insertions(+), 28 deletions(-)
 
 diff --git a/dm/gfx/tests/t_zero_depth.m b/dm/gfx/tests/t_zero_depth.m
 index 854ffc481eebd29493e9ef2f23fd8248a396f1e6..8c0583d25564a5b393740abf267b93f5d5cb9ac8 100644
@@ -30,18 +29,10 @@ index 854ffc481eebd29493e9ef2f23fd8248a396f1e6..8c0583d25564a5b393740abf267b93f5
          else for (size_t k = 0; k < poison_bytes / 4; k++) ((float *)poison.contents)[k] = .75f;
          id<MTLCommandBuffer> cb = [queue commandBuffer]; id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
 diff --git a/dm/tools/lint_c_baseline.tsv b/dm/tools/lint_c_baseline.tsv
-index fcdf220cf38ed0d3632c6f8c8a8f26796fa39fae..7a7420e0c5c5da2cbb0cbc593f3e41a8465a05c9 100644
+index 7b3dc2f49927e17a717b8791ceeadaeb168b2501..d5e1d302088d0120fa7f1d2143f6512fc0bcb966 100644
 --- a/dm/tools/lint_c_baseline.tsv
 +++ b/dm/tools/lint_c_baseline.tsv
-@@ -25,7 +25,6 @@ dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.NullDereference	2
- dm/gfx/nvn/nvn_mtl.m	clang-analyzer-core.uninitialized.Assign	2
- dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullableDereferenced	4
- dm/gfx/nvn/nvn_mtl.m	clang-analyzer-nullability.NullablePassedToNonnull	14
--dm/gfx/nvn/nvn_mtl.m	clang-analyzer-security.ArrayBound	1
- dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.NullArg	2
- dm/gfx/nvn/nvn_mtl.m	clang-analyzer-unix.cstring.UninitializedRead	3
- dm/gfx/nvn/nvn_rec.h	clang-analyzer-nullability.NullablePassedToNonnull	1
-@@ -90,7 +89,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
+@@ -88,7 +88,7 @@ dm/host/tests/t_fpslock.c	clang-analyzer-core.NullDereference	1
  dm/host/tests/t_fs.c	bugprone-command-processor	2
  dm/host/tests/t_fs.c	clang-analyzer-unix.Stream	1
  dm/host/tests/t_fs_case.c	clang-analyzer-unix.Stream	1
@@ -51,12 +42,12 @@ index fcdf220cf38ed0d3632c6f8c8a8f26796fa39fae..7a7420e0c5c5da2cbb0cbc593f3e41a8
  dm/host/tests/t_hid.c	clang-analyzer-unix.Errno	1
  dm/host/tests/t_movie_vpx.c	clang-analyzer-core.UndefinedBinaryOperatorResult	1
 diff --git a/dm/tools/tests/test_bench.py b/dm/tools/tests/test_bench.py
-index c299b03aa45c0d61c3ed1132b70fe5bbd1c43c0e..cce5b8009c5a42268ca0b2cdcf012aaa1cbba23d 100644
+index f52032886a6318bbfd1d972ada075748f9c98f89..1b6f409bb690b54db95060226cc821d26f8a7280 100644
 --- a/dm/tools/tests/test_bench.py
 +++ b/dm/tools/tests/test_bench.py
-@@ -25,6 +25,13 @@ class Bench(unittest.TestCase):
-             self.assertEqual(s['fps'], 100.0); self.assertEqual(s['frame_p50'], 10.0); self.assertEqual(s['frame_p99'], 10.0); self.assertEqual(s['frame_max'], 50.0)
-             self.assertEqual(s['over_budget'], 1)   # only the 50 ms frame is longer than 1.5 × 8.33 ms
+@@ -44,6 +44,13 @@ class Bench(unittest.TestCase):
+             self.assertEqual(m['sub_kinstr_draw'], 30.0)
+             self.assertEqual(bench.submit_metrics(f, 20.0, 21.0), {})
  
 +    def test_shader_folder(self):   # the NSP script's shader.noindex, or the shader/ of a build folder it has not built in since it took that name
 +        with tempfile.TemporaryDirectory() as d:
@@ -87,21 +78,8 @@ index d21d22802d418e5322f60850d42f699a5b999d42..293e6e93c6f59de41fd0ee86a352b397
              self.assertIn(folder, report)
  
      def test_home_redacted(self):
-diff --git a/dm/tools/tests/test_nso_match.py b/dm/tools/tests/test_nso_match.py
-index 679e33f86c6b1efdaccb1ff14a32fd8f8f0b9be8..49730bd43f8eb9fee47c60d00c1c6040630be56a 100644
---- a/dm/tools/tests/test_nso_match.py
-+++ b/dm/tools/tests/test_nso_match.py
-@@ -427,7 +427,7 @@ class Matching(unittest.TestCase):
-                 f"MATCH_CUTS = {{'main': [{rule!r}]}}\n")
-             for bid, expected_nb in ((known, '1f2003d5'), ('00' * 16, 'e0124091')):
-                 img = bytearray(self.original)
--                ns = dict(__file__=str(root / 'tools/patch_nso.py'), os=os, glob=glob, importlib=importlib,
-+                ns: dict = dict(__file__=str(root / 'tools/patch_nso.py'), os=os, glob=glob, importlib=importlib,
-                           MOD=SimpleNamespace(build_id=bytes.fromhex(bid)), IMG=img, TEXT_END=0x2000, NAME='main', outdir=str(root / f'out_{bid}'))
-                 with patch.dict(os.environ, DM_GAME=gid): exec(code, ns)
-                 self.assertEqual([(c[0], c[1], c[2]) for c in ns['ALIAS_APPLIED']], [(0x108, 'e00317aa', expected_nb)])
 diff --git a/dm/tools/tests/test_regress.py b/dm/tools/tests/test_regress.py
-index 0ba9fdb2c451b00d2b90a28d2c128c2642b677ce..e71617a39dd37aba069d1c77acf3fa39ba8de9be 100644
+index a628e083dd9bb0a7e193aef70ed6e2f00919e268..0197d7c3e4c7c5a41d8f2f679fac8679fd03f1c3 100644
 --- a/dm/tools/tests/test_regress.py
 +++ b/dm/tools/tests/test_regress.py
 @@ -497,16 +497,16 @@ class Regress(unittest.TestCase):
@@ -166,21 +144,22 @@ index 1d894a593456aca8a1c38419f4b36370b49927cf..0b2be24fd243f2ea549c46af6c451227
  
      def test_conflicts_since(self):
 diff --git a/scripts/bench.py b/scripts/bench.py
-index 267eaf5208067430abfdcaf23d14ae78637286f1..557a3352820dba75a6816ec0040054f9c29be0e3 100755
+index 13443c0db0d51c9182824749a4fab2c0211b6e0d..176e223d403f115778a4c0c0301aeb49329b6f56 100755
 --- a/scripts/bench.py
 +++ b/scripts/bench.py
-@@ -4,8 +4,8 @@
+@@ -4,9 +4,9 @@
  # Variants run the same route with other settings, in turn and repeated, so two hosts or two sets of switches compare under the same load; a screenshot after the measurement
  # window of every run shows whether a variant changes the picture without stalling a measured frame.
  # Usage: python3 scripts/bench.py <id>_build folder [options]   (the folder the NSP script made with --platform mac: tools/dmhost, the rewritten modules, the extracted RomFS,
--#   shader/cache and font; the game's title ID is the folder name's start). -h lists the options. Exit code 0 when every run gave frames, 1 otherwise.
+-#   shader/cache and font; the game's title ID is the folder name's start). -h lists the options. Exit code 0 when every run gave frames, 1 otherwise, 130 when interrupted,
++#   shader.noindex/cache and font; the game's title ID is the folder name's start). -h lists the options. Exit code 0 when every run gave frames, 1 otherwise, 130 when interrupted,
+ #   143 when stopped by SIGTERM (either way the running host is stopped first and --lock released).
 -#   --route <name>: a route of the game's profile (dm/games/<id>/bench.tsv); the first one by default. --save <folder>: the save the route starts from (default <id>_build/run/save);
-+#   shader.noindex/cache and font; the game's title ID is the folder name's start). -h lists the options. Exit code 0 when every run gave frames, 1 otherwise.
 +#   --route <name>: a route of the game's profile (dm/games/<id>/bench.tsv); the first one by default. --idle <seconds>: no route, the game left running that long (smoke tests). --save <folder>: the save the route starts from (default <id>_build/run/save);
  #   each run gets a copy, the folder itself is not changed. --variant 'label:KEY=VALUE,KEY=VALUE': a variant (repeatable; KEY host=<path> runs another host binary, msl=<folder>
  #   other Mac shader libraries, shmap=<file> another shader map (with the c1_full.tsv / cb_extent.tsv of those libraries beside it), patched=<folder> other rewritten modules,
  #   pso=<folder> another pipeline archive); without one, a single variant 'base'. --runs N: each variant N times, in turn (default 2).
-@@ -31,6 +31,13 @@ def newest(paths):   # the newest version folder (v<number>) of a glob
+@@ -66,6 +66,13 @@ def newest(paths):   # the newest version folder (v<number>) of a glob
      return vs[-1] if vs else None
  
  
@@ -194,7 +173,7 @@ index 267eaf5208067430abfdcaf23d14ae78637286f1..557a3352820dba75a6816ec0040054f9
  def routes(gid):
      f = REPO / 'dm/games' / gid / 'bench.tsv'
      if not f.is_file(): return {}
-@@ -86,9 +93,10 @@ def run_one(a, gid, build, var, route, out, lock):
+@@ -142,9 +149,10 @@ def run_one(a, gid, build, var, route, out, lock):
      prof = build / 'profile' / gid if (build / 'profile' / gid / 'game.tsv').is_file() else REPO / 'dm/games' / gid
      out.mkdir(parents=True, exist_ok=True); save, temp = out / 'save', out / 'temp'
      shutil.rmtree(save, ignore_errors=True); shutil.copytree(a.save, save); temp.mkdir(exist_ok=True)
@@ -206,7 +185,7 @@ index 267eaf5208067430abfdcaf23d14ae78637286f1..557a3352820dba75a6816ec0040054f9
      if (build / 'pso/mac').is_dir(): env.setdefault('DM_PSO_BUNDLE', str(build / 'pso/mac'))   # the offline pipeline archive the Mac app bundles (launcher.c sets it there); without it an NVN game rebuilds every base before its first frame
      if (build / 'aoc').is_dir(): env['DM_AOC_DIR'] = str(build / 'aoc')
      archive = var.get('pso') or a.pso_archive
-@@ -185,16 +193,21 @@ def main():
+@@ -310,16 +318,21 @@ def run_benchmark():
      ap.add_argument('--shots', type=lambda v: [float(x) for x in v.split(',')], help='screenshot times in seconds from host start, comma-separated (default: after the measurement window; in-window captures perturb timing)')
      ap.add_argument('--no-hud', action='store_true', help='no Metal performance HUD')
      ap.add_argument('--out', help='the output folder (default <id>_build/bench/<date-time>)')
@@ -252,7 +231,7 @@ index be6593ae598aaf40142217bf8142a8e8ab22304e..71d9dfdc4df73b2426f37d137cde0d46
      for d in dirs:
          if d.is_symlink() or not d.is_dir(): continue
 diff --git a/scripts/regress.py b/scripts/regress.py
-index 93d18fd81a2f2baf05b402e7537dd3ebe70fa156..89b3b1d8a9312eeaa00f1137024c7e82e4cef54e 100644
+index 5fcd4b5a1e9df320e9eeff368b1671b59d79f415..2011790a813ae1abe496904d0c49164a53d0b9e8 100644
 --- a/scripts/regress.py
 +++ b/scripts/regress.py
 @@ -96,7 +96,7 @@ rfs = shader_lib.romfs
@@ -261,7 +240,7 @@ index 93d18fd81a2f2baf05b402e7537dd3ebe70fa156..89b3b1d8a9312eeaa00f1137024c7e82
  GAMES = Path(os.environ.get('REGRESS_GAMES', ''))
 -HOST_DIRS = ('dm/host', 'dm/gfx', 'dm/gfx/nvn', 'dm/gfx/nvn/include', 'dm/gfx/tex', 'dm/gfx/vk', 'dm/gfx/gl')   # as build_ipa_from_nsp.py: the host's sources and headers
 +HOST_DIRS = ('dm/host', 'dm/host/nxforge', 'dm/gfx', 'dm/gfx/nvn', 'dm/gfx/nvn/nxforge', 'dm/gfx/nvn/include', 'dm/gfx/tex', 'dm/gfx/vk', 'dm/gfx/gl')   # as build_ipa_from_nsp.py: the host's sources and headers
- REWRITER = ('dm/tools/patch_nso.py', 'dm/tools/jump_solver.py', 'dm/tools/nso.py', 'dm/tools/mod_layout.py', 'dm/tools/nso_code.py', 'dm/tools/nso_asm.py', 'dm/tools/nso_match.py', 'dm/tools/sdk_patches.py', 'dm/tools/engine_patches.py', 'dm/tools/ue_cvar.py', 'dm/tools/ue_malloc.py', 'dm/tools/ue_region.py', 'dm/tools/ue_ring.py', 'dm/tools/fps_target.py', 'dm/tools/monolith_fps.py', 'dm/tools/loader_census.py', 'dm/tools/ue_fixed_rate.py', 'dm/tools/unity_fps.py', 'dm/tools/unity_bucket.py', 'dm/tools/snowdrop_pools.py')
+ REWRITER = ('dm/tools/patch_nso.py', 'dm/tools/jump_solver.py', 'dm/tools/nso.py', 'dm/tools/mod_layout.py', 'dm/tools/nso_code.py', 'dm/tools/nso_asm.py', 'dm/tools/nso_syms.py', 'dm/tools/nso_match.py', 'dm/tools/sdk_patches.py', 'dm/tools/engine_patches.py', 'dm/tools/ue_cvar.py', 'dm/tools/ue_malloc.py', 'dm/tools/ue_region.py', 'dm/tools/ue_ring.py', 'dm/tools/fps_target.py', 'dm/tools/monolith_fps.py', 'dm/tools/loader_census.py', 'dm/tools/ue_fixed_rate.py', 'dm/tools/unity_fps.py', 'dm/tools/unity_bucket.py', 'dm/tools/snowdrop_pools.py')
  HEAVY_EXE = {'clang', 'make', 'xcodebuild', 'ld', 'ld64', 'swift-frontend', 'dotnet', 'metal', 'metal-tt', 'air-tt', 'applegpu-nt', 'dmsh_xlate', 'spirv-cross'}   # jobs that skew a measurement
  HEAVY_PY = r'(dmsh_build|shader_split|own_compilers|patch_nso|vk_shaders)\.py'   # (the shared measuring rule)
 @@ -253,7 +253,8 @@ class Game:
@@ -334,7 +313,7 @@ index 93d18fd81a2f2baf05b402e7537dd3ebe70fa156..89b3b1d8a9312eeaa00f1137024c7e82
      po = tree.path / 'dm/gfx/tools/pso_offline.py'
      if not po.is_file(): return {'checked': 0, 'note': 'no pso_offline.py in this revision', 'bad': []}
      env = g.env(tree)
-@@ -1077,7 +1082,7 @@ def run_env(g, art, route, outdir, a):
+@@ -1126,7 +1131,7 @@ def run_env(g, art, route, outdir, a):
                 DM_WINDOW='1', DM_WINDOW_TOP='1', DM_FOCUS_KEEP='1', DM_AUDIO='0', DM_METAL_HUD='0' if a.no_hud else '1', DM_CTL=str(outdir / 'ctl'), TMPDIR=str(game_root(g) / 'tmp') + '/')
      if g.kind == 'nvn':
          env.update(DM_NVN_SHMAP=str(prof / 'shader_map.tsv'), DM_NVN_TSV=str(outdir / 'frames.tsv'), DM_NVN_TSV_CALLS='0')

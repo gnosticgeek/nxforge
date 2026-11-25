@@ -36,7 +36,7 @@ Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
  9 files changed, 139 insertions(+), 16 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 1d9c0a2f0ae72af570224db68634caf4f6448ea5..fce377fe7d0a8d970545c219aae0a783ef38e4ce 100644
+index 12c4caa7770c5ee53063ebe0ef568727dfb1e885..29477159aa6592340bd092513941908a10385949 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -11,6 +11,7 @@ A Switch 2 game: update 1.1.1 (v131072), SDK 22.2.8 (`Ounce`). Nintendo EPD's en
@@ -168,11 +168,11 @@ index 2f97a3d151f33314bbb44dfd8363ad4781330de0..a267a6b76d6b6bfbf2400fb6ec2f2b57
  
  # A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index fa2f9336b67d7d2c08f9a744dbd1a81693bc71ff..70ac7c05768ca2f1530c1675aef0b5b9e6b2250b 100644
+index f87fb50c56d9b905292da7c255d3800cc86b3ce8..60bf7cccb335861e6fdd4a9228ea51a86a355190 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -40,6 +40,7 @@ DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone
- DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
+@@ -41,6 +41,7 @@ DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone
+ DM_MIC_GAIN	range	1:8:0.5	1	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
  DM_SCREEN_ASPECT	choice	auto=Match screen?platform:ios,1.6=MacBook (16:10)?platform:mac,1.43=iPhone Duo screen (1.43:1),0=16:9 (Switch)	auto|0	fixups:SCREEN_ASPECT	Game	Picture shape	Taller shapes render more pixels and can increase GPU time and heat.
  DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
 +DM_SCREEN_WIDE	choice	auto=Match screen?platform:mac,0=16:9 (Switch)	0|auto	fixups:SCREEN_WIDE	Game	Wide screen	On a screen wider than 16:9 the picture fills it, with more of the scene at the sides. Renders more pixels: a little slower.
@@ -180,10 +180,10 @@ index fa2f9336b67d7d2c08f9a744dbd1a81693bc71ff..70ac7c05768ca2f1530c1675aef0b5b9
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/host/dm.h b/dm/host/dm.h
-index 3f16f9c37ebe673ec1cd92900490c47341ef21ee..d1317167f675f19462785e9e9bb521b630dd05aa 100644
+index 4e0a5b939ef2d6deb29ddeb946e7b7827c54bfa0..1a27ec56b1dffc269ec7b30eaa0e71ad9738fc55 100644
 --- a/dm/host/dm.h
 +++ b/dm/host/dm.h
-@@ -103,6 +103,7 @@ typedef struct {
+@@ -109,6 +109,7 @@ typedef struct {
      uint32_t unity_qs_idx, unity_qs_arr, unity_qs_size, unity_qs_vsync;   // [obj + arr] + (int32)[obj + idx] * size + vsync; 0 = none
      uint64_t fps_state_off;    // frame step state page (patch_nso.py FRAME_STEP: Tears of the Kingdom 1.4.3 and Breath of the Wild 1.9.0 main); 0 = none
      uint32_t step_max;         // the largest step the frame step stubs give the game (the fixups table's STEP_MAX, patch_nso.py ctx.step_max); 0 = FSTEP_MAX
@@ -192,10 +192,10 @@ index 3f16f9c37ebe673ec1cd92900490c47341ef21ee..d1317167f675f19462785e9e9bb521b6
      int fstep_t120;            // the frame step stub takes its step in ticks of 1/120 s (the FRAME_STEP_120 capability: state +0x38 120, and 40 fps)
      int movie_native_color_keys; // the movie SDK's MediaData uses the native buffer's colour index directly (MOVIE_NATIVE_COLOR_KEYS)
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 3da88d677312189a8a5ea61eed1deebb676883f1..17818bc713da5f4aed222823e00fd51383c841dc 100644
+index 2f34f0627bbd355460d3035937b59986dd1d7578..a9ad1e61defc898b5a7adf15655a2764d437824e 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
-@@ -933,6 +933,17 @@ __attribute__((constructor)) static void prefs_from_old_id(void) {
+@@ -936,6 +936,17 @@ __attribute__((constructor)) static void prefs_from_old_id(void) {
      }
  }
  
@@ -213,7 +213,7 @@ index 3da88d677312189a8a5ea61eed1deebb676883f1..17818bc713da5f4aed222823e00fd513
  // ---------- Cheats: the menu and the panel (hle_cheats.c holds every state; these only show it and call it) ----------
  
  // A string of the engine as an NSString that is never nil: cheat names, sections and notes come from the player's files,
-@@ -1798,6 +1809,10 @@ void front_run(void (*guest)(void)) {
+@@ -1801,6 +1812,10 @@ void front_run(void (*guest)(void)) {
          [NSApplication sharedApplication];
          [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
          NSRect r = NSMakeRect(0, 0, 1280, 720);
@@ -225,10 +225,10 @@ index 3da88d677312189a8a5ea61eed1deebb676883f1..17818bc713da5f4aed222823e00fd513
                                                      styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
                                                        backing:NSBackingStoreBuffered defer:NO];
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index 6b84aae20a19cf16982b6328fcabf10672313360..c208958986d9beae65a9e9a376df7835f859eabe 100644
+index 8d17deab6ba1d53c71b5b17ae81703dab5fcc85f..be4f885c2cedf6d00bc57c691402f3f9d490e62e 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
-@@ -346,6 +346,7 @@ static void read_layout(module_t *m, const char *dir) {
+@@ -422,6 +422,7 @@ static void read_layout(module_t *m, const char *dir) {
          else if (!strcmp(key, "MOVIE_NATIVE_COLOR_KEYS")) m->movie_native_color_keys = v == 1;
          else if (!strcmp(key, "STEP_MAX")) m->step_max = (uint32_t)v;
          else if (!strcmp(key, "FRAME_STEP_120")) m->fstep_t120 = v != 0;
@@ -236,7 +236,7 @@ index 6b84aae20a19cf16982b6328fcabf10672313360..c208958986d9beae65a9e9a376df7835
          else if (!strcmp(key, "UE_MALLOC_VT")) m->ue_malloc_vt = v;
          else if (!strcmp(key, "UE_MALLOC_SLOT")) m->ue_malloc_slot = (unsigned)v;
          else if (!strcmp(key, "FPS_TARGET_PTR")) m->fps_target_ptr = v;
-@@ -402,6 +403,8 @@ static void read_layout(module_t *m, const char *dir) {
+@@ -479,6 +480,8 @@ static void read_layout(module_t *m, const char *dir) {
  uint8_t *dm_fps_state;
  int dm_fps_step_max;   // the largest step the stubs give the game (STEP_MAX in its fixups table; 0 = FSTEP_MAX): the frame step holds frames and pays back within it (hle_nvn.c)
  static const char *g_fps_mod;   // the module holding the state page (for the log)
@@ -245,7 +245,7 @@ index 6b84aae20a19cf16982b6328fcabf10672313360..c208958986d9beae65a9e9a376df7835
  static float g_render_scale_max = 1.0f;   // the render-scale stub's largest scale (RENDER_SCALE in its fixups table; 1 for a stub that only lowers the game's size)
  static int g_fstep_t120;                  // the frame step stub takes ticks of 1/120 s (the FRAME_STEP_120 capability): the page's unit (+0x38) is 120, and 40 fps is taken
  static void install_fps_state(module_t *m) {
-@@ -409,6 +412,7 @@ static void install_fps_state(module_t *m) {
+@@ -486,6 +489,7 @@ static void install_fps_state(module_t *m) {
      dm_fps_state = m->base + m->fps_state_off; g_fps_mod = m->name; dm_fps_step_max = (int)m->step_max;
      if (m->render_scale_max > 1) g_render_scale_max = (float)m->render_scale_max;
      g_fstep_t120 = m->fstep_t120;
@@ -253,7 +253,7 @@ index 6b84aae20a19cf16982b6328fcabf10672313360..c208958986d9beae65a9e9a376df7835
  }
  // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
  // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
-@@ -469,6 +473,36 @@ void dm_fps_state_apply(void) {
+@@ -546,6 +550,36 @@ void dm_fps_state_apply(void) {
              LOG("%s: screen shape %.3f: output 1920x%u, layout 1280x%u (DM_SCREEN_ASPECT; only builds with screen-shape stubs follow it)", g_fps_mod, a, oh, lh);
          }
      }
@@ -291,7 +291,7 @@ index 6b84aae20a19cf16982b6328fcabf10672313360..c208958986d9beae65a9e9a376df7835
      LOG("%s: frame step %s%s (%s)", g_fps_mod, !t ? "as the game sets it" : g_fstep_t120 ? "in ticks of 1/120 s decided by the host" : "in whole vsyncs decided by the host", t ? cap : "", e ? "DM_FPS_TARGET" : "game profile fps_target");
  }
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index cfb9b4ac6f3b5ba7ccbb6c63fa1837e37bd5a6fa..55ebe0c199fe96bbf493cd5ff0decfe6dac73c88 100644
+index ad9ac5b7b7f23264b362f532937a3cb9bc5e671d..dd8cf60962aba4d048667017a68d27430ddcf68c 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
 @@ -21,7 +21,7 @@ A patch's binding is what its correctness is anchored to, from the loosest. A pa
@@ -310,9 +310,9 @@ index cfb9b4ac6f3b5ba7ccbb6c63fa1837e37bd5a6fa..55ebe0c199fe96bbf493cd5ff0decfe6
 -| `build` → `sdk` | Mina the Hollower's row (cb82ed52, SDK 21.4.3; NXForge) | address space | blocked: drop it once a Mina build rewritten with the rules alone matches this one | judgement | 1 | [sdk_patches.py](../../dm/tools/sdk_patches.py) | SDK 20.5.22's constructor layout, which the rules now cover; the row came before the rules |
 +| `build` → `sdk` | Mina the Hollower's row (cb82ed52, SDK 21.4.3; NXForge) | address space | blocked: drop it once a Mina build rewritten with the rules alone matches this one | judgement | — | [sdk_patches.py](../../dm/tools/sdk_patches.py) | SDK 20.5.22's constructor layout, which the rules now cover; the row came before the rules |
  | `build` → `engine` | Criterion's 60 fps mode, frame ticks and game step at fixed addresses | frame rate | blocked: one game on that engine here | judgement | 1 | [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | the studio's engine, which its other games ship |
- | `build` → `engine` | Frostbite's frame regulator at a fixed pointer | frame rate | blocked: one Frostbite game here | judgement | 1 | [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md) | engine code other Frostbite games ship (the simulation's own rate is already set by name) |
  | `build` → `engine` | Next Level Games' frame limiter target at a fixed address | frame rate | blocked: one game on that engine here | judgement | 1 | [Luigi's Mansion 3](../../dm/games/0100DCA0064A6000/README.md) | the studio's engine, which its other games ship |
-@@ -63,7 +63,6 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ | `build` → `engine` | RE Engine's frame limit at a fixed pointer | frame rate | blocked: Rise has not been verified with the engine matcher that finds Apollo Justice | judgement | 1 | [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md) | engine code other RE Engine games ship |
+@@ -62,7 +62,6 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  | `build` → `game` | 60 fps frame step (112 sites) | frame rate | kept: 1.0.1 (2019) is the last update; a function match would serve no other build of this game | checked: nso_fnmap of its 112 sites into those four mains (2026-11-09) | 1 | [ASTRAL CHAIN](../../dm/games/01007300020FA000/README.md) | the game's own clock and timers (a community 60 fps mod on the host's frame step). PlatinumGames' other games do not share them: none of its 15 functions has an exact match in Bayonetta, Bayonetta 2, Bayonetta 3 or NieR:Automata |
  | `build` → `game` | 60 fps frame step and render scale (ksys::VFR) | frame rate | kept: 44 sites in 34 functions to fingerprint for an update that may not come (1.9.0, the Switch 2 Edition release); convert when a new build appears | checked: nso_fnmap of its 44 sites into those 13 mains (2026-11-09) | 1 | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | the game's own frame code; the frame-step state page is general. No engine sibling shares it: none of its 34 functions has an exact match in Tears of the Kingdom, SMO, MK8D, ACNH, Splatoon 2 / 3, Kirby, Mario Party, Ocarina, Smash, Metroid Dread or Origami King (only the widescreen stubs' sead::PerspectiveProjection functions recur) |
  | `build` → `game` | Hagi coroutine stack region 1 GB → 64 MB | memory | kept: 1.1.4 is the last update; a match over Hagi would serve no other build of this game | checked: the final build 1.1.4 (the only one the profile packs), 2026-11-04 | 1 | [Super Mario 3D All-Stars: Super Mario Sunshine](../../dm/games/010049900F546002/README.md) | a size inside Hagi's own code: nothing the host sees tells a 1 GB reservation it can shrink from one it cannot |
@@ -320,7 +320,7 @@ index cfb9b4ac6f3b5ba7ccbb6c63fa1837e37bd5a6fa..55ebe0c199fe96bbf493cd5ff0decfe6
  
  ## Summary
  
-@@ -87,7 +86,6 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -85,7 +84,6 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  | [Mario + Rabbids® Sparks of Hope](#mario--rabbids-sparks-of-hope) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
  | [Mario Kart World](#mario-kart-world) | 0 | 0 | 1 | 0 | 0 | `game` |
  | [METAL GEAR SOLID: Peace Walker - Master Collection Version (Game)](#metal-gear-solid-peace-walker---master-collection-version-game) | 0 | 0 | 3 | 0 | 0 | `game` |
@@ -328,7 +328,7 @@ index cfb9b4ac6f3b5ba7ccbb6c63fa1837e37bd5a6fa..55ebe0c199fe96bbf493cd5ff0decfe6
  | [Monster Hunter Rise](#monster-hunter-rise) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
  | [Need For Speed™ Hot Pursuit Remastered](#need-for-speed-hot-pursuit-remastered) | 1 | 0 | 0 | 0 | 5 | `build` → `game`, `build` → `engine` |
  | [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](#nierautomata-the-end-of-yorha-edition-010056b015fe8000) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
-@@ -428,17 +426,6 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -418,17 +416,6 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  
  - **function-matched stub** (`main` of builds without STUBS): render-thread synchronization: a function of 0x1a4 bytes, `+0x18`, `+0x190` in it
  
@@ -346,7 +346,7 @@ index cfb9b4ac6f3b5ba7ccbb6c63fa1837e37bd5a6fa..55ebe0c199fe96bbf493cd5ff0decfe6
  ### Monster Hunter Rise
  
  [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), `0100B04011742000`.
-@@ -758,7 +745,7 @@ Cuts of Nintendo SDK `sdk` builds ([sdk_patches.py](../../dm/tools/sdk_patches.p
+@@ -756,7 +743,7 @@ Cuts of Nintendo SDK `sdk` builds ([sdk_patches.py](../../dm/tools/sdk_patches.p
  - **`build` → `sdk`**, address space, blocked: drop it once a Mina build rewritten with the rules alone matches this one, judgement: Mina the Hollower's row (cb82ed52, SDK 21.4.3; NXForge). SDK 20.5.22's constructor layout, which the rules now cover; the row came before the rules
  - **`sdk`**, address space, at goal, checked: both function pairs reproduced all three exact cuts on the two original SDK builds, with six more equivalent implementations found in 48 distinct SDK builds: Older VammManager: 64 MB node area and 32 MB large-region alignment. The two older SDK implementations need smaller reservations and alignment to fit the iPhone alias region after the Snowdrop metadata reservation
  
@@ -356,10 +356,10 @@ index cfb9b4ac6f3b5ba7ccbb6c63fa1837e37bd5a6fa..55ebe0c199fe96bbf493cd5ff0decfe6
    - cut `+0x14fc5c`: AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000
  
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index b01e29c596474ff3795c8a97347ae0a82d95322f..e6694fcba5768bbf80cca4dc7350a6fca23a2d09 100644
+index a72d5147d93a90880e27c8eec31b3abcd9ed5452..3fa328e72da9d09a631a02ddec6cc08c80dacb24 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -437,6 +437,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
+@@ -443,6 +443,7 @@ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the
  DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
  DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)
  DM_SCREEN_MATCH	switch	`0` keeps the screen's refresh rate in fullscreen; by default a Mac screen whose rate is not a multiple of the game's frame rate switches to one that is (144 → 120 Hz), and a variable-refresh screen to a fixed-rate mode at a multiple (ProMotion 120 → 60 Hz at 60 and 30 fps)
@@ -368,10 +368,10 @@ index b01e29c596474ff3795c8a97347ae0a82d95322f..e6694fcba5768bbf80cca4dc7350a6fc
  DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
  DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
 diff --git a/docs/settings.md b/docs/settings.md
-index 10c5a17f34de06c6a62b5d88b4e0f683ecb2f9a4..57b24ae098c0f0bce598a690f7249b04b7d752b7 100644
+index f478da27f7c6e3db40f48469bbbf53a0b31810d3..17b091ef910d04c9b92fc9b28c83cf4d317c4357 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -96,6 +96,10 @@ Games whose profile supports it (Breath of the Wild, Animal Crossing: New Horizo
+@@ -100,6 +100,10 @@ Games whose profile supports it (Breath of the Wild, Animal Crossing: New Horizo
  
  iPhone and iPad. **Automatic**, the default, turns with the device as before: landscape either way on an iPhone, any way on an iPad. **Landscape** stays in landscape, either way up. **Portrait** stays upright, with the picture above the touch controls (or centred when a controller is connected). The screen turns as soon as you pick it, on the settings screen or in the in-game menu.
  
@@ -382,8 +382,8 @@ index 10c5a17f34de06c6a62b5d88b4e0f683ecb2f9a4..57b24ae098c0f0bce598a690f7249b04
  ### Frame-rate counter
  
  Shows the frames per second at the top left.
-@@ -324,6 +328,8 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
- | Picture (iPhone and iPad) | `DM_PICTURE_FIT` | `fit` 16:9 with black bars, `fill` covers the screen, cropped |
+@@ -328,6 +332,8 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+ | Picture | `DM_PICTURE_FIT` | `fit` 16:9 with black bars, `fill` covers the screen (or Mac window), cropped |
  | Picture shape | `DM_SCREEN_ASPECT` | On builds with screen-shape stubs, `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1), else 16:9 (iOS only); `1.6` MacBook (16:10, Mac only); `1.43` the iPhone Duo's shape, `0` 16:9 |
  | Rotation (iPhone and iPad) | `DM_ROTATION` | `auto` as the device turns, `landscape`, `portrait` |
 +| Picture shape | `DM_SCREEN_ASPECT` | `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1), else 16:9 (iOS only); `1.43` the iPhone Duo's shape, `0` 16:9 |

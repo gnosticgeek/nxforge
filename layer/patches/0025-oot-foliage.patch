@@ -17,7 +17,7 @@ From brad-n/TVPort 8609a1cb by Brad Norman (MIT), on upstream's frame step rule:
  7 files changed, 68 insertions(+), 1 deletion(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index fce377fe7d0a8d970545c219aae0a783ef38e4ce..2936baca6a87974dc5b8b7da0aa90a4490941ec6 100644
+index 29477159aa6592340bd092513941908a10385949..028e0a1e854ce65dafc9dac42ee772025843fc0b 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -162,6 +162,10 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
@@ -116,10 +116,10 @@ index a267a6b76d6b6bfbf2400fb6ec2f2b5766461aea..3684e864f83dfddbdb467ad8b9d299d9
  
  # A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index f7580c4b93ef2df31f8d3a5aac0c2fb6d9371850..21627c27eeec4dec564d59d5426b441c89123ec2 100644
+index 748c7d9200d945819fc439e5e9d17556a532cb48..e3bbeefc6aae6f2993cc7030a47a891bd8adcafe 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -43,6 +43,7 @@ DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
+@@ -44,6 +44,7 @@ DM_MIC_GAIN	range	1:8:0.5	1	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
  DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.6=MacBook (16:10)?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	fixups:SCREEN_ASPECT	Game	Picture shape	Taller shapes render more pixels and can increase GPU time and heat.
  DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
  DM_SCREEN_WIDE	choice	0=16:9 (Switch),16x10=16:10?platform:mac,auto=Auto (match the screen)?platform:mac	0|auto	fixups:SCREEN_WIDE	Game	Aspect ratio	Fills a 16:10 or ultrawide screen instead of showing bars: Auto matches the screen the game opens on. 16:10 shows a little less at the sides, wider screens more.
@@ -128,10 +128,10 @@ index f7580c4b93ef2df31f8d3a5aac0c2fb6d9371850..21627c27eeec4dec564d59d5426b441c
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index 66a515dd3b6da10ad73be2b44f4ae98699884290..af4fc946e561167240e9d17276e437413ee23bef 100644
+index 7a3fcc99a606c786338df8e08f5558ab5b2be3f2..79504ce712c0184d7e40b11f0451e9d9358d5073 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
-@@ -443,6 +443,12 @@ void dm_fps_state_apply(void) {
+@@ -520,6 +520,12 @@ void dm_fps_state_apply(void) {
      memcpy(dm_fps_state + 0x40, &dyn, sizeof dyn);
      // A full model heap (Ocarina of Time's patches.py heap_retry): DM_HEAP_RETRY=0 writes 1 at +0x17c, and the game's allocations that found their heap full stay as shipped
      { const char *hr = getenv("DM_HEAP_RETRY"); if (hr && !strcmp(hr, "0")) { uint32_t off = 1; memcpy(dm_fps_state + 0x17c, &off, 4); LOG("%s: full model heap retry off (DM_HEAP_RETRY=0)", g_fps_mod); } }
@@ -145,10 +145,10 @@ index 66a515dd3b6da10ad73be2b44f4ae98699884290..af4fc946e561167240e9d17276e43741
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index 55ebe0c199fe96bbf493cd5ff0decfe6dac73c88..8a4633fa1467ce851c3056827e3cb8d57ffbfb28 100644
+index dd8cf60962aba4d048667017a68d27430ddcf68c..c6d5c5070046cdf058beb39d9befed17f329572e 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
-@@ -692,6 +692,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -690,6 +690,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09); 30 fps threshold scaling checked in test_ocarina_drs.py and in play at 30 fps on an M2 Air (PR #1954, 2026-11-16): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
  - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (main+0x31d3200, 0xfc8 bytes, one caller main+0x31c00cc); the status ubfx at +0xce4, the store at +0xd48 (the only float store to #0xe5c in main; s0 computed from the update's w0 at +0xd34, never reread from +0xe5c) and the size loop clearing bit 3 of +0xe2c read by disassembly (2026-11-09, 2026-11-23); guard, status and store stubs executed natively on ARM64 in test_ocarina_drs.py: render scale: the 3D views at a fraction of the game's own size (DM_RENDER_SCALE). The game's own view-size update (its test of the dynamic-resolution status and its scale store), found by its function's fingerprint on any build that keeps it; the level function's stub above holds level 0 under a scale
  - **`game`**, rendering, at goal, checked: v131072 main: one function per fingerprint, free registers read at each site; indexed pane names, classes and dimensions checked against the UIL records. In-place Vert+ projection-object updates (and DM_SCREEN_FOV=off Hor-) executed on ARM64 in test_ocarina_screen_shape.py and verified in Kakariko Village on Mac at 16:9, 16:10 and 4:3 (2026-11-23); 0/3 projection fingerprint matches in TOTK, BOTW and Mario Kart World; physical iPad/iPhone retest pending: screen shape: taller render targets, cameras, Layout2 panes and a 16:9 movie viewport (DM_SCREEN_ASPECT). The game's own display setup, camera, pane and movie code; installed together after every function matches. Indexed pane edits verify the authored name, class and dimensions they use
@@ -157,10 +157,10 @@ index 55ebe0c199fe96bbf493cd5ff0decfe6dac73c88..8a4633fa1467ce851c3056827e3cb8d5
  - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
  - **function-matched** (`main` of builds without CUTS): movie update cap: 3 pictures a frame, the frame step's largest hold, in place of the limit (2), which also sizes the decoder pipeline: 1 function, 1 cut
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 31a18d23319f0bb796b0172a87c4b6120469342c..64a2b0fcbf55c9cbcab851e597e72bf4f06a70da 100644
+index 0561383387a20620c494f62e22db2754fe9a7a28..7e9cbc398e1bec1f4398d11155de2eaee1371607 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -52,6 +52,7 @@ DM_EXL_TRACE	diagnostic	`=1` logs the first four code words written per view by
+@@ -53,6 +53,7 @@ DM_EXL_TRACE	diagnostic	`=1` logs the first four code words written per view by
  DM_FD_LOG	diagnostic	`=<seconds>` logs, every that many seconds, the number and kinds of file descriptors the process has open
  DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
  DM_FOCUS_KEEP	switch	`1` keeps the game in focus while its Mac window is up, whichever app is active (minimizing still counts); `scripts/regress.py` sets it, so another app taking the key window during a run does not pause a game that stops out of focus
@@ -169,10 +169,10 @@ index 31a18d23319f0bb796b0172a87c4b6120469342c..64a2b0fcbf55c9cbcab851e597e72bf4
  DM_FORCE_STRICT	diagnostic	`=1` makes the loader fail on forced-hook entries no module references, instead of only noting them (for checking a mistyped list)
  DM_FPS	switch	`30` or `60` pins the frame rate the display link and frame pacing aim for; otherwise it follows the game's present interval (60, or 30 when the game asks for 30)
 diff --git a/docs/settings.md b/docs/settings.md
-index dad3368017013b1ce1d31d5c21c8ab1bfa6a5608..bcd311b2379c44b8058338236fbc9a24e841a8ea 100644
+index eac494909c944534f5dda67691b27995aad1971c..8ccf19af4166b3d28e96da2cdcb9dc1b606559cc 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -100,6 +100,10 @@ iPhone and iPad. **Automatic**, the default, turns with the device as before: la
+@@ -104,6 +104,10 @@ iPhone and iPad. **Automatic**, the default, turns with the device as before: la
  
  Mac, games whose build supports it (Ocarina of Time); the Mac settings window calls it **Aspect ratio**. **Auto (match the screen)**, the default, renders a picture of the main screen's own shape (below a MacBook's notch, so 16:10 there) when it is wider than 16:9 (an ultrawide monitor, 3440x1440 for one): the same view up and down, more of the scene at the sides, and the HUD at the screen's edges; or when it is taller, from 1.3:1 (a MacBook's 16:10): the same height with a little less at the sides, filling the screen without bars. On a 16:9 screen it is the Switch's 16:9 picture, as **16:9**. **16:10** always renders 16:10 (2304x1440 docked). The game's window opens in that shape; choose **Fullscreen** in [Display mode](#display-mode) to fill the screen. The wider picture has about a third more pixels, so it runs a little slower. **Handheld** [console mode](#console-mode) keeps 16:9. In an `env.txt`: `DM_SCREEN_WIDE=auto`, `0`, or a size such as `3440x1440` or `16x10`.
  

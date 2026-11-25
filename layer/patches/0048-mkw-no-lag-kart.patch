@@ -45,8 +45,8 @@ Claude-Session: https://claude.ai/code/session_016qteK2nyjB1RLLqWJsbvhn
  dm/gfx/tests/t_pool_finalize.m     | 169 +++++++++++++++++++++++++++++
  dm/gfx/tests/t_upload_src.m        |   1 +
  dm/tools/docs_patches.py           |   4 +
- docs/env_switches.tsv              |  11 +-
- 12 files changed, 395 insertions(+), 22 deletions(-)
+ docs/env_switches.tsv              |  13 ++-
+ 12 files changed, 396 insertions(+), 23 deletions(-)
  create mode 100644 dm/gfx/tests/t_pool_finalize.m
 
 diff --git a/dm/games/0400C3F00006E000/game.tsv b/dm/games/0400C3F00006E000/game.tsv
@@ -68,20 +68,20 @@ index a3be031bc7f2816230e2dffc6d4221c62fcfc16d..cc00e74549d2f2acdfb80634cc867aa1
 +# 20 to 28 ms shorter
 +up_copy	128
 diff --git a/dm/games/README.md b/dm/games/README.md
-index 12620f8c82e1c4f45a8cb79332c91fa4212c72f1..70b9c1cfc95eccb53079b00ee5597ade3a7a6134 100644
+index 0d11a7aaa345a7e60528f51e992b715b6c5e7998..8e88d9c22a21e4beed3e61d78903499ff9526f67 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -296,6 +296,8 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+@@ -311,6 +311,8 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | `present_snap` | `on` / `off` (the default): present snapshots by default (`nvn_mtl.m` `mtl_snap_on`, a ring of 2 host textures): each present is copied and the game's swapchain texture is free at once, so the GPU does not idle between frames ([Present snapshots](../../docs/reference/frame-rate.md#present-snapshots-the-games-swapchain-texture-free-at-once)). A setting the game was tested with: the iOS launcher's **Frame buffering** defaults to it, and `DM_PRESENT_SNAP` / `Documents/env.txt` override it. Breath of the Wild sets it on |
  | `pso_mtl4` | `on` / `off` (the default): on iOS, render pipelines through MTL4Compiler by default, with the pipeline archive, the prepare step, the hybrid pipelines and the prebuild (on by default on the Mac; `DM_PSO_MTL4=1` / `0` overrides). A setting the game was tested with on an iPhone. It also gives the app the [pipeline archive made offline](../../docs/development.md#the-pipeline-archive-made-offline) (`build_ipa.sh` builds it for the `pso_gpu` key's list when present, else for `g18p`, unless `DM_PSO_GPUS` says otherwise). An iOS build carries the pulling libraries (`_bp`) whatever this key says, since the launcher's Metal 4 pipelines toggle can turn the path on. Profiles with `pso_mtl4 off` get no archive unless a build override selects one. Breath of the Wild sets it on |
  | `pso_gpu` | Optional, whitespace-separated GPU architectures: the ones the [pipeline archive made offline](../../docs/development.md#the-pipeline-archive-made-offline) is made for when the profile also sets `pso_mtl4 on`. The bases are made per GPU family and each family's archive costs its own `metal-tt` run, so a profile names exactly the devices it serves. 1-4 tokens, each alphanumeric, with or without the `applegpu_` prefix (for example `g18p applegpu_g19p`); `none` is not a value. Without this key, `pso_mtl4 on` keeps the A19 / A19 Pro default `g18p`; `pso_mtl4 off` gets no archive. The `DM_PSO_GPUS` switch / the NSP script's `--gpu` overrides the archive selection; this key does not enable Metal 4 pipelines |
 +| `nvn_cut` | draws (default `64`; `0` = one command buffer per submission): a submission goes to the GPU in segments of this many draws while the GPU has run out of work (`nvn_mtl.m` `cut_draws`; `DM_NVN_CUT` overrides). Mario Kart World: `8` (kingbumi31/no-lag-kart: four players, the heaviest minute, 10 and 38 frames off their step with 64, none with 8, M2 Pro) |
 +| `up_copy` | megabytes (default `0`, off; up to `2048`): upload sources from a large or texture-only pool are copied into a resident ring of this size instead of a zero-copy buffer made resident for each upload (`nvn_mtl.m` `up_copy_src`; `DM_NVN_UP_COPY` overrides). The ring stays wired. Mario Kart World: `128` (a scene cut's residency work halves, its frame 20 to 28 ms shorter on an M2 Pro; kingbumi31/no-lag-kart) |
  | `enc_thread` | `on` / `off` (the default): on the Mac, Metal encoding on its own thread by default, as on iOS for every game (`nvn_rec.h` `rec_on`; `DM_NVN_ENC_THREAD=1` / `0` and the launcher's Encode thread override it). For a game that waits on its fence every frame, whose submit thread would otherwise also encode before the wait: Need for Speed: Hot Pursuit Remastered's 60 fps frame took 18.1 ms with encoding on the submit thread and 16.7 on its own |
- | `fps_target` | Frame rate cap of the rewriter's frame step, for builds that have one (`FRAME_STEP` in the profile's `patches.py`: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0, Hyrule Warriors: Age of Calamity 1.3.0, Paper Mario: The Thousand-Year Door 1.0.1, ASTRAL CHAIN 1.0.1), or the engine's own frame limit the host writes into game memory (`hle_fpslock.c`: Monster Hunter Rise 16.0.2, which also needs `present_interval display`; any Unreal Engine 4.2x / 5 build, its `t.MaxFPS` (or `ue_fps_cvar`) and `rhi.SyncInterval` or `nvn.SyncInterval`, found by name by the rewriter, so the game asks for present interval 1 itself, and its fixed frame rate `GEngine->FixedFrameRate`, found by its reflection entry and written while the engine's `bUseFixedFrameRate` is set (DRAGON BALL: Sparking! ZERO's battles, Pikmin 4); Luigi's Mansion 3 1.4.0, its frame limiter's milliseconds per frame, with `present_interval display`; Pokémon Brilliant Diamond 1.3.0, Unity's integer `Application.targetFrameRate`, also with `present_interval display`; EA SPORTS FC 27, Frostbite's simulation rate, found by name on any build, and on 1.8d.310c its frame regulator, also with `present_interval display`; Fire Emblem Fortune's Weave, a target frame rate the game steps by, found by its readers on any build, so the game asks for present interval 1 itself; Monolith's [native interval](../../docs/reference/frame-rate.md#monoliths-native-frame-interval), found from reviewed engine implementations, with required game timing corrections matched separately). `0` (the default): the game's own step. `30` / `60`: the host decides each frame's step in whole vsyncs and keeps the frame on screen that long (`hle_nvn.c` `fstep_tick`, `nvn_fstep.h`): 1 at a 60 cap, 2 when 60 does not hold or at a 30 cap (and while a prerendered movie plays), plus one vsync while the game is behind real time after a late frame. Presents follow that hold instead of the interval the game sets. `DM_FPS_TARGET` overrides it, also from `Documents/env.txt`; the log line `frame step: game time … of real time` checks the game's speed. A derived profile (`derive_profile`) whose `main` has no `FRAME_STEP` stubs, while the profile has them for other builds, gets `fps_target 0`: without the stubs the host would present every vsync and the game would run at double speed. On a main with neither a frame step nor an engine limit the host writes, the host keeps the game's own present interval whatever `fps_target` or `DM_FPS_TARGET` says (`hle_fpslock.c` `dm_fps_lock_engine`), except with `present_interval display`, where the cap is the present interval alone: a game whose only limit is its present interval and that steps by the time that passed (Red Dead Redemption) |
+ | `fps_target` | Frame rate cap of the rewriter's frame step, for builds that have one (`FRAME_STEP` in the profile's `patches.py`: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0, Hyrule Warriors: Age of Calamity 1.3.0, Paper Mario: The Thousand-Year Door 1.0.1, ASTRAL CHAIN 1.0.1), or the engine's own frame limit the host writes into game memory (`hle_fpslock.c`: Monster Hunter Rise 16.0.2, which also needs `present_interval display`; any Unreal Engine 4.2x / 5 build, its `t.MaxFPS` (or `ue_fps_cvar`) and `rhi.SyncInterval` or `nvn.SyncInterval`, found by name by the rewriter, so the game asks for present interval 1 itself, and its fixed frame rate `GEngine->FixedFrameRate`, found by its reflection entry and written while the engine's `bUseFixedFrameRate` is set (DRAGON BALL: Sparking! ZERO's battles, Pikmin 4); Luigi's Mansion 3 1.4.0, its frame limiter's milliseconds per frame, with `present_interval display`; Pokémon Brilliant Diamond 1.3.0, Unity's integer `Application.targetFrameRate`, also with `present_interval display`; EA SPORTS FC 27, Frostbite's simulation rate and frame regulator, found dynamically on any build, also with `present_interval display`; Fire Emblem Fortune's Weave, a target frame rate the game steps by, found by its readers on any build, so the game asks for present interval 1 itself; Monolith's [native interval](../../docs/reference/frame-rate.md#monoliths-native-frame-interval), found from reviewed engine implementations, with required game timing corrections matched separately). `0` (the default): the game's own step. `30` / `60`: the host decides each frame's step in whole vsyncs and keeps the frame on screen that long (`hle_nvn.c` `fstep_tick`, `nvn_fstep.h`): 1 at a 60 cap, 2 when 60 does not hold or at a 30 cap (and while a prerendered movie plays), plus one vsync while the game is behind real time after a late frame. Presents follow that hold instead of the interval the game sets. `DM_FPS_TARGET` overrides it, also from `Documents/env.txt`; the log line `frame step: game time … of real time` checks the game's speed. A derived profile (`derive_profile`) whose `main` has no `FRAME_STEP` stubs, while the profile has them for other builds, gets `fps_target 0`: without the stubs the host would present every vsync and the game would run at double speed. On a main with neither a frame step nor an engine limit the host writes, the host keeps the game's own present interval whatever `fps_target` or `DM_FPS_TARGET` says (`hle_fpslock.c` `dm_fps_lock_engine`), except with `present_interval display`, where the cap is the present interval alone: a game whose only limit is its present interval and that steps by the time that passed (Red Dead Redemption) |
  | `fps_max` | `60` (the default) or `120`: the highest rate `fps_target` and the player's **Frame rate** take. `120` only for a game with an engine limit the host writes and whose speed was measured at 120 against 60 over the same inputs: the target then follows the frames that fit, 120 or 60 ([120 fps follows the frame step](../../docs/reference/frame-rate.md#120-fps-follows-the-frame-step)). |
 diff --git a/dm/games/game.py b/dm/games/game.py
-index 24af68e699d23b96e01dcbdd20c19a632b413a79..08ef6c30b50a0b9951a52c02f5eaf207b122bc59 100644
+index c18fa32a03a872a5469c7411363a49a972e7261e..467cad3b1c0af7a4dc8a4f03b1a0672fb1fe6c78 100644
 --- a/dm/games/game.py
 +++ b/dm/games/game.py
 @@ -182,6 +182,10 @@ def header_one(g):
@@ -105,30 +105,30 @@ index 24af68e699d23b96e01dcbdd20c19a632b413a79..08ef6c30b50a0b9951a52c02f5eaf207
           f'#define DM_GAME_PAD_LAYOUT {("simple", "full", "touch").index(pl)}',
           f'#define DM_GAME_OPMODE {int(om == "console")}',
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index cee968b8609c2089febd931776d3b7cbfb63c09e..ecc0b386cb9842526229c8d0d09fcdc54e6a030e 100644
+index d378a90c7ac1e9829413ee14429b159640147858..d0204ca2f23129cb3a52682c4ea243cad3be7a91 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -3454,7 +3454,9 @@ _Static_assert(sizeof(map_req) == 0x28, "NVNmappingRequest");
+@@ -3542,7 +3542,9 @@ _Static_assert(sizeof(map_req) == 0x28, "NVNmappingRequest");
  enum { VPT_LEAF = 512 };   // a page-table leaf covers 2 MB
  typedef struct { const uint8_t *phys; uint64_t gen; uint32_t live, shadow; uint64_t wst; } vpte;   // live: may still be under a live GPU buffer (vunmap_defer); shadow: per-run copy in reservation (vshadow_map); wst: last copy-change stamp
  struct vshadow { uint64_t voff, size; const uint8_t *src; uint8_t *alias_base, *alias; uint64_t alias_len, stamp; uint8_t **snap; uint32_t np; };   // misaligned physical mapping kept as a per-run copy; alias: host RW vm_remap of physical pages (0 SIGSEGV writebacks); snap: lazy per-host-page snapshot allocated only on GPU-written pages
--struct vpool { const pool_t *pool; uint8_t *base; uint64_t len, size, top; int nrun, taken, alias_reg; struct vrun { uint64_t lo, hi; } *run; vpte **pt; struct vlog_ent *log; _Atomic uint64_t nlog; struct vshadow *sh; int nsh, csh; };   // len: reserved; size: the pool's; top: highest mapped end so far (logged per 128 MB); alias_reg: counted in resource_vis (mtl_sparse_alias_delta)
-+struct vpool { const pool_t *pool; uint8_t *base; uint64_t len, size, top; int nrun, taken, alias_reg; struct vrun { uint64_t lo, hi; } *run; vpte **pt; struct vlog_ent *log; _Atomic uint64_t nlog; struct vshadow *sh; int nsh, csh;   // len: reserved; size: the pool's; top: highest mapped end so far (logged per 128 MB); alias_reg: counted in resource_vis (mtl_sparse_alias_delta)
+-struct vpool { const pool_t *pool; uint8_t *base; uint64_t len, size, top; int nrun, taken, alias_reg; struct vrun { uint64_t lo, hi; } *run; vpte **pt; struct vlog_ent *log; _Atomic uint64_t nlog; struct vshadow *sh; size_t nsh, csh; };   // len: reserved; size: the pool's; top: highest mapped end so far (logged per 128 MB); alias_reg: counted in resource_vis (mtl_sparse_alias_delta)
++struct vpool { const pool_t *pool; uint8_t *base; uint64_t len, size, top; int nrun, taken, alias_reg; struct vrun { uint64_t lo, hi; } *run; vpte **pt; struct vlog_ent *log; _Atomic uint64_t nlog; struct vshadow *sh; size_t nsh, csh;   // len: reserved; size: the pool's; top: highest mapped end so far (logged per 128 MB); alias_reg: counted in resource_vis (mtl_sparse_alias_delta)
 +               struct { uint64_t lo, hi; } *phys; int nphys, cphys, phys_all; };   // phys: the storage of the physical pools it has mapped pages of, kept while it lives (nvn_sparse_shares); phys_all: more than VPHYS_MAX of them
 +enum { VPHYS_MAX = 256 };
  struct vlog_ent { uint64_t off, len; };   // a mapping request: the pool's change log (nvn_sparse_log_read), kept once a placement sparse texture asks for it
  enum { VLOG_N = 4096 };
  static struct vpool **g_vp; static int g_nvp, g_cvp;   // the pools with a range of their own, under g_vp_mu
-@@ -3501,7 +3503,7 @@ static void vpool_drop(pool_t *o) {   // caller holds g_vp_mu
+@@ -3589,7 +3591,7 @@ static void vpool_drop(pool_t *o) {   // caller holds g_vp_mu
      for (uint64_t l = 0; l < (v->size + (2u << 20) - 1) >> 21; l++) free(v->pt[l]);
      for (int i = 0; i < g_nvp; i++) if (g_vp[i] == v) { g_vp[i] = g_vp[--g_nvp]; break; }
-     for (int k = 0; k < v->nsh; k++) { atomic_fetch_sub(&g_sh_bytes, v->sh[k].size); vshadow_free(&v->sh[k]); }
+     for (size_t k = 0; k < v->nsh; k++) { atomic_fetch_sub(&g_sh_bytes, v->sh[k].size); vshadow_free(&v->sh[k]); }
 -    free(v->pt); free(v->log); free(v->run); free(v->sh); free(v); o->vp = NULL;
 +    free(v->pt); free(v->log); free(v->run); free(v->sh); free(v->phys); free(v); o->vp = NULL;
  }
  static void vunmap_run(int all); static int g_nvun;   // the deferred unmaps (below)
  // Pool finalize: the reservation goes (munmap) with its runs' buffers. The GPU finishes the work submitted so far first: the buffers' deferred release keeps them alive for that
-@@ -3845,6 +3847,15 @@ static int vpool_map(struct vpool *v, const map_req *r) {   // caller holds g_vp
+@@ -3935,6 +3937,15 @@ static int vpool_map(struct vpool *v, const map_req *r) {   // caller holds g_vp
      if (ph && (!ph->mem || r->poff < 0 || (uint64_t)r->poff + r->size > ph->size)) { LOG("[RED] virtual pool %p: physical pool %p (%#llx bytes, storage %p) cannot supply %#llx+%#llx", (const void *)v->pool, (const void *)ph, (unsigned long long)ph->size, (void *)ph->mem, (unsigned long long)r->poff, (unsigned long long)r->size); return 0; }
      vpt_set(v, (uint64_t)r->voff, r->size, ph ? ph->mem + r->poff : NULL);
      if (v->nsh) vshadow_cut(v, (uint64_t)r->voff, (uint64_t)r->voff + r->size);
@@ -144,7 +144,7 @@ index cee968b8609c2089febd931776d3b7cbfb63c09e..ecc0b386cb9842526229c8d0d09fcdc5
      vm_address_t to = (vm_address_t)(v->base + r->voff);
      // Not directly vm_remap-able (beyond reservation, or misaligned to host page): misaligned physical sources with host-page-aligned virtual ranges become per-run shadow copies; others stay in the page table only
      if ((uint64_t)r->voff + r->size > v->len || ((uintptr_t)to | r->size | (uint64_t)r->voff) & (pg - 1) || (ph && (((uintptr_t)ph->mem + (uintptr_t)r->poff) & (pg - 1)))) {
-@@ -4437,6 +4448,32 @@ int nvn_sparse_alias(uint64_t lo, uint64_t hi) {
+@@ -4527,6 +4538,32 @@ int nvn_sparse_alias(uint64_t lo, uint64_t hi) {
      }
      pthread_mutex_unlock(&g_vp_mu); return r;
  }
@@ -178,10 +178,10 @@ index cee968b8609c2089febd931776d3b7cbfb63c09e..ecc0b386cb9842526229c8d0d09fcdc5
  // whether its content may have changed since an upload (a mapping in its range newer than gen, or a physical page behind it written after the dirty-page stamp), and the write
  // protection of the physical pages behind it (taken before an upload, as for any packaged texture)
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03e5ce92b7 100644
+index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b472840610231142f6d 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -1534,14 +1534,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,
+@@ -1705,14 +1705,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,
  }
  
  // Address → pool: the last hit first, then a binary search over indices sorted by start address, and a full linear scan only when that fails (pools overlapping).
@@ -216,7 +216,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
  }
  static int big_new(big_pool *b, uintptr_t lo, uintptr_t hi, uintptr_t end, int reach) {   // caller holds g_mu: a new entry for [lo, end) of the pool, looked up for addresses in [lo, hi)
      id<MTLBuffer> buf = pool_buf(lo, end);
-@@ -2422,6 +2438,8 @@ static void drw_drained(void) { g_drain_sub = g_sub_serial; g_drain_other = g_wr
+@@ -2590,6 +2606,8 @@ static void drw_drained(void) { g_drain_sub = g_sub_serial; g_drain_other = g_wr
  static int drw_valid(void) { return g_drain_sub == g_sub_serial && !g_drw_over && g_wr_epoch - g_wr_geo == g_drain_other; }
  static int drw_hits(uint64_t lo, uint64_t n) { for (int i = 0; i < g_ndrw; i++) if (lo < g_drw_hi[i] && g_drw_lo[i] < lo + n) return 1; return 0; }
  int nvn_sparse_alias(uint64_t lo, uint64_t hi);   // hle_nvn.c: a sparse guest range may alias another pool at a different address
@@ -225,7 +225,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
  static id<MTL4ComputeCommandEncoder> blit_buf(uint64_t rlo, uint64_t rhi, uint64_t wlo, uint64_t whi) {
      g_wr_epoch++;
      g_blit_alias = 1;   // before blit_raw, so an encoder it opens starts with alias visibility
-@@ -4179,6 +4197,12 @@ static int up_lost_take(id tex) {   // This texture's upload was dropped: take i
+@@ -4460,6 +4478,12 @@ static int up_lost_take(id tex) {   // This texture's upload was dropped: take i
      if (!tex) return 0; os_unfair_lock_lock(&g_up_lost_lk); int hit = [g_up_lost containsObject:tex]; if (hit) { [g_up_lost removeObject:tex]; atomic_store(&g_up_lost_n, (int)g_up_lost.allObjects.count); atomic_fetch_add(&g_up_lost_redo, 1); } os_unfair_lock_unlock(&g_up_lost_lk); return hit;
  }
  static void up_diag(void);
@@ -238,7 +238,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
  static void up_flush(void) {
      up_owner_check("up_flush");
      if (!g_up_cb) return;
-@@ -4211,6 +4235,7 @@ static void up_flush(void) {
+@@ -4492,6 +4516,7 @@ static void up_flush(void) {
      NSArray *dsts = targets.allObjects;
      static int lost_at = -2; static uint64_t batch_n; if (lost_at == -2) { const char *e = getenv("DM_TEST_UP_LOST"); lost_at = e ? atoi(e) : -1; } int fake_lost = dsts.count && lost_at > 0 && (int)++batch_n == lost_at;
      MTL4CommitOptions *o = [MTL4CommitOptions new];
@@ -246,7 +246,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
      atomic_fetch_add(&g_up_pending, 1);
      [o addFeedbackHandler:^(id<MTL4CommitFeedback> f) {
          if (f.error) { MLOG("[RED] upload command buffer execution error: %s", f.error.description.UTF8String); res_top_once(f.error); gpu_lost_check(f.error, "upload"); }
-@@ -4236,6 +4261,7 @@ static void up_flush(void) {
+@@ -4517,6 +4542,7 @@ static void up_flush(void) {
          } else {
              up_complete(slot);
          }
@@ -254,7 +254,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
      }];
      res_commit();
      cb_end(cb, nil);
-@@ -4590,12 +4616,50 @@ static void rb_swap_rows(uint8_t *p, size_t wb, size_t rows, size_t nz, size_t r
+@@ -4872,12 +4898,50 @@ static void rb_swap_rows(uint8_t *p, size_t wb, size_t rows, size_t nz, size_t r
  // nil elsewhere (or if it is refused: the caller looks the address up as usual). The GPU only reads it, so it is made over the pages the upload has just protected, not through pool_buf,
  // which would make them writable again and the texture count as written at once
  static uint64_t g_up_src_made;   // source buffers made (t_upload_src)
@@ -305,7 +305,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
      uintptr_t pg = (uintptr_t)getpagesize(), a = (uintptr_t)addr & ~(pg - 1), b = ((uintptr_t)addr + len + pg - 1) & ~(pg - 1);
      // The staging budget does not count guest pages. End the batch only between textures so its completion can release those pages without invalidating a source already being assembled.
      size_t budget = up_src_budget();
-@@ -8179,12 +8243,27 @@ typedef struct { tex_t t; int ok; view_t v; int has_v; void *view; uint64_t view
+@@ -8966,13 +9030,28 @@ typedef struct { tex_t t; int ok; view_t v; int has_v; void *view, *view_fam; ui
                   void *palt[4], *palt_of[4]; uint64_t palt_rid[4];   // palt[k]: the view a texture pool table of layered type k (pool_lk) holds for the ID (pool_fit), apart from alt so slot binds and tables do not take turns
                   void *alt, *alt_of; uint64_t alt_rid; uint8_t alt_type;   // alt: compatible view used when the shader's declared type differs from view (tex_fit), alt_of = the view it was built from
                   void *im, *im_of; uint64_t im_rid;                       // im: the view an image slot reads in the shader's pixel class (img_fit), im_of = the view it was built from
@@ -316,6 +316,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
  enum { STAND_NO = 1, STAND_WAIT = 2 };   // treg_t.stand_no: no stand-in while the registration stands; none until a mapping over its pages notes it (treg_sparse_notes)
  static treg_t *g_treg; static int g_ntreg;
  static nvn_hmap g_treg_serial = {.klen = 8};   // serial → first registered descriptor index + 1, under g_rmu
+ static int treg_serial_held(uint64_t serial) { return nvn_hm_get(&g_treg_serial, &serial) != NULL; }   // a pool ID registers it; caller holds g_rmu
 +// The IDs registered with a texture of one memory pool, a list as by serial: a pool's Finalize marks them gone. It walked every registered ID for that, under g_rmu, which every
 +// draw takes for its textures: 0.75 to 1.2 ms a pool with Mario Kart World's 131,329 IDs, to mark an ID or none, so while the game finalized 50 pools in a row the replay moved
 +// one lock hand-over at a time, and that frame took 65 ms. An ID joins its pool's list behind the list's first one, so the table changes only when a list gets or loses its
@@ -334,7 +335,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
  // Texture ID views are valid for an epoch (view_ser), not for every serial table change: ser_sync takes the notes (own_note) and sends only the IDs registered with a noted serial
  // down the slow path; a change without a note starts a new epoch, which sends them all (what every g_ser_gen bump did before). A battle map in Fire Emblem: Fortune's Weave changes a
  // few serials a frame (the per-stage program ring in bind_stages among them), and each change made the next pool walk (pool_gpu) resolve all ~5,000 IDs again, 2 ms a frame.
-@@ -8261,14 +8340,22 @@ static void treg_drop_stand(treg_t *r) {
+@@ -9067,14 +9146,22 @@ static void treg_drop_stand(treg_t *r) {
      if (r->stand) { defer_obj_unref((__bridge id)r->stand); CFRelease(r->stand); r->stand = NULL; r->stand_rid = 0; g_stand_live--; }
      r->stand_no = 0;
  }
@@ -364,7 +365,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
  }
  static void treg_retire_serial(uint64_t ser) {
      // Finalize retires the API object, not the descriptor's copied metadata.
-@@ -8391,8 +8478,14 @@ static nvn_hmap g_vc = {.klen = 8};   // the Metal texture's address → vc_set
+@@ -9215,8 +9302,14 @@ static nvn_hmap g_vc = {.klen = 8};   // the Metal texture's address → vc_set
  static uint64_t g_vc_hit, g_vc_new;
  static inline uint64_t vc_addr(id<MTLTexture> t) { return (uint64_t)(uintptr_t)(__bridge void *)t; }
  static void vc_rows_drop(vc_set *s) { if (s->rows) { defer_obj_release((__bridge id)s->rows); CFRelease(s->rows); s->rows = NULL; s->rows_rid = s->rows_n = 0; } }
@@ -379,7 +380,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
      for (int i = 0; i < VC_WAYS; i++) if (s->view[i]) { defer_obj_unref((__bridge id)s->view[i]); CFRelease(s->view[i]); }
      vc_rows_drop(s);
      free(s);
-@@ -8408,7 +8501,7 @@ static vc_set *vc_set_for(id<MTLTexture> base, const void *pool) {   // base's e
+@@ -9232,7 +9325,7 @@ static vc_set *vc_set_for(id<MTLTexture> base, const void *pool) {   // base's e
      if (!held) return NULL;
      if (g_vc.n >= VC_MAX) nvn_hm_clear(&g_vc, vc_set_free);
      if (!(s = calloc(1, sizeof *s))) return NULL;
@@ -388,7 +389,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
      return s;
  }
  static void vc_put(id<MTLTexture> base, const void *pool, const vc_key *k, id<MTLTexture> v) {
-@@ -8446,6 +8539,7 @@ void mtl_vc_stats(unsigned *n, uint64_t *hit, uint64_t *made) { os_unfair_lock_l
+@@ -9270,6 +9363,7 @@ void mtl_vc_stats(unsigned *n, uint64_t *hit, uint64_t *made) { os_unfair_lock_l
  static void tb2_gone_clear(void);
  static void vc_drop_pool(const void *pool) {   // caller holds g_rmu
      tb2_gone_clear();
@@ -396,7 +397,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
      for (uint32_t i = 0; i < g_vc.cap;) {   // a deletion shifts later entries back into slot i: look at it again
          vc_set *s = g_vc.vals[i];
          if (s && s->pool == pool) { uint64_t a; memcpy(&a, g_vc.keys + (size_t)i * 8, 8); nvn_hm_del(&g_vc, &a); vc_set_free(s); }
-@@ -8566,9 +8660,10 @@ static void treg_gone(treg_t *r) {
+@@ -9406,9 +9500,10 @@ static void treg_gone(treg_t *r) {
      treg_drop_stand(r);
  }
  static void treg_drop_pool_views(const void *pool) {
@@ -408,7 +409,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
      os_unfair_lock_unlock(&g_rmu);
  }
  // Which texture IDs shaders read through a pool (dmsh_reflect.py pool_arrays): a bitmap the shaders set, one bit an ID, which the host folds into g_seen_done at each submission. A handle read from game
-@@ -8670,6 +8765,11 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
+@@ -9510,6 +9605,11 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
              if (rr->next) g_treg[rr->next - 1].prev = id_ + 1;
              nvn_hm_put(&g_treg_serial, &t->serial, (void *)(uintptr_t)(id_ + 1));
          }
@@ -420,7 +421,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
      }
      // The scan can remove a gone ID before an identical registration revives it.
      if ((!same || was_gone) && t && !rr->sp && t->pool && nvn_sparse_pool(t->pool)) {
-@@ -15957,7 +16057,7 @@ static int tex_storage_overlap(const tex_t *a, const tex_t *b) {
+@@ -17131,7 +17231,7 @@ static int tex_storage_overlap(const tex_t *a, const tex_t *b) {
      if (!a->mem || !b->mem) return 0;
      uint64_t x = (uint64_t)a->mem, y = (uint64_t)b->mem;
      if (!a->L.size || !b->L.size || a->L.size > UINT64_MAX - x || b->L.size > UINT64_MAX - y) return 1;
@@ -429,7 +430,7 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
  }
  static int g_samples_fb_left;   // draw_samples_rt: a fragment texture that is a colour attachment does not count: fb_prepare answers for it, as for any draw of a pass
  static const char *g_dsr_why;   // what draw_samples_rt found (the pass dump's split line)
-@@ -19654,7 +19754,7 @@ int mtl_fps_target(void) { static int env = -2; if (env == -2) { const char *e =
+@@ -21009,7 +21109,7 @@ int mtl_fps_target(void) { static int env = -2; if (env == -2) { const char *e =
  // Cut only when no encoder is open and no pass is deferred / merged / hoisted; commit this batch's uploads first (later draws use them). The fence signal and completion work stay on the last segment only: the queue executes in commit order and every encoder starts with a queue barrier
  // A buffer → texture copy is cut after as well, at the next pass boundary whatever the draw count (g_cut_copy, set by copy_b2t). It can run while the host encodes the rest.
  // The cut starts the already encoded work promptly. Record-time staging handles a source recycled by the CPU before encoding even reaches the copy (hle_nvn.c).
@@ -439,10 +440,10 @@ index e059527c3758edcbb025ae224d7cfba87d275afe..a25e8da226f7074a1828635606f85b03
  // The count starts with the submission (mtl_sub_begin). It used to start at the submission's first sub_cut, which only a render target change reaches (OP_SET_RT): the draws a
  // submission makes into the target it inherited, before its first target change, were never counted, and the first segment came that many draws late
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 1c58141ef98019608b5884712f30288cd6b4ed71..59bf7bd5a6015af002b139d992ef530cd4f91f15 100644
+index 9c9d75ced292333c77cd118a87042f91706382a0..6d777598b10c90a767351d5d71b4b98588f22cbf 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
-@@ -309,6 +309,8 @@ t_file_wire: t_file_wire.m $(MTL_T_DEP)
+@@ -313,6 +313,8 @@ t_file_wire: t_file_wire.m $(MTL_T_DEP)
  	clang $(CFLAGS) -fobjc-arc -o $@ t_file_wire.m $(MTL_T_SRC) $(FW)
  t_gpu_only_addr: t_gpu_only_addr.m $(MTL_T_DEP)
  	clang $(CFLAGS) -fobjc-arc -o $@ t_gpu_only_addr.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
@@ -452,7 +453,7 @@ index 1c58141ef98019608b5884712f30288cd6b4ed71..59bf7bd5a6015af002b139d992ef530c
  	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_chunks.m $(MTL_T_SRC) $(FW)
  t_pool_retire: t_pool_retire.m $(MTL_T_DEP)
 diff --git a/dm/gfx/tests/t_copy_alias.m b/dm/gfx/tests/t_copy_alias.m
-index 24254f2b06f7086e0500cd1a2e66af303e5103a3..cd2899e039562c48601ff56dc1abd5387c2d8fd5 100644
+index 595d4956d082425206d4cd78f7de03a4ca6e3d35..c98b505cf596c2f9c5b53f9043c51dbba845f8d5 100644
 --- a/dm/gfx/tests/t_copy_alias.m
 +++ b/dm/gfx/tests/t_copy_alias.m
 @@ -40,6 +40,42 @@ static void separate_buffers(void) {
@@ -706,10 +707,10 @@ index 4921241e119101a24a369a110f026a8450077320..e4de3b31ba41306edcd9d90e8b5ec0f6
      CHECK("GPU deswizzle is available", g_nvn_deswz_gpu);
      uint8_t *mem = mmap(NULL, POOL_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 diff --git a/dm/tools/docs_patches.py b/dm/tools/docs_patches.py
-index 6401bcffccff5d08ea5078131814ff509d578c98..7a8e52502c1f9d1ab7618801124e671493a8f8a2 100644
+index 7db28e9e00141e7620700099c599cd2bf4216903..48d4c5fa1cc0d96dcdb5a3fff5ffd2f5df5b2b2f 100644
 --- a/dm/tools/docs_patches.py
 +++ b/dm/tools/docs_patches.py
-@@ -115,6 +115,10 @@ SWITCH_BINDING = [
+@@ -113,6 +113,10 @@ SWITCH_BINDING = [
       'why': 'the replay could find such draws itself, at the cost of a pass split each'}),
      ('enc_thread', '', {'what': 'Metal encoding on its own thread on the Mac', 'now': 'game', 'goal': 'host', 'purpose': 'frame rate',
       'why': f'what iOS does for every game: {DEFAULT_SOON}'}),
@@ -721,10 +722,10 @@ index 6401bcffccff5d08ea5078131814ff509d578c98..7a8e52502c1f9d1ab7618801124e6714
      ('pso_mtl4', '', {'what': 'MTL4Compiler pipelines on iOS', 'now': 'game', 'goal': 'host', 'purpose': 'rendering', 'why': f'a setting the game was tested with on an iPhone: {DEFAULT_SOON}'}),
      ('screen_aspect', '', {'what': 'a picture of a taller screen\'s own shape (DM_SCREEN_ASPECT)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1b3ad8c22 100644
+index c7c3fdf65091a01f0e54432fb0e0d77bd0f783f2..ef41754e5962dc5ef547a1fc3252098f3f4b20a4 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -27,6 +27,7 @@ DM_CHEATS	path	Folder of Atmosphère cheat files: `<folder>/<build ID>.txt` or a
+@@ -28,6 +28,7 @@ DM_CHEATS	path	Folder of Atmosphère cheat files: `<folder>/<build ID>.txt` or a
  DM_CHEATS_ANY_BUILD	switch	`1` loads a cheat file written for another build of the game when it is the only one (its addresses may not fit: for `cheat_anchor.py` checks)
  DM_CHEATS_DEBUG	diagnostic	Logs every memory write a cheat makes and the cheat file context the menu's "another version" rows come from
  DM_CHEATS_ON	switch	Comma-separated cheat names turned on at launch, besides the saved per-build enabled states
@@ -732,7 +733,7 @@ index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1
  DM_CHEATS_WINDOW	switch	`1` opens the Mac Cheats panel beside the game from the start
  DM_CONTROL_NACP	path	The game's control data, `control.nacp` (default: `control.nacp` beside the RomFS, as in the NSP script's extraction folder and the Mac app's Resources); the iOS app sets it to its `dm/control.nacp`. The host answers `fs::GetCacheStorageMax` from it
  DM_COPY_GAME_RESOURCES	switch	`NO` skips the Xcode build phase that copies the game's resources into the app (`stage_resources.sh`, on by default); `build_ipa.sh` sets it for its unsigned build, which packs them itself
-@@ -41,8 +42,8 @@ DM_DBG_AU_FRAMES	diagnostic	`=<frames>` asks the Mac's Core Audio output for tha
+@@ -42,8 +43,8 @@ DM_DBG_AU_FRAMES	diagnostic	`=<frames>` asks the Mac's Core Audio output for tha
  DM_DETCLOCK	switch	`=<step ns>`: from the first present on, the guest clock advances a fixed step per present, and the random source uses a fixed seed (replay and test runs). Relative thread sleeps and synchronization timeouts use host time
  DM_DETCLOCK_PACE	switch	`=1` with `DM_DETCLOCK`: each frame takes at least one clock step of wall time, so background loading keeps up with the fixed clock (used by the screenshot gate)
  DM_DISPLAY_NAME	switch	Overrides the iOS app's name in `build_ipa.sh` (default the game name in the base NSP's control data)
@@ -742,7 +743,7 @@ index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1
  DM_EMBED_TAG	path	Set by the iOS app of a game of several programs: the tag of the running program's embedded sections (`p<N>`, `gen_embed.py --tag`)
  DM_ENTITLEMENTS	path	`=<plist>` gives a prepared Xcode project another entitlements file instead of the Increased Memory Limit one, and the ad-hoc signature of the unsigned IPA's executable carries them; relative paths start at the caller's directory; empty means no entitlements
  DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into the app as `dm/env.txt`, applied at boot; `Documents/env.txt` overrides them
-@@ -70,6 +71,7 @@ DM_FULLSCREEN	player	`1` (any value but `0`) starts the Mac window in fullscreen
+@@ -71,12 +72,13 @@ DM_FULLSCREEN	player	`1` (any value but `0`) starts the Mac window in fullscreen
  DM_FULLSCREEN_MENU_BAR	switch	`1` keeps macOS's behaviour in full screen on the Mac: the menu bar and title bar come back when the pointer is at the top of the screen; by default NXForge hides them and the Dock
  DM_FX_DIRECT	switch	With `DM_PRESENT_UPSCALE=metalfx`, `0` keeps the present pass after MetalFX's spatial scaler; by default the scaler writes the drawable itself when the picture fills it unflipped and the drawable takes the scaler's output (iOS)
  DM_FX_INPLACE	switch	With `DM_PRESENT_UPSCALE=metalfx`, `0` keeps the copy into MetalFX's input; by default the scaler reads the presented texture itself when the picture is all of it
@@ -750,7 +751,14 @@ index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1
  DM_GAME	switch	Selects the game profile (a title ID under `dm/games` or `DM_GAMES_DIR`) for the Python tools and the rewriter; there is no default
  DM_GAMES_DIR	path	Profile folders outside the repository, separated by `:`, searched after `dm/games`; the NSP script points it at a provisional or derived profile
  DM_GAMES_FIRST	switch	`=1` searches `DM_GAMES_DIR` before `dm/games`, so a provisional or derived profile wins over the game's own (the NSP script's `--provisional`)
-@@ -100,10 +102,10 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
+ DM_GAME_ENV	switch	`KEY=VALUE` pairs, separated by spaces, that the game's own `getenv` returns, in place of the profile's `game_env` (`hle_os.c`); any other name goes to the SDK's empty environment
+-DM_GAME_MENU_TEXT	switch	Localized labels for the iOS in-game gear menu, one per line ([Starting a game](frontends.md#starting-a-game)). An empty or missing line keeps the English label
+ DM_GAME_FOLDER	diagnostic	`=<folder>` (set by the Mac launcher): the game folder, where screenshots and recordings go and the save sits in `Saves/save`; `0` in an `env.txt` keeps the save in Application Support and the captures in Pictures and Movies
++DM_GAME_MENU_TEXT	switch	Localized labels for the iOS in-game gear menu, one per line ([Starting a game](frontends.md#starting-a-game)). An empty or missing line keeps the English label
+ DM_GFX_FIXTURE_OUT	test	`=<dir>`: graphics tests write their raw result textures and buffers there
+ DM_GFX_SCALE	diagnostic	The graphics scale tier `oe::GetCurrentGraphicsScale` answers: `0` (default, both modes), or `1` or `2`, the reduced tiers at which a Switch 2 game renders smaller
+ DM_GIP_LOG	diagnostic	`1` logs each packet other than an input report that an Xbox One pad read over USB sends (`pad_gip_mac.h`), its command and length; Mac only
+@@ -102,10 +104,10 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
  DM_GUEST_FILE_PUNCH	switch	`0` keeps the disk blocks of guest memory the game gives back (with `DM_GUEST_FILE=1`); by default they are punched out (`F_PUNCHHOLE`, which also drops the pages): the heap's at once, the alias region's by a sweep every 10 s once they have stayed given back over a whole interval
  DM_GUEST_FILE_SCAN	diagnostic	`=1` (with `DM_GUEST_FILE=1`): every 30 s a `[mem] guest file scan` line, the dirty guest pages by region (heap, alias, stack, other) and how many of them read all 0
  DM_GUEST_SPAWN_TEST	diagnostic	`=1` runs a self-test before `nnMain`: a host-started guest thread does SDK malloc / free and locks an `nn::os` mutex, and the result is logged; `=2` also keeps a resident thread
@@ -762,7 +770,7 @@ index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1
  DM_HID_LOG	diagnostic	`1` logs the HID button usage number of each button pressed on a raw HID gamepad (`pad_hid_mac.h`), to write a `DM_HID_MAP`
  DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, the Taiko Drum's own numbering on USB `0f0d:00f0`, `pad_hid.h`); Mac only
  DM_HID_PADS	switch	`0` stops reading raw HID gamepads that GameController does not list, such as an 8BitDo in its own mode (`pad_hid_mac.h`); Mac only
-@@ -190,7 +192,7 @@ DM_NVN_COUNT	diagnostic	`1` counts every NVN call (the counting trampolines) and
+@@ -195,7 +197,7 @@ DM_NVN_COUNT	diagnostic	`1` counts every NVN call (the counting trampolines) and
  DM_NVN_CPUPROF	diagnostic	1 records CPU wall/time/instruction totals by renderer operation; off by default.
  DM_NVN_CSH_PRESCAN	diagnostic	`0` runs the compute-hoist scan at every pass's first draw even when no dispatch follows (as before; for timing)
  DM_NVN_CS_HOIST	switch	`0` makes a compute dispatch between the draws of a pass end it (on by default: the dispatch runs ahead of the pass when that changes nothing the draws before it read)
@@ -771,7 +779,7 @@ index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1
  DM_NVN_CUT_BUSY	switch	`=0` / `=1` / `=<N>`: `0`, a segment boundary commits whatever the GPU is doing; `1` (the default), commits only when earlier work on the queue has finished (read from the queue's shared event `g_rx_ev`, or held on the encode thread with `DM_NVN_ENC_THREAD=1`); `<N>` (`>= 2`), commits while fewer than `N` commits are in flight on the queue
  DM_NVN_DEPTHOVR	diagnostic	`=<fragment shader key prefix>,…`: those draws compare depth with `ALWAYS`; with `DM_NVN_HILITE`, tells "the depth test rejects every fragment" from "nothing rasterizes"
  DM_NVN_DEPTH_BOUNDS	diagnostic	`0` ignores NVN and Vulkan depth bounds on Apple10+ GPUs (`setDepthTestMinBound:maxBound:`); `ab` alternates with `DM_AB` (on by default on Apple10+ GPUs, inactive on older GPUs)
-@@ -322,6 +324,7 @@ DM_NVN_UNWRITTEN_DC	switch	`0` disables optional stores elided for loaded, uncha
+@@ -327,6 +329,7 @@ DM_NVN_UNWRITTEN_DC	switch	`0` disables optional stores elided for loaded, uncha
  DM_NVN_UPLOAD_IDLE_MS	switch	A positive interval in milliseconds enables idle trimming of completed upload staging. Defaults to `0` on all platforms. An explicit `0` keeps the slots and logs their sizes and allocation counts for comparison.
  DM_NVN_UPLOAD_REUSE	switch	0 keeps the original one-block upload-slot policy; default retains bounded demand-sized primary and overflow buffers after completion.
  DM_NVN_UPLOAD_SRC_MB	switch	positive MiB budget for an upload batch's zero-copy source buffers over guest memory; default `0` disables it. Flushes between textures; one oversized texture or a sparse gather can exceed the budget.
@@ -779,7 +787,7 @@ index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1
  DM_NVN_VBUF_CACHE	switch	`0` turns off the cache of resolved vertex stream addresses and vertex argument table writes across draws (on by default), for A/B runs
  DM_NVN_VCONV_CHECK	diagnostic	`=1` scans the indices again at every reuse of a cached vertex conversion range (`vconv_range`) and reports differences
  DM_NVN_VCONV_CPU	switch	`=1` converts on the CPU every vertex attribute Metal's fetch cannot read, as before, instead of through the shader's shadow inputs (`<key>_bv`) or its pulling entry (`<key>_bp`)
-@@ -393,6 +396,7 @@ DM_PROGRAM_ID	switch	`=<hex>`: the program ID the host reports from `svcGetInfo(
+@@ -398,6 +401,7 @@ DM_PROGRAM_ID	switch	`=<hex>`: the program ID the host reports from `svcGetInfo(
  DM_PRO_STICKS	switch	On the Mac, `0` disables the automatic per-stick passive HID fallback for a single Switch Pro-compatible controller whose GameController stick stays zero while report `0x30` moves (`motion_pro_mac.h`, `pad_pro.h`); enabled by default, independent of `DM_MOTION` / `DM_MOTION_HID`
  DM_PSO_ARCHIVE	path	The folder of the per-game Metal 4 pipeline archive of pipeline bases (default `pso_archive/` beside `pso_user.tsv`); `off` keeps no archive
  DM_PSO_ARCH_WARM_FLUSH_MS	switch	`=<ms>`: during a prewarm the game plays through (no prepare step) that is not compacting, the timer's flush hands the archive's period over once it is that old, then twice as long each time up to 16 times (default 60000; `0`: no flush until the prewarm ends or the period is full)
@@ -787,11 +795,11 @@ index f3246d64a3d14ba26809e6b6e81da20227e3bef5..dfff02730495fb811fd46079fb1fa4e1
  DM_PSO_BUNDLE	path	The pipeline archive made offline (`<GPU architecture>.mtl4a`, `prebuilt.tsv`), read only; the iOS app and Mac launcher set it to their `pso/` folder; `off` ignores it
  DM_PSO_DEMAND_RECORD	switch	`0`: a pipeline a hybrid draw stands in for goes into `pso_user.tsv` only once built, not when first asked for (default: at once, so the next start's prepare step builds it)
  DM_PSO_GPUS	switch	`build_ipa.sh`: the GPU architectures, comma-separated, to build the offline pipeline archive for (`none` builds none); unset, a profile with `pso_mtl4 on` gets its `pso_gpu` list or `g18p` when absent; profiles with `pso_mtl4 off` get none
-@@ -411,6 +415,7 @@ DM_PSO_PREPARE	switch	`0` runs the prewarm in the background while the game star
+@@ -416,6 +420,7 @@ DM_PSO_PREPARE	switch	`0` runs the prewarm in the background while the game star
  DM_PSO_PREPARE_THREADS	switch	`=<n>`: the workers of the prepare step that builds the prewarm lists before the first frame (default: the device's active cores)
  DM_PSO_PULL_ALL	diagnostic	`=1`: every draw that has a pulling pipeline draws with it, never with the pipeline for its vertex layout
  DM_PSO_RECORD	path	`=<file>`: appends the shaders and pipelines used in the run to that file, for re-recording the prewarm manifest
 +DM_PSO_SCRATCH	path	A folder for metal-tt's temporary files and library copies when the work folder's volume is slow (NXForge; `pso_offline.py --scratch`, set by the build on a slow game drive)
  DM_PSO_USER	path	The per-device list of shaders and pipelines built on the spot (default: `pso_user.tsv` in the parent of `DM_SAVE`)
  DM_PSO_WAITLOG	diagnostic	`=1` logs each draw that waited more than 20 ms for its pipeline, with its shader pair and why no stand-in served it
- DM_QOS_EDGES	switch	`=e1,e2`: the Switch priority edges of `DM_QOS_MAP` (default `44,59`)
+ DM_PYTHON	path	`=<python executable>`: Python executable for `build_ipa.sh` and `dm/host/Makefile` (the NSP script sets it to its own Python; defaults to `python3` on `PATH`; `FONT_PY` still overrides it for `make_shared_fonts.py`)

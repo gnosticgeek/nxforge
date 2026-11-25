@@ -20,21 +20,21 @@ Performance for NVN games.
  5 files changed, 28 insertions(+), 4 deletions(-)
 
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 1f01f3a498ab9dc3be8e7f7ff62d15a83fb330a7..f7580c4b93ef2df31f8d3a5aac0c2fb6d9371850 100644
+index 304015c777528ef9fa26b470320fce74bd6ade2d..748c7d9200d945819fc439e5e9d17556a532cb48 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -48,4 +48,5 @@ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines
+@@ -49,4 +49,5 @@ DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
  DM_NVN_ENC_THREAD	toggle	-	1|DM_GAME_ENC_THREAD	gfxapi:nvn	Performance	Encode thread
  DM_FPS_HOLD	toggle	on/off	DM_GAME_FPS_HOLD	DM_GAME_FPS_TARGET!=0	Performance	Hold frames when late
 +DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
  DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 8a84e0f42cd593cd3aa8f9e5fef23f83d7e7e960..b8718cc800b323e76b3268c1d3c890230508df38 100644
+index 0d5a3595f18d6d67372ba68d9f5a996685625882..29fc531322befd0a9bf9c2f9180f9b154396d652 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -783,6 +783,23 @@ static void res_check(id r, const char *what, int reg) {
-         MLOG("[RED] missing residency #%d: %s slot %d %s %p (parent chain %d deep) allocated %lu B storage mode %lu%s", nbad, what, reg, is_tex ? "texture" : "buffer", (__bridge void *)a, hops, (unsigned long)a.allocatedSize, (unsigned long)a.storageMode,
+@@ -874,6 +874,23 @@ static void res_check(id r, const char *what, int reg) {
+         MLOG("[RED] missing residency #%d: %s slot %d %s %p (parent chain %d deep) allocated %lu B storage mode %lu%s", g_res_missing, what, reg, is_tex ? "texture" : "buffer", (__bridge void *)a, hops, (unsigned long)a.allocatedSize, (unsigned long)a.storageMode,
               t ? [NSString stringWithFormat:@" format %lu %lux%lu type %lu usage %#lx", (unsigned long)t.pixelFormat, (unsigned long)t.width, (unsigned long)t.height, (unsigned long)t.textureType, (unsigned long)t.usage].UTF8String : ""); }
  }
 +// NXForge: the memory the host's rules plan for (the Memory setting; from Fasen24-AI/swordboiMacNative 790245d6 and d343de61, by EmmanueleC, MIT): Metal's working set for this
@@ -57,7 +57,7 @@ index 8a84e0f42cd593cd3aa8f9e5fef23f83d7e7e960..b8718cc800b323e76b3268c1d3c89023
  // GPU memory guard. GPU memory is wired, and the driver refuses to wire past Metal's working set (recommendedMaxWorkingSetSize: IOGPUScheduler freeToWireMemory fails there). The submit thread
  // then waits in the kernel, where nothing can kill the process: GitHub issue #1326 ended with a Mac frozen until the power button, PR #1319's 8 GB Mac with WindowServer's watchdog. So every commit
  // of the residency set looks first, at the larger of what the commit would leave (the set's allocatedSize, which counts only what was committed, and what was added since) and the device's
-@@ -1134,7 +1151,7 @@ static void guard_init(void) {
+@@ -1262,7 +1279,7 @@ static void guard_init(void) {
      { const char *d = getenv("DM_NVN_GUARD_DEVICE"); g_guard_dev = d && atoi(d); }
      const char *e = getenv("DM_NVN_RES_LIMIT_MB"); uint64_t ws = g_dev.recommendedMaxWorkingSetSize, lim = e ? strtoull(e, NULL, 0) << 20 : 0;
      if (!g_res) return;
@@ -66,7 +66,7 @@ index 8a84e0f42cd593cd3aa8f9e5fef23f83d7e7e960..b8718cc800b323e76b3268c1d3c89023
  #if TARGET_OS_IPHONE
          if (!lim) g_guard.stop = g_guard.wall = UINT64_MAX;
  #endif
-@@ -8589,7 +8606,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
+@@ -9429,7 +9446,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
  enum { SEEN_REARM = 60, SEEN_CAP_DIV = 4 };
  static uint32_t g_seen_at[POOL_SEEN_WORDS * 32]; static uint64_t g_seen_rearm, g_seen_kept, g_seen_dropped;
  static int seen_keep(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_SEEN_KEEP"); v = e ? MAX(atoi(e), 0) : 600; } return v; }
@@ -75,7 +75,7 @@ index 8a84e0f42cd593cd3aa8f9e5fef23f83d7e7e960..b8718cc800b323e76b3268c1d3c89023
  static int pool_seen_stale(int id_) {   // caller holds g_rmu
      if (!seen_keep() || g_seen_kb_all <= seen_cap_kb() || id_ < 0 || id_ >= (int)(POOL_SEEN_WORDS * 32) || !pool_seen(id_)) return 0;
      return (uint32_t)atomic_load(&g_cur_frame) - g_seen_at[id_] > (uint32_t)seen_keep();
-@@ -13528,7 +13545,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
+@@ -14657,7 +14674,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
  static uint64_t g_walk_frame = ~0ull, g_walk_spent, g_walk_sub = ~0ull; static double g_walk_ms; static int g_walk_over;
  static uint64_t pool_tex_size(const tex_t *t) { return t->L.size ? t->L.size : 1; }
  static int pool_size_cmp(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }
@@ -85,7 +85,7 @@ index 8a84e0f42cd593cd3aa8f9e5fef23f83d7e7e960..b8718cc800b323e76b3268c1d3c89023
  // A render target no pass has written holds nothing to read, and a pass makes its texture when it renders. Made for a read, one that only registers next frame's target took three times the
  // textures and 17 GB allocated on Ocarina of Time: the game re-registers its IDs with transient targets, whose IDs a shader read as the previous texture
 diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
-index f99969036eec3ce0d7e7b09b02402883d4018f5e..72b2ec758d598e7bc31c85422ffe9ecfcaeb40ce 100644
+index 1d6d304d270e9d3a74e91d356c27bdc0a612f1e4..33ba378545be16bb8b40a48a0f1c24233381226e 100644
 --- a/dm/tools/tests/test_launcher_settings.py
 +++ b/dm/tools/tests/test_launcher_settings.py
 @@ -15,7 +15,7 @@ settings = importlib.util.module_from_spec(spec)
@@ -98,22 +98,22 @@ index f99969036eec3ce0d7e7b09b02402883d4018f5e..72b2ec758d598e7bc31c85422ffe9ecf
  
  def build(gid, api, platform=None):
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index c7134b46dec631962345110903b2659899510ca0..23f858a01cff3eea7995fe6c6b4dc08413468021 100644
+index 4c0675e307ba3eddf561fe1c9a8ba9dddbaed0a5..8f3ffeabd1a05c9084437e727f397924a53556cd 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -134,6 +134,7 @@ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz M
+@@ -136,6 +136,7 @@ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz M
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
  DM_LONGFRAME	diagnostic	`0` turns off the long-frame log (on by default), a line for a frame over 20 ms or with GPU time over 16.7 ms that is clearly above recent frames
  DM_MEASURE_LOCK	path	`=<file>`: `scripts/regress.py`'s default `--lock`, the measuring lock `scripts/bench.py --lock` shares: held only while a game runs, and the harness's shader builds pause while another process holds it
 +DM_MEMORY_GB	player	`auto` (default) or a number of GB: the device memory the host's rules plan for (the launcher's Memory): where the memory guard begins to let go, how many textures are made ahead
  DM_MEMSTAT	diagnostic	`=<tsv>` writes one line per second of memory accounting: footprint, Metal allocation and resident and charged memory by region class (guest, code, malloc, gpu, …); on iOS a relative path is under `Documents`, and `Documents/env.txt` can set it
  DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second writes every VM region of 1 MiB or more to `<tsv>.regions`
- DM_MEM_CAP_GB	switch	`=<GB>`: the memory watchdog exits when resident memory exceeds that many GB (default 24 on the Mac, none on iOS; `0` turns it off)
+ DM_MEMSTAT_WALK	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, walks VM regions for the class breakdown every N seconds (default 1; walking every second costs about 9 M cycles a frame on another core in OoT), while the totals stay per second and intermediate lines repeat the last walk's class columns
 diff --git a/docs/settings.md b/docs/settings.md
-index 42c652aa6543a4da88800fb70bae239c9c79caff..dad3368017013b1ce1d31d5c21c8ab1bfa6a5608 100644
+index 57b3756ead839759dd198fbd1f74099abe7d9642..eac494909c944534f5dda67691b27995aad1971c 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -225,6 +225,10 @@ flowchart LR
+@@ -229,6 +229,10 @@ flowchart LR
  - **Off:** the game keeps aiming at 60; a late frame is shown one refresh later and the next one goes on as usual, so heavy scenes look less even but stay closer to 60 on average.
  - **When to change it:** turn it off if the game often falls to 30 fps although it is only slightly late.
  
@@ -124,7 +124,7 @@ index 42c652aa6543a4da88800fb70bae239c9c79caff..dad3368017013b1ce1d31d5c21c8ab1b
  ### Performance HUD
  
  Apple's performance overlay shows frame rate, frame and GPU times, and memory. It helps compare settings. Leave it off for play. On iPhone and iPad, switch it on, press **Play** to save the choice, then quit and reopen the app. The saved choice enables the HUD at launch. Switching it off before **Play** hides it for that session and saves the off choice.
-@@ -345,6 +349,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+@@ -350,6 +354,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
  | Pipeline prebuild | `DM_PSO_PREBUILD` | `1`, `0` |
  | Encode thread | `DM_NVN_ENC_THREAD` | `1`, `0` |
  | Hold frames when late | `DM_FPS_HOLD` | `on`, `off` |

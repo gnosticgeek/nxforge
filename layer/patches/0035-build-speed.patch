@@ -11,7 +11,7 @@ Subject: build-speed: --cleanup shaders keeps the shader work for the next
  2 files changed, 74 insertions(+), 23 deletions(-)
 
 diff --git a/dm/gfx/tools/pso_offline.py b/dm/gfx/tools/pso_offline.py
-index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6616c5c60 100644
+index 6f674eafd7f7fedae1d3bc8e80b74eabd6c96af3..b8e1d11421551778d501e5a59f6d49641ae3d42c 100644
 --- a/dm/gfx/tools/pso_offline.py
 +++ b/dm/gfx/tools/pso_offline.py
 @@ -45,7 +45,7 @@
@@ -23,7 +23,7 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
  from pathlib import Path
  
  sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
-@@ -346,6 +346,16 @@ def space_needed(bases):   # what metal-tt is let start with, an estimate: its t
+@@ -361,6 +361,16 @@ def space_needed(bases):   # what metal-tt is let start with, an estimate: its t
      return max(2 << 30, bases * (96 << 10))
  
  
@@ -40,7 +40,7 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
  def clear_temporaries(work):   # what a failed or killed metal-tt leaves in its TMPDIR (the work folder): translate-*, *.airp, multiple-functions-input-*.metallib
      for f in [*work.glob('translate-*'), *work.glob('*.airp'), *work.glob('multiple-functions-input-*.metallib')]:
          shutil.rmtree(f) if f.is_dir() else f.unlink(missing_ok=True)
-@@ -388,16 +398,17 @@ def os_min_default(platform):
+@@ -403,16 +413,17 @@ def os_min_default(platform):
  def compile_archive(js, part, work, arch, platform, osmin, count):
      """One compiler invocation, with its temporaries on the work volume. Never publish a failed output."""
      part.unlink(missing_ok=True)
@@ -63,7 +63,7 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
          text = f'[RED] pso_offline: metal-tt failed for {arch} (exit {r.returncode})'
          if free < 1 << 30: sys.exit(f'{text} ({free / 2**30:.1f} GB free on the volume of {work} when it failed: likely out of disk space): {log_path.read_text()[-2000:]}')
          raise CompileFailed(f'{text}: {log_path.read_text()[-2000:]}')   # with room on the volume: the caller looks for the pipelines it stops on (compile_isolating)
-@@ -490,7 +501,7 @@ def real_libraries(lib_dir, bases, work, computes=()):
+@@ -505,7 +516,7 @@ def real_libraries(lib_dir, bases, work, computes=()):
      cuts = cut_entries(lib_dir, bases, computes)
      folder = os.path.isdir(lib_dir)
      if folder and not cuts: return lib_dir
@@ -72,7 +72,7 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
      for name in sorted({lib for vl, _, fl, _ in bases for lib in (vl, fl)} | {lib for lib, _ in computes}):
          if folder: (real / f'{name}.metallib').symlink_to(Path(lib_dir).resolve() / f'{name}.metallib'); continue
          with romfs.open(os.path.join(lib_dir, f'{name}.metallib'), 'rb') as f, open(real / f'{name}.metallib', 'wb') as o: shutil.copyfileobj(f, o)
-@@ -499,7 +510,7 @@ def real_libraries(lib_dir, bases, work, computes=()):
+@@ -514,7 +525,7 @@ def real_libraries(lib_dir, bases, work, computes=()):
      return real
  
  
@@ -81,7 +81,7 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
  
  
  def compile_batch(lib_dir, bases, work, arch, platform, osmin, toolchain, computes=()):
-@@ -561,7 +572,7 @@ def groups_of(bases, computes, batch_size, compute_size=COMPUTE_BATCH):
+@@ -576,7 +587,7 @@ def groups_of(bases, computes, batch_size, compute_size=COMPUTE_BATCH):
      return groups
  
  
@@ -90,7 +90,7 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
      """Limit compiler input size, then combine every completed group into the usual single archive.
  
      This bounds input count, not memory: a single pipeline can still exceed Apple's compiler resources.
-@@ -596,9 +607,16 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
+@@ -611,9 +622,16 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
          print(f'pso_offline: {arch}: batch {index}/{total}: ready ({"reused" if reused else "compiled"})', flush=True)
          fb, fc = read_failed(work / f'batches.{arch}' / name, arch); failed[0].extend(fb); failed[1].extend(fc)
          return piece
@@ -110,7 +110,7 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
      # the newest batches first: a base a later batch compiled again comes before the dead entry of its old library
      pieces = [root / f'{i:05d}' / f'{arch}.mtl4a' for i in sorted(map(int, state['batches']), reverse=True)]
      with concurrent.futures.ThreadPoolExecutor(max(1, jobs)) as pool:   # a failed group stops the build once the others under way have finished (their pieces stay cached)
-@@ -913,10 +931,13 @@ def main(argv=None):
+@@ -928,10 +946,13 @@ def main(argv=None):
      ap.add_argument('--manifest', action='append', help='pso_manifest.tsv: its C rows first (default: the profile\'s)')
      ap.add_argument('--no-compute', action='store_true', help='no compute pipelines, the bases alone')
      ap.add_argument('--jobs', type=int, default=JOBS, help=f'metal-tt runs at a time for the compute pipelines (default {JOBS}, half the logical CPUs)')
@@ -124,7 +124,7 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
      if a.batch_size < 0: ap.error('--batch-size must be zero or positive')
      if a.game:
          sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'games')); import game
-@@ -978,7 +999,7 @@ def main(argv=None):
+@@ -994,7 +1015,7 @@ def main(argv=None):
          part = work / f'{arch}.mtl4a.partial'; part.unlink(missing_ok=True)
          t1 = time.time(); print(f'pso_offline: {arch}: metal-tt, {len(bases)} bases, {len(computes)} compute pipelines (minutes) ...', flush=True)
          if a.batch_size and len(groups_of(bases, computes, a.batch_size)) > 1:
@@ -134,10 +134,10 @@ index cfba11c0e444963fc2dc655d9109121ae3258d1d..68ca3886e7f7d172cedf91a5b6f167a6
              fb, fc = compile_isolating(lib_dir, bases, computes, js, part, work, arch, a.platform, osmin)
          write_failed(work, arch, fb, fc); failed_bases += fb; failed_computes += fc
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191067a1cb6 100755
+index ae680bbcbb06400f585b93effa7d199a4d06d41a..552f14ce3cf2970fb42916a38c2474273eaa596c 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3308,8 +3308,9 @@ def cleanup(mode, work, versions, pkg_ver, survey=None, everything=False):
+@@ -3457,8 +3457,9 @@ def cleanup(mode, work, versions, pkg_ver, survey=None, everything=False):
          if p.exists() or p.is_symlink(): gone.append(p.relative_to(work.parent)); rmtree(p)
      before = free_gb(work)
      if everything:
@@ -148,7 +148,7 @@ index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191
      else:
          for p in sorted(ex.iterdir()) if ex.is_dir() else []:
              if p.name not in versions: drop(p)
-@@ -3320,7 +3321,8 @@ def cleanup(mode, work, versions, pkg_ver, survey=None, everything=False):
+@@ -3469,7 +3470,8 @@ def cleanup(mode, work, versions, pkg_ver, survey=None, everything=False):
      freed = max(free_gb(work) - before, 0)
      if gone: say(f'cleanup ({mode}): deleted {", ".join(str(p) for p in gone)}; {freed:.1f} GB freed')
      else: say(f'cleanup ({mode}): nothing to delete')
@@ -158,7 +158,7 @@ index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191
  
  
  MTL_ARCH_M = '''#import <Metal/Metal.h>
-@@ -3357,6 +3359,7 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+@@ -3506,6 +3508,7 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
      PROG.add(1); PROG.stage('Pipeline archive', step=f'{arch} (metal-tt, minutes when its inputs changed)')
      out = work / 'pso/mac'
      cmd = [py, repo / 'dm/gfx/tools/pso_offline.py', '--game', g.id, '--msl', lib, '--out', out, '--work', work / 'pso/mac-work', '--gpu', arch, '--platform', 'macos']
@@ -166,7 +166,7 @@ index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191
      if not g.table('pso_pairs.tsv').is_file() and (work / SHADER / 'pso_pairs.tsv').is_file():   # the split's copy, as the app gets it (--pso-pairs)
          cmd += ['--pairs', g.table('shader_pairs.tsv'), '--pairs', work / SHADER / 'pso_pairs.tsv']
      if PLAN is not None:   # pso_offline.py --check: how many bases a run would compile (exit 3), nothing written
-@@ -3380,7 +3383,7 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+@@ -3529,7 +3532,7 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
              if pso['batches'] is None: pso['batches'] = int(m[1]) - 1
          elif m := re.search(r'batch (\d+)/(\d+): ready', ln):
              i, n = int(m[1]), int(m[2]); b = n if pso['batches'] is None else min(pso['batches'], n)
@@ -175,7 +175,7 @@ index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191
              else: pso['ready'] += 1; PROG.set(step='compiling the compute pipelines', done=pso['ready'], total=n - b, unit='groups')
          elif ': merging ' in ln: PROG.set(step='merging the batches')
          elif ': metal-tt, ' in ln: PROG.set(step='compiling (one batch)')
-@@ -3395,6 +3398,30 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+@@ -3544,6 +3547,30 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
      return out
  
  
@@ -206,7 +206,7 @@ index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191
  def drop_prewarm(pso):   # the prewarm pipelines in an archive folder, with their indexes (.keys) and stamp: an earlier build's, when this one makes none
      for old in pso.glob('*-prewarm-*'): old.unlink()
      (pso / 'prewarm.tsv').unlink(missing_ok=True)
-@@ -3583,8 +3610,8 @@ def parse_args(argv):
+@@ -3732,8 +3759,8 @@ def parse_args(argv):
      ap.add_argument('-l', '--language', help='game language, a code or a name: ja, fr, de, es, it, nl, pt, ru, ko, zh-Hans, zh-Hant, en-GB, fr-CA, es-419, pt-BR, pl, th, Japanese, ... (default: the LANGUAGE setting, else English); '
                      'it must be one the game supports, which the console lists')
      ap.add_argument('--keep-extracted', action=argparse.BooleanOptionalAction, help='keep the extracted game files after the IPA is built, for the next build (default: the KEEP_EXTRACTED setting, on)')
@@ -217,7 +217,7 @@ index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191
                      'so the next build starts from the NSPs again. Never the NSPs, prod.keys or the game\'s save (default: the CLEANUP setting, off)')
      ap.add_argument('--work-dir', help='the game\'s build folder, used as it is (default: the WORK_DIR setting, else <title ID>_build in the NSP folder); the extracted files, shader cache and temporary files live there, and the IPA or Mac app defaults to the folder holding it')
      ap.add_argument('--env-file', help='environment switches for a diagnostic build (one KEY=VALUE per line)')
-@@ -3777,15 +3804,15 @@ def main(args=None):
+@@ -3980,15 +4007,15 @@ def _main(args, cleanup):
      if prepare_xcode and not keep: raise BuildError('--prepare-xcode requires --keep-extracted: Xcode builds from the extracted files')
      if args.xcode_workspace and not prepare_xcode: raise BuildError('--xcode-workspace requires --prepare-xcode')
      clean = args.cleanup or CLEANUP
@@ -236,17 +236,17 @@ index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191
      nsp_dir = Path(os.path.expanduser(args.nsp_dir or NSP_DIR or ask('NSP folder: ', 'the NSP folder'))).resolve()
      if not nsp_dir.exists(): raise BuildError(f'not a folder: {nsp_dir}')
      nup = nup_file(nsp_dir)   # a NUP file given in place of the folder: its folder is the NSP folder (the build folder and the IPA go there)
-@@ -3895,6 +3922,9 @@ def main(args=None):
-     xlate = repo / 'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate'
-     # DM_GAME picks the profile; DM_ROOT / WORK point at <id>_build: the tools' default paths and temporary directories all stay inside it
-     env.update(DM_GAME=g.id, DM_ROOT=str(work), WORK=str(work / TMP))
+@@ -4100,6 +4127,9 @@ def _main(args, cleanup):
+     # DM_GAME picks the profile; DM_ROOT points at <id>_build and WORK defaults to <id>_build/tmp.noindex (NXForge: TMP) unless caller WORK directs scratch elsewhere
+     work_tmp = cleanup.enter_context(scratch_work(work / TMP, g.id))
+     env.update(DM_GAME=g.id, DM_ROOT=str(work), WORK=str(work_tmp))
 +    if PLAN is None and (scratch := scratch_folder(work, g.id, env)) is not None:   # NXForge: the compilers' temporary files off a slow game drive (the run folders under tmp.noindex stay)
 +        (scratch / 'tmp').mkdir(); env.update(WORK=str(scratch / 'tmp'), DM_PSO_SCRATCH=str(scratch / 'pso'))
 +        say(f'temporary files of the shader compiles: {scratch} (the build folder is not on an APFS volume)')
      logs = work / 'logs'
      global STAGE_TIMES; STAGE_TIMES = logs / 'stage_times.json'
      move_to_noindex(work, 'shader', SHADER)
-@@ -4064,7 +4094,7 @@ def main(args=None):
+@@ -4283,7 +4313,7 @@ def _main(args, cleanup):
          rmtree(work / TMP)
          say(f'done: {out_ipa} ({tree_size(out_ipa)[1] / 2**30:.1f} GB); '
              f'open it from Finder. Its save goes to Saves/ beside it (~/Library/Application Support/nxnative/{app:016X}/ where that folder is not writable), its log to ~/Library/Logs/nxnative/{app:016X}.log')
@@ -255,7 +255,7 @@ index f457a5e584ad84995f03e4eab1699c8174d101b2..088e8718c491e0be03cda82448e11191
          if seen_shaders: say('a partial shader library: where a shader is missing, the log says so in red and the draw goes without it. Run this script again with --seen-shaders to add what the log names, or without it for the whole map')
          report_profile_status(g, reg, pkg_ver, derived, provisional, 'Mac app', patched)
          return
-@@ -4141,7 +4171,7 @@ def main(args=None):
+@@ -4361,7 +4391,7 @@ def _main(args, cleanup):
      if not keep:
          for d in [ex] + [r['ex'] for r in programs.values()]: say(f'deleting the extracted game files: {d}'); rmtree(d)
      say(f'done: {out_ipa} ({out_ipa.stat().st_size / 2**30:.1f} GB)')

@@ -76,10 +76,10 @@ index 0000000000000000000000000000000000000000..31193ac724f3a93984443dfd15a8c401
 +if __name__ == '__main__':
 +    unittest.main()
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 065349ff6c4fe6745ca065f148272df12a19a1d8..fbfd5b3ce2778b7cfc333632aba4c3539b449c5d 100755
+index f5fbaae4bdf989cb50258beb8c8ff74d2558a776..8ebf723c96dbba3b86fd7321e72631712dc7d48d 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3436,6 +3436,24 @@ def drop_prewarm(pso):   # the prewarm pipelines in an archive folder, with thei
+@@ -3585,6 +3585,24 @@ def drop_prewarm(pso):   # the prewarm pipelines in an archive folder, with thei
      (pso / 'prewarm.tsv').unlink(missing_ok=True)
  
  
@@ -104,7 +104,7 @@ index 065349ff6c4fe6745ca065f148272df12a19a1d8..fbfd5b3ce2778b7cfc333632aba4c353
  def mac_prebake(py, repo, work, msl, g, host, pso, env, logs):
      """PLATFORM 'mac-app', --prebake (on by default): what the app's first start would still build after the pipeline archive, made here and added to the archive folder pso, so the first
      start finds it (nvn_mtl.m pso_bundle_open_prewarm) instead of building it before the first frame: the prewarm list's pipelines (pso_manifest.tsv: the R rows' bases with a vertex layout,
-@@ -3449,6 +3467,7 @@ def mac_prebake(py, repo, work, msl, g, host, pso, env, logs):
+@@ -3598,6 +3616,7 @@ def mac_prebake(py, repo, work, msl, g, host, pso, env, logs):
      if pso is None: return pso   # no pair archive (none for this Mac's GPU, or --gpu none): the app has no bundle to put them in
      manifest = g.table('pso_manifest.tsv')
      text = manifest.read_text() if manifest.is_file() else ''

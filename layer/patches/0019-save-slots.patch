@@ -12,7 +12,7 @@ With the host stopped, the slot the sidebar named in DM_LAUNCHER_SLOT_LOAD is cl
  3 files changed, 9 insertions(+), 4 deletions(-)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 8cc88b94e91ba41c3b72d8ecc46efec2a0aa344e..65d5d985784efa37642e49dcde349bc37ae24b36 100644
+index 1790e73c08c632311d6464d5edc0248d20e936d9..07814a29d2899fb099eadf7d07c31f1c9776c8a7 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
 @@ -273,6 +273,8 @@ static void programs_table(const char *contents, const char *res, const char *su
@@ -24,7 +24,7 @@ index 8cc88b94e91ba41c3b72d8ecc46efec2a0aa344e..65d5d985784efa37642e49dcde349bc3
  int main(int argc, char **argv) {
      char self[PATH_MAX], exe[PATH_MAX]; uint32_t n = sizeof self;
      if (_NSGetExecutablePath(self, &n) || !realpath(self, exe)) return 1;
-@@ -360,6 +362,8 @@ int main(int argc, char **argv) {
+@@ -362,6 +364,8 @@ int main(int argc, char **argv) {
      // Restart game (Quick settings, front_mac.m front_qs_restart): the host makes this file and quits; the launcher then starts it again with the same environment
      char restart[PATH_MAX]; snprintf(restart, sizeof restart, "%s/restart-requested", sup);
      unlink(restart); setenv("DM_LAUNCHER_RESTART", restart, 1);
@@ -33,7 +33,7 @@ index 8cc88b94e91ba41c3b72d8ecc46efec2a0aa344e..65d5d985784efa37642e49dcde349bc3
      int status;
      for (;;) {
          int err = posix_spawn(&g_child, host, NULL, NULL, host_argv, environ);
-@@ -368,7 +372,8 @@ int main(int argc, char **argv) {
+@@ -370,7 +374,8 @@ int main(int argc, char **argv) {
          // Cloud saves (DM_SAVE_SYNC, dm/host/save_sync.h): what the host committed and had not sent yet goes now, after a crash too (the committed save is whole whatever the host was doing)
          // DM_SAVE as the host had it: an env file or the launch environment may have set another folder than this app's own
          if (!save_sync_after_exit(getenv("DM_SAVE"), id)) fprintf(stderr, "launcher: the save did not reach the cloud; it goes at the next start\n");
@@ -44,37 +44,37 @@ index 8cc88b94e91ba41c3b72d8ecc46efec2a0aa344e..65d5d985784efa37642e49dcde349bc3
          restart_choices();
      }
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index ebbeb0d76f8b3a47c85e4bb96753ab679a39f07a..c2c16d78d8725b0db956256f50f65ebef1d74ef1 100755
+index df8a2e09a77153affeb2d355801fc8936c65456e..57c651c1ab83324695c07900e52fd587081fd7d8 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
-@@ -471,7 +471,7 @@ def pack(a):
+@@ -472,7 +472,7 @@ def pack(a):
          if not codesign: raise SystemExit('codesign is not available')
          codesign = Path(codesign).resolve()
          minos = min_os(a.host)
--        sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'tools/romfs.py', HERE.parent / 'tools/nso_syms.py'] + swift_sources()
-+        sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE / 'nxforge/launcher_slots.inc', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'tools/romfs.py', HERE.parent / 'tools/nso_syms.py'] + swift_sources()
+-        sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'host/save_sync_apple.m', HERE.parent / 'tools/romfs.py', HERE.parent / 'tools/nso_syms.py'] + swift_sources()
++        sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE / 'nxforge/launcher_slots.inc', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'host/save_sync_apple.m', HERE.parent / 'tools/romfs.py', HERE.parent / 'tools/nso_syms.py'] + swift_sources()
          large = {*msls, *pso, *(p for x in programs for p in x[5])}   # the shader libraries and pipeline archives (13.5 GB for Ocarina of Time): by stat, as the RomFS trees below
          def tree(p):   # a folder's entries; a RomFS image's one row as a large file's (as_packed)
              rows = inventory(Path(p))
 diff --git a/dm/tools/tests/test_nsp_mac_app.py b/dm/tools/tests/test_nsp_mac_app.py
-index 63f4629067cc92a1b55e5752b7e18a0b72ee6166..5c6eeda2915540f9e345175a6a13c8f106e95672 100644
+index c6576ed498f5a809e1dfe9a330a34e65b4785c6f..4e645f3050f94501e10ed50119799bc84856a503 100644
 --- a/dm/tools/tests/test_nsp_mac_app.py
 +++ b/dm/tools/tests/test_nsp_mac_app.py
-@@ -136,7 +136,7 @@ class PackReuse(unittest.TestCase):
+@@ -140,7 +140,7 @@ class PackReuse(unittest.TestCase):
              'pso/gpu-prewarm-00.mtl4a': b'bases', 'pso/gpu-prewarm-00.keys': b'DMPSOIX1', 'pso/prewarm.tsv': b'stamp',   # --prebake's files and their index
              'env.txt': b'DM_TEST=1', 'split.tsv': b'split', 'icon.jpg': b'jpeg', 'source/launcher.c': b'launcher',
-             'host/romfs_image.h': b'validator', 'host/save_sync.c': b'sync', 'host/save_sync.h': b'sync api', 'tools/romfs.py': b'reader', 'tools/nso_syms.py': b'symbols',
+             'host/romfs_image.h': b'validator', 'host/save_sync.c': b'sync', 'host/save_sync.h': b'sync api', 'host/save_sync_apple.m': b'apple sync', 'tools/romfs.py': b'reader', 'tools/nso_syms.py': b'symbols',
 -            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_window.swift': b'nxf',
 +            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_window.swift': b'nxf', 'source/nxforge/launcher_slots.inc': b'slots',
          }
          for n in pack_app.TABLES: files['profile/' + n] = n.encode()
          for n, content in files.items(): (t / n).write_bytes(content)
-@@ -221,7 +221,7 @@ class PackReuse(unittest.TestCase):
+@@ -225,7 +225,7 @@ class PackReuse(unittest.TestCase):
          names = ['dmhost', 'patched/main.patched.bin', 'patched/main.fixups.tsv', 'patched/main.gates.tsv', 'patched/main.cuts.tsv',
                   'patched/main.obs.tsv', 'patched/nro.tsv', 'msl/k.metallib', 'msl/k.json', 'msl/inputs.tsv', 'font/nintendo_ext.ttf',
                   'pso/gpu.mtl4a', 'pso/prebuilt.tsv', 'pso/rest_pairs.tsv', 'pso/archive.tsv', 'pso/gpu-prewarm-00.mtl4a', 'pso/gpu-prewarm-00.keys', 'pso/prewarm.tsv', 'env.txt', 'icon.jpg', 'source/launcher.c',
 -                 'tools/nso_syms.py', 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_window.swift',   # the settings window's sources
 +                 'tools/nso_syms.py', 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_window.swift', 'source/nxforge/launcher_slots.inc',   # the settings window's sources
-                  'host/save_sync.c', 'host/save_sync.h']   # the cloud-save code the launcher links (its send after the host exits)
+                  'host/save_sync.c', 'host/save_sync.h', 'host/save_sync_apple.m']   # the cloud-save code the launcher links (its send after the host exits)
          names += ['profile/' + n for n in pack_app.TABLES]
          for name in names:

@@ -3009,7 +3009,7 @@ index 0ab5187d572346461006792d2b88c7cc7cae6e45..80c51b24657d15743c36ede7333b1b08
  
  ## Open
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index f0f3c28d358bb3afb4abefc7d33439ccbdf83862..d4089d690db646df49ace95f17dac98b4c2cd290 100644
+index a6b9c9737bf4637411851c646108a5bdbfda2672..8a540c6b6d5bd03c951d6dab9e1492d495653032 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -91,6 +91,8 @@ Measured on an M6 Mac with 16 GB, headless, on one walk with camera turns (`walk
@@ -3021,7 +3021,7 @@ index f0f3c28d358bb3afb4abefc7d33439ccbdf83862..d4089d690db646df49ace95f17dac98b
  - Resolved: frames of 30–64 ms while walking into the castle town, with `new pipelines 0` and `6 re-uploads, 227.4 MB / 32.0 ms`: the loader fills a 1800x1380x8 R16 array (38.5 MB) and three block-compressed textures over several frames while they are drawn, and each use read the whole texture again, up to 8 times in one submission: [a texture written while it is drawn read whole at every use](../../../docs/reference/frame-rate.md#a-texture-written-while-it-is-drawn-read-whole-at-every-use). Now one look a submission and only the written layers: 25 ms at most there. The single-image textures (3072x2096 BC5, 3056x1152) are still read whole, once a submission (open).
  - Open: frames of 100–650 ms when an area first loads (640 first uploads, 321 MB, in one frame of 294 ms; another 640 ms of submit with 68 MB).
  - Resolved (long-session confirmation on [issue #2507](https://github.com/seedds/nxnative/issues/2507) open): area loads that grew slower over a session (80 ms >30 ms in loads 1–20 to 584–640 ms in loads 121–200, up to 1.5 s, all in `submit+present` with the GPU idle): [packaged-texture and CPU-written tables walked by every memory pool Finalize](../../../docs/reference/nvn-objects.md#packaged-texture-and-cpu-written-tables-walked-by-every-memory-pool-finalize). Both tables are now partitioned by memory pool, with dead packaged-texture entries compacted before growth.
-@@ -455,7 +457,9 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
+@@ -462,7 +464,9 @@ Its 37 kernels that correct samples, NDSR's network among them, gave about 0.25
  - [Freeing a memory pool during a texture ID walk](../../../docs/reference/nvn-objects.md#freeing-a-memory-pool-during-a-texture-id-walk): the `-[NvPkg buffer]: unrecognized selector` crash after a save or a scene change.
  - [Extended products behind spirv-cross's optnone helper](../../../docs/reference/shaders.md#extended-products-behind-spirv-crosss-optnone-helper): 348,587 constant divisions left as unoptimized calls; the Kokiri Forest deck 54.0 → 59.1 fps on an M4 Pro.
  - [HMMA chains keep their matrices in the SIMD-group](../../../docs/reference/shaders.md#hmma-chains-keep-their-matrices-in-the-simd-group): the NDVE movie networks behind the title and the opening, 14.8 → 11.4 ms of compute a frame on this M6.
@@ -3032,7 +3032,7 @@ index f0f3c28d358bb3afb4abefc7d33439ccbdf83862..d4089d690db646df49ace95f17dac98b
  - [The uniform copy thread's hand-off convoys on its mutex](../../../docs/reference/frame-rate.md#the-uniform-copy-threads-hand-off-convoys-on-its-mutex): resolved. On one host build (M4 Pro) the replay thread spent half its busy samples in `ubc_wait`, 221-333k instructions a draw and 23-57 ms of submit CPU a frame against 38.9k and 7.1 ms with `DM_NVN_UB_COPY_THREAD=0`; about 35 shadows a frame that `um_overlay` writes into are now copied on the submit thread (PR #2078).
  - [The 30 Hz display link in fullscreen on a fixed-rate screen](../../../docs/reference/frame-rate.md#the-30-hz-display-link-in-fullscreen-on-a-fixed-rate-screen): 66.7 ms frames at a 30 fps cap in fullscreen on a MacBook Air M4, with the frame-delta change that applies the cap.
 diff --git a/dm/games/0400C3F00006E000/README.md b/dm/games/0400C3F00006E000/README.md
-index dde1e614b9c31429bc9bd397fb5ac9f4fa37b020..5ad814a3409eaabda8ebb89f0d8fb47542390958 100644
+index 4ba5cd891d2f56bcae5b0a9f5e85ea136a18708f..528857e6f55b3be101c5c58a8736c6d1817d71f3 100644
 --- a/dm/games/0400C3F00006E000/README.md
 +++ b/dm/games/0400C3F00006E000/README.md
 @@ -9,6 +9,7 @@ A Switch 2 game. Brought up on the base game (v0), SDK 19.3.3 built for the Swit
@@ -3068,7 +3068,7 @@ index dde1e614b9c31429bc9bd397fb5ac9f4fa37b020..5ad814a3409eaabda8ebb89f0d8fb475
  ## Terrain and movies
  
  The flat ground with blocky seams behind the title and the menu was terrain tiles the CPU wrote with no flush, read as zeros: [Uncompressed storage the CPU wrote, in a pool the GPU has not written](../../../docs/reference/nvn-objects.md#uncompressed-storage-the-cpu-wrote-in-a-pool-the-gpu-has-not-written). The title now shows real terrain, with hills, lawns and road edges.
-@@ -203,8 +215,10 @@ Mac regression on the M4 Pro with macOS 27.2.1 and Xcode 27.2, 2026-11-19. Both
+@@ -205,8 +217,10 @@ Mac regression on the M4 Pro with macOS 27.2.1 and Xcode 27.2, 2026-11-19. Both
  - [Compute shared memory past 32 KB](../../../docs/reference/shaders.md#compute-shared-memory-past-32-kb)
  - [Uniform references past the first kilobyte](../../../docs/reference/shaders.md#uniform-references-past-the-first-kilobyte)
  - [A control section's words read as a BAHS entry](../../../docs/reference/shaders.md#a-control-sections-words-read-as-a-bahs-entry) (resolved, [issue #1592](https://github.com/seedds/nxnative/issues/1592)): `cs_lib.bin` 74, `797e77c2ec4341c5` at `agl_common.sharcb#BAHS@0x5c778`, was no shader. Dropping it and its fact reduced the index of the next 69 `cs_lib.bin` rows (`agl_common`, `agl_ndsr`, `agl_technique_pfx`, gsys `common`) by one, as in the reporter's base-game split. The full [v0 split](#shaders) confirms the removal. [1.8.0](#180) also has false entries outside control sections.
@@ -3116,7 +3116,7 @@ index 1a53c308e48e127ed56937a835f3e1dd9a997a0e..a3be031bc7f2816230e2dffc6d4221c6
 +# race goes from 33.4–33.6 to 42.2–42.3 fps docked (main 777a5f6c); a faster GPU stays at full size
 +gpu_timestamps	segment
 diff --git a/dm/games/0400E88025B1A000/README.md b/dm/games/0400E88025B1A000/README.md
-index 257ac71627719539b52c860d5c8d004e1cb856d2..5d85a5a73f55924284f19d33e2561eedf7c6855b 100644
+index 8a296cb31772831fbb73899c1cd383709604b266..2fce07b26cc0edfa51d02abda8ba5f011674ff4f 100644
 --- a/dm/games/0400E88025B1A000/README.md
 +++ b/dm/games/0400E88025B1A000/README.md
 @@ -70,6 +70,8 @@ DLSS alpha control (2026-11-17, M6, macOS 27.2, Xcode 27.2): a fresh save, `DM_K
@@ -3129,18 +3129,18 @@ index 257ac71627719539b52c860d5c8d004e1cb856d2..5d85a5a73f55924284f19d33e2561eed
  - [A GPU copy into a texture uploaded from its storage uploaded all of it again](../../../docs/reference/nvn-objects.md#a-gpu-copy-into-a-texture-uploaded-from-its-storage-uploaded-all-of-it-again): 7.6 s and 10 s frames at the prologue's scene changes; measured on a build of our fork, not on `main`.
  - [The graphics scale does not follow the operation mode](../../../docs/reference/services.md#the-graphics-scale-does-not-follow-the-operation-mode): the 768x432 scene docked; measured on a build of the PR author's fork, not on `main`.
 diff --git a/dm/games/README.md b/dm/games/README.md
-index d4a328b6a9de3dcd62e2946945af6b348815ea25..12620f8c82e1c4f45a8cb79332c91fa4212c72f1 100644
+index 4b2aa91845420c5520ace4ee88d07cfcc0f8e67f..0d11a7aaa345a7e60528f51e992b715b6c5e7998 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -129,6 +129,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+@@ -135,6 +135,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | [Hades II](0100A00019DE0000/README.md) | `0100A00019DE0000` | 1.0.141667 (and base game) | 20.5.15 (base game: 19.3.9) | Supergiant Games' engine | NVN | — |
- | [Hollow Knight](0100633007D48000/README.md) | `0100633007D48000` | 1.5.12620 | 20.5.21 | Unity 6000.0.61f1 IL2CPP, FMOD | NVN | — |
- | [Hollow Knight: Silksong](010013C00E930000/README.md) | `010013C00E930000` | 1.0.30000 | 20.5.8 | Unity 6000.0.50f1 IL2CPP | NVN | — |
+ | [Hollow Knight](0100633007D48000/README.md) | `0100633007D48000` | 1.5.12620 | 20.5.21 | Unity 6000.0.61f1 IL2CPP, FMOD | NVN | 60 fps target, [120 fps option](0100633007D48000/README.md#frame-rate) |
+ | [Hollow Knight: Silksong](010013C00E930000/README.md) | `010013C00E930000` | 1.0.30000 | 20.5.8 | Unity 6000.0.50f1 IL2CPP | NVN | 60 fps target, [120 fps option](010013C00E930000/README.md#frame-rate) |
 +| [Horizon Chase 2](0100001019F6E000/README.md) | `0100001019F6E000` | 1.6.9 | 14.3.1 | Unreal Engine 4, FMOD | NVN |
  | [Hyrule Warriors: Age of Calamity](01002B00111A2000/README.md) | `01002B00111A2000` | 1.3.0 | 9.6.0 | Koei Tecmo's KTGL | NVN | 60 fps target |
  | [Hyrule Warriors: Age of Imprisonment](04003F40232DE000/README.md) | `04003F40232DE000` | v196608 (Switch 2) | 20.5.15 (Ounce) | Koei Tecmo's KTGL | NVN2 | — |
  | [Hyrule Warriors: Definitive Edition](0100AE00096EA000/README.md) | `0100AE00096EA000` | 1.0.1 | 3.5.1 | Koei Tecmo's KTGL | NVN | — |
-@@ -153,7 +154,8 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+@@ -161,7 +162,8 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | [Metro 2033 Redux](0100D4900E82C000/README.md) | `0100D4900E82C000` | 1.0.0 (base) | 8.2.0 | 4A Engine | NVN | — |
  | [Metroid Dread](010093801237C000/README.md) | `010093801237C000` | 2.1.0 | 11.4.3 | MercurySteam's engine | NVN | — |
  | [Metroid Prime 4: Beyond](010019A01E2F2000/README.md) | `010019A01E2F2000` | 1.1.0 | 19.3.15 | Retro Studios' engine | NVN | — |
@@ -3150,7 +3150,7 @@ index d4a328b6a9de3dcd62e2946945af6b348815ea25..12620f8c82e1c4f45a8cb79332c91fa4
  | [Minecraft Dungeons II](0100A7C01B792000/README.md) | `0100A7C01B792000` | 1.1.3.0 | 20.5.15 | Unreal Engine 5, Wwise, Havok | NVN | 60 fps target, [120 fps option](0100A7C01B792000/README.md#frame-rate) |
  | [Minecraft for Nintendo Switch](0100D71004694000/README.md) | `0100D71004694000` | 1.26.62 | 20.5.14 | RenderDragon, FMOD | Vulkan | — |
  | [Monster Hunter Rise](0100B04011742000/README.md) | `0100B04011742000` | 16.0.2 | 11.4.3 | Capcom's RE Engine | NVN | 60 fps target |
-@@ -269,7 +271,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+@@ -284,7 +286,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | Key | Meaning |
  |---|---|
  | `title_id`, `program_id` | Identity. `program_id` is what `svcGetInfo(ProgramId)` reports. The game's name is not stored: the NSP script reads it from the NSP's control data (NACP) |
@@ -3159,7 +3159,7 @@ index d4a328b6a9de3dcd62e2946945af6b348815ea25..12620f8c82e1c4f45a8cb79332c91fa4
  | `ipa`, `app_category` | iOS app: the default IPA file name and the App Store category |
  | `build <ver> <display version> <module>=<build ID>…` | One row per version the game was brought up on. The NSP script builds any version (the base game alone, any update): a registered one from the profile as it is, any other from a profile derived from it (`<id>_build/profile`: the same keys, that version's own shader tables; `derive_profile`), with a red line naming the modules whose build no row registers, which the per-build cuts and host fixes do not reach. The host reports the display version by `main`'s build ID |
  | `package` | The version the profile's tables, prewarm list and notes were made on. The NSP script packs the newest version in the folder (`-p` / `PACKAGE` picks another) |
-@@ -316,6 +318,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+@@ -331,6 +333,7 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | `draw_barriers` | `full` (the default) / `game`: how draw passes are ordered. `full`: each waits for all earlier GPU work. `game`: by the game's own barriers (NVN asks for one before results of rendering are read), so a pass's vertex work overlaps the previous pass's fragments. Ocarina of Time's GPU time 25 → 18 ms, about 180 full barriers a frame halved. Only a barrier that orders primitives or indirect data waits for all earlier work; a fragment-only one keeps the overlap. Only vertex-stage reads of the previous pass's output without a barrier change order. `DM_NVN_BARRIER` overrides it |
  | `vconv_range` | `on` / `off` (the default): vertex attributes the replay converts on the CPU (integer shader inputs fed float-type formats and the like, `vconv_bind` in `nvn_mtl.m`) are converted only over the vertices each draw reads (first / count, or the smallest and largest index of a direct indexed draw, kept while the index pages stay unwritten) instead of the whole bound range. Age of Calamity binds whole mesh pools: in a battle that was millions of vertices a frame. Indirect draws, per-instance streams and indices with a GPU write queued on them keep the whole range. `DM_NVN_VCONV_CHECK=1` scans the indices again at every reuse and reports differences; `DM_NVN_VCONV_RANGE=0` / `1` overrides it |
  | `shader_key_skip` | `<offset>+<length>` (none by default): control-section bytes every shader key hashes as zeros, in `shader_split.py` (`key_ctl`) and the host (`hle_nvn.c` `keys_hash`), for an engine that shares one control section among shaders that differ only there. Batman: Arkham Knight: `0x770+0x78`, GLSLC's compile information (+0x778..+0x791 and +0x7d0..+0x7e7); without it the game asks for shaders the map does not have, each the control section of one record with the code area of another. It must stay clear of `+0x700..+0x75f`, which the tools read; it is a shader chain input, as every `shader_*` key |
@@ -3168,10 +3168,10 @@ index d4a328b6a9de3dcd62e2946945af6b348815ea25..12620f8c82e1c4f45a8cb79332c91fa4
  
  ### What the game files decide at every build
 diff --git a/dm/games/profile_guess.py b/dm/games/profile_guess.py
-index 7ccc5dd9998e4ea53001b9a10961a376292cef4e..4e9db6ddd75ace968803b0aac4f6d2a46d799be8 100644
+index 47d89324c79226199e531704ea557890cd734a2b..5bb2ad92b1f4d137b6f63333418b4d5b5012d081 100644
 --- a/dm/games/profile_guess.py
 +++ b/dm/games/profile_guess.py
-@@ -20,8 +20,10 @@ MAGICS = [(b'UnityFS\0', 'UnityFS'), (b'UnityWeb', 'UnityWeb'), (b'UnityRaw', 'U
+@@ -21,8 +21,10 @@ MAGICS = [(b'UnityFS\0', 'UnityFS'), (b'UnityWeb', 'UnityWeb'), (b'UnityRaw', 'U
            (bytes.fromhex('28b52ffd'), 'zstd'), (b'FRES', 'bfres'), (b'BNTX', 'BNTX'), (b'BWAV', 'BWAV'), (b'FSAR', 'BFSAR'), (b'CPK ', 'CRI CPK'), (b'CRID', 'CRI USM'),
            (b'@UTF', 'CRI UTF'), (b'AKPK', 'Wwise pck'), (b'BKHD', 'Wwise bnk'), (b'FSB5', 'FMOD'), (b'\x89PNG', 'PNG'), (b'RIFF', 'RIFF'), (b'OggS', 'Ogg'), (b'PK\x03\x04', 'zip'), (b'NSO0', 'NSO'),
            (bytes.fromhex('03022307'), 'SPIR-V'), (b'ONEPACK\0', 'Trinity pack'), (b'ARC\0', 'MT Framework ARC'), (b'SCNE', 'Bezel Engine archive'), (b'XNB', 'XNB'), (b'pkzl', 'PlatinumGames PKZ'),
@@ -3184,20 +3184,20 @@ index 7ccc5dd9998e4ea53001b9a10961a376292cef4e..4e9db6ddd75ace968803b0aac4f6d2a4
  # Unreal by its name, which every Unreal 4 / 5 main here has; 'UE4' alone is no marker: it is a build path in Octopath Traveler II's main, and four bytes of machine code in Unreal 5 mains and in PRAGMATA's
  # (RE Engine), whose DLSS module also has a 'UE4 generic plugin' string. RE Engine by its via.render.* type names (PRAGMATA's main: 1,925)
  # IL2CPP by the metadata file every IL2CPP player opens: Unity 2022's main (Ace Attorney Investigations Collection) has no il2cpp_ API names, Engage's 2020.3 has both
-@@ -164,6 +166,7 @@ def facts_of(exefs, romfs):
+@@ -171,6 +173,7 @@ def facts_of(exefs, romfs):
          else: R['root'].add(parts[0])
-         R['biggest'] = max(R['biggest'], (size, path.strip('/')))
+         if own: R['biggest'] = max(R['biggest'], (size, path.strip('/')))
          mag = next((n for m, n in MAGICS if h.startswith(m)), None)
 +        mag = mag or next((n for m, n in SIZED if h[4:8] == m), None)
          if mag: R['mags'][mag] += 1; R['magb'][mag] += size
          if mag in PACKED: R['extc'][ext] += 1
      return F
 diff --git a/dm/games/settings.py b/dm/games/settings.py
-index 08c7270ff2c1fc06fdfddd04d2ec877548b96190..05407eeed664f76f9140677a01ad1e2f38236e1b 100644
+index bd17f671263ee53c0793616dfd74bf6f72c47655..37be5cac8618855ff6dd4a23af55d299965e1c22 100644
 --- a/dm/games/settings.py
 +++ b/dm/games/settings.py
-@@ -77,6 +77,7 @@ def build(gid, patched, control, other_programs=()):
-     def shown(cond, n):
+@@ -78,6 +78,7 @@ def build(gid, patched, control, other_programs=()):
+         if '&' in cond: return all(shown(c, n) for c in cond.split('&'))
          if cond == 'always': return True
          if cond == 'mac-mic': return mac_mic
 +        if '&' in cond: return all(shown(c, n) for c in cond.split('&'))   # every one of them (gfxapi:nvn&platform:mac)
@@ -3205,7 +3205,7 @@ index 08c7270ff2c1fc06fdfddd04d2ec877548b96190..05407eeed664f76f9140677a01ad1e2f
          if cond.startswith('fixups:'): return cond[7:] in keys
          if cond.startswith('gfxapi:'): return os.environ.get('GFXAPI', '') == cond[7:]
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 8cfacbaf85eba28a924a44730f2d731ab13e1cbf..fa2f9336b67d7d2c08f9a744dbd1a81693bc71ff 100644
+index cc4f3ff0b2279c6030c0f8515a76a45657be343f..f87fb50c56d9b905292da7c255d3800cc86b3ce8 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -7,7 +7,7 @@
@@ -3217,38 +3217,39 @@ index 8cfacbaf85eba28a924a44730f2d731ab13e1cbf..fa2f9336b67d7d2c08f9a744dbd1a816
  #             mac-mic: a Mac app whose modules import the supported polling InputStream API;
  #             platform:<ios | mac>: the app's platform (SETTINGS_PLATFORM, ios when unset), for a switch only that platform's front end reads
  #   section   Game, Controls or Performance: a heading on the single settings screen. Rows appear in table order within each section
-@@ -19,8 +19,12 @@ DM_FPS_TARGET	choice	30=30 fps,40=40 fps?fixups:FRAME_STEP_120,60=60 fps,120=120
+@@ -19,9 +19,13 @@ DM_FPS_TARGET	choice	30=30 fps,40=40 fps?fixups:FRAME_STEP_120,60=60 fps,120=120
  DM_DYNAMIC_RESOLUTION	toggle	-	0	fixups:DYNAMIC_RESOLUTION	Game	Dynamic resolution	Lets the game lower its resolution under load. Turn off to keep full resolution for the selected console mode.
  DM_RENDER_SCALE	range	0.5:1.0:0.05	1.0	fixups:RENDER_SCALE	Game	Render scale		level=basic
  DM_OPMODE	choice	1=Docked,0=Handheld	DM_GAME_OPMODE	always	Game	Console mode		level=basic
 -DM_PRESENT_UPSCALE	choice	off=Standard,metalfx=MetalFX	off	always	Game	Upscaling	Uses more GPU time and can increase heat.
 +DM_PRESENT_UPSCALE	choice	off=Standard,metalfx=MetalFX	off|metalfx	always	Game	Upscaling	Uses more GPU time and can increase heat.
  DM_UPSCALER	choice	game=Game's own,metalfx=MetalFX	game	DM_GAME_UPSCALER_N!=0	Game	Game's upscaler
+ DM_NVN_ANISO	choice	0=Game default,2=2x,4=4x,8=8x,16=16x	0	platform:mac&gfxapi:nvn	Game	Texture filtering	Sharper ground and walls seen at an angle. 16x costs little on a Mac.
 +DM_PRESENT_AA	choice	off=Off,fxaa=FXAA	off	gfxapi:nvn&platform:mac	Game	Anti-aliasing	Smooths jagged edges in games without anti-aliasing of their own; small text softens a little.
 +DM_PIXEL_ART	choice	auto=Auto,off=Off,sharp=Sharp pixels,smooth=Smooth edges	auto	gfxapi:nvn&platform:mac	Game	Pixel art	Crisp, even pixels for 2D games. Auto turns it on when the game draws pixel art; MetalFX, anti-aliasing, HDR highlights and frame interpolation wait while it is on.	level=basic
 +DM_PRESENT_EDR	toggle	-	0	gfxapi:nvn&platform:mac	Game	HDR highlights	On an XDR or HDR screen the brightest parts of the picture glow above white. White HUD text brightens too.	level=basic
 +DM_PRESENT_EDR_STRENGTH	range	0:1:0.05	0.5	gfxapi:nvn&platform:mac	Game	HDR brightness boost		level=basic;needs=DM_PRESENT_EDR=1
  DM_LANG	choice	languages	build:DM_LANG	languages>1	Game	Game language		level=basic
  DM_FULLSCREEN	choice	0=Window,1=Fullscreen	0	platform:mac	Game	Display mode		level=basic
- DM_PICTURE_FIT	choice	fit=Fit,fill=Fill	fit	platform:ios	Game	Picture	Fill crops the game's 16:9 picture to cover the screen. Health bars, subtitles or maps near the edges can be cut off. A full-screen picture without cropping needs a patch for each game.
-@@ -35,6 +39,7 @@ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and
+ DM_PICTURE_FIT	choice	fit=Fit,fill=Fill	fit	always	Game	Picture	Fill crops the game's 16:9 picture to cover the screen. Health bars, subtitles or maps near the edges can be cut off. A full-screen picture without cropping needs a patch for each game.
+@@ -36,6 +40,7 @@ DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and
  DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone. macOS asks for access when you launch with this enabled.	level=basic
- DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
+ DM_MIC_GAIN	range	1:8:0.5	1	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
  DM_SCREEN_ASPECT	choice	auto=Match screen?platform:ios,1.6=MacBook (16:10)?platform:mac,1.43=iPhone Duo screen (1.43:1),0=16:9 (Switch)	auto|0	fixups:SCREEN_ASPECT	Game	Picture shape	Taller shapes render more pixels and can increase GPU time and heat.
 +DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
  DM_PRESENT_SNAP	toggle	-	DM_GAME_PRESENT_SNAP	gfxapi:nvn	Performance	Frame buffering	Up to one frame more display latency.
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
-index cd959762ebe73699963ef2fce5be3b6f3e0cc124..f99969036eec3ce0d7e7b09b02402883d4018f5e 100644
+index bbacea8cf95e0fec62563f117706f89a0fe9b559..1d6d304d270e9d3a74e91d356c27bdc0a612f1e4 100644
 --- a/dm/tools/tests/test_launcher_settings.py
 +++ b/dm/tools/tests/test_launcher_settings.py
 @@ -78,7 +78,7 @@ class LauncherSettingsTests(unittest.TestCase):
          self.assertEqual(build(BOTW, 'nvn', 'ios').keys(), ios.keys())   # ios when unset
-         self.assertEqual(set(ios) - set(mac), {'DM_SHOW_FPS', 'DM_TOUCH_HAPTICS', 'DM_PICTURE_FIT', 'DM_ROTATION'})
+         self.assertEqual(set(ios) - set(mac), {'DM_SHOW_FPS', 'DM_TOUCH_HAPTICS', 'DM_ROTATION'})
          self.assertIn('DM_RUMBLE', mac); self.assertIn('DM_METAL_HUD', mac)
--        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2'})   # the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
-+        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART'})   # NXForge's present options (the Mac sidebar's too); the Mac window's Display mode (front_mac.m reads 1 or 0); Switch 2 controllers (pad_switch2_apple.m, wired on the Mac only)
+-        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_NVN_ANISO'})   # Mac-only Display mode, Switch 2 controllers, and NVN texture filtering
++        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_NVN_ANISO', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART'})   # Mac-only Display mode, Switch 2 controllers, NVN texture filtering, and NXForge's present options (the Mac sidebar's too)
+         self.assertNotIn('DM_NVN_ANISO', build('0100535012974000', 'vulkan', 'mac'))
+         self.assertNotIn('DM_NVN_ANISO', build('010014E00DB56000', 'gl', 'mac'))
          s = mac['DM_FULLSCREEN']
-         self.assertEqual((s['kind'], s['default'], s['options'], s['level']), ('choice', '0', [['0', 'Window'], ['1', 'Fullscreen']], 'basic'))
- 

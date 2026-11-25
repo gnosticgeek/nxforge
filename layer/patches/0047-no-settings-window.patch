@@ -15,7 +15,7 @@ Subject: no-settings-window: NXForge's game apps start straight into the game;
  7 files changed, 35 insertions(+), 44 deletions(-)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index be0280e1e1029e788e34e0ffa125c961f735426f..607e60cbf0bb915089c5a1ff8b04ff776b8f9984 100644
+index eb739ef9198d1c1711858a2480123d2079b3f08c..6f4df559074649059f9fa4fa94631b99c0227bfe 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
 @@ -10,9 +10,10 @@
@@ -92,7 +92,7 @@ index be0280e1e1029e788e34e0ffa125c961f735426f..607e60cbf0bb915089c5a1ff8b04ff77
      microphone_at_launch();
      setenv("DM_ROOT", sup, 0); setenv("DM_ROMFS", romfs, 0); setenv("DM_TEMP", temp, 0);
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 07c89732f79153e4ae10bc3eca62cba5ec5def17..12a99ab9835001135c4fe4672a61c7dcdf7450a0 100755
+index 53bf8c4f2168f559a01f097bedbc4b82ee8ccf1e..94fcf4ce35188fe406c434def8a0cf7d357f87c0 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
 @@ -1,10 +1,10 @@
@@ -122,40 +122,40 @@ index 07c89732f79153e4ae10bc3eca62cba5ec5def17..12a99ab9835001135c4fe4672a61c7dc
 -def build_launcher(out, minos, clang, swiftc, sdk):   # launcher.c's main and the host's cloud-save code (its send after the host exits), linked by swiftc with the settings window (no Swift main: -parse-as-library)
 +def build_launcher(out, minos, clang, swiftc, sdk):   # launcher.c's main and the host's cloud-save code (its send after the host exits), linked by swiftc with the Swift sources (no Swift main: -parse-as-library)
      with tempfile.TemporaryDirectory(dir=out.parents[3]) as t:
-         objs = [Path(t) / 'launcher.o', Path(t) / 'save_sync.o']
-         for obj, src in zip(objs, (HERE / 'launcher.c', HERE.parent / 'host/save_sync.c')):
+         objs = [Path(t) / 'launcher.o', Path(t) / 'save_sync.o', Path(t) / 'save_sync_apple.o']
+         for obj, src in zip(objs, (HERE / 'launcher.c', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync_apple.m')):
 diff --git a/dm/tools/tests/test_nsp_mac_app.py b/dm/tools/tests/test_nsp_mac_app.py
-index 5c6eeda2915540f9e345175a6a13c8f106e95672..b8bb8d8c7a9660adca8a36162540232305ec5a4e 100644
+index 4e645f3050f94501e10ed50119799bc84856a503..748701bf505d9c2bdfc9ec2987557b120f173fff 100644
 --- a/dm/tools/tests/test_nsp_mac_app.py
 +++ b/dm/tools/tests/test_nsp_mac_app.py
-@@ -136,7 +136,7 @@ class PackReuse(unittest.TestCase):
+@@ -140,7 +140,7 @@ class PackReuse(unittest.TestCase):
              'pso/gpu-prewarm-00.mtl4a': b'bases', 'pso/gpu-prewarm-00.keys': b'DMPSOIX1', 'pso/prewarm.tsv': b'stamp',   # --prebake's files and their index
              'env.txt': b'DM_TEST=1', 'split.tsv': b'split', 'icon.jpg': b'jpeg', 'source/launcher.c': b'launcher',
-             'host/romfs_image.h': b'validator', 'host/save_sync.c': b'sync', 'host/save_sync.h': b'sync api', 'tools/romfs.py': b'reader', 'tools/nso_syms.py': b'symbols',
+             'host/romfs_image.h': b'validator', 'host/save_sync.c': b'sync', 'host/save_sync.h': b'sync api', 'host/save_sync_apple.m': b'apple sync', 'tools/romfs.py': b'reader', 'tools/nso_syms.py': b'symbols',
 -            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_window.swift': b'nxf', 'source/nxforge/launcher_slots.inc': b'slots',
 +            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_save_check.swift': b'nxf', 'source/nxforge/launcher_slots.inc': b'slots',
          }
          for n in pack_app.TABLES: files['profile/' + n] = n.encode()
          for n, content in files.items(): (t / n).write_bytes(content)
-@@ -221,7 +221,7 @@ class PackReuse(unittest.TestCase):
+@@ -225,7 +225,7 @@ class PackReuse(unittest.TestCase):
          names = ['dmhost', 'patched/main.patched.bin', 'patched/main.fixups.tsv', 'patched/main.gates.tsv', 'patched/main.cuts.tsv',
                   'patched/main.obs.tsv', 'patched/nro.tsv', 'msl/k.metallib', 'msl/k.json', 'msl/inputs.tsv', 'font/nintendo_ext.ttf',
                   'pso/gpu.mtl4a', 'pso/prebuilt.tsv', 'pso/rest_pairs.tsv', 'pso/archive.tsv', 'pso/gpu-prewarm-00.mtl4a', 'pso/gpu-prewarm-00.keys', 'pso/prewarm.tsv', 'env.txt', 'icon.jpg', 'source/launcher.c',
 -                 'tools/nso_syms.py', 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_window.swift', 'source/nxforge/launcher_slots.inc',   # the settings window's sources
 +                 'tools/nso_syms.py', 'source/Launcher.swift', 'ios/Sources/LauncherSettings.swift', 'ios/Sources/LauncherRow.swift', 'ios/Sources/SaveSyncReport.swift', 'source/nxforge/launcher_save_check.swift', 'source/nxforge/launcher_slots.inc',   # the launcher's Swift sources
-                  'host/save_sync.c', 'host/save_sync.h']   # the cloud-save code the launcher links (its send after the host exits)
+                  'host/save_sync.c', 'host/save_sync.h', 'host/save_sync_apple.m']   # the cloud-save code the launcher links (its send after the host exits)
          names += ['profile/' + n for n in pack_app.TABLES]
          for name in names:
-@@ -282,7 +282,7 @@ class PackReuse(unittest.TestCase):
-         self.assertIn(c[c.index('-o') + 1], s)   # launcher.c's object, with its main
-         sync = next(c for c in self.commands if Path(c[0]).name == 'clang' and '-o' in c and c[-1].endswith('save_sync.c'))
-         self.assertIn(sync[sync.index('-o') + 1], s)   # save_sync.c's object: the launcher sends the save once the host has exited
+@@ -289,7 +289,7 @@ class PackReuse(unittest.TestCase):
+         sync_apple = next(c for c in self.commands if Path(c[0]).name == 'clang' and '-o' in c and c[-1].endswith('save_sync_apple.m'))
+         self.assertIn('-fobjc-arc', sync_apple)
+         self.assertIn(sync_apple[sync_apple.index('-o') + 1], s)   # save_sync_apple.m's object: NSFileCoordinator wrapper shared with host/iOS
 -        self.assertEqual([Path(x).name for x in s if x.endswith('.swift')], ['Launcher.swift', 'LauncherSettings.swift', 'LauncherRow.swift', 'SaveSyncReport.swift', 'launcher_window.swift'])
 +        self.assertEqual([Path(x).name for x in s if x.endswith('.swift')], ['Launcher.swift', 'LauncherSettings.swift', 'LauncherRow.swift', 'SaveSyncReport.swift', 'launcher_save_check.swift'])
  
      def test_selected_file_modes_and_file_additions_and_removals_invalidate(self):
          self.pack()
-@@ -547,7 +547,7 @@ class PackReuse(unittest.TestCase):
+@@ -554,7 +554,7 @@ class PackReuse(unittest.TestCase):
      def test_missing_selected_inputs_fail_before_reuse_or_partial_creation(self):
          self.pack()
          for name in ('dmhost', 'patched/main.fixups.tsv', 'msl/k.metallib', 'romfs/marker', 'pso/prebuilt.tsv', 'env.txt', 'icon.jpg',
@@ -164,7 +164,7 @@ index 5c6eeda2915540f9e345175a6a13c8f106e95672..b8bb8d8c7a9660adca8a361625402323
              with self.subTest(name=name):
                  p = self.tmp / name; hidden = p.with_name(p.name + '.hidden'); p.rename(hidden)
                  try:
-@@ -721,7 +721,7 @@ class App(unittest.TestCase):
+@@ -728,7 +728,7 @@ class App(unittest.TestCase):
  
      def launch(self, wait=False, app=None, args=(), **env):
          home = self.tmp / 'home'
@@ -174,7 +174,7 @@ index 5c6eeda2915540f9e345175a6a13c8f106e95672..b8bb8d8c7a9660adca8a361625402323
          return subprocess.Popen([(app or self.app) / 'Contents/MacOS/nxnative', *args], env=e, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
  
 diff --git a/docs/development.md b/docs/development.md
-index 5b4edf297568bc9b9f585f940284c2f8cd8e5935..3834e8b1435aa31b31f2074cf5768091f38173c7 100644
+index 7fd5f36998b29211b1ed2bcccc3bc4ed150d67bc..3394829176308ac945c3272372aafedd955fb126 100644
 --- a/docs/development.md
 +++ b/docs/development.md
 @@ -616,7 +616,7 @@ The bundle holds what the IPA holds, with the Mac's shader libraries:
@@ -196,12 +196,12 @@ index 5b4edf297568bc9b9f585f940284c2f8cd8e5935..3834e8b1435aa31b31f2074cf5768091
  Why the host is a child process: macOS privacy checks (TCC) cover files on removable volumes. A launcher that hands its process over to the host, such as a shell script that `exec`s `dmhost`, got EPERM on every open on the external drive, with no prompt. That happened with ad-hoc and Developer ID signatures alike, and after `tccutil reset`. A compiled launcher as `CFBundleExecutable` that `posix_spawn`s `dmhost`, which sits beside it in `Contents/MacOS`, can read those files. An app that sits on the game drive needs this, and so does an env file that points at files there.
  
 diff --git a/docs/frontends.md b/docs/frontends.md
-index 24f81e7c34407a624a869f3cf442eac49b249f96..0e9137226137c4f6ccabb30568324b6f5dfef79a 100644
+index 33e680227690a91ece1f820536b0ea166f90d44c..e65f65268bd6a8a71224801a00196c789e676203 100644
 --- a/docs/frontends.md
 +++ b/docs/frontends.md
 @@ -57,7 +57,7 @@ A built app carries the settings its game supports, as the iPhone app's settings
  
- **A Mac app** is started like any app, or by running its `Contents/MacOS/nxnative` with the chosen settings in its environment (`DM_FPS_TARGET=30`, …). The launcher there runs the host as a child, forwards SIGTERM, SIGINT and SIGHUP to it and exits with its exit code: 0 for a quit (⌘Q, the Home prompt, closing the window), 70 after the alert that macOS stopped running the game's GPU work ([A GPU whose access macOS revoked stops the game](reference/rendering.md#a-gpu-whose-access-macos-revoked-stops-the-game)), 134 for an abort. A variable already in the environment wins; then come `~/Library/Application Support/nxnative/<title ID>/env.txt` and the bundle's `dm/env.txt`, one `KEY=VALUE` per line ([A Mac app](development.md#a-mac-app)). The save is in `save/` in that Application Support folder; the log is `~/Library/Logs/nxnative/<title ID>.log`, the previous run's `<title ID>.prev.log`. The title ID is `DMTitleID` in the app's `Info.plist`.
+ **A Mac app** is started like any app, or by running its `Contents/MacOS/nxnative` with the chosen settings in its environment (`DM_FPS_TARGET=30`, …). The launcher there runs the host as a child, forwards SIGTERM, SIGINT and SIGHUP to it and exits with its exit code: 0 for a quit (⌘Q, the Home prompt, closing the window), 70 after the alert that macOS stopped running the game's GPU work ([A GPU whose access macOS revoked stops the game](reference/rendering.md#a-gpu-whose-access-macos-revoked-stops-the-game)), 134 for an abort. A variable already in the environment wins; then come `~/Library/Application Support/nxnative/<title ID>/env.txt` and the bundle's `dm/env.txt`, one `KEY=VALUE` per line ([A Mac app](development.md#a-mac-app)). The save is in `save/` in that Application Support folder; screenshots exported through `nn::album::SaveScreenshot` go to `~/Pictures/nxnative/<title ID>/` as PNG files (`DM_ALBUM_DIR` overrides the folder, created on first save); the log is `~/Library/Logs/nxnative/<title ID>.log`, the previous run's `<title ID>.prev.log`. The title ID is `DMTitleID` in the app's `Info.plist`.
  
 -A Mac app shows its own settings window before the game, drawn from its `launcher.json` and keeping its choices in the same store ([Saved choices](#saved-choices), [The Mac settings window](settings.md#the-mac-settings-window)). It shows a variable the launch environment or an `env.txt` sets as fixed. A front end that draws the settings itself starts the app with `DM_LAUNCHER=0` in its environment (or `--no-launcher` on its command line) to skip the window. The saved choices still apply, so a front end that writes them gets the same game as the window would.
 +An NXForge Mac app has no settings window of its own: it starts straight into the game with the saved choices, which NXForge.app (or any front end) writes from its `launcher.json` ([Saved choices](#saved-choices), [The Mac settings window](settings.md#the-mac-settings-window)). A variable the launch environment or an `env.txt` sets is fixed for that run. `--no-launcher` on its command line, which older builds needed to skip their window, is accepted and changes nothing; `DM_LAUNCHER=0` also skips the cloud save check.
@@ -209,7 +209,7 @@ index 24f81e7c34407a624a869f3cf442eac49b249f96..0e9137226137c4f6ccabb30568324b6f
  A Mac game quits when the player holds a controller's Home button for 2 seconds and confirms with A ([On the Mac](playing.md#on-the-mac)). Its prompt is in English; a front end that shows the player another language passes the texts in `DM_HOME_QUIT_TEXT`, one per line in this order: the hold indicator ("Keep holding to quit"), the title ("Quit <game>?"), the note ("Unsaved progress will be lost."), the quit button and the cancel button. An empty or missing line keeps the English text. The same goes for the prompt that waits when a game asks for more players than have joined (Mac and iOS): `DM_CTRL_PROMPT_TEXT`, one per line, the title ("{min} players wanted"), the hint ("Press a button on each controller to join."), the count ("Players: {joined} of {min}"), the done button and the cancel button; `{min}`, `{max}` and `{joined}` are replaced by the numbers. Whether macOS lets the game have the Home button is the player's Home button setting for apps, which a front end reads itself on macOS 27 (`GCControllerHomeButtonSettingsManager`, while a controller is connected) to tell the player when the system keeps Home.
  
 diff --git a/docs/playing.md b/docs/playing.md
-index 93e88126fbe1cab8c318b944386c1e4ad572930a..1c2ae48dc92230f109422da5ed336a8d97b86db0 100644
+index 54827a9e50fe7fb18b8174f84f1af89a7235d599..17c939569dc0982c14af4c786da5cd87227e9660 100644
 --- a/docs/playing.md
 +++ b/docs/playing.md
 @@ -49,7 +49,7 @@ Without them, Miis have no heads, and only the six default Miis are listed ([det
@@ -231,10 +231,10 @@ index 93e88126fbe1cab8c318b944386c1e4ad572930a..1c2ae48dc92230f109422da5ed336a8d
  1. **Pair a controller once, in the game.** While the game runs, hold the controller's small Sync button until its player lights sweep. The game pairs it and it plays; the log says `paired with this Mac`. A controller paired this way forgets the console it was paired with: pair it there again to use it with one.
  2. **From then on, press any button on it** while a game with the setting on is running: it wakes and connects, no Sync needed. A controller woken for a Switch 2 nearby is left alone.
 diff --git a/docs/settings.md b/docs/settings.md
-index 680a850c234cea7e8bb384b00aaa2e9b22c1b875..348754dcf397499206fdad352b7151e518b3e4ca 100644
+index 1be3bf72dd8b1d7663ec2e2aacaab201f7236544..5ebab9d414a0458cffd7f156323997afaad72951 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -263,17 +263,11 @@ Sets every setting back to the game's tested default; **Play** then forgets your
+@@ -267,17 +267,11 @@ Sets every setting back to the game's tested default; **Play** then forgets your
  
  ## The Mac settings window
  
@@ -255,7 +255,7 @@ index 680a850c234cea7e8bb384b00aaa2e9b22c1b875..348754dcf397499206fdad352b7151e5
  
  ### Display mode
  
-@@ -289,11 +283,11 @@ Turn off **Show at launch** to start the game at once with your choices. Hold Op
+@@ -293,11 +287,11 @@ Turn off **Show at launch** to start the game at once with your choices. Hold Op
  
  ### Cloud saves folder
  

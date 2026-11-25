@@ -7,6 +7,5 @@ dm/gfx/nvn/nvn_mtl.m	-W	initializing '__strong id<MTLRenderCommandEncoder>' with
 dm/gfx/nvn/nvn_mtl.m	-W	passing '__strong id<MTLRenderCommandEncoder>' to parameter of incompatible type 'id<MTL4RenderCommandEncoder>'
 dm/gfx/nvn/nvn_mtl.m	-W	passing 'const __strong id<MTLRenderCommandEncoder>' to parameter of incompatible type 'id<MTL4RenderCommandEncoder>'
 dm/gfx/nvn/nvn_mtl.m	-W	passing 'id<MTLRenderCommandEncoder>' to parameter of incompatible type 'id<MTL4RenderCommandEncoder>'
-dm/gfx/nvn/nvn_mtl.m	-W	returning 'id<MTL4ComputeCommandEncoder>' from a function with incompatible result type 'id<MTLComputeCommandEncoder>'
 dm/gfx/nvn/nvn_mtl.m	-Wcompare-distinct-pointer-types	comparison of distinct pointer types ('id<MTL4RenderCommandEncoder>' and 'id<MTLRenderCommandEncoder>')
 dm/gfx/nvn/nvn_mtl.m	-Wignored-qualifiers	ARC __unsafe_unretained lifetime qualifier on return type is ignored

@@ -15,7 +15,7 @@ Origin: EmmanueleC's commit 82ab1be7 in Fasen24-AI/swordboiMacNative (MIT).
  4 files changed, 39 insertions(+), 1 deletion(-)
 
 diff --git a/dm/host/motion_pro.h b/dm/host/motion_pro.h
-index e4e73a4ddf612f5c8cd176f0b1265163b4d95482..ee44b98af6406807fe720f19711087a0d667d979 100644
+index 26d8419febe9b7f77439b13e96c56a74b04d74d3..a7efefdee5f67c9378b907ea5d73a4b8fb8ad5ef 100644
 --- a/dm/host/motion_pro.h
 +++ b/dm/host/motion_pro.h
 @@ -2,13 +2,22 @@
@@ -74,10 +74,10 @@ index e4e73a4ddf612f5c8cd176f0b1265163b4d95482..ee44b98af6406807fe720f19711087a0
      return 3;
  }
 diff --git a/dm/host/motion_pro_mac.h b/dm/host/motion_pro_mac.h
-index 77f30c1ac5fc2e9dd9678e313983385fd6366abd..ae8f49c718a86ebedddef35fce82fb71bd335c30 100644
+index 029dd90d75054a025c933ffb9ca39c1b8af4ba1e..7853375c187a448f25bfd7930a10c0c400662ee5 100644
 --- a/dm/host/motion_pro_mac.h
 +++ b/dm/host/motion_pro_mac.h
-@@ -197,6 +197,9 @@ static void pro_report(void *ctx, IOReturn result, void *sender, IOHIDReportType
+@@ -208,6 +208,9 @@ static void pro_report(void *ctx, IOReturn result, void *sender, IOHIDReportType
      pro_motion_sample samples[3];
      int n = m->decode(&d->motion, r, (size_t)len, now, samples);
      for (int i = 0; i < n; i++) dm_motion_set_hid(g->player, samples[i].acc, samples[i].rot, samples[i].ns);
@@ -88,7 +88,7 @@ index 77f30c1ac5fc2e9dd9678e313983385fd6366abd..ae8f49c718a86ebedddef35fce82fb71
  static int pro_property(IOHIDDeviceRef hid, CFStringRef key) {
      CFTypeRef v = IOHIDDeviceGetProperty(hid, key); int n = 0;
 diff --git a/dm/host/tests/t_motion_pro.c b/dm/host/tests/t_motion_pro.c
-index 87001b221d952738659d50a028ac2bc45fd25216..b76e5bd811d48e59d4ff74ecdcc93e0d0553357f 100644
+index b7561d92f90b2048ea3716a86287f4a37f587865..27e871b99bfa10303f536e2c508bf84cefc64521 100644
 --- a/dm/host/tests/t_motion_pro.c
 +++ b/dm/host/tests/t_motion_pro.c
 @@ -29,6 +29,14 @@ int main(void) {
@@ -107,10 +107,10 @@ index 87001b221d952738659d50a028ac2bc45fd25216..b76e5bd811d48e59d4ff74ecdcc93e0d
      assert(pro_motion_player(1, 1, -1) == -1 && pro_motion_player(0, 1, 0) == -1);
      assert(pro_motion_player(2, 1, 0) == -1 && pro_motion_player(1, 2, 0) == -1);
 diff --git a/docs/reference/services.md b/docs/reference/services.md
-index d44edfd62ff2eb40c7a03fcf6e76576a831fdef3..c1800b187c17eca4f3eda6fec3d3da088008c2a4 100644
+index 24508951965580c1e30e254ade013c3039797319..eeee64981fc8e705841dc2e110020a9c64bfc955 100644
 --- a/docs/reference/services.md
 +++ b/docs/reference/services.md
-@@ -587,6 +587,7 @@ Most service calls can be found before they crash, before the first boot or the
+@@ -611,6 +611,7 @@ Most service calls can be found before they crash, before the first boot or the
  - **Fix:** `motion_pro_mac.h` listens nonexclusively to vendor `057E`, product `2009`, without sending commands or changing the driver's configuration. `motion_pro.h` converts the three signed little-endian samples to G and rad/s in the Switch frame; their nominal 5 ms spacing reaches the shared integrator through `dm_motion_set_hid`. Each HID device owns its buffer and decoder. HID, GameController and phone orientations stay separate; usable GameController data wins, otherwise fresh HID data supplies that player's controller motion. Removal, focus loss or ambiguous routing clears only the HID source; 300 ms of silence expires it. `DM_MOTION_HID=0` disables the reader; `DM_MOTION=0` disables all motion.
  - **Routing limit:** GameController exposes no public per-controller HID identity. Raw motion is enabled only with one physical Pro and one GameController Pro, using that controller's existing player slot (including `DM_KBD_PLAYER=own` / `DM_PAD_MERGE`). Multiple Pros keep their GameController paths; raw data is never assigned to the first controller by guesswork. Each model the reader knows (a table in `motion_pro_mac.h`, with the [DualShock 4](#dualshock-4-over-bluetooth-advertises-motion-but-sends-zeroes)) is paired on its own, so another model connected beside the Pro does not make it ambiguous; under `DM_PAD_MERGE`, where two models share player 1, the first live model in the table keeps it. Every motion report rechecks routing, so a continuously streaming pad takes over when the preferred model has been silent for one second, even without a removal callback; the preferred model takes the player back on its first report. `t_motion_pro_mac` covers both transitions. Synthetic GameController HID devices are excluded with Apple's `GCSyntheticDevice` property.
  - **Open:** passive reading cannot obtain factory calibration without issuing SPI commands alongside the OS driver (identical pads read from their reports do issue that read, and it works: [Identical controllers that GameController lists as one](#identical-controllers-that-gamecontroller-lists-as-one)). Nominal scales are 4096 counts/G and 70 mdps/count ([protocol research](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/imu_sensor_notes.md)); no automatic bias learning removes slow intentional turns. Sample order follows that research and [Linux hid-nintendo](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-nintendo.c); SDL reverses it. Confirm order, sensitivity, drift and reconnects on hardware before calling the reworked reader device-tested. `t_motion_pro`, `t_motion_pro_mac` and `t_hid` cover decoding, timestamps, ownership, removal, ambiguity and source fallback with synthetic inputs.

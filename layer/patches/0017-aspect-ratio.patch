@@ -16,13 +16,13 @@ DM_SCREEN_WIDE takes shapes from 1.3:1 to 32:9 other than 16:9, so 16x10 renders
  5 files changed, 35 insertions(+), 15 deletions(-)
 
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 70ac7c05768ca2f1530c1675aef0b5b9e6b2250b..d24198782a85f51dba5ba44b6ae8d70f10a45fd8 100644
+index 60bf7cccb335861e6fdd4a9228ea51a86a355190..99a1ed6572674a61896ff74e2fba7eedec2ef409 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
-@@ -38,9 +38,9 @@ DM_PAD_PRESS_TO_JOIN	toggle	-	0	always	Controls	Press a button to join
+@@ -39,9 +39,9 @@ DM_PAD_PRESS_TO_JOIN	toggle	-	0	always	Controls	Press a button to join
  DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
  DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone. macOS asks for access when you launch with this enabled.	level=basic
- DM_MIC_GAIN	range	1:8:0.5	4	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
+ DM_MIC_GAIN	range	1:8:0.5	1	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
 -DM_SCREEN_ASPECT	choice	auto=Match screen?platform:ios,1.6=MacBook (16:10)?platform:mac,1.43=iPhone Duo screen (1.43:1),0=16:9 (Switch)	auto|0	fixups:SCREEN_ASPECT	Game	Picture shape	Taller shapes render more pixels and can increase GPU time and heat.
 +DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.6=MacBook (16:10)?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	fixups:SCREEN_ASPECT	Game	Picture shape	Taller shapes render more pixels and can increase GPU time and heat.
  DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
@@ -32,10 +32,10 @@ index 70ac7c05768ca2f1530c1675aef0b5b9e6b2250b..d24198782a85f51dba5ba44b6ae8d70f
  DM_PSO_MTL4	toggle	-	DM_GAME_PSO_MTL4|1	gfxapi:nvn	Performance	Metal 4 pipelines	Keeps a pipeline archive; uses more memory.
  DM_PSO_PREBUILD	toggle	-	1	gfxapi:nvn	Performance	Pipeline prebuild	The first start waits a few minutes for it, once.	needs=DM_PSO_MTL4=1
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 17818bc713da5f4aed222823e00fd51383c841dc..9da65ea0283ab0e8875a02b673f920b7ca7c1b06 100644
+index a9ad1e61defc898b5a7adf15655a2764d437824e..7880fbf56eb5da5ca4216c0e8ec3e0517d11e089 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
-@@ -939,7 +939,9 @@ extern int (*dm_front_screen)(unsigned *w, unsigned *h);
+@@ -942,7 +942,9 @@ extern int (*dm_front_screen)(unsigned *w, unsigned *h);
  static int mac_screen(unsigned *w, unsigned *h) {
      @autoreleasepool {
          NSScreen *sc = NSScreen.screens.firstObject; if (!sc) return 0;
@@ -46,7 +46,7 @@ index 17818bc713da5f4aed222823e00fd51383c841dc..9da65ea0283ab0e8875a02b673f920b7
      }
  }
  __attribute__((constructor)) static void wide_hook(void) { dm_front_screen = mac_screen; }
-@@ -1811,7 +1813,9 @@ void front_run(void (*guest)(void)) {
+@@ -1814,7 +1816,9 @@ void front_run(void (*guest)(void)) {
          NSRect r = NSMakeRect(0, 0, 1280, 720);
          {   // A wide picture (DM_SCREEN_WIDE as the loader left it: <width>x<height> or 0, loader.c) gets a window of its shape
              const char *sw = getenv("DM_SCREEN_WIDE"); unsigned ww = 0, wh = 0;
@@ -58,10 +58,10 @@ index 17818bc713da5f4aed222823e00fd51383c841dc..9da65ea0283ab0e8875a02b673f920b7
          NSWindow *win = [[NSWindow alloc] initWithContentRect:r
                                                      styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index c208958986d9beae65a9e9a376df7835f859eabe..66a515dd3b6da10ad73be2b44f4ae98699884290 100644
+index be4f885c2cedf6d00bc57c691402f3f9d490e62e..7a3fcc99a606c786338df8e08f5558ab5b2be3f2 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
-@@ -416,6 +416,12 @@ static void install_fps_state(module_t *m) {
+@@ -493,6 +493,12 @@ static void install_fps_state(module_t *m) {
  }
  // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
  // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
@@ -74,7 +74,7 @@ index c208958986d9beae65a9e9a376df7835f859eabe..66a515dd3b6da10ad73be2b44f4ae986
  void dm_fps_state_apply(void) {
      if (!dm_fps_state) return;
      const char *e = getenv("DM_FPS_TARGET"); int t = e ? atoi(e) : DM_GAME_FPS_TARGET;
-@@ -441,7 +447,15 @@ void dm_fps_state_apply(void) {
+@@ -518,7 +524,15 @@ void dm_fps_state_apply(void) {
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
      const char *as = getenv("DM_SCREEN_ASPECT");
@@ -91,7 +91,7 @@ index c208958986d9beae65a9e9a376df7835f859eabe..66a515dd3b6da10ad73be2b44f4ae986
          char *end; float a = strtof(as, &end);
          if (end == as || *end || !(a >= 1.3f && a < 1.77f)) LOG("[RED] DM_SCREEN_ASPECT=%s: a width / height from 1.3 to 1.77; keeping 16:9", as);
          else {
-@@ -487,11 +501,13 @@ void dm_fps_state_apply(void) {
+@@ -564,11 +578,13 @@ void dm_fps_state_apply(void) {
          if (!(om ? atoi(om) : DM_GAME_OPMODE)) {
              if (asked) LOG("%s: DM_SCREEN_WIDE=%s: handheld mode keeps 16:9 (the handheld picture's size is not among the wide-screen stubs: Ocarina of Time crops it to 1920x1080)", g_fps_mod, ws);
          } else if (!strcmp(ws, "auto")) {
@@ -110,10 +110,10 @@ index c208958986d9beae65a9e9a376df7835f859eabe..66a515dd3b6da10ad73be2b44f4ae986
          if (ok) {
              double a = (double)ww / wh; uint32_t q = (uint32_t)(a * 65536.0 + 0.5); float af = (float)a;
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index e6694fcba5768bbf80cca4dc7350a6fca23a2d09..c3eddee65e64dfb95ccb825e79922bc10488bd0b 100644
+index 3fa328e72da9d09a631a02ddec6cc08c80dacb24..27bd9b28c68cd6ee7440c04c90ebd85f7eeca5d7 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -432,12 +432,12 @@ DM_SAVED_CHOICES	switch	`0` ignores the player's saved choices (launcher.<VAR> i
+@@ -438,12 +438,12 @@ DM_SAVED_CHOICES	switch	`0` ignores the player's saved choices (launcher.<VAR> i
  DM_SAVE_SYNC	player	Cloud saves: the folder whose `<title ID>/save.dmsync` the save is synced through, `icloud` for iCloud Drive/nxnative Saves (the Mac); `0` or unset, off. The Mac launcher sets the folder chosen in its settings window's Cloud saves, the iPhone app the one picked in its launcher (dm/host/save_sync.h); regress.py, bench.py and the NSP script's own host runs set `0`
  DM_SAVE_SYNC_CHOICE	switch	Cloud saves: set by a front end that asks the player when the cloud's save and this device's both changed (any value: a save that changed on both sides is replaced on neither without a choice); `ask`: no choice yet, `cloud:<hash>` brings in the cloud's save with that hash, `local:<hash>` sends this device's over the cloud's save with that hash (`local:none`: the cloud had none), `offline`: the cloud could not be read before the start, so the host does not wait for it; unset, the newer save wins (dm/host/save_sync.c, docs/frontends.md)
  DM_SCHEME_NAME	switch	Set by `build_ipa.sh` itself for xcodegen's `project.yml`: the Xcode scheme name, `DmIOS`, or `<display name> (<title ID>)` for a project prepared with `--prepare-xcode`
@@ -129,10 +129,10 @@ index e6694fcba5768bbf80cca4dc7350a6fca23a2d09..c3eddee65e64dfb95ccb825e79922bc1
  DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
  DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
 diff --git a/docs/settings.md b/docs/settings.md
-index 57b24ae098c0f0bce598a690f7249b04b7d752b7..6673c7f66453d8dc75ee09e85959f156123f711f 100644
+index 17b091ef910d04c9b92fc9b28c83cf4d317c4357..7ba9cb69b83a74417ea2668e1ae4faf310f61e1a 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -90,7 +90,7 @@ iPhone and iPad. **Fit**, the default, shows the game's picture (16:9, or the ta
+@@ -94,7 +94,7 @@ iPhone, iPad and Mac. **Fit**, the default, shows the game's picture (16:9, or t
  
  ### Picture shape
  
@@ -141,7 +141,7 @@ index 57b24ae098c0f0bce598a690f7249b04b7d752b7..6673c7f66453d8dc75ee09e85959f156
  
  ### Rotation
  
-@@ -98,7 +98,7 @@ iPhone and iPad. **Automatic**, the default, turns with the device as before: la
+@@ -102,7 +102,7 @@ iPhone and iPad. **Automatic**, the default, turns with the device as before: la
  
  ### Wide screen
  
@@ -150,8 +150,8 @@ index 57b24ae098c0f0bce598a690f7249b04b7d752b7..6673c7f66453d8dc75ee09e85959f156
  
  ### Frame-rate counter
  
-@@ -328,8 +328,8 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
- | Picture (iPhone and iPad) | `DM_PICTURE_FIT` | `fit` 16:9 with black bars, `fill` covers the screen, cropped |
+@@ -332,8 +332,8 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+ | Picture | `DM_PICTURE_FIT` | `fit` 16:9 with black bars, `fill` covers the screen (or Mac window), cropped |
  | Picture shape | `DM_SCREEN_ASPECT` | On builds with screen-shape stubs, `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1), else 16:9 (iOS only); `1.6` MacBook (16:10, Mac only); `1.43` the iPhone Duo's shape, `0` 16:9 |
  | Rotation (iPhone and iPad) | `DM_ROTATION` | `auto` as the device turns, `landscape`, `portrait` |
 -| Picture shape | `DM_SCREEN_ASPECT` | `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1), else 16:9 (iOS only); `1.43` the iPhone Duo's shape, `0` 16:9 |

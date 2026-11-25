@@ -2,6 +2,11 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.61.0 (2026-11-25)
+
+- **The engine moves to the newest nxnative** (upstream `1e06abd9`, 138 commits past the last pin `7d38c8e0`). For Mario Kart World: the end-of-race freezes of up to a minute are fixed (stalled acquire threads are retired, upstream #3285). Also: Metal 4 mesh pipelines with bases and a prebuild (built whole, which avoids the GPU hangs seen in Ocarina's Kakariko Graveyard and Jabu-Jabu), MetalFX scalers retired at their fence so old ones stop piling up, a "Texture filtering" setting from upstream (2x to 16x, beside NXForge's own sidebar floor), and Picture › Fill on the Mac. Games need a full rebuild to pick the engine up; the shader chain is now `6cc2d4225993`.
+- **One layer patch dropped because upstream now has it** (48 left): pool-stats-lock (0.58.2's Ocarina crash fix); upstream #3330 reads the pool tables under the same lock.
+
 ## 0.60.2 (2026-11-23)
 
 - **The Convert page shows a NUP's real icon, and drops a false warning** (Converter 0.29.3, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): `scripts/source_info.py` saves the icon packed in a NUP (`NXF_ICON_DIR`) so the page has it before any build, and it no longer warns "no base game in this NUP" when the update carries its own code and RomFS, which is the whole game as packers write it (Mario Kart World 1.8.0's 23.5 GB update). The build log still prints that line. App and helper script only, no engine change.
