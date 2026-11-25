@@ -178,10 +178,10 @@ index d378a90c7ac1e9829413ee14429b159640147858..d0204ca2f23129cb3a52682c4ea243ca
  // whether its content may have changed since an upload (a mapping in its range newer than gen, or a physical page behind it written after the dirty-page stamp), and the write
  // protection of the physical pages behind it (taken before an upload, as for any packaged texture)
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a056b8b9065 100644
+index c41ab746ce802e3f8085287aa4870d0fdf9bf408..0969ef3dae8b761a366b14547599c9f2cd8a33b0 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -1701,14 +1701,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,
+@@ -1704,14 +1704,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,
  }
  
  // Address → pool: the last hit first, then a binary search over indices sorted by start address, and a full linear scan only when that fails (pools overlapping).
@@ -216,7 +216,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
  }
  static int big_new(big_pool *b, uintptr_t lo, uintptr_t hi, uintptr_t end, int reach) {   // caller holds g_mu: a new entry for [lo, end) of the pool, looked up for addresses in [lo, hi)
      id<MTLBuffer> buf = pool_buf(lo, end);
-@@ -2586,6 +2602,8 @@ static void drw_drained(void) { g_drain_sub = g_sub_serial; g_drain_other = g_wr
+@@ -2589,6 +2605,8 @@ static void drw_drained(void) { g_drain_sub = g_sub_serial; g_drain_other = g_wr
  static int drw_valid(void) { return g_drain_sub == g_sub_serial && !g_drw_over && g_wr_epoch - g_wr_geo == g_drain_other; }
  static int drw_hits(uint64_t lo, uint64_t n) { for (int i = 0; i < g_ndrw; i++) if (lo < g_drw_hi[i] && g_drw_lo[i] < lo + n) return 1; return 0; }
  int nvn_sparse_alias(uint64_t lo, uint64_t hi);   // hle_nvn.c: a sparse guest range may alias another pool at a different address
@@ -225,7 +225,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
  static id<MTL4ComputeCommandEncoder> blit_buf(uint64_t rlo, uint64_t rhi, uint64_t wlo, uint64_t whi) {
      g_wr_epoch++;
      g_blit_alias = 1;   // before blit_raw, so an encoder it opens starts with alias visibility
-@@ -4456,6 +4474,12 @@ static int up_lost_take(id tex) {   // This texture's upload was dropped: take i
+@@ -4459,6 +4477,12 @@ static int up_lost_take(id tex) {   // This texture's upload was dropped: take i
      if (!tex) return 0; os_unfair_lock_lock(&g_up_lost_lk); int hit = [g_up_lost containsObject:tex]; if (hit) { [g_up_lost removeObject:tex]; atomic_store(&g_up_lost_n, (int)g_up_lost.allObjects.count); atomic_fetch_add(&g_up_lost_redo, 1); } os_unfair_lock_unlock(&g_up_lost_lk); return hit;
  }
  static void up_diag(void);
@@ -238,7 +238,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
  static void up_flush(void) {
      up_owner_check("up_flush");
      if (!g_up_cb) return;
-@@ -4488,6 +4512,7 @@ static void up_flush(void) {
+@@ -4491,6 +4515,7 @@ static void up_flush(void) {
      NSArray *dsts = targets.allObjects;
      static int lost_at = -2; static uint64_t batch_n; if (lost_at == -2) { const char *e = getenv("DM_TEST_UP_LOST"); lost_at = e ? atoi(e) : -1; } int fake_lost = dsts.count && lost_at > 0 && (int)++batch_n == lost_at;
      MTL4CommitOptions *o = [MTL4CommitOptions new];
@@ -246,7 +246,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
      atomic_fetch_add(&g_up_pending, 1);
      [o addFeedbackHandler:^(id<MTL4CommitFeedback> f) {
          if (f.error) { MLOG("[RED] upload command buffer execution error: %s", f.error.description.UTF8String); res_top_once(f.error); gpu_lost_check(f.error, "upload"); }
-@@ -4513,6 +4538,7 @@ static void up_flush(void) {
+@@ -4516,6 +4541,7 @@ static void up_flush(void) {
          } else {
              up_complete(slot);
          }
@@ -254,7 +254,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
      }];
      res_commit();
      cb_end(cb, nil);
-@@ -4868,12 +4894,50 @@ static void rb_swap_rows(uint8_t *p, size_t wb, size_t rows, size_t nz, size_t r
+@@ -4871,12 +4897,50 @@ static void rb_swap_rows(uint8_t *p, size_t wb, size_t rows, size_t nz, size_t r
  // nil elsewhere (or if it is refused: the caller looks the address up as usual). The GPU only reads it, so it is made over the pages the upload has just protected, not through pool_buf,
  // which would make them writable again and the texture count as written at once
  static uint64_t g_up_src_made;   // source buffers made (t_upload_src)
@@ -305,7 +305,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
      uintptr_t pg = (uintptr_t)getpagesize(), a = (uintptr_t)addr & ~(pg - 1), b = ((uintptr_t)addr + len + pg - 1) & ~(pg - 1);
      // The staging budget does not count guest pages. End the batch only between textures so its completion can release those pages without invalidating a source already being assembled.
      size_t budget = up_src_budget();
-@@ -8962,13 +9026,28 @@ typedef struct { tex_t t; int ok; view_t v; int has_v; void *view, *view_fam; ui
+@@ -8965,13 +9029,28 @@ typedef struct { tex_t t; int ok; view_t v; int has_v; void *view, *view_fam; ui
                   void *palt[4], *palt_of[4]; uint64_t palt_rid[4];   // palt[k]: the view a texture pool table of layered type k (pool_lk) holds for the ID (pool_fit), apart from alt so slot binds and tables do not take turns
                   void *alt, *alt_of; uint64_t alt_rid; uint8_t alt_type;   // alt: compatible view used when the shader's declared type differs from view (tex_fit), alt_of = the view it was built from
                   void *im, *im_of; uint64_t im_rid;                       // im: the view an image slot reads in the shader's pixel class (img_fit), im_of = the view it was built from
@@ -335,7 +335,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
  // Texture ID views are valid for an epoch (view_ser), not for every serial table change: ser_sync takes the notes (own_note) and sends only the IDs registered with a noted serial
  // down the slow path; a change without a note starts a new epoch, which sends them all (what every g_ser_gen bump did before). A battle map in Fire Emblem: Fortune's Weave changes a
  // few serials a frame (the per-stage program ring in bind_stages among them), and each change made the next pool walk (pool_gpu) resolve all ~5,000 IDs again, 2 ms a frame.
-@@ -9063,14 +9142,22 @@ static void treg_drop_stand(treg_t *r) {
+@@ -9066,14 +9145,22 @@ static void treg_drop_stand(treg_t *r) {
      if (r->stand) { defer_obj_unref((__bridge id)r->stand); CFRelease(r->stand); r->stand = NULL; r->stand_rid = 0; g_stand_live--; }
      r->stand_no = 0;
  }
@@ -365,7 +365,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
  }
  static void treg_retire_serial(uint64_t ser) {
      // Finalize retires the API object, not the descriptor's copied metadata.
-@@ -9211,8 +9298,14 @@ static nvn_hmap g_vc = {.klen = 8};   // the Metal texture's address → vc_set
+@@ -9214,8 +9301,14 @@ static nvn_hmap g_vc = {.klen = 8};   // the Metal texture's address → vc_set
  static uint64_t g_vc_hit, g_vc_new;
  static inline uint64_t vc_addr(id<MTLTexture> t) { return (uint64_t)(uintptr_t)(__bridge void *)t; }
  static void vc_rows_drop(vc_set *s) { if (s->rows) { defer_obj_release((__bridge id)s->rows); CFRelease(s->rows); s->rows = NULL; s->rows_rid = s->rows_n = 0; } }
@@ -380,7 +380,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
      for (int i = 0; i < VC_WAYS; i++) if (s->view[i]) { defer_obj_unref((__bridge id)s->view[i]); CFRelease(s->view[i]); }
      vc_rows_drop(s);
      free(s);
-@@ -9228,7 +9321,7 @@ static vc_set *vc_set_for(id<MTLTexture> base, const void *pool) {   // base's e
+@@ -9231,7 +9324,7 @@ static vc_set *vc_set_for(id<MTLTexture> base, const void *pool) {   // base's e
      if (!held) return NULL;
      if (g_vc.n >= VC_MAX) nvn_hm_clear(&g_vc, vc_set_free);
      if (!(s = calloc(1, sizeof *s))) return NULL;
@@ -389,7 +389,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
      return s;
  }
  static void vc_put(id<MTLTexture> base, const void *pool, const vc_key *k, id<MTLTexture> v) {
-@@ -9266,6 +9359,7 @@ void mtl_vc_stats(unsigned *n, uint64_t *hit, uint64_t *made) { os_unfair_lock_l
+@@ -9269,6 +9362,7 @@ void mtl_vc_stats(unsigned *n, uint64_t *hit, uint64_t *made) { os_unfair_lock_l
  static void tb2_gone_clear(void);
  static void vc_drop_pool(const void *pool) {   // caller holds g_rmu
      tb2_gone_clear();
@@ -397,7 +397,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
      for (uint32_t i = 0; i < g_vc.cap;) {   // a deletion shifts later entries back into slot i: look at it again
          vc_set *s = g_vc.vals[i];
          if (s && s->pool == pool) { uint64_t a; memcpy(&a, g_vc.keys + (size_t)i * 8, 8); nvn_hm_del(&g_vc, &a); vc_set_free(s); }
-@@ -9402,9 +9496,10 @@ static void treg_gone(treg_t *r) {
+@@ -9405,9 +9499,10 @@ static void treg_gone(treg_t *r) {
      treg_drop_stand(r);
  }
  static void treg_drop_pool_views(const void *pool) {
@@ -409,7 +409,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
      os_unfair_lock_unlock(&g_rmu);
  }
  // Which texture IDs shaders read through a pool (dmsh_reflect.py pool_arrays): a bitmap the shaders set, one bit an ID, which the host folds into g_seen_done at each submission. A handle read from game
-@@ -9506,6 +9601,11 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
+@@ -9509,6 +9604,11 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
              if (rr->next) g_treg[rr->next - 1].prev = id_ + 1;
              nvn_hm_put(&g_treg_serial, &t->serial, (void *)(uintptr_t)(id_ + 1));
          }
@@ -421,7 +421,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
      }
      // The scan can remove a gone ID before an identical registration revives it.
      if ((!same || was_gone) && t && !rr->sp && t->pool && nvn_sparse_pool(t->pool)) {
-@@ -17127,7 +17227,7 @@ static int tex_storage_overlap(const tex_t *a, const tex_t *b) {
+@@ -17130,7 +17230,7 @@ static int tex_storage_overlap(const tex_t *a, const tex_t *b) {
      if (!a->mem || !b->mem) return 0;
      uint64_t x = (uint64_t)a->mem, y = (uint64_t)b->mem;
      if (!a->L.size || !b->L.size || a->L.size > UINT64_MAX - x || b->L.size > UINT64_MAX - y) return 1;
@@ -430,7 +430,7 @@ index 39e44de85bb49a3fa30ac651517fc4373e63f4e5..c36fcddd0cfcac2ed802a5f5e6511a05
  }
  static int g_samples_fb_left;   // draw_samples_rt: a fragment texture that is a colour attachment does not count: fb_prepare answers for it, as for any draw of a pass
  static const char *g_dsr_why;   // what draw_samples_rt found (the pass dump's split line)
-@@ -21005,7 +21105,7 @@ int mtl_fps_target(void) { static int env = -2; if (env == -2) { const char *e =
+@@ -21008,7 +21108,7 @@ int mtl_fps_target(void) { static int env = -2; if (env == -2) { const char *e =
  // Cut only when no encoder is open and no pass is deferred / merged / hoisted; commit this batch's uploads first (later draws use them). The fence signal and completion work stay on the last segment only: the queue executes in commit order and every encoder starts with a queue barrier
  // A buffer → texture copy is cut after as well, at the next pass boundary whatever the draw count (g_cut_copy, set by copy_b2t). It can run while the host encodes the rest.
  // The cut starts the already encoded work promptly. Record-time staging handles a source recycled by the CPU before encoding even reaches the copy (hle_nvn.c).

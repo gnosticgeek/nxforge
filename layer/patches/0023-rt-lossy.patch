@@ -18,10 +18,10 @@ Check: make -C dm/gfx/tests GAME=<id> check_t_rt_lossy (Mac).
  create mode 100644 dm/gfx/tests/t_rt_lossy.m
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index e213a57938b8a31fd4cec873a0b4bf0c13f15277..9dbd74d2c293bbd3cc4f5c4f8f26e0f7ffb6d3ad 100644
+index aafc5f1efba83ca076987ae0a7d4705895c8af7a..7426f6dc985440b274746e4067f5fef0ce8eb94b 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -4218,6 +4218,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
+@@ -4221,6 +4221,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
      *w = l < 32 ? MAX(t->d.width >> l, 1u) : 1u; *h = l < 32 ? MAX(H >> l, 1u) : 1u;
      if (z) *z = l < 32 ? MAX(Z >> l, 1u) : 1u;
  }
@@ -46,7 +46,7 @@ index e213a57938b8a31fd4cec873a0b4bf0c13f15277..9dbd74d2c293bbd3cc4f5c4f8f26e0f7
  // In-place upgrade: when the original texture was not created with PixelFormatView (off by default, to keep Apple GPU lossless compression) but a different-format view is needed, create a new one with the original spec + PixelFormatView, copy over every slice × level, and replace the registration.
  // Count: across the 4 screens character select / camp / wilderness / combat, 17473 textures needed a different-format view 0 times, so this is a fallback and does not rely on predicting which textures need it
  // The same upgrade adds render-target usage for a whole-level clear (clear_tex) of a texture made without it: Monster Hunter Rise clears a 32x80 packaged one
-@@ -7078,7 +7096,7 @@ static void *tex_mtl_resolve(const tex_t *ct, int *in_storage, id<MTLTexture> __
+@@ -7081,7 +7099,7 @@ static void *tex_mtl_resolve(const tex_t *ct, int *in_storage, id<MTLTexture> __
          mt = pair_texture(t, d);   // (neither filled: their storage is shared)
          if (!mt) mt = image_texture(t, d);
          if (!mt) mt = pool_heap_texture(t, d);
@@ -72,7 +72,7 @@ index e7bdf3fc907e6d5aec0252eecfd2c13ce8a95ed7..6cac1e87a30f483d6b1decbc65e484c5
 +	MTL_DEBUG_LAYER=1 ./t_rt_lossy off
 diff --git a/dm/gfx/tests/t_rt_lossy.m b/dm/gfx/tests/t_rt_lossy.m
 new file mode 100644
-index 0000000000000000000000000000000000000000..a7992e0c139babb5aae8b7349b87f8859541ee53
+index 0000000000000000000000000000000000000000..7cf2f26fd2b3b8bbf7c0e4b181a66429d30a47d7
 --- /dev/null
 +++ b/dm/gfx/tests/t_rt_lossy.m
 @@ -0,0 +1,89 @@
@@ -158,8 +158,8 @@ index 0000000000000000000000000000000000000000..a7992e0c139babb5aae8b7349b87f885
 +    b.serial = 999041; b.d.width = b.d.height = 256; nvn_tex_layout(&b.d, &b.L); mtl_tex_init(&b);
 +    id<MTLTexture> ma = tex_mtl(&a), mb = tex_mtl(&b);
 +    CHECK(ma.heap && ma.heap == mb.heap, "resolution-family sharing remains available");
-+    CHECK(!ma.allowGPUOptimizedContents && ma.compressionType == MTLTextureCompressionTypeLossless,
-+          "uncompressed family storage is never forced into lossy compression");
++    CHECK(ma.compressionType == MTLTextureCompressionTypeLossless,   // families keep Metal's lossless compression since upstream 4015ce2c; the lossy opt-in never reaches them
++          "family storage is never forced into lossy compression");
 +    mtl_sub_commit(); mtl_drain();
 +    CHECK(!mtl_last_commit_error(), "initialization and the upgrade copy finish without GPU errors");
 +    mtl_alias_drop_pool(&p); mtl_drain();

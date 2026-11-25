@@ -30,7 +30,7 @@ index 304015c777528ef9fa26b470320fce74bd6ade2d..748c7d9200d945819fc439e5e9d17556
 +DM_MEMORY_GB	choice	auto=Automatic,8=8 GB,12=12 GB,16=16 GB,18=18 GB,24=24 GB,32=32 GB	auto	gfxapi:nvn	Performance	Memory	How much of the device's memory the game plans for. Lower than the device has: textures are let go sooner, with more room for other apps.
  DM_METAL_HUD	toggle	-	0	always	Performance	Performance HUD
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 0812838bb146b71d197c35e34bf4a0191baf9090..e213a57938b8a31fd4cec873a0b4bf0c13f15277 100644
+index 89c23f56608c88729ffbd4fd41d6d2b838d2c025..aafc5f1efba83ca076987ae0a7d4705895c8af7a 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -874,6 +874,23 @@ static void res_check(id r, const char *what, int reg) {
@@ -66,7 +66,7 @@ index 0812838bb146b71d197c35e34bf4a0191baf9090..e213a57938b8a31fd4cec873a0b4bf0c
  #if TARGET_OS_IPHONE
          if (!lim) g_guard.stop = g_guard.wall = UINT64_MAX;
  #endif
-@@ -9425,7 +9442,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
+@@ -9428,7 +9445,7 @@ static int tex_reg_target(const treg_t *r) { return tex_reg_target_of(&r->t, r->
  enum { SEEN_REARM = 60, SEEN_CAP_DIV = 4 };
  static uint32_t g_seen_at[POOL_SEEN_WORDS * 32]; static uint64_t g_seen_rearm, g_seen_kept, g_seen_dropped;
  static int seen_keep(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_NVN_SEEN_KEEP"); v = e ? MAX(atoi(e), 0) : 600; } return v; }
@@ -75,7 +75,7 @@ index 0812838bb146b71d197c35e34bf4a0191baf9090..e213a57938b8a31fd4cec873a0b4bf0c
  static int pool_seen_stale(int id_) {   // caller holds g_rmu
      if (!seen_keep() || g_seen_kb_all <= seen_cap_kb() || id_ < 0 || id_ >= (int)(POOL_SEEN_WORDS * 32) || !pool_seen(id_)) return 0;
      return (uint32_t)atomic_load(&g_cur_frame) - g_seen_at[id_] > (uint32_t)seen_keep();
-@@ -14653,7 +14670,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
+@@ -14656,7 +14673,7 @@ enum { POOL_FRAME_BYTES = 32u << 20, POOL_REQ_BYTES = 128u << 20, POOL_SUB_MS =
  static uint64_t g_walk_frame = ~0ull, g_walk_spent, g_walk_sub = ~0ull; static double g_walk_ms; static int g_walk_over;
  static uint64_t pool_tex_size(const tex_t *t) { return t->L.size ? t->L.size : 1; }
  static int pool_size_cmp(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }

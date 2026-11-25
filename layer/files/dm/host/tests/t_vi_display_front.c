@@ -12,6 +12,7 @@ uint64_t now_ns(void) { return 0; }
 uint64_t guest_ns(void) { return 0; }
 void mtl_present_progress(uint64_t *queued, uint64_t *done) { *queued = *done = 0; }
 double mtl_presented_time(uint64_t n) { (void)n; return 0; }
+int mtl_gpu_done(uint64_t f, uint64_t *t1) { (void)f; *t1 = 0; return -1; }   // no GPU here: no record, so a frame's time is when it was queued (hle_vi.c)
 // the HDR answers hle_vi.c gives (nvn/hdr.c, upstream PR #3009): these checks reach none, so HDR off and the default paper white
 int dm_hdr_paper_white(void) { return 203; }
 int dm_hdr_answer(uint16_t *peak) { if (peak) *peak = 0; return 0; }
