@@ -16,7 +16,7 @@ Idea from the fork survey (PranavDupati/ninboy-hat-for-macos, widmonstertony's d
  6 files changed, 51 insertions(+), 4 deletions(-)
 
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 43c354859df7be3ee7557e9a6c4f47ae2287d221..a15ad70d73a14159428adefc2413405f6ff6bd9a 100644
+index e8d36295173432dd64be139ff182e427e641e270..7e1663cdb4570f926b1230219197715f3cdc179c 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -38,6 +38,8 @@ DM_RUMBLE_MIN	range	0:0.9:0.05	0	always	Controls	Rumble cutoff
@@ -25,11 +25,11 @@ index 43c354859df7be3ee7557e9a6c4f47ae2287d221..a15ad70d73a14159428adefc2413405f
  DM_PAD_PRESS_TO_JOIN	toggle	-	0	always	Controls	Press a button to join
 +DM_MOUSE_CAMERA	toggle	-	0	platform:mac	Controls	Mouse camera	Hold the right mouse button and move the mouse to turn the camera (the right stick).
 +DM_MOUSE_CAMERA_SPEED	range	0.25:4:0.25	1.0	platform:mac	Controls	Mouse camera speed		needs=DM_MOUSE_CAMERA=1
- DM_SW2	toggle	-	0	platform:mac	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
+ DM_SW2	toggle	-	0	always	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it (on iPhone and iPad, after each start). The system asks once for Bluetooth access.
  DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone. macOS asks for access when you launch with this enabled.	level=basic
  DM_MIC_GAIN	range	1:8:0.5	1	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 7880fbf56eb5da5ca4216c0e8ec3e0517d11e089..3d07b52e2c8ea76822e0a1338a4fb3bd704aa1e6 100644
+index d9258f50b98b7548992f5b01e6ad6d679b950ede..92d414f4bb7f875895ff960b36dde531198afdaa 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -6,7 +6,7 @@
@@ -41,7 +41,7 @@ index 7880fbf56eb5da5ca4216c0e8ec3e0517d11e089..3d07b52e2c8ea76822e0a1338a4fb3bd
  // Controllers: face buttons as on the iPhone, by position (right A, bottom B, top X, left Y) or on a Nintendo pad by its labels (pad_apple.h) while the face buttons are not remapped, shoulders L R, triggers ZL ZR, Menu + Options −, both sticks and their presses.
  // Each controller is a player of its own (local co-op): the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (pad_slots.h);
  // DM_PAD_MERGE=1 merges every controller into player 1 instead, DM_KBD_PLAYER=own makes the keyboard player 1 on its own, with the controllers from player 2 on.
-@@ -246,9 +246,14 @@ static void cursor_hide_for_input(void) {
+@@ -272,9 +272,14 @@ static void cursor_hide_for_input(void) {
      NSView *v = g_win.contentView;
      if (NSPointInRect([v convertPoint:g_win.mouseLocationOutsideOfEventStream fromView:nil], v.bounds)) [NSCursor setHiddenUntilMouseMoves:YES];
  }
@@ -57,7 +57,7 @@ index 7880fbf56eb5da5ca4216c0e8ec3e0517d11e089..3d07b52e2c8ea76822e0a1338a4fb3bd
      dm_input_set(g_btn, lx, ly, rx, ry);
  }
  // Key and controller map (the sidebar's Controls section, quick_settings_mac.swift; saved per game). Actions 0–15 are the NpadButton bits (dm_input.h: A B X Y, the stick presses,
-@@ -500,7 +505,33 @@ static void pads_reread(void) {
+@@ -544,7 +549,33 @@ static void pads_reread(void) {
      for (jc1_pad *d = g_jc1_pads; d; d = d->next) jc1pad_read(d);
  }
  static void hq_close(void);
@@ -91,7 +91,7 @@ index 7880fbf56eb5da5ca4216c0e8ec3e0517d11e089..3d07b52e2c8ea76822e0a1338a4fb3bd
      hq_close();   // the prompt or the hold indicator, if one is up: the Games app the system opens for Home takes the focus too
      [NSCursor setHiddenUntilMouseMoves:NO];
      display_awake(0);
-@@ -893,6 +924,9 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
+@@ -942,6 +973,9 @@ void front_picture_shape(int w, int h) { if (w > 0 && h > 0) g_picture_aspect =
      dm_touch_set(&t, 1); g_mouse_down = 1;
  }
  - (void)mouseUp:(NSEvent *)e { (void)e; if (g_mouse_down) { g_mouse_down = 0; dm_touch_set(NULL, 0); } }
@@ -101,7 +101,7 @@ index 7880fbf56eb5da5ca4216c0e8ec3e0517d11e089..3d07b52e2c8ea76822e0a1338a4fb3bd
  // The drawable follows the view in pixels: a layer assigned to a layer-backed view kept the drawable at the first window's 1280x720 in fullscreen too, so the game picture was
  // scaled down to it and up again by the compositor
  - (void)fitDrawable {
-@@ -1931,7 +1965,7 @@ void front_run(void (*guest)(void)) {
+@@ -1990,7 +2024,7 @@ void front_run(void (*guest)(void)) {
              if (e.type == NSEventTypeKeyDown && (e.modifierFlags & NSEventModifierFlagCommand)) return e;   // ⌘ shortcuts go to the menu; a key released while ⌘ is held still reaches the game, or it would stay pressed
              if (assign_key(e)) return nil;   // a key being assigned in the Controls section
              if (e.type == NSEventTypeKeyDown && fn_shortcut(e)) return e;   // fn (Globe) + a letter is the system's (fn+F full screen, GitHub issue #873), not the game's F
@@ -111,20 +111,20 @@ index 7880fbf56eb5da5ca4216c0e8ec3e0517d11e089..3d07b52e2c8ea76822e0a1338a4fb3bd
                  { int k = qs_key(e); if (k) return k > 0 ? nil : e; }   // NXForge: P peeks, C compares, / searches; a text field keeps its typing (front_mac_quick_settings.inc)
                  int nav = e.keyCode == 126 ? NAV_UP : e.keyCode == 125 ? NAV_DOWN : e.keyCode == 123 ? NAV_LEFT : e.keyCode == 124 ? NAV_RIGHT : e.keyCode == 36 || e.keyCode == 49 || e.keyCode == 76 ? NAV_OK
 diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
-index 33ba378545be16bb8b40a48a0f1c24233381226e..be8df597459bd21fee1d38db85a8ba009b7e96a0 100644
+index b947bed63dd749153e924279af77696fad955f0e..c0ac7faddbb475bbe7af51ef2cb582c22a12d9f5 100644
 --- a/dm/tools/tests/test_launcher_settings.py
 +++ b/dm/tools/tests/test_launcher_settings.py
 @@ -78,7 +78,7 @@ class LauncherSettingsTests(unittest.TestCase):
          self.assertEqual(build(BOTW, 'nvn', 'ios').keys(), ios.keys())   # ios when unset
          self.assertEqual(set(ios) - set(mac), {'DM_SHOW_FPS', 'DM_TOUCH_HAPTICS', 'DM_ROTATION'})
          self.assertIn('DM_RUMBLE', mac); self.assertIn('DM_METAL_HUD', mac)
--        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_NVN_ANISO', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART'})   # Mac-only Display mode, Switch 2 controllers, NVN texture filtering, and NXForge's present options (the Mac sidebar's too)
-+        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_SW2', 'DM_NVN_ANISO', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART', 'DM_MOUSE_CAMERA', 'DM_MOUSE_CAMERA_SPEED'})   # Mac-only Display mode, Switch 2 controllers, NVN texture filtering, and NXForge's present options (the Mac sidebar's too)
+-        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_NVN_ANISO', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART'})   # Mac-only Display mode, NVN texture filtering, and NXForge's present options (the Mac sidebar's too)
++        self.assertEqual(set(mac) - set(ios), {'DM_FULLSCREEN', 'DM_NVN_ANISO', 'DM_PRESENT_AA', 'DM_PRESENT_EDR', 'DM_PRESENT_EDR_STRENGTH', 'DM_PRESENT_INTERP', 'DM_PIXEL_ART', 'DM_MOUSE_CAMERA', 'DM_MOUSE_CAMERA_SPEED'})   # Mac-only Display mode, NVN texture filtering, and NXForge's present options (the Mac sidebar's too)
          self.assertNotIn('DM_NVN_ANISO', build('0100535012974000', 'vulkan', 'mac'))
          self.assertNotIn('DM_NVN_ANISO', build('010014E00DB56000', 'gl', 'mac'))
          s = mac['DM_FULLSCREEN']
 diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
-index a22c86ee89242770629007be70a7d1b07442d4f3..55ba34fedd82f9d5e69f01141387a1aa6f529a74 100644
+index fe9a167b2d13c89363467fceec4d2b13717ee38b..0766a184f2a54854a5923c45e2068cfd629bd82a 100644
 --- a/docs/agents/symptoms.md
 +++ b/docs/agents/symptoms.md
 @@ -10,6 +10,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
@@ -136,10 +136,10 @@ index a22c86ee89242770629007be70a7d1b07442d4f3..55ba34fedd82f9d5e69f01141387a1aa
  - the game reloads one asset for ever: a background loader takes about a core and the process several (Ocarina of Time: 412% CPU on the Mac, `OptimizeChangeBanc` and `ParallelDecompThread` busy all session, one model and its texture opened about 22 times a second). Or, from the NSP script: `vN: K file(s) whose bytes do not start as their names promise (a .zs file that is not a zstd stream), so the game files are damaged`, then the files. → [A damaged file in a NUP or a dump has no hash to fail](../reference/packing.md#a-damaged-file-in-a-nup-or-a-dump-has-no-hash-to-fail)
  - `pack_nup.py`, or the NSP script on a NUP, ends in a Python traceback (`RecursionError` in `tree_bytes`) instead of a `[RED]` line. → [A NUP whose folder contains itself](../reference/packing.md#a-nup-whose-folder-contains-itself)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index b36fe4697457c5b60cf3347bbd24ac4c933972af..82f76f6b5b3ea7e85ff9fc3c2fd0b4374761c52c 100644
+index 376d2f036619efeadce069db60b89573957c9152..3f0c627c7d87c3df23f04526c706e38ff8f6044f 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -157,6 +157,8 @@ DM_MOTION_AXES	switch	`=<map>` such as `x,-z,y`: maps Apple's controller axes to
+@@ -158,6 +158,8 @@ DM_MOTION_AXES	switch	`=<map>` such as `x,-z,y`: maps Apple's controller axes to
  DM_MOTION_GAIN	switch	`=<gain>`: how fast the orientation is pulled toward the measured gravity, in rad/s per unit error (default 0.5; `0` integrates the gyro alone)
  DM_MOTION_HID	switch	On the Mac, `0` disables the passive HID motion fallback of a Switch Pro Controller, a DualShock 4 over Bluetooth, and an 8BitDo Ultimate 2 Wireless over Bluetooth (`motion_pro_mac.h`); enabled by default when exactly one physical pad and one GameController controller of a model can use the same player slot; usable GameController motion takes priority
  DM_MOTION_LOG	diagnostic	`=1` logs player 1's mapped motion sample once a second per source (phone / GameController / controller HID; acceleration in G, gyro in revolutions/s), for checking the axes: flat and still reads acc 0 0 -1
@@ -149,7 +149,7 @@ index b36fe4697457c5b60cf3347bbd24ac4c933972af..82f76f6b5b3ea7e85ff9fc3c2fd0b437
  DM_MSL_DIR	path	Parent folder of the shader libraries: NVN loads from `b-<chain version>/` or the one file `b-<chain version>.img` beneath it, Vulkan from `vk/`, GL from `gl/`; the app and the Mac launcher set it
  DM_MSL_LIB_COPY	diagnostic	`1` copies every `.metallib` mapping into allocator-owned `dispatch_data` on the Mac as iOS does (`nvn_mtl.m` `lib_from_map`); `0` borrows the file mapping on iOS as the Mac does by default
 diff --git a/docs/settings.md b/docs/settings.md
-index b2a6a6c74c8d17f834a4e271e4f4c1082e7466f0..95d597bba7e2f3b81e034818ce8154a5361313ff 100644
+index 8155f0e9ccb216d24820dc47b8dd7dc1b0476eb2..4e5502793c11c7e3c186dc7af07a665dc7c8005d 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -145,6 +145,14 @@ A controller's vibration weaker than this stays off, and the rest is spread over
@@ -164,6 +164,6 @@ index b2a6a6c74c8d17f834a4e271e4f4c1082e7466f0..95d597bba7e2f3b81e034818ce8154a5
 +
 +How far the stick turns for a given mouse movement, 100 % by default, 25 % to 400 % (`DM_MOUSE_CAMERA_SPEED`). At 100 % about 2,500 points of movement a second turn it fully.
 +
- ## Performance
+ ### Switch 2 controllers
  
- These settings change how the app hands frames to the screen and how it prepares the GPU's work. The game's tested defaults are a good start; change them when a game stutters, runs hot, or you want less latency.
+ **Off** by default. On, the game takes Joy-Con 2 and Pro Controller 2 over Bluetooth: hold the small Sync button on one during the game, until its player lights sweep, to pair it. On the Mac it pairs with this Mac, and after that a press of any of its buttons connects it ([Switch 2 controllers](playing.md#switch-2-controllers-mac)); macOS asks for Bluetooth access the first time, and again after the app is packed again. On iPhone and iPad it is used without pairing, so hold Sync again after each start of the game ([on iPhone and iPad](playing.md#switch-2-controllers-iphone-and-ipad)); iOS asks for Bluetooth access the first time. In an `env.txt`: `DM_SW2=1`.

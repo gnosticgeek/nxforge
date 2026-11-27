@@ -1,0 +1,241 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: seedds <seedds@gmail.com>
+Date: Sat, 21 Nov 2026 23:53:28 +0800
+Subject: upstream-pr-3037: Ocarina of Time renders taller screens natively
+ (nxnative 47578ded)
+
+Upstream's screen-shape stubs for Ocarina of Time (DM_SCREEN_ASPECT): taller render targets,
+cameras at 16:9's sides with more above and below, the HUD and menus fitted to the height,
+and the title and opening movies kept 16:9 inside the taller picture.
+
+NXForge on top:
+- the stubs sit beside NXForge's wide-screen, foliage, model detail, shadow cascade and 4K
+  output stubs; upstream's 'graphics init' function is 'shape: graphics init' here, since
+  NXForge's 4K output names another function so
+- the loader gives a screen taller than 16:9 (the Mac's Aspect ratio row at 16:10, or Auto
+  on a MacBook) to the shape stubs when the build has both (SCREEN_ASPECT capability), so
+  16:10 no longer squeezes the HUD's 2D art; ultrawide stays with DM_SCREEN_WIDE
+- Picture shape stays a row for the games whose profile has screen_aspect on; the tests
+  count the shape's 19 hooks on top of NXForge's own
+
+Co-authored-by: padsiwono <169828080+padsiwono@users.noreply.github.com>
+Co-authored-by: Piino Studio <6049515+PiinoStudio@users.noreply.github.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_016qteK5CgJi2GrwbMox94av
+---
+ dm/games/0400486024DEC000/README.md         | 14 +++++++++
+ dm/games/settings.tsv                       |  4 +--
+ dm/host/dm.h                                |  1 +
+ dm/host/loader.c                            | 20 +++++++++++-
+ dm/tools/tests/test_launcher_settings.py    | 12 +++++++-
+ dm/tools/tests/test_ocarina_screen_shape.py | 34 ++++++++++++++++-----
+ docs/env_switches.tsv                       |  2 +-
+ 7 files changed, 74 insertions(+), 13 deletions(-)
+
+diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
+index 9cd2f4e7c97c20d7ce67ce92010abead9043c4e6..213141f5ccc3217c65b1f95c10f18011d21bb91a 100644
+--- a/dm/games/0400486024DEC000/README.md
++++ b/dm/games/0400486024DEC000/README.md
+@@ -36,6 +36,20 @@ Verified on the Mac (v131072, Kokiri/Goron City gameplay): `16:9` (`0`, `2560x14
+ 
+ The revised hooks matched all 26 indexed pane rules against the v131072 layout archive. A headless run on an M4 Pro (macOS 27.2.1, Xcode 27.2, cached chain `df1800562702`) presented `2560x1920` at 4:3. The captured title movie was `2560x1440` with 240 black rows above and below. The Items pause menu showed the top bar and guide row at the edges with a round Bomb preview. Physical iPad verification of the revised title movie is pending.
+ 
++### Screen shape (`DM_SCREEN_ASPECT`, current)
++
++On v131072, `DM_SCREEN_ASPECT` (1.3 to 1.77, e.g. `1.6` for 16:10 or `1.333` for 4:3) runs nineteen hooks installed together under `MATCH_FRAME_STEP`. Every required function must match, including the pane array allocator and constructor, before the rewriter writes the `SCREEN_ASPECT` capability that exposes *Picture shape*. The dynamic-resolution match is independent. At state `+0x48` of zero the hooks leave the original values in place. The aspect hooks cover eleven height sites across `graphics init`, `scene app init`, `base scene defaults`, `display mgr defaults`, `base res read`, and `display target a/b/c`, `perspective proj` (`sead::PerspectiveProjection::doUpdateMatrixImpl_` at `0x3485cc0`), devirtualized inlined projection updates `camera update` (`main+0x33b82c`) and `device proj` (`main+0x23b9a8`), the `Layout2` ortho builders `layout ortho` (`main+0x1520c80`) and `layout view ortho` (`main+0x773b90`), `layout calc matrix` (`main+0x14e9980`), and `pane global matrix` (`main+0x152caa0`, the edge hook below), and the movie viewport. The `Layout2` ortho stubs guard on `oh != 0`, `width >= 1000.0`, and `|width*9 - height*16| < 4.0`, scaling height by `state +0x5c` (`(16/9) / ratio`) so capture textures keep their native sizes and 2D HUD elements keep a 1:1 pixel ratio inside the centred 16:9 band while 3D rendering expands Vert+ (preserving 16:9 horizontal framing with extra vertical view); `layout calc matrix` scales full-screen PicturePanes (`width >= 1000`, `height >= 700`, `|width*9 - height*16| < 200`) so scene faders and wipes cover the expanded canvas without un-faded bands at top and bottom.
++
++The HUD and the menu bars at the screen's edges ([`shape_anchor.c`](shape_anchor.c), `_shape_anchor` in `patches.py`): the ortho stubs leave every layout in the centred 16:9 band, so `pane global matrix` calls `shape_calc` at `main+0x152ce50`, after a pane's global matrix is computed and before it is stored, for panes with a parent and root panes alike. In the HUD layouts (hearts, buttons, minimap, action guides, timers, location names) the first pane of a chain whose translation is past the 16:9 edge region (`|y| >= 650` of 2160) moves out by the extra half-height; in the menu frames `MenuOverlay_00` (top bar node 5, guide row 31) and `SystemOverlay_00` (title bar 2 and 4, bottom bar 3 and 7) those nodes move with their children. Indexed edits check the pane array bounds, the authored name, authored and live class, and any authored dimensions the edit uses. `MapMenu_00` holds both the minimap and the Minus map page: the page's subtrees (nodes 16, 81, 90, 95) count as menu, and the two layers the game places at the minimap, at (1490, -644), just inside the edge region (node 64, and node 82, the icon layer under node 81 that carries the player arrow and the exits), move down with the minimap when they sit there (x > 1000); on the map page the game puts node 82 at the centre and it stays. A child's matrix is computed from its parent's stored one, so each widget moves whole, with its labels, counts and icons; lists, centred dialogs and the map page stay in the band. The chain's state rides in the translation's z as a mark (`-3/1024` menu, `-4/1024` HUD, `-5/1024` moved), which the UI projection leaves invisible. At 16:9 the trampoline bypasses the helper and its stack traffic.
++
++Menu backgrounds that end at the 16:9 band (`pane_edit` in `shape_anchor.c`): no game art is stretched, scaled or cut. Art keeps its 16:9 size or moves; only plain shading is made larger. `PlusMenu_00`: the pause pages' side gradients (2, 3, 5, 6) reach the real top and bottom, each page's bottom gradient (11 Collection, 12 Equipment, 13 Items, the page art's own shade, even sideways) moves to the real bottom at its own height and widens to the screen's width about its page's centre (the pages are 4280 apart, so two never overlap while they slide), and the shade under the top bar (20) moves up with the bar. `SystemLoadList_00`: the list's clipping window (5) grows by the extra height at its bottom, so the list starts where it does at 16:9 and shows more rows; its rows, which the game lays from the window's top edge, are put back (marks `-6/1024` window, `-7/1024` row). `MapMenu_00`: the map page's dark backdrops (11, 17, 95) fill the screen's height, the parchment keeps its 16:9 size, and the world map's soft side shades (93, 94) reach the edges. `ChallengeMenu_01` (Threads of Time): the tapestry mask stays at its authored size. Its picture wrapper is 0x60 bytes (`main+0x1529f4c`), and the reviewed asset has no texture-transform block in its picture definition. The PR’s earlier write at wrapper `+0x100` fell outside the object. Key Items and the Minus map's parchment keep their 16:9 size.
++
++The movies (`movie draw`, `main+0x3b5c710`: the title screen's background and the opening): the draw's viewport is the whole frame buffer, so the 16:9 movie filled a taller frame, 1.33x taller at 4:3 (the title's moon an oval). At `+0x64`, after the viewport is built and before `main+0x2846e0` applies it (viewport and scissor), a rect taller than 16:9 becomes 16:9 about its centre, with black above and below; the art keeps its shape as the menu backgrounds do. The title's moon, height / width (3 frames each): 4:3 1.27 to 1.33 before, 0.98 to 1.01 after; 16:10 1.09 to 1.12 before, 0.99 to 1.01 after; 3:2 0.99 to 1.01 after; 16:9 0.99 to 1.01.
++
++Verified on the Mac (v131072, Kokiri/Goron City gameplay): `16:9` (`0`, `2560x1440`), `16:10` (`1.6`, `2560x1600`), and `4:3` (`1.333`, `2560x1920`) all keep `heart1` at `68x33` (`h/w = 0.485`, shifted vertically by half the extra height) with unstretched HUD widgets and Vert+ 3D framing.
++
++The revised hooks matched all 26 indexed pane rules against the v131072 layout archive. A headless run on an M4 Pro (macOS 27.2.1, Xcode 27.2, cached chain `df1800562702`) presented `2560x1920` at 4:3. The captured title movie was `2560x1440` with 240 black rows above and below. The Items pause menu showed the top bar and guide row at the edges with a round Bomb preview. Physical iPad verification of the revised title movie is pending.
++
+ ## Files
+ 
+ One [NUP container](../../../docs/development.md#the-packing-script-in-detail) of 25.6 GB: `scripts/pack_nup.py` unpacks it to `extract/v131072/`. The RomFS keeps most files as zstd with dictionaries from `Pack/ZsDic.pack.zs`. The movies are AV1.
+diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
+index be62eabe5d7f2b150daaa3638c42c36875a0beeb..994be426e80510d063a0c243a2595ee02add44b3 100644
+--- a/dm/games/settings.tsv
++++ b/dm/games/settings.tsv
+@@ -44,9 +44,9 @@ DM_MOUSE_CAMERA_SPEED	range	0.25:4:0.25	1.0	platform:mac	Controls	Mouse camera s
+ DM_SW2	toggle	-	0	always	Controls	Switch 2 controllers	Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it (on iPhone and iPad, after each start). The system asks once for Bluetooth access.
+ DM_MIC	toggle	-	0	mac-mic	Controls	Microphone	Lets the game hear your microphone. macOS asks for access when you launch with this enabled.	level=basic
+ DM_MIC_GAIN	range	1:8:0.5	1	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
+-DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.6=MacBook (16:10)?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	fixups:SCREEN_ASPECT	Game	Picture shape	Taller shapes render more pixels and can increase GPU time and heat.
++DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.43=iPhone Duo screen (1.43:1)?platform:ios,auto=Auto (match the screen)?platform:mac,auto=Match screen?platform:ios	auto	fixups:SCREEN_ASPECT&DM_GAME_SCREEN_ASPECT!=0	Game	Picture shape	Renders about a quarter more pixels: a little slower and warmer.
+ DM_PRESENT_INTERP	choice	off=Off,on=On,auto=Auto (120 Hz screens)	off	gfxapi:nvn&platform:mac	Performance	120 fps frame interpolation	Shows a 60 fps game at 120 fps with in-between pictures, about 8 ms later. Experimental: fast edges and the HUD can wobble.	level=basic
+-DM_SCREEN_WIDE	choice	0=16:9 (Switch),16x10=16:10?platform:mac,auto=Auto (match the screen)?platform:mac	0|auto	fixups:SCREEN_WIDE	Game	Aspect ratio	Fills a 16:10 or ultrawide screen instead of showing bars: Auto matches the screen the game opens on. 16:10 shows a little less at the sides, wider screens more.
++DM_SCREEN_WIDE	choice	0=16:9 (Switch),16x10=16:10?platform:mac,auto=Auto (match the screen)?platform:mac	0|auto	fixups:SCREEN_WIDE	Game	Aspect ratio	Fills a 16:10 or ultrawide screen instead of showing bars: Auto matches the screen the game opens on. 16:10 shows more above and below with the HUD at the edges in games that support it (Ocarina of Time), else a little less at the sides; wider screens show more at the sides.
+ DM_FOLIAGE	toggle	on/off	1	fixups:FOLIAGE	Game	Grass and ground cover	Turn off on a slower GPU: grass, ferns, clover and moss are not drawn (about 3.5 ms of GPU a frame in Ocarina of Time). Cut grass and bushes stay.
+ DM_MODEL_LOD	choice	0=Full,2=Lower,4=Lowest	0	fixups:MODEL_LOD	Game	Model detail	Lower picks the game's simpler models nearer the camera, for a slower GPU (about 1 to 3 ms a frame in Ocarina of Time's busiest scenes).
+ DM_SHADOW_CASCADES	choice	0=Full,2=2 cascades,1=1 cascade	0	fixups:SHADOW_CASCADES	Game	Shadow range	Fewer cascades end the sun's shadows nearer the camera and make near shadows softer. Takes effect at the next game start.
+diff --git a/dm/host/dm.h b/dm/host/dm.h
+index bf7466dd58ee9ac5b2b925a2de94f2a0419d954a..675409ddfdc0256808de5ef88ee56b9040558414 100644
+--- a/dm/host/dm.h
++++ b/dm/host/dm.h
+@@ -110,6 +110,7 @@ typedef struct {
+     uint64_t fps_state_off;    // frame step state page (patch_nso.py FRAME_STEP: Tears of the Kingdom 1.4.3 and Breath of the Wild 1.9.0 main); 0 = none
+     uint32_t step_max;         // the largest step the frame step stubs give the game (the fixups table's STEP_MAX, patch_nso.py ctx.step_max); 0 = FSTEP_MAX
+     uint32_t screen_wide;      // wide-screen stubs (the fixups table's SCREEN_WIDE, a capability the build's stubs declare, patch_nso.py): DM_SCREEN_WIDE has something to act on; 0 = none
++    uint32_t screen_aspect;    // NXForge: screen-shape stubs (the fixups table's SCREEN_ASPECT capability: Ocarina of Time, nxnative PR #3037); a taller DM_SCREEN_WIDE goes to them
+     uint32_t render_scale_max; // a render-scale stub's largest scale (the fixups table's RENDER_SCALE, patch_nso.py): DM_RENDER_SCALE is held to it; 0 = no such stub
+     int fstep_t120;            // the frame step stub takes its step in ticks of 1/120 s (the FRAME_STEP_120 capability: state +0x38 120, and 40 fps)
+     int movie_native_color_keys; // the movie SDK's MediaData uses the native buffer's colour index directly (MOVIE_NATIVE_COLOR_KEYS)
+diff --git a/dm/host/loader.c b/dm/host/loader.c
+index 561c7aaf01e7694f9de78702fa0d79294f6b2755..3b340f37761ed2ec302940974ecdbcc611509a23 100644
+--- a/dm/host/loader.c
++++ b/dm/host/loader.c
+@@ -423,6 +423,7 @@ static void read_layout(module_t *m, const char *dir) {
+         else if (!strcmp(key, "STEP_MAX")) m->step_max = (uint32_t)v;
+         else if (!strcmp(key, "FRAME_STEP_120")) m->fstep_t120 = v != 0;
+         else if (!strcmp(key, "SCREEN_WIDE")) m->screen_wide = (uint32_t)v;
++        else if (!strcmp(key, "SCREEN_ASPECT")) m->screen_aspect = (uint32_t)v;
+         else if (!strcmp(key, "UE_MALLOC_VT")) m->ue_malloc_vt = v;
+         else if (!strcmp(key, "UE_MALLOC_SLOT")) m->ue_malloc_slot = (unsigned)v;
+         else if (!strcmp(key, "FPS_TARGET_PTR")) m->fps_target_ptr = v;
+@@ -481,6 +482,7 @@ uint8_t *dm_fps_state;
+ int dm_fps_step_max;   // the largest step the stubs give the game (STEP_MAX in its fixups table; 0 = FSTEP_MAX): the frame step holds frames and pays back within it (hle_nvn.c)
+ static const char *g_fps_mod;   // the module holding the state page (for the log)
+ static int g_screen_wide;   // the build has wide-screen stubs (SCREEN_WIDE in its fixups table)
++static int g_screen_aspect;   // NXForge: the build has screen-shape stubs too (SCREEN_ASPECT in its fixups table)
+ int (*dm_front_screen)(unsigned *w, unsigned *h);   // the main screen's size in pixels, set by a front end that has one to match (front_mac.m); DM_SCREEN_WIDE=auto asks it
+ static float g_render_scale_max = 1.0f;   // the render-scale stub's largest scale (RENDER_SCALE in its fixups table; 1 for a stub that only lowers the game's size)
+ static int g_fstep_t120;                  // the frame step stub takes ticks of 1/120 s (the FRAME_STEP_120 capability): the page's unit (+0x38) is 120, and 40 fps is taken
+@@ -489,7 +491,7 @@ static void install_fps_state(module_t *m) {
+     dm_fps_state = m->base + m->fps_state_off; g_fps_mod = m->name; dm_fps_step_max = (int)m->step_max;
+     if (m->render_scale_max > 1) g_render_scale_max = (float)m->render_scale_max;
+     g_fstep_t120 = m->fstep_t120;
+-    g_screen_wide = m->screen_wide != 0;
++    g_screen_wide = m->screen_wide != 0; g_screen_aspect = m->screen_aspect != 0;
+ }
+ // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
+ // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
+@@ -544,6 +546,22 @@ void dm_fps_state_apply(void) {
+     if (cn && *cn) { char *end; unsigned long v = strtoul(cn, &end, 10); if (end == cn || *end || v > 3) LOG("[RED] DM_SHADOW_CASCADES=%s: 1, 2 or 3; keeping the game's shadow cascades", cn); else if (v) { scn = (uint32_t)v; LOG("%s: at most %u shadow cascades (DM_SHADOW_CASCADES; builds with the stub)", g_fps_mod, scn); } }
+     memcpy(dm_fps_state + 0x308, &scn, sizeof scn);
+     }
++    // NXForge: a build with both wide-screen and screen-shape stubs (Ocarina of Time since nxnative PR #3037) takes a screen taller than 16:9 through the shape stubs, which also
++    // fit the HUD, menus and movies to the height; DM_SCREEN_WIDE (the Mac settings' Aspect ratio row) keeps the wider screens. 16x10, or auto on a 16:10 MacBook, becomes
++    // DM_SCREEN_ASPECT=<ratio> and DM_SCREEN_WIDE=0, unless DM_SCREEN_ASPECT is already set (a value of its own wins)
++    const char *sa0 = getenv("DM_SCREEN_ASPECT");
++    if (g_screen_wide && g_screen_aspect && !(sa0 && *sa0)) {
++        const char *w0 = getenv("DM_SCREEN_WIDE"); unsigned tw = 0, th = 0; char tl = 0;
++        const char *om = getenv("DM_OPMODE");
++        if (!w0 || !*w0 || !strcmp(w0, "auto")) { if (getenv("DM_WINDOW") && dm_front_screen && !dm_front_screen(&tw, &th)) tw = th = 0; }
++        else if (sscanf(w0, "%ux%u%c", &tw, &th, &tl) != 2) tw = th = 0;
++        double r = tw && th ? (double)tw / th : 0;
++        if ((om ? atoi(om) : DM_GAME_OPMODE) && r >= 1.3 && r < 1.77) {
++            char rb[16]; snprintf(rb, sizeof rb, "%.3f", r);
++            setenv("DM_SCREEN_ASPECT", rb, 1); setenv("DM_SCREEN_WIDE", "0", 1);
++            LOG("%s: a %ux%u screen (%.3f:1) is taller than 16:9: the screen-shape stubs take it (DM_SCREEN_ASPECT=%s), not the wide-screen ones", g_fps_mod, tw, th, r, rb);
++        }
++    }
+     // Screen shape: DM_SCREEN_ASPECT, the screen's width / height between 1.3 and 1.77, makes the builds with screen-shape stubs
+     // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
+     // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
+diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
+index f2b16ef68bee07ec9c1dadd4202ef9c21c6c7035..9466106109f56ac45a81318382e364a69ab2255c 100644
+--- a/dm/tools/tests/test_launcher_settings.py
++++ b/dm/tools/tests/test_launcher_settings.py
+@@ -102,12 +102,22 @@ class LauncherSettingsTests(unittest.TestCase):
+             self.assertNotIn('DM_SCREEN_ASPECT', build(gid, 'nvn'))
+         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'GFXAPI': 'nvn', 'SETTINGS_PLATFORM': 'ios'}):
+             (Path(tmp) / 'main.fixups.tsv').write_text('# SCREEN_ASPECT\t1\n', encoding='utf-8')
+-            for gid in games:
++            for gid in games[1:]:   # NXForge: not Ocarina of Time, whose taller screens come through its Aspect ratio row (test_picture_shape_follows_the_profile)
+                 with self.subTest(gid=gid):
+                     rows = settings.build(gid, tmp, Path(tmp) / 'control.nacp')['settings']
+                     shape = next(row for row in rows if row['env'] == 'DM_SCREEN_ASPECT')
+                     self.assertEqual(shape['default'], 'auto')
+ 
++    def test_picture_shape_follows_the_profile(self):
++        # NXForge: Picture shape (DM_SCREEN_ASPECT) shows for the games whose profile has screen_aspect on (Breath of the Wild, Animal Crossing); Ocarina of Time takes a
++        # taller screen through its Aspect ratio row (DM_SCREEN_WIDE), which the loader hands to its screen-shape stubs (nxnative PR #3037)
++        with tempfile.TemporaryDirectory() as tmp, patch.object(settings.nacp, 'languages', return_value=['en-US']), patch.dict(os.environ, {'GFXAPI': 'nvn', 'SETTINGS_PLATFORM': 'mac'}):
++            (Path(tmp) / 'main.fixups.tsv').write_text('# SCREEN_ASPECT\t1\n', encoding='utf-8')   # a build with the screen-shape stubs
++            for gid, shown in (('0400486024DEC000', False), (BOTW, True), ('01006F8002326000', True)):
++                with self.subTest(gid=gid):
++                    rows = {s['env'] for s in settings.build(gid, tmp, Path(tmp) / 'control.nacp')['settings']}
++                    self.assertEqual('DM_SCREEN_ASPECT' in rows, shown)
++
+     def test_malformed_platform_defaults_are_rejected(self):
+         for default in ('1|', '|0', '1|0|1'):
+             with self.subTest(default=default), tempfile.TemporaryDirectory() as tmp:
+diff --git a/dm/tools/tests/test_ocarina_screen_shape.py b/dm/tools/tests/test_ocarina_screen_shape.py
+index 6d7e001e964721fd65da01e77dd0534d7ae1d747..d5638966150d993c073e3b13b07c81de522a22d1 100644
+--- a/dm/tools/tests/test_ocarina_screen_shape.py
++++ b/dm/tools/tests/test_ocarina_screen_shape.py
+@@ -39,30 +39,48 @@ def record_hooks(others):
+ 
+ 
+ class Placement(unittest.TestCase):
++    # NXForge: the frame step stub also installs NXForge's own Ocarina stubs (wide screen, foliage, model detail, shadow cascades, the heap retry), so the screen shape's
++    # hooks are counted against the sites the stub writes with every screen-shape function missing
++    def baseline(self):
++        return record_hooks(FUNCTIONS | {name: None for name in patch.screen_shape_functions})
++
+     def test_movie_draw_site(self):
+         # the movie's draw is one of the screen shape's functions, and its stub replaces the instruction after the viewport is built (ldp x9, x8, [x19, #0x18] at +0x64)
+         self.assertEqual(OTHERS['movie draw']['size'], 0x158)
++        base, base_caps = self.baseline()
+         sites, capabilities = record_hooks(FUNCTIONS)
+         self.assertEqual(sites[FUNCTIONS['movie draw'] + 0x64], '69a241a9')
+-        self.assertEqual(len(sites), 23)   # frame step, DRS, two render-scale hooks, and 19 aspect hooks
+-        self.assertEqual(capabilities, {'DYNAMIC_RESOLUTION', 'FRAME_STEP_120', 'SCREEN_ASPECT'})
++        self.assertEqual(len(sites), len(base) + 19)   # 19 aspect hooks on top of the rest
++        self.assertEqual(capabilities, base_caps | {'SCREEN_ASPECT'})
++        self.assertIn('DYNAMIC_RESOLUTION', capabilities)
+ 
+     def test_any_missing_aspect_match_leaves_all_aspect_hooks_out(self):
+-        render_scale = FUNCTIONS['render scale']
+-        other_sites = {0xe4, FUNCTIONS['dynamic resolution'], render_scale + 0xce4, render_scale + 0xd48}
++        base, base_caps = self.baseline()
++        self.assertNotIn('SCREEN_ASPECT', base_caps)
+         for name in patch.screen_shape_functions:
+             with self.subTest(name=name):
+                 sites, capabilities = record_hooks(FUNCTIONS | {name: None})
+-                self.assertEqual(set(sites), other_sites)
+-                self.assertEqual(capabilities, {'DYNAMIC_RESOLUTION', 'FRAME_STEP_120'})
++                self.assertEqual(set(sites), set(base))
++                self.assertEqual(capabilities, base_caps)
+ 
+     def test_aspect_does_not_need_dynamic_resolution(self):
+         sites, _ = record_hooks(FUNCTIONS)
++        base, _ = self.baseline()
++        aspect_sites = set(sites) - set(base)
+         for name in ('dynamic resolution', 'dynamic resolution update'):
+             with self.subTest(name=name):
+                 without_drs, capabilities = record_hooks(FUNCTIONS | {name: None})
+-                self.assertEqual(set(without_drs), set(sites) - {FUNCTIONS['dynamic resolution']})
+-                self.assertEqual(capabilities, {'FRAME_STEP_120', 'SCREEN_ASPECT'})
++                self.assertLessEqual(aspect_sites, set(without_drs))
++                self.assertIn('SCREEN_ASPECT', capabilities)
++                self.assertNotIn('DYNAMIC_RESOLUTION', capabilities)
++
++    def test_wide_and_shape_hooks_do_not_share_a_site(self):
++        # NXForge: the wide-screen stubs (DM_SCREEN_WIDE) patch the widths beside the heights the shape stubs patch, in two of the same functions
++        sites, _ = record_hooks(FUNCTIONS)
++        no_wide, _ = record_hooks(FUNCTIONS | {name: None for name in OTHERS if name.startswith('wide: ')})
++        no_shape, _ = self.baseline()
++        self.assertEqual(len(set(no_wide) & (set(sites) - set(no_shape)) - set(no_shape)), 19)
++        self.assertEqual(len(sites), len(set(sites)))
+ 
+ 
+ class Arm64ScreenShape(unittest.TestCase):
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index eb2f7bcec1098ec02dcbf3609ac7f14bc3e14a63..7327ab5d79693ac9499b4a7f9d7816fc0161d795 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -461,7 +461,7 @@ DM_SAVE_BACKUPS	switch	`0` disables automatic start-of-session save clones in `<
+ DM_SAVE_SYNC	player	Cloud saves: the folder whose `<title ID>/save.dmsync` the save is synced through, `icloud` for iCloud Drive/nxnative Saves (the Mac); `0` or unset, off. The Mac launcher sets the folder chosen in its settings window's Cloud saves, the iPhone app the one picked in its launcher (dm/host/save_sync.h); regress.py, bench.py and the NSP script's own host runs set `0`
+ DM_SAVE_SYNC_CHOICE	switch	Cloud saves: set by a front end that asks the player when the cloud's save and this device's both changed (any value: a save that changed on both sides is replaced on neither without a choice); `ask`: no choice yet, `cloud:<hash>` brings in the cloud's save with that hash, `local:<hash>` sends this device's over the cloud's save with that hash (`local:none`: the cloud had none), `offline`: the cloud could not be read before the start, so the host does not wait for it; unset, the newer save wins (dm/host/save_sync.c, docs/frontends.md)
+ DM_SCHEME_NAME	switch	Set by `build_ipa.sh` itself for xcodegen's `project.yml`: the Xcode scheme name, `DmIOS`, or `<display name> (<title ID>)` for a project prepared with `--prepare-xcode`
+-DM_SCREEN_ASPECT	player	`=<width/height>` (1.3 to 1.77, e.g. `1.6` for MacBook 16:10, `1.43` for the iPhone Duo) renders a build with installed screen-shape stubs in that shape: output 1920 wide, 1280-wide layout space, the HUD at the taller edges and 16:9's sides in view; `auto` the app window's own shape (iOS) or the main screen's below its notch (Mac, with a window; the loader then leaves the variable holding the ratio or `0`) when it is taller than 16:9, else 16:9; `0` or unset is 16:9; launcher setting
++DM_SCREEN_ASPECT	player	`=<width/height>` (1.3 to 1.77, e.g. `1.6` for MacBook 16:10, `1.43` for the iPhone Duo) renders a build with installed screen-shape stubs, or a build with screen-shape stubs (Ocarina of Time, nxnative PR #3037), in that shape: output 1920 wide, 1280-wide layout space, the HUD at the taller edges and 16:9's sides in view; `auto` the app window's own shape (iOS) or the main screen's below its notch (Mac, with a window; the loader then leaves the variable holding the ratio or `0`) when it is taller than 16:9, else 16:9; `0` or unset is 16:9; launcher setting
+ DM_SCREEN_ASPECT_SITES	diagnostic	`=<mask>` with DM_SCREEN_ASPECT: which of the profile's layout-size conversion stubs follow the taller layout, one bit each (default all)
+ DM_SCREEN_FOV	diagnostic	`off` with DM_SCREEN_ASPECT: the scene keeps the game's vertical angle (narrower sides) instead of 16:9's sides with more above and below
+ DM_SCREEN_HUD	diagnostic	`=<edge>,<listed>,<full width>,<full height>[,<tallest>]` with DM_SCREEN_ASPECT: the layout rules' distances and sizes in the 1280x720 space (default 280,100,1270,710,1300)

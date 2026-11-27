@@ -12,8 +12,8 @@ DM_PSO_USER) now join the list in the work folder (pso/played_manifest.tsv);
 the profile's file is untouched. NXFORGE_PLAYED_PIPELINES=off leaves them out.
 ---
  dm/tools/tests/test_nsp_played_pipelines.py | 53 +++++++++++++++++++++
- scripts/build_ipa_from_nsp.py               | 19 ++++++++
- 2 files changed, 72 insertions(+)
+ scripts/build_ipa_from_nsp.py               | 22 +++++++++
+ 2 files changed, 75 insertions(+)
  create mode 100644 dm/tools/tests/test_nsp_played_pipelines.py
 
 diff --git a/dm/tools/tests/test_nsp_played_pipelines.py b/dm/tools/tests/test_nsp_played_pipelines.py
@@ -76,16 +76,27 @@ index 0000000000000000000000000000000000000000..31193ac724f3a93984443dfd15a8c401
 +if __name__ == '__main__':
 +    unittest.main()
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index f5fbaae4bdf989cb50258beb8c8ff74d2558a776..8ebf723c96dbba3b86fd7321e72631712dc7d48d 100755
+index ae47d6bf7a08d694d87f6061f30eeca0ca0672f3..81a8a0028f02912c53e19de9f62889e4ec924bce 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3585,6 +3585,24 @@ def drop_prewarm(pso):   # the prewarm pipelines in an archive folder, with thei
-     (pso / 'prewarm.tsv').unlink(missing_ok=True)
+@@ -3748,6 +3748,10 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs, host=None):
+     if not g.table('pso_pairs.tsv').is_file() and (work / SHADER / 'pso_pairs.tsv').is_file():   # the split's copy, as the app gets it (--pso-pairs)
+         cmd += ['--pairs', g.table('shader_pairs.tsv'), '--pairs', work / SHADER / 'pso_pairs.tsv']
+     if host: cmd += ['--prewarm-host', host]
++    if host:   # NXForge: the pipelines this Mac's player built at a draw join the prewarm list (played_pipelines)
++        profile = g.table('pso_manifest.tsv')
++        _, played = played_pipelines(g, profile.read_text() if profile.is_file() else '', profile, work)
++        if played != profile: cmd += ['--manifest', played]
+     if PLAN is not None:   # pso_offline.py --check: how many bases a run would compile (exit 3), nothing written
+         lines = []
+         rc = run(cmd + ['--check'], logs / 'pso_offline_mac_check.log', env=env, fatal=False, ok=(3,), on_line=lines.append)
+@@ -3806,6 +3810,24 @@ def scratch_folder(work, gid, environ=os.environ):
+     return d
  
  
 +def played_pipelines(g, text, manifest, work):
 +    """NXForge: the pipelines this Mac's player built at a draw (the R and M rows of ~/Library/Application Support/nxnative/<id>/pso_user.tsv, the launcher's DM_PSO_USER) join the
-+    profile's prewarm list for --prebake, so a rebuilt app has them in its bundle instead of compiling them mid-play again. Rows the profile already lists are not repeated; the list
++    profile's prewarm list for --prebake (pso_offline.py --prewarm-host --manifest), so a rebuilt app has them in its bundle instead of compiling them mid-play again. Rows the profile already lists are not repeated; the list
 +    goes in the work folder (the profile's own file is left as it is). NXFORGE_PLAYED_PIPELINES=off: the profile's list alone, as nxnative builds it. Returns (text, manifest path)"""
 +    if os.environ.get('NXFORGE_PLAYED_PIPELINES', '').lower() in ('0', 'off', 'no', 'false'): return text, manifest
 +    user = Path.home() / 'Library/Application Support/nxnative' / g.id / 'pso_user.tsv'
@@ -101,14 +112,6 @@ index f5fbaae4bdf989cb50258beb8c8ff74d2558a776..8ebf723c96dbba3b86fd7321e7263171
 +    return merged, out
 +
 +
- def mac_prebake(py, repo, work, msl, g, host, pso, env, logs):
-     """PLATFORM 'mac-app', --prebake (on by default): what the app's first start would still build after the pipeline archive, made here and added to the archive folder pso, so the first
-     start finds it (nvn_mtl.m pso_bundle_open_prewarm) instead of building it before the first frame: the prewarm list's pipelines (pso_manifest.tsv: the R rows' bases with a vertex layout,
-@@ -3598,6 +3616,7 @@ def mac_prebake(py, repo, work, msl, g, host, pso, env, logs):
-     if pso is None: return pso   # no pair archive (none for this Mac's GPU, or --gpu none): the app has no bundle to put them in
-     manifest = g.table('pso_manifest.tsv')
-     text = manifest.read_text() if manifest.is_file() else ''
-+    text, manifest = played_pipelines(g, text, manifest, work)
-     rows = sum(ln.startswith(('R\t', 'M\t')) for ln in text.splitlines())
-     def none(why):   # the app goes without them: none of an earlier build's stay in pso (pso_offline.py leaves an architecture's there)
-         say(why); drop_prewarm(pso); return pso
+ def mac_app_name(name):   # the app's file name: the game name with the characters Finder shows otherwise (':' and '/') as ' - '
+     return re.sub(r'\s*[:/]\s*', ' - ', name).strip(' .-') or 'nxnative'
+ 

@@ -38,15 +38,16 @@ Claude-Session: https://claude.ai/code/session_016qteK2nyjB1RLLqWJsbvhn
  dm/games/README.md                 |   2 +
  dm/games/game.py                   |   6 +
  dm/gfx/nvn/hle_nvn.c               |  41 ++++++-
- dm/gfx/nvn/nvn_mtl.m               | 132 +++++++++++++++++++---
+ dm/gfx/nvn/nvn_mtl.m               | 138 +++++++++++++++++++----
  dm/gfx/tests/Makefile              |   2 +
  dm/gfx/tests/t_copy_alias.m        |  38 ++++++-
  dm/gfx/tests/t_direct_upload.m     |   1 +
  dm/gfx/tests/t_pool_finalize.m     | 169 +++++++++++++++++++++++++++++
  dm/gfx/tests/t_upload_src.m        |   1 +
  dm/tools/docs_patches.py           |   4 +
- docs/env_switches.tsv              |  13 ++-
- 12 files changed, 396 insertions(+), 23 deletions(-)
+ docs/agents/game-patches.md        |  32 +++---
+ docs/env_switches.tsv              |  17 ++-
+ 13 files changed, 420 insertions(+), 41 deletions(-)
  create mode 100644 dm/gfx/tests/t_pool_finalize.m
 
 diff --git a/dm/games/0400C3F00006E000/game.tsv b/dm/games/0400C3F00006E000/game.tsv
@@ -68,10 +69,10 @@ index a3be031bc7f2816230e2dffc6d4221c62fcfc16d..cc00e74549d2f2acdfb80634cc867aa1
 +# 20 to 28 ms shorter
 +up_copy	128
 diff --git a/dm/games/README.md b/dm/games/README.md
-index 0d11a7aaa345a7e60528f51e992b715b6c5e7998..8e88d9c22a21e4beed3e61d78903499ff9526f67 100644
+index b296119da86a37c09767c23409f8a16cdc4caa0a..5775950713bac1d02d72f968f37320898d20b8cc 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -311,6 +311,8 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
+@@ -338,6 +338,8 @@ One row per profile; the notes are each profile's `README.md`. Entries marked pr
  | `present_snap` | `on` / `off` (the default): present snapshots by default (`nvn_mtl.m` `mtl_snap_on`, a ring of 2 host textures): each present is copied and the game's swapchain texture is free at once, so the GPU does not idle between frames ([Present snapshots](../../docs/reference/frame-rate.md#present-snapshots-the-games-swapchain-texture-free-at-once)). A setting the game was tested with: the iOS launcher's **Frame buffering** defaults to it, and `DM_PRESENT_SNAP` / `Documents/env.txt` override it. Breath of the Wild sets it on |
  | `pso_mtl4` | `on` / `off` (the default): on iOS, render pipelines through MTL4Compiler by default, with the pipeline archive, the prepare step, the hybrid pipelines and the prebuild (on by default on the Mac; `DM_PSO_MTL4=1` / `0` overrides). A setting the game was tested with on an iPhone. It also gives the app the [pipeline archive made offline](../../docs/development.md#the-pipeline-archive-made-offline) (`build_ipa.sh` builds it for the `pso_gpu` key's list when present, else for `g18p`, unless `DM_PSO_GPUS` says otherwise). An iOS build carries the pulling libraries (`_bp`) whatever this key says, since the launcher's Metal 4 pipelines toggle can turn the path on. Profiles with `pso_mtl4 off` get no archive unless a build override selects one. Breath of the Wild sets it on |
  | `pso_gpu` | Optional, whitespace-separated GPU architectures: the ones the [pipeline archive made offline](../../docs/development.md#the-pipeline-archive-made-offline) is made for when the profile also sets `pso_mtl4 on`. The bases are made per GPU family and each family's archive costs its own `metal-tt` run, so a profile names exactly the devices it serves. 1-4 tokens, each alphanumeric, with or without the `applegpu_` prefix (for example `g18p applegpu_g19p`); `none` is not a value. Without this key, `pso_mtl4 on` keeps the A19 / A19 Pro default `g18p`; `pso_mtl4 off` gets no archive. The `DM_PSO_GPUS` switch / the NSP script's `--gpu` overrides the archive selection; this key does not enable Metal 4 pipelines |
@@ -105,10 +106,10 @@ index c18fa32a03a872a5469c7411363a49a972e7261e..467cad3b1c0af7a4dc8a4f03b1a0672f
           f'#define DM_GAME_PAD_LAYOUT {("simple", "full", "touch").index(pl)}',
           f'#define DM_GAME_OPMODE {int(om == "console")}',
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index d378a90c7ac1e9829413ee14429b159640147858..d0204ca2f23129cb3a52682c4ea243cad3be7a91 100644
+index ac52e252ce1b3442e56c34cb461f4270de8c8116..602b0cde138158f76f56737ac8ee53e9cc8d28bb 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -3542,7 +3542,9 @@ _Static_assert(sizeof(map_req) == 0x28, "NVNmappingRequest");
+@@ -3675,7 +3675,9 @@ _Static_assert(sizeof(map_req) == 0x28, "NVNmappingRequest");
  enum { VPT_LEAF = 512 };   // a page-table leaf covers 2 MB
  typedef struct { const uint8_t *phys; uint64_t gen; uint32_t live, shadow; uint64_t wst; } vpte;   // live: may still be under a live GPU buffer (vunmap_defer); shadow: per-run copy in reservation (vshadow_map); wst: last copy-change stamp
  struct vshadow { uint64_t voff, size; const uint8_t *src; uint8_t *alias_base, *alias; uint64_t alias_len, stamp; uint8_t **snap; uint32_t np; };   // misaligned physical mapping kept as a per-run copy; alias: host RW vm_remap of physical pages (0 SIGSEGV writebacks); snap: lazy per-host-page snapshot allocated only on GPU-written pages
@@ -119,7 +120,7 @@ index d378a90c7ac1e9829413ee14429b159640147858..d0204ca2f23129cb3a52682c4ea243ca
  struct vlog_ent { uint64_t off, len; };   // a mapping request: the pool's change log (nvn_sparse_log_read), kept once a placement sparse texture asks for it
  enum { VLOG_N = 4096 };
  static struct vpool **g_vp; static int g_nvp, g_cvp;   // the pools with a range of their own, under g_vp_mu
-@@ -3589,7 +3591,7 @@ static void vpool_drop(pool_t *o) {   // caller holds g_vp_mu
+@@ -3722,7 +3724,7 @@ static void vpool_drop(pool_t *o) {   // caller holds g_vp_mu
      for (uint64_t l = 0; l < (v->size + (2u << 20) - 1) >> 21; l++) free(v->pt[l]);
      for (int i = 0; i < g_nvp; i++) if (g_vp[i] == v) { g_vp[i] = g_vp[--g_nvp]; break; }
      for (size_t k = 0; k < v->nsh; k++) { atomic_fetch_sub(&g_sh_bytes, v->sh[k].size); vshadow_free(&v->sh[k]); }
@@ -128,7 +129,7 @@ index d378a90c7ac1e9829413ee14429b159640147858..d0204ca2f23129cb3a52682c4ea243ca
  }
  static void vunmap_run(int all); static int g_nvun;   // the deferred unmaps (below)
  // Pool finalize: the reservation goes (munmap) with its runs' buffers. The GPU finishes the work submitted so far first: the buffers' deferred release keeps them alive for that
-@@ -3935,6 +3937,15 @@ static int vpool_map(struct vpool *v, const map_req *r) {   // caller holds g_vp
+@@ -4068,6 +4070,15 @@ static int vpool_map(struct vpool *v, const map_req *r) {   // caller holds g_vp
      if (ph && (!ph->mem || r->poff < 0 || (uint64_t)r->poff + r->size > ph->size)) { LOG("[RED] virtual pool %p: physical pool %p (%#llx bytes, storage %p) cannot supply %#llx+%#llx", (const void *)v->pool, (const void *)ph, (unsigned long long)ph->size, (void *)ph->mem, (unsigned long long)r->poff, (unsigned long long)r->size); return 0; }
      vpt_set(v, (uint64_t)r->voff, r->size, ph ? ph->mem + r->poff : NULL);
      if (v->nsh) vshadow_cut(v, (uint64_t)r->voff, (uint64_t)r->voff + r->size);
@@ -144,7 +145,7 @@ index d378a90c7ac1e9829413ee14429b159640147858..d0204ca2f23129cb3a52682c4ea243ca
      vm_address_t to = (vm_address_t)(v->base + r->voff);
      // Not directly vm_remap-able (beyond reservation, or misaligned to host page): misaligned physical sources with host-page-aligned virtual ranges become per-run shadow copies; others stay in the page table only
      if ((uint64_t)r->voff + r->size > v->len || ((uintptr_t)to | r->size | (uint64_t)r->voff) & (pg - 1) || (ph && (((uintptr_t)ph->mem + (uintptr_t)r->poff) & (pg - 1)))) {
-@@ -4527,6 +4538,32 @@ int nvn_sparse_alias(uint64_t lo, uint64_t hi) {
+@@ -4662,6 +4673,32 @@ int nvn_sparse_alias(uint64_t lo, uint64_t hi) {
      }
      pthread_mutex_unlock(&g_vp_mu); return r;
  }
@@ -178,10 +179,10 @@ index d378a90c7ac1e9829413ee14429b159640147858..d0204ca2f23129cb3a52682c4ea243ca
  // whether its content may have changed since an upload (a mapping in its range newer than gen, or a physical page behind it written after the dirty-page stamp), and the write
  // protection of the physical pages behind it (taken before an upload, as for any packaged texture)
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b472840610231142f6d 100644
+index b6ba4dc6ac492567d3d07df5d870f1bdec6c9d01..c83b82e6358d4e0700bfe8aeb9cf1ee874e81cd8 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -1705,14 +1705,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,
+@@ -1752,14 +1752,30 @@ void mtl_pool_replace(const void *const *del, int ndel, const void *const *add,
  }
  
  // Address → pool: the last hit first, then a binary search over indices sorted by start address, and a full linear scan only when that fails (pools overlapping).
@@ -216,7 +217,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
  }
  static int big_new(big_pool *b, uintptr_t lo, uintptr_t hi, uintptr_t end, int reach) {   // caller holds g_mu: a new entry for [lo, end) of the pool, looked up for addresses in [lo, hi)
      id<MTLBuffer> buf = pool_buf(lo, end);
-@@ -2590,6 +2606,8 @@ static void drw_drained(void) { g_drain_sub = g_sub_serial; g_drain_other = g_wr
+@@ -2637,6 +2653,8 @@ static void drw_drained(void) { g_drain_sub = g_sub_serial; g_drain_other = g_wr
  static int drw_valid(void) { return g_drain_sub == g_sub_serial && !g_drw_over && g_wr_epoch - g_wr_geo == g_drain_other; }
  static int drw_hits(uint64_t lo, uint64_t n) { for (int i = 0; i < g_ndrw; i++) if (lo < g_drw_hi[i] && g_drw_lo[i] < lo + n) return 1; return 0; }
  int nvn_sparse_alias(uint64_t lo, uint64_t hi);   // hle_nvn.c: a sparse guest range may alias another pool at a different address
@@ -225,7 +226,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
  static id<MTL4ComputeCommandEncoder> blit_buf(uint64_t rlo, uint64_t rhi, uint64_t wlo, uint64_t whi) {
      g_wr_epoch++;
      g_blit_alias = 1;   // before blit_raw, so an encoder it opens starts with alias visibility
-@@ -4460,6 +4478,12 @@ static int up_lost_take(id tex) {   // This texture's upload was dropped: take i
+@@ -4543,6 +4561,12 @@ static int up_lost_take(id tex) {   // This texture's upload was dropped: take i
      if (!tex) return 0; os_unfair_lock_lock(&g_up_lost_lk); int hit = [g_up_lost containsObject:tex]; if (hit) { [g_up_lost removeObject:tex]; atomic_store(&g_up_lost_n, (int)g_up_lost.allObjects.count); atomic_fetch_add(&g_up_lost_redo, 1); } os_unfair_lock_unlock(&g_up_lost_lk); return hit;
  }
  static void up_diag(void);
@@ -238,7 +239,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
  static void up_flush(void) {
      up_owner_check("up_flush");
      if (!g_up_cb) return;
-@@ -4492,6 +4516,7 @@ static void up_flush(void) {
+@@ -4575,6 +4599,7 @@ static void up_flush(void) {
      NSArray *dsts = targets.allObjects;
      static int lost_at = -2; static uint64_t batch_n; if (lost_at == -2) { const char *e = getenv("DM_TEST_UP_LOST"); lost_at = e ? atoi(e) : -1; } int fake_lost = dsts.count && lost_at > 0 && (int)++batch_n == lost_at;
      MTL4CommitOptions *o = [MTL4CommitOptions new];
@@ -246,7 +247,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      atomic_fetch_add(&g_up_pending, 1);
      [o addFeedbackHandler:^(id<MTL4CommitFeedback> f) {
          if (f.error) { MLOG("[RED] upload command buffer execution error: %s", f.error.description.UTF8String); res_top_once(f.error); gpu_lost_check(f.error, "upload"); }
-@@ -4517,6 +4542,7 @@ static void up_flush(void) {
+@@ -4600,6 +4625,7 @@ static void up_flush(void) {
          } else {
              up_complete(slot);
          }
@@ -254,7 +255,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      }];
      res_commit();
      cb_end(cb, nil);
-@@ -4872,12 +4898,50 @@ static void rb_swap_rows(uint8_t *p, size_t wb, size_t rows, size_t nz, size_t r
+@@ -4955,12 +4981,50 @@ static void rb_swap_rows(uint8_t *p, size_t wb, size_t rows, size_t nz, size_t r
  // nil elsewhere (or if it is refused: the caller looks the address up as usual). The GPU only reads it, so it is made over the pages the upload has just protected, not through pool_buf,
  // which would make them writable again and the texture count as written at once
  static uint64_t g_up_src_made;   // source buffers made (t_upload_src)
@@ -305,7 +306,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      uintptr_t pg = (uintptr_t)getpagesize(), a = (uintptr_t)addr & ~(pg - 1), b = ((uintptr_t)addr + len + pg - 1) & ~(pg - 1);
      // The staging budget does not count guest pages. End the batch only between textures so its completion can release those pages without invalidating a source already being assembled.
      size_t budget = up_src_budget();
-@@ -8966,13 +9030,28 @@ typedef struct { tex_t t; int ok; view_t v; int has_v; void *view, *view_fam; ui
+@@ -9197,13 +9261,28 @@ typedef struct { tex_t t; int ok; view_t v; int has_v; void *view, *view_fam; ui
                   void *palt[4], *palt_of[4]; uint64_t palt_rid[4];   // palt[k]: the view a texture pool table of layered type k (pool_lk) holds for the ID (pool_fit), apart from alt so slot binds and tables do not take turns
                   void *alt, *alt_of; uint64_t alt_rid; uint8_t alt_type;   // alt: compatible view used when the shader's declared type differs from view (tex_fit), alt_of = the view it was built from
                   void *im, *im_of; uint64_t im_rid;                       // im: the view an image slot reads in the shader's pixel class (img_fit), im_of = the view it was built from
@@ -315,8 +316,8 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
                   uint32_t used; } treg_t;   // stand: what its pool table entries hold while its texture is not made (pool_stand; retained), stand_tt1 its texture type + 1, stand_no: it can have none (STAND_NO), or none until a mapping notes its pages (STAND_WAIT); reg_frame: the frame of the registration
  enum { STAND_NO = 1, STAND_WAIT = 2 };   // treg_t.stand_no: no stand-in while the registration stands; none until a mapping over its pages notes it (treg_sparse_notes)
  static treg_t *g_treg; static int g_ntreg;
- static nvn_hmap g_treg_serial = {.klen = 8};   // serial → first registered descriptor index + 1, under g_rmu
- static int treg_serial_held(uint64_t serial) { return nvn_hm_get(&g_treg_serial, &serial) != NULL; }   // a pool ID registers it; caller holds g_rmu
+ static nvn_hmap g_treg_serial = {.klen = 8};   // serial → first registered descriptor index + 1; mutated under g_rmu + g_treg_ser_lk (readers holding either lock are excluded from writers)
+ static int treg_serial_held(uint64_t serial) { return nvn_hm_get(&g_treg_serial, &serial) != NULL; }   // a pool ID registers it; caller holds g_rmu or g_treg_ser_lk
 +// The IDs registered with a texture of one memory pool, a list as by serial: a pool's Finalize marks them gone. It walked every registered ID for that, under g_rmu, which every
 +// draw takes for its textures: 0.75 to 1.2 ms a pool with Mario Kart World's 131,329 IDs, to mark an ID or none, so while the game finalized 50 pools in a row the replay moved
 +// one lock hand-over at a time, and that frame took 65 ms. An ID joins its pool's list behind the list's first one, so the table changes only when a list gets or loses its
@@ -335,7 +336,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
  // Texture ID views are valid for an epoch (view_ser), not for every serial table change: ser_sync takes the notes (own_note) and sends only the IDs registered with a noted serial
  // down the slow path; a change without a note starts a new epoch, which sends them all (what every g_ser_gen bump did before). A battle map in Fire Emblem: Fortune's Weave changes a
  // few serials a frame (the per-stage program ring in bind_stages among them), and each change made the next pool walk (pool_gpu) resolve all ~5,000 IDs again, 2 ms a frame.
-@@ -9067,14 +9146,22 @@ static void treg_drop_stand(treg_t *r) {
+@@ -9298,18 +9377,26 @@ static void treg_drop_stand(treg_t *r) {
      if (r->stand) { defer_obj_unref((__bridge id)r->stand); CFRelease(r->stand); r->stand = NULL; r->stand_rid = 0; g_stand_live--; }
      r->stand_no = 0;
  }
@@ -344,15 +345,20 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      treg_t *r = &g_treg[id_];
 -    if (!r->ok || !r->t.serial) return;
 -    if (r->prev) g_treg[r->prev - 1].next = r->next;
--    else if (r->next) nvn_hm_put(&g_treg_serial, &r->t.serial, (void *)(uintptr_t)r->next);
--    else nvn_hm_del(&g_treg_serial, &r->t.serial);
--    if (r->next) g_treg[r->next - 1].prev = r->prev;
--    r->prev = r->next = 0;
+-    else {
+-        os_unfair_lock_lock(&g_treg_ser_lk);
+-        if (r->next) nvn_hm_put(&g_treg_serial, &r->t.serial, (void *)(uintptr_t)r->next);
+-        else nvn_hm_del(&g_treg_serial, &r->t.serial);
+-        os_unfair_lock_unlock(&g_treg_ser_lk);
 +    if (!r->ok) return;
 +    if (r->t.serial) {
 +        if (r->prev) g_treg[r->prev - 1].next = r->next;
-+        else if (r->next) nvn_hm_put(&g_treg_serial, &r->t.serial, (void *)(uintptr_t)r->next);
-+        else nvn_hm_del(&g_treg_serial, &r->t.serial);
++        else {
++            os_unfair_lock_lock(&g_treg_ser_lk);
++            if (r->next) nvn_hm_put(&g_treg_serial, &r->t.serial, (void *)(uintptr_t)r->next);
++            else nvn_hm_del(&g_treg_serial, &r->t.serial);
++            os_unfair_lock_unlock(&g_treg_ser_lk);
++        }
 +        if (r->next) g_treg[r->next - 1].prev = r->prev;
 +        r->prev = r->next = 0;
 +    }
@@ -361,11 +367,13 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
 +        else treg_pool_set((uint64_t)(uintptr_t)r->t.pool, r->pnext);   // it was its pool's first
 +        if (r->pnext) g_treg[r->pnext - 1].pprev = r->pprev;
 +        r->pprev = r->pnext = 0;
-+    }
+     }
+-    if (r->next) g_treg[r->next - 1].prev = r->prev;
+-    r->prev = r->next = 0;
  }
  static void treg_retire_serial(uint64_t ser) {
      // Finalize retires the API object, not the descriptor's copied metadata.
-@@ -9215,8 +9302,14 @@ static nvn_hmap g_vc = {.klen = 8};   // the Metal texture's address → vc_set
+@@ -9454,8 +9541,14 @@ static nvn_hmap g_vc = {.klen = 8};   // the Metal texture's address → vc_set
  static uint64_t g_vc_hit, g_vc_new;
  static inline uint64_t vc_addr(id<MTLTexture> t) { return (uint64_t)(uintptr_t)(__bridge void *)t; }
  static void vc_rows_drop(vc_set *s) { if (s->rows) { defer_obj_release((__bridge id)s->rows); CFRelease(s->rows); s->rows = NULL; s->rows_rid = s->rows_n = 0; } }
@@ -380,7 +388,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      for (int i = 0; i < VC_WAYS; i++) if (s->view[i]) { defer_obj_unref((__bridge id)s->view[i]); CFRelease(s->view[i]); }
      vc_rows_drop(s);
      free(s);
-@@ -9232,7 +9325,7 @@ static vc_set *vc_set_for(id<MTLTexture> base, const void *pool) {   // base's e
+@@ -9471,7 +9564,7 @@ static vc_set *vc_set_for(id<MTLTexture> base, const void *pool) {   // base's e
      if (!held) return NULL;
      if (g_vc.n >= VC_MAX) nvn_hm_clear(&g_vc, vc_set_free);
      if (!(s = calloc(1, sizeof *s))) return NULL;
@@ -389,7 +397,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      return s;
  }
  static void vc_put(id<MTLTexture> base, const void *pool, const vc_key *k, id<MTLTexture> v) {
-@@ -9270,6 +9363,7 @@ void mtl_vc_stats(unsigned *n, uint64_t *hit, uint64_t *made) { os_unfair_lock_l
+@@ -9509,6 +9602,7 @@ void mtl_vc_stats(unsigned *n, uint64_t *hit, uint64_t *made) { os_unfair_lock_l
  static void tb2_gone_clear(void);
  static void vc_drop_pool(const void *pool) {   // caller holds g_rmu
      tb2_gone_clear();
@@ -397,7 +405,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      for (uint32_t i = 0; i < g_vc.cap;) {   // a deletion shifts later entries back into slot i: look at it again
          vc_set *s = g_vc.vals[i];
          if (s && s->pool == pool) { uint64_t a; memcpy(&a, g_vc.keys + (size_t)i * 8, 8); nvn_hm_del(&g_vc, &a); vc_set_free(s); }
-@@ -9406,9 +9500,10 @@ static void treg_gone(treg_t *r) {
+@@ -9645,9 +9739,10 @@ static void treg_gone(treg_t *r) {
      treg_drop_stand(r);
  }
  static void treg_drop_pool_views(const void *pool) {
@@ -409,9 +417,9 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      os_unfair_lock_unlock(&g_rmu);
  }
  // Which texture IDs shaders read through a pool (dmsh_reflect.py pool_arrays): a bitmap the shaders set, one bit an ID, which the host folds into g_seen_done at each submission. A handle read from game
-@@ -9510,6 +9605,11 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
-             if (rr->next) g_treg[rr->next - 1].prev = id_ + 1;
+@@ -9751,6 +9846,11 @@ void mtl_reg_tex(int tid, const tex_t *t, const view_t *v) {
              nvn_hm_put(&g_treg_serial, &t->serial, (void *)(uintptr_t)(id_ + 1));
+             os_unfair_lock_unlock(&g_treg_ser_lk);
          }
 +        if (t && t->pool) {   // behind its pool's first ID, or the first itself
 +            uint64_t pk = (uint64_t)(uintptr_t)t->pool; int first = treg_pool_first(pk);
@@ -421,7 +429,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
      }
      // The scan can remove a gone ID before an identical registration revives it.
      if ((!same || was_gone) && t && !rr->sp && t->pool && nvn_sparse_pool(t->pool)) {
-@@ -17131,7 +17231,7 @@ static int tex_storage_overlap(const tex_t *a, const tex_t *b) {
+@@ -17490,7 +17590,7 @@ static int tex_storage_overlap(const tex_t *a, const tex_t *b) {
      if (!a->mem || !b->mem) return 0;
      uint64_t x = (uint64_t)a->mem, y = (uint64_t)b->mem;
      if (!a->L.size || !b->L.size || a->L.size > UINT64_MAX - x || b->L.size > UINT64_MAX - y) return 1;
@@ -430,7 +438,7 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
  }
  static int g_samples_fb_left;   // draw_samples_rt: a fragment texture that is a colour attachment does not count: fb_prepare answers for it, as for any draw of a pass
  static const char *g_dsr_why;   // what draw_samples_rt found (the pass dump's split line)
-@@ -21009,7 +21109,7 @@ int mtl_fps_target(void) { static int env = -2; if (env == -2) { const char *e =
+@@ -21981,7 +22081,7 @@ int mtl_fps_target(void) { static int env = -2; if (env == -2) { const char *e =
  // Cut only when no encoder is open and no pass is deferred / merged / hoisted; commit this batch's uploads first (later draws use them). The fence signal and completion work stay on the last segment only: the queue executes in commit order and every encoder starts with a queue barrier
  // A buffer → texture copy is cut after as well, at the next pass boundary whatever the draw count (g_cut_copy, set by copy_b2t). It can run while the host encodes the rest.
  // The cut starts the already encoded work promptly. Record-time staging handles a source recycled by the CPU before encoding even reaches the copy (hle_nvn.c).
@@ -440,10 +448,10 @@ index a1171139c7757707ef0e8c41f97b11adcf93a2f5..f789c73298be3e918b026b4728406102
  // The count starts with the submission (mtl_sub_begin). It used to start at the submission's first sub_cut, which only a render target change reaches (OP_SET_RT): the draws a
  // submission makes into the target it inherited, before its first target change, were never counted, and the first segment came that many draws late
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 9c9d75ced292333c77cd118a87042f91706382a0..6d777598b10c90a767351d5d71b4b98588f22cbf 100644
+index ccefdca5cd8749ab16f849c65b4cff95998f040c..c31a330e1850e1911aeb70ab6a07bb9ee2e1fff0 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
-@@ -313,6 +313,8 @@ t_file_wire: t_file_wire.m $(MTL_T_DEP)
+@@ -316,6 +316,8 @@ t_file_wire: t_file_wire.m $(MTL_T_DEP)
  	clang $(CFLAGS) -fobjc-arc -o $@ t_file_wire.m $(MTL_T_SRC) $(FW)
  t_gpu_only_addr: t_gpu_only_addr.m $(MTL_T_DEP)
  	clang $(CFLAGS) -fobjc-arc -o $@ t_gpu_only_addr.m $(filter-out ../nvn/hle_nvn.c,$(MTL_T_SRC)) $(FW)
@@ -721,8 +729,113 @@ index 7db28e9e00141e7620700099c599cd2bf4216903..48d4c5fa1cc0d96dcdb5a3fff5ffd2f5
      ('present_snap', '', {'what': 'present snapshots', 'now': 'game', 'goal': 'host', 'purpose': 'rendering', 'why': f'a setting the game was tested with: {DEFAULT_SOON}'}),
      ('pso_mtl4', '', {'what': 'MTL4Compiler pipelines on iOS', 'now': 'game', 'goal': 'host', 'purpose': 'rendering', 'why': f'a setting the game was tested with on an iPhone: {DEFAULT_SOON}'}),
      ('screen_aspect', '', {'what': 'a picture of a taller screen\'s own shape (DM_SCREEN_ASPECT)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
+diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
+index 4090b44855940bb526839ffc8992bf705d89005c..5303ef70a7c0d88bafa5009500192208955c2303 100644
+--- a/docs/agents/game-patches.md
++++ b/docs/agents/game-patches.md
+@@ -25,17 +25,19 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ 
+ | Now → goal | Patch | Purpose | Status | Evidence | Games | Where | Why |
+ |---|---|---|---|---|---|---|---|
+-| `game` → `host` | CPU-written textures uploaded after a flush | rendering | gap | judgement | 14 | `tex_flush_upload`: [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md), [Ghost Trick: Phantom Detective](../../dm/games/010029B018432000/README.md), [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), [Kirby Air Riders](../../dm/games/040077201BE50000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [Resident Evil](../../dm/games/010050F00BC1A000/README.md), [SD GUNDAM G GENERATION CROSS RAYS](../../dm/games/010055700CEA8000/README.md), [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [Yoshi's Crafted World](../../dm/games/01006000040C2000/README.md) | unified memory semantics; off by default because a flushed range could cover an image a shader writes: tracking GPU writes would make it safe for every game |
+-| `game` → `host` | CPU-written textures uploaded without a flush | rendering | gap | judgement | 13 | `tex_dirty_upload`: [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md), [Ghost Trick: Phantom Detective](../../dm/games/010029B018432000/README.md), [Kirby Air Riders](../../dm/games/040077201BE50000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [Resident Evil](../../dm/games/010050F00BC1A000/README.md), [SD GUNDAM G GENERATION CROSS RAYS](../../dm/games/010055700CEA8000/README.md), [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [Yoshi's Crafted World](../../dm/games/01006000040C2000/README.md) | as tex_flush_upload, for pools the CPU writes without a flush |
+-| `game` → `host` | MapPhysicalMemory limited to the application pool | memory | gap | judgement | 6 | `mem_map_limit`: [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md), [Pokémon Scarlet](../../dm/games/0100A3D008C5C000/README.md), [Pokémon Violet](../../dm/games/01008F6008C5E000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [Xenoblade Chronicles 3](../../dm/games/010074F013262000/README.md), [Xenoblade Chronicles X: Definitive Edition](../../dm/games/0100453019AA8000/README.md) | Horizon's limit; off by default because Ace Attorney Investigations Collection maps a little more than its profile's 1 GB pool, which is the thing to fix |
++| `game` → `host` | CPU-written textures uploaded after a flush | rendering | gap | judgement | 15 | `tex_flush_upload`: [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md), [Ghost Trick: Phantom Detective](../../dm/games/010029B018432000/README.md), [Horizon Chase 2](../../dm/games/0100001019F6E000/README.md), [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), [Kirby Air Riders](../../dm/games/040077201BE50000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [Resident Evil](../../dm/games/010050F00BC1A000/README.md), [SD GUNDAM G GENERATION CROSS RAYS](../../dm/games/010055700CEA8000/README.md), [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [Yoshi's Crafted World](../../dm/games/01006000040C2000/README.md) | unified memory semantics; off by default because a flushed range could cover an image a shader writes: tracking GPU writes would make it safe for every game |
++| `game` → `host` | CPU-written textures uploaded without a flush | rendering | gap | judgement | 14 | `tex_dirty_upload`: [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md), [Ghost Trick: Phantom Detective](../../dm/games/010029B018432000/README.md), [Horizon Chase 2](../../dm/games/0100001019F6E000/README.md), [Kirby Air Riders](../../dm/games/040077201BE50000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [Resident Evil](../../dm/games/010050F00BC1A000/README.md), [SD GUNDAM G GENERATION CROSS RAYS](../../dm/games/010055700CEA8000/README.md), [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [Yoshi's Crafted World](../../dm/games/01006000040C2000/README.md) | as tex_flush_upload, for pools the CPU writes without a flush |
++| `game` → `host` | MapPhysicalMemory limited to the application pool | memory | gap | judgement | 7 | `mem_map_limit`: [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md), [Pokémon Scarlet](../../dm/games/0100A3D008C5C000/README.md), [Pokémon Violet](../../dm/games/01008F6008C5E000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [Xenoblade Chronicles 3](../../dm/games/010074F013262000/README.md), [Xenoblade Chronicles X: Definitive Edition](../../dm/games/0100453019AA8000/README.md) | Horizon's limit; off by default because Ace Attorney Investigations Collection maps a little more than its profile's 1 GB pool, which is the thing to fix |
+ | `game` → `host` | buffer-texture handles indexed through c2's tables | shaders | gap | judgement | 5 | `tex_dyn_slots`: [CAPTAIN TSUBASA 2: WORLD FIGHTERS](../../dm/games/01009720213B0000/README.md), [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md), [FINAL FANTASY RESONANCE (Asian release)](../../dm/games/0100B8A026F14000/README.md), [Minecraft Dungeons II](../../dm/games/0100A7C01B792000/README.md), [OCTOPATH TRAVELER 0](../../dm/games/01005270232F2000/README.md) | right only where the handle comes from c2's tables: the translator could prove that per shader |
+ | `game` → `host` | StandardAllocator blocks of 64 KB and more aligned to 64 KB | memory | gap | judgement | 5 | `alloc_big_align`: [13 Sentinels: Aegis Rim](../../dm/games/01003FC01670C000/README.md), [13 Sentinels: Aegis Rim (Asia)](../../dm/games/01008D7016438000/README.md), [13 Sentinels: Aegis Rim (Japan)](../../dm/games/010045C014650000/README.md), [Unicorn Overlord](../../dm/games/010069401ADB8000/README.md), [Unicorn Overlord (Asia)](../../dm/games/010054B01AD92000/README.md) | the cause is a memory pool's GPU address, big-page aligned on hardware and the CPU address here: pool GPU addresses aligned as hardware does, or this alignment for every game |
++| `game` → `host` | Metal encoding on its own thread on the Mac | frame rate | gap | judgement | 2 | `enc_thread`: [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | what iOS does for every game: a default for every game after `regress.py check` on the games |
+ | `build` → `host` | record-time copy of CPU staging bytes at one verified buffer-to-texture upload site | rendering | gap | judgement | 1 | `tex_copy_staging`: [Catherine: Full Body](../../dm/games/0100BF00112C0000/README.md) | a main build ID and return address identify one CPU upload site because NVN also supports GPU-written buffer-to-texture copies; tracking GPU-written ranges would make staging capture general |
+ | `game` → `host` | CPU vertex conversion over the vertices a draw reads | power | gap | judgement | 1 | `vconv_range`: [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md) | the same vertices as the whole range, for less work; DM_NVN_VCONV_CHECK checks it: a default for every game after `regress.py check` on the games |
+ | `game` → `host` | draw passes ordered by the game's own barriers | frame rate | gap | judgement | 1 | `draw_barriers`: [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | what NVN specifies: a default for every game after `regress.py check` on the games |
+-| `game` → `host` | Metal encoding on its own thread on the Mac | frame rate | gap | judgement | 1 | `enc_thread`: [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | what iOS does for every game: a default for every game after `regress.py check` on the games |
++| `game` → `host` | draws between the segments a submission is committed in while the GPU waits | frame rate | gap | judgement | 1 | `nvn_cut`: [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | measured per game (no-lag-kart: Mario Kart World split screen); the default stays 64 |
+ | `game` → `host` | MTL4Compiler pipelines on iOS | rendering | gap | judgement | 1 | `pso_mtl4`: [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | a setting the game was tested with on an iPhone: a default for every game after `regress.py check` on the games |
+ | `game` → `host` | present snapshots | rendering | gap | judgement | 1 | `present_snap`: [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | a setting the game was tested with: a default for every game after `regress.py check` on the games |
++| `game` → `host` | upload sources copied into a resident ring | frame rate | gap | judgement | 1 | `up_copy`: [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | costs the ring's memory, wired for good; measured on Mario Kart World's scene cuts |
+ | `build` → `engine` | online subsystem: the fallback after the default service fails is Switch, not NULL | runtime | gap | checked: one build (1.6.9): the bytes at the site, and a boot on the Mac | 1 | [Horizon Chase 2](../../dm/games/0100001019F6E000/README.md) | Unreal's own fallback names an online subsystem this game does not ship; any Unreal game whose default service is EOS and that lacks NULL would need the same, so an engine_patches.py rule could hold it |
+ | `build` → `game` | frame limiter 30 → 60 fps and the 1/60 update step | frame rate | gap | judgement | 1 | [DARK SOULS: REMASTERED](../../dm/games/01004AB00A260000/README.md) | the game's own limiter constant and fixed step |
+ | `build` → `game` | frame limiter spin: its branch back cut | frame rate | gap | judgement | 1 | [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | the engine's own spin limiter; a function-matched rule could carry it over the game's updates |
+@@ -108,7 +110,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ | [The Legend of Heroes: Trails into Reverie](#the-legend-of-heroes-trails-into-reverie) | 0 | 0 | 0 | 1 | 0 | `game` |
+ | [The Legend of Zelda: Breath of the Wild](#the-legend-of-zelda-breath-of-the-wild) | 7 | 0 | 43 | 0 | 0 | `build` → `game` ×2 |
+ | [The Legend of Zelda: Link's Awakening](#the-legend-of-zelda-links-awakening) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
+-| [The Legend of Zelda: Ocarina of Time](#the-legend-of-zelda-ocarina-of-time) | 0 | 0 | 23 | 3 | 0 | `game` ×7 |
++| [The Legend of Zelda: Ocarina of Time](#the-legend-of-zelda-ocarina-of-time) | 0 | 0 | 41 | 3 | 0 | `game` ×11 |
+ | [The Legend of Zelda: Tears of the Kingdom](#the-legend-of-zelda-tears-of-the-kingdom) | 0 | 0 | 9 | 0 | 0 | `game` |
+ | [Xenoblade Chronicles 3](#xenoblade-chronicles-3) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
+ | [Xenoblade Chronicles X: Definitive Edition](#xenoblade-chronicles-x-definitive-edition) | 6 | 0 | 1 | 1 | 0 | `game` ×2 |
+@@ -742,6 +744,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ - **`game`**, rendering, at goal, checked: v131072 and v0 mains: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields (+0x8, +0x10, +0x174, +0x1a0) read by disassembly, the fields read in play (2026-11-08, v0 2026-11-27); the climb run natively against a model of the update and in play to full size (2026-11-09); 30 fps threshold scaling checked in test_ocarina_drs.py and in play at 30 fps on an M2 Air (PR #1954, 2026-11-16): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (main+0x31d3200, 0xfc8 bytes, one caller main+0x31c00cc); the status ubfx at +0xce4, the store at +0xd48 (the only float store to #0xe5c in main; s0 computed from the update's w0 at +0xd34, never reread from +0xe5c) and the size loop clearing bit 3 of +0xe2c read by disassembly (2026-11-09, 2026-11-23); guard, status and store stubs executed natively on ARM64 in test_ocarina_drs.py: render scale: the 3D views at a fraction of the game's own size (DM_RENDER_SCALE). The game's own view-size update (its test of the dynamic-resolution status and its scale store), found by its function's fingerprint on any build that keeps it; the level function's stub above holds level 0 under a scale
+ - **`game`**, rendering, at goal, checked: v131072 main: one function per fingerprint, free registers read at each site; indexed pane names, classes and dimensions checked against the UIL records. In-place Vert+ projection-object updates (and DM_SCREEN_FOV=off Hor-) executed on ARM64 in test_ocarina_screen_shape.py and verified in Kakariko Village on Mac at 16:9, 16:10 and 4:3 (2026-11-23); 0/3 projection fingerprint matches in TOTK, BOTW and Mario Kart World; physical iPad/iPhone retest pending: screen shape: taller render targets, cameras, Layout2 panes and a 16:9 movie viewport (DM_SCREEN_ASPECT). The game's own display setup, camera, pane and movie code; installed together after every function matches. Indexed pane edits verify the authored name, class and dimensions they use
++- **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen's edges and the scene at 16:9's proportions with more at the sides (2026-11-12): wide screen: the swap chain and frame buffer sizes and the scene cameras' aspect (DM_SCREEN_WIDE). The game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags' readers (turf draw lists, per-draw callbacks, the type classes' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10): foliage off: the foliage module's grass / forest disables and type hide bits set each frame (DM_FOLIAGE). The foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint; the level choice read by disassembly (its three copies in the model scene calc and the module's level function), the free registers at each site; counters in the stubs in play on the balcony: about 55 size and 24 distance choices a frame in the calc, none in the level function (2026-11-12): model level of detail: the size on screen and the start distance seen through a factor (DM_MODEL_LOD). The graphics module's pixel scale and start distance coefficient where the game's model scene calc and its level function read them, found by the three functions' fingerprints on any build that keeps them; switchable, off by default
+ - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint, the key, field offset and default read by disassembly; one cascade pass a frame instead of three in play on the balcony (2026-11-12): shadow cascades: DepthShadowCascadeNum0 lowered as the parameters load (DM_SHADOW_CASCADES). The visit of DepthShadowCascadeNum0 in gsys ModelSceneConfigParam's binder, found by its function's fingerprint on any build that keeps it; switchable, off by default
+@@ -749,8 +752,8 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
+ - **function-matched** (`main` of builds without CUTS): movie update cap: 3 pictures a frame, the frame step's largest hold, in place of the limit (2), which also sizes the decoder pipeline: 1 function, 1 cut
+ - **function-matched** (`main` of builds without CUTS): movie frame: the pictures the player has taken (its +0xc), not 1 more for each frame drawn: 2 functions, 2 cuts
+-- **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; render scale, a function of 0xfc8 bytes, `+0xce4`, `+0xd48` in it; graphics init, a function of 0x570 bytes, `+0x204`, `+0x3c0` in it; scene app init, a function of 0x273c bytes, `+0x168`, `+0x174` in it; base scene defaults, a function of 0x3cc bytes, `+0x38c`, `+0x39c` in it; display mgr defaults, a function of 0x4e0 bytes, `+0xc` in it; base res read, a function of 0x1a0 bytes, `+0x114` in it; display target a, a function of 0x58 bytes, `+0x44` in it; display target b, a function of 0x1a8 bytes, `+0x110` in it; display target c, a function of 0x188 bytes, `+0x130` in it; layout ortho, a function of 0x7b0 bytes, `+0x208` in it; layout view ortho, a function of 0x62c bytes, `+0x398` in it; perspective proj, a function of 0xb8 bytes, `+0x0` in it; camera update, a function of 0x1648 bytes, `+0xf6c` in it; device proj, a function of 0x3b0 bytes, `+0x98` in it; layout calc matrix, a function of 0x208 bytes, `+0x19c` in it; pane global matrix, a function of 0x46c bytes, `+0x3b0` in it; layout pane array, a function of 0x1d0 bytes,  in it; pane constructor, a function of 0xfbc bytes,  in it; movie draw, a function of 0x158 bytes, `+0x64` in it; launcher capabilities: DYNAMIC_RESOLUTION, FRAME_STEP_120, SCREEN_ASPECT
+-- **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9a8 bytes, `+0x108` in it; dynamic resolution, a function of 0x2a8 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb30 bytes,  in it; launcher capabilities: DYNAMIC_RESOLUTION, FRAME_STEP_120
++- **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9b4 bytes, `+0xe4` in it; dynamic resolution, a function of 0x294 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb24 bytes,  in it; render scale, a function of 0xfc8 bytes, `+0xce4`, `+0xd48` in it; wide: nnMain create arg, a function of 0x570 bytes, `+0x200` in it; wide: framework constructor, a function of 0x273c bytes, `+0x164`, `+0x170` in it; wide: camera update A, a function of 0x1700 bytes, `+0xa74` in it; wide: camera update B, a function of 0xa40 bytes, `+0x204` in it; wide: camera update C, a function of 0x638 bytes, `+0x428` in it; graphics init, a function of 0x570 bytes, `+0x204`, `+0x3c0` in it; scene app init, a function of 0x273c bytes, `+0x168`, `+0x174` in it; base scene defaults, a function of 0x3cc bytes, `+0x38c`, `+0x39c` in it; display mgr defaults, a function of 0x4e0 bytes, `+0xc` in it; base res read, a function of 0x1a0 bytes, `+0x114` in it; display target a, a function of 0x58 bytes, `+0x44` in it; display target b, a function of 0x1a8 bytes, `+0x110` in it; display target c, a function of 0x188 bytes, `+0x130` in it; layout ortho, a function of 0x7b0 bytes, `+0x208` in it; layout view ortho, a function of 0x62c bytes, `+0x398` in it; perspective proj, a function of 0xb8 bytes, `+0x0` in it; camera update, a function of 0x1648 bytes, `+0xf6c` in it; device proj, a function of 0x3b0 bytes, `+0x98` in it; layout calc matrix, a function of 0x208 bytes, `+0x19c` in it; pane global matrix, a function of 0x46c bytes, `+0x3b0` in it; layout pane array, a function of 0x1d0 bytes,  in it; pane constructor, a function of 0xfbc bytes,  in it; movie draw, a function of 0x158 bytes, `+0x64` in it; foliage calc, a function of 0x6f8 bytes, `+0x0` in it; model calc, a function of 0xc374 bytes, `+0x26c4`, `+0x34a0`, `+0x8a80`, `+0x91bc`, `+0xabe4`, `+0xb9c4` in it; model lod, a function of 0x4a8 bytes, `+0x14c`, `+0x1e4` in it; model lod inline, a function of 0x860 bytes, `+0x228`, `+0x2a4` in it; scene config binder, a function of 0xbe1c bytes, `+0x2408` in it; launcher capabilities: DRS_HEADROOM, DYNAMIC_RESOLUTION, FOLIAGE, FRAME_STEP_120, MODEL_LOD, SCREEN_ASPECT, SCREEN_WIDE, SHADOW_CASCADES
++- **function-matched frame step** (`main` of builds without FRAME_STEP): frame ratio from the host's step: a function of 0x9a8 bytes, `+0x108` in it; dynamic resolution, a function of 0x2a8 bytes, `+0x0` in it; dynamic resolution update, a function of 0xb30 bytes,  in it; launcher capabilities: DRS_HEADROOM, DYNAMIC_RESOLUTION, FRAME_STEP_120
+ 
+ ### The Legend of Zelda: Tears of the Kingdom
+ 
+@@ -799,7 +802,7 @@ Cuts of Nintendo SDK `sdk` builds ([sdk_patches.py](../../dm/tools/sdk_patches.p
+ - **`build` → `sdk`**, address space, blocked: drop it once a Mina build rewritten with the rules alone matches this one, judgement: Mina the Hollower's row (cb82ed52, SDK 21.4.3; NXForge). SDK 20.5.22's constructor layout, which the rules now cover; the row came before the rules
+ - **`sdk`**, address space, at goal, checked: both function pairs reproduced all three exact cuts on the two original SDK builds, with six more equivalent implementations found in 48 distinct SDK builds: Older VammManager: 64 MB node area and 32 MB large-region alignment. The two older SDK implementations need smaller reservations and alignment to fit the iPhone alias region after the Snowdrop metadata reservation
+ 
+-- **sdk** `cb82ed52…` ([sdk_patches.py:17](../../dm/tools/sdk_patches.py#L17)): Mina the Hollower 1.0.5
++- **sdk** `cb82ed52…` ([sdk_patches.py:7](../../dm/tools/sdk_patches.py#L7)): Mina the Hollower 1.0.5
+   - cut `+0x14fbf0`: AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000
+   - cut `+0x14fc5c`: AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000
+ 
+@@ -834,11 +837,12 @@ Profile keys (`game.tsv`) whose value changes what the host does, set away from
+ | Key and value | Games | Binding | Why |
+ |---|---|---|---|
+ | `draw_barriers game` | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | `game` → `host`, gap | what NVN specifies: a default for every game after `regress.py check` on the games |
+-| `enc_thread on` | [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | `game` → `host`, gap | what iOS does for every game: a default for every game after `regress.py check` on the games |
+ | `game_env DOTNET_GCRegionRange=60000000` | [Absolum](../../dm/games/0100A83022A22000/README.md) | `game`, at goal | measured for the game's regions |
++| `hdr on` | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | `game`, at goal | the game's own HDR10 path and tone mapping; the host only answers its display query (nxnative PR #3009) |
+ | `launch_param hex:2d726567696f6e206575202d6c616e20656e202d73656c66726567696f6e204555202d7265736f6c7574696f6e2030202d75707363616c652030202d6c61756e63686572706174682030` | [METAL GEAR SOLID: Peace Walker - Master Collection Version (Game)](../../dm/games/010099801C4FA001/README.md) | `game`, at goal | what another program of the application hands over with oe::ExecuteProgram, for one run alone |
+ | `launch_param lang8 f32:0.5 f32:1` | [Super Mario 3D All-Stars: Super Mario Sunshine](../../dm/games/010049900F546002/README.md) | `game`, at goal | what another program of the application hands over with oe::ExecuteProgram, for one run alone |
+ | `launch_param lang8 f32:1.12 f32:2.24` | [Super Mario 3D All-Stars: Super Mario 64](../../dm/games/010049900F546001/README.md) | `game`, at goal | what another program of the application hands over with oe::ExecuteProgram, for one run alone |
++| `nvn_cut 8` | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | `game` → `host`, gap | measured per game (no-lag-kart: Mario Kart World split screen); the default stays 64 |
+ | `present_snap on` | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | `game` → `host`, gap | a setting the game was tested with: a default for every game after `regress.py check` on the games |
+ | `programs 1=010049900F546001 2=010049900F546002` | [Super Mario 3D All-Stars](../../dm/games/010049900F546000/README.md) | `game`, at goal | which programs a game has that this host can run: a fact of its files, the profiles that exist for them |
+ | `programs 1=010099801C4FA001` | [METAL GEAR SOLID: Peace Walker - Master Collection Version](../../dm/games/010099801C4FA000/README.md) | `game`, at goal | which programs a game has that this host can run: a fact of its files, the profiles that exist for them |
+@@ -852,19 +856,21 @@ Profile keys (`game.tsv`) whose value changes what the host does, set away from
+ | `tex_copy_staging 93a79c77da81f7f15db021c5c7431eb4:0x32bd78` | [Catherine: Full Body](../../dm/games/0100BF00112C0000/README.md) | `build` → `host`, gap | a main build ID and return address identify one CPU upload site because NVN also supports GPU-written buffer-to-texture copies; tracking GPU-written ranges would make staging capture general |
+ | `ue_fps_cvar Project.FrameRateLimit` | [SHIN MEGAMI TENSEI V: Vengeance](../../dm/games/010069C01AB82000/README.md) | `game`, at goal | the game's own variable, which its settings apply to t.MaxFPS; the rewriter finds it by name (ue_cvar.py) |
+ | `ue_texture_pool 1000` | [DRAGON QUEST VII Reimagined](../../dm/games/0100A9D01C446000/README.md) | `game`, at goal | the game's own budget, raised to its Windows value |
++| `up_copy 128` | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | `game` → `host`, gap | costs the ring's memory, wired for good; measured on Mario Kart World's scene cuts |
+ | `vconv_range on` | [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md) | `game` → `host`, gap | the same vertices as the whole range, for less work; DM_NVN_VCONV_CHECK checks it: a default for every game after `regress.py check` on the games |
+-| `fps_hold off` | [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) | `game`, at goal | the game's pacing |
++| `enc_thread on` | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | `game` → `host`, gap | what iOS does for every game: a default for every game after `regress.py check` on the games |
+ | `perf_mode boost` | [Big Brain Academy: Brain vs. Brain](../../dm/games/0100620012D6E000/README.md), [Rhythm Heaven Groove](../../dm/games/0100D9F01D474000/README.md) | `game`, at goal | a combination a Switch 1 never reports: a choice per game |
+ | `screen_aspect on` | [Animal Crossing: New Horizons](../../dm/games/01006F8002326000/README.md), [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | `game`, at goal | the output size is the host's, but the stubs that follow it (projections, layout panes, screen copies) are this build's code |
++| `fps_hold off` | [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) | `game`, at goal | the game's pacing |
+ | `stdalloc_cap 0x60000000` | [Persona 5 Tactica](../../dm/games/010087701B092000/README.md), [Sea of Stars](../../dm/games/01008C0016544000/README.md), [Sonic Superstars](../../dm/games/01008F701C074000/README.md), [Star Ocean: The Second Story R](../../dm/games/010065301A2E0000/README.md) | `game`, at goal | what the regions after it need, measured by the NSP script's region check, or 1 GB from its heap check; the host's cap is the default |
+ | `alloc_big_align on` | [13 Sentinels: Aegis Rim](../../dm/games/01003FC01670C000/README.md), [13 Sentinels: Aegis Rim (Asia)](../../dm/games/01008D7016438000/README.md), [13 Sentinels: Aegis Rim (Japan)](../../dm/games/010045C014650000/README.md), [Unicorn Overlord](../../dm/games/010069401ADB8000/README.md), [Unicorn Overlord (Asia)](../../dm/games/010054B01AD92000/README.md) | `game` → `host`, gap | the cause is a memory pool's GPU address, big-page aligned on hardware and the CPU address here: pool GPU addresses aligned as hardware does, or this alignment for every game |
+ | `stdalloc_cap 0x80000000` | [A Little to the Left](../../dm/games/0100354017668000/README.md), [Ace Angler: Fishing Spirits](../../dm/games/01007C50132C8000/README.md), [Advance Wars 1+2: Re-Boot Camp](../../dm/games/0100300012F2A000/README.md), [FINAL FANTASY V](../../dm/games/0100AA201415C000/README.md), [Pokémon Brilliant Diamond](../../dm/games/0100000011D90000/README.md) | `game`, at goal | what the regions after it need, measured by the NSP script's region check, or 1 GB from its heap check; the host's cap is the default |
+ | `tex_dyn_slots on` | [CAPTAIN TSUBASA 2: WORLD FIGHTERS](../../dm/games/01009720213B0000/README.md), [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md), [FINAL FANTASY RESONANCE (Asian release)](../../dm/games/0100B8A026F14000/README.md), [Minecraft Dungeons II](../../dm/games/0100A7C01B792000/README.md), [OCTOPATH TRAVELER 0](../../dm/games/01005270232F2000/README.md) | `game` → `host`, gap | right only where the handle comes from c2's tables: the translator could prove that per shader |
+-| `mem_map_limit on` | [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md), [Pokémon Scarlet](../../dm/games/0100A3D008C5C000/README.md), [Pokémon Violet](../../dm/games/01008F6008C5E000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [Xenoblade Chronicles 3](../../dm/games/010074F013262000/README.md), [Xenoblade Chronicles X: Definitive Edition](../../dm/games/0100453019AA8000/README.md) | `game` → `host`, gap | Horizon's limit; off by default because Ace Attorney Investigations Collection maps a little more than its profile's 1 GB pool, which is the thing to fix |
++| `mem_map_limit on` | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md), [Pokémon Scarlet](../../dm/games/0100A3D008C5C000/README.md), [Pokémon Violet](../../dm/games/01008F6008C5E000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [Xenoblade Chronicles 3](../../dm/games/010074F013262000/README.md), [Xenoblade Chronicles X: Definitive Edition](../../dm/games/0100453019AA8000/README.md) | `game` → `host`, gap | Horizon's limit; off by default because Ace Attorney Investigations Collection maps a little more than its profile's 1 GB pool, which is the thing to fix |
+ | `fps_max 120` | [DRAGON BALL: Sparking! ZERO](../../dm/games/010035F022078000/README.md), [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md), [Hollow Knight](../../dm/games/0100633007D48000/README.md), [Hollow Knight: Silksong](../../dm/games/010013C00E930000/README.md), [Mario & Luigi: Brothership](../../dm/games/01006D0017F7A000/README.md), [Minecraft Dungeons II](../../dm/games/0100A7C01B792000/README.md), [Pikmin 4](../../dm/games/0100B7C00933A000/README.md), [The Rogue Prince of Persia](../../dm/games/01008D9022462000/README.md) | `game`, at goal | enabled per game only after verifying its speed at 120 against 60 over the same inputs |
+ | `op_mode handheld` | [Balatro](../../dm/games/0100CD801CE5E000/README.md), [Big Brain Academy: Brain vs. Brain](../../dm/games/0100620012D6E000/README.md), [Bridge Constructor Portal](../../dm/games/010016E004796000/README.md), [Captain Toad: Treasure Tracker](../../dm/games/01009BF0072D4000/README.md), [Cytus α](../../dm/games/010063100B2C2000/README.md), [Rhythm Heaven Groove](../../dm/games/0100D9F01D474000/README.md), [stitch.](../../dm/games/010025801CEA8000/README.md), [Super Mario 3D All-Stars: Super Mario Sunshine](../../dm/games/010049900F546002/README.md), [Super Mario Galaxy](../../dm/games/010099C022B96000/README.md), [Super Mario Galaxy 2](../../dm/games/0100FD8022DAA000/README.md), [Taiko Risshiden V DX](../../dm/games/0100346017304000/README.md) | `game`, at goal | the game's controls (handheld: the touch screen instead of a gyro pointer) |
+-| `tex_dirty_upload on` | [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md), [Ghost Trick: Phantom Detective](../../dm/games/010029B018432000/README.md), [Kirby Air Riders](../../dm/games/040077201BE50000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [Resident Evil](../../dm/games/010050F00BC1A000/README.md), [SD GUNDAM G GENERATION CROSS RAYS](../../dm/games/010055700CEA8000/README.md), [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [Yoshi's Crafted World](../../dm/games/01006000040C2000/README.md) | `game` → `host`, gap | as tex_flush_upload, for pools the CPU writes without a flush |
+-| `tex_flush_upload on` | [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md), [Ghost Trick: Phantom Detective](../../dm/games/010029B018432000/README.md), [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), [Kirby Air Riders](../../dm/games/040077201BE50000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [Resident Evil](../../dm/games/010050F00BC1A000/README.md), [SD GUNDAM G GENERATION CROSS RAYS](../../dm/games/010055700CEA8000/README.md), [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [Yoshi's Crafted World](../../dm/games/01006000040C2000/README.md) | `game` → `host`, gap | unified memory semantics; off by default because a flushed range could cover an image a shader writes: tracking GPU writes would make it safe for every game |
++| `tex_dirty_upload on` | [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md), [Ghost Trick: Phantom Detective](../../dm/games/010029B018432000/README.md), [Horizon Chase 2](../../dm/games/0100001019F6E000/README.md), [Kirby Air Riders](../../dm/games/040077201BE50000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [Resident Evil](../../dm/games/010050F00BC1A000/README.md), [SD GUNDAM G GENERATION CROSS RAYS](../../dm/games/010055700CEA8000/README.md), [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [Yoshi's Crafted World](../../dm/games/01006000040C2000/README.md) | `game` → `host`, gap | as tex_flush_upload, for pools the CPU writes without a flush |
++| `tex_flush_upload on` | [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md), [Ghost Trick: Phantom Detective](../../dm/games/010029B018432000/README.md), [Horizon Chase 2](../../dm/games/0100001019F6E000/README.md), [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), [Kirby Air Riders](../../dm/games/040077201BE50000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [Resident Evil](../../dm/games/010050F00BC1A000/README.md), [SD GUNDAM G GENERATION CROSS RAYS](../../dm/games/010055700CEA8000/README.md), [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [Yoshi's Crafted World](../../dm/games/01006000040C2000/README.md) | `game` → `host`, gap | unified memory semantics; off by default because a flushed range could cover an image a shader writes: tracking GPU writes would make it safe for every game |
+ | `stdalloc_cap 0x40000000` | [Ace Attorney Investigations Collection](../../dm/games/010005501E68C000/README.md), [AI: THE SOMNIUM FILES - nirvanA Initiative](../../dm/games/0100713016CCC000/README.md), [Blasphemous 2](../../dm/games/010040801A4C8000/README.md), [Boomerang Fu](../../dm/games/010081A00EE62000/README.md), [Brain Memory Training Academy](../../dm/games/0100F5D01DA3A000/README.md), [Castlevania: Belmont's Curse](../../dm/games/0100BA4026E94000/README.md), [Cozy Land](../../dm/games/0100777022394000/README.md), [Cult of the Lamb](../../dm/games/01002E7016C46000/README.md), [FINAL FANTASY VI](../../dm/games/0100AA001415E000/README.md), [Monster Train 2](../../dm/games/010051701FB46000/README.md), [Patrick's Parabox](../../dm/games/0100E44016C22000/README.md), [Subnautica](../../dm/games/0100429011144000/README.md), [Subnautica: Below Zero](../../dm/games/010014C011146000/README.md), [Super Mario RPG](../../dm/games/0100BC0018138000/README.md), [Super Monkey Ball Banana Rumble](../../dm/games/010031F019294000/README.md), [SUPER ROBOT WARS Y](../../dm/games/010063301BD50000/README.md), [TUNIC](../../dm/games/0100DA801624E000/README.md) | `game`, at goal | what the regions after it need, measured by the NSP script's region check, or 1 GB from its heap check; the host's cap is the default |
+ | `present_interval display` | [Alien: Isolation](../../dm/games/010075D00E8BA000/README.md), [Assassin's Creed® Ⅲ Remastered](../../dm/games/01007F600B134000/README.md), [Atelier Ryza 3: Alchemist of the End & the Secret Key](../../dm/games/010095E018944000/README.md), [Borderlands: Game of the Year Edition](../../dm/games/010064800F66A000/README.md), [Diablo II: Resurrected](../../dm/games/0100726014352000/README.md), [Divinity: Original Sin 2 - Definitive Edition](../../dm/games/010027400CDC6000/README.md), [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md), [LEGO® Star Wars™: The Skywalker Saga](../../dm/games/010042D00D900000/README.md), [Luigi's Mansion 3](../../dm/games/0100DCA0064A6000/README.md), [Mario + Rabbids Kingdom Battle](../../dm/games/010067300059A000/README.md), [Mario + Rabbids® Sparks of Hope](../../dm/games/0100317013770000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [Monster Train 2](../../dm/games/010051701FB46000/README.md), [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [Pokémon Brilliant Diamond](../../dm/games/0100000011D90000/README.md), [Red Dead Redemption](../../dm/games/01007820196A6000/README.md), [South Park: The Fractured But Whole](../../dm/games/01008F2005154000/README.md), [stitch.](../../dm/games/010025801CEA8000/README.md), [The Witcher 3: Wild Hunt — Complete Edition](../../dm/games/0100A0800E9C4000/README.md) | `game`, at goal | right only for games whose logic does not count frames |
+ | `fps_target 60` | [A Little to the Left](../../dm/games/0100354017668000/README.md), [Alien: Isolation](../../dm/games/010075D00E8BA000/README.md), [Apollo Justice: Ace Attorney Trilogy](../../dm/games/010020D01B890000/README.md), [Assassin's Creed® Ⅲ Remastered](../../dm/games/01007F600B134000/README.md), [ASTRAL CHAIN](../../dm/games/01007300020FA000/README.md), [Atelier Ryza 3: Alchemist of the End & the Secret Key](../../dm/games/010095E018944000/README.md), [Bloodstained: Ritual of the Night](../../dm/games/0100BF500207C000/README.md), [Borderlands: Game of the Year Edition](../../dm/games/010064800F66A000/README.md), [BRAVELY DEFAULT Ⅱ](../../dm/games/01006DC010326000/README.md), [CAPTAIN TSUBASA 2: WORLD FIGHTERS](../../dm/games/01009720213B0000/README.md), [Divinity: Original Sin 2 - Definitive Edition](../../dm/games/010027400CDC6000/README.md), [DRAGON BALL: Sparking! ZERO](../../dm/games/010035F022078000/README.md), [DRAGON QUEST I & II HD-2D Remake](../../dm/games/0100D7C01F254000/README.md), [DRAGON QUEST III HD-2D Remake](../../dm/games/01003E601E324000/README.md), [DRAGON QUEST VII Reimagined](../../dm/games/0100A9D01C446000/README.md), [DRAGON QUEST XI S: Echoes of an Elusive Age – Definitive Edition](../../dm/games/01006C300E9F0000/README.md), [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md), [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md), [FINAL FANTASY RESONANCE (Asian release)](../../dm/games/0100B8A026F14000/README.md), [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md), [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md), [Hollow Knight](../../dm/games/0100633007D48000/README.md), [Hollow Knight: Silksong](../../dm/games/010013C00E930000/README.md), [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), [It Takes Two](../../dm/games/010092A0172E4000/README.md), [LEGO® Star Wars™: The Skywalker Saga](../../dm/games/010042D00D900000/README.md), [Luigi's Mansion 3](../../dm/games/0100DCA0064A6000/README.md), [Mario & Luigi: Brothership](../../dm/games/01006D0017F7A000/README.md), [Mario + Rabbids Kingdom Battle](../../dm/games/010067300059A000/README.md), [Mario + Rabbids® Sparks of Hope](../../dm/games/0100317013770000/README.md), [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), [Minecraft Dungeons II](../../dm/games/0100A7C01B792000/README.md), [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md), [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](../../dm/games/010056B015FE8000/README.md), [NieR:Automata The End of YoRHa Edition (0100B8E016F76000)](../../dm/games/0100B8E016F76000/README.md), [Oceanhorn 2: Knights of the Lost Realm](../../dm/games/01006CB010840000/README.md), [OCTOPATH TRAVELER](../../dm/games/010057D006492000/README.md), [OCTOPATH TRAVELER 0](../../dm/games/01005270232F2000/README.md), [OCTOPATH TRAVELER II](../../dm/games/0100A3501946E000/README.md), [Outer Wilds](../../dm/games/01003DC0144B6000/README.md), [Overcooked! All You Can Eat](../../dm/games/0100F28011892000/README.md), [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md), [Persona 5 Tactica](../../dm/games/010087701B092000/README.md), [Pikmin 4](../../dm/games/0100B7C00933A000/README.md), [Pokémon Brilliant Diamond](../../dm/games/0100000011D90000/README.md), [Pokémon Shining Pearl](../../dm/games/010018E011D92000/README.md), [Princess Peach: Showtime!](../../dm/games/01007A3009184000/README.md), [Red Dead Redemption](../../dm/games/01007820196A6000/README.md), [SHIN MEGAMI TENSEI V: Vengeance](../../dm/games/010069C01AB82000/README.md), [South Park: The Fractured But Whole](../../dm/games/01008F2005154000/README.md), [stitch.](../../dm/games/010025801CEA8000/README.md), [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md), [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), [The Rogue Prince of Persia](../../dm/games/01008D9022462000/README.md), [The Witcher 3: Wild Hunt — Complete Edition](../../dm/games/0100A0800E9C4000/README.md), [TRIANGLE STRATEGY](../../dm/games/0100CC80140F8000/README.md), [TUNIC](../../dm/games/0100DA801624E000/README.md), [Xenoblade Chronicles X: Definitive Edition](../../dm/games/0100453019AA8000/README.md) | `game`, at goal | a choice per game |
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index c7c3fdf65091a01f0e54432fb0e0d77bd0f783f2..ef41754e5962dc5ef547a1fc3252098f3f4b20a4 100644
+index 533107337ea85ba2d23a2147782a6cd216208a1b..a8438a789d55c97835734ac17bbf1e4554155039 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -28,6 +28,7 @@ DM_CHEATS	path	Folder of Atmosphère cheat files: `<folder>/<build ID>.txt` or a
@@ -768,9 +881,20 @@ index c7c3fdf65091a01f0e54432fb0e0d77bd0f783f2..ef41754e5962dc5ef547a1fc3252098f
  DM_HDR_PAPER_WHITE	switch	`=<nits>` (80 to 1000, default 203, BT.2408): the paper white `vi::QueryDisplayHdrPaperWhite` gives the game under `DM_HDR`, which the present maps to the screen's SDR white (EDR 1.0); the game tone-maps its highlights into peak / paper white (at most 1600 / 203 = 7.9), so a higher value leaves them less room
 +DM_HEAP_RETRY	switch	`0`: Ocarina of Time's model rebuild (main+0x4366e0) goes on with a null block when its small model heap is full, as shipped; by default the CPU buffers and GPU memory are tried again in the heap's parents and the default heap (`patches.py` `heap_retry`, Hookshot issue 1697; state page +0x170 / +0x174 the counts, +0x17c the off flag)
  DM_HID_LOG	diagnostic	`1` logs the HID button usage number of each button pressed on a raw HID gamepad (`pad_hid_mac.h`), to write a `DM_HID_MAP`
- DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, the Taiko Drum's own numbering on USB `0f0d:00f0`, `pad_hid.h`); Mac only
+ DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, the Switch wired HID layout on USB `0f0d:00f0` (HORI Taiko Drum) and `0e6f:0185` (PDP Wired Fight Pad Pro), `pad_hid.h`); Mac only
  DM_HID_PADS	switch	`0` stops reading raw HID gamepads that GameController does not list, such as an 8BitDo in its own mode (`pad_hid_mac.h`); Mac only
-@@ -195,7 +197,7 @@ DM_NVN_COUNT	diagnostic	`1` counts every NVN call (the counting trampolines) and
+@@ -144,9 +146,9 @@ DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once;
+ DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz Mac screens; by default the link counts only the refreshes nearest a steady 1/60 s clock
+ DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
+ DM_LONGFRAME	diagnostic	`0` turns off the long-frame log (on by default), a line for a frame over 20 ms or with GPU time over 16.7 ms that is clearly above recent frames
+-DM_MAC_COMPOSITED	switch	`auto` (default, Mac): sets `CAMetalLayer.opaque = NO` only in native fullscreen on a mirrored display to work around macOS Direct-to-Display purple-band flicker (`front_mac.m`, issue #1821); `1` forces non-opaque (WindowServer composited) on every display; `0` forces opaque
+ DM_LOW_LAG	player	`0` turns off NXForge's lower input lag on the Mac (on by default; the settings window's Lower input lag): while a game has frame time to spare its presents skip the display link, and a full queue of drawables is emptied by one frame, so a frame is on screen about 30 to 36 ms (fullscreen) or 42 to 52 ms (window) after the game presents it instead of 60 and 80 ms; a game without headroom keeps the display link. `DM_PRESENT_LINK` and `DM_PRESENT_LATENCY` turn it off too (`nxforge/low_lag.h`)
+ DM_LOW_LAG_TEST	diagnostic	`=<frames>` ends each run of direct presents after that many frames, to test the way back to the display link (`nxforge/low_lag.inc`)
++DM_MAC_COMPOSITED	switch	`auto` (default, Mac): sets `CAMetalLayer.opaque = NO` only in native fullscreen on a mirrored display to work around macOS Direct-to-Display purple-band flicker (`front_mac.m`, issue #1821); `1` forces non-opaque (WindowServer composited) on every display; `0` forces opaque
+ DM_MEASURE_LOCK	path	`=<file>`: `scripts/regress.py`'s default `--lock`, the measuring lock `scripts/bench.py --lock` shares: held only while a game runs, and the harness's shader builds pause while another process holds it
+ DM_MEMORY_GB	player	`auto` (default) or a number of GB: the device memory the host's rules plan for (the launcher's Memory): where the memory guard begins to let go, how many textures are made ahead
+ DM_MEMSTAT	diagnostic	`=<tsv>` writes one line per second of memory accounting: footprint, Metal allocation and resident and charged memory by region class (guest, code, malloc, gpu, …); on iOS a relative path is under `Documents`, and `Documents/env.txt` can set it
+@@ -197,7 +199,7 @@ DM_NVN_COUNT	diagnostic	`1` counts every NVN call (the counting trampolines) and
  DM_NVN_CPUPROF	diagnostic	1 records CPU wall/time/instruction totals by renderer operation; off by default.
  DM_NVN_CSH_PRESCAN	diagnostic	`0` runs the compute-hoist scan at every pass's first draw even when no dispatch follows (as before; for timing)
  DM_NVN_CS_HOIST	switch	`0` makes a compute dispatch between the draws of a pass end it (on by default: the dispatch runs ahead of the pass when that changes nothing the draws before it read)
@@ -779,7 +903,7 @@ index c7c3fdf65091a01f0e54432fb0e0d77bd0f783f2..ef41754e5962dc5ef547a1fc3252098f
  DM_NVN_CUT_BUSY	switch	`=0` / `=1` / `=<N>`: `0`, a segment boundary commits whatever the GPU is doing; `1` (the default), commits only when earlier work on the queue has finished (read from the queue's shared event `g_rx_ev`, or held on the encode thread with `DM_NVN_ENC_THREAD=1`); `<N>` (`>= 2`), commits while fewer than `N` commits are in flight on the queue
  DM_NVN_DEPTHOVR	diagnostic	`=<fragment shader key prefix>,…`: those draws compare depth with `ALWAYS`; with `DM_NVN_HILITE`, tells "the depth test rejects every fragment" from "nothing rasterizes"
  DM_NVN_DEPTH_BOUNDS	diagnostic	`0` ignores NVN and Vulkan depth bounds on Apple10+ GPUs (`setDepthTestMinBound:maxBound:`); `ab` alternates with `DM_AB` (on by default on Apple10+ GPUs, inactive on older GPUs)
-@@ -327,6 +329,7 @@ DM_NVN_UNWRITTEN_DC	switch	`0` disables optional stores elided for loaded, uncha
+@@ -332,6 +334,7 @@ DM_NVN_UNWRITTEN_DC	switch	`0` disables optional stores elided for loaded, uncha
  DM_NVN_UPLOAD_IDLE_MS	switch	A positive interval in milliseconds enables idle trimming of completed upload staging. Defaults to `0` on all platforms. An explicit `0` keeps the slots and logs their sizes and allocation counts for comparison.
  DM_NVN_UPLOAD_REUSE	switch	0 keeps the original one-block upload-slot policy; default retains bounded demand-sized primary and overflow buffers after completion.
  DM_NVN_UPLOAD_SRC_MB	switch	positive MiB budget for an upload batch's zero-copy source buffers over guest memory; default `0` disables it. Flushes between textures; one oversized texture or a sparse gather can exceed the budget.
@@ -787,7 +911,7 @@ index c7c3fdf65091a01f0e54432fb0e0d77bd0f783f2..ef41754e5962dc5ef547a1fc3252098f
  DM_NVN_VBUF_CACHE	switch	`0` turns off the cache of resolved vertex stream addresses and vertex argument table writes across draws (on by default), for A/B runs
  DM_NVN_VCONV_CHECK	diagnostic	`=1` scans the indices again at every reuse of a cached vertex conversion range (`vconv_range`) and reports differences
  DM_NVN_VCONV_CPU	switch	`=1` converts on the CPU every vertex attribute Metal's fetch cannot read, as before, instead of through the shader's shadow inputs (`<key>_bv`) or its pulling entry (`<key>_bp`)
-@@ -398,6 +401,7 @@ DM_PROGRAM_ID	switch	`=<hex>`: the program ID the host reports from `svcGetInfo(
+@@ -405,6 +408,7 @@ DM_PROGRAM_ID	switch	`=<hex>`: the program ID the host reports from `svcGetInfo(
  DM_PRO_STICKS	switch	On the Mac, `0` disables the automatic per-stick passive HID fallback for a single Switch Pro-compatible controller whose GameController stick stays zero while report `0x30` moves (`motion_pro_mac.h`, `pad_pro.h`); enabled by default, independent of `DM_MOTION` / `DM_MOTION_HID`
  DM_PSO_ARCHIVE	path	The folder of the per-game Metal 4 pipeline archive of pipeline bases (default `pso_archive/` beside `pso_user.tsv`); `off` keeps no archive
  DM_PSO_ARCH_WARM_FLUSH_MS	switch	`=<ms>`: during a prewarm the game plays through (no prepare step) that is not compacting, the timer's flush hands the archive's period over once it is that old, then twice as long each time up to 16 times (default 60000; `0`: no flush until the prewarm ends or the period is full)
@@ -795,7 +919,7 @@ index c7c3fdf65091a01f0e54432fb0e0d77bd0f783f2..ef41754e5962dc5ef547a1fc3252098f
  DM_PSO_BUNDLE	path	The pipeline archive made offline (`<GPU architecture>.mtl4a`, `prebuilt.tsv`), read only; the iOS app and Mac launcher set it to their `pso/` folder; `off` ignores it
  DM_PSO_DEMAND_RECORD	switch	`0`: a pipeline a hybrid draw stands in for goes into `pso_user.tsv` only once built, not when first asked for (default: at once, so the next start's prepare step builds it)
  DM_PSO_GPUS	switch	`build_ipa.sh`: the GPU architectures, comma-separated, to build the offline pipeline archive for (`none` builds none); unset, a profile with `pso_mtl4 on` gets its `pso_gpu` list or `g18p` when absent; profiles with `pso_mtl4 off` get none
-@@ -416,6 +420,7 @@ DM_PSO_PREPARE	switch	`0` runs the prewarm in the background while the game star
+@@ -423,6 +427,7 @@ DM_PSO_PREPARE	switch	`0` runs the prewarm in the background while the game star
  DM_PSO_PREPARE_THREADS	switch	`=<n>`: the workers of the prepare step that builds the prewarm lists before the first frame (default: the device's active cores)
  DM_PSO_PULL_ALL	diagnostic	`=1`: every draw that has a pulling pipeline draws with it, never with the pipeline for its vertex layout
  DM_PSO_RECORD	path	`=<file>`: appends the shaders and pipelines used in the run to that file, for re-recording the prewarm manifest
@@ -803,3 +927,14 @@ index c7c3fdf65091a01f0e54432fb0e0d77bd0f783f2..ef41754e5962dc5ef547a1fc3252098f
  DM_PSO_USER	path	The per-device list of shaders and pipelines built on the spot (default: `pso_user.tsv` in the parent of `DM_SAVE`)
  DM_PSO_WAITLOG	diagnostic	`=1` logs each draw that waited more than 20 ms for its pipeline, with its shader pair and why no stand-in served it
  DM_PYTHON	path	`=<python executable>`: Python executable for `build_ipa.sh` and `dm/host/Makefile` (the NSP script sets it to its own Python; defaults to `python3` on `PATH`; `FONT_PY` still overrides it for `make_shared_fonts.py`)
+@@ -486,9 +491,9 @@ DM_SPIN	switch	`0` makes the rewriter's spin gate return at once, so guest poll
+ DM_SPIN_LIST	diagnostic	`=1` makes `patch_nso.py` print every guest poll loop it found and sends through a spin gate
+ DM_SPIN_POLL	switch	`=<µs>`: how long a spin-gate wait polls before it sleeps with the yield back-off (default 2000; `0` yields on every pass)
+ DM_SPLIT_REGISTERED_MAP	path	Registered `shader_map.tsv` used by the splitter to keep a known source label when the same shader is found in several places
+-DM_STICK_MOTION	player	`1` starts with Right Stick Motion enabled: player 1 uses the right stick to turn the virtual six-axis sensor. Off by default; toggle it during play from the Mac Controls menu.
+ DM_STICK_DEADZONE_L	player	`=1..50`: a radial deadzone for the left stick of every physical controller, a whole percent of its travel: inside it the stick reads centred, outside it the rest of the travel is rescaled so a full push still reads full (`stick_deadzone.h`); unset or `0` leaves the stick as reported. Keyboard, touch and scripted input do not use it. Launcher setting
+ DM_STICK_DEADZONE_R	player	The same for the right stick (`DM_STICK_DEADZONE_L`). Launcher setting
++DM_STICK_MOTION	player	`1` starts with Right Stick Motion enabled: player 1 uses the right stick to turn the virtual six-axis sensor. Off by default; toggle it during play from the Mac Controls menu.
+ DM_SVC	diagnostic	`=1` logs memory SVCs (`SetHeapSize`, `MapMemory`, `Map`/`UnmapPhysicalMemory`) with their addresses and sizes
+ DM_SW2	player	`=1` turns on Switch 2 controllers over Bluetooth LE (Joy-Con 2, Pro Controller 2): the settings window's Switch 2 controllers. Off, no Bluetooth client is created and macOS asks nothing. The host also stays off when the app's Info.plist has no NSBluetoothAlwaysUsageDescription, without which macOS ends the process at the first Bluetooth scan
+ DM_SW2_GYRO_DPS	diagnostic	`=<degrees per second per count>` is the Switch 2 controllers' gyro scale (default 0.0607, measured on a left and a right Joy-Con 2; the Switch family's nominal 0.070 turned a 90 degree tilt into 104)

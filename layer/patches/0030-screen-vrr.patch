@@ -9,10 +9,10 @@ Subject: screen-vrr: a ProMotion screen keeps its variable refresh in
  1 file changed, 2 insertions(+)
 
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 3d07b52e2c8ea76822e0a1338a4fb3bd704aa1e6..a45278a9fa756cf01461fe013aa0e33202db51a1 100644
+index 92d414f4bb7f875895ff960b36dde531198afdaa..6701621f7e78734c16292ec37a04a8d9808e8893 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
-@@ -148,6 +148,7 @@ static void screen_match_restore(int on_it, int undone) {   // main thread: the
+@@ -174,6 +174,7 @@ static void screen_match_restore(int on_it, int undone) {   // main thread: the
      CGDisplayModeRelease(g_match_orig); g_match_orig = NULL; g_match_pick = 0; g_match_pick_vrr = 0;
      if (undone) g_match_undone = CACurrentMediaTime();
  }
@@ -20,7 +20,7 @@ index 3d07b52e2c8ea76822e0a1338a4fb3bd704aa1e6..a45278a9fa756cf01461fe013aa0e332
  static void screen_match_apply(void);
  static void screen_match_once(void) {   // screen_match_apply's work, never entered twice at once
      static int off = -1; if (off < 0) { const char *e = getenv("DM_SCREEN_MATCH"); off = e && !strcmp(e, "0"); if (off) LOG("front end: the screen keeps its refresh rate in fullscreen too (DM_SCREEN_MATCH=0)"); }
-@@ -188,6 +189,7 @@ static void screen_match_once(void) {   // screen_match_apply's work, never ente
+@@ -214,6 +215,7 @@ static void screen_match_once(void) {   // screen_match_apply's work, never ente
      // the current mode is variable-refresh: the screen's own mode as screen_refresh saw it; one this host switched to as it chose it (the screen observer may lag), so a
      // fixed mode is never left for the variable one at a rate it already matches
      int vrr = !g_match_orig ? g_screen_variable_refresh : cur_id == g_match_pick ? g_match_pick_vrr : cur_id == CGDisplayModeGetIODisplayModeID(g_match_orig) ? g_match_orig_vrr : 0;

@@ -2,6 +2,13 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.62.0 (2026-11-27)
+
+- **The engine moves to the newest nxnative** (upstream `2d0773f4`, 164 commits past the last pin `1e06abd9`). For Ocarina of Time: 7,058 more prewarm rows from players' runs and further prewarm seeds and pipelines, so fewer shaders compile mid-play, and the frame step and dynamic resolution on version 1.0.0 too (#3319). For Mario Kart World: more prewarm seeds. Also: Switch 2 controllers on iPhone and iPad, controller player lights on the Mac, the Pro Controller's resting gyro drift learned and removed (#3364), MetalFX for NDSR's same-encoding variants (#3399), launcher defaults resolved the same way with or without a window, the Mac app's prewarm pipelines made inside `pso_offline.py`, and about 25 new game profiles.
+- **Three layer patches dropped or reshaped because upstream now has them** (46 left): pro-gyro-zero (upstream #3364 learns the resting gyro bias itself) and cra-damaged-members (upstream 715a9403 checks member sizes before decoding) are dropped; played-pipelines now hands the player's pipelines to `pso_offline.py --manifest`, since upstream folded the Mac prebake step into it.
+- **Game apps send nothing to upstream's prewarm inbox**: upstream's apps now upload the player's `pso_user.tsv` to its inbox by default, with the off switch in the settings window that NXForge's apps do not have, so NXForge packs no upload URL unless `DM_PREWARM_UPLOAD_URL` names one.
+- Games need a full rebuild for the new engine.
+
 ## 0.61.0 (2026-11-25)
 
 - **The engine moves to the newest nxnative** (upstream `1e06abd9`, 138 commits past the last pin `7d38c8e0`). For Mario Kart World: the end-of-race freezes of up to a minute are fixed (stalled acquire threads are retired, upstream #3285). Also: Metal 4 mesh pipelines with bases and a prebuild (built whole, which avoids the GPU hangs seen in Ocarina's Kakariko Graveyard and Jabu-Jabu), MetalFX scalers retired at their fence so old ones stop piling up, a "Texture filtering" setting from upstream (2x to 16x, beside NXForge's own sidebar floor), and Picture › Fill on the Mac. Games need a full rebuild to pick the engine up; the shader chain is now `6cc2d4225993`.
