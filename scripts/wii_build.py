@@ -186,8 +186,11 @@ def make_icon(src, res_dir, work, square=False):
         os.makedirs(iconset)
         sq = os.path.join(work, "icon-square.png")
         out = subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", src], capture_output=True, text=True).stdout
-        w = int(re.search(r"pixelWidth: (\d+)", out).group(1))
-        hgt = int(re.search(r"pixelHeight: (\d+)", out).group(1))
+        mw = re.search(r"pixelWidth: (\d+)", out)
+        mh = re.search(r"pixelHeight: (\d+)", out)
+        if not mw or not mh:
+            return False
+        w, hgt = int(mw.group(1)), int(mh.group(1))
         side = max(w, hgt) if square else min(w, hgt)
         args = ["--padToHeightWidth", str(side), str(side)] if square else ["-c", str(side), str(side)]
         subprocess.run(["sips", *args, src, "--out", sq], check=True, capture_output=True)
@@ -307,7 +310,7 @@ class Build:
                 shutil.copy2(shot, os.path.join(res, "wii", "title.png"))
                 subprocess.run(["sips", "-Z", "960", os.path.join(res, "wii", "title.png")], capture_output=True)
             self.end(("started and drew " + f"{trial['frames']:,} frames" + (f" at {trial['fps']:.0f} fps" if trial.get("fps") else "")) if trial.get("playing")
-                     else "did not reach its first frame in the trial: " + (trial.get("error") or "see the log"))
+                     else "did not reach its first frame in the trial: " + str(trial.get("error") or "see the log"))
         icon = make_icon(cover, res, work, square=True) if os.path.exists(cover) else make_icon(os.path.join(work, "title.png"), res, work)
         if icon:
             plist["CFBundleIconFile"] = "AppIcon"
