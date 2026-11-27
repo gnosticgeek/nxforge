@@ -5,38 +5,39 @@ Subject: front-end-save-check: NXForge's Play (--no-launcher) runs the cloud
  save check without the settings window
 
 ---
- dm/mac/launcher.c     | 8 +++++---
+ dm/mac/launcher.c     | 9 ++++++---
  docs/env_switches.tsv | 1 +
- 2 files changed, 6 insertions(+), 3 deletions(-)
+ 2 files changed, 7 insertions(+), 3 deletions(-)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 098ffa506ecf3bb3e9ff32ab19786eaeaac68077..1790e73c08c632311d6464d5edc0248d20e936d9 100644
+index eda400be758035d04c170ef156c87db43d2e7521..80acde0667b66e21e5c108b8e4db48b1f86ac135 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
-@@ -37,6 +37,7 @@
- 
+@@ -39,6 +39,7 @@
  extern char **environ;
- int dm_mac_launcher(void);   // Launcher.swift: 1 = Play (the settings are in the environment), 0 = the player quit, 2 = no window (apply the saved choices here)
+ void dm_mac_record_launch_keys(void);   // Launcher.swift: records settings from dm/launcher.json already set in the launch environment into DM_ENV_LAUNCH_KEYS
+ int dm_mac_launcher(int show_window);   // Launcher.swift: 1 = start the game (resolved settings in the environment), 0 = the player quit
 +int dm_mac_save_check(void);   // NXForge (dm/mac/nxforge/launcher_window.swift): the cloud save check alone, for --no-launcher: 2 = go on, 0 = the player quit
+ void dm_prewarm_upload_schedule(void);
  int dm_mac_microphone_consent(void);
  static pid_t g_child;
- static char *g_file_keys, *g_launch_keys;   // the variables the env files set, and the settings the launch environment set (DM_ENV_FILE_KEYS, DM_ENV_LAUNCH_KEYS)
-@@ -325,9 +326,10 @@ int main(int argc, char **argv) {
+@@ -265,9 +266,11 @@ int main(int argc, char **argv) {
      fprintf(stderr, "launcher: save %s\n", getenv("DM_SAVE") ?: save);
      setenv("DM_SAVE", save, 0);   // before the window (and after the save moved into the game folder): its cloud-save check compares this save with the cloud's (Launcher.swift SaveCheck)
      int window = !(getenv("DM_LAUNCHER") && !strcmp(getenv("DM_LAUNCHER"), "0"));
 -    for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--no-launcher")) window = 0;
 -    if (!window) fprintf(stderr, "launcher: no settings window (DM_LAUNCHER=0 or --no-launcher)\n");
--    int shown = window ? dm_mac_launcher() : 2;
+-    if (!dm_mac_launcher(window)) return 0;   // Quit: no game
 +    int no_launcher = 0;   // NXForge: --no-launcher (NXForge's Play) still checks the cloud save; DM_LAUNCHER=0 asks nothing, as before
 +    for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--no-launcher")) no_launcher = 1;
 +    if (no_launcher || !window) fprintf(stderr, "launcher: no settings window (DM_LAUNCHER=0 or --no-launcher)\n");
-+    int shown = no_launcher && window ? dm_mac_save_check() : window ? dm_mac_launcher() : 2;
-     if (!shown) return 0;   // Quit: no game
-     if (shown == 2) saved_choices();
++    if (no_launcher && window && !dm_mac_save_check()) return 0;   // Quit: no game
++    if (!dm_mac_launcher(window && !no_launcher)) return 0;   // Quit: no game
+     dm_prewarm_upload_schedule();
      cloud_saves_folder();
+     microphone_at_launch();
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 27bd9b28c68cd6ee7440c04c90ebd85f7eeca5d7..35098e8ffbcfe74f24d4ac2486b11ab1ab39d943 100644
+index 3de1e288c8ee16dfd9297fc0db42ceda74dc257d..3497cbf00ff97a9a6a82fe98891c72b3e9e29089 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -58,6 +58,7 @@ DM_FPS	switch	`30` or `60` pins the frame rate the display link and frame pacing

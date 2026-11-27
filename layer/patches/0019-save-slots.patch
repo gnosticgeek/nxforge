@@ -12,10 +12,10 @@ With the host stopped, the slot the sidebar named in DM_LAUNCHER_SLOT_LOAD is cl
  3 files changed, 9 insertions(+), 4 deletions(-)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 1790e73c08c632311d6464d5edc0248d20e936d9..07814a29d2899fb099eadf7d07c31f1c9776c8a7 100644
+index 80acde0667b66e21e5c108b8e4db48b1f86ac135..c2758618f7f0dc488e6db5d4f9a217700b16a30c 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
-@@ -273,6 +273,8 @@ static void programs_table(const char *contents, const char *res, const char *su
+@@ -214,6 +214,8 @@ static void programs_table(const char *contents, const char *res, const char *su
      fclose(f); fclose(o); setenv("DM_PROGRAMS", out, 0);
  }
  
@@ -24,7 +24,7 @@ index 1790e73c08c632311d6464d5edc0248d20e936d9..07814a29d2899fb099eadf7d07c31f1c
  int main(int argc, char **argv) {
      char self[PATH_MAX], exe[PATH_MAX]; uint32_t n = sizeof self;
      if (_NSGetExecutablePath(self, &n) || !realpath(self, exe)) return 1;
-@@ -362,6 +364,8 @@ int main(int argc, char **argv) {
+@@ -302,6 +304,8 @@ int main(int argc, char **argv) {
      // Restart game (Quick settings, front_mac.m front_qs_restart): the host makes this file and quits; the launcher then starts it again with the same environment
      char restart[PATH_MAX]; snprintf(restart, sizeof restart, "%s/restart-requested", sup);
      unlink(restart); setenv("DM_LAUNCHER_RESTART", restart, 1);
@@ -33,7 +33,7 @@ index 1790e73c08c632311d6464d5edc0248d20e936d9..07814a29d2899fb099eadf7d07c31f1c
      int status;
      for (;;) {
          int err = posix_spawn(&g_child, host, NULL, NULL, host_argv, environ);
-@@ -370,7 +374,8 @@ int main(int argc, char **argv) {
+@@ -310,7 +314,8 @@ int main(int argc, char **argv) {
          // Cloud saves (DM_SAVE_SYNC, dm/host/save_sync.h): what the host committed and had not sent yet goes now, after a crash too (the committed save is whole whatever the host was doing)
          // DM_SAVE as the host had it: an env file or the launch environment may have set another folder than this app's own
          if (!save_sync_after_exit(getenv("DM_SAVE"), id)) fprintf(stderr, "launcher: the save did not reach the cloud; it goes at the next start\n");
@@ -44,10 +44,10 @@ index 1790e73c08c632311d6464d5edc0248d20e936d9..07814a29d2899fb099eadf7d07c31f1c
          restart_choices();
      }
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index df8a2e09a77153affeb2d355801fc8936c65456e..57c651c1ab83324695c07900e52fd587081fd7d8 100755
+index 3530e578f7944dfc0c890d38223b973f17734cb3..62786e5d36c6d2fe7c5143e77d614878879cc0df 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
-@@ -472,7 +472,7 @@ def pack(a):
+@@ -476,7 +476,7 @@ def pack(a):
          if not codesign: raise SystemExit('codesign is not available')
          codesign = Path(codesign).resolve()
          minos = min_os(a.host)
@@ -57,19 +57,19 @@ index df8a2e09a77153affeb2d355801fc8936c65456e..57c651c1ab83324695c07900e52fd587
          def tree(p):   # a folder's entries; a RomFS image's one row as a large file's (as_packed)
              rows = inventory(Path(p))
 diff --git a/dm/tools/tests/test_nsp_mac_app.py b/dm/tools/tests/test_nsp_mac_app.py
-index c6576ed498f5a809e1dfe9a330a34e65b4785c6f..4e645f3050f94501e10ed50119799bc84856a503 100644
+index 6d755aef16f84e82eb0b238900264f0b2bcc6130..37f47aa0cd7b96bb61023df603417ada11d92796 100644
 --- a/dm/tools/tests/test_nsp_mac_app.py
 +++ b/dm/tools/tests/test_nsp_mac_app.py
-@@ -140,7 +140,7 @@ class PackReuse(unittest.TestCase):
-             'pso/gpu-prewarm-00.mtl4a': b'bases', 'pso/gpu-prewarm-00.keys': b'DMPSOIX1', 'pso/prewarm.tsv': b'stamp',   # --prebake's files and their index
+@@ -141,7 +141,7 @@ class PackReuse(unittest.TestCase):
              'env.txt': b'DM_TEST=1', 'split.tsv': b'split', 'icon.jpg': b'jpeg', 'source/launcher.c': b'launcher',
              'host/romfs_image.h': b'validator', 'host/save_sync.c': b'sync', 'host/save_sync.h': b'sync api', 'host/save_sync_apple.m': b'apple sync', 'tools/romfs.py': b'reader', 'tools/nso_syms.py': b'symbols',
--            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_window.swift': b'nxf',
-+            'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report', 'source/nxforge/launcher_window.swift': b'nxf', 'source/nxforge/launcher_slots.inc': b'slots',
+             'source/Launcher.swift': b'window', 'ios/Sources/LauncherSettings.swift': b'model', 'ios/Sources/LauncherRow.swift': b'rows', 'ios/Sources/SaveSyncReport.swift': b'report',
+-            'ios/Sources/PrewarmUpload.swift': b'upload', 'source/nxforge/launcher_window.swift': b'nxf',
++            'ios/Sources/PrewarmUpload.swift': b'upload', 'source/nxforge/launcher_window.swift': b'nxf', 'source/nxforge/launcher_slots.inc': b'slots',
          }
          for n in pack_app.TABLES: files['profile/' + n] = n.encode()
          for n, content in files.items(): (t / n).write_bytes(content)
-@@ -225,7 +225,7 @@ class PackReuse(unittest.TestCase):
+@@ -239,7 +239,7 @@ class PackReuse(unittest.TestCase):
          names = ['dmhost', 'patched/main.patched.bin', 'patched/main.fixups.tsv', 'patched/main.gates.tsv', 'patched/main.cuts.tsv',
                   'patched/main.obs.tsv', 'patched/nro.tsv', 'msl/k.metallib', 'msl/k.json', 'msl/inputs.tsv', 'font/nintendo_ext.ttf',
                   'pso/gpu.mtl4a', 'pso/prebuilt.tsv', 'pso/rest_pairs.tsv', 'pso/archive.tsv', 'pso/gpu-prewarm-00.mtl4a', 'pso/gpu-prewarm-00.keys', 'pso/prewarm.tsv', 'env.txt', 'icon.jpg', 'source/launcher.c',

@@ -17,10 +17,10 @@ the child host (macOS privacy checks refuse an exec'ed process's opens there).
  3 files changed, 24 insertions(+)
 
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 07814a29d2899fb099eadf7d07c31f1c9776c8a7..eb739ef9198d1c1711858a2480123d2079b3f08c 100644
+index c2758618f7f0dc488e6db5d4f9a217700b16a30c..fe3aba6b606427c3790c1df91a05faed010a90f3 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
-@@ -366,6 +366,23 @@ int main(int argc, char **argv) {
+@@ -306,6 +306,23 @@ int main(int argc, char **argv) {
      unlink(restart); setenv("DM_LAUNCHER_RESTART", restart, 1);
      char slotreq[PATH_MAX]; snprintf(slotreq, sizeof slotreq, "%s/slot-load-requested", sup);   // quick-save slots (nxforge/launcher_slots.inc)
      unlink(slotreq); setenv("DM_LAUNCHER_SLOT_LOAD", slotreq, 1);
@@ -45,21 +45,21 @@ index 07814a29d2899fb099eadf7d07c31f1c9776c8a7..eb739ef9198d1c1711858a2480123d20
      for (;;) {
          int err = posix_spawn(&g_child, host, NULL, NULL, host_argv, environ);
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 57c651c1ab83324695c07900e52fd587081fd7d8..53bf8c4f2168f559a01f097bedbc4b82ee8ccf1e 100755
+index 62786e5d36c6d2fe7c5143e77d614878879cc0df..b430e84fffce81ba8714494d62511b6930dc116f 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
-@@ -132,6 +132,9 @@ def info_plist(a, minos, icon):
-          'NSBluetoothAlwaysUsageDescription': 'Connect Switch 2 Joy-Con and Pro Controllers over Bluetooth.',
-          'LSApplicationCategoryType': a.category or 'public.app-category.games', 'LSSupportsGameMode': False, 'DMTitleID': a.title_id.upper(), 'DMRomfsMarker': a.marker or '', 'DMLanguage': a.lang or 'en-US', 'DMSaveSyncChoice': 1}
+@@ -126,6 +126,9 @@ def info_plist(a, minos, icon):
      if icon: p['CFBundleIconFile'] = 'AppIcon'
+     if getattr(a, 'prewarm_upload_url', None) and Path(a.msl).name not in ('vk', 'gl'):
+         p['DMPrewarmUploadURL'] = a.prewarm_upload_url
 +    # DM_APP_GAME_MODE=1 when packing: an app that asks for Game Mode and whose launcher hands its process to the host (launcher.c DM_LAUNCH_EXEC), for a Mac where Game Mode
 +    # helps more than its GPU clock rule costs. The default stays off, for the reason above
 +    if os.environ.get('DM_APP_GAME_MODE') == '1': p['LSSupportsGameMode'] = True; p['GCSupportsGameMode'] = True; p['DMLaunchExec'] = '1'
      if a.settings:
          listed = json.loads(Path(a.settings).read_text(encoding='utf-8'))['settings']
-         p['DMSettings'] = settings_rules(listed)
+         lang = next((s['default'] for s in listed if s['env'] == 'DM_LANG'), None)
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 19aa2f40184c0c415bd21818871c921b1991e2e5..0561383387a20620c494f62e22db2754fe9a7a28 100644
+index 6fafe1e2a8cdbd0c4231ee04cd54cc402a5ac97a..737dedbb642cca22bc2f9edea401107290483193 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -8,6 +8,7 @@ DM_ANISO	diagnostic	`0`, `2`, `4`, `8` or `16`: anisotropic filtering of at leas
@@ -79,7 +79,7 @@ index 19aa2f40184c0c415bd21818871c921b1991e2e5..0561383387a20620c494f62e22db2754
  DM_LAUNCH_PARAM	path	File whose bytes `oe::TryPopLaunchParameter` returns once; `oe::ExecuteProgram` sets it for the program it starts; a relaunch removes it
  DM_LINK_VTICK	switch	`0` keeps the system's display-link rate on 144 or 165 Hz Mac screens; by default the link counts only the refreshes nearest a steady 1/60 s clock
  DM_LOADHASH	diagnostic	`=1` logs an address-independent SHA-256 per module after loading
-@@ -455,6 +458,7 @@ DM_SHARED_FONT	path	One font file served for every shared-font type except the N
+@@ -463,6 +466,7 @@ DM_SHARED_FONT	path	One font file served for every shared-font type except the N
  DM_SHARED_FONT_EXT	path	Font file served for shared-font type 5, the Nintendo extension with the button icons (default `$DM_FONT_DIR/nintendo_ext.ttf`, made by `make_shared_fonts.py`)
  DM_SHOW_FPS	player	`1` shows the frame-rate counter on the iPhone (frames put on screen per second, top left); at IPA build it sets `DMShowFPS` in `Info.plist`, which `Documents/env.txt` overrides
  DM_SIX_DELAY	switch	`=0` (the default), `=auto` or `=<ms>` (up to 40): `DM_IMU_DELAY`'s playout delay for the six-axis states (`GetSixAxisSensorStates`) instead of the IMU samples. None by default: a Switch 1 game reads the newest state each frame (aiming, steering), so a delay only adds latency. Also through `DM_CTL`'s `env`

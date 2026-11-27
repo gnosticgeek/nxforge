@@ -29,7 +29,7 @@ Co-authored-by: dsi-hub <260802842+dsi-hub@users.noreply.github.com>
  5 files changed, 45 insertions(+)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 6e059ed0b7804eff8b30ddfd9d77a4820a4aaddc..12c4caa7770c5ee53063ebe0ef568727dfb1e885 100644
+index 73d5ad657813e12300c66241ac82bd34c7af877a..0302b9cd2bcd1e10603850925e43821237d42001 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -170,6 +170,7 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
@@ -41,18 +41,18 @@ index 6e059ed0b7804eff8b30ddfd9d77a4820a4aaddc..12c4caa7770c5ee53063ebe0ef568727
  ## Saves
  
 diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
-index 1de6c70b0c6c412fdcfabb95ff48a8f2ac300ff9..2f97a3d151f33314bbb44dfd8363ad4781330de0 100644
+index 26e3919aab98b4c5149cf371b0b85084ef531aaf..a5a539f02540ed698963735289e17ab212ea2266 100644
 --- a/dm/games/0400486024DEC000/patches.py
 +++ b/dm/games/0400486024DEC000/patches.py
-@@ -41,6 +41,7 @@ def frame_step(ctx):
+@@ -41,6 +41,7 @@ def frame_step_at(ctx, at):
      dynamic_resolution(ctx)
      render_scale(ctx)
      screen_shape(ctx)
 +    heap_retry(ctx)
- 
- # The game's dynamic resolution (game__gfx__DynamicResolutionParam: LoadThreshold, ReduceCounterMax, IncreaseCounterMax and a list of levels, each a ResolutionReduceScale and a
- # Priority; on v131072 levels 0..9 at 0.75..0.333 of 2048x1152, 1536x864 to 683x384). Its update (main+0x805aa0) reads the frame's GPU load (about 0.2 ms a unit) into +0x8, subtracts
-@@ -528,3 +529,41 @@ BINDING = [
+ # The division's place in each build's function: +0xe4 on v131072; +0x108 on v0 (1.0.0, main+0x6b5900, 0x9a8 bytes), whose function loads three more globals into x21, x23 and x24
+ # before it and saves x23 to x25 for them. The rest is the same: s1 the base rate, s0 written again on every path before it is read, neither x16 nor x17 used
+ def frame_step(ctx): frame_step_at(ctx, 0xe4)
+@@ -538,3 +539,41 @@ BINDING = [
       'why': "the game's own display setup, camera, pane and movie code; installed together after every function matches. Indexed pane edits verify the authored name, class and dimensions they use",
       'checked': 'v131072 main: one function per fingerprint, free registers read at each site; indexed pane names, classes and dimensions checked against the UIL records. In-place Vert+ projection-object updates (and DM_SCREEN_FOV=off Hor-) executed on ARM64 in test_ocarina_screen_shape.py and verified in Kakariko Village on Mac at 16:9, 16:10 and 4:3 (2026-11-23); 0/3 projection fingerprint matches in TOTK, BOTW and Mario Kart World; physical iPad/iPhone retest pending'},
  ]
@@ -95,10 +95,10 @@ index 1de6c70b0c6c412fdcfabb95ff48a8f2ac300ff9..2f97a3d151f33314bbb44dfd8363ad47
 +        start = stub(heap_gpu_words, site, 0x37000040, {8: obj}, site + 8, fail)
 +        fs_put(site, [B(site, start)], 'full model heap: GPU memory the heap had no room for is made in its parents or the default heap (Hookshot issue 1697)')
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 3e0aedaf9a08fb4d39556b1868ad8ae566c0cd01..51b6ed8189c63e844a6086de499de04badfccac3 100644
+index 96c1310b1a8275f0013deb3ff0927cec0104c12f..89f4d972b821c8adc4eeacf3711666dab85d0d54 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
-@@ -2564,6 +2564,8 @@ static void power_line(uint64_t frame) {
+@@ -2681,6 +2681,8 @@ static void power_line(uint64_t frame) {
          double nf = frame > pf ? (double)(frame - pf) : 1;   // per frame: the fair comparison when one build holds the frame rate better than another
          LOG("[nvn] power up to frame %llu: CPU energy %.2f W, %.1f mJ per frame (%.1f fps); CPU %.0f%% (100 = one core), %.0f%% of it on performance cores; wakeups %.0f/s (out of platform idle %.0f); GPU %.1f ms/s; thermal %d; top yielders: %s", frame,
              (e - pe) / 1e9 / s, (e - pe) / 1e6 / nf, nf / s, (cpu - pcpu) / 1e7 / s, cpu > pcpu ? 100.0 * (double)(p - pp) / (double)(cpu - pcpu) : 0, (iw - piw) / s, (idw - ppw) / s, (g - pg) / 1e6 / s, dm_thermal_now(), yt);
@@ -121,7 +121,7 @@ index 262fd5c42ceccdeea2fb678c9375854a9336fb3b..8d17deab6ba1d53c71b5b17ae81703da
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 3b08c2fee2bcae8664ffd2a0a54511cc75133070..a72d5147d93a90880e27c8eec31b3abcd9ed5452 100644
+index c875533a0733856f19814d0ef326902d2bcfd4cb..c6783355e740152e1d3684491d3b5e07674175e0 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -97,6 +97,7 @@ DM_GUEST_FILE_MIN_FREE	switch	`=<size>` (whole MB, K / M / G; default 2G, `0` ne
@@ -130,5 +130,5 @@ index 3b08c2fee2bcae8664ffd2a0a54511cc75133070..a72d5147d93a90880e27c8eec31b3abc
  DM_GUEST_SPAWN_TEST	diagnostic	`=1` runs a self-test before `nnMain`: a host-started guest thread does SDK malloc / free and locks an `nn::os` mutex, and the result is logged; `=2` also keeps a resident thread
 +DM_HEAP_RETRY	switch	`0`: Ocarina of Time's model rebuild (main+0x4366e0) goes on with a null block when its small model heap is full, as shipped; by default the CPU buffers and GPU memory are tried again in the heap's parents and the default heap (`patches.py` `heap_retry`, Hookshot issue 1697; state page +0x170 / +0x174 the counts, +0x17c the off flag)
  DM_HID_LOG	diagnostic	`1` logs the HID button usage number of each button pressed on a raw HID gamepad (`pad_hid_mac.h`), to write a `DM_HID_MAP`
- DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, the Taiko Drum's own numbering on USB `0f0d:00f0`, `pad_hid.h`); Mac only
+ DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, the Switch wired HID layout on USB `0f0d:00f0` (HORI Taiko Drum) and `0e6f:0185` (PDP Wired Fight Pad Pro), `pad_hid.h`); Mac only
  DM_HID_PADS	switch	`0` stops reading raw HID gamepads that GameController does not list, such as an 8BitDo in its own mode (`pad_hid_mac.h`); Mac only

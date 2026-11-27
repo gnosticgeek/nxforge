@@ -126,7 +126,7 @@ index 9b57466fd2a029c856c77d9a9cff7ced3aa1b28c..eca68cf85cbd0ca4293718f736b7af42
      if (d->fcount < 8) { d->fifo[(d->fhead + d->fcount) % 8] = i; d->fcount++; } else LOG("[RED] nn::codec: acquirable queue full at release %u", i);
      int before = cv_pending(d);
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 33be89250bb502643f9a4938414c8e55f83b7341..0d2814ac45dcf7ad02ecdf8592c7fb8af7e216dc 100644
+index 7f6aa7f723b31d144b868425381f82a550d14376..f61b0b36a9835aedbc52fc9f24db14a4be386150 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
 @@ -12,13 +12,14 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
@@ -145,7 +145,7 @@ index 33be89250bb502643f9a4938414c8e55f83b7341..0d2814ac45dcf7ad02ecdf8592c7fb8a
  	$(B)/t_fs $(QUIET)
  	$(B)/t_fs_mutation $(QUIET)
  	TMPDIR="$(abspath $(B))" $(B)/t_fs_commit_list
-@@ -372,6 +373,8 @@ $(B)/t_oe: t_oe.c ../hle_oe.c ../hle.h ../dm.h $(GAME_H) | $(B)
+@@ -381,6 +382,8 @@ $(B)/t_oe: t_oe.c ../hle_oe.c ../hle.h ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_oe.c
  $(B)/t_friends: t_friends.c ../hle_friends.c ../hle.h ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_friends.c
