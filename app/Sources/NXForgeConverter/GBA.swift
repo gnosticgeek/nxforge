@@ -15,7 +15,11 @@ enum GBA {
     static let extensions: Set<String> = ["gba", "agb", "zip"]
     static let folderName = "NXForge Builds"
 
-    static func isGame(_ p: String) -> Bool { extensions.contains(p.url.pathExtension.lowercased()) && !Source.isDir(p) }
+    /// (a .zip holding a Wii or GameCube disc is Wii.swift's)
+    static func isGame(_ p: String) -> Bool {
+        let ext = p.url.pathExtension.lowercased()
+        return extensions.contains(ext) && !Source.isDir(p) && !(ext == "zip" && Wii.isZipDisc(p))
+    }
     /// Whether a built app is a Game Boy Advance one (its cartridge sits in Contents/Resources/gba)
     static func isApp(_ app: String) -> Bool { FileManager.default.fileExists(atPath: app + "/Contents/Resources/gba/port.json") }
     static func isTitleID(_ t: String?) -> Bool { t?.uppercased().hasPrefix("0BA0") == true }

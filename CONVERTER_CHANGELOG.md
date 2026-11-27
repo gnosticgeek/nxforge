@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.30.2 (2026-11-27)
+
+Shipped in NXForge 0.63.2.
+
+- **Play on a Wii or GameCube game opens it**: no Convert page. A game with no app yet shows as Ready; Play runs `wii_build.py --no-trial` in the background behind the launch screen ("Getting it ready"), then starts it (`Wii.swift` playWii; GameStatus `.playable`). They are left out of the Not built yet filter.
+- **A GameCube folder of its own** in Settings › Library (`gamecube_root`), separate from the Wii folder.
+- **Zipped Wii and GameCube discs** are listed (the disc header read through the zip; `GBA.isGame` leaves such zips alone) and **WiiWare WADs** get their game ID from the TMD.
+
 ## 0.30.1 (2026-11-27)
 
 Shipped in NXForge 0.63.1.

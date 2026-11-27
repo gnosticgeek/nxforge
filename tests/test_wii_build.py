@@ -55,6 +55,24 @@ class Formats(unittest.TestCase):
         i = wii_build.read_disc(self.write('tp.gcz', head + block + bytes(0x200)))
         self.assertEqual((i['platform'], i['id']), ('gamecube', 'GZ2E01'))
 
+    def test_zip_holding_a_disc(self):
+        import zipfile
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, 'Elebits (USA).zip')
+        with zipfile.ZipFile(p, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr('Elebits (USA).rvz', b'RVZ\x01' + bytes(0x54) + disc(b'RELEA4', b'Elebits') + bytes(0x1000))
+        i = wii_build.read_disc(p)
+        self.assertEqual((i['id'], i['form']), ('RELEA4', 'disc in a zip'))
+        self.assertEqual(wii_build.zip_member(p).filename, 'Elebits (USA).rvz')
+
+    def test_wad_id_from_its_tmd(self):
+        w = bytearray(0xC0 + 0x200)
+        w[0:24] = struct.pack('>IIIIII', 0x20, 0, 0x40, 0, 0x40, 0x200)
+        w[0xC0 + 0x18C + 4:0xC0 + 0x18C + 8] = b'WR9E'
+        w[0xC0 + 0x18C + 12:0xC0 + 0x18C + 14] = b'08'
+        i = wii_build.read_disc(self.write('Mega Man 9 (USA) (WiiWare).wad', bytes(w)))
+        self.assertEqual((i['id'], i['form']), ('WR9E08', 'WiiWare'))
+
     def test_not_a_disc(self):
         with self.assertRaises(wii_build.Stop):
             wii_build.read_disc(self.write('notes.iso', bytes(0x400)))

@@ -37,9 +37,11 @@ them); after that only the bridge is built again when it changes.
 
 ## Making an app
 
-In NXForge: Settings › Library › Wii and GameCube folder names the folder your discs are in (left unset, folders named
-`wii` or `gamecube` beside the Switch games folder or the Game Boy Advance one are used, and two levels of folders
-inside are read). The games are listed under Wii and GameCube; Convert makes the app.
+In NXForge: Settings › Library › Wii folder and GameCube folder name the folders your discs are in (left unset, a folder
+named `wii`, and one named `gamecube`, `gc` or `ngc`, beside the Switch games folder or the Game Boy Advance one are
+used, and two levels of folders inside are read). A disc can be zipped (one image per .zip); it is unpacked once into the
+game's own folder. The games are listed under Wii and GameCube and read Ready: Play makes the app on the way, in a few
+seconds, and opens it (no trial run); Convert does the same with the trial run.
 
 By hand:
 

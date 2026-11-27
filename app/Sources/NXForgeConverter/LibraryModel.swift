@@ -42,6 +42,12 @@ extension AppModel {
         if settings.gamesRoot == nil { scanWii() } else { scanLibrary() }
     }
 
+    func chooseGameCubeRoot() {
+        guard let d = choose(folder: true, start: Wii.gameCubeRoot(settings) ?? settings.gamesRoot ?? "/Volumes") else { return }
+        settings.gameCubeRoot = d
+        if settings.gamesRoot == nil { scanWii() } else { scanLibrary() }
+    }
+
     func chooseGamesRoot() {
         guard let d = choose(folder: true, start: settings.gamesRoot ?? "/Volumes") else { return }
         settings.gamesRoot = d
@@ -60,7 +66,7 @@ extension AppModel {
         libraryMessage = nil
         let before = library?.root == root ? library : nil
         let gbaRoot = GBA.root(settings)
-        let wiiRoots = Wii.roots(settings)
+        let wiiRoots = Wii.allRoots(settings)
         libraryTask = Task.detached(priority: .utility) {
             var lastGames = 0
             let r = GameLibrary.scan(root: root) { n, cur, games in
@@ -127,7 +133,7 @@ extension AppModel {
 
     /// The Wii and GameCube folders alone, merged into the kept list, as scanGBA does for cartridges: a few hundred bytes of each disc image.
     func scanWii() {
-        let roots = Wii.roots(settings)
+        let roots = Wii.allRoots(settings)
         guard !roots.isEmpty, !libraryScanning, !wiiScanRunning else { return }
         wiiScanRunning = true
         Task.detached(priority: .utility) {
@@ -137,7 +143,7 @@ extension AppModel {
                 guard let found, !self.libraryScanning else { return }
                 var l = self.library ?? LibraryScan(root: self.settings.gamesRoot ?? roots[0], scanned: Date(), games: [])
                 let had = l.games.filter { $0.kind == .wii }
-                guard had.map(\.id) != found.map(\.id) else { return }
+                guard had.map({ $0.id + ($0.titleID ?? "") }) != found.map({ $0.id + ($0.titleID ?? "") }) else { return }
                 l.games = l.games.filter { $0.kind != .wii } + GameLibrary.carryDetails(from: had, to: found)
                 self.library = l
                 GameLibrary.saveCache(l)

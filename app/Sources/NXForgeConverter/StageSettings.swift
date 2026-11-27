@@ -413,9 +413,13 @@ struct StageSettings: View {
                 path(GBA.root(model.settings)?.tildePath, none: "Not chosen", width: 200)
                 button(model.settings.gbaRoot == nil ? "Choose…" : "Change…") { model.chooseGBARoot() }.disabled(model.libraryScanning)
             },
-            row("Wii and GameCube folder", "Your Wii and GameCube disc images (.iso, .rvz, .wbfs, .gcz, .ciso, .wia) and WiiWare .wad files, side by side or a folder each. They are played with Dolphin from where they are. Left unset, folders named wii or gamecube beside the games folder are used.") {
+            row("Wii folder", "Your Wii disc images (.iso, .rvz, .wbfs and others, or a .zip holding one) and WiiWare .wad files, side by side or a folder each. They play with Dolphin. Left unset, a folder named wii beside the games folder is used.") {
                 path(Wii.root(model.settings)?.tildePath, none: "Not chosen", width: 200)
                 button(model.settings.wiiRoot == nil ? "Choose…" : "Change…") { model.chooseWiiRoot() }.disabled(model.libraryScanning)
+            },
+            row("GameCube folder", "Your GameCube disc images (.iso, .rvz, .gcz and others, or a .zip holding one). They play with Dolphin. Left unset, a folder named gamecube or gc beside the games folder is used.") {
+                path(Wii.gameCubeRoot(model.settings)?.tildePath, none: "Not chosen", width: 200)
+                button(model.settings.gameCubeRoot == nil ? "Choose…" : "Change…") { model.chooseGameCubeRoot() }.disabled(model.libraryScanning)
             },
             row("Look for new games", "How often NXForge looks at the games folder, in front or not, and scans when a game was added or removed. It also looks each time it comes to the front. Manual leaves it to Refresh.", .folderCheck) {
                 segmented($model.settings.folderCheck, FolderCheck.allCases, width: 290) { $0.rawValue }

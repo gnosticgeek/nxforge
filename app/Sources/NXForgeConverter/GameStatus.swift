@@ -9,6 +9,8 @@ enum GameStatus: Equatable {
     case ready
     /// the files are there and the build can start
     case notBuilt
+    /// a Wii or GameCube game with no app yet: Play makes it on the way, in seconds (Wii.swift playWii), so it reads as ready
+    case playable
     /// a Switch game read with prod.keys, and no keys file is saved or beside it
     case keysNeeded
     /// the files are on a drive or a share that is not connected now (its name)
@@ -22,6 +24,7 @@ enum GameStatus: Equatable {
     var buildable: Bool {
         if case .notBuilt = self { return true }
         if case .buildFailed = self { return true }
+        if case .playable = self { return true }
         return false
     }
 
@@ -32,6 +35,7 @@ enum GameStatus: Equatable {
         switch self {
         case .ready: "Ready"
         case .notBuilt: "Not built yet"
+        case .playable: "Ready"
         case .keysNeeded: "Keys needed"
         case .driveOffline: "Drive offline"
         case .filesMissing: "Files missing"
@@ -43,6 +47,7 @@ enum GameStatus: Equatable {
         switch self {
         case .ready: "play.fill"
         case .notBuilt: "hammer.fill"
+        case .playable: "play.fill"
         case .keysNeeded: "key.fill"
         case .driveOffline: "externaldrive.badge.xmark"
         case .filesMissing: "questionmark.folder.fill"
@@ -55,6 +60,7 @@ enum GameStatus: Equatable {
         switch self {
         case .ready: "Built and ready to play."
         case .notBuilt: "Build turns the game's files into a Mac app."
+        case .playable: "Plays with Dolphin. The first Play sets it up, which takes a few seconds."
         case .keysNeeded: "Building a Switch game needs your prod.keys. Choose it once and NXForge uses it for every build."
         case .driveOffline(let d): "Its files are on \(d), which is not connected. Connect it and the game is back."
         case .filesMissing: "The folder the library found it in has gone. Scan the library again, or put the files back."
@@ -68,6 +74,7 @@ enum GameStatus: Equatable {
         switch self {
         case .ready: "Play"
         case .notBuilt: "Build"
+        case .playable: "Play"
         case .keysNeeded: "Choose Keys…"
         case .driveOffline: "Check Again"
         case .filesMissing: "Scan Again"
@@ -77,7 +84,7 @@ enum GameStatus: Equatable {
 
     var actionSymbol: String {
         switch self {
-        case .ready: "play.fill"
+        case .ready, .playable: "play.fill"
         case .notBuilt, .buildFailed: "hammer.fill"
         case .keysNeeded: "key.fill"
         case .driveOffline, .filesMissing: "arrow.clockwise"
@@ -91,6 +98,7 @@ enum GameStatus: Equatable {
         switch self {
         case .ready: Color(red: 0.29, green: 0.87, blue: 0.50)
         case .notBuilt: Color(white: 0.62)
+        case .playable: Color(red: 0.29, green: 0.87, blue: 0.50)
         case .keysNeeded: Color(red: 0.98, green: 0.75, blue: 0.14)
         case .driveOffline, .filesMissing, .buildFailed: Color(red: 1, green: 0.55, blue: 0.45)
         }
@@ -116,7 +124,7 @@ enum GameStatus: Equatable {
         }
         if g.kind == .packages, keys(g.folder) == nil { return .keysNeeded }
         if let f = failure(g.folder) { return .buildFailed(f) }
-        return .notBuilt
+        return g.kind == .wii ? .playable : .notBuilt
     }
 }
 
@@ -129,7 +137,7 @@ extension AppModel {
     func fix(_ g: StageGame) {
         switch status(g) {
         case .ready: playFromStage(g.ref)
-        case .notBuilt, .buildFailed: playFromStage(g.ref)
+        case .notBuilt, .buildFailed, .playable: playFromStage(g.ref)
         case .keysNeeded:
             // the same question a build asks; once a keys file is saved the game shows as Not built yet, and Build goes on
             if chooseKeysForBuild() { revision += 1; showBanner("Keys saved", detail: "\(g.name) can be built now.", tone: .success) }

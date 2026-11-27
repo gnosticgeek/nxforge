@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import zipfile
 import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,7 +36,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import wii_engine as engine  # noqa: E402
 
 STAGES = ["Read disc", "Prepare engine", "Package", "Trial run"]
-DISC_EXTENSIONS = {".iso", ".gcm", ".rvz", ".wia", ".wbfs", ".gcz", ".ciso", ".wad", ".dol", ".elf"}
+DISC_EXTENSIONS = {".iso", ".gcm", ".rvz", ".wia", ".wbfs", ".gcz", ".ciso", ".wad", ".dol", ".elf"}   # and a .zip holding one disc image
 WII_MAGIC, GC_MAGIC = 0x5D1C9EA3, 0xC2339F3D
 
 
@@ -88,36 +89,59 @@ def clean_name(file_name):
     return n or "Game"
 
 
+def zip_member(path):
+    """The disc image inside a .zip (No-Intro and Redump sets come zipped, one disc each), or None."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            for i in z.infolist():
+                if os.path.splitext(i.filename)[1].lower() in DISC_EXTENSIONS - {".wad", ".dol", ".elf"} and not i.is_dir():
+                    return i
+    except (zipfile.BadZipFile, OSError):
+        return None
+    return None
+
+
 def disc_header(path):
     """The disc's own header (its first 0x80 bytes) from any of the image formats Dolphin reads, or None.
     ISO and GCM are the disc as it is; WBFS keeps it at 0x200, CISO at 0x8000, RVZ and WIA a copy in their own header,
-    GCZ in its first compressed block."""
-    with open(path, "rb") as f:
-        head = f.read(0x8100)
-        if len(head) < 0x80:
+    GCZ in its first compressed block. A .zip is read through to the disc image inside it."""
+    if path.lower().endswith(".zip"):
+        m = zip_member(path)
+        if not m:
             return None
-        magic = head[:4]
-        if magic in (b"RVZ\x01", b"WIA\x01"):
-            return head[0x58:0x58 + 0x80]
-        if magic == b"WBFS":
-            return head[0x200:0x280]
-        if magic == b"CISO":
-            return head[0x8000:0x8080]
-        if struct.unpack("<I", magic)[0] == 0xB10BC001:
-            sub, csize, dsize, block_size, blocks = struct.unpack("<IQQII", head[4:32])
-            if blocks == 0:
-                return None
-            ptr0 = struct.unpack("<Q", head[32:40])[0]
-            data_start = 32 + blocks * 12
-            f.seek(data_start + (ptr0 & ~(1 << 63)))
-            raw = f.read(block_size + 64)
-            if ptr0 & (1 << 63):
-                return raw[:0x80]
-            try:
-                return zlib.decompressobj().decompress(raw, 0x80)
-            except zlib.error:
-                return None
-        return head[:0x80]
+        with zipfile.ZipFile(path) as z, z.open(m) as f:
+            return header_from(f)
+    with open(path, "rb") as f:
+        return header_from(f)
+
+
+def header_from(f):
+    """The header from an open image (a file, or the disc inside a zip): see disc_header."""
+    head = f.read(0x8100)
+    if len(head) < 0x80:
+        return None
+    magic = head[:4]
+    if magic in (b"RVZ\x01", b"WIA\x01"):
+        return head[0x58:0x58 + 0x80]
+    if magic == b"WBFS":
+        return head[0x200:0x280]
+    if magic == b"CISO":
+        return head[0x8000:0x8080]
+    if struct.unpack("<I", magic)[0] == 0xB10BC001:
+        sub, csize, dsize, block_size, blocks = struct.unpack("<IQQII", head[4:32])
+        if blocks == 0:
+            return None
+        ptr0 = struct.unpack("<Q", head[32:40])[0]
+        data_start = 32 + blocks * 12
+        f.seek(data_start + (ptr0 & ~(1 << 63)))
+        raw = f.read(block_size + 64)
+        if ptr0 & (1 << 63):
+            return raw[:0x80]
+        try:
+            return zlib.decompressobj().decompress(raw, 0x80)
+        except zlib.error:
+            return None
+    return head[:0x80]
 
 
 def read_disc(path):
@@ -134,12 +158,14 @@ def read_disc(path):
             hsize, _, cert, _, tik, tmd = struct.unpack(">IIIIII", h[:24])
             align = lambda n: (n + 63) & ~63  # noqa: E731
             f.seek(align(hsize) + align(cert) + align(tik) + 0x18C)
-            tid = f.read(8)
-        if len(tid) < 8:
+            tmd = f.read(0x0E)   # the title ID (8 bytes), its type (4) and the publisher's two-letter code (the group ID)
+        if len(tmd) < 0x0E:
             raise Stop("not a WAD Dolphin can read: its header is cut short")
-        code = "".join(chr(c) if 32 < c < 127 else "0" for c in tid[4:])
-        return dict(platform="wii", id=code + "00", version=0, title=name, form="WiiWare")
+        code = "".join(chr(c) if 32 < c < 127 else "0" for c in tmd[4:8] + tmd[12:14])
+        return dict(platform="wii", id=code, version=0, title=name, form="WiiWare")
     h = disc_header(path)
+    if ext == ".zip" and h is None:
+        raise Stop("this .zip holds no Wii or GameCube disc image")
     if not h or len(h) < 0x60:
         raise Stop("not a Wii or GameCube disc image NXForge can read")
     wii, gc = struct.unpack(">I", h[0x18:0x1C])[0] == WII_MAGIC, struct.unpack(">I", h[0x1C:0x20])[0] == GC_MAGIC
@@ -147,7 +173,7 @@ def read_disc(path):
         raise Stop("not a Wii or GameCube disc: its header has neither console's mark")
     gid = "".join(chr(c) if 32 < c < 127 else "0" for c in h[:6])
     title = h[0x20:0x60].split(b"\0")[0].decode("latin-1", "replace").strip()
-    return dict(platform="wii" if wii else "gamecube", id=gid, version=h[7], title=title or name, form="disc")
+    return dict(platform="wii" if wii else "gamecube", id=gid, version=h[7], title=title or name, form="disc in a zip" if ext == ".zip" else "disc")
 
 
 def title_id(info):
@@ -231,7 +257,7 @@ class Build:
             p.stage("Read disc", os.path.basename(disc))
         if not os.path.isfile(disc):
             raise Stop(f"no file at {disc}")
-        info = read_disc(disc)
+        info: dict = read_disc(disc)
         tid = title_id(info)
         name = a.name or clean_name(disc)
         size = os.path.getsize(disc)
@@ -247,6 +273,9 @@ class Build:
         out = os.path.abspath(a.out or os.path.join(home or os.path.dirname(disc), safe + ".app"))
         work = os.path.abspath(a.work_dir or os.path.join(home or os.path.dirname(out), tid + "_build"))
         os.makedirs(work, exist_ok=True)
+        if disc.lower().endswith(".zip"):
+            disc = self.unzip(disc, os.path.dirname(out))
+            info.update(disc=disc, zip=os.path.abspath(a.disc))
 
         p.stage("Prepare engine", "Dolphin " + engine.engine()["commit"][:8])
         if engine.stale():
@@ -327,6 +356,35 @@ class Build:
         shutil.rmtree(old, ignore_errors=True)
         p.say(f"done: {out}")
         return out
+
+    def unzip(self, zipped, into):
+        """Dolphin cannot read a disc inside a zip: the image is unpacked once into the game's own folder (the app's),
+        and kept there for the app to play. An image already there at the same size is used as it is."""
+        m = zip_member(zipped)
+        if not m:
+            raise Stop("this .zip holds no Wii or GameCube disc image")
+        dst = os.path.join(into, os.path.basename(m.filename))
+        if os.path.exists(dst) and os.path.getsize(dst) == m.file_size:
+            self.p.step(f"Using the disc unpacked before: {os.path.basename(dst)}")
+            return dst
+        free = shutil.disk_usage(into).free
+        if free < m.file_size + (2 << 30):
+            raise Stop(f"not enough room to unpack the disc: it needs {m.file_size / (1 << 30):.1f} GB and {free / (1 << 30):.1f} GB is free")
+        self.p.step(f"Unpacking the disc from its zip, once ({m.file_size / (1 << 30):.1f} GB)")
+        tmp = dst + ".part"
+        done, t0 = 0, time.time()
+        with zipfile.ZipFile(zipped) as z, z.open(m) as src, open(tmp, "wb") as out:
+            while True:
+                b = src.read(8 << 20)
+                if not b:
+                    break
+                out.write(b)
+                done += len(b)
+                el = time.time() - t0
+                self.p.emit(ev="progress", step="Unpacking the disc", frac=done / max(m.file_size, 1), done=done >> 20, total=m.file_size >> 20, unit="MB",
+                            **({"eta": round(el * (m.file_size - done) / done)} if done and el > 2 else {}))
+        os.replace(tmp, dst)
+        return dst
 
     def write_port(self, res, info, w, trial):
         port = dict(info, engine=dict(name="Dolphin", commit=w["commit"]), built=int(time.time()),
