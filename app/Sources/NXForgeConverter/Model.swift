@@ -130,6 +130,8 @@ final class AppModel {
     @ObservationIgnored var folderCheckRunning = false
     @ObservationIgnored var gbaScanRunning = false
     @ObservationIgnored var wiiScanRunning = false
+    /// Wii and GameCube games whose app is being made for Play (Wii.swift playWii)
+    @ObservationIgnored var wiiStarting = Set<String>()
     /// games a scan found that the one before did not have, waiting for their names to be read (lookUpNewGames)
     @ObservationIgnored var newGameIDs = Set<String>()
     var mountObserver: NSObjectProtocol?

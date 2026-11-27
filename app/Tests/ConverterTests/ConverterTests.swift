@@ -2993,4 +2993,52 @@ import Testing
             #expect(NSImage(contentsOf: art.appending(path: name + ".png")) != nil, "\(name).png")
         }
     }
+
 }
+
+extension WiiGames {
+    @Test func aZippedDiscIsAWiiGameNotAGBAOne() throws {
+        let iso = header("RELEA4", title: "Elebits", wii: true) + [UInt8](repeating: 0, count: 0x300)
+        // a stored zip entry: local header, the name, the data
+        let name = Array("Elebits (USA).rvz".utf8)
+        var z: [UInt8] = [0x50, 0x4B, 3, 4, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let size = UInt32(iso.count)
+        z += [UInt8(size & 0xFF), UInt8(size >> 8 & 0xFF), 0, 0, UInt8(size & 0xFF), UInt8(size >> 8 & 0xFF), 0, 0]
+        z += [UInt8(name.count), 0, 0, 0] + name + iso
+        let p = try file("Elebits (USA).zip", z)
+        #expect(Wii.isZipDisc(p) && Wii.isGame(p) && !GBA.isGame(p))
+        #expect(Source.kind(of: p) == .wii)
+        #expect(Wii.header(p)?.gameID == "RELEA4")
+    }
+
+    @Test func aWADIsReadFromItsTMD() throws {
+        var w = [UInt8](repeating: 0, count: 0x40 + 0x40 + 0x40 + 0x200)
+        // header size 0x20, cert chain 0x40, ticket 0x40: the TMD starts at 0xC0
+        w[3] = 0x20; w[11] = 0x40; w[19] = 0x40
+        let tmd = 0xC0 + 0x18C
+        for (i, c) in "WR9E".utf8.enumerated() { w[tmd + 4 + i] = c }
+        for (i, c) in "08".utf8.enumerated() { w[tmd + 12 + i] = c }
+        let p = try file("Mega Man 9 (USA) (WiiWare).wad", w)
+        let h = try #require(Wii.header(p))
+        #expect(h.gameID == "WR9E08" && h.titleID == "0E00575239453038" && !h.gamecube)
+    }
+
+    @Test func gameCubeHasItsOwnFolder() throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "nxf-roots-\(UUID().uuidString)")
+        for d in ["switch", "wii", "gc"] { try FileManager.default.createDirectory(at: base.appending(path: d), withIntermediateDirectories: true) }
+        var s = Settings()
+        s.gamesRoot = base.appending(path: "switch").path
+        #expect(Wii.roots(s) == [base.appending(path: "wii").path])
+        #expect(Wii.gameCubeRoots(s) == [base.appending(path: "gc").path])
+        s.gameCubeRoot = "/elsewhere"
+        #expect(Wii.gameCubeRoots(s) == ["/elsewhere"] && Wii.allRoots(s).count == 2)
+    }
+
+    @Test func aWiiGameWithNoAppIsReadyToPlay() throws {
+        let p = try file("Zack (USA).iso", header("RTZE08", title: "Zack", wii: true))
+        let g = LibraryGame(kind: .wii, path: p, name: "Zack", titleID: "0E0052545A453038", files: [], fileCount: 1, bytes: 1, base: true, updates: 0, dlc: 0)
+        let st = GameStatus.of(app: nil, game: g, keys: { _ in nil })
+        #expect(st == .playable && st.action == "Play" && st.buildable)
+    }
+}
+

@@ -159,7 +159,7 @@ extension AppModel {
         case .gba: out = out.filter { $0.console == .gba }
         case .wii: out = out.filter { $0.console == .wii }
         case .gamecube: out = out.filter { $0.console == .gamecube }
-        case .notBuilt: out = out.filter { $0.app == nil }
+        case .notBuilt: out = out.filter { $0.app == nil && !$0.console.dolphin }   // a Wii or GameCube game plays without a build
         }
         let q = stageSearch.trimmingCharacters(in: .whitespaces)
         if !q.isEmpty { out = TitleMatch.sorted(out.filter { TitleMatch.matches(q, [$0.name, $0.titleID]) }, query: q, title: \.name, last: \.last) }
@@ -1051,7 +1051,7 @@ struct StageLibrary: View {
         case .gba: pool.filter { $0.console == .gba }.count
         case .wii: pool.filter { $0.console == .wii }.count
         case .gamecube: pool.filter { $0.console == .gamecube }.count
-        case .notBuilt: pool.filter { $0.app == nil }.count
+        case .notBuilt: pool.filter { $0.app == nil && !$0.console.dolphin }.count
         }
     }
 
