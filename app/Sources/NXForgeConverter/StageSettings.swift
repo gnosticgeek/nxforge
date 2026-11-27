@@ -8,7 +8,7 @@ import SwiftUI
 
 /// The panel's sections, in the order of its list
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", playing = "Playing", library = "Library", artwork = "Artwork", theatre = "Theatre"
+    case general = "General", playing = "Playing", library = "Library", artwork = "Artwork", theatre = "Theatre", tv = "TV"
     case saves = "Saves", building = "Building", updates = "Updates", storage = "Storage"
 
     var id: String { rawValue }
@@ -18,7 +18,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .playing: "play.circle"
         case .library: "square.grid.2x2"
         case .artwork: "photo.on.rectangle"
-        case .theatre: "tv"
+        case .theatre: "theatermasks"
+        case .tv: "tv"
         case .saves: "icloud"
         case .building: "hammer"
         case .updates: "arrow.down.circle"
@@ -33,6 +34,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .library: "Where your games are, and how they are shown."
         case .artwork: "Covers, wide art and store details, and where they are kept."
         case .theatre: "Your games full screen on a TV, for the sofa and a controller."
+        case .tv: "When a TV is plugged in, and how Theatre fits on it."
         case .saves: "Cloud saves, snapshots and backups for every game."
         case .building: "The keys file, and how a game becomes a Mac app."
         case .updates: "This version of NXForge, and how it stays current."
@@ -48,7 +50,8 @@ enum StageSettingRow: Int, CaseIterable {
     case firstPlayOptions, batteryPreset, localShaders
     case folderCheck, showSwitch2, showSwitch1, showGBA, showWii, showGameCube, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
-    case theatreTheme, museumLighting, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
+    case theatreTheme, museumLighting, showcaseLayout, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
+    case theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver
     case cloudSaves, snapshotAfterPlay, saveBackupPush
     case notify, openAfterBuild, keepBackups, reuseCache
     case autoUpdate
@@ -59,7 +62,8 @@ enum StageSettingRow: Int, CaseIterable {
         case .firstPlayOptions, .batteryPreset, .localShaders: .playing
         case .folderCheck, .showSwitch2, .showSwitch1, .showGBA, .showWii, .showGameCube, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
-        case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector, .museumLighting: .theatre
+        case .theatreTheme, .showcaseLayout, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector, .museumLighting: .theatre
+        case .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver: .tv
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
         case .notify, .openAfterBuild, .keepBackups, .reuseCache: .building
         case .autoUpdate: .updates
@@ -367,6 +371,7 @@ struct StageSettings: View {
         case .library: library
         case .artwork: artwork
         case .theatre: theatre
+        case .tv: tv
         case .saves: saves
         case .building: building
         case .updates: updates
@@ -453,16 +458,13 @@ struct StageSettings: View {
     }
 
     var theatre: [SettingsGroup] {
-        let theme = Binding(get: { model.settings.theatreTheme }, set: { model.settings.theatreTheme = $0; model.theatreTheme = $0 })
+        let theme = Binding(get: { model.settings.theatreTheme }, set: { model.pickTheatreTheme($0) })
         let volume = Binding(get: { Double(model.settings.theatreVolume) }, set: { model.settings.theatreVolume = Int($0.rounded()); model.theatreVolumeTick += 1 })
-        let homeOpens = Binding(get: { model.settings.homeOpensTheatre }, set: { model.settings.homeOpensTheatre = $0; ControllerNav.shared.background($0) })
-        let atLogin = Binding(get: { LoginItem.on }, set: { LoginItem.set($0); model.loginItemTick += 1 })
-        _ = model.loginItemTick
         let screen: [SettingsRowSpec] = [
             row("Theatre", "Your games full screen, for the sofa and a controller. Also ⇧⌘F. B leaves it.") {
                 button(model.theatre ? "Leave Theatre" : "Open Theatre") { model.stageSettings = false; model.toggleTheatre() }
             },
-            row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Shutter shows slanted panels of art; Trailer plays the game's trailer; Wallet shows your game cards in their wallet; Museum shows your collection on a lit wall, a shelf a console; Wii shows your Wii and GameCube games as a list beside a big card. ZL and ZR switch them on Theatre.", .theatreTheme) {
+            row("Theme", "Showcase shows your boxes; Cinema shows big art with rows like a TV app; Shutter shows slanted panels of art; Trailer plays the game's trailer; Wallet shows your game cards in their wallet; Museum shows your collection on a lit wall, a shelf a console; Wii shows your Wii and GameCube games as a list beside a big card. On Theatre, + opens the picker, where each system has its own looks; ZL and ZR step the system's looks.", .theatreTheme) {
                 segmented(theme, TheatreTheme.allCases, width: 640) { $0.rawValue }
             },
             row("Museum lighting", "The Museum wall's light: Classic, Daylight, Evening, Neon (each shelf in its console's colour) or Lights out (only the game in focus lit). Up from the top shelf, then left and right, changes it on Theatre.", .museumLighting) {
@@ -471,17 +473,6 @@ struct StageSettings: View {
             row("Showcase layout", "Carousel turns a ring of your boxes; Fan spreads them like a hand of cards; Shelf stands them spine out. Up and down switch them on Theatre.", .showcaseLayout) {
                 segmented($model.settings.showcaseLayout, ShowcaseLayout.allCases, width: 330) { $0.rawValue }
                     .onChange(of: model.settings.showcaseLayout) { _, l in model.showcaseLayout = l }
-            },
-            row("When a TV is plugged in", "Ask offers Theatre when a controller is connected too; Always opens it straight away.", .theatreOnTV) {
-                segmented($model.settings.theatreOnTV, TheatreOnTV.allCases, width: 240) { $0.rawValue }
-            },
-            toggle("Home button opens Theatre", "Press Home on a controller while NXForge is behind other apps and it comes to the front on Theatre. In a game, Home still opens the game's Quick settings.", homeOpens, .homeOpensTheatre),
-            toggle("Open NXForge at login", "NXForge starts with the Mac, so the Home button and a plugged-in TV can open Theatre without the keyboard.", atLogin),
-            row("TV edges", "Some TVs crop the edges of the picture. If Theatre's clock or buttons are cut off, inset the picture.", .theatreEdges) {
-                segmented($model.settings.theatreEdges, TheatreEdges.allCases, width: 240) { $0.title }
-            },
-            row("Screensaver", "Left alone this long, Theatre cycles your games' art with a dim clock, and after an hour lets the TV sleep. Any button wakes it.", .theatreSaver) {
-                segmented($model.settings.theatreSaver, TheatreSaver.allCases, width: 240) { $0.rawValue }
             },
         ]
         let sound: [SettingsRowSpec] = [
@@ -507,6 +498,26 @@ struct StageSettings: View {
             toggle("Collector touches", "A sticker with the hours you have played, wear on the cases you play most, and a COMPLETED stamp you add with R when a case is in your hand.", $model.settings.theatreCollector, .theatreCollector),
         ]
         return [SettingsGroup(rows: screen), SettingsGroup(caption: "Sound and light", rows: sound)]
+    }
+
+    var tv: [SettingsGroup] {
+        let homeOpens = Binding(get: { model.settings.homeOpensTheatre }, set: { model.settings.homeOpensTheatre = $0; ControllerNav.shared.background($0) })
+        let atLogin = Binding(get: { LoginItem.on }, set: { LoginItem.set($0); model.loginItemTick += 1 })
+        _ = model.loginItemTick
+        let rows: [SettingsRowSpec] = [
+            row("When a TV is plugged in", "Ask offers Theatre when a controller is connected too; Always opens it straight away.", .theatreOnTV) {
+                segmented($model.settings.theatreOnTV, TheatreOnTV.allCases, width: 240) { $0.rawValue }
+            },
+            toggle("Home button opens Theatre", "Press Home on a controller while NXForge is behind other apps and it comes to the front on Theatre. In a game, Home still opens the game's Quick settings.", homeOpens, .homeOpensTheatre),
+            toggle("Open NXForge at login", "NXForge starts with the Mac, so the Home button and a plugged-in TV can open Theatre without the keyboard.", atLogin),
+            row("TV edges", "Some TVs crop the edges of the picture. If Theatre's clock or buttons are cut off, inset the picture.", .theatreEdges) {
+                segmented($model.settings.theatreEdges, TheatreEdges.allCases, width: 240) { $0.title }
+            },
+            row("Screensaver", "Left alone this long, Theatre cycles your games' art with a dim clock, and after an hour lets the TV sleep. Any button wakes it.", .theatreSaver) {
+                segmented($model.settings.theatreSaver, TheatreSaver.allCases, width: 240) { $0.rawValue }
+            },
+        ]
+        return [SettingsGroup(rows: rows)]
     }
 
     var saves: [SettingsGroup] {
