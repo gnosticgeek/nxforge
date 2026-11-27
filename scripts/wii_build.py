@@ -257,7 +257,7 @@ class Build:
             p.stage("Read disc", os.path.basename(disc))
         if not os.path.isfile(disc):
             raise Stop(f"no file at {disc}")
-        info = read_disc(disc)
+        info: dict = read_disc(disc)
         tid = title_id(info)
         name = a.name or clean_name(disc)
         size = os.path.getsize(disc)
