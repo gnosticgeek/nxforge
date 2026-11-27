@@ -157,6 +157,8 @@ struct Settings: Codable, Equatable {
     var theatreMusicFolder: String?
     /// the front end's Favourites (StageGame.favoriteKey: title IDs, or app paths for apps without one), in the order they were added
     var favorites: [String] = []
+    /// your stars for a game, 1 to 5 (StageGame.favoriteKey), given with left and right on Theatre's Wii theme
+    var gameStars: [String: Int] = [:]
     /// the systems switched off in Settings › Library (Console raw values): their games and builds are kept but not shown anywhere
     var hiddenSystems: [String] = []
 
@@ -193,7 +195,7 @@ struct Settings: Codable, Equatable {
         case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
         case theatreLaunch = "theatre_launch", theatreRumble = "theatre_rumble"
         case theatreTilt = "theatre_tilt", theatreCollector = "theatre_collector", completed, museumLighting = "theatre_museum_lighting"
-        case hiddenSystems = "hidden_systems"
+        case hiddenSystems = "hidden_systems", gameStars = "game_stars"
     }
 
     init() {}
@@ -246,6 +248,7 @@ struct Settings: Codable, Equatable {
         downloadStoreInfo = (try? c.decodeIfPresent(Bool.self, forKey: .downloadStoreInfo)) ?? true
         mediaInGameFolder = (try? c.decodeIfPresent(Bool.self, forKey: .mediaInGameFolder)) ?? true
         favorites = (try? c.decodeIfPresent([String].self, forKey: .favorites)) ?? []
+        gameStars = (try? c.decodeIfPresent([String: Int].self, forKey: .gameStars)) ?? [:]
         localShaders = (try? c.decodeIfPresent(Bool.self, forKey: .localShaders)) ?? true
         sessionRecap = (try? c.decodeIfPresent(Bool.self, forKey: .sessionRecap)) ?? true
         lightWhilePlaying = (try? c.decodeIfPresent(Bool.self, forKey: .lightWhilePlaying)) ?? true

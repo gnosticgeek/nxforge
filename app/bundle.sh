@@ -27,6 +27,8 @@ fi
 cp "$icon" "$app/Contents/Resources/AppIcon.icns"
 # What's New reads the changelog the app was built with (ConverterUpdate.bundledChangelog), not the engine checkout's, which can be on another branch
 cp "$here/../CONVERTER_CHANGELOG.md" "$app/Contents/Resources/"
+# the artwork of Theatre's themes (Art/: the Wii theme's, WiiTheme.swift)
+cp -R "$here/Art" "$app/Contents/Resources/"
 # each game's genres (Genres.swift): every library/<title ID>/game.md
 for f in "$here"/../library/*/game.md; do
   [ -f "$f" ] || continue
