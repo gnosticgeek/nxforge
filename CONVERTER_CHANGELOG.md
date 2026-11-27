@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.31.0 (2026-11-27)
+
+Shipped in NXForge 0.64.0.
+
+- **Theatre's picker, to Tom's mock-up.** + on Theatre (or Systems and Themes in the B menu) opens the Theme Picker: a panel per system with games (Switch 2, Switch, Wii, GameCube, Game Boy Advance) and All games, side by side like the blades of a shutter. The panel in focus opens wide with Theatre's real room drawn inside it at that size, live, and a glow in the system's colour; the others are narrow slivers turned towards it, the system's name up the side over its last-played game's art. Left and right (or ZL and ZR) move the opening along with a spring, up and down step through the system's looks: Switch and Switch 2 have Wallet and Shutter, Wii and GameCube the Wii theme and Showcase, Game Boy Advance Showcase and Cinema, and All games Museum, Showcase, Cinema, Trailer, Shutter and Wallet. A keeps it, B (or a click on the room) puts back what Theatre was on, Y is Surprise me and + Settings. A room shows only its system's games, every look in it; each system reopens on the look it was left on (`theatre_system`, `theatre_looks` in settings.json; saved settings open on All games as before). ZL and ZR on Theatre step the system's looks, and the top bars say "Switch · Shutter".
+- **The dice and the gear in every theme's top bar.** Surprise me (the shuffle, also L3) and Settings, as round buttons beside the clock (top left on the Museum wall and the Wii theme). What Should I Play? is gone from the Theatre menu, which is now Continue, Systems and Themes, Settings and Leave Theatre; the feet say "+ Themes".
+- **A TV section in Settings.** When a TV is plugged in, Home button opens Theatre, Open NXForge at login, TV edges (the four corner marks show on Theatre while a controller is on that row) and Screensaver move out of Theatre into their own section; TV Edges leaves the Theatre menu. A theme chosen in Settings keeps the system when it is one of its looks, else goes to All games. Code: `TheatrePicker.swift`.
+
 ## 0.30.1 (2026-11-27)
 
 Shipped in NXForge 0.63.1.
