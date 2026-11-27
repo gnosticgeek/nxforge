@@ -84,7 +84,7 @@ index 37be5cac8618855ff6dd4a23af55d299965e1c22..b5ead453b063c9d84686c762cee45ff0
          if cond == 'mac-mic': return mac_mic
          if '&' in cond: return all(shown(c, n) for c in cond.split('&'))   # every one of them (gfxapi:nvn&platform:mac)
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index e4cf041764d5d48c9c8403118367d05e92b96348..c8a6d1fa05c9f7de509b02cf6e1fb6ab3893de66 100644
+index 994be426e80510d063a0c243a2595ee02add44b3..411413b15ebd591e19aef19de096ebd24b603e4d 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -9,7 +9,7 @@
@@ -176,10 +176,10 @@ index 24af00bec745f440c7fef2b094687ac00487904c..523500676ec268457fd792332387ddc6
 +HLE_FORCE("_ZN2nn2vi37ClearLayerNextHdrContentGamutMetadataEPNS0_5LayerE", "layer HDR metadata cleared", Result, h_vi_HdrGamutClear, void *layer) { (void)layer; return RES_OK; }
 +HLE_FORCE("_ZN2nn2vi41ClearLayerNextHdrToSdrToneMappingMetadataEPNS0_5LayerE", "layer HDR metadata cleared", Result, h_vi_HdrToneMapClear, void *layer) { (void)layer; return RES_OK; }
 diff --git a/dm/gfx/msl/present.metal b/dm/gfx/msl/present.metal
-index 0653d7badb1bc00375e5112ed634af69af2d2a2e..b798f9d8dcee6b3f62d60bf1ef9dcb1ad136ebac 100644
+index 27397d2dee0757b71134287e15788201857f1959..eeea353d80c84d85b8cb32e0a48f1f2288a9b5b7 100644
 --- a/dm/gfx/msl/present.metal
 +++ b/dm/gfx/msl/present.metal
-@@ -157,3 +157,37 @@ fragment float4 fs_lcd(V in [[stage_in]], texture2d<float> t [[texture(0)]], sam
+@@ -158,3 +158,37 @@ fragment float4 fs_lcd(V in [[stage_in]], texture2d<float> t [[texture(0)]], sam
    float3 col = cell_texel(t, g, n, c.edge) * mix(float3(1), sub * mix(0.25f, 1.0f, lit), vis);
    return edr_out(float4(saturate(col * (1.0f + 0.3f * vis)), 1), c);
  }
@@ -395,10 +395,10 @@ index 0000000000000000000000000000000000000000..9a13c9b39f76a01f55b9c8b3781b2430
 +typedef struct { int std_lo, std_hi, ext_lo, ext_hi, gamut, tone, set; } dm_hdr_meta;
 +void dm_hdr_meta_get(dm_hdr_meta *m);
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11adcf93a2f5 100644
+index 4533901c1d2cb2776a2b08e728fdbf98aad121a9..b6ba4dc6ac492567d3d07df5d870f1bdec6c9d01 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -53,6 +53,7 @@
+@@ -54,6 +54,7 @@
  #include "msl_image.h"
  #include "dmsh_chain.h"   // DMSH_CHAIN: the translation chain version of the B shader library expected by this source tree, one for every game (beside this file, tools/dmsh_chain.py --header)
  #include "game_profile.h"   // game profile constants (profile id, the profile's switches)
@@ -406,7 +406,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
  // Texture slot table per stage: 0-127 the combined handles (nvnCommandBufferBindTexture), 128-255 the separate texture binds (NVN_SEPTEX_SLOT0, nvn_obj.h)
  #define NTEX 256
  // The NVN driver's constant segments c0 and c2 (byte offsets, slot counts) and the binding kinds of the shader reflection have one definition, which the shader build reads too (dmsh_build.py through dmsh_abi.py)
-@@ -327,6 +328,7 @@ static _Atomic int g_up_pending;
+@@ -328,6 +329,7 @@ static _Atomic int g_up_pending;
  // command buffer discarded as the victim of another's error comes back with a timeout too while the game goes on, as it did in #1326's second run
  static _Atomic int g_gpu_lost;
  void front_gpu_lost(void);
@@ -414,7 +414,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
  __attribute__((weak)) void front_gpu_lost(void) { MDIE("GPU access revoked: macOS runs none of this process's GPU work any more"); }   // the Mac front end leaves full screen, says why and quits
  // Metal 4 reports a commit's error as MTL4CommandQueueErrorTimeout with no text, and the command buffer's own error underneath (NSUnderlyingErrorKey, NSMultipleUnderlyingErrorsKey):
  // every command buffer error in both #1326 logs has that shape. Only this domain counts: an innocent victim's IOGPU error underneath has code 5 too
-@@ -1405,7 +1407,7 @@ static void mtl_init_once(void) {
+@@ -1451,7 +1453,7 @@ static void mtl_init_once(void) {
      g_present_args = [g_dev newArgumentTableWithDescriptor:pad error:&ate];
      if (!g_present_args) MDIE("failed to create the present argument table: %s", ate.localizedDescription.UTF8String);
      for (int i = 0; i < 3; i++) {
@@ -423,7 +423,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
          if (!g_present_uv[i]) MDIE("failed to create present UV buffer[%d]", i);
          res_add(g_present_uv[i]);
      }
-@@ -21538,6 +21540,7 @@ static struct { uint64_t frame; char path[1024]; } g_shotq[SHOTQ_MAX]; static in
+@@ -22510,6 +22512,7 @@ static struct { uint64_t frame; char path[1024]; } g_shotq[SHOTQ_MAX]; static in
  static pthread_mutex_t g_shotq_mu = PTHREAD_MUTEX_INITIALIZER;
  static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4]);
  static int present_crop_rect(id<MTLTexture> src, const int crop[4], NSUInteger r[4]);
@@ -431,7 +431,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
  enum { PRESENT_FAILED, PRESENT_STANDARD, PRESENT_METALFX };
  static int present_offscreen_m4(id<MTLTexture> src, const int crop[4], id<MTLTexture> out, void (^done)(int));
  static int present_offscreen_wait(id<MTLTexture> src, const int crop[4], id<MTLTexture> out);
-@@ -21599,7 +21602,8 @@ void dm_gfx_shot_at(long k, const char *path) {
+@@ -22571,7 +22574,8 @@ void dm_gfx_shot_at(long k, const char *path) {
  // of that size (with DM_PRESENT_UPSCALE=metalfx through MetalFX, on the Metal 4 queue: present_offscreen_m4); screen=0 (texture dump) is unaffected.
  // Without it, a window the game crops (nvnWindowSetCrop) is captured the same way at the window texture's own size: what is outside the crop is never presented and holds
  // whatever the texture held before (Bastion crops its 1920x1080 window textures to 1600x900; the strip outside was black in some runs and purple in others, which regress.py
@@ -441,7 +441,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
  static void shot(id<MTLTexture> src, const char *path, int screen, const int crop[4]) {
      static int out_w = -1, out_h;
      if (out_w < 0) {
-@@ -21609,7 +21613,8 @@ static void shot(id<MTLTexture> src, const char *path, int screen, const int cro
+@@ -22581,7 +22585,8 @@ static void shot(id<MTLTexture> src, const char *path, int screen, const int cro
      }
      id<MTLTexture> read = src;
      NSUInteger r[4]; int cropped = screen && !out_w && present_crop_rect(src, crop, r) && (r[0] || r[1] || r[2] != src.width || r[3] != src.height);
@@ -451,7 +451,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
          NSUInteger ow = out_w ? (NSUInteger)out_w : src.width, oh = out_w ? (NSUInteger)out_h : src.height;
          MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:ow height:oh mipmapped:NO];
          d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead; d.storageMode = MTLStorageModePrivate;
-@@ -22000,7 +22005,38 @@ static void present_pipeline(MTLPixelFormat format) {
+@@ -22972,7 +22977,38 @@ static void present_pipeline(MTLPixelFormat format) {
          g_blit_samp = [g_dev newSamplerStateWithDescriptor:sd];
      }
  }
@@ -490,7 +490,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
  // Present samples only the valid source rectangle declared by NVN; kept separate from the raw swapchain readback screenshot. Edges are clamped to the texel centers of the valid area, so bilinear does not read the black texels outside.
  // Present samples the raw bytes stored in the swapchain texture (the Switch's scan-out sends the stored bytes as they are): an sRGB source is replaced by a non-sRGB view of the same storage,
  // otherwise sampling decodes to linear first, the BGRA8Unorm layer does not encode again, and the whole picture comes out dark. Other formats are returned as they are (Mario's swapchain is RGBA8 and does not come here).
-@@ -22097,7 +22133,7 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
+@@ -23069,7 +23105,7 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
      if (memcmp(meta, last_crop, sizeof meta)) { memcpy(last_crop, meta, sizeof meta);
          MLOG("present crop: source texture %lux%lu, valid %lu,%lu %lux%lu → target %lux%lu", (unsigned long)src.width, (unsigned long)src.height,
               (unsigned long)cx, (unsigned long)cy, (unsigned long)cw, (unsigned long)ch, (unsigned long)dst.width, (unsigned long)dst.height); }
@@ -499,7 +499,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
      MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
      int full = vp.originX == 0 && vp.originY == 0 && vp.width == dw && vp.height == dh;
      static double last_vp[4];   // Log one line when the viewport changes (used by the real-device screen-level acceptance screen_check.py to check the aspect ratio)
-@@ -22108,10 +22144,11 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
+@@ -23080,10 +23116,11 @@ static int present_encode(id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTex
      rp.colorAttachments[0].storeAction = MTLStoreActionStore;
      id<MTLRenderCommandEncoder> en = [cb renderCommandEncoderWithDescriptor:rp];
      [en setViewport:vp];
@@ -513,7 +513,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
      if (atomic_load_explicit(&g_origin_ll, memory_order_relaxed)) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
      [en setFragmentBytes:uv length:sizeof uv atIndex:0];
      [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-@@ -22512,7 +22549,10 @@ static int up_mfx_encode(NvShader *cs) {
+@@ -23541,7 +23578,10 @@ static int up_mfx_encode(NvShader *cs) {
  // (fx: the scaler state to use, nil = bilinear). uvb: the pass's crop constants (one buffer per present allocator, written by the CPU)
  static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4], id<MTLBuffer> uvb, fx_state *fx) {
      NSUInteger r[4]; if (!present_crop_rect(src, crop, r)) return 0;
@@ -525,7 +525,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
      // The window's right part a front end keeps for a panel (mtl_present_inset): the picture fits and centres in what is left. Only the window's present (fx is the present thread's):
      // screenshots and recordings stay whole
      double dw = dst.width, dh = dst.height, aw = fx == &g_fx_present ? dw * (1 - atomic_load(&g_present_inset)) : dw;
-@@ -22522,22 +22562,22 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+@@ -23551,22 +23591,22 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
      static int direct_ok = -1; if (direct_ok < 0) { const char *e = getenv("DM_FX_DIRECT"); direct_ok = !(e && !strcmp(e, "0")); }
      // Anti-aliasing first, on the game's own pixels (aa_encode); its output stands in for the game's texture from here on, at the origin
      id<MTLTexture> tex = present_raw_src(src), aa;
@@ -554,7 +554,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
      if (wrote) return PRESENT_METALFX;
      if (up && fx == &g_fx_present) { static int once; if (!once++)
          MLOG("present upscaling: the present pass draws MetalFX's output into the drawable: %s (drawable %lux%lu format %lu usage %#lx, picture %lux%lu)",
-@@ -22563,10 +22603,10 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
+@@ -23592,10 +23632,10 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
      uv[4] = (float)((fmax(floor(cx + 1e-6), 0) + 0.5) / tw); uv[5] = (float)((fmax(floor(cy + 1e-6), 0) + 0.5) / th);
      uv[6] = (float)((fmin(ceil(cx + cw - 1e-6), tw) - 0.5) / tw); uv[7] = (float)((fmin(ceil(cy + ch - 1e-6), th) - 0.5) / th);
      if (flipped) { uv[1] += uv[3]; uv[3] = -uv[3]; }   // lower-left origin: the window image is stored bottom-up
@@ -567,7 +567,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
      [en drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
      m4_end(en);
      return up ? PRESENT_METALFX : PRESENT_STANDARD;
-@@ -22613,6 +22653,43 @@ static void present_gpu_note(double s, int fx) {
+@@ -23642,6 +23682,43 @@ static void present_gpu_note(double s, int fx) {
      MLOG("present command buffer GPU time over 600 presents %s: p50 %.3f ms, p95 %.3f ms, max %.3f ms", fx ? "through MetalFX" : "through the bilinear pass", a[299], a[569], a[599]);
      n[fx] = 0;
  }
@@ -611,7 +611,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
  static double g_link_it_tin;   // Enqueue time of the frame the display-link callback is presenting (read and written only on the display-link thread)
  // External presents wait on g_q4, but diagnostic readback can use another queue. Wait for the producer before any read of that frame.
  static id<MTLSharedEvent> g_ext_ev;
-@@ -22684,6 +22761,8 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -23713,6 +23790,8 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      for (int i = 0; i < g_nshotq;) if (g_present_n >= g_shotq[i].frame) { present_shot(src, g_shotq[i].path, crop, ev_val, &shot_ready); g_shotq[i] = g_shotq[--g_nshotq]; } else i++;
      pthread_mutex_unlock(&g_shotq_mu);
  
@@ -620,7 +620,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
      if (atomic_load(&g_gpu_lost) || atomic_load(&g_present_suspended)) return 0;
      CAMetalLayer *layer = (__bridge CAMetalLayer *)front_metal_layer();
      if (!layer) return 0;
-@@ -22691,8 +22770,16 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -23720,8 +23799,16 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
  #if TARGET_OS_OSX
      if (!layer.displaySyncEnabled) layer.displaySyncEnabled = YES;   // Windowed mode follows the display's vsync to prevent tearing
  #endif
@@ -640,7 +640,7 @@ index 9a916e47531447fee156d3bf134ba7bc507c7751..a1171139c7757707ef0e8c41f97b11ad
      if (atomic_load(&g_recorder_on) && g_fi_phase != FI_HELD) record_present(src, crop);   // the video recorder's frame (capture_mac.m)
      static uint64_t nxf_dr_wait; if (!supplied && nxf_ll_trim_drop(nxf_dr_wait)) { nxf_dr_wait = 0; return 0; }   // NXForge: nxforge/low_lag.h (the trim)
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index bd89aac3e1a81dc5806612b039763f206f7a36c0..9c9d75ced292333c77cd118a87042f91706382a0 100644
+index 1c7f810327d716dfa8031ae5dd66f3525fb239fa..ccefdca5cd8749ab16f849c65b4cff95998f040c 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
 @@ -134,6 +134,9 @@ t_host_msl: t_host_msl.m ../nvn/host_msl.m ../nvn/host_msl.h $(MSL_H)
@@ -747,7 +747,7 @@ index 0000000000000000000000000000000000000000..fa78f2d7bdc2623932e2ac0f236e9061
 +    return failed != 0;
 +}
 diff --git a/dm/gfx/tests/t_present_crop.m b/dm/gfx/tests/t_present_crop.m
-index a85d2aa14bb7257b60282d77a82b30db59092345..1d6d2ae6c99a7af453291ea8a75a2953b99bd7b1 100644
+index 2ebe668a150475ef3e2ec2885920ae61c862fa87..369c90676b2bd82ba192d13c255075364349ee9e 100644
 --- a/dm/gfx/tests/t_present_crop.m
 +++ b/dm/gfx/tests/t_present_crop.m
 @@ -42,6 +42,17 @@ static int check_present_resize(id<MTLTexture> src, int w, int h) {
@@ -804,9 +804,9 @@ index a85d2aa14bb7257b60282d77a82b30db59092345..1d6d2ae6c99a7af453291ea8a75a2953
      mtl_init();
  #ifndef CROP_LEGACY_HEADER
      if (argc == 2 && !strcmp(argv[1], "--external-screenshots")) {
-@@ -671,6 +704,75 @@ int main(int argc, char **argv) { @autoreleasepool {
-         EXPECT("the shape reported to the front end is the layer's, width",1920,g_shape_w);EXPECT("the shape reported to the front end is the layer's, height",1080,g_shape_h);
-         res_remove(sw);
+@@ -704,6 +737,75 @@ int main(int argc, char **argv) { @autoreleasepool {
+         mtl_present_layer(0, 0);
+         res_remove(zsrc);
      }
 +    {   // HDR (DM_HDR, nvn/hdr.h, msl/present.metal): the decision through screen changes, what vi answers, the layer's wish, and the present's four variants on the GPU
 +        mtl_present_layer(1,1);   // the square fixtures fill the canvas
@@ -896,10 +896,10 @@ index 8adcd7d49df621a13ecf191a4c0bf305fa6a1122..4081c0fff4d1bf70824ccf310f5800fd
  // GPU memory nearly full (called by the graphics backend's nvn_mtl.m guard_stop, once): the game's GPU memory reached about 95% of Metal's working set, the most the driver can wire, and nothing more
  // could be let go. Past the working set the submit thread would wait in the kernel, unkillable, with the Mac frozen. The Mac front end stops the game's GPU work and sound, leaves full screen, says
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index a45278a9fa756cf01461fe013aa0e33202db51a1..9c9c664a0e335287e30e781caf8e1ba5e530845c 100644
+index 6701621f7e78734c16292ec37a04a8d9808e8893..0d8cf2541e1cd6dcce9794ded45f8f05fb6336bc 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
-@@ -23,6 +23,7 @@ _Static_assert(QS_CHEAT_LABEL == DM_CHEAT_LABEL && QS_CHEAT_SECTION_START == DM_
+@@ -24,6 +24,7 @@ _Static_assert(QS_CHEAT_LABEL == DM_CHEAT_LABEL && QS_CHEAT_SECTION_START == DM_
                 && QS_CHEAT_PAIR_OFF == DM_CHEAT_PAIR_OFF && QS_CHEAT_ONCE == DM_CHEAT_ONCE, "quick_settings_mac.h's cheat flags follow dm.h's");
  #include "capture_mac.h"
  #include "hle.h"
@@ -907,7 +907,7 @@ index a45278a9fa756cf01461fe013aa0e33202db51a1..9c9c664a0e335287e30e781caf8e1ba5
  #include "pad_slots.h"
  #include "haptics_apple.h"
  #include "motion_apple.h"
-@@ -75,6 +76,7 @@ static _Atomic int g_screen_variable_refresh;
+@@ -76,6 +77,7 @@ static _Atomic int g_screen_variable_refresh;
  int front_screen_variable_refresh(void) { return g_screen_variable_refresh; }
  static CGDirectDisplayID g_match_id; static CGDisplayModeRef g_match_orig; static int g_match_orig_vrr;   // main thread: the screen this host switched, its own mode (NULL = none switched) and whether that mode is variable-refresh
  static int32_t g_match_pick; static int g_match_pick_vrr;   // main thread: the IO mode ID this host last switched to (valid while g_match_orig != NULL) and whether it is variable-refresh
@@ -915,15 +915,15 @@ index a45278a9fa756cf01461fe013aa0e33202db51a1..9c9c664a0e335287e30e781caf8e1ba5
  static void screen_refresh(NSScreen *screen) {   // main thread: refresh capabilities of the current screen and mode, including a mode change without moving the window
      if (!screen) return;
      g_screen_fps = (int)screen.maximumFramesPerSecond;
-@@ -92,6 +94,7 @@ static void screen_refresh(NSScreen *screen) {   // main thread: refresh capabil
+@@ -93,6 +95,7 @@ static void screen_refresh(NSScreen *screen) {   // main thread: refresh capabil
      } else {
          g_screen_native_fps = g_screen_fps;
      }
 +    hdr_refresh(screen);
  }
- // The software keyboard input box is up (front_text_input). The game window is not key then, which is not a focus change the game should see: on hardware the inline keyboard is drawn inside
- // the game, which keeps its focus, and ShowKeyboard's applet sends its own out-of-focus / in-focus pair (DM_APPLET). Monster Hunter Rise dropped the hunter's name after the round trip and asked again. Main thread only
-@@ -236,6 +239,43 @@ static void screen_match_apply(void) {
+ // Workaround for a macOS Direct-to-Display scanout artifact (GitHub issue #1821: a flickering purple/pink horizontal
+ // band across the top of the picture in native fullscreen on mirrored HDMI displays on M4 Pro / M5 Pro). Setting
+@@ -262,6 +265,43 @@ static void screen_match_apply(void) {
          dispatch_async(dispatch_get_main_queue(), ^{ screen_match_apply(); g_match_pending--; });
      }
  }
@@ -968,10 +968,10 @@ index a45278a9fa756cf01461fe013aa0e33202db51a1..9c9c664a0e335287e30e781caf8e1ba5
      if (!g_layer || g_match_want == fps) return;   // no window (a windowless run's main thread runs the guest), or the rate as before
      g_match_want = fps; g_match_pending++;
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 531d9fe8e912c1bde99ab3cf86a7731bd28dbcbe..1e5cddef5ab1b2c2ba6199eddeb15d774ffaa08d 100644
+index 6c9038f97346aebe1a583b201e41e34e897c745b..693352fa2d88891ae66d3bfdd4bb1da718eb22bb 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
-@@ -303,7 +303,7 @@ $(B)/t_shared_font: t_shared_font.c ../hle_sdk16.c ../hle.h ../dm.h $(GAME_H) |
+@@ -308,7 +308,7 @@ $(B)/t_shared_font: t_shared_font.c ../hle_sdk16.c ../hle.h ../dm.h $(GAME_H) |
  	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -Wno-frame-address -I.. $(GINC) -o $@ t_shared_font.c
  # nn::vi::ListFrameHistory: the SDK's FrameInfo, newest first, from the present queue's progress
  run: $(B)/t_vi_history
@@ -1028,7 +1028,7 @@ index 87d315eb0cf0406507873200c7f9c51b551b8487..7db28e9e00141e7620700099c599cd2b
      ('stdalloc_cap', '', {'what': "StandardAllocator's address space", 'now': 'game', 'goal': 'game', 'purpose': 'address space',
       'why': "what the regions after it need, measured by the NSP script's region check, or 1 GB from its heap check; the host's cap is the default"}),
 diff --git a/dm/tools/tests/test_launcher_settings.py b/dm/tools/tests/test_launcher_settings.py
-index 3bd3df3a008a39affa0b470232f8a8d326dc8152..562a78f213563b768b2d0c721fd4e1bbd5469a96 100644
+index 9466106109f56ac45a81318382e364a69ab2255c..781e37067a1245096779c3e4764851a3357bc4c1 100644
 --- a/dm/tools/tests/test_launcher_settings.py
 +++ b/dm/tools/tests/test_launcher_settings.py
 @@ -84,6 +84,13 @@ class LauncherSettingsTests(unittest.TestCase):
@@ -1046,7 +1046,7 @@ index 3bd3df3a008a39affa0b470232f8a8d326dc8152..562a78f213563b768b2d0c721fd4e1bb
          # nvn_mtl.m pso4_on: Mac defaults on, iOS follows the profile. nvn_rec.h rec_on: iOS on, Mac off.
          for gid, ios_pso in ((BOTW, '1'), (WONDER, '0')):
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index c188ece918c3a4f6edb345c6f911d4ca24301920..c7c3fdf65091a01f0e54432fb0e0d77bd0f783f2 100644
+index 7327ab5d79693ac9499b4a7f9d7816fc0161d795..533107337ea85ba2d23a2147782a6cd216208a1b 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -103,6 +103,9 @@ DM_GUEST_FILE_PUNCH	switch	`0` keeps the disk blocks of guest memory the game gi
@@ -1057,13 +1057,13 @@ index c188ece918c3a4f6edb345c6f911d4ca24301920..c7c3fdf65091a01f0e54432fb0e0d77b
 +DM_HDR_DUMP	diagnostic	`=1` logs, at the 120th present of the game's HDR10 picture (`=<n>`: the nth), the window texture's size and format and a 64x64 centre patch's code values decoded as PQ (min / max / average, nits and extended sRGB), with the vi answers and the game's layer HDR metadata, to confirm the encoding on hardware (a white HUD near PQ 0.58 = 203 nits)
 +DM_HDR_PAPER_WHITE	switch	`=<nits>` (80 to 1000, default 203, BT.2408): the paper white `vi::QueryDisplayHdrPaperWhite` gives the game under `DM_HDR`, which the present maps to the screen's SDR white (EDR 1.0); the game tone-maps its highlights into peak / paper white (at most 1600 / 203 = 7.9), so a higher value leaves them less room
  DM_HID_LOG	diagnostic	`1` logs the HID button usage number of each button pressed on a raw HID gamepad (`pad_hid_mac.h`), to write a `DM_HID_MAP`
- DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, the Taiko Drum's own numbering on USB `0f0d:00f0`, `pad_hid.h`); Mac only
+ DM_HID_MAP	switch	`=<map>` such as `A=1,B=2,X=4,Y=5`: which HID button usage presses each Switch button on a raw HID gamepad (names A B X Y LS RS L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN; default 8BitDo's D-input numbering by position, the Switch wired HID layout on USB `0f0d:00f0` (HORI Taiko Drum) and `0e6f:0185` (PDP Wired Fight Pad Pro), `pad_hid.h`); Mac only
  DM_HID_PADS	switch	`0` stops reading raw HID gamepads that GameController does not list, such as an 8BitDo in its own mode (`pad_hid_mac.h`); Mac only
 diff --git a/docs/reference/services.md b/docs/reference/services.md
-index eeee64981fc8e705841dc2e110020a9c64bfc955..3a5e162f00cba48b21cd47f4a548eed3bb90c0c7 100644
+index ab11b67d97c8b9638fbe7cca7ed4edd8b87f900e..2cb4d72729d304160bb44caceb008aff6f7ef698 100644
 --- a/docs/reference/services.md
 +++ b/docs/reference/services.md
-@@ -1131,7 +1131,7 @@ Most service calls can be found before they crash, before the first boot or the
+@@ -1180,7 +1180,7 @@ Most service calls can be found before they crash, before the first boot or the
  
  - **Symptom:** `CRASH sig=11 addr=0 pc=0` with the link register just after a call to a `vi::SetLayerNextHdr…` or `vi::ClearLayerNextHdr…` function.
  - **Cause:** the SDK forwards a layer's HDR metadata through a table its graphics system fills, which is null on the host.
@@ -1073,12 +1073,12 @@ index eeee64981fc8e705841dc2e110020a9c64bfc955..3a5e162f00cba48b21cd47f4a548eed3
  
  ### Layer frame numbers
 diff --git a/docs/settings.md b/docs/settings.md
-index e448731c457d3b34e6dfde0a6622883a0b92cb9f..1be3bf72dd8b1d7663ec2e2aacaab201f7236544 100644
+index 88cc2bcd32ea3ff1e247e2f41672497724ef6f68..246304c0d978e59d550b7d9da6551d515bd7d9a4 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -283,6 +283,10 @@ Turn off **Show at launch** to start the game at once with your choices. Hold Op
+@@ -157,6 +157,10 @@ Mac only, off by default (`DM_MOUSE_CAMERA`). On: hold the right mouse button ov
  
- **Window** or **Fullscreen**: how the game's window opens. ⌃⌘F or the green button changes it while you play. In an `env.txt`: `DM_FULLSCREEN=1` or `0`.
+ How far the stick turns for a given mouse movement, 100 % by default, 25 % to 400 % (`DM_MOUSE_CAMERA_SPEED`). At 100 % about 2,500 points of movement a second turn it fully.
  
 +### HDR
 +
@@ -1086,12 +1086,12 @@ index e448731c457d3b34e6dfde0a6622883a0b92cb9f..1be3bf72dd8b1d7663ec2e2aacaab201
 +
  ### Switch 2 controllers
  
- **Off** by default. On, the game takes Joy-Con 2 and Pro Controller 2 over Bluetooth: hold the small Sync button on one during the game, until its player lights sweep, to pair it with this Mac; after that a press of any of its buttons connects it ([Switch 2 controllers](playing.md#switch-2-controllers-mac)). macOS asks for Bluetooth access the first time, and again after the app is packed again. In an `env.txt`: `DM_SW2=1`.
-@@ -361,6 +365,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
+ **Off** by default. On, the game takes Joy-Con 2 and Pro Controller 2 over Bluetooth: hold the small Sync button on one during the game, until its player lights sweep, to pair it. On the Mac it pairs with this Mac, and after that a press of any of its buttons connects it ([Switch 2 controllers](playing.md#switch-2-controllers-mac)); macOS asks for Bluetooth access the first time, and again after the app is packed again. On iPhone and iPad it is used without pairing, so hold Sync again after each start of the game ([on iPhone and iPad](playing.md#switch-2-controllers-iphone-and-ipad)); iOS asks for Bluetooth access the first time. In an `env.txt`: `DM_SW2=1`.
+@@ -369,6 +373,7 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under
  | Console mode | `DM_OPMODE` | `1` docked, `0` handheld |
  | Game language | `DM_LANG` | a language code, such as `ja` |
  | Display mode (Mac) | `DM_FULLSCREEN` | `1` fullscreen, `0` a window |
 +| HDR (Mac) | `DM_HDR` | `auto` HDR on a screen that can show it, switched live as the window moves between screens (default for a game that draws HDR), `0` off |
  | Cloud saves folder (Mac) | `DM_SAVE_SYNC` | a folder; `icloud`: iCloud Drive › nxnative Saves; `0`: off |
+ | Start save backups | `DM_SAVE_BACKUPS` | `0`: off (on by default: keeps up to 10 / 256 MB in `<save>-backups/<date> start`) |
  | Picture | `DM_PICTURE_FIT` | `fit` 16:9 with black bars, `fill` covers the screen (or Mac window), cropped |
- | Picture shape | `DM_SCREEN_ASPECT` | On builds with screen-shape stubs, `auto` the app window's own shape where it is taller than 16:9 (iPad 4:3, iPhone Duo 1.43:1), else 16:9 (iOS only); `1.6` MacBook (16:10, Mac only); `1.43` the iPhone Duo's shape, `0` 16:9 |

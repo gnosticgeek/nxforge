@@ -22,7 +22,7 @@ under Dynamic resolution on builds with the DRS_HEADROOM capability.
  6 files changed, 14 insertions(+)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 93fc294f6fd3c3dcfef3c45ed0b563a0ff2e5607..6d38d38e1f75ae0bac0db179558edcf5e1f931cd 100644
+index 18deecbca16758a2cd1558dd21a6b5cd7bc0690a..9cd2f4e7c97c20d7ce67ce92010abead9043c4e6 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -125,6 +125,7 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
@@ -34,10 +34,10 @@ index 93fc294f6fd3c3dcfef3c45ed0b563a0ff2e5607..6d38d38e1f75ae0bac0db179558edcf5
    Nothing is decided until a level has held 8 frames, since the load is read a few frames late. The 8 frames in a row keep a single slow frame, or the first frames at a new size, from rejecting a level that fits. An earlier version stepped down on 2 frames over and stopped at level 2 after one burst to 90 at level 1. A version that stepped up only when the load, scaled by the next level's pixel ratio, stayed under the threshold sat at the floor too: 70 × 1.3 is over 83. Result (M4 Pro, 2026-11-09, `kokiri-still`, the full library on chain a02f1e0dfdde): from the floor to full size, then mostly at 1536x864. The load there is about 83, the game's own threshold, so a sustained frame over moves it to level 1 (0.70) for about 10 s. 59.9 fps, all 1,800 frames held at one vsync, frame p99 16.89 ms, GPU p50 14.5 ms. Loads by level: 72 at the floor, 75 at level 6, 80 at level 2, 82 at level 1, 83 at full size.
  - Current: the launcher's **Render scale** (`DM_RENDER_SCALE`, 0.5 to 1.0, 1.0 by default) fixes the 3D views at that fraction of the game's own size and holds the dynamic resolution at its top level, as on Breath of the Wild and Tears of the Kingdom, with the game's own upscaler to the output. Two stubs in the view-size update (found by its fingerprint) multiply the scale the game computes and make the frame recompute the sizes whenever `[x20+0xe5c]` differs from the last scaled value; the level stub returns level 0 under a scale below 1.0 ([`patches.py`](patches.py), render scale; [PR #1903](https://github.com/seedds/nxnative/pull/1903)). Measured on an M4 Pro (20-core GPU, 2026-11-09, `kokiri-deck`, docked, two runs each, main `d8b2b64a1`, taken at graphics scale tier 1 where the top 3D size was 1536x864; the engine's own rounding gave 1171x659 at 0.75 and 781x439 at 0.5):
 diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
-index f45ca19b86daaaf2391904354cc2c3ccf90d55a0..c4c6a6b95a0c1c805818e578418e935fb88c3389 100644
+index 102b5fa5796c17646418ac3c37ebcb7b15f088a7..bb7821a242ea235e1c9f245f1bcca318bf3da139 100644
 --- a/dm/games/0400486024DEC000/patches.py
 +++ b/dm/games/0400486024DEC000/patches.py
-@@ -210,6 +210,7 @@ drs_controller = (   # drs_stub.s, assembled with clang; x0 the controller, x16
+@@ -215,6 +215,7 @@ drs_controller = (   # drs_stub.s, assembled with clang; x0 the controller, x16
      0xb9404211, 0x35000071, 0x2a1f03e0, 0xd65f03c0,                                                   # off (state +0x40 0): level 0
      0xbd401001, 0xbd400202, 0x1e202048, 0x540000ed, 0x52a84e0a, 0x1e270140, 0x1e202040, 0x5400006a,   # threshold, × 60 / the target fps (state +0, a float) under 60
      0x1e200821, 0x1e221821,
@@ -45,7 +45,7 @@ index f45ca19b86daaaf2391904354cc2c3ccf90d55a0..c4c6a6b95a0c1c805818e578418e935f
      0xbd400800, 0xb9417402, 0xb941a003, 0x7100005f, 0x1a9fa042, 0x528001e9, 0x6b09005f, 0x1a89d042,   # load, level (0..15), count
      0xb9420204, 0x11000484, 0xb9020204, 0xb9420605, 0xb9420a06, 0x6b0200bf, 0x1a8617e6, 0xb9020602,   # calls + 1; calls at this level
      0xb9020a06,
-@@ -524,6 +525,7 @@ def dynamic_resolution(ctx):
+@@ -529,6 +530,7 @@ def dynamic_resolution(ctx):
             'dynamic resolution level: 0 (full resolution), or with state +0x40 (DM_DYNAMIC_RESOLUTION) a climb on the load measured at each level')
      fs_put(site, [B(site, start)], why)
      ctx.capabilities.add('DYNAMIC_RESOLUTION')
@@ -54,7 +54,7 @@ index f45ca19b86daaaf2391904354cc2c3ccf90d55a0..c4c6a6b95a0c1c805818e578418e935f
  
  # Render scale (DM_RENDER_SCALE, state +0x10, dm/host/loader.c): the 3D views at that fraction of the game's own size, the dynamic resolution held at its top level (as Tears of the
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index b90c39e528fc5d22d75160281d02179fbc0a4d3b..5010536f675b4383785828340df416bbbc014530 100644
+index b2616e9cccb3013d0d37c87dc706847acb78a083..be62eabe5d7f2b150daaa3638c42c36875a0beeb 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -17,6 +17,7 @@
@@ -82,7 +82,7 @@ index b255060e79bd51fd7b82ef7205877d15cc95c9e9..561c7aaf01e7694f9de78702fa0d7929
      { const char *hr = getenv("DM_HEAP_RETRY"); if (hr && !strcmp(hr, "0")) { uint32_t off = 1; memcpy(dm_fps_state + 0x17c, &off, 4); LOG("%s: full model heap retry off (DM_HEAP_RETRY=0)", g_fps_mod); } }
      // Foliage (Ocarina of Time's patches.py foliage, from TVPort 8609a1cb), u32 at +0x300: DM_FOLIAGE=off makes the game's foliage module skip its grass and ground cover (its own
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 06973fb7b17006fd5660a093e4a9e758fc3f7431..58114427469d15dfddd7688067b8575a22b0dbec 100644
+index 2b1766cc9acbeb9b2d318e83d5e1a1cc74f1c6d7..eb2f7bcec1098ec02dcbf3609ac7f14bc3e14a63 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -43,6 +43,7 @@ DM_DETCLOCK	switch	`=<step ns>`: from the first present on, the guest clock adva
@@ -94,7 +94,7 @@ index 06973fb7b17006fd5660a093e4a9e758fc3f7431..58114427469d15dfddd7688067b8575a
  DM_ENTITLEMENTS	path	`=<plist>` gives a prepared Xcode project another entitlements file instead of the Increased Memory Limit one, and the ad-hoc signature of the unsigned IPA's executable carries them; relative paths start at the caller's directory; empty means no entitlements
  DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into the app as `dm/env.txt`, applied at boot; `Documents/env.txt` overrides them
 diff --git a/docs/settings.md b/docs/settings.md
-index fd2f6c0176c423c69a2cfaeb049009427541272f..e448731c457d3b34e6dfde0a6622883a0b92cb9f 100644
+index 8e34addc30ea347b0b8b2d8c677ef7a3d58bb145..88cc2bcd32ea3ff1e247e2f41672497724ef6f68 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -34,6 +34,10 @@ Ocarina of Time also offers **40 fps**, on the iPhone and the Mac. Each frame st

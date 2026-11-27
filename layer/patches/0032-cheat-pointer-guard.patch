@@ -10,7 +10,7 @@ Subject: cheat-pointer-guard: a cheat write that would break a pointer is
  2 files changed, 28 insertions(+)
 
 diff --git a/dm/host/hle_cheats.c b/dm/host/hle_cheats.c
-index e895997d635e8dbb4278cb29648a46209fd1c723..1eca4e422036fb77a0c6a2e99661cd9f6ac8af67 100644
+index 31f4f2f710ac6043aeb5601c18800068555a3da1..bb5e6baf87c82280ec16c8f7c8be916a041c7d2e 100644
 --- a/dm/host/hle_cheats.c
 +++ b/dm/host/hle_cheats.c
 @@ -598,6 +598,7 @@ static void value_text(const cheat_t *c, unsigned width, uint64_t v, char *out,
@@ -30,10 +30,10 @@ index e895997d635e8dbb4278cb29648a46209fd1c723..1eca4e422036fb77a0c6a2e99661cd9f
          char where[48], now[48], new_[48]; uint64_t cur = 0;
          addr_name(addr, where, sizeof where);
 diff --git a/dm/host/tests/t_cheats.c b/dm/host/tests/t_cheats.c
-index f7eb1935cdff0050ea6fec126d589be0b63e0eaa..5519f8d0f5f173efce95730c1fa4aa58040f3527 100644
+index 57b7e42742d71899c203d1e055d06ca5f1526cb9..9af49fe9c42ef55c0d7cbc14df82fc748c3eaab3 100644
 --- a/dm/host/tests/t_cheats.c
 +++ b/dm/host/tests/t_cheats.c
-@@ -645,6 +645,32 @@ int main(void) {
+@@ -675,6 +675,32 @@ int main(int argc, char **argv) {
      rm("1111111111111111.txt"); load_all();
      CHECK(!dm_cheats_found() && !exists(".cheats-running-0100000000000000"), "a reload that finds no file removes the flag: nothing runs now");
  

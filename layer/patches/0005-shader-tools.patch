@@ -24,14 +24,14 @@ Subject: shader-tools: Shader toolchain: shared metallib cache, compiler
  16 files changed, 580 insertions(+), 82 deletions(-)
 
 diff --git a/dm/gfx/nvn/dmsh_chain.h b/dm/gfx/nvn/dmsh_chain.h
-index 9e3897c12737e02417a2fd1a27a1da9198019d73..82b92f117e0c88a13951f4b925cd8222b295f3e4 100644
+index e961b13663b3ada5a736c98268a625fa2f181b9b..d85344c2850dab559e6cd776ed05f3ca217700e2 100644
 --- a/dm/gfx/nvn/dmsh_chain.h
 +++ b/dm/gfx/nvn/dmsh_chain.h
 @@ -1,3 +1,3 @@
  // Generated file (dm/gfx/tools/dmsh_chain.py --header): the B shader library translation chain version this source tree expects (default options), one for every game;
  // the host loads only <library dir>/b-<V>/. Run dmsh_chain.py --header after changing the chain's tools and commit this file with the change
--#define DMSH_CHAIN "541dad7184e0"
-+#define DMSH_CHAIN "6cc2d4225993"
+-#define DMSH_CHAIN "3a749f834250"
++#define DMSH_CHAIN "39d1d214f6ce"
 diff --git a/dm/gfx/tests/test_dmsh_ampere_mem.py b/dm/gfx/tests/test_dmsh_ampere_mem.py
 index e9500a30fbfe21162b41acd3e61e056ef8439cfe..06a6705770ccbf478875197afe1ad67bae841293 100644
 --- a/dm/gfx/tests/test_dmsh_ampere_mem.py
@@ -58,7 +58,7 @@ index f83aacd81d01c44f5538a62796493bf2a4414185..92a64fbaa45a9a4b188e862d2bcd0221
                MTL=types.SimpleNamespace(compile=compile_msl, compile_split=compile_split, with_compiler=lambda target, refl: refl))
      tree = ast.parse((pathlib.Path(dmsh_entry.__file__).parent / 'dmsh_build.py').read_text())
 diff --git a/dm/gfx/tools/dmsh_build.py b/dm/gfx/tools/dmsh_build.py
-index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653aca1d07f 100644
+index 6446a3669c825c1ee26c17976e780c83c16c52d6..d40e04b5f7b119bb3c7502f23c1ed3c2cde92812 100644
 --- a/dm/gfx/tools/dmsh_build.py
 +++ b/dm/gfx/tools/dmsh_build.py
 @@ -7,7 +7,7 @@
@@ -127,7 +127,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
      return ('lock\0' + open(dmsh_chain.LOCK).read() + '\0options\0' + dmsh_chain.options() +
              '\0xlate\0' + dmsh_chain.xlate_source_sha() + '\0spirv-cross\0' + sc.stdout + sc.stderr +
              '\0xc\0' + repr(XC) + '\0mac\0' + MAC_RECORD + '\0ios\0' + (ios_metal.RECORD if IOSOUT else '') + '\0metal\0' + METAL_FP)
-@@ -712,7 +744,7 @@ def gs_slice(spv):
+@@ -721,7 +753,7 @@ def gs_slice(spv):
      grading LUT the tone mapper reads, and without it the screen came out a flat blue). Metal has no geometry stage, so the host drops such a shader and draws with the vertex shader's
      layer entry points instead (vs_layer_entry), which write that component as the layer. Read from the SPIR-V as GLSL (SPIRV-Cross writes no MSL for a geometry stage).
      → {'loc': input location, 'comp': component} or None (any other geometry shader: one-pass cube shadows emit six transformed triangles)"""
@@ -136,7 +136,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
      g = r.stdout
      if r.returncode or 'layout(triangles) in;' not in g or 'layout(max_vertices = 3, triangle_strip) out;' not in g or g.count('EmitVertex();') != 3 or 'EndPrimitive' in g: return None
      ins = {m.group(2): int(m.group(1)) for m in re.finditer(r'layout\(location = (\d+)\) in vec4 (\w+)\[3\];', g)}
-@@ -809,14 +841,14 @@ def geometry_finish(key, w, j, c1):
+@@ -818,14 +850,14 @@ def geometry_finish(key, w, j, c1):
      dmsh_geometry.output_layout(code, 0)   # validate before running the translator
      jobs = [{**j, 'key': key + '_g' + str(t), 'geometry_topology': t} for t in range(5)]
      jp = os.path.join(w, key + '_geometry.json'); atomic_json(jp, jobs)
@@ -151,9 +151,9 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
 -        r = subprocess.run([SPIRV_CROSS, *XC, spv], capture_output=True, text=True)
 +        r = spawn([SPIRV_CROSS, *XC, spv], capture_output=True, text=True)
          if r.returncode: return 'geometry MSL failed', r.stderr.strip()[:160], None
-         try: selected = dmsh_rewrite.uniform_tests(dmsh_rewrite.select_guards(dmsh_rewrite.bit0_mask(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout)))))   # precise, a tested bit 0's mask (bit0_mask), bounded uniform reads as selects (dmsh_rewrite.select_guards), tested words as volatile loads (uniform_tests), as finish makes them
+         try: selected = dmsh_metalwa.apply(dmsh_rewrite.uniform_tests(dmsh_rewrite.select_guards(dmsh_rewrite.bit0_mask(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout))))))[0]   # precise, bit0_mask, select_guards, uniform_tests, and Metal compiler workarounds (dmsh_metalwa), as finish makes them
          except ValueError as e: return 'geometry MSL failed', str(e)[:160], None
-@@ -848,7 +880,7 @@ def geometry_finish(key, w, j, c1):
+@@ -857,7 +889,7 @@ def geometry_finish(key, w, j, c1):
              base = {**refl, 'key': key + '_b'}
              save('_b', src, base)
              spv = os.path.join(w, k + '.reader.spv'); dmsh_geometry.flatten_sets(spv)
@@ -162,7 +162,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
              if r.returncode: return 'geometry reader failed', r.stderr.strip()[:160], None
              try: selected = dmsh_rewrite.uniform_tests(dmsh_rewrite.select_guards(dmsh_rewrite.bit0_mask(dmsh_rewrite.precise(dmsh_atomic.check_msl(r.stdout)))))
              except ValueError as e: return 'geometry reader failed', str(e)[:160], None
-@@ -870,7 +902,7 @@ def cross_msl(spv, msl):
+@@ -879,7 +911,7 @@ def cross_msl(spv, msl):
          from dmsh_wrap import wrap_signed_integers
          with open(spv, 'rb') as f: data = wrap_signed_integers(f.read())
          with open(spv, 'wb') as f: f.write(data)
@@ -171,7 +171,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
  
  
  def finish(key, w, j, c1):
-@@ -893,7 +925,7 @@ def finish(key, w, j, c1):
+@@ -902,7 +934,7 @@ def finish(key, w, j, c1):
          extra = {l: t for l, t in dmsh_entry.int_inputs(src).items() if l not in j['attr']}
          if extra:
              j['attr'].update(extra); jp = os.path.join(w, f'job1_{key}.json'); json.dump([j], open(jp, 'w'))
@@ -180,7 +180,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
              if rx.returncode or not os.path.exists(os.path.join(w, key + '.spv')): return 'translation failed', ('integer-input retranslation: ' + rx.stderr.strip())[:160], None
              spv_single_lane(os.path.join(w, key + '.spv'))
              r = cross_msl(os.path.join(w, key + '.spv'), msl)
-@@ -926,7 +958,8 @@ def finish(key, w, j, c1):
+@@ -935,7 +967,8 @@ def finish(key, w, j, c1):
                   if not b['flags'] & 1 and b['cb_slot'] != abi.GMEM_MAP_CB_SLOT}   # BufferUsageFlags.Write (includes atomics)
      src = dmsh_wide.constant_reads(src, read_only, dmsh_chain.storage_constant_mode())
      src = dmsh_rewrite.tg_fence(src)   # warp-synchronous shared memory: the translator's dmsh_tg_fence() as a simdgroup-scope fence (see tg_fence)
@@ -190,7 +190,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
      if j['stage'] == 'ps': src = dmsh_rewrite.frag_z_snap(src)[0]   # gl_FragCoord.z against a depth of its own surface (see frag_z_snap)
      try: src = dmsh_rewrite.uniform_tests(src)   # a uniform word tested against constants read by a volatile load per test, so the front end folds no switch (see uniform_tests)
      except ValueError as e: return 'uniform tests rewrite failed', str(e)[:160], None
-@@ -1052,6 +1085,7 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
+@@ -1066,6 +1099,7 @@ for _label, _d in (('mac', out), ('ios', IOSOUT)):
          _m = OUT_KEY.match(_n)
          if _m and owned_output(_m.group(1)): os.unlink(os.path.join(_d, _n))
      if STAMP_BEFORE != INPUTS and os.path.exists(os.path.join(_d, dmsh_chain.STAMP)): os.unlink(os.path.join(_d, dmsh_chain.STAMP))
@@ -198,7 +198,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
  STORE.delete_prefix(STAGE + '/')   # what a stopped build of this folder staged
  
  def sweep_work(root):
-@@ -1075,7 +1109,10 @@ with open(os.path.join(w, 'pid'), 'w') as _f: _f.write(str(os.getpid()))
+@@ -1089,7 +1123,10 @@ with open(os.path.join(w, 'pid'), 'w') as _f: _f.write(str(os.getpid()))
  if SOURCE_ONLY:
      MTL = SourceOutputs()
  else:
@@ -210,7 +210,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
      # First take libraries earlier chain versions left on disk, beside the output and in the roots DMSH_PREFILL lists.
      for _spec in [cache_root + ('=' + os.path.dirname(IOSOUT) if IOSOUT else '')] + [x for x in os.environ.get('DMSH_PREFILL', '').split(os.pathsep) if x]:
          _mac, _, _ios = _spec.partition('=')
-@@ -1139,6 +1176,7 @@ def xlate_errors(r):
+@@ -1153,6 +1190,7 @@ def xlate_errors(r):
      for ln in r.stderr.splitlines():
          m = re.match(r'\[RED\] (\w+): (.*)', ln)
          if m: xerr[m.group(1)] = m.group(2)[:160]
@@ -218,7 +218,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
  def translate(batch):
      """A batch's misses translated into a working folder of its own (removed once the batch is finished) → that folder"""
      wb = tempfile.mkdtemp(prefix='batch_', dir=w)
-@@ -1146,9 +1184,12 @@ def translate(batch):
+@@ -1160,9 +1198,12 @@ def translate(batch):
      for k in miss: jobs[k], c1s[k] = job_for(k, loc[k][0], rec_of(k)[1], wb)
      def xl(ch):
          jp = os.path.join(wb, f'job_{abs(hash(ch[0]))}.json'); json.dump([jobs[k] for k in ch], open(jp, 'w'))
@@ -233,7 +233,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
      return wb
  def restored(key, wb):
      """A cache hit's outputs back on disk while it is finished. When another build pruned them since the look (cache_lookup), the shader is translated now, in the batch's folder: False"""
-@@ -1156,7 +1197,7 @@ def restored(key, wb):
+@@ -1170,7 +1211,7 @@ def restored(key, wb):
      PRE_STATS['hit'] -= 1; PRE_STATS['miss'] += 1; PRE_STATS['pruned meanwhile'] += 1
      jobs[key], c1s[key] = job_for(key, loc[key][0], rec_of(key)[1], wb)
      jp = os.path.join(wb, f'job1_{key}.json'); json.dump([jobs[key]], open(jp, 'w'))
@@ -242,7 +242,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
      return False
  DONE = collections.Counter()
  def fin(key, wb):
-@@ -1195,7 +1236,8 @@ COUNTERS = (PRE_STATS, VIN_STATS, PULL_STATS, SIDE_STATS, BF_STATS, MTL.stats)
+@@ -1209,7 +1250,8 @@ COUNTERS = (PRE_STATS, VIN_STATS, PULL_STATS, SIDE_STATS, BF_STATS, MTL.stats)
  def worker_start():
      global PROGRESS, STORE
      assert SERVED is not None and isinstance(MTL, dmsh_mtlcache.Cache)
@@ -252,7 +252,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
      PROGRESS = None   # this build writes it, as the workers' shaders finish
  def fin_worker(key, wb, job, err):
      """fin in a worker process, given what translate left for the shader in this process (its job and c1, its translator error) → (fin's result, what it added to the counters)"""
-@@ -1219,12 +1261,13 @@ def results(fs):   # → what fin returned for them, in their order (a worker's
+@@ -1233,12 +1275,13 @@ def results(fs):   # → what fin returned for them, in their order (a worker's
          out.append(r)
      return out
  SERVED = shader_cache.Served(STORE, PROCS) if PROCS and keys else None
@@ -267,7 +267,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
  # Two phases: paired vertex shaders read their pixel shaders' MSL (vs_pad), so they go last, in batches of their own, once every shader before them is finished. The next batch is
  # translated while this one is finished, and handed out before this one is done, so that no worker waits for the slowest shader of a batch; a batch's working folder goes when it is done
  batches = [b[i:i + BATCH] for b in ([k for k in keys if k not in PAIRS], [k for k in keys if k in PAIRS]) for i in range(0, len(b), BATCH)]
-@@ -1332,6 +1375,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
+@@ -1346,6 +1389,7 @@ print(f'pulling libraries (<key>_bp, dmsh_pull.py): {PULL_STATS["generated"]} ge
        f'{PULL_STATS["unit"]} vertex shaders\' libraries cut from one compile (dmsh_side.vs_unit), {PULL_STATS["unit failed"]} compiled each from its own source instead')
  print('mesh libraries (<vertex>_<geometry>_m3, dmsh_mesh.py): ' + (', '.join(f'{k} {v}' for k, v in MESH_STATS.items()) or 'none'))
  print(MTL.summary())
@@ -275,7 +275,7 @@ index 7984adb5e590911778166d13ddc0dfc359423bbc..95535eabdb9ccc7dc42b8214d860a653
  for lvl in [k for k in st if k != 'ok']:
      for e, n in collections.Counter(r[2] for r in res if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
  ok = [r[3] for r in res if r[1] == 'ok']
-@@ -1368,7 +1412,7 @@ if not want: print(f'library stamp: game {GAME.id}, inputs {INPUTS}', flush=True
+@@ -1382,7 +1426,7 @@ if not want: print(f'library stamp: game {GAME.id}, inputs {INPUTS}', flush=True
  if not want:
      for _tool, _table, _step in (('c1_guard.py', 'c1_full.tsv', 'c1 guard'), ('cb_extent.py', 'cb_extent.tsv', 'uniform read extents')):
          progress(_step, force=True)
@@ -562,10 +562,10 @@ index d0e967d44b0abc96e900d16478803a594ce3a862..415bdd1bc10a2cb892d029559cde2dcc
  
  if __name__ == '__main__':
 diff --git a/dm/gfx/tools/pso_offline.py b/dm/gfx/tools/pso_offline.py
-index c25e2e0663c6726ab5cf4bdd344255433e380b1e..6f674eafd7f7fedae1d3bc8e80b74eabd6c96af3 100644
+index a9504cec215d90714280ce8a34d066f4fb42ab43..e4fb40a9ae394847ca52d2cb48a3b87338b0c836 100644
 --- a/dm/gfx/tools/pso_offline.py
 +++ b/dm/gfx/tools/pso_offline.py
-@@ -329,20 +329,34 @@ def run_reused(work, key, out, archs):
+@@ -340,20 +340,34 @@ def run_reused(work, key, out, archs):
      except (OSError, KeyError, TypeError, AttributeError): return None
  
  
@@ -605,7 +605,7 @@ index c25e2e0663c6726ab5cf4bdd344255433e380b1e..6f674eafd7f7fedae1d3bc8e80b74eab
  def space_needed(bases):   # what metal-tt is let start with, an estimate: its temporary files (TMPDIR, one .airp per base) and the archive (about 41 KB per base at 15,767 bases); Cruis'n Blast's 33,858 bases failed with 366 MB free
      return max(2 << 30, bases * (96 << 10))
  
-@@ -519,6 +533,37 @@ def compile_batch(lib_dir, bases, work, arch, platform, osmin, toolchain, comput
+@@ -530,6 +544,37 @@ def compile_batch(lib_dir, bases, work, arch, platform, osmin, toolchain, comput
      return dst, False
  
  
@@ -643,7 +643,7 @@ index c25e2e0663c6726ab5cf4bdd344255433e380b1e..6f674eafd7f7fedae1d3bc8e80b74eab
  def groups_of(bases, computes, batch_size, compute_size=COMPUTE_BATCH):
      """The groups compile_batches compiles, [(folder name, bases, compute pipelines)]: the bases in groups of batch_size (00001, ...), then the compute pipelines in groups of compute_size
      of their own (c00001, ...), so that a change to either leaves the other's groups as they are. 0: one group of each"""
-@@ -538,21 +583,43 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
+@@ -549,21 +594,43 @@ def compile_batches(lib_dir, bases, work, part, arch, platform, osmin, toolchain
      On M2, merged archives passed archive-only lookups of two synthetic pipelines and all 32,864 Odyssey bases.
      Other workloads and compiler versions can have different resource use.
      The groups of bases run one after the other, as before; the compute groups, small, jobs at a time, each in its own folder (its TMPDIR).
@@ -694,7 +694,7 @@ index c25e2e0663c6726ab5cf4bdd344255433e380b1e..6f674eafd7f7fedae1d3bc8e80b74eab
      part.unlink(missing_ok=True)
      need, free = max(2 << 30, sum(p.stat().st_size for p in pieces)), vol_space.free_bytes(work)
      if free < need: sys.exit(f'[RED] pso_offline: {free / 2**30:.1f} GB free before merging; need at least {need / 2**30:.1f} GB')
-@@ -828,6 +895,21 @@ def save_run(work, quick, out, archs):
+@@ -873,6 +940,21 @@ def save_run(work, quick, out, archs):
          with contextlib.suppress(OSError): (work / 'run.key').write_text(json.dumps({'key': quick, 'outputs': outputs(out, work, archs)}, sort_keys=True) + '\n')
  
  
@@ -716,7 +716,7 @@ index c25e2e0663c6726ab5cf4bdd344255433e380b1e..6f674eafd7f7fedae1d3bc8e80b74eab
  def main(argv=None):
      ap = argparse.ArgumentParser(description='Build the pipeline archive of a game\'s shader pairs offline (metal-tt)')
      ap.add_argument('--msl', required=True, help='the shader libraries, b-<chain version> (with their reflection <key>_b.json)')
-@@ -840,6 +922,7 @@ def main(argv=None):
+@@ -885,6 +967,7 @@ def main(argv=None):
      ap.add_argument('--platform', choices=('ios', 'macos'), default='ios')
      ap.add_argument('--os-min', help='minimum OS of the archives (default: iOS, the SDK\'s major version; macOS, this Mac\'s)')
      ap.add_argument('--script-only', action='store_true', help='write the script and the stamp, run no metal-tt')
@@ -724,7 +724,7 @@ index c25e2e0663c6726ab5cf4bdd344255433e380b1e..6f674eafd7f7fedae1d3bc8e80b74eab
      ap.add_argument('--batch-size', type=int, default=BATCH, help=f'compile sequential groups of at most N bases and merge with metal-pack, when there are more (default {BATCH}; 0: one compiler invocation)')
      ap.add_argument('--shader-map', action='append', help='shader_map.tsv: its compute shaders get pipelines (default: the profile\'s)')
      ap.add_argument('--manifest', action='append', help='pso_manifest.tsv: its C rows first (default: the profile\'s)')
-@@ -848,6 +931,7 @@ def main(argv=None):
+@@ -893,6 +976,7 @@ def main(argv=None):
      ap.add_argument('--prewarm-host', help='a Mac host built from this checkout for this profile (make -C dm/host GAME=<id>): its prebuild tool makes the prewarm lists\' R and M rows\' '
                                             'pipelines from these libraries, and metal-tt compiles them for each --gpu (<arch>-prewarm-<NN>.mtl4a with its index); without it there are none')
      a = ap.parse_args(argv)
@@ -732,7 +732,7 @@ index c25e2e0663c6726ab5cf4bdd344255433e380b1e..6f674eafd7f7fedae1d3bc8e80b74eab
      if a.batch_size < 0: ap.error('--batch-size must be zero or positive')
      if a.game:
          sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'games')); import game
-@@ -899,6 +983,7 @@ def main(argv=None):
+@@ -945,6 +1029,7 @@ def main(argv=None):
      libraries = library_digest(lib_dir, bases, computes)
      keys = {arch: archive_key(configuration, libraries, arch, a.platform, osmin, tv) for arch in archs}
      del configuration   # the compiler reads the script from disk
@@ -741,7 +741,7 @@ index c25e2e0663c6726ab5cf4bdd344255433e380b1e..6f674eafd7f7fedae1d3bc8e80b74eab
      for arch, key in keys.items():
          dst, kf = out / f'{arch}.mtl4a', work / f'key.{arch}'
 diff --git a/dm/gfx/tools/shader_split.py b/dm/gfx/tools/shader_split.py
-index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0eecaf52f 100644
+index 45709a79f439cadcaf982d86412b46d3a1e2c57e..e0bc39073b3ac77f391df294484ed0b0cda3b827 100644
 --- a/dm/gfx/tools/shader_split.py
 +++ b/dm/gfx/tools/shader_split.py
 @@ -1,6 +1,6 @@
@@ -752,7 +752,7 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
  #   · BNSH ('BNSH\0\0\0\0', carried by bfsha / particle effect esetb / UI layout blarc / embedded in main):
  #       +0x60 grsc block; +0x7c variation count u32; +0x80 variation table pointer (pointers are relative to the BNSH start). A variation is 0x40 bytes; the binary program is at +0x10;
  #       the binary program has 6 stage pointers from +0x08: vertex, hull, domain, geometry, pixel, compute; NVN2 adds ray tracing at +0x38 and task/mesh at +0x40/+0x48. The stage code descriptor has +0x08 control pointer, +0x10 code area pointer, +0x18 code area length, +0x1c control length.
-@@ -881,6 +881,7 @@ def pacx4_unchunk(d, at, chunks, n, where):
+@@ -883,6 +883,7 @@ def pacx4_unchunk(d, at, chunks, n, where):
      for c, u in chunks:
          raw = span(d, at, c, where)
          if c != u:
@@ -760,7 +760,7 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
              try: raw = lz4.block.decompress(raw, uncompressed_size=u)
              except lz4.block.LZ4BlockError as e: red(f'{where}: invalid LZ4 chunk at {at:#x}: {e}')
          out += raw
-@@ -2363,6 +2364,41 @@ def gfpak_members(d, label):
+@@ -2369,6 +2370,41 @@ def gfpak_members(d, label):
          if len(data) != usz: red(f'{label}#{i}: {len(data):#x} bytes, the entry says {usz:#x}')
          yield f'#{i}', data
  
@@ -802,7 +802,7 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
  NLG_DICT = bytes.fromhex('5824f3a9')
  def nlg_dict(d, label):
      """Next Level Games' archive index (Luigi's Mansion 3: '<name>.dict' beside '<name>.data', every RomFS file but the Wwise banks): u32 magic 0xa9f32458, u8 4, u8 1, u8 compressed,
-@@ -4225,11 +4261,14 @@ def unzs_dict(d, did, where):
+@@ -4251,11 +4287,14 @@ def unzs_dict(d, did, where):
      return zstd.decompress(d, zstd_dict=_ZD[did])
  
  def unzs(path):
@@ -819,9 +819,9 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
 +    try: return unzs_dict(d, did, path) if did else zstd.decompress(d)
 +    except zstd.ZstdError as e: red(f'{path}: invalid zstd stream ({e})')
  
- def frame_size(f):
-     """The uncompressed size a zstd or LZ4 frame header records, None when it records none"""
-@@ -4391,6 +4430,20 @@ def unity_text_glslc(x, base):
+ def nested_zstd(d, label, limit):
+     """Decode one or more concatenated zstd frames within a byte budget."""
+@@ -4439,6 +4478,20 @@ def unity_text_glslc(x, base):
          if b'\x91\x68\x86\x19' in b: out += glslc_shaders(b, f'{base}#{name}', need=False)
      return out
  
@@ -840,9 +840,9 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
 +        yield m
 +
  NEST = 16   # archives in archives scan_blob opens (SARC, PlatinumGames' DAT): real files nest a few. A damaged or crafted one could nest one per header's length, or have every
-             # member point at the same inner archive, its work doubling with each level. Two budgets of NEST times the file bound the work: left[0], the members a file's archives open,
-             # each counted by what it takes up in its archive, and left[1], what its Yaz0 members expand to. Counting a Yaz0 member by what it expands to in the first budget paid twice
-@@ -4523,14 +4576,7 @@ def scan_blob(d, label, out, depth=0, left=None):
+             # member point at the same inner archive, its work doubling with each level. Two budgets start at NEST times the file: left[0], the members a file's archives open,
+             # each counted by what it takes up in its archive, and left[1], what compressed members expand to (shared across the whole file). A decoded compressed member gives
+@@ -4616,14 +4669,7 @@ def scan_blob(d, label, out, depth=0, left=None):
          for nm, m in sarc_members(d, label): scan_blob(m, f'{label}/{nm}', out, depth + 1, left)
          return
      if d[:4] == b'NARC':   # Camelot's containers (cra.py): each member packed by its first byte, so its size says nothing about the budget above
@@ -858,7 +858,7 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
          return
      if d[:4] == b'BAHS': out.extend(bahs_shaders(d, label)); return
      if d[:4] == RGXD: out.extend(rgxd_shaders(d, label)); return
-@@ -4612,7 +4658,7 @@ def pixel_input_cover(shaders):
+@@ -4706,7 +4752,7 @@ def pixel_input_cover(shaders):
          k = min(ins, key=lambda k: (-len(ins[k] & left), k)); cover.append(k); left -= ins[k]
      return cover
  
@@ -867,7 +867,7 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
  # Unreal Engine 3's shader caches (ue3_shaders, '#UE3@'); MonoGame's effects, whose passes may name no vertex shader and keep the one bound (Celeste: 10 of its 13 effects draw through SpriteBatch's vertex shader, which is in main); Next Level Games'
  # archives (Luigi's Mansion 3 makes 5,317 programs of one stage each at boot); PlatinumGames' shader objects (Bayonetta 3: one stage each, pg_shader); control sections loose in main
  # (Advance Wars 1+2: Re-Boot Camp's Bink shaders, raw_shaders), which no file pairs; YEBIS's effect file (tfxo_shaders); and Sumo's Ninty_NX descriptors and NVNsh records, one stage
-@@ -5132,6 +5178,10 @@ def scan_file_in(args):
+@@ -5226,6 +5272,10 @@ def scan_file_in(args):
      if head[:8] == GFPAK:   # a Game Freak archive (gfpak_members): each entry scanned as a file of its own (the shaders are BNSH entries)
          for nm, m in gfpak_members(open(path, 'rb').read(), '/' + rel): scan_blob(m, f'/{rel}{nm}', found)
          return rel, uniq_keys(found), var_pairs(found), trees
@@ -878,7 +878,7 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
      if head[:4] == b'SRYK':
          import vbf
          with open(path, 'rb') as f:
-@@ -5347,6 +5397,16 @@ def plan_jobs(files, heads, romfs_v, main_v):
+@@ -5441,6 +5491,16 @@ def plan_jobs(files, heads, romfs_v, main_v):
      return big, files
  
  
@@ -893,9 +893,9 @@ index f40787d233eac84767e754c1ce5d5b5b40cfa592..3d2fb4b6c4000a37c2d8f47acc6d6dc0
 +    return out
 +
  def main():
-     romfs_l, main_l, pkg, mapout, factsout = sys.argv[1:6]
-     pairsout = sys.argv[6] if len(sys.argv) > 6 else None
-@@ -5501,6 +5561,9 @@ def main():
+     args = sys.argv[1:]
+     json_paths = args[:1] == ['--json-paths']
+@@ -5604,6 +5664,9 @@ def main():
              f.write('# kind: evidence  task / mesh / pixel shader triples within shader variations, for mesh pipeline bases (generated by dm/gfx/tools/shader_split.py, do not edit): M <TAB> task key (or -) <TAB> mesh key <TAB> pixel key (or -)\n')
              for a, b, c in sorted(mesh): f.write(f'M\t{a}\t{b}\t{c}\n')
      print(f'shaders: {len(rows)} (' + ', '.join(f'{STAGE_NAME[s]} {n}' for s, n in sorted(stat.items())) + '); sources ' + ', '.join(f'{g} {n}' for g, n in per_src.most_common()) + f'; compute shader answers {len(facts)} rows' + (f'; variation pairs {len(pairs)}' + (f' (+ {len(sp_cover)} cover)' if sp_cover else '') if pairsout else ''))
@@ -954,7 +954,7 @@ index 7999e63303f62f779144652884ee639c8dc7bf51..252ee614eb4e4e705e137ed5238e7c1a
          dirs = [(os.path.join(out, 'vk'), 'macosx', [MAC_MIN_FLAG])]   # the Mac host's minimum macOS, as the NVN chain's libraries (dmsh_chain.py MAC_MIN)
          # The iPhone library is compiled with -fmetal-math-mode=relaxed, as the NVN chain's (dm/ios/tools/ios_metal.py): the default fast mode lets the GPU compiler assume there is
 diff --git a/dm/tools/fuzz/fuzz_shader_split.py b/dm/tools/fuzz/fuzz_shader_split.py
-index 63666c9c9e7bfd2616bea1600abc0458f7b95ac2..c7d45fd78b09cc6c584dc91f56c5c7fa117921b0 100644
+index fb2809914edd3aa066d687ffa745b5913df8aa95..8fb41c30c6330cf53062f48e821006c97dcfd1ec 100644
 --- a/dm/tools/fuzz/fuzz_shader_split.py
 +++ b/dm/tools/fuzz/fuzz_shader_split.py
 @@ -11,6 +11,8 @@ import struct
@@ -981,20 +981,20 @@ index 63666c9c9e7bfd2616bea1600abc0458f7b95ac2..c7d45fd78b09cc6c584dc91f56c5c7fa
  
  
  def nxsd():
-@@ -173,7 +183,7 @@ def dbx():
+@@ -180,7 +190,7 @@ def nsgz():
  def seeds():
      b = bnsh()
      return {'bnsh': b, 'bahs': bahs(), 'mshd': mshd(), 'sarc-yaz0': yaz0(sarc([(b'shader.bnsh', b)])), 'glslc': glslc([VS]), 'glslc-program': glslc([VS, PS]),
--            'sdf': sdf(), 'arh1': arh1(), 'rgxd': rgxd(), 'nxsd': nxsd(), 'nxvs': nxsh(b'NXVS', VS), 'nxfs': nxsh(b'NXFS', PS), 'vfs2': vfs2(), 'dbx': dbx()}
-+            'sdf': sdf(), 'arh1': arh1(), 'rgxd': rgxd(), 'nxsd': nxsd(), 'nxvs': nxsh(b'NXVS', VS), 'nxfs': nxsh(b'NXFS', PS), 'vfs2': vfs2(), 'dbx': dbx(), 'narc': narc([b, b'\x94\0\0\0' + struct.pack('<I', len(b)) + lz4.block.compress(b, store_size=False)])}
+-            'sdf': sdf(), 'arh1': arh1(), 'rgxd': rgxd(), 'nxsd': nxsd(), 'nxvs': nxsh(b'NXVS', VS), 'nxfs': nxsh(b'NXFS', PS), 'vfs2': vfs2(), 'dbx': dbx(), 'nsgz': nsgz()}
++            'sdf': sdf(), 'arh1': arh1(), 'rgxd': rgxd(), 'nxsd': nxsd(), 'nxvs': nxsh(b'NXVS', VS), 'nxfs': nxsh(b'NXFS', PS), 'vfs2': vfs2(), 'dbx': dbx(), 'nsgz': nsgz(), 'narc': narc([b, b'\x94\0\0\0' + struct.pack('<I', len(b)) + lz4.block.compress(b, store_size=False)])}
  
  
  def check(data):
 diff --git a/dm/tools/shader_cache.py b/dm/tools/shader_cache.py
-index 73a04532b880040ba5ae9a28673641d98d86fa50..42b5fcf893985da14120bd95eb1bff8159383d39 100644
+index ade7e8cfc1e3562738e0bd44d30c5c8de8b81eaf..9e9f2756d2a3090216bd7bb1c252dc98d6cd91f2 100644
 --- a/dm/tools/shader_cache.py
 +++ b/dm/tools/shader_cache.py
-@@ -273,6 +273,24 @@ class Store(_Files):
+@@ -276,6 +276,24 @@ class Store(_Files):
          self._run('PRAGMA incremental_vacuum')
          return len(gone), sum(size.get(d, 0) for d in gone)
  
@@ -1019,17 +1019,17 @@ index 73a04532b880040ba5ae9a28673641d98d86fa50..42b5fcf893985da14120bd95eb1bff81
      def delete_prefix(self, prefix):
          """Remove every entry whose name starts with prefix, and the bytes nothing names any more, giving their pages back (dmsh_build.py's staged outputs once its image is written)"""
          with self.lock:
-@@ -388,7 +406,7 @@ class Served:
+@@ -391,7 +409,7 @@ class Served:
      where that worker's thread stood when the build finished its shaders in threads, on the one connection and under its lock. A worker's batch is that thread's batch, so it is whole
      or absent as before, and is rolled back when the worker dies inside it.
      Made before the fork; start() here once every worker is forked (it starts threads); worker() in each worker gives its store (get, has, names, put, put_file, to_file, delete_prefix, batch, full)"""
--    OPS = ('get', 'has', 'names', 'put', 'delete_prefix')
-+    OPS = ('get', 'has', 'names', 'put', 'delete_prefix', 'touch')   # touch: NXForge's shared Metal cache (dmsh_mtlcache.py)
+-    OPS = ('get', 'has', 'names', 'blob_ids', 'put', 'delete_prefix')
++    OPS = ('get', 'has', 'names', 'blob_ids', 'put', 'delete_prefix', 'touch')   # touch: NXForge's shared Metal cache (dmsh_mtlcache.py)
  
      def __init__(self, store, n):
          ctx = multiprocessing.get_context('fork')
-@@ -448,6 +466,7 @@ class Remote(_Files):
-     def names(self, prefix): return self._call('names', prefix)
+@@ -452,6 +470,7 @@ class Remote(_Files):
+     def blob_ids(self, prefix): return self._call('blob_ids', prefix)
      def put(self, name, data, when=None): self._call('put', name, data, when)
      def delete_prefix(self, prefix): self._call('delete_prefix', prefix)
 +    def touch(self, name): self._call('touch', name)   # NXForge: Store.touch
@@ -1088,10 +1088,10 @@ index e836b3088eaabec61e4606bb3200c45276610162..0454d8fbb71e3b39ccd859d0122b8a08
  class NspScript(unittest.TestCase):
      def setUp(self):
 diff --git a/dm/tools/tests/test_pso_offline.py b/dm/tools/tests/test_pso_offline.py
-index 38894d3ed9eab043a93b2d6dd2adaf9f04ef4132..a1000de7dcbea6532c279f85b63a1e3a6e3546d7 100644
+index 817c1f1f9e7bafbd629ed027d81d1ecc41efbe1b..1985bab65208b237b95fece04a993ff00189cc05 100644
 --- a/dm/tools/tests/test_pso_offline.py
 +++ b/dm/tools/tests/test_pso_offline.py
-@@ -737,10 +737,10 @@ class Build(BuildCase):
+@@ -753,10 +753,10 @@ class Build(BuildCase):
          with mock.patch.object(po, 'plan', return_value=(bases, [], {})), mock.patch.object(self, 'fake_run', runner):
              self.main('--batch-size', '1', '--os-min', '27.0')
          groups = self.work / 'batches.applegpu_g18p'
@@ -1104,7 +1104,7 @@ index 38894d3ed9eab043a93b2d6dd2adaf9f04ef4132..a1000de7dcbea6532c279f85b63a1e3a
  
      def test_compute_pipelines_are_groups_of_their_own(self):
          (self.prof / 'shader_map.tsv').write_text('package\tindex\tstage\tdm_ctl_sha16\tsource\ncs\t0\tcompute\tk\tx\ncs\t1\tcompute\tkc\tx\n')
-@@ -755,7 +755,7 @@ class Build(BuildCase):
+@@ -771,7 +771,7 @@ class Build(BuildCase):
              self.assertEqual(observed, [('compile', ['main0_z']), ('compile', []), ('merge', 2)])   # the bases, the compute pipelines, one archive
              self.assertEqual(computes(), ['lib:k_b'])   # kc has function constants: left to the host
              self.assertIn('compute\t1\n', (self.out / 'archive.tsv').read_text())
@@ -1113,7 +1113,7 @@ index 38894d3ed9eab043a93b2d6dd2adaf9f04ef4132..a1000de7dcbea6532c279f85b63a1e3a
              observed.clear(); self.main('--os-min', '27.0'); self.assertEqual(observed, [])   # unchanged: the archive reused
              (self.prof / 'shader_pairs.tsv').write_text('v\tc\nv\tf\n')   # other pair lists, the same bases and compute pipelines: the archive reused
              observed.clear(); self.main('--os-min', '27.0'); self.assertEqual(observed, [])
-@@ -774,14 +774,58 @@ class Build(BuildCase):
+@@ -790,14 +790,58 @@ class Build(BuildCase):
          self.assertTrue((self.out / 'applegpu_g18p.mtl4a').is_file())
          self.assertEqual((self.out / 'rest_pairs.tsv').read_text(), 'v\tc\n')
  
@@ -1202,7 +1202,7 @@ index d24a5f9ab302b78705af53d0331201813f0e377d..7583411cef30aa96d05151fc13bdbe0b
      def test_a_header_that_cannot_be_used_is_said_once_and_compiles_stay_plain(self):
          with mock.patch.object(dmsh_pch, 'make', return_value=(None, 'a test shader compiled with it differs')) as make, mock.patch.object(subprocess, 'run', return_value=self.result()) as run, mock.patch('builtins.print') as say:
 diff --git a/dm/tools/tests/test_shader_toolchain_cache.py b/dm/tools/tests/test_shader_toolchain_cache.py
-index 998590f6f44d20daad4f7254d822f4db4022dab7..0bc4fb55286a22c500f952a4ac2cd0b4c608d08d 100644
+index 6fbf2e5d77101206d2aaa1378145809fb9d525c2..fc3be8f8b1257caf12c3a7a4362045e8e3a9deb6 100644
 --- a/dm/tools/tests/test_shader_toolchain_cache.py
 +++ b/dm/tools/tests/test_shader_toolchain_cache.py
 @@ -3,6 +3,7 @@ Exercise the builder's real key/restore functions without game files or Xcode.
@@ -1223,7 +1223,7 @@ index 998590f6f44d20daad4f7254d822f4db4022dab7..0bc4fb55286a22c500f952a4ac2cd0b4
          (root / 'out').mkdir()
          names = {'tool_fingerprint', 'shader_key', 'cache_path', 'cache_outputs', 'restore_cache', 'publish_cache', 'atomic_json', 'cache_meta_path',
                   'vs_pad', 'partner_inputs', 'label_dir', 'output', 'commit', 'publish_library', 'owned_output', 'submit', 'results'}
-@@ -668,5 +670,65 @@ class BuildProgress(unittest.TestCase):
+@@ -710,5 +712,65 @@ class BuildProgress(unittest.TestCase):
          self.assertEqual(list(dict.fromkeys(e['step'] for e in partial_seen)), ['writing the library image'])
  
  

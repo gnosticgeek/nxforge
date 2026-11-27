@@ -8,16 +8,16 @@ Subject: oot-foliage: Ocarina of Time's grass and ground cover can be switched
 From brad-n/TVPort 8609a1cb by Brad Norman (MIT), on upstream's frame step rule: state page +0x300 (TVPort's +0xb0 is upstream's wide-screen state here).
 ---
  dm/games/0400486024DEC000/README.md  |  4 +++
- dm/games/0400486024DEC000/patches.py | 52 +++++++++++++++++++++++++++-
+ dm/games/0400486024DEC000/patches.py | 51 +++++++++++++++++++++++++++-
  dm/games/settings.tsv                |  1 +
  dm/host/loader.c                     |  6 ++++
  docs/agents/game-patches.md          |  1 +
  docs/env_switches.tsv                |  1 +
  docs/settings.md                     |  4 +++
- 7 files changed, 68 insertions(+), 1 deletion(-)
+ 7 files changed, 67 insertions(+), 1 deletion(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 29477159aa6592340bd092513941908a10385949..028e0a1e854ce65dafc9dac42ee772025843fc0b 100644
+index 8f281822853452b42c250d7d01264bf8ecab792f..eceef54dda0e63cbe6bd4bdd64572159ac7a5a15 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -162,6 +162,10 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
@@ -32,7 +32,7 @@ index 29477159aa6592340bd092513941908a10385949..028e0a1e854ce65dafc9dac42ee77202
  
  - Loading the same v131072 save into Kokiri Forest outside Link's house peaked at 9.777 GiB of macOS physical footprint on `f76fe0c1` and 9.793 GiB on `de348580` (+16 MiB, +0.16%). Both runs on the 48 GB M4 Pro MacBook Pro (macOS 27.2.1) used the warmed system Metal cache, the same route shader image with conservative uniform-buffer defaults, and frames 2000–3100. Pipeline archives, prewarm and shader prefetch were off. Other shader compiles were active on the Mac in both runs. A second fixed-build run peaked at 9.863 GiB. The matched difference is smaller than that run-to-run spread, so the change in peak footprint is inconclusive for this load. [PR #2714](https://github.com/seedds/nxnative/pull/2714)
 diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
-index a267a6b76d6b6bfbf2400fb6ec2f2b5766461aea..3684e864f83dfddbdb467ad8b9d299d959ba6002 100644
+index a884db0a2c009a7e98017c6fd57c7a5872e3b5e0..e52b681392751632a34f7eacee584a2d94b986f4 100644
 --- a/dm/games/0400486024DEC000/patches.py
 +++ b/dm/games/0400486024DEC000/patches.py
 @@ -3,6 +3,12 @@
@@ -48,12 +48,15 @@ index a267a6b76d6b6bfbf2400fb6ec2f2b5766461aea..3684e864f83dfddbdb467ad8b9d299d9
  # The game's frame ratio. Once a frame the function at main+0x6e6be0 (v131072) divides its base rate (60.0, or 30.0 while bit 0 of [x21+0x24f] is set) by the int frame rate at
  # [x21+0x2c8] (fdiv s8,s1,s0 at +0xe4) and hands the result to the time object (main+0x3b4e300: ratio at +0x10, 1 / ratio at +0x14, round(60 / ratio) at +0x1c), which the game
  # steps by; the frame's own time never enters it, so a frame that takes two vsyncs at rate 60 plays at half speed. The stub gives the ratio the host's step instead: step × base / unit,
-@@ -44,6 +50,46 @@ def frame_step(ctx):
+@@ -44,10 +50,49 @@ def frame_step_at(ctx, at):
      screen_shape(ctx)
      heap_retry(ctx)
      screen_wide(ctx)
 +    foliage(ctx)
-+
+ # The division's place in each build's function: +0xe4 on v131072; +0x108 on v0 (1.0.0, main+0x6b5900, 0x9a8 bytes), whose function loads three more globals into x21, x23 and x24
+ # before it and saves x23 to x25 for them. The rest is the same: s1 the base rate, s0 written again on every path before it is read, neither x16 nor x17 used
+ def frame_step(ctx): frame_step_at(ctx, 0xe4)
+ def frame_step_v0(ctx): frame_step_at(ctx, 0x108)
 +# Foliage off (state +0x300, u32 written by the loader: DM_FOLIAGE=off, 1; 0 = the game's): a quality trade for slower GPUs. Grass, ferns, clover, the moss fur on logs and the
 +# other ground cover are game::foliage, one module (its singleton at main+0x4e22540 on v131072; Pack/Foliage.pack, a 248 MB "Foliage Scene Heap") with a class per model type
 +# (Turf, Turf1, Moss, Frost, Forest, Stone, Leaf, Flower, impostors ...), whose slot 8 says whether that type is on: the module's per-frame calc, the render list, the draws and
@@ -95,17 +98,17 @@ index a267a6b76d6b6bfbf2400fb6ec2f2b5766461aea..3684e864f83dfddbdb467ad8b9d299d9
  
  # The game's dynamic resolution (game__gfx__DynamicResolutionParam: LoadThreshold, ReduceCounterMax, IncreaseCounterMax and a list of levels, each a ResolutionReduceScale and a
  # Priority; on v131072 levels 0..9 at 0.75..0.333 of 2048x1152, 1536x864 to 683x384). Its update (main+0x805aa0) reads the frame's GPU load (about 0.2 ms a unit) into +0x8, subtracts
-@@ -529,7 +575,8 @@ MATCH_FRAME_STEP = {'main': [
+@@ -533,7 +578,8 @@ MATCH_FRAME_STEP = {'main': [
                  'wide: camera update A': {'size': 0x1700, 'fingerprints': ['efc2b7111d6387f88960348730d936b4bec9e6d08a19f67bd33e75d752f61df8']},   # main+0x4c48c0
                  'wide: camera update B': {'size': 0xa40, 'fingerprints': ['876b8ff1dc66ff0cb867028d9043fc71adbfac31acc093d040644550e37ac770']},   # main+0x2e1b960
                  'wide: camera update C': {'size': 0x638, 'fingerprints': ['755b131403f6a7d8bb991716f403bb482bbcee61ec0dbf2f04421cc74a749166']},   # main+0x2e1c3a0
 -                **screen_shape_functions}},
 +                **screen_shape_functions,
 +                'foliage calc': {'size': 0x6f8, 'fingerprints': ['34cac4f1d8c1a00d12efcb767c1213da3d6c5d692cb61254da2cb1b926d49891']}}},   # main+0x2c00a40
- ]}
- 
- # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
-@@ -597,6 +644,9 @@ BINDING = [
+     # v0 (1.0.0): the same frame ratio and dynamic resolution, their data addresses moved (the level function's blocks laid out differently, the same fields and constants, a leaf,
+     # called twice from the update; the update stores the load at +0x8 and keeps the level at +0x174). Its view-size update and display setup differ from v131072's, so there is
+     # no render scale or screen shape on it. Without this the game's own dynamic resolution runs and drops the 3D views toward its floor (game note, Dynamic resolution)
+@@ -607,6 +653,9 @@ BINDING = [
      {'what': 'wide screen: the swap chain and frame buffer sizes and the scene cameras\' aspect (DM_SCREEN_WIDE)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
       'why': "the game's own size constants and camera updates, each found by its function's fingerprint on any build that keeps all five; switchable (DM_SCREEN_WIDE)",
       'checked': 'v131072 main: one function with each fingerprint, the sites and x16 / x17 read by disassembly; on an M5 Pro at 3440x1440 the title, the load menu and Goron City rendered 3440x1440 with 2580x1080 3D targets, the HUD at the screen\'s edges and the scene at 16:9\'s proportions with more at the sides (2026-11-12)'},
@@ -116,7 +119,7 @@ index a267a6b76d6b6bfbf2400fb6ec2f2b5766461aea..3684e864f83dfddbdb467ad8b9d299d9
  
  # A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index 748c7d9200d945819fc439e5e9d17556a532cb48..e3bbeefc6aae6f2993cc7030a47a891bd8adcafe 100644
+index 014d27c06af2571c550ac95b03f27be23084bec1..9196c55d1d2008c63946a1f953970717e78212a2 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -44,6 +44,7 @@ DM_MIC_GAIN	range	1:8:0.5	1	mac-mic	Controls	Microphone gain		needs=DM_MIC=1
@@ -145,11 +148,11 @@ index 7a3fcc99a606c786338df8e08f5558ab5b2be3f2..79504ce712c0184d7e40b11f0451e9d9
      // (Breath of the Wild 1.9.0's patches.py) render that shape: the output keeps its width (1920) and takes the height that gives the ratio, a multiple of 48 so the
      // 2/3-size layout space (1280 wide) stays whole: 1.43 → 1920x1344 and 1280x896. State +0x48 u32 output height, +0x4c u32 layout height, +0x50 its float; 0 = 16:9
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index dd8cf60962aba4d048667017a68d27430ddcf68c..c6d5c5070046cdf058beb39d9befed17f329572e 100644
+index b2b289e291fc97f6b36c1017400bf90b1da60b26..020fc8383386bc4a1868c22d08d3b47bcf4828cf 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
-@@ -690,6 +690,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
- - **`game`**, rendering, at goal, checked: v131072 main: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields read by disassembly, the fields read in play (2026-11-08); the climb run natively against a model of the update and in play to full size (2026-11-09); 30 fps threshold scaling checked in test_ocarina_drs.py and in play at 30 fps on an M2 Air (PR #1954, 2026-11-16): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
+@@ -729,6 +729,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ - **`game`**, rendering, at goal, checked: v131072 and v0 mains: one function with each fingerprint (the level function a leaf, x2..x11 / x16 / x17 / s0..s2 free), its callers, the update and the controller fields (+0x8, +0x10, +0x174, +0x1a0) read by disassembly, the fields read in play (2026-11-08, v0 2026-11-27); the climb run natively against a model of the update and in play to full size (2026-11-09); 30 fps threshold scaling checked in test_ocarina_drs.py and in play at 30 fps on an M2 Air (PR #1954, 2026-11-16): dynamic resolution: full size, or a climb on the load measured at each level. The game's own dynamic-resolution level function and update, found by their functions' fingerprints on any build that keeps both; switchable (DM_DYNAMIC_RESOLUTION)
  - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (main+0x31d3200, 0xfc8 bytes, one caller main+0x31c00cc); the status ubfx at +0xce4, the store at +0xd48 (the only float store to #0xe5c in main; s0 computed from the update's w0 at +0xd34, never reread from +0xe5c) and the size loop clearing bit 3 of +0xe2c read by disassembly (2026-11-09, 2026-11-23); guard, status and store stubs executed natively on ARM64 in test_ocarina_drs.py: render scale: the 3D views at a fraction of the game's own size (DM_RENDER_SCALE). The game's own view-size update (its test of the dynamic-resolution status and its scale store), found by its function's fingerprint on any build that keeps it; the level function's stub above holds level 0 under a scale
  - **`game`**, rendering, at goal, checked: v131072 main: one function per fingerprint, free registers read at each site; indexed pane names, classes and dimensions checked against the UIL records. In-place Vert+ projection-object updates (and DM_SCREEN_FOV=off Hor-) executed on ARM64 in test_ocarina_screen_shape.py and verified in Kakariko Village on Mac at 16:9, 16:10 and 4:3 (2026-11-23); 0/3 projection fingerprint matches in TOTK, BOTW and Mario Kart World; physical iPad/iPhone retest pending: screen shape: taller render targets, cameras, Layout2 panes and a 16:9 movie viewport (DM_SCREEN_ASPECT). The game's own display setup, camera, pane and movie code; installed together after every function matches. Indexed pane edits verify the authored name, class and dimensions they use
 +- **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags' readers (turf draw lists, per-draw callbacks, the type classes' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10): foliage off: the foliage module's grass / forest disables and type hide bits set each frame (DM_FOLIAGE). The foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default
@@ -157,7 +160,7 @@ index dd8cf60962aba4d048667017a68d27430ddcf68c..c6d5c5070046cdf058beb39d9befed17
  - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
  - **function-matched** (`main` of builds without CUTS): movie update cap: 3 pictures a frame, the frame step's largest hold, in place of the limit (2), which also sizes the decoder pipeline: 1 function, 1 cut
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 0561383387a20620c494f62e22db2754fe9a7a28..7e9cbc398e1bec1f4398d11155de2eaee1371607 100644
+index 737dedbb642cca22bc2f9edea401107290483193..b403d0521a4ed2873dcb065d1ab4b4129f5383eb 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -53,6 +53,7 @@ DM_EXL_TRACE	diagnostic	`=1` logs the first four code words written per view by
@@ -169,7 +172,7 @@ index 0561383387a20620c494f62e22db2754fe9a7a28..7e9cbc398e1bec1f4398d11155de2eae
  DM_FORCE_STRICT	diagnostic	`=1` makes the loader fail on forced-hook entries no module references, instead of only noting them (for checking a mistyped list)
  DM_FPS	switch	`30` or `60` pins the frame rate the display link and frame pacing aim for; otherwise it follows the game's present interval (60, or 30 when the game asks for 30)
 diff --git a/docs/settings.md b/docs/settings.md
-index eac494909c944534f5dda67691b27995aad1971c..8ccf19af4166b3d28e96da2cdcb9dc1b606559cc 100644
+index f40a1d5d8ed236b8cad2dd243fecee626c98eb46..31795bcb64eae506606d1cd37e51993dd56c64ba 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -104,6 +104,10 @@ iPhone and iPad. **Automatic**, the default, turns with the device as before: la

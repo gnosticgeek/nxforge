@@ -18,10 +18,10 @@ Check: make -C dm/gfx/tests GAME=<id> check_t_rt_lossy (Mac).
  create mode 100644 dm/gfx/tests/t_rt_lossy.m
 
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 29fc531322befd0a9bf9c2f9180f9b154396d652..776569197d103b9338d8bcd96a95a551ee29d3a3 100644
+index c65a8f3a654c2214b50acdb488664525e09c956e..33a4c1c8d5b2b45af1e70bbf2a1a48e712bffb7d 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
-@@ -4222,6 +4222,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
+@@ -4304,6 +4304,24 @@ static inline void tex_lsize(const tex_t *t, unsigned l, uint32_t *w, uint32_t *
      *w = l < 32 ? MAX(t->d.width >> l, 1u) : 1u; *h = l < 32 ? MAX(H >> l, 1u) : 1u;
      if (z) *z = l < 32 ? MAX(Z >> l, 1u) : 1u;
  }
@@ -46,7 +46,7 @@ index 29fc531322befd0a9bf9c2f9180f9b154396d652..776569197d103b9338d8bcd96a95a551
  // In-place upgrade: when the original texture was not created with PixelFormatView (off by default, to keep Apple GPU lossless compression) but a different-format view is needed, create a new one with the original spec + PixelFormatView, copy over every slice × level, and replace the registration.
  // Count: across the 4 screens character select / camp / wilderness / combat, 17473 textures needed a different-format view 0 times, so this is a fallback and does not rely on predicting which textures need it
  // The same upgrade adds render-target usage for a whole-level clear (clear_tex) of a texture made without it: Monster Hunter Rise clears a 32x80 packaged one
-@@ -7082,7 +7100,7 @@ static void *tex_mtl_resolve(const tex_t *ct, int *in_storage, id<MTLTexture> __
+@@ -7268,7 +7286,7 @@ static void *tex_mtl_resolve(const tex_t *ct, int *in_storage, id<MTLTexture> __
          mt = pair_texture(t, d);   // (neither filled: their storage is shared)
          if (!mt) mt = image_texture(t, d);
          if (!mt) mt = pool_heap_texture(t, d);
@@ -56,10 +56,10 @@ index 29fc531322befd0a9bf9c2f9180f9b154396d652..776569197d103b9338d8bcd96a95a551
          if (!mt) { RED_ONCE(2, "failed to create MTLTexture %ux%u format %#x target %d", t->d.width, t->d.height, t->d.format, t->d.target); return NULL; }
      }
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index e7bdf3fc907e6d5aec0252eecfd2c13ce8a95ed7..6cac1e87a30f483d6b1decbc65e484c54d08c645 100644
+index dba7553b93c93a5ce21b8db82d7c1f78808c7b32..71e5ba1b674877cfe6c2cbcaf81b58635c6b3399 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
-@@ -1093,3 +1093,10 @@ t_cpuprof: t_cpuprof.m $(MTL_T_DEP)
+@@ -1112,3 +1112,10 @@ t_cpuprof: t_cpuprof.m $(MTL_T_DEP)
  check_t_cpuprof: t_cpuprof
  	MTL_DEBUG_LAYER=1 DM_NVN_CPUPROF=1 DM_NVN_ENC_THREAD=0 ./t_cpuprof
  	MTL_DEBUG_LAYER=1 DM_NVN_CPUPROF=1 DM_NVN_ENC_THREAD=1 ./t_cpuprof
@@ -166,10 +166,10 @@ index 0000000000000000000000000000000000000000..7cf2f26fd2b3b8bbf7c0e4b181a66429
 +    printf("%d checks, %d failures\n", checks, failed); return failed != 0;
 +} }
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 8f3ffeabd1a05c9084437e727f397924a53556cd..19aa2f40184c0c415bd21818871c921b1991e2e5 100644
+index 7414c810ade3218d97d18a6c15b183a44ddae5b1..6fafe1e2a8cdbd0c4231ee04cd54cc402a5ac97a 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -259,6 +259,7 @@ DM_NVN_ROP_ROUND	switch	`0` leaves float colours going into 8-bit, 16-bit and RG
+@@ -263,6 +263,7 @@ DM_NVN_ROP_ROUND	switch	`0` leaves float colours going into 8-bit, 16-bit and RG
  DM_NVN_RP_AREA	switch	`0` makes passes on targets of 16 M pixels or more cover the whole target, as before; by default a draw pass that loads what it keeps stops at the far corner of its scissor when that is at most half the target
  DM_NVN_RT_CONTINUE	switch	`0` ends the pass whenever the game sets render targets, as before; by default SetRenderTargets naming the open pass's targets continues the pass
  DM_NVN_RT_DEAD	switch	`0` keeps every shared render target of a GPU-only pool while a texture object names it, as before; by default one another target drew over and that has not been used for 3 s is released once a second, and made again at its next use (`ab` alternates it with the `DM_AB` phases)

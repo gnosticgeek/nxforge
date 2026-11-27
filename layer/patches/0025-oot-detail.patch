@@ -9,17 +9,17 @@ From brad-n/TVPort ba9cf51e by Brad Norman (MIT): the stubs at state page +0x304
 other functions 4 MB apart (Ocarina's rule now has 16). TVPort's DM_AB_STATE measurement switch is not taken.
 ---
  dm/games/0400486024DEC000/README.md  |   2 +
- dm/games/0400486024DEC000/patches.py | 107 ++++++++++++++++++++++++++-
+ dm/games/0400486024DEC000/patches.py | 109 ++++++++++++++++++++++++++-
  dm/games/settings.tsv                |   2 +
  dm/host/loader.c                     |  13 ++++
  dm/tools/tests/test_patches.py       |  12 +++
  docs/agents/game-patches.md          |  21 +++++-
  docs/env_switches.tsv                |   2 +
  docs/settings.md                     |   8 ++
- 8 files changed, 163 insertions(+), 4 deletions(-)
+ 8 files changed, 165 insertions(+), 4 deletions(-)
 
 diff --git a/dm/games/0400486024DEC000/README.md b/dm/games/0400486024DEC000/README.md
-index 028e0a1e854ce65dafc9dac42ee772025843fc0b..93fc294f6fd3c3dcfef3c45ed0b563a0ff2e5607 100644
+index eceef54dda0e63cbe6bd4bdd64572159ac7a5a15..18deecbca16758a2cd1558dd21a6b5cd7bc0690a 100644
 --- a/dm/games/0400486024DEC000/README.md
 +++ b/dm/games/0400486024DEC000/README.md
 @@ -166,6 +166,8 @@ From the same Kakariko save, walk into Hyrule Field and continue towards Castle
@@ -32,19 +32,25 @@ index 028e0a1e854ce65dafc9dac42ee772025843fc0b..93fc294f6fd3c3dcfef3c45ed0b563a0
  
  - Loading the same v131072 save into Kokiri Forest outside Link's house peaked at 9.777 GiB of macOS physical footprint on `f76fe0c1` and 9.793 GiB on `de348580` (+16 MiB, +0.16%). Both runs on the 48 GB M4 Pro MacBook Pro (macOS 27.2.1) used the warmed system Metal cache, the same route shader image with conservative uniform-buffer defaults, and frames 2000–3100. Pipeline archives, prewarm and shader prefetch were off. Other shader compiles were active on the Mac in both runs. A second fixed-build run peaked at 9.863 GiB. The matched difference is smaller than that run-to-run spread, so the change in peak footprint is inconclusive for this load. [PR #2714](https://github.com/seedds/nxnative/pull/2714)
 diff --git a/dm/games/0400486024DEC000/patches.py b/dm/games/0400486024DEC000/patches.py
-index 3684e864f83dfddbdb467ad8b9d299d959ba6002..f45ca19b86daaaf2391904354cc2c3ccf90d55a0 100644
+index e52b681392751632a34f7eacee584a2d94b986f4..102b5fa5796c17646418ac3c37ebcb7b15f088a7 100644
 --- a/dm/games/0400486024DEC000/patches.py
 +++ b/dm/games/0400486024DEC000/patches.py
-@@ -51,6 +51,8 @@ def frame_step(ctx):
+@@ -51,10 +51,14 @@ def frame_step_at(ctx, at):
      heap_retry(ctx)
      screen_wide(ctx)
      foliage(ctx)
 +    model_lod(ctx)
 +    shadow_cascades(ctx)
- 
++
+ # The division's place in each build's function: +0xe4 on v131072; +0x108 on v0 (1.0.0, main+0x6b5900, 0x9a8 bytes), whose function loads three more globals into x21, x23 and x24
+ # before it and saves x23 to x25 for them. The rest is the same: s1 the base rate, s0 written again on every path before it is read, neither x16 nor x17 used
+ def frame_step(ctx): frame_step_at(ctx, 0xe4)
+ def frame_step_v0(ctx): frame_step_at(ctx, 0x108)
++
  # Foliage off (state +0x300, u32 written by the loader: DM_FOLIAGE=off, 1; 0 = the game's): a quality trade for slower GPUs. Grass, ferns, clover, the moss fur on logs and the
  # other ground cover are game::foliage, one module (its singleton at main+0x4e22540 on v131072; Pack/Foliage.pack, a 248 MB "Foliage Scene Heap") with a class per model type
-@@ -90,6 +92,99 @@ def foliage(ctx):
+ # (Turf, Turf1, Moss, Frost, Forest, Stone, Leaf, Flower, impostors ...), whose slot 8 says whether that type is on: the module's per-frame calc, the render list, the draws and
+@@ -93,6 +97,99 @@ def foliage(ctx):
      ctx.put(base, [B(base, start)], 'foliage off: the module\'s grass / forest disables and type hide bits set each frame (state +0x300, DM_FOLIAGE=off; 0 = the game\'s)')
      ctx.capabilities.add('FOLIAGE')
  
@@ -144,7 +150,7 @@ index 3684e864f83dfddbdb467ad8b9d299d959ba6002..f45ca19b86daaaf2391904354cc2c3cc
  
  # The game's dynamic resolution (game__gfx__DynamicResolutionParam: LoadThreshold, ReduceCounterMax, IncreaseCounterMax and a list of levels, each a ResolutionReduceScale and a
  # Priority; on v131072 levels 0..9 at 0.75..0.333 of 2048x1152, 1536x864 to 683x384). Its update (main+0x805aa0) reads the frame's GPU load (about 0.2 ms a unit) into +0x8, subtracts
-@@ -576,7 +671,11 @@ MATCH_FRAME_STEP = {'main': [
+@@ -579,7 +676,11 @@ MATCH_FRAME_STEP = {'main': [
                  'wide: camera update B': {'size': 0xa40, 'fingerprints': ['876b8ff1dc66ff0cb867028d9043fc71adbfac31acc093d040644550e37ac770']},   # main+0x2e1b960
                  'wide: camera update C': {'size': 0x638, 'fingerprints': ['755b131403f6a7d8bb991716f403bb482bbcee61ec0dbf2f04421cc74a749166']},   # main+0x2e1c3a0
                  **screen_shape_functions,
@@ -154,10 +160,10 @@ index 3684e864f83dfddbdb467ad8b9d299d959ba6002..f45ca19b86daaaf2391904354cc2c3cc
 +                'model lod': {'size': 0x4a8, 'fingerprints': ['739352a7c0fe91d8a0ab0ab62096f5735eafd8577e8b907136f0904367e65440']},   # main+0x31d48b0
 +                'model lod inline': {'size': 0x860, 'fingerprints': ['9689ff1833cbbb9e47ffd604d9e1bca6ef31a73c2f7520492e9681ca59397461']},   # main+0x31d4d80
 +                'scene config binder': {'size': 0xbe1c, 'fingerprints': ['9a6c3c997131c75bd152e7de43e419351d80f8dd07169234009d6fee266f707f']}}},   # main+0x35667c0
- ]}
- 
- # The movie player's pictures per frame. Once a frame the player's update (main+0x3b5ca60 on v131072) adds the frame's time (the time object's +0x18, the frame ratio / 60 s, times
-@@ -647,6 +746,12 @@ BINDING = [
+     # v0 (1.0.0): the same frame ratio and dynamic resolution, their data addresses moved (the level function's blocks laid out differently, the same fields and constants, a leaf,
+     # called twice from the update; the update stores the load at +0x8 and keeps the level at +0x174). Its view-size update and display setup differ from v131072's, so there is
+     # no render scale or screen shape on it. Without this the game's own dynamic resolution runs and drops the 3D views toward its floor (game note, Dynamic resolution)
+@@ -656,6 +757,12 @@ BINDING = [
      {'what': 'foliage off: the foliage module\'s grass / forest disables and type hide bits set each frame (DM_FOLIAGE)', 'now': 'game', 'goal': 'game', 'purpose': 'rendering',
       'why': "the foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default",
       'checked': 'v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags\' readers (turf draw lists, per-draw callbacks, the type classes\' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10)'},
@@ -171,7 +177,7 @@ index 3684e864f83dfddbdb467ad8b9d299d959ba6002..f45ca19b86daaaf2391904354cc2c3cc
  
  # A full model heap (DM_HEAP_RETRY, on by default). The game's OptimizeChangeBank thread rebuilds a model's material block (main+0x4366e0) with memory from small
 diff --git a/dm/games/settings.tsv b/dm/games/settings.tsv
-index e3bbeefc6aae6f2993cc7030a47a891bd8adcafe..43c354859df7be3ee7557e9a6c4f47ae2287d221 100644
+index 9196c55d1d2008c63946a1f953970717e78212a2..e8d36295173432dd64be139ff182e427e641e270 100644
 --- a/dm/games/settings.tsv
 +++ b/dm/games/settings.tsv
 @@ -45,6 +45,8 @@ DM_SCREEN_ASPECT	choice	0=16:9 (Switch),1.6=16:10?platform:mac,1.6=MacBook (16:1
@@ -230,7 +236,7 @@ index 6ef5c650882711e8701d512eb75a7663525eb998..c2dc7cf1224963051f8646f7911ad199
  if __name__ == '__main__':
      unittest.main()
 diff --git a/docs/agents/game-patches.md b/docs/agents/game-patches.md
-index c6d5c5070046cdf058beb39d9befed17f329572e..bd5b192042e56d9c5df5f2d64cfb0abb527ffeef 100644
+index 020fc8383386bc4a1868c22d08d3b47bcf4828cf..4090b44855940bb526839ffc8992bf705d89005c 100644
 --- a/docs/agents/game-patches.md
 +++ b/docs/agents/game-patches.md
 @@ -21,7 +21,7 @@ A patch's binding is what its correctness is anchored to, from the loosest. A pa
@@ -265,9 +271,9 @@ index c6d5c5070046cdf058beb39d9befed17f329572e..bd5b192042e56d9c5df5f2d64cfb0abb
  | [METAL GEAR SOLID: Peace Walker - Master Collection Version (Game)](#metal-gear-solid-peace-walker---master-collection-version-game) | 0 | 0 | 3 | 0 | 0 | `game` |
 +| [Mina the Hollower](#mina-the-hollower) | 3 | 0 | 0 | 0 | 0 | `build` → unreviewed |
  | [Monster Hunter Rise](#monster-hunter-rise) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
- | [Need For Speed™ Hot Pursuit Remastered](#need-for-speed-hot-pursuit-remastered) | 1 | 0 | 0 | 0 | 5 | `build` → `game`, `build` → `engine` |
- | [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](#nierautomata-the-end-of-yorha-edition-010056b015fe8000) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
-@@ -416,6 +418,17 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+ | [NARUTO SHIPPUDEN™: Ultimate Ninja® STORM 3 Full Burst](#naruto-shippuden-ultimate-ninja-storm-3-full-burst) | 0 | 0 | 0 | 1 | 0 | `game` |
+ | [NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS](#naruto-x-boruto-ultimate-ninja-storm-connections) | 0 | 0 | 6 | 0 | 0 | `game` |
+@@ -422,6 +424,17 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  
  - **function-matched stub** (`main` of builds without STUBS): render-thread synchronization: a function of 0x1a4 bytes, `+0x18`, `+0x190` in it
  
@@ -285,7 +291,7 @@ index c6d5c5070046cdf058beb39d9befed17f329572e..bd5b192042e56d9c5df5f2d64cfb0abb
  ### Monster Hunter Rise
  
  [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md), `0100B04011742000`.
-@@ -691,6 +704,8 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
+@@ -730,6 +743,8 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
  - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (main+0x31d3200, 0xfc8 bytes, one caller main+0x31c00cc); the status ubfx at +0xce4, the store at +0xd48 (the only float store to #0xe5c in main; s0 computed from the update's w0 at +0xd34, never reread from +0xe5c) and the size loop clearing bit 3 of +0xe2c read by disassembly (2026-11-09, 2026-11-23); guard, status and store stubs executed natively on ARM64 in test_ocarina_drs.py: render scale: the 3D views at a fraction of the game's own size (DM_RENDER_SCALE). The game's own view-size update (its test of the dynamic-resolution status and its scale store), found by its function's fingerprint on any build that keeps it; the level function's stub above holds level 0 under a scale
  - **`game`**, rendering, at goal, checked: v131072 main: one function per fingerprint, free registers read at each site; indexed pane names, classes and dimensions checked against the UIL records. In-place Vert+ projection-object updates (and DM_SCREEN_FOV=off Hor-) executed on ARM64 in test_ocarina_screen_shape.py and verified in Kakariko Village on Mac at 16:9, 16:10 and 4:3 (2026-11-23); 0/3 projection fingerprint matches in TOTK, BOTW and Mario Kart World; physical iPad/iPhone retest pending: screen shape: taller render targets, cameras, Layout2 panes and a 16:9 movie viewport (DM_SCREEN_ASPECT). The game's own display setup, camera, pane and movie code; installed together after every function matches. Indexed pane edits verify the authored name, class and dimensions they use
  - **`game`**, rendering, at goal, checked: v131072 main: one function with this fingerprint (slot 6 of the module vtable); the flags' readers (turf draw lists, per-draw callbacks, the type classes' slot 8, the GPU calc node) read by disassembly; each gate switched in play on the balcony with shots and the encoders per phase (2026-11-10): foliage off: the foliage module's grass / forest disables and type hide bits set each frame (DM_FOLIAGE). The foliage module's per-frame calc, found by its function's fingerprint on any build that keeps it; the flags are the module's own (its timeline disables and debug hide bits); switchable, off by default
@@ -294,7 +300,7 @@ index c6d5c5070046cdf058beb39d9befed17f329572e..bd5b192042e56d9c5df5f2d64cfb0abb
  
  - **function-matched** (`main` of builds without CUTS): movie pictures a frame: up to 2, the constructor's value for an argument of 2 or more, whatever its caller passes (1): 1 function, 1 cut
  - **function-matched** (`main` of builds without CUTS): movie update cap: 3 pictures a frame, the frame step's largest hold, in place of the limit (2), which also sizes the decoder pipeline: 1 function, 1 cut
-@@ -744,7 +759,7 @@ Cuts of Nintendo SDK `sdk` builds ([sdk_patches.py](../../dm/tools/sdk_patches.p
+@@ -784,7 +799,7 @@ Cuts of Nintendo SDK `sdk` builds ([sdk_patches.py](../../dm/tools/sdk_patches.p
  - **`build` → `sdk`**, address space, blocked: drop it once a Mina build rewritten with the rules alone matches this one, judgement: Mina the Hollower's row (cb82ed52, SDK 21.4.3; NXForge). SDK 20.5.22's constructor layout, which the rules now cover; the row came before the rules
  - **`sdk`**, address space, at goal, checked: both function pairs reproduced all three exact cuts on the two original SDK builds, with six more equivalent implementations found in 48 distinct SDK builds: Older VammManager: 64 MB node area and 32 MB large-region alignment. The two older SDK implementations need smaller reservations and alignment to fit the iPhone alias region after the Snowdrop metadata reservation
  
@@ -304,10 +310,10 @@ index c6d5c5070046cdf058beb39d9befed17f329572e..bd5b192042e56d9c5df5f2d64cfb0abb
    - cut `+0x14fc5c`: AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000
  
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 7e9cbc398e1bec1f4398d11155de2eaee1371607..b36fe4697457c5b60cf3347bbd24ac4c933972af 100644
+index b403d0521a4ed2873dcb065d1ab4b4129f5383eb..376d2f036619efeadce069db60b89573957c9152 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -150,6 +150,7 @@ DM_METAL_HUD	player	`1` shows Apple's Metal performance HUD over the game (frame
+@@ -151,6 +151,7 @@ DM_METAL_HUD	player	`1` shows Apple's Metal performance HUD over the game (frame
  DM_MIC	player	`1` lets a game use the Mac's microphone through SDK polling input streams, after macOS grants access. Off by default. A packed Mac app asks before launching the host, including with the settings window hidden
  DM_MIC_DEVICE	player	Core Audio input device UID for Mac microphone capture. Unset or `default` follows the system default. If the selected device is absent, capture uses the system default until it returns
  DM_MIC_GAIN	player	Gain on the Mac microphone before the soft limiter, from 1 to 8 (default 1)
@@ -315,7 +321,7 @@ index 7e9cbc398e1bec1f4398d11155de2eaee1371607..b36fe4697457c5b60cf3347bbd24ac4c
  DM_MOTION	switch	`0` ignores live motion: every six-axis sensor lies flat as before (a shake still plays), and neither controllers' motion sensors nor the phone's device motion are switched on (`hle_hid.c`, `motion_apple.h`, `DmGamepad.m`); the NSP script's `--no-motion` (`MOTION = False`) builds it in
  DM_MOTION_ACC_SIGN	switch	`-1` flips only GameController's acceleration, for a source that reports the specific force (+1 G up at rest) instead of the gravity direction (`motion_fusion.h`); phone and raw HID samples are already in the Switch frame
  DM_MOTION_AXES	switch	`=<map>` such as `x,-z,y`: maps Apple's controller axes to the Switch's, a signed permutation applied to acceleration and rotation alike, for a controller whose axes differ (default `x,y,z`; phone and raw HID samples are already in the Switch frame)
-@@ -454,6 +455,7 @@ DM_SCREEN_WIDE	player	`=<width>x<height>` of a screen from 1.3:1 to 32:9 other t
+@@ -462,6 +463,7 @@ DM_SCREEN_WIDE	player	`=<width>x<height>` of a screen from 1.3:1 to 32:9 other t
  DM_SETTINGS_FILE	path	`0` turns off the Mac player's per-game settings file (`NXForge settings.txt` in DM_GAME_FOLDER, else `nxforge-settings.txt` in DM_ROOT), which mirrors the Quick settings sidebar's choices and wins at launch
  DM_SF_TRACE	diagnostic	`=1` logs every request on the game's own HIPC client sessions that the host answers (`hle_sf.c`)
  DM_SHADER_FILES	switch	`1` packs an NVN game's shader library into the unsigned IPA of `build_ipa.sh` as its separate files, `msl/b-<chain>/`, not as the one file `b-<chain>.img`, for install tools that cannot copy a large file (AltServer: 2 GiB) (`pack_ipa.py --shader-files`; off by default; `--shader-files` of the NSP script sets this)
@@ -324,7 +330,7 @@ index 7e9cbc398e1bec1f4398d11155de2eaee1371607..b36fe4697457c5b60cf3347bbd24ac4c
  DM_SHARED_FONT	path	One font file served for every shared-font type except the Nintendo extension (default: each type's own file in `$DM_FONT_DIR`, made by `make_shared_fonts.py`; a type without one takes `standard.ttf`, and with no `standard.ttf` macOS's Arial Unicode as it is, which some games' font engines cannot load)
  DM_SHARED_FONT_EXT	path	Font file served for shared-font type 5, the Nintendo extension with the button icons (default `$DM_FONT_DIR/nintendo_ext.ttf`, made by `make_shared_fonts.py`)
 diff --git a/docs/settings.md b/docs/settings.md
-index 8ccf19af4166b3d28e96da2cdcb9dc1b606559cc..b2a6a6c74c8d17f834a4e271e4f4c1082e7466f0 100644
+index 31795bcb64eae506606d1cd37e51993dd56c64ba..8155f0e9ccb216d24820dc47b8dd7dc1b0476eb2 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -108,6 +108,14 @@ Mac, games whose build supports it (Ocarina of Time); the Mac settings window ca

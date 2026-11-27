@@ -10,7 +10,7 @@ Subject: battery-saver: on the battery, a game nobody is playing pauses
  2 files changed, 2 insertions(+)
 
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 2df5eec9de5661fda3ce8af6220fb5ccbd81b52d..06973fb7b17006fd5660a093e4a9e758fc3f7431 100644
+index b73a5196050ef4ea44d6fff7cb0f856e421208bd..2b1766cc9acbeb9b2d318e83d5e1a1cc74f1c6d7 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -21,6 +21,7 @@ DM_AUDIO_MUTE	switch	`=1` runs the real Core Audio output path (callback pacing,
@@ -22,10 +22,10 @@ index 2df5eec9de5661fda3ce8af6220fb5ccbd81b52d..06973fb7b17006fd5660a093e4a9e758
  DM_BUNDLE_ID	switch	Overrides the iOS app's bundle ID in `build_ipa.sh` (default `org.nxnative.<title ID in lowercase>`)
  DM_CHEATS	path	Folder of Atmosphère cheat files: `<folder>/<build ID>.txt` or an SD-card layout (`atmosphere/contents/<title ID>/cheats/`) under it (default `<DM_ROOT>/cheats`); the Mac menu lists and toggles them
 diff --git a/docs/settings.md b/docs/settings.md
-index d9368d8727ecd1526d1745aa0f74e72dd9acdabe..a8d1034ec12c952c2476a7ea8f2e6eb5e7efb38f 100644
+index 6f5ca01792349fdc9a8624ae6c20687cbcff7529..c4cec84d9a05860b815cd0afa9d984632d61a4bc 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
-@@ -324,6 +324,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
+@@ -328,6 +328,7 @@ A Mac app also has a sidebar while the game runs: **Quick settings** (Esc, ⇧
  | Volume and mute | – | the slider and speaker at the top | – | `DMQuickSettings.volume.<game>`, `DMQuickSettings.muted.<game>` |
  | Pause the game, quieter sound while the sidebar is open | – | General | – | `DMQuickSettings.pauseOpen.<game>` (unset: on), `DMQuickSettings.duckOpen.<game>` |
  | Library keeps the game (a game NXForge's Play started): the sidebar's Library button pauses the game and hides it, and NXForge's Resume brings it back where it was; off, Library ends the game | – | General | – | `DMQuickSettings.keepLibrary.<game>` (unset: on) |

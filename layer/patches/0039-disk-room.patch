@@ -57,10 +57,10 @@ index 75204e168a59e51a01009e3e0e24ee1df33c4ced..06a6dce5335ee96663ada151e1df6db5
      def compile_split(self, target, msl, libs, split):
          """msl → the libraries libs cut from its one compile, split(the library's bytes) → their bytes, in order: clones of what the same source gave before, or a compile (then the pieces
 diff --git a/dm/tools/tests/test_nsp_mac.py b/dm/tools/tests/test_nsp_mac.py
-index 950dd93a946bebb3a6ca79fd4b2a1e68ff60923a..c2feed5969edff264f256b8b012553e2499bcbcf 100644
+index 883ce6c4d0442790d0efdbcb31ef525b61f73216..85c9d94c1143d18ef8ec68df359d90145e6d94f4 100644
 --- a/dm/tools/tests/test_nsp_mac.py
 +++ b/dm/tools/tests/test_nsp_mac.py
-@@ -409,5 +409,25 @@ class EnvFile(Base):
+@@ -520,5 +520,25 @@ class EnvFile(Base):
          with self.assertRaises(nsp.BuildError): nsp.env_file_pairs(self.tmp / 'none.txt')
  
  
@@ -87,10 +87,10 @@ index 950dd93a946bebb3a6ca79fd4b2a1e68ff60923a..c2feed5969edff264f256b8b012553e2
  if __name__ == '__main__':
      unittest.main()
 diff --git a/dm/tools/tests/test_shader_toolchain_cache.py b/dm/tools/tests/test_shader_toolchain_cache.py
-index 0bc4fb55286a22c500f952a4ac2cd0b4c608d08d..3434bd80af9577ed8846f33e0a85ca4f52618618 100644
+index fc3be8f8b1257caf12c3a7a4362045e8e3a9deb6..8174e9a0d1e523cb1c8f4b371a23c80e43791b4a 100644
 --- a/dm/tools/tests/test_shader_toolchain_cache.py
 +++ b/dm/tools/tests/test_shader_toolchain_cache.py
-@@ -644,6 +644,7 @@ class BuildProgress(unittest.TestCase):
+@@ -686,6 +686,7 @@ class BuildProgress(unittest.TestCase):
              GAME=types.SimpleNamespace(id='0100000000000000', table=lambda n: self.root / n),
              INPUTS='aaaaaaaaaaaa', STAMP_BEFORE='aaaaaaaaaaaa', __file__=str(TOOLS / 'dmsh_build.py'),
              subprocess=types.SimpleNamespace(run=lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, 'ok\n', '')),
@@ -98,7 +98,7 @@ index 0bc4fb55286a22c500f952a4ac2cd0b4c608d08d..3434bd80af9577ed8846f33e0a85ca4f
          )
          exec(compile(ast.Module(body=funcs, type_ignores=[]), str(TOOLS / 'dmsh_build.py'), 'exec'), ns)
          start = next(i for i, n in enumerate(self.tree.body) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '_img_labels' for t in n.targets))
-@@ -720,6 +721,22 @@ class SharedMetalCache(unittest.TestCase):
+@@ -762,6 +763,22 @@ class SharedMetalCache(unittest.TestCase):
          for text in ('one', 'two', 'six'): self.assertTrue(self.store.has(self.cache.path('mac', (text * 5000).encode())))
          self.assertNotIn('removed', line)
  
@@ -122,10 +122,10 @@ index 0bc4fb55286a22c500f952a4ac2cd0b4c608d08d..3434bd80af9577ed8846f33e0a85ca4f
          old = self.root / 'NXForge/metallib'
          for target in ('mac', 'ios'):
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 552f14ce3cf2970fb42916a38c2474273eaa596c..f5fbaae4bdf989cb50258beb8c8ff74d2558a776 100755
+index 293dcf8b5071fba016179c6fa436e4a982ecbad7..ae47d6bf7a08d694d87f6061f30eeca0ca0672f3 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -3550,10 +3550,14 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs):
+@@ -3776,10 +3776,14 @@ def mac_pso(py, repo, work, lib, g, gpus, env, logs, host=None):
  PSO_BASE_JOBS = int(os.environ.get('DM_PSO_BASE_JOBS') or 1)   # NXForge: metal-tt runs at a time for the pipeline archive's batches of bases (pso_offline.py --base-jobs)
  
  
@@ -141,7 +141,7 @@ index 552f14ce3cf2970fb42916a38c2474273eaa596c..f5fbaae4bdf989cb50258beb8c8ff74d
      them in the build folder, NXFORGE_SCRATCH=<folder> names another place. Only temporary files: every cache and output stays in the build folder"""
      import atexit
      want = environ.get('NXFORGE_SCRATCH', '')
-@@ -3565,6 +3569,11 @@ def scratch_folder(work, gid, environ=os.environ):
+@@ -3791,6 +3795,11 @@ def scratch_folder(work, gid, environ=os.environ):
              if can_clone(work): return None
          except OSError: return None
          d = Path.home() / 'Library/Caches/NXForge/scratch' / gid
