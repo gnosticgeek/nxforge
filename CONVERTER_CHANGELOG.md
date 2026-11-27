@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.30.1 (2026-11-27)
+
+Shipped in NXForge 0.63.1.
+
+- **Wii, a seventh Theatre theme** (to Tom's mock-up). Your Wii and GameCube games as a light blue game library: "Game Library" and the count over a column of white pill buttons, the game in focus outlined in cyan with a chevron, and on the right one big white card. In the card the game's screenshot fills a curved window, the Wii wordmark (or GameCube's) sits in the corner the curve leaves, and a tray at the window's foot says which controller the game takes and for how many ("Wii Remote + Nunchuk, 1–2 players"). Under it: the title with your stars, publisher, year, genre and age rating ("E Everyone", "Teen", "PEGI 12"), the first sentences of the game's blurb, and its logo. Up and down browse (seven buttons in view, the list slides to keep the focus in them), left and right give the game in focus 0 to 5 stars (kept in settings.json as `game_stars`), A plays (or Continue, or the step the game needs), and everything else works as on the other themes. Only Wii and GameCube games are shown. The artwork is the mock-up's own, in `app/Art/TheatreWii` (bundle.sh copies it into the app), laid out on its 1920 × 1080 grid and scaled to the screen.
+- **Facts and pictures for Wii and GameCube games.** GameTDB's database of every Wii and GameCube disc (wiitdb.zip, 10 MB, downloaded once a month and kept as `covers/wiitdb.json`) gives the English title, blurb, publisher, year, genres, age rating, players and controllers by the disc's game ID. libretro-thumbnails gives a screenshot (else the title screen) and the game's logo, matched by title in the disc's own region, its file list fetched from GitHub once a month; pictures linked to another disc's are followed. A game with no screenshot shows its box over its own colours, one with no logo its box. Settings › Artwork's Download store details and Download wide art switch them off. Code: `WiiTheme.swift`, `WiiTheatreInfo.swift`.
+- For checks: `NXC_THEATRE=wii`. Tests: the `TheatreWiiTheme` suite (GameTDB's XML, picture matching and links, the list window, the setting).
+
 ## 0.30.0 (2026-11-27)
 
 Shipped in NXForge 0.63.0.

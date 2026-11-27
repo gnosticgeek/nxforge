@@ -2043,7 +2043,7 @@ import Testing
                                ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
             #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"\(saved)\"".utf8)) == theme)
         }
-        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer", "Wallet", "Museum"])
+        #expect(TheatreTheme.allCases.map(\.rawValue) == ["Showcase", "Cinema", "Shutter", "Trailer", "Wallet", "Museum", "Wii"])
         #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Shutter\"".utf8)) == .shutter)
     }
 
@@ -2924,5 +2924,73 @@ import Testing
         #expect(Wii.coverURLs(id: "R7PP01", kind: "cover").first?.absoluteString == "https://art.gametdb.com/wii/cover/EN/R7PP01.png")
         #expect(Wii.coverURLs(id: "R7PE01", kind: "cover").map(\.absoluteString) == ["https://art.gametdb.com/wii/cover/US/R7PE01.png", "https://art.gametdb.com/wii/cover/EN/R7PE01.png"])
         #expect(NLifeSource.pages(name: "Punch-Out!!", titleID: "0E00523750453031").first?.absoluteString.contains("/games/wii/") == true)
+    }
+}
+
+@Suite struct TheatreWiiTheme {
+    @Test func readsGameTDBsEnglishFacts() {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?><datafile><WiiTDB version="1" games="1"/>
+        <game name="Super Mario Galaxy (USA) (EN,FR,ES)"><id>RMGE01</id><type/><region>NTSC-U</region>
+        <locale lang="EN"><title>Super Mario Galaxy</title><synopsis>Become Mario as he traverses gravity-bending galaxies. Players experience dizzying perspective shifts. Whether you're surfing on a ray across an ocean in the clouds, there's no limit to the cosmic challenges you'll encounter!</synopsis></locale>
+        <locale lang="FR"><title>Super Mario Galaxy FR</title><synopsis>Le jeu.</synopsis></locale>
+        <developer>Nintendo EAD Tokyo</developer><publisher>Nintendo</publisher><date year="2007" month="11" day="12"/>
+        <genre>adventure,platformer</genre><rating type="ESRB" value="E"><descriptor>mild cartoon violence</descriptor></rating>
+        <input players="2"><control type="wiimote" required="true"/><control type="nunchuk" required="true"/></input></game>
+        <game name="Melee"><id>GALE01</id><type>GameCube</type><locale lang="EN"><title>Super Smash Bros. Melee</title></locale>
+        <rating type="ESRB" value="T"/><input players="4"><control type="gamecube" required="true"/></input></game>
+        </datafile>
+        """
+        let all = WiiTDB.parse(Data(xml.utf8))
+        let e = try! #require(all["RMGE01"])
+        #expect(e.title == "Super Mario Galaxy")
+        #expect(e.publisher == "Nintendo" && e.year == 2007)
+        #expect(e.genreText == "Adventure / Platformer")
+        #expect(e.ratingWords == "Everyone")
+        #expect(e.playersText == "1–2 players")
+        #expect(e.controller(gamecube: false) == ("Wii Remote", "+ Nunchuk"))
+        #expect(e.nunchuk)
+        #expect(e.shortSynopsis == "Become Mario as he traverses gravity-bending galaxies. Players experience dizzying perspective shifts.")
+        let m = try! #require(all["GALE01"])
+        #expect(m.controller(gamecube: true) == ("GameCube", "Controller"))
+        #expect(m.ratingWords == "Teen" && m.playersText == "1–4 players")
+    }
+
+    @Test func matchesLibretroPicturesByTitleAndRegion() {
+        let paths = ["Named_Snaps/Super Mario Galaxy (Europe).png", "Named_Snaps/Super Mario Galaxy (USA).png", "Named_Snaps/Super Mario Galaxy 2 (USA).png",
+                     "Named_Logos/Super Mario Galaxy (Europe, Australia) (En,Fr,De,Es,It).png", "Named_Snaps/Sonic _ SEGA All-Stars Racing (USA).png",
+                     "Named_Snaps/Legend of Zelda, The - Twilight Princess (USA).png"]
+        #expect(WiiArt.match("Super Mario Galaxy", gameID: "RMGE01", folder: "Named_Snaps", in: paths) == "Named_Snaps/Super Mario Galaxy (USA).png")
+        #expect(WiiArt.match("Super Mario Galaxy", gameID: "RMGP01", folder: "Named_Snaps", in: paths) == "Named_Snaps/Super Mario Galaxy (Europe).png")
+        #expect(WiiArt.match("Super Mario Galaxy", gameID: "RMGE01", folder: "Named_Logos", in: paths) == "Named_Logos/Super Mario Galaxy (Europe, Australia) (En,Fr,De,Es,It).png")
+        #expect(WiiArt.match("Sonic & SEGA All-Stars Racing", gameID: "SSQE8P", folder: "Named_Snaps", in: paths) != nil)
+        #expect(WiiArt.match("The Legend of Zelda: Twilight Princess", gameID: "RZDE01", folder: "Named_Snaps", in: paths) != nil)
+        #expect(WiiArt.linked("Named_Logos/Super Mario Galaxy (USA) (En,Fr,Es).png", "Super Mario Galaxy (Europe, Australia) (En,Fr,De,Es,It).png")
+                == "Named_Logos/Super Mario Galaxy (Europe, Australia) (En,Fr,De,Es,It).png")
+        #expect(WiiArt.linked("Named_Logos/A (USA).png", "../Named_Titles/A (USA).png") == "Named_Titles/A (USA).png")
+        #expect(WiiArt.match("Super Mario Galaxy 3", gameID: "RMGE01", folder: "Named_Snaps", in: paths) == nil)
+        #expect(WiiArt.raw("Nintendo_-_Wii", "Named_Snaps/Sonic _ SEGA All-Stars Racing (USA).png")?.absoluteString
+                == "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Wii/master/Named_Snaps/Sonic%20_%20SEGA%20All-Stars%20Racing%20(USA).png")
+    }
+
+    @Test func theListKeepsTheFocusInView() {
+        #expect(WiiGameList.first(index: 0, count: 5) == 0)
+        #expect(WiiGameList.first(index: 3, count: 20) == 0)
+        #expect(WiiGameList.first(index: 10, count: 20) == 6)
+        #expect(WiiGameList.first(index: 19, count: 20) == 13)
+    }
+
+    @Test func theThemeIsSavedAndItsArtworkIsThere() throws {
+        #expect(TheatreTheme(rawValue: "Wii") == .wii)
+        #expect(TheatreMenuRow.row(.wii).theme == .wii)
+        var s = Settings()
+        s.gameStars["0E00524D47453031"] = 4
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back.gameStars["0E00524D47453031"] == 4)
+        for name in ["background", "card", "aperture", "row", "row-selected", "tray", "wii-system-wordmark", "star-filled", "rating-e-everyone"] {
+            // app/Art/TheatreWii, which bundle.sh copies into the app's Resources
+            let art = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appending(path: "Art/TheatreWii")
+            #expect(NSImage(contentsOf: art.appending(path: name + ".png")) != nil, "\(name).png")
+        }
     }
 }

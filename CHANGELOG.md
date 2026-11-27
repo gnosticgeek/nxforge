@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.63.1 (2026-11-27)
+
+- **Theatre's Wii theme** (Converter 0.30.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Wii and GameCube games as a light blue game library to Tom's mock-up, a list of pill buttons beside a big card with the game's screenshot, the controller it takes, its facts from GameTDB, your stars and its logo. App only, no engine change.
+
 ## 0.63.0 (2026-11-27)
 
 Wii and GameCube games, played with Dolphin ([wii/README.md](wii/README.md); Converter 0.30.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); Sidebar 0.12.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)). No Switch or Game Boy Advance game needs a rebuild.
