@@ -123,7 +123,7 @@ struct WiiGameList: View {
     var body: some View {
         let first = Self.first(index: index, count: games.count)
         ZStack(alignment: .topLeading) {
-            Text("Game Library").font(WiiLook.font(48 * s, "DemiBold")).kerning(-0.6 * s).foregroundStyle(WiiLook.ink)
+            Text("Game Library").font(WiiLook.font(45 * s, "DemiBold")).kerning(-0.6 * s).foregroundStyle(WiiLook.ink)
                 .lineLimit(1).fixedSize()
                 .wiiBox(73, 72, 330, 66, s, .leading)
             Text(countText).font(WiiLook.font(20 * s)).foregroundStyle(WiiLook.soft)
@@ -133,8 +133,7 @@ struct WiiGameList: View {
             ZStack(alignment: .topLeading) {
                 ForEach(Array(games.enumerated()), id: \.element.id) { i, g in
                     WiiGameRow(name: WiiTheme.name(model, g), selected: i == index, s: s)
-                        .wiiBox(WiiLook.rowX - 34, WiiLook.rowTop - 35 + CGFloat(i - first) * WiiLook.rowStep - 120, 537, 156, s)
-                        .opacity(i < first - 1 || i > first + WiiLook.rowsShown ? 0 : 1)
+                        .wiiBox(WiiLook.rowX - 34, WiiLook.rowTop - 35 + CGFloat(i - first) * WiiLook.rowStep - 150, 537, 156, s)
                         .onTapGesture {
                             if g.id == model.theatreFocus { model.rememberTheatreFocus(); model.fix(g) } else { model.theatreFocus = g.id }
                             model.theatreTouched = Date()
@@ -144,9 +143,10 @@ struct WiiGameList: View {
                         .accessibilityAddTraits(i == index ? [.isButton, .isSelected] : .isButton)
                 }
             }
-            .frame(width: 600 * s, height: (WiiLook.rowStep * CGFloat(WiiLook.rowsShown) + 60) * s, alignment: .topLeading)
+            // from just above the first face to just under the seventh, so no neighbour peeks in
+            .frame(width: 600 * s, height: 745 * s, alignment: .topLeading)
             .clipped()
-            .offset(y: 120 * s)
+            .offset(y: 150 * s)
             .animation(still ? nil : .spring(duration: 0.35, bounce: 0.1), value: first)
             if games.isEmpty {
                 Text("Your Wii and GameCube games appear here once a Wii games folder is chosen in Settings › Library.")
@@ -199,7 +199,7 @@ struct WiiGameRow: View {
         ZStack(alignment: .topLeading) {
             WiiArtImage(name: selected ? "row-selected" : "row")
             Text(name)
-                .font(WiiLook.font(28 * s, selected ? "Bold" : "Medium"))
+                .font(WiiLook.font(27 * s, selected ? "Bold" : "Medium"))
                 .kerning(-0.4 * s)
                 .foregroundStyle(selected ? WiiLook.selected : WiiLook.row)
                 .lineLimit(1).minimumScaleFactor(0.6)
