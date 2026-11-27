@@ -223,7 +223,7 @@ final class WiiArt {
     }
 
     /// Fetch the pictures of the games that have none yet, one after another; a game libretro has nothing for is asked again after a month
-    func fetchMissing(_ games: [(key: String, gameID: String, title: String, gamecube: Bool)]) {
+    func fetchMissing(_ games: [(key: String, gameID: String, titles: [String], gamecube: Bool)]) {
         let todo = games.filter { !asked.contains($0.key) }
         guard !todo.isEmpty else { return }
         for g in todo { asked.insert(g.key) }
@@ -244,7 +244,7 @@ final class WiiArt {
                 guard let names = lists[repo], !names.isEmpty else { continue }   // offline: asked again at the next start
                 var got = false
                 for (folder, out) in [("Named_Snaps", snap), ("Named_Titles", snap), ("Named_Logos", logo)] where !fm.fileExists(atPath: out.path) {
-                    guard let path = Self.match(g.title, gameID: g.gameID, folder: folder, in: names), let data = await Self.picture(repo, path) else { continue }
+                    guard let path = g.titles.lazy.compactMap({ Self.match($0, gameID: g.gameID, folder: folder, in: names) }).first, let data = await Self.picture(repo, path) else { continue }
                     try? data.write(to: out)
                     got = true
                 }

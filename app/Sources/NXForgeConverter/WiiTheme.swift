@@ -95,10 +95,14 @@ struct WiiTheme: View {
     /// GameTDB's facts once, and libretro's screenshot and logo for each game shown
     func fetch(_ games: [StageGame]) {
         let s = model.settings
-        let wanted = games.compactMap { g -> (key: String, gameID: String, title: String, gamecube: Bool)? in
+        let wanted = games.compactMap { g -> (key: String, gameID: String, titles: [String], gamecube: Bool)? in
             guard let id = Wii.gameID(titleID: g.titleID) else { return nil }
-            let title = WiiTDB.shared.entry(id, download: s.downloadStoreInfo)?.title ?? g.name
-            return (g.coverKey, id, title, g.console == .gamecube)
+            // GameTDB's title, the file's, and the part before a subtitle ("Smarty Pants: Trivia Fun for Everyone!" is "Smarty Pants")
+            var titles: [String] = []
+            for t in [WiiTDB.shared.entry(id, download: s.downloadStoreInfo)?.title, g.name].compactMap({ $0 }) {
+                for x in [t, String(t.split(separator: ":").first ?? ""), String(t.components(separatedBy: " - ").first ?? "")] where !x.isEmpty && !titles.contains(x) { titles.append(x) }
+            }
+            return (g.coverKey, id, titles, g.console == .gamecube)
         }
         if s.downloadHeroes, !wanted.isEmpty { WiiArt.shared.fetchMissing(wanted) }
     }
@@ -242,12 +246,13 @@ struct WiiCard: View {
         } else if let g = game, let front = CoverArt.front(g) {
             // no screenshot: the box, over its own colours spread out of focus
             ZStack {
-                Image(nsImage: front).resizable().aspectRatio(contentMode: .fill).blur(radius: 40 * s).opacity(0.85)
-                Color.white.opacity(0.18)
+                Image(nsImage: front).resizable().aspectRatio(contentMode: .fill).blur(radius: 70 * s).opacity(0.9)
+                Color.white.opacity(0.3)
+                // left of the middle and low, clear of the curve over the top right
                 Image(nsImage: front).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-                    .frame(height: 520 * s)
-                    .shadow(color: .black.opacity(0.35), radius: 24 * s, y: 12 * s)
-                    .offset(x: 90 * s, y: 20 * s)
+                    .frame(height: 470 * s)
+                    .shadow(color: .black.opacity(0.3), radius: 24 * s, y: 12 * s)
+                    .offset(x: -170 * s, y: 30 * s)
             }
         } else {
             LinearGradient(colors: [Color(red: 0.80, green: 0.91, blue: 0.97), Color(red: 0.62, green: 0.80, blue: 0.92)], startPoint: .top, endPoint: .bottom)
@@ -355,7 +360,6 @@ struct WiiStars: View {
         HStack(spacing: -1 * s) {
             ForEach(0..<5, id: \.self) { i in
                 WiiArtImage(name: i < stars ? "star-filled" : "star-empty").frame(width: 26 * s, height: 26 * s)
-                    .opacity(i < stars ? 1 : 0.55)
             }
         }
         .accessibilityElement(children: .ignore)
