@@ -35,6 +35,8 @@ struct Job {
     var folder: String { Source.folder(of: gameDir) }
     /// a Game Boy Advance cartridge file (GBA.swift): scripts/gba_build.py converts it
     var gba: Bool { GBA.isGame(gameDir) }
+    /// a Wii or GameCube disc image (Wii.swift): scripts/wii_build.py makes its app
+    var wii: Bool { Wii.isGame(gameDir) }
     /// the game files' size, recorded so other games' first builds can be estimated from this one
     var gameBytes: Int64 = 0
 }
@@ -248,7 +250,7 @@ final class BuildRun {
         defer { ProcessInfo.processInfo.endActivity(activity) }
         let say: (String) -> Void = { m in DispatchQueue.main.async { r.flushLog(); r.log.append(m); r.onChange?() } }
         do {
-            if job.gba { try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true) }
+            if job.gba || job.wii { try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true) }
             let lock = try FolderLock(job.folder)
             defer { lock.release() }
             guard let repo = job.env.repo else { throw ConverterError("no NXForge engine checkout") }
@@ -433,7 +435,12 @@ final class BuildRun {
         p.executableURL = URL(fileURLWithPath: py)
         let tree = Layer.tree(repo)
         var args = ["-u", tree + "/" + scriptPath, job.gameDir, "--platform", job.ios ? "ios" : "mac-app", "--progress", "json"]
-        if job.gba {
+        if job.wii {
+            // a Wii or GameCube disc: its own script (in the checkout), its app and build folder in the game's own folder (Wii.home); the disc stays where it is
+            try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true)
+            args = ["-u", repo + "/" + Wii.helper, job.gameDir, "--progress", "json", "--home", job.folder, "--name", Wii.cleanName(job.gameDir)]
+            if let o = job.rebuild { args += ["-o", o] }
+        } else if job.gba {
             // a Game Boy Advance cartridge: its own script (in the checkout, not the engine tree), its app and build folder in the game's own folder (GBA.home)
             try? FileManager.default.createDirectory(atPath: job.folder, withIntermediateDirectories: true)
             args = ["-u", repo + "/" + GBA.helper, job.gameDir, "--progress", "json", "--home", job.folder, "--name", GBA.cleanName(job.gameDir)]
@@ -452,7 +459,7 @@ final class BuildRun {
         }
         }
         p.arguments = args
-        p.currentDirectoryURL = URL(fileURLWithPath: job.gba ? repo : tree)
+        p.currentDirectoryURL = URL(fileURLWithPath: job.gba || job.wii ? repo : tree)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = job.env.path
         env["PYTHONUNBUFFERED"] = "1"

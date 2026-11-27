@@ -2,6 +2,14 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.63.0 (2026-11-27)
+
+Wii and GameCube games, played with Dolphin ([wii/README.md](wii/README.md); Converter 0.30.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); Sidebar 0.12.0, [SIDEBAR_CHANGELOG.md](SIDEBAR_CHANGELOG.md)). No Switch or Game Boy Advance game needs a rebuild.
+
+- **A Mac app for a Wii or GameCube disc.** `scripts/wii_build.py` reads the disc's header (ISO, GCM, RVZ, WIA, WBFS, GCZ and CISO; WiiWare WADs; DOL and ELF homebrew), packages NXForge's Wii player with Dolphin and its data into a 22 MB app that plays the disc where it lies, takes the box art from GameTDB for its icon, and runs the game for 25 seconds with no window to check it starts. Steps: Read disc, Prepare engine, Package, Trial run.
+- **Dolphin as a library.** `wii/ENGINE` pins Dolphin `1ab733dd`; `scripts/wii_engine.py` builds it once (15 to 30 minutes, outside the repository) with NXForge's bridge `wii/bridge/nxdolphin.mm`, which started from RetroReplay's Dolphin bridge and adds save states to a file, live picture settings, screenshots, the save folder, a frame count of the game's own frames and the Wii Remote held sideways. Dolphin and these files are GPL-2.0-or-later; NOTICE says which.
+- **The Wii player** (`wii/host/mac/wii_front_mac.m`): Dolphin's Metal picture in the window, keyboard, mouse pointer and two controllers, ⌘1 to ⌘3 save states kept between sessions, saves in the game's usual `save/` folder (the NAND in `save/Wii`, memory cards in `save/GC`) so save backups and snapshots cover them, and NXForge's sidebar.
+- Tests: `tests/test_wii_build.py` (every image format's header, title IDs, names); the app's `WiiGames` suite. Checked with no window on Punch-Out!!, Zack & Wiki and Kirby's Epic Yarn (each reaches its menus at 60 fps; a save state saved); not yet played by hand.
 ## 0.62.0 (2026-11-27)
 
 - **The engine moves to the newest nxnative** (upstream `2d0773f4`, 164 commits past the last pin `1e06abd9`). For Ocarina of Time: 7,058 more prewarm rows from players' runs and further prewarm seeds and pipelines, so fewer shaders compile mid-play, and the frame step and dynamic resolution on version 1.0.0 too (#3319). For Mario Kart World: more prewarm seeds. Also: Switch 2 controllers on iPhone and iPad, controller player lights on the Mac, the Pro Controller's resting gyro drift learned and removed (#3364), MetalFX for NDSR's same-encoding variants (#3399), launcher defaults resolved the same way with or without a window, the Mac app's prewarm pipelines made inside `pso_offline.py`, and about 25 new game profiles.

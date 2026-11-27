@@ -46,7 +46,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 enum StageSettingRow: Int, CaseIterable {
     case startIn, returnToLibrary, sessionRecap, lightWhilePlaying
     case firstPlayOptions, batteryPreset, localShaders
-    case folderCheck, showSwitch2, showSwitch1, showGBA, squareCovers, groupByConsole
+    case folderCheck, showSwitch2, showSwitch1, showGBA, showWii, showGameCube, squareCovers, groupByConsole
     case downloadCovers, downloadHeroes, downloadStoreInfo, mediaInGameFolder
     case theatreTheme, museumLighting, showcaseLayout, theatreOnTV, homeOpensTheatre, theatreEdges, theatreSaver, theatreVolume, theatreSounds, theatreRumble, theatreMusic, theatreTimeOfDay, theatreLaunch, theatreTilt, theatreCollector
     case cloudSaves, snapshotAfterPlay, saveBackupPush
@@ -57,7 +57,7 @@ enum StageSettingRow: Int, CaseIterable {
         switch self {
         case .startIn, .returnToLibrary, .sessionRecap, .lightWhilePlaying: .general
         case .firstPlayOptions, .batteryPreset, .localShaders: .playing
-        case .folderCheck, .showSwitch2, .showSwitch1, .showGBA, .squareCovers, .groupByConsole: .library
+        case .folderCheck, .showSwitch2, .showSwitch1, .showGBA, .showWii, .showGameCube, .squareCovers, .groupByConsole: .library
         case .downloadCovers, .downloadHeroes, .downloadStoreInfo, .mediaInGameFolder: .artwork
         case .theatreTheme, .showcaseLayout, .theatreOnTV, .homeOpensTheatre, .theatreEdges, .theatreSaver, .theatreVolume, .theatreSounds, .theatreRumble, .theatreMusic, .theatreTimeOfDay, .theatreLaunch, .theatreTilt, .theatreCollector, .museumLighting: .theatre
         case .cloudSaves, .snapshotAfterPlay, .saveBackupPush: .saves
@@ -413,6 +413,10 @@ struct StageSettings: View {
                 path(GBA.root(model.settings)?.tildePath, none: "Not chosen", width: 200)
                 button(model.settings.gbaRoot == nil ? "Choose…" : "Change…") { model.chooseGBARoot() }.disabled(model.libraryScanning)
             },
+            row("Wii and GameCube folder", "Your Wii and GameCube disc images (.iso, .rvz, .wbfs, .gcz, .ciso, .wia) and WiiWare .wad files, side by side or a folder each. They are played with Dolphin from where they are. Left unset, folders named wii or gamecube beside the games folder are used.") {
+                path(Wii.root(model.settings)?.tildePath, none: "Not chosen", width: 200)
+                button(model.settings.wiiRoot == nil ? "Choose…" : "Change…") { model.chooseWiiRoot() }.disabled(model.libraryScanning)
+            },
             row("Look for new games", "How often NXForge looks at the games folder, in front or not, and scans when a game was added or removed. It also looks each time it comes to the front. Manual leaves it to Refresh.", .folderCheck) {
                 segmented($model.settings.folderCheck, FolderCheck.allCases, width: 290) { $0.rawValue }
             },
@@ -422,6 +426,8 @@ struct StageSettings: View {
             toggle("Nintendo Switch 2", "Switch 2 games on Home, in Discover, on Theatre and its Museum wall, and on the Converter's pages. Off hides them; nothing is deleted.", shown(.switch2), .showSwitch2),
             toggle("Nintendo Switch", "Switch games everywhere in NXForge. Off hides them; their files, builds and saves stay as they are.", shown(.switch1), .showSwitch1),
             toggle("Game Boy Advance", "Game Boy Advance games everywhere in NXForge. Off hides them; their files, builds and saves stay as they are.", shown(.gba), .showGBA),
+            toggle("Nintendo Wii", "Wii games everywhere in NXForge. Off hides them; their discs, apps and saves stay as they are.", shown(.wii), .showWii),
+            toggle("Nintendo GameCube", "GameCube games everywhere in NXForge. Off hides them; their discs, apps and saves stay as they are.", shown(.gamecube), .showGameCube),
         ]
         let look: [SettingsRowSpec] = [
             toggle("Square covers", "Shows each game's square shop art instead of its box on Home and in Discover: smaller, so more fit in a row. The same as Discover's square button.", $model.settings.squareCovers, .squareCovers),

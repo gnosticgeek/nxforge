@@ -4,7 +4,7 @@
 // (<title ID>_build) and the app go in the folder that holds the game's files, as the script puts them.
 import Foundation
 
-enum SourceKind: String, Decodable { case packages, nup, dump, gba }
+enum SourceKind: String, Decodable { case packages, nup, dump, gba, wii }
 
 /// scripts/source_info.py's description of a NUP or a dump folder.
 struct SourceInfo: Decodable, Hashable {
@@ -34,11 +34,12 @@ struct SourceInfo: Decodable, Hashable {
     var sized: Bool { romfsBytes >= 0 && fileBytes >= 0 }
 
     /// "a NUP container" / "a dump folder"
-    var form: String { kind == .gba ? "Game Boy Advance cartridge" : kind == .nup ? "NUP container" : "dump folder" }
+    var form: String { kind == .wii ? (Wii.isGameCubeID(titleID) ? "GameCube disc" : "Wii disc") : kind == .gba ? "Game Boy Advance cartridge" : kind == .nup ? "NUP container" : "dump folder" }
 
     /// "Base game + update + 2 DLC", as Engine.describeFiles names a folder of NSPs
     var describe: String {
         if kind == .gba { return "Cartridge" }
+        if kind == .wii { return "Disc image" }
         var parts = [base ? "Base game" : "Update as the whole game"]
         if base && !updates.isEmpty { parts.append("update") }
         if dlc > 0 { parts.append("\(dlc) DLC") }
@@ -57,12 +58,12 @@ enum Source {
     static func isNupFile(_ p: String) -> Bool { p.url.pathExtension.lowercased() == "nup" && !isDir(p) }
 
     /// The folder holding the game's files: where <title ID>_build, the lock and the app go.
-    static func folder(of p: String) -> String { isDir(p) ? p : GBA.isGame(p) ? GBA.home(for: p) : p.url.deletingLastPathComponent().path }
+    static func folder(of p: String) -> String { isDir(p) ? p : GBA.isGame(p) || Wii.isGame(p) ? GBA.home(for: p) : p.url.deletingLastPathComponent().path }
 
     /// What the path is, from the file system alone, the way the script decides: game packages in a folder win over a .nup or a dump
     /// layout beside them.
     static func kind(of p: String) -> SourceKind {
-        if !isDir(p) { return isNupFile(p) ? .nup : GBA.isGame(p) ? .gba : .packages }
+        if !isDir(p) { return isNupFile(p) ? .nup : GBA.isGame(p) ? .gba : Wii.isGame(p) ? .wii : .packages }
         if !GameFiles.list(in: p.url).isEmpty { return .packages }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: p)) ?? []
         if names.contains(where: { $0.lowercased().hasSuffix(".nup") }) { return .nup }
@@ -79,6 +80,7 @@ enum Source {
     /// so its read takes a second instead of a walk of every file (Mario Kart World's dump: 411,696 files); an older script ignores it.
     static func read(_ p: String, env: ToolEnv, quick: Bool = false) -> Result<SourceInfo, ConverterError> {
         if GBA.isGame(p) { return GBA.read(p, env: env) }
+        if Wii.isGame(p) { return Wii.read(p, env: env) }
         guard let repo = env.repo, let py = env.python else { return .failure(ConverterError("no engine checkout or Python yet: see Toolchain")) }
         guard FileManager.default.fileExists(atPath: repo + "/" + helper) else {
             return .failure(ConverterError("this engine has no \(helper): update the engine to build a .nup or a dump folder"))
@@ -109,6 +111,7 @@ enum Source {
 
     static func validation(_ i: SourceInfo) -> Validation {
         if i.kind == .gba { return GBA.validation(i) }
+        if i.kind == .wii { return Wii.validation(i) }
         var s = [CheckLine(ok: true, text: "\(i.form): game \(i.titleID), no keys needed")]
         if let pr = i.profile { s.append(CheckLine(ok: true, text: "NXForge profile: \(pr)")) }
         else { s.append(CheckLine(ok: false, text: "no NXForge profile for \(i.titleID): the build guesses one, and the game may not start", warn: true)) }
@@ -130,7 +133,7 @@ enum Source {
 
     /// Free space a first build needs: the newest version's RomFS is unpacked into one image and then cloned into the app, with the
     /// shader cache and the pipeline archive beside it (Ocarina of Time, a 26 GB .nup: about 76 GB at its peak, 35 GB of app).
-    static func firstBuildBytes(_ i: SourceInfo) -> Int64 { i.kind == .gba ? Int64(300) << 20 : max(i.romfsBytes, i.fileBytes, 0) * 2 + (Int64(20) << 30) }
+    static func firstBuildBytes(_ i: SourceInfo) -> Int64 { i.kind == .gba ? Int64(300) << 20 : i.kind == .wii ? Int64(200) << 20 : max(i.romfsBytes, i.fileBytes, 0) * 2 + (Int64(20) << 30) }
 
     /// A dump folder's sizes from the full read, by path, so choosing the game again (or a toolchain check validating it again) does not
     /// walk its files again while the folder's modification date is unchanged.

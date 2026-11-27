@@ -36,6 +36,12 @@ extension AppModel {
         if settings.gamesRoot == nil { scanGBA() } else { scanLibrary() }
     }
 
+    func chooseWiiRoot() {
+        guard let d = choose(folder: true, start: Wii.root(settings) ?? settings.gamesRoot ?? "/Volumes") else { return }
+        settings.wiiRoot = d
+        if settings.gamesRoot == nil { scanWii() } else { scanLibrary() }
+    }
+
     func chooseGamesRoot() {
         guard let d = choose(folder: true, start: settings.gamesRoot ?? "/Volumes") else { return }
         settings.gamesRoot = d
@@ -54,6 +60,7 @@ extension AppModel {
         libraryMessage = nil
         let before = library?.root == root ? library : nil
         let gbaRoot = GBA.root(settings)
+        let wiiRoots = Wii.roots(settings)
         libraryTask = Task.detached(priority: .utility) {
             var lastGames = 0
             let r = GameLibrary.scan(root: root) { n, cur, games in
@@ -76,6 +83,10 @@ extension AppModel {
             var gba = gbaRoot.map { GBA.scan(root: $0) } ?? []
             if gba.isEmpty, let gbaRoot, !Source.isDir(gbaRoot) { gba = before?.games.filter { $0.kind == .gba } ?? [] }
             out.games = out.games.filter { $0.kind != .gba } + gba
+            // and the Wii and GameCube folders' discs, the same way
+            var wii = Wii.scan(roots: wiiRoots)
+            if wii.isEmpty, !wiiRoots.isEmpty, !wiiRoots.contains(where: Source.isDir) { wii = before?.games.filter { $0.kind == .wii } ?? [] }
+            out.games = out.games.filter { $0.kind != .wii } + wii
             await MainActor.run {
                 self.library = out
                 self.checkNewlyPlayable()
@@ -95,6 +106,7 @@ extension AppModel {
     /// NXForge starts and with every look at the games folder, so cartridges are listed (and new ones show up) without a scan of
     /// the Switch games folder, which may be on a drive that is away. A folder that does not answer keeps the ones it had.
     func scanGBA() {
+        scanWii()
         guard let gbaRoot = GBA.root(settings), !libraryScanning, !gbaScanRunning else { return }
         gbaScanRunning = true
         Task.detached(priority: .utility) {
@@ -106,6 +118,27 @@ extension AppModel {
                 let had = l.games.filter { $0.kind == .gba }
                 guard had.map(\.id) != found.map(\.id) else { return }
                 l.games = l.games.filter { $0.kind != .gba } + GameLibrary.carryDetails(from: had, to: found)
+                self.library = l
+                GameLibrary.saveCache(l)
+                self.readLibraryDetails()
+            }
+        }
+    }
+
+    /// The Wii and GameCube folders alone, merged into the kept list, as scanGBA does for cartridges: a few hundred bytes of each disc image.
+    func scanWii() {
+        let roots = Wii.roots(settings)
+        guard !roots.isEmpty, !libraryScanning, !wiiScanRunning else { return }
+        wiiScanRunning = true
+        Task.detached(priority: .utility) {
+            let found = roots.contains(where: Source.isDir) ? Wii.scan(roots: roots) : nil
+            await MainActor.run {
+                self.wiiScanRunning = false
+                guard let found, !self.libraryScanning else { return }
+                var l = self.library ?? LibraryScan(root: self.settings.gamesRoot ?? roots[0], scanned: Date(), games: [])
+                let had = l.games.filter { $0.kind == .wii }
+                guard had.map(\.id) != found.map(\.id) else { return }
+                l.games = l.games.filter { $0.kind != .wii } + GameLibrary.carryDetails(from: had, to: found)
                 self.library = l
                 GameLibrary.saveCache(l)
                 self.readLibraryDetails()

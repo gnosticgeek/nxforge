@@ -4,6 +4,12 @@ The in-game Quick settings sidebar has its own version, separate from NXForge's 
 
 What counts as the sidebar: `dm/host/quick_settings_mac.swift` and `.h`, `dm/host/capture_mac.*`, `dm/host/nxforge/` and `dm/gfx/nvn/nxforge/` (its glue, controller navigation, remapping and the present filters).
 
+## 0.12.0 (2026-11-27)
+
+Ships in NXForge 0.63.0.
+
+- **Wii and GameCube games** (wii/host/mac/wii_front_mac.m answers `front_qs_gba()` with 2, so no new call is needed and the Switch and GBA players are unchanged). General has a Play group (Wii Remote: upright with a Nunchuk, sideways or alone; Speed limit) and the same three save states as a GBA game, kept after quitting; Graphics has Dolphin's own settings in place of the present pass's (Aspect ratio, Widescreen hack, Internal resolution, Anti-aliasing, Texture filtering, applied at once, and Reset graphics); Controls lists the keys and buttons. The settings with several values (`gbaValue` 6 to 12) can be found by search, and so can the GBA ones now.
+
 ## 0.11.0 (2026-11-22)
 
 Ships in NXForge 0.58.0.

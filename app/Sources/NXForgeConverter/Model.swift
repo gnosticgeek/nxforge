@@ -28,15 +28,20 @@ enum BuildSort: String, CaseIterable { case newest = "Newest first", oldest = "O
 
 /// Which console a build's game is for: Switch 2 title IDs start 04 (0400486024DEC000), Switch ones 01.
 enum Console: String, CaseIterable {
-    case switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance"
+    case switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance", wii = "Wii", gamecube = "GameCube"
 
-    /// "Nintendo Switch 2", "Game Boy Advance"
+    /// "Nintendo Switch 2", "Game Boy Advance", "Nintendo GameCube"
     var fullName: String { self == .gba ? rawValue : "Nintendo \(rawValue)" }
+    /// a console whose games Dolphin plays (Wii.swift)
+    var dolphin: Bool { self == .wii || self == .gamecube }
 
-    static func of(titleID t: String) -> Console { GBA.isTitleID(t) ? .gba : t.hasPrefix("04") ? .switch2 : .switch1 }
+    static func of(titleID t: String) -> Console {
+        GBA.isTitleID(t) ? .gba : Wii.isWiiID(t) ? .wii : Wii.isGameCubeID(t) ? .gamecube : t.hasPrefix("04") ? .switch2 : .switch1
+    }
 
     static func of(_ b: BuildRecord) -> Console {
         if GBA.isGame(b.gameDir) { return .gba }
+        if Wii.isGame(b.gameDir) { return VerifiedGames.titleID(ofApp: b.app).map(of(titleID:)) ?? .wii }
         if let t = VerifiedGames.titleID(ofApp: b.app) { return of(titleID: t) }
         return Source.isNupFile(b.gameDir) || b.gameFiles == "NUP container" ? .switch2 : .switch1
     }
@@ -44,7 +49,7 @@ enum Console: String, CaseIterable {
 
 /// The Builds page's console filter
 enum ConsoleFilter: String, CaseIterable {
-    case all = "All", switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance"
+    case all = "All", switch2 = "Switch 2", switch1 = "Switch", gba = "Game Boy Advance", wii = "Wii", gamecube = "GameCube"
     var console: Console? { Console(rawValue: rawValue) }
     /// the filters for the systems switched on in Settings
     static func shown(_ s: Settings) -> [ConsoleFilter] { allCases.filter { $0.console.map(s.shows) ?? true } }
@@ -124,6 +129,7 @@ final class AppModel {
     /// a look at the games folder for new games is under way (rescanIfFolderChanged)
     @ObservationIgnored var folderCheckRunning = false
     @ObservationIgnored var gbaScanRunning = false
+    @ObservationIgnored var wiiScanRunning = false
     /// games a scan found that the one before did not have, waiting for their names to be read (lookUpNewGames)
     @ObservationIgnored var newGameIDs = Set<String>()
     var mountObserver: NSObjectProtocol?
@@ -459,7 +465,8 @@ final class AppModel {
         let builds = Engine.builds()
         Task.detached {
             let n = GameNeeds.detect(dir: dir, repo: repo)
-            let bytes = src.map { max($0.fileBytes, $0.romfsBytes, 0) } ?? Estimates.gameBytes(dir)
+            // a Wii disc is played where it is: the app is Dolphin and the player, not a copy of the game
+            let bytes = src.map { $0.kind == .wii ? Source.firstBuildBytes($0) : max($0.fileBytes, $0.romfsBytes, 0) } ?? Estimates.gameBytes(dir)
             let e = Estimates.expected(gameDir: dir, gameBytes: bytes, builds: builds)
             await MainActor.run { if self.gameFolder == dir { self.needs = n; self.expected = e } }
             let d = Disk.need(gameDir: dir, outDir: out, app: app, firstBuild: src.map(Source.firstBuildBytes), gameBytes: bytes)
@@ -877,7 +884,7 @@ final class AppModel {
             switch r {
             case .success(let msg):
                 if run.ipa != nil { c.title = "\(name)'s IPA is ready"; c.body = msg; c.categoryIdentifier = Notify.ipa; c.userInfo = ["path": run.ipa ?? ""] }
-                else { c.title = "\(name) is ready"; c.body = run.app.map(GBA.isApp) == true ? "Converted\(took)." : "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
+                else { c.title = "\(name) is ready"; c.body = run.app.map { GBA.isApp($0) || Wii.isApp($0) } == true ? "Converted\(took)." : "Built and signed\(took). Its first launch prepares shaders, so it takes longer than later ones."; c.categoryIdentifier = Notify.built; c.userInfo = ["path": run.app ?? ""] }
             case .failure(let e):
                 c.title = e.description.hasPrefix("Stopped: only") ? "Build stopped: disk almost full" : "Build failed"; c.body = e.description
                 if e.description != "stopped" { c.categoryIdentifier = Notify.failed }
@@ -1029,12 +1036,12 @@ final class AppModel {
         let p = NSOpenPanel()
         p.canChooseDirectories = true
         p.canChooseFiles = true
-        p.allowedContentTypes = [.folder] + (gameExtensions.sorted() + ["nup"] + GBA.extensions.sorted()).compactMap { UTType(filenameExtension: $0) }
+        p.allowedContentTypes = [.folder] + (gameExtensions.sorted() + ["nup"] + GBA.extensions.sorted() + Wii.extensions.sorted()).compactMap { UTType(filenameExtension: $0) }
         p.allowsMultipleSelection = false
-        p.message = "Choose the game's folder or a game file (.nsp, .xci, .nsz, .xcz), a Switch 2 game's .nup file or dump folder, or a Game Boy Advance game (.gba, or a .zip holding one)"
+        p.message = "Choose the game's folder or a game file (.nsp, .xci, .nsz, .xcz), a Switch 2 game's .nup file or dump folder, a Game Boy Advance game (.gba, or a .zip holding one), or a Wii or GameCube disc image (.iso, .rvz, .wbfs, .gcz, .wad and others)"
         if let start { p.directoryURL = Source.folder(of: start).url }
         guard p.runModal() == .OK, let u = p.url else { return nil }
-        return Source.isDir(u.path) || Source.isNupFile(u.path) || GBA.isGame(u.path) ? u.path : u.deletingLastPathComponent().path
+        return Source.isDir(u.path) || Source.isNupFile(u.path) || GBA.isGame(u.path) || Wii.isGame(u.path) ? u.path : u.deletingLastPathComponent().path
     }
 
     /// Asks on a sheet over the window in front (HIG: alerts about a window's work attach to it), waiting for the answer.

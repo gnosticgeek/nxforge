@@ -1,0 +1,3 @@
+# The Dolphin commit NXForge's Wii and GameCube games are played with (scripts/wii_engine.py; wii/README.md).
+url https://github.com/dolphin-emu/dolphin.git
+commit 1ab733dd5ccb38108c97a76b1f79802683e36049

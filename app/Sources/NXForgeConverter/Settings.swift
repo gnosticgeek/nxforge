@@ -50,6 +50,8 @@ struct Settings: Codable, Equatable {
     var gamesRoot: String?
     /// the Game Boy Advance games folder (cartridge files side by side); nil = a folder named gba beside the games folder, when there is one (GBA.root)
     var gbaRoot: String?
+    /// the Wii and GameCube games folder (disc images, side by side or a folder each); nil = folders named wii or gamecube beside the games folder (Wii.roots)
+    var wiiRoot: String?
     /// how often the games folder is looked at for new games, in front or not, and whether coming to the front looks too
     var folderCheck: FolderCheck = .ten
     var appearance: Appearance = .system
@@ -170,7 +172,7 @@ struct Settings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case repo, python, keys, appearance, notify
-        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root", gbaRoot = "gba_root", folderCheck = "folder_check"
+        case gameDir = "game_dir", signIdentity = "sign_identity", outDir = "out_dir", defaultKeys = "default_keys", gamesRoot = "games_root", gbaRoot = "gba_root", wiiRoot = "wii_root", folderCheck = "folder_check"
         case openAfterBuild = "open_after_build", reuseCache = "reuse_cache", keepBackups = "keep_backups", logDetail = "log_detail", cleanup
         case lastSeenVersion = "last_seen_version", libraryLayout = "library_layout", librarySort = "library_sort"
         case saveBackupRepo = "save_backup_repo", saveBackupPush = "save_backup_push", remounts
@@ -208,6 +210,7 @@ struct Settings: Codable, Equatable {
         defaultKeys = try c.decodeIfPresent(String.self, forKey: .defaultKeys)
         gamesRoot = try c.decodeIfPresent(String.self, forKey: .gamesRoot)
         gbaRoot = try c.decodeIfPresent(String.self, forKey: .gbaRoot)
+        wiiRoot = try c.decodeIfPresent(String.self, forKey: .wiiRoot)
         folderCheck = (try? c.decodeIfPresent(FolderCheck.self, forKey: .folderCheck)) ?? .ten
         appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? .system
         notify = (try? c.decodeIfPresent(Bool.self, forKey: .notify)) ?? true
