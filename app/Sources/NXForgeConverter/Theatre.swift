@@ -1737,7 +1737,7 @@ struct TrailerTheme: View {
                 if model.theatreFilters().count > 1 { HStack(spacing: 6 * u) { hints.glyph("L"); hints.glyph("R"); Text("Filter") } }
                 HStack(spacing: 6 * u) { hints.glyph("ZL"); hints.glyph("ZR"); Text("Theme") }
                 HStack(spacing: 6 * u) { hints.glyph("R3"); Text(model.theatreMuted ? "Sound on" : "Mute") }
-                HStack(spacing: 6 * u) { hints.glyph("+"); Text("Menu") }
+                HStack(spacing: 6 * u) { hints.glyph("+"); Text("Themes") }
                 HStack(spacing: 6 * u) { hints.glyph("B"); Text("Leave") }
             }
             .font(.system(size: 17 * u, weight: .medium)).foregroundStyle(.white.opacity(0.85)).lineLimit(1)

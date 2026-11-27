@@ -385,7 +385,7 @@ struct TheatrePickerView: View {
     func sliver(_ s: TheatreSystem, side: Int, distance: Int) -> some View {
         let r = 22 * u
         let w = PickerLayout.sliver * u, h = PickerLayout.height * u * (distance > 1 ? 0.9 : 0.96)
-        return ZStack(alignment: .topLeading) {
+        return ZStack {
             LinearGradient(colors: [s.accent, s.accent.mix(with: .black, by: 0.55)], startPoint: .top, endPoint: .bottom)
             if let art = art(s) {
                 Image(nsImage: art).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
@@ -395,15 +395,19 @@ struct TheatrePickerView: View {
                     .opacity(0.85)
             }
             LinearGradient(colors: [s.accent.opacity(0.55), .clear], startPoint: .top, endPoint: .center)
+        }
+        .frame(width: w, height: h)
+        // the name up the side, turned about its top left corner so it reads from the foot up, starting near the top
+        .overlay(alignment: .topLeading) {
             Text(s.short)
                 .font(.system(size: 46 * u, weight: .bold)).lineLimit(1).fixedSize()
                 .shadow(color: .black.opacity(0.4), radius: 6 * u)
                 .rotationEffect(.degrees(-90), anchor: .topLeading)
-                .offset(x: 26 * u, y: 40 * u + textLength(s))
-            Image(systemName: s.symbol).font(.system(size: 22 * u, weight: .semibold)).opacity(0.85)
-                .frame(width: w, height: h - 22 * u, alignment: .bottom)
+                .offset(x: 30 * u, y: 36 * u + textLength(s))
         }
-        .frame(width: w, height: h)
+        .overlay(alignment: .bottom) {
+            Image(systemName: s.symbol).font(.system(size: 22 * u, weight: .semibold)).opacity(0.85).padding(.bottom, 22 * u)
+        }
         .clipShape(.rect(cornerRadius: r))
         .overlay(RoundedRectangle(cornerRadius: r).strokeBorder(.white.opacity(0.22), lineWidth: 1.5))
         .brightness(distance > 1 ? -0.08 : 0)

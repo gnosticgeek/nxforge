@@ -2038,6 +2038,23 @@ import Testing
         #expect(abs(s.first!) < 0.05 && abs(s.last!) < 0.05)
     }
 
+    @Test func theatreSystemsAndTheirLooks() throws {
+        // each system has its looks, the first its default; a look it lacks steps from its first
+        #expect(TheatreSystem.switch1.looks == [.wallet, .shutter])
+        #expect(TheatreSystem.wii.look(after: .wii, 1) == .showcase)
+        #expect(TheatreSystem.wii.look(after: .showcase, 1) == .wii)
+        #expect(TheatreSystem.switch1.look(after: .museum, 1) == .wallet)
+        #expect(Set(TheatreSystem.all.looks).isSuperset(of: TheatreTheme.allCases.filter { $0 != .wii }))
+        // the system is the console of the same name; All games is every game
+        #expect(TheatreSystem.gamecube.console == .gamecube && TheatreSystem.gba.console == .gba && TheatreSystem.all.console == nil)
+        #expect(try JSONDecoder().decode(TheatreSystem.self, from: Data("\"Wii\"".utf8)) == .wii)
+        #expect(try JSONDecoder().decode(TheatreSystem.self, from: Data("\"PlayStation\"".utf8)) == .all)
+        // settings saved before 0.64 open on All games
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.theatreSystem == .all && old.theatreLooks.isEmpty)
+        #expect(StageSettingRow.theatreEdges.section == .tv && StageSettingRow.theatreOnTV.section == .tv && StageSettingRow.theatreVolume.section == .theatre)
+    }
+
     @Test func carouselAndFanBecomeShowcase() throws {
         for (saved, theme) in [("Carousel", TheatreTheme.showcase), ("Fan", .showcase), ("Gallery", .showcase), ("Shelf", .showcase),
                                ("Cinema", .cinema), ("Trailer", .trailer), ("rubbish", .showcase)] {
@@ -2165,7 +2182,7 @@ import Testing
 
     @Test func continueIsOnTheMenuOnlyWithACardInTheConsole() {
         #expect(TheatreMenuRow.allCases.first == .resume)
-        #expect(TheatreMenuRow.row(.shutter) == .shutter && TheatreMenuRow.resume.theme == nil)
+        #expect(TheatreMenuRow.allCases == [.resume, .themes, .settings, .leave])
     }
 }
 
@@ -2721,7 +2738,6 @@ import Testing
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
         #expect(!back.theatreTilt && !back.theatreCollector && back.completed == ["0100AAAA00000000"])
         #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Wallet\"".utf8)) == .wallet)
-        #expect(TheatreMenuRow.row(.wallet) == .wallet)
     }
 
     @Test func aCaseShowsItsHoursAndItsWear() {
@@ -2783,7 +2799,6 @@ import Testing
 
     @Test func itIsATheme() throws {
         #expect(try JSONDecoder().decode(TheatreTheme.self, from: Data("\"Museum\"".utf8)) == .museum)
-        #expect(TheatreMenuRow.row(.museum) == .museum && TheatreMenuRow.museum.theme == .museum)
         #expect(Settings().museumLighting == .evening)
         #expect(MuseumLighting.allCases.map(\.rawValue) == ["Classic", "Daylight", "Evening", "Neon", "Lights out"])
         #expect(MuseumLighting.lightsOut.step(1) == .classic && MuseumLighting.classic.step(-1) == .lightsOut)
@@ -2982,7 +2997,6 @@ import Testing
 
     @Test func theThemeIsSavedAndItsArtworkIsThere() throws {
         #expect(TheatreTheme(rawValue: "Wii") == .wii)
-        #expect(TheatreMenuRow.row(.wii).theme == .wii)
         var s = Settings()
         s.gameStars["0E00524D47453031"] = 4
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
