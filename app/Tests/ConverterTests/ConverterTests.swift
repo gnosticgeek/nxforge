@@ -2965,6 +2965,9 @@ import Testing
         #expect(WiiArt.match("Super Mario Galaxy", gameID: "RMGE01", folder: "Named_Logos", in: paths) == "Named_Logos/Super Mario Galaxy (Europe, Australia) (En,Fr,De,Es,It).png")
         #expect(WiiArt.match("Sonic & SEGA All-Stars Racing", gameID: "SSQE8P", folder: "Named_Snaps", in: paths) != nil)
         #expect(WiiArt.match("The Legend of Zelda: Twilight Princess", gameID: "RZDE01", folder: "Named_Snaps", in: paths) != nil)
+        #expect(WiiArt.linked("Named_Logos/Super Mario Galaxy (USA) (En,Fr,Es).png", "Super Mario Galaxy (Europe, Australia) (En,Fr,De,Es,It).png")
+                == "Named_Logos/Super Mario Galaxy (Europe, Australia) (En,Fr,De,Es,It).png")
+        #expect(WiiArt.linked("Named_Logos/A (USA).png", "../Named_Titles/A (USA).png") == "Named_Titles/A (USA).png")
         #expect(WiiArt.match("Super Mario Galaxy 3", gameID: "RMGE01", folder: "Named_Snaps", in: paths) == nil)
         #expect(WiiArt.raw("Nintendo_-_Wii", "Named_Snaps/Sonic _ SEGA All-Stars Racing (USA).png")?.absoluteString
                 == "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Wii/master/Named_Snaps/Sonic%20_%20SEGA%20All-Stars%20Racing%20(USA).png")

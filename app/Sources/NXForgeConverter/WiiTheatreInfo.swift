@@ -244,8 +244,7 @@ final class WiiArt {
                 guard let names = lists[repo], !names.isEmpty else { continue }   // offline: asked again at the next start
                 var got = false
                 for (folder, out) in [("Named_Snaps", snap), ("Named_Titles", snap), ("Named_Logos", logo)] where !fm.fileExists(atPath: out.path) {
-                    guard let path = Self.match(g.title, gameID: g.gameID, folder: folder, in: names),
-                          let url = Self.raw(repo, path), let data = await CoverStore.get(url), NSImage(data: data)?.isValid == true else { continue }
+                    guard let path = Self.match(g.title, gameID: g.gameID, folder: folder, in: names), let data = await Self.picture(repo, path) else { continue }
                     try? data.write(to: out)
                     got = true
                 }
@@ -261,6 +260,24 @@ final class WiiArt {
     func forget(_ key: String) {
         for k in [Kind.snap, .logo] { memory["\(key)-\(k.rawValue)"] = nil; absent.remove("\(key)-\(k.rawValue)") }
         revision += 1
+    }
+
+    /// A picture from the repository. One picture used for several discs is kept once and the others are symbolic links to it,
+    /// which GitHub serves as the link's own text (the other file's name): that file is fetched instead.
+    nonisolated static func picture(_ repo: String, _ path: String) async -> Data? {
+        guard let url = raw(repo, path), let data = await CoverStore.get(url) else { return nil }
+        if NSImage(data: data)?.isValid == true { return data }
+        guard data.count < 1024, let target = linked(path, String(decoding: data, as: UTF8.self)), let u = raw(repo, target),
+              let d = await CoverStore.get(u), NSImage(data: d)?.isValid == true else { return nil }
+        return d
+    }
+
+    /// "Named_Logos/A (USA).png" linking to "A (Europe).png" → "Named_Logos/A (Europe).png"
+    nonisolated static func linked(_ path: String, _ link: String) -> String? {
+        let t = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, !t.contains("\n"), t.hasSuffix(".png") else { return nil }
+        let full = URL(fileURLWithPath: "/" + path).deletingLastPathComponent().appending(path: t).standardized.path
+        return String(full.dropFirst())
     }
 
     nonisolated static func raw(_ repo: String, _ path: String) -> URL? {
