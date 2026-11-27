@@ -42,7 +42,7 @@ struct ShutterFoot: View {
                 HStack(spacing: 26 * u) {
                     HStack(spacing: 10 * u) { hints.glyph("ZL"); hints.glyph("ZR"); Text("Theme") }
                     rule
-                    hint(hints, "+", "Menu")
+                    hint(hints, "+", "Themes")
                     rule
                     hint(hints, "B", "Leave")
                 }

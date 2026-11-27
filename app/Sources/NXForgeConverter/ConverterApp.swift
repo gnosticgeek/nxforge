@@ -190,9 +190,12 @@ struct ConverterApp: App {
             model.theatreWatch = env["NXC_WATCH"] != nil
             model.theatreMuted = true
             if let n = env["NXC_GAME"], let g = model.stageGames().first(where: { $0.name.localizedCaseInsensitiveContains(n) }) { model.theatreFocus = g.id }
-            // NXC_THEATREMENU=1 the menu on Leave, =edges on TV Edges (its corner marks); NXC_FILTER=favourites, recent or genre:<name>;
+            // NXC_THEATREMENU=1 the menu on Leave; NXC_FILTER=favourites, recent or genre:<name>;
             // NXC_EDGES=small or large; NXC_SAVER=1 the screensaver; NXC_VOLUME=<0-100> the volume card
-            if let m = env["NXC_THEATREMENU"] { model.theatreMenu = (m == "edges" ? TheatreMenuRow.edges : TheatreMenuRow.leave).rawValue }
+            if env["NXC_THEATREMENU"] != nil { model.theatreMenu = TheatreMenuRow.leave.rawValue }
+            // NXC_SYSTEM=<Switch, Switch 2, Wii, GameCube, Game Boy Advance>: that system's room; NXC_PICKER=1 the picker over it
+            if let sys = env["NXC_SYSTEM"].flatMap({ n in TheatreSystem.allCases.first { $0.rawValue.lowercased() == n.lowercased() } }) { model.theatreSystem = sys }
+            if env["NXC_PICKER"] != nil { model.openTheatrePicker() }
             if let f = env["NXC_FILTER"] { model.theatreFilter = TheatreFilter(key: f) }
             // the Museum wall: NXC_LIGHT=<Classic, Daylight, Evening, Neon, Lights out>; NXC_MUSEUMLIGHT=1 the focus on its lighting switch
             if let l = env["NXC_LIGHT"].flatMap({ n in MuseumLighting.allCases.first { $0.rawValue.lowercased() == n.lowercased() } }) { model.settings.museumLighting = l }

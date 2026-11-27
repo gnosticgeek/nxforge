@@ -188,6 +188,9 @@ final class AppModel {
     /// row while it is open, a TV's offer, the screen it is on, and when a button was last pressed (the carousel turns on by itself)
     var theatre = false
     var theatreTheme: TheatreTheme = .showcase
+    /// the system Theatre shows (All games, or one console's), and the picker while it is up (TheatrePicker.swift)
+    var theatreSystem: TheatreSystem = .all
+    var theatrePicker: TheatrePickerState?
     /// Showcase's layout: the carousel or the fan (ShowcaseLayout)
     var showcaseLayout: ShowcaseLayout = .carousel
     var theatreFocus: String?

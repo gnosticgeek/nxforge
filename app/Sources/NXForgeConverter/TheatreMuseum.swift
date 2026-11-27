@@ -223,6 +223,9 @@ struct MuseumTheme: View {
                 // the brass plaque over the cabinet, and the lighting switch at the top right
                 MuseumTitle(filter: model.theatreShownFilter)
                     .frame(width: W * u).padding(.top, 12 * u)
+                // the dice and the gear at the top left, the lighting switch at the right
+                TheatreCorner(model: model, size: 44)
+                    .padding(.top, 16 * u).padding(.leading, (MuseumLayout.side + 6) * u)
                 MuseumLightSwitch(light: light, focused: model.museumLightFocus) { model.settings.museumLighting = $0 }
                     .frame(width: W * u, alignment: .trailing).padding(.top, 14 * u).padding(.trailing, (MuseumLayout.side + 6) * u)
                 HStack(alignment: .bottom) {

@@ -334,7 +334,7 @@ extension AppModel {
         case .downloadHeroes: flip(&settings.downloadHeroes)
         case .downloadStoreInfo: flip(&settings.downloadStoreInfo)
         case .mediaInGameFolder: flip(&settings.mediaInGameFolder)
-        case .theatreTheme: cycle(&settings.theatreTheme); theatreTheme = settings.theatreTheme
+        case .theatreTheme: var t = settings.theatreTheme; cycle(&t); pickTheatreTheme(t)
         case .showcaseLayout: cycle(&settings.showcaseLayout); showcaseLayout = settings.showcaseLayout
         case .theatreOnTV: cycle(&settings.theatreOnTV)
         case .homeOpensTheatre: flip(&settings.homeOpensTheatre); ControllerNav.shared.background(settings.homeOpensTheatre)

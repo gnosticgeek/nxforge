@@ -137,6 +137,9 @@ struct Settings: Codable, Equatable {
     var theatreVolume = 100
     var theatreLastGame: String?
     var theatreFilter: String?
+    /// the system Theatre shows (TheatrePicker.swift), and the look each system was last left on (by system, theme)
+    var theatreSystem: TheatreSystem = .all
+    var theatreLooks: [String: String] = [:]
     /// Theatre's sounds (clicks as the games turn, a thunk on launch), the focused game's music (a file in its media folder),
     /// its light following the time of day, and the games it has shown (nil until it first opens: none is a new arrival then)
     var theatreSounds = true
@@ -194,6 +197,7 @@ struct Settings: Codable, Equatable {
         case theatreTheme = "theatre_theme", showcaseLayout = "theatre_showcase_layout", theatreOnTV = "theatre_on_tv", homeOpensTheatre = "home_opens_theatre"
         case theatreEdges = "theatre_edges", theatreSaver = "theatre_saver", theatreVolume = "theatre_volume"
         case theatreLastGame = "theatre_last_game", theatreFilter = "theatre_filter"
+        case theatreSystem = "theatre_system", theatreLooks = "theatre_looks"
         case theatreSounds = "theatre_sounds", theatreMusic = "theatre_music", theatreTimeOfDay = "theatre_time_of_day", theatreSeen = "theatre_seen", theatreMusicFolder = "theatre_music_folder"
         case theatreLaunch = "theatre_launch", theatreRumble = "theatre_rumble"
         case theatreTilt = "theatre_tilt", theatreCollector = "theatre_collector", completed, museumLighting = "theatre_museum_lighting"
@@ -268,6 +272,8 @@ struct Settings: Codable, Equatable {
         theatreVolume = min(max((try? c.decodeIfPresent(Int.self, forKey: .theatreVolume)) ?? 100, 0), 100)
         theatreLastGame = try? c.decodeIfPresent(String.self, forKey: .theatreLastGame)
         theatreFilter = try? c.decodeIfPresent(String.self, forKey: .theatreFilter)
+        theatreSystem = (try? c.decodeIfPresent(TheatreSystem.self, forKey: .theatreSystem)) ?? .all
+        theatreLooks = (try? c.decodeIfPresent([String: String].self, forKey: .theatreLooks)) ?? [:]
         theatreSounds = (try? c.decodeIfPresent(Bool.self, forKey: .theatreSounds)) ?? true
         theatreMusic = (try? c.decodeIfPresent(Bool.self, forKey: .theatreMusic)) ?? true
         theatreTimeOfDay = (try? c.decodeIfPresent(Bool.self, forKey: .theatreTimeOfDay)) ?? true

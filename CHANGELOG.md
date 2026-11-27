@@ -2,6 +2,10 @@
 
 NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versions) has the rules). Each entry lists what NXForge adds on top of [nxnative](https://github.com/seedds/nxnative); upstream's own changes come in through the merges it names.
 
+## 0.64.0 (2026-11-27)
+
+- **Theatre's picker: a system, then its look** (Converter 0.31.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): + on Theatre opens a shutter of tall panels, one per system (Switch 2, Switch, Wii, GameCube, Game Boy Advance) and All games; the one in focus fans open with the real room inside it, the others are slivers with their names up the side. Up and down step the system's looks, A keeps it, B puts back what was there. The dice (Surprise me) and the gear (Settings) sit in every theme's top bar, What Should I Play? leaves the menu for the dice, and the TV options move to a TV section in Settings. App only, no engine change.
+
 ## 0.63.2 (2026-11-27)
 
 Wii and GameCube follow-ups from Tom's first look (Converter 0.30.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); [wii/README.md](wii/README.md)). No game needs a rebuild.

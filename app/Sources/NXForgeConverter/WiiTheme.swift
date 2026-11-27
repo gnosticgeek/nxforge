@@ -81,6 +81,8 @@ struct WiiTheme: View {
                 ZStack(alignment: .topLeading) {
                     WiiGameList(model: model, games: games, index: index, s: s)
                     WiiCard(model: model, game: focus, s: s)
+                    // the dice and the gear, at the top left over the list
+                    TheatreCorner(model: model, ink: WiiLook.ink, size: 40).environment(\.tu, s).wiiBox(73, 16, 120, 44, s, .leading)
                 }
                 .frame(width: WiiLook.width * s, height: WiiLook.height * s)
             }

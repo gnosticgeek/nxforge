@@ -12,7 +12,7 @@ struct ShutterTopBar: View {
             TheatreConsoleMark(model: model, ink: ShutterLook.ink)
             Spacer()
             HStack(spacing: 18 * u) {
-                Text("Shutter").font(.system(size: 26 * u, weight: .medium)).opacity(0.9)
+                Text(model.theatreSystem == .all ? "Shutter" : "\(model.theatreSystem.rawValue) · Shutter").font(.system(size: 26 * u, weight: .medium)).opacity(0.9)
                 Rectangle().fill(ShutterLook.accent).frame(width: 2 * u, height: 30 * u)
                 TimelineView(.everyMinute) { t in
                     HStack(spacing: 10 * u) {
@@ -20,6 +20,7 @@ struct ShutterTopBar: View {
                         Text(t.date.formatted(date: .omitted, time: .shortened)).font(.system(size: 28 * u, weight: .semibold)).monospacedDigit()
                     }
                 }
+                TheatreCorner(model: model, ink: ShutterLook.ink, size: 46)
             }
         }
         .padding(.horizontal, 56 * u).frame(height: ShutterLayout.top * u)
