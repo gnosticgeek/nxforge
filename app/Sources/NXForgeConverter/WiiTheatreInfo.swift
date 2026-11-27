@@ -224,9 +224,10 @@ final class WiiArt {
 
     /// Fetch the pictures of the games that have none yet, one after another; a game libretro has nothing for is asked again after a month
     func fetchMissing(_ games: [(key: String, gameID: String, titles: [String], gamecube: Bool)]) {
-        let todo = games.filter { !asked.contains($0.key) }
+        // asked again when there are new titles to try (GameTDB's, once it is read)
+        let todo = games.filter { !asked.contains($0.key + "|" + $0.titles.joined(separator: "|")) }
         guard !todo.isEmpty else { return }
-        for g in todo { asked.insert(g.key) }
+        for g in todo { asked.insert(g.key + "|" + g.titles.joined(separator: "|")) }
         let previous = fetch
         fetch = Task.detached(priority: .utility) {
             await previous?.value
@@ -238,7 +239,10 @@ final class WiiArt {
                 let dir = CoverStore.dir, none = dir.appending(path: "\(g.key).wiiartnone")
                 let snap = dir.appending(path: "\(g.key)-snap.png"), logo = dir.appending(path: "\(g.key)-logo.png")
                 if fm.fileExists(atPath: snap.path) && fm.fileExists(atPath: logo.path) { continue }
-                if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 30 * 86400 { continue }
+                // nothing found under these titles this month (the marker holds the titles tried)
+                let tried = Data(g.titles.joined(separator: "\n").utf8)
+                if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 30 * 86400,
+                   (try? Data(contentsOf: none)) == tried { continue }
                 let repo = g.gamecube ? "Nintendo_-_GameCube" : "Nintendo_-_Wii"
                 if lists[repo] == nil { lists[repo] = await Self.list(repo) }
                 guard let names = lists[repo], !names.isEmpty else { continue }   // offline: asked again at the next start
@@ -248,7 +252,7 @@ final class WiiArt {
                     try? data.write(to: out)
                     got = true
                 }
-                if got || fm.fileExists(atPath: snap.path) || fm.fileExists(atPath: logo.path) { try? fm.removeItem(at: none) } else { try? Data().write(to: none) }
+                if got || fm.fileExists(atPath: snap.path) || fm.fileExists(atPath: logo.path) { try? fm.removeItem(at: none) } else { try? tried.write(to: none) }
                 if got {
                     let key = g.key
                     await MainActor.run { WiiArt.shared.forget(key) }

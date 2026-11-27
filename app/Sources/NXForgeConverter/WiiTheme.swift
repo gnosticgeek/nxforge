@@ -89,7 +89,8 @@ struct WiiTheme: View {
         .ignoresSafeArea()
         .environment(\.colorScheme, .light)
         .animation(still ? nil : .easeOut(duration: 0.18), value: focus?.id)
-        .task(id: games.map(\.id).joined(separator: "|")) { fetch(games) }
+        // again once GameTDB is read, for its titles
+        .task(id: games.map(\.id).joined(separator: "|") + "#\(WiiTDB.shared.revision)") { fetch(games) }
     }
 
     /// GameTDB's facts once, and libretro's screenshot and logo for each game shown
@@ -246,13 +247,13 @@ struct WiiCard: View {
         } else if let g = game, let front = CoverArt.front(g) {
             // no screenshot: the box, over its own colours spread out of focus
             ZStack {
-                Image(nsImage: front).resizable().aspectRatio(contentMode: .fill).blur(radius: 70 * s).opacity(0.9)
-                Color.white.opacity(0.3)
+                if let wash = CoverArt.ambient(g) { Image(nsImage: wash).resizable().aspectRatio(contentMode: .fill) }
+                Color.white.opacity(0.25)
                 // left of the middle and low, clear of the curve over the top right
                 Image(nsImage: front).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-                    .frame(height: 470 * s)
+                    .frame(height: 440 * s)
                     .shadow(color: .black.opacity(0.3), radius: 24 * s, y: 12 * s)
-                    .offset(x: -170 * s, y: 30 * s)
+                    .offset(x: -200 * s, y: 50 * s)
             }
         } else {
             LinearGradient(colors: [Color(red: 0.80, green: 0.91, blue: 0.97), Color(red: 0.62, green: 0.80, blue: 0.92)], startPoint: .top, endPoint: .bottom)
