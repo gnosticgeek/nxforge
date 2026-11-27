@@ -6,6 +6,15 @@ NXForge releases are tagged `vX.Y.Z` on `main` ([UPSTREAM.md](UPSTREAM.md#versio
 
 - **Theatre's picker: a system, then its look** (Converter 0.31.0, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): + on Theatre opens a shutter of tall panels, one per system (Switch 2, Switch, Wii, GameCube, Game Boy Advance) and All games; the one in focus fans open with the real room inside it, the others are slivers with their names up the side. Up and down step the system's looks, A keeps it, B puts back what was there. The dice (Surprise me) and the gear (Settings) sit in every theme's top bar, What Should I Play? leaves the menu for the dice, and the TV options move to a TV section in Settings. App only, no engine change.
 
+## 0.63.2 (2026-11-27)
+
+Wii and GameCube follow-ups from Tom's first look (Converter 0.30.2, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md); [wii/README.md](wii/README.md)). No game needs a rebuild.
+
+- **Play just plays a Wii or GameCube game.** There is no Convert step to sit through: Play makes the game's small app on the way (the Wii player, Dolphin and the box art, a few seconds, no trial run) and opens it. These games read Ready before their first play.
+- **GameCube is its own platform**, with its own folder in Settings (a `gamecube`, `gc` or `ngc` folder beside the games folder is found by itself); the Wii folder no longer takes GameCube discs in.
+- **Zipped discs.** A `.zip` holding one disc image is listed by the disc's header and unpacked once, into the game's own folder, the first time it plays (Elebits, 3 GB from a share: 30 s).
+- **WiiWare games have their real IDs** (the title ID and publisher code from the WAD's TMD), so they get GameTDB's art instead of a Switch game's of the same name.
+
 ## 0.63.1 (2026-11-27)
 
 - **Theatre's Wii theme** (Converter 0.30.1, [CONVERTER_CHANGELOG.md](CONVERTER_CHANGELOG.md)): the Wii and GameCube games as a light blue game library to Tom's mock-up, a list of pill buttons beside a big card with the game's screenshot, the controller it takes, its facts from GameTDB, your stars and its logo. App only, no engine change.

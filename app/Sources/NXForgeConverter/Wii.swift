@@ -14,7 +14,30 @@ enum Wii {
     static let discExtensions: Set<String> = ["iso", "gcm", "rvz", "wia", "wbfs", "gcz", "ciso"]
     static let extensions: Set<String> = discExtensions.union(["wad", "dol", "elf"])
 
-    static func isGame(_ p: String) -> Bool { extensions.contains(p.url.pathExtension.lowercased()) && !Source.isDir(p) }
+    static func isGame(_ p: String) -> Bool {
+        let ext = p.url.pathExtension.lowercased()
+        return (extensions.contains(ext) || (ext == "zip" && isZipDisc(p))) && !Source.isDir(p)
+    }
+
+    nonisolated(unsafe) private static var zipCache: [String: Bool] = [:]
+    private static let zipLock = NSLock()
+    /// Whether a .zip holds a Wii or GameCube disc image (Redump sets come zipped, one disc each): its first entry's name, from
+    /// the zip's first local header (30 bytes and the name), remembered per path
+    static func isZipDisc(_ p: String) -> Bool {
+        zipLock.lock(); let hit = zipCache[p]; zipLock.unlock()
+        if let hit { return hit }
+        var yes = false
+        if let h = FileHandle(forReadingAtPath: p), let d = try? h.read(upToCount: 30 + 1024), d.count > 30 {
+            try? h.close()
+            let b = [UInt8](d)
+            if b[0] == 0x50, b[1] == 0x4B, b[2] == 3, b[3] == 4 {
+                let n = Int(b[26]) | Int(b[27]) << 8
+                if 30 + n <= b.count, let name = String(bytes: b[30..<(30 + n)], encoding: .utf8) { yes = discExtensions.contains(name.url.pathExtension.lowercased()) }
+            }
+        }
+        zipLock.lock(); zipCache[p] = yes; zipLock.unlock()
+        return yes
+    }
     /// Whether a built app is a Wii or GameCube one (its port.json sits in Contents/Resources/wii)
     static func isApp(_ app: String) -> Bool { FileManager.default.fileExists(atPath: app + "/Contents/Resources/wii/port.json") }
     static func isTitleID(_ t: String?) -> Bool { isWiiID(t) || isGameCubeID(t) }
@@ -51,10 +74,18 @@ enum Wii {
 
     /// The disc's own first 0x80 bytes, from whichever image format holds it (wii_build.py disc_header)
     static func discHeader(_ path: String) -> Data? {
+        if path.url.pathExtension.lowercased() == "zip" {   // the disc inside: its first bytes, enough for an ISO, RVZ, WIA or WBFS header
+            guard isZipDisc(path), let d = GBA.head(path, count: 0x280) else { return nil }
+            return parseHeader([UInt8](d), file: nil)
+        }
         guard let h = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? h.close() }
         guard let d = try? h.read(upToCount: 0x8100), d.count >= 0x80 else { return nil }
-        let b = [UInt8](d)
+        return parseHeader([UInt8](d), file: h)
+    }
+
+    private static func parseHeader(_ b: [UInt8], file h: FileHandle?) -> Data? {
+        guard b.count >= 0x80 else { return nil }
         let magic = String(bytes: b[0..<4], encoding: .ascii) ?? ""
         func slice(_ at: Int) -> Data? { b.count >= at + 0x80 ? Data(b[at..<(at + 0x80)]) : nil }
         if magic == "RVZ\u{1}" || magic == "WIA\u{1}" { return slice(0x58) }
@@ -63,6 +94,7 @@ enum Wii {
         let le32 = { (o: Int) in UInt32(b[o]) | UInt32(b[o + 1]) << 8 | UInt32(b[o + 2]) << 16 | UInt32(b[o + 3]) << 24 }
         let le64 = { (o: Int) in UInt64(le32(o)) | UInt64(le32(o + 4)) << 32 }
         if le32(0) == 0xB10B_C001 {   // GCZ: the header is in the first block, stored or zlib-compressed
+            guard let h else { return nil }
             let blockSize = Int(le32(24)), blocks = Int(le32(28))
             guard blocks > 0, blockSize > 0, b.count >= 40 else { return nil }
             let ptr = le64(32), stored = ptr & (1 << 63) != 0
@@ -91,7 +123,9 @@ enum Wii {
     /// The game's title, game ID, console and the title ID NXForge keeps it under; nil when the file is not a Wii or GameCube disc.
     /// A WAD, DOL or ELF has no disc header: wii_build.py --info reads those.
     static func header(_ path: String) -> Header? {
-        guard discExtensions.contains(path.url.pathExtension.lowercased()), let d = discHeader(path), d.count >= 0x60 else { return nil }
+        let ext = path.url.pathExtension.lowercased()
+        if ext == "wad" { return wadHeader(path) }
+        guard discExtensions.contains(ext) || ext == "zip", let d = discHeader(path), d.count >= 0x60 else { return nil }
         let b = [UInt8](d)
         let be32 = { (o: Int) in UInt32(b[o]) << 24 | UInt32(b[o + 1]) << 16 | UInt32(b[o + 2]) << 8 | UInt32(b[o + 3]) }
         let wii = be32(0x18) == 0x5D1C_9EA3, gc = be32(0x1C) == 0xC233_9F3D
@@ -103,21 +137,48 @@ enum Wii {
         return Header(title: title, gameID: gameID, gamecube: !wii, titleID: (wii ? "0E00" : "0C00") + id.map { String(format: "%02X", $0) }.joined())
     }
 
-    /// The Wii games folder: the one in Settings, else folders named wii or gamecube beside the Switch games folder or the
-    /// Game Boy Advance one (…/roms/gba → …/roms/wii, …/roms/gamecube).
+    /// A WiiWare WAD's game ID from its TMD: the title ID's last four letters and the publisher's two (wii_build.py read_disc)
+    static func wadHeader(_ path: String) -> Header? {
+        guard let h = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? h.close() }
+        guard let d = try? h.read(upToCount: 0x20), d.count >= 24 else { return nil }
+        let b = [UInt8](d)
+        let be = { (o: Int) in Int(b[o]) << 24 | Int(b[o + 1]) << 16 | Int(b[o + 2]) << 8 | Int(b[o + 3]) }
+        let align = { (n: Int) in (n + 63) & ~63 }
+        try? h.seek(toOffset: UInt64(align(be(0)) + align(be(8)) + align(be(16)) + 0x18C))
+        guard let t = try? h.read(upToCount: 0x0E), t.count == 0x0E else { return nil }
+        let tb = [UInt8](t), id = (Array(tb[4..<8]) + Array(tb[12..<14])).map { $0 > 32 && $0 < 127 ? $0 : 0x30 }
+        return Header(title: cleanName(path), gameID: String(bytes: id, encoding: .ascii) ?? "000000", gamecube: false,
+                      titleID: "0E00" + id.map { String(format: "%02X", $0) }.joined())
+    }
+
+    /// The Wii games folder: the one in Settings, else a folder named wii beside the Switch games folder or the Game Boy Advance
+    /// one (…/roms/gba → …/roms/wii).
     static func roots(_ s: Settings) -> [String] {
         if let r = s.wiiRoot, !r.isEmpty { return [r] }
+        return beside(s, ["wii"])
+    }
+    static func root(_ s: Settings) -> String? { roots(s).first }
+    /// The GameCube games folder, its own platform: the one in Settings, else a folder named gamecube, gc or ngc beside those
+    static func gameCubeRoots(_ s: Settings) -> [String] {
+        if let r = s.gameCubeRoot, !r.isEmpty { return [r] }
+        return beside(s, ["gamecube", "gc", "ngc"])
+    }
+    static func gameCubeRoot(_ s: Settings) -> String? { gameCubeRoots(s).first }
+    /// Both platforms' folders, for one scan
+    static func allRoots(_ s: Settings) -> [String] { Array(NSOrderedSet(array: roots(s) + gameCubeRoots(s))) as? [String] ?? [] }
+
+    private static func beside(_ s: Settings, _ names: [String]) -> [String] {
         var out: [String] = []
         for base in [s.gamesRoot, s.gbaRoot].compactMap({ $0 }) where !base.isEmpty {
             let parent = base.url.deletingLastPathComponent()
-            for n in ["wii", "gamecube", "gc", "ngc"] {
+            for n in names {
                 let p = parent.appending(path: n).path
                 if !out.contains(p) && Source.isDir(p) { out.append(p) }
             }
         }
         return out
     }
-    static func root(_ s: Settings) -> String? { roots(s).first }
 
     /// Every game in the folders (and two levels of folders under them: sets often keep a folder per game), as Library games.
     static func scan(roots: [String]) -> [LibraryGame] {
@@ -134,7 +195,7 @@ enum Wii {
                 guard isGame(p) else { continue }
                 let ext = p.url.pathExtension.lowercased()
                 let h = header(p)
-                if h == nil && discExtensions.contains(ext) { continue }   // an .iso of something else
+                if h == nil && (discExtensions.contains(ext) || ext == "zip") { continue }   // an .iso of something else
                 if ext == "wbfs", n.range(of: #"\.wbf\d$"#, options: .regularExpression) != nil { continue }
                 let bytes = ((try? fm.attributesOfItem(atPath: (p as NSString).resolvingSymlinksInPath))?[.size] as? NSNumber)?.int64Value ?? 0
                 var g = LibraryGame(kind: .wii, path: p, name: cleanName(n), titleID: h?.titleID, files: [], fileCount: 1, bytes: bytes, base: true, updates: 0, dlc: 0)
@@ -220,5 +281,51 @@ struct WiiPortCard: View {
 
     private func row(_ k: String, _ v: String) -> some View {
         GridRow { Text(k).foregroundStyle(.secondary); Text(v).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
+    }
+}
+
+// MARK: Play straight away
+
+extension AppModel {
+    /// Play on a Wii or GameCube game with no app yet: no Convert page and no build to wait for. The app is made in the
+    /// background (scripts/wii_build.py with no trial run: the player, Dolphin and the box art copied into a 22 MB app, a few
+    /// seconds; a zipped disc is unpacked once first), and the game opens as soon as it is there.
+    func playWii(_ g: LibraryGame) {
+        guard let repo = env?.repo, let py = env?.python else { frontEnd = false; convertFromLibrary(g); return }
+        if wiiStarting.contains(g.id) { return }
+        wiiStarting.insert(g.id)
+        let name = g.displayName, ref = GameRef(libraryID: g.id, app: nil), path = env?.path ?? ""
+        let zipped = g.path.url.pathExtension.lowercased() == "zip"
+        let note = !Wii.engineBuilt ? "Building Dolphin on this Mac, once: 15 to 30 minutes"
+            : zipped ? "Unpacking the disc from its zip, once" : nil
+        if frontEnd { launching = Launching(ref: ref, app: "", name: name, note: note, summary: "", phase: .preparing) }
+        else { showBanner("Getting \(name) ready", detail: note ?? "A few seconds", symbol: "play.fill") }
+        let held = launching?.id
+        let args = ["-u", repo + "/" + Wii.helper, g.path, "--home", g.folder, "--name", Wii.cleanName(g.path), "--no-trial"]
+        Task { @MainActor [weak self] in
+            let out = await Task.detached(priority: .userInitiated) { () -> (ok: Bool, out: String)? in
+                try? FileManager.default.createDirectory(atPath: g.folder, withIntermediateDirectories: true)
+                return NXForgeConverter.run(py, args, env: ["PATH": path, "PYTHONUNBUFFERED": "1"], cwd: repo)
+            }.value
+            guard let self else { return }
+            self.wiiStarting.remove(g.id)
+            let app = out?.out.split(separator: "\n").last { $0.hasPrefix("done: ") }.map { String($0.dropFirst(6)) }
+            guard let app, out?.ok == true, FileManager.default.fileExists(atPath: app) else {
+                let why = out?.out.split(separator: "\n").last.map(String.init)?.replacingOccurrences(of: "wii_build: ", with: "") ?? "the script did not start"
+                if self.launching?.id == held { self.launching = nil }
+                self.showBanner("\(name) could not start", detail: why, tone: .failure, action: ("Open in Converter", { [weak self] in self?.frontEnd = false; self?.convertFromLibrary(g) }))
+                return
+            }
+            // the library knows its app now, so it shows as ready everywhere
+            if var l = self.library, let i = l.games.firstIndex(where: { $0.id == g.id }) {
+                l.games[i].app = app
+                self.library = l
+                GameLibrary.saveCache(l)
+            }
+            self.revision += 1
+            if held != nil, self.launching?.id != held { return }   // called off meanwhile
+            self.launching = nil
+            self.playFromStage(GameRef(libraryID: g.id, app: app))
+        }
     }
 }

@@ -288,6 +288,7 @@ extension AppModel {
         guard let app = r.app ?? b?.app, FileManager.default.fileExists(atPath: app) else {
             // a game that cannot play yet: the step that fixes it (GameStatus), and a build only when that is what it needs
             if let sg = stageGames().first(where: { $0.isRef(r) }), sg.app == nil, !status(sg).buildable { fix(sg); return }
+            if let g, g.kind == .wii { playWii(g); return }   // a Wii or GameCube game just plays: its app is made on the way
             if let g { frontEnd = false; convertFromLibrary(g) }
             return
         }

@@ -12,6 +12,14 @@ Shipped in NXForge 0.64.0.
 - **The dice and the gear in every theme's top bar.** Surprise me (the shuffle, also L3) and Settings, as round buttons beside the clock (top left on the Museum wall and the Wii theme). What Should I Play? is gone from the Theatre menu, which is now Continue, Systems and Themes, Settings and Leave Theatre; the feet say "+ Themes".
 - **A TV section in Settings.** When a TV is plugged in, Home button opens Theatre, Open NXForge at login, TV edges (the four corner marks show on Theatre while a controller is on that row) and Screensaver move out of Theatre into their own section; TV Edges leaves the Theatre menu. A theme chosen in Settings keeps the system when it is one of its looks, else goes to All games. Code: `TheatrePicker.swift`.
 
+## 0.30.2 (2026-11-27)
+
+Shipped in NXForge 0.63.2.
+
+- **Play on a Wii or GameCube game opens it**: no Convert page. A game with no app yet shows as Ready; Play runs `wii_build.py --no-trial` in the background behind the launch screen ("Getting it ready"), then starts it (`Wii.swift` playWii; GameStatus `.playable`). They are left out of the Not built yet filter.
+- **A GameCube folder of its own** in Settings › Library (`gamecube_root`), separate from the Wii folder.
+- **Zipped Wii and GameCube discs** are listed (the disc header read through the zip; `GBA.isGame` leaves such zips alone) and **WiiWare WADs** get their game ID from the TMD.
+
 ## 0.30.1 (2026-11-27)
 
 Shipped in NXForge 0.63.1.
