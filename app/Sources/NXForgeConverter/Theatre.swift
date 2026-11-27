@@ -16,7 +16,7 @@ import SwiftUI
 import WebKit
 
 enum TheatreTheme: String, Codable, CaseIterable {
-    case showcase = "Showcase", cinema = "Cinema", shutter = "Shutter", trailer = "Trailer", wallet = "Wallet", museum = "Museum"
+    case showcase = "Showcase", cinema = "Cinema", shutter = "Shutter", trailer = "Trailer", wallet = "Wallet", museum = "Museum", wii = "Wii"
 
     /// Carousel and Fan (to 0.48.8) became Showcase's two layouts (Fan had been Gallery, and Gallery Shelf); anything else
     /// unknown is Showcase too
@@ -32,6 +32,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         case .trailer: "The trailer fills the room"
         case .wallet: "Your game cards in their wallet"
         case .museum: "Your collection on a lit wall, a shelf a console"
+        case .wii: "Your Wii and GameCube games, a list and a big card"
         }
     }
     var symbol: String {
@@ -42,6 +43,7 @@ enum TheatreTheme: String, Codable, CaseIterable {
         case .trailer: "play.rectangle"
         case .wallet: "wallet.bifold"
         case .museum: "building.columns"
+        case .wii: "list.bullet.rectangle"
         }
     }
 }
@@ -167,7 +169,7 @@ struct TheatreFact: Hashable {
 
 /// The Theatre menu's rows (Menu, or B for Leave)
 enum TheatreMenuRow: Int, CaseIterable {
-    case resume, showcase, cinema, shutter, trailer, wallet, museum, shuffle, edges, settings, leave
+    case resume, showcase, cinema, shutter, trailer, wallet, museum, wii, shuffle, edges, settings, leave
     var title: String {
         switch self {
         case .resume: "Continue"
@@ -186,6 +188,7 @@ enum TheatreMenuRow: Int, CaseIterable {
         case .trailer: .trailer
         case .wallet: .wallet
         case .museum: .museum
+        case .wii: .wii
         case .resume, .shuffle, .edges, .settings, .leave: nil
         }
     }
@@ -355,12 +358,14 @@ extension AppModel {
 
     /// The games on Theatre: the built ones (every game when none is built) in the filter, favourites first, then the ones played
     /// lately (newest first), then as the front end orders them
-    func theatreGames() -> [StageGame] { theatreList(theatrePool(.showcase)) }
+    func theatreGames() -> [StageGame] { theatreList(theatrePool(theatreTheme == .wii ? .wii : .showcase)) }
 
     /// The games a theme picks from: Trailer every game, built or not; the others the built ones (every game when none is built)
     func theatrePool(_ theme: TheatreTheme? = nil) -> [StageGame] {
-        let games = stageGames()
-        if (theme ?? theatreTheme) == .trailer { return games }
+        let every = stageGames()
+        if (theme ?? theatreTheme) == .trailer { return every }
+        // the Wii theme: the games Dolphin plays, and only those
+        let games = (theme ?? theatreTheme) == .wii ? every.filter(\.console.dolphin) : every
         let built = games.filter { $0.app != nil }
         return built.isEmpty ? games : built
     }
@@ -564,6 +569,21 @@ extension AppModel {
             let games = theatreGames()
             focus = theatreFocused(games)
             if museumLightFocus || [.left, .right, .up, .down].contains(k) { museumPad(k, games: games, focus: focus); return }
+        case .wii:
+            // up and down go down the list (round from the last to the first), left and right give the game in focus fewer or more stars
+            let games = theatreGames()
+            focus = theatreFocused(games)
+            if (k == .up || k == .down), !games.isEmpty {
+                let i = games.firstIndex { $0.id == focus?.id } ?? 0
+                theatreFocus = games[(i + (k == .up ? -1 : 1) + games.count) % games.count].id
+                if games.count > 1 { theatreCue(.step) }
+                return
+            }
+            if k == .left || k == .right, let g = focus {
+                let now = settings.gameStars[g.favoriteKey] ?? 0, next = min(max(now + (k == .left ? -1 : 1), 0), 5)
+                if next != now { settings.gameStars[g.favoriteKey] = next == 0 ? nil : next; theatreCue(.step) }
+                return
+            }
         case .cinema:
             let rows = theatreRows()
             guard !rows.isEmpty else { focus = nil; break }
@@ -614,7 +634,7 @@ extension AppModel {
         theatreMenu = nil
         switch r {
         case .resume: theatreUnbox = nil; booklet = nil; continueFromConsole()
-        case .showcase, .cinema, .shutter, .trailer, .wallet, .museum: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
+        case .showcase, .cinema, .shutter, .trailer, .wallet, .museum, .wii: if let t = r.theme { setTheatreTheme(t); theatreCue(.theme) }
         case .shuffle: shuffleTheatre()
         // A steps the edges round and keeps the menu up, so the corners stay in view
         case .edges:
@@ -868,6 +888,7 @@ struct TheatreView: View {
         case .trailer: TrailerTheme(model: model).transition(.opacity)
         case .wallet: WalletTheme(model: model).transition(.opacity)
         case .museum: MuseumTheme(model: model).transition(.opacity)
+        case .wii: WiiTheme(model: model).transition(.opacity)
         }
     }
 
@@ -1089,7 +1110,7 @@ struct TheatreMenu: View {
         switch r {
         case .resume: "play.fill"
         case .showcase: model.showcaseLayout.symbol
-        case .cinema, .shutter, .trailer, .wallet, .museum: r.theme?.symbol ?? ""
+        case .cinema, .shutter, .trailer, .wallet, .museum, .wii: r.theme?.symbol ?? ""
         case .shuffle: "dice"
         case .edges: "rectangle.dashed"
         case .settings: "gearshape"
@@ -1101,7 +1122,7 @@ struct TheatreMenu: View {
         switch r {
         case .resume: "Its card is still in the console"
         case .showcase: "Your boxes as a carousel, a fan or a shelf: ← → here, ↑ ↓ on Theatre"
-        case .cinema, .shutter, .trailer, .wallet, .museum: r.theme?.note
+        case .cinema, .shutter, .trailer, .wallet, .museum, .wii: r.theme?.note
         case .shuffle: "Spin the shelf and land on a game (L3)"
         case .edges: "Can you see all four corners? ← → to inset the picture"
         case .settings: nil
