@@ -16,3 +16,5 @@ tree/
 gba/tree/
 gba/host/target/
 gba/build/
+# The Wii and GameCube player's build outputs (wii/host/mac/build.sh); Dolphin itself builds outside the repository (scripts/wii_engine.py)
+wii/build/

@@ -2856,8 +2856,73 @@ import Testing
         var s = Settings()
         s.setShows(.gba, false)
         #expect(!StageFilter.shown(.owned, s).contains(.gba) && StageFilter.shown(.owned, s).contains(.switch1))
-        #expect(StageFilter.shown(.built, s) == [.all, .favorites, .switch2, .switch1])
-        #expect(ConsoleFilter.shown(s) == [.all, .switch2, .switch1])
+        #expect(StageFilter.shown(.built, s) == [.all, .favorites, .switch2, .switch1, .wii, .gamecube])
+        #expect(ConsoleFilter.shown(s) == [.all, .switch2, .switch1, .wii, .gamecube])
+        s.setShows(.gamecube, false)
+        #expect(ConsoleFilter.shown(s) == [.all, .switch2, .switch1, .wii])
         #expect(ConsoleFilter.shown(Settings()) == ConsoleFilter.allCases)
+    }
+}
+
+
+@Suite struct WiiGames {
+    /// a disc header: the game ID, its version, the console's mark and the title
+    func header(_ id: String, title: String, wii: Bool) -> [UInt8] {
+        var h = [UInt8](repeating: 0, count: 0x80)
+        for (i, c) in id.utf8.enumerated() { h[i] = c }
+        let mark: [UInt8] = wii ? [0x5D, 0x1C, 0x9E, 0xA3] : [0xC2, 0x33, 0x9F, 0x3D]
+        for i in 0..<4 { h[(wii ? 0x18 : 0x1C) + i] = mark[i] }
+        for (i, c) in title.utf8.enumerated() { h[0x20 + i] = c }
+        return h
+    }
+    func file(_ name: String, _ bytes: [UInt8]) throws -> String {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "nxf-wii-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let p = dir.appending(path: name).path
+        try Data(bytes).write(to: URL(fileURLWithPath: p))
+        return p
+    }
+
+    @Test func aPlainDiscIsReadFromItsHeader() throws {
+        let p = try file("Zack & Wiki (USA).iso", header("RTZE08", title: "Zack and Wiki", wii: true) + [UInt8](repeating: 0, count: 0x100))
+        let h = try #require(Wii.header(p))
+        #expect(h.gameID == "RTZE08" && !h.gamecube && h.title == "Zack and Wiki")
+        #expect(h.titleID == "0E0052545A453038")
+        #expect(Wii.gameID(titleID: h.titleID) == "RTZE08")
+        #expect(Console.of(titleID: h.titleID) == .wii)
+    }
+
+    @Test func anRVZKeepsTheHeaderInItsOwn() throws {
+        var b = [UInt8]("RVZ\u{1}".utf8) + [UInt8](repeating: 0, count: 0x54)
+        b += header("GALE01", title: "Super Smash Bros Melee", wii: false)
+        let p = try file("Melee.rvz", b)
+        let h = try #require(Wii.header(p))
+        #expect(h.gameID == "GALE01" && h.gamecube)
+        #expect(Console.of(titleID: h.titleID) == .gamecube)
+        #expect(Wii.isGameCubeID(h.titleID) && !Wii.isWiiID(h.titleID))
+    }
+
+    @Test func otherFilesAreNotGames() throws {
+        let p = try file("notes.iso", [UInt8](repeating: 7, count: 0x200))
+        #expect(Wii.header(p) == nil)
+        let dir = p.url.deletingLastPathComponent().path
+        _ = try file("x.txt", [1, 2, 3])
+        #expect(Wii.scan(roots: [dir]).isEmpty)
+        #expect(!Wii.isGame(dir + "/x.txt") && Wii.isGame("/a/b.wbfs") && Wii.isGame("/a/b.WAD"))
+    }
+
+    @Test func aFolderOfDiscsIsListedOnce() throws {
+        let p = try file("Kirby's Epic Yarn (USA).iso", header("RK5E01", title: "Kirby's Epic Yarn", wii: true))
+        let dir = p.url.deletingLastPathComponent().path
+        try Data(header("RK5E01", title: "Kirby's Epic Yarn", wii: true)).write(to: URL(fileURLWithPath: dir + "/Zz copy.iso"))
+        let games = Wii.scan(roots: [dir])
+        #expect(games.count == 1)
+        #expect(games.first?.name == "Kirby's Epic Yarn" && games.first?.console == .wii && games.first?.kind == .wii)
+    }
+
+    @Test func gameTDBArtStartsWithTheGamesRegion() {
+        #expect(Wii.coverURLs(id: "R7PP01", kind: "cover").first?.absoluteString == "https://art.gametdb.com/wii/cover/EN/R7PP01.png")
+        #expect(Wii.coverURLs(id: "R7PE01", kind: "cover").map(\.absoluteString) == ["https://art.gametdb.com/wii/cover/US/R7PE01.png", "https://art.gametdb.com/wii/cover/EN/R7PE01.png"])
+        #expect(NLifeSource.pages(name: "Punch-Out!!", titleID: "0E00523750453031").first?.absoluteString.contains("/games/wii/") == true)
     }
 }

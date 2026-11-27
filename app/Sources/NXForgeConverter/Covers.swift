@@ -372,6 +372,8 @@ enum NLifeSource {
     /// boxed games' section, then the download games'
     static func pages(name: String, titleID: String?) -> [URL] {
         var sections = ["nintendo-switch", "switch-eshop"]
+        if Wii.isWiiID(titleID) { sections = ["wii", "wiiware"] }
+        if Wii.isGameCubeID(titleID) { sections = ["gamecube"] }
         if titleID?.hasPrefix("04") == true { sections.insert("nintendo-switch-2", at: 0) }
         return Array(slugs(name).flatMap { s in sections.compactMap { URL(string: "\(site)/games/\($0)/\(s)") } }.prefix(maxTries))
     }
@@ -662,9 +664,20 @@ final class CoverStore {
                 let front = Self.dir.appending(path: "\(g.key)-front.jpg"), none = Self.dir.appending(path: "\(g.key).none")
                 if fm.fileExists(atPath: front.path) { continue }
                 if let d = (try? fm.attributesOfItem(atPath: none.path))?[.modificationDate] as? Date, Date().timeIntervalSince(d) < 7 * 86400 { continue }
+                var got = false
+                if let id = Wii.gameID(titleID: g.key) {
+                    // a Wii or GameCube game: GameTDB's Wii art, by the disc's own game ID (no name matching)
+                    if let data = await Self.first(Wii.coverURLs(id: id, kind: "coverHQ") + Wii.coverURLs(id: id, kind: "cover")), CoverSource.boxShaped(data), let jpg = CoverSource.jpeg(data) {
+                        try? jpg.write(to: front)
+                        if let wrap = await Self.first(Wii.coverURLs(id: id, kind: "coverfullHQ") + Wii.coverURLs(id: id, kind: "coverfull")) {
+                            if let b = CoverSource.jpeg(wrap, unit: CoverSource.wrap(.back)) { try? b.write(to: Self.dir.appending(path: "\(g.key)-back.jpg")) }
+                            if let s = CoverSource.jpeg(wrap, unit: CoverSource.wrap(.spine)) { try? s.write(to: Self.dir.appending(path: "\(g.key)-spine.jpg")) }
+                        }
+                        got = true
+                    }
+                } else {
                 if list == nil { list = await Self.titles() }
                 guard let list else { return }   // offline: try again at the next start
-                var got = false
                 for id in CoverSource.match(g.name, in: list).prefix(4) {
                     guard let data = await Self.first(CoverSource.urls(id: id, kind: "coverHQ") + CoverSource.urls(id: id, kind: "cover")),
                           CoverSource.boxShaped(data), let jpg = CoverSource.jpeg(data) else { continue }
@@ -675,6 +688,7 @@ final class CoverStore {
                     }
                     got = true
                     break
+                }
                 }
                 if got {
                     try? fm.removeItem(at: none)

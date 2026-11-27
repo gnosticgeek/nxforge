@@ -148,7 +148,7 @@ struct StageGamePage: View {
                 }
                 separator
             }
-            if let t = g.titleID {
+            if let t = g.titleID, !g.console.dolphin {   // Wii and GameCube games have no cheats yet
                 let c = CheatsSummary.of(app: g.app, titleID: t)
                 info("wand.and.stars", "Cheats", c.value, c.note) { model.cheatsFor = g.ref }
                 separator

@@ -14,7 +14,7 @@
 import Foundation
 
 struct LibraryGame: Codable, Hashable, Identifiable {
-    enum Kind: String, Codable { case packages, nup, dump, gba }
+    enum Kind: String, Codable { case packages, nup, dump, gba, wii }
     var id: String { shared ? path + "|" + files.joined(separator: "|") : path }
     var kind: Kind
     /// what the converter builds from: the game's folder, or the .nup file
@@ -57,8 +57,8 @@ struct LibraryGame: Codable, Hashable, Identifiable {
     var signature: String { files.sorted().joined(separator: "|") }
 
     /// a GBA game's is its own folder on a local drive (GBA.home), not the folder its cartridge file shares with the others
-    var folder: String { kind == .gba ? GBA.home(for: path) : kind == .nup ? path.url.deletingLastPathComponent().path : path }
-    var console: Console { kind == .gba ? .gba : kind != .packages || titleID?.hasPrefix("04") == true ? .switch2 : .switch1 }
+    var folder: String { kind == .gba || kind == .wii ? GBA.home(for: path) : kind == .nup ? path.url.deletingLastPathComponent().path : path }
+    var console: Console { kind == .gba ? .gba : kind == .wii ? (Wii.isGameCubeID(titleID) ? .gamecube : .wii) : kind != .packages || titleID?.hasPrefix("04") == true ? .switch2 : .switch1 }
 
     /// "Base game + update + 4 DLC", "Update only", "NUP container"
     var contents: String {
@@ -66,6 +66,7 @@ struct LibraryGame: Codable, Hashable, Identifiable {
         case .nup: return "NUP container"
         case .dump: return "Dump folder"
         case .gba: return "Cartridge"
+        case .wii: return "Disc image"
         case .packages:
             var parts = [base ? "Base game" : (updates > 0 ? "Update only" : dlc > 0 ? "DLC only" : "Game file")]
             if base && updates > 0 { parts.append(updates == 1 ? "update" : "\(updates) updates") }

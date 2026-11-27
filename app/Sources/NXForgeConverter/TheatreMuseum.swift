@@ -78,7 +78,7 @@ enum MuseumLayout {
     /// the gap between cases, as a fraction of a case's width
     static let gap = 0.28
 
-    static let order: [Console] = [.switch2, .switch1, .gba]
+    static let order: [Console] = [.switch2, .switch1, .gba, .wii, .gamecube]
 
     /// The shelves: one a console that has games here, Switch 2 first
     static func shelves(_ games: [StageGame]) -> [(console: Console, games: [StageGame])] {
@@ -149,6 +149,8 @@ enum MuseumLayout {
         case .switch2: Color(red: 1, green: 0.28, blue: 0.34)
         case .switch1: Color(red: 0.15, green: 0.78, blue: 1)
         case .gba: Color(red: 0.62, green: 0.42, blue: 1)
+        case .wii: Color(red: 0.55, green: 0.85, blue: 1)
+        case .gamecube: Color(red: 0.5, green: 0.38, blue: 0.95)
         }
     }
 }
@@ -702,6 +704,8 @@ struct MuseumConsoleArt: View {
             let w = geo.size.width, h = geo.size.height
             switch console {
             case .gba: gba(w: w, h: h)
+            case .wii: wii(w: w, h: h)
+            case .gamecube: gamecube(w: w, h: h)
             case .switch1: hybrid(w: w, h: h, left: Color(red: 0.0, green: 0.66, blue: 0.93), right: Color(red: 1.0, green: 0.30, blue: 0.29), ring: nil)
             case .switch2: hybrid(w: w, h: h, left: Color(white: 0.14), right: Color(white: 0.14), ring: Color(red: 0.92, green: 0.2, blue: 0.26))
             }
@@ -743,6 +747,34 @@ struct MuseumConsoleArt: View {
             }
             // the controller's inner rail, in the Switch 2's red
             if let ring { Rectangle().fill(ring).frame(width: w * 0.04).frame(maxWidth: .infinity, alignment: leftSide ? .trailing : .leading).padding(.vertical, h * 0.06) }
+        }
+        .frame(width: w, height: h)
+    }
+
+    /// a Wii lying flat: white, its disc slot lit blue along the front
+    func wii(w: CGFloat, h: CGFloat) -> some View {
+        let bh = h * 0.34
+        return ZStack {
+            RoundedRectangle(cornerRadius: bh * 0.3).fill(LinearGradient(colors: [Color(white: 0.97), Color(white: 0.8)], startPoint: .top, endPoint: .bottom))
+                .frame(width: w * 0.92, height: bh)
+            RoundedRectangle(cornerRadius: bh * 0.3).strokeBorder(.white.opacity(0.5), lineWidth: 1).frame(width: w * 0.92, height: bh)
+            Capsule().fill(Color(red: 0.35, green: 0.8, blue: 1)).frame(width: w * 0.42, height: bh * 0.1).shadow(color: Color(red: 0.35, green: 0.8, blue: 1), radius: 6)
+            Circle().fill(Color(white: 0.7)).frame(width: bh * 0.18).position(x: w * 0.12, y: h / 2)
+        }
+        .frame(width: w, height: h)
+    }
+
+    /// a GameCube: an indigo cube, its handle at the back and the round lid on top
+    func gamecube(w: CGFloat, h: CGFloat) -> some View {
+        let s = min(w, h) * 0.86
+        let body = Color(red: 0.33, green: 0.28, blue: 0.62)
+        return ZStack {
+            RoundedRectangle(cornerRadius: s * 0.12).strokeBorder(Color(white: 0.2), lineWidth: s * 0.06).frame(width: s * 0.7, height: s * 0.5).offset(y: -s * 0.36)
+            RoundedRectangle(cornerRadius: s * 0.1).fill(LinearGradient(colors: [body, Color(red: 0.22, green: 0.18, blue: 0.45)], startPoint: .top, endPoint: .bottom))
+                .frame(width: s, height: s * 0.86).offset(y: s * 0.05)
+            RoundedRectangle(cornerRadius: s * 0.1).strokeBorder(.white.opacity(0.18), lineWidth: 1).frame(width: s, height: s * 0.86).offset(y: s * 0.05)
+            Circle().fill(Color(white: 0.1).opacity(0.55)).frame(width: s * 0.5).offset(y: s * 0.05)
+            Text("G").font(.system(size: s * 0.22, weight: .black, design: .rounded)).foregroundStyle(.white.opacity(0.35)).offset(y: s * 0.05)
         }
         .frame(width: w, height: h)
     }

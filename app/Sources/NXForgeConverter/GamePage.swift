@@ -77,7 +77,7 @@ struct GamePage: View {
                 let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(spacing: 16))
                 layout {
                     VStack(spacing: 16) {
-                        if let b, !GBA.isApp(b.app) { LaunchSettingsCard(app: b.app) }   // a GBA game has no settings window: Quick settings in the game holds its choices
+                        if let b, !GBA.isApp(b.app), !Wii.isApp(b.app) { LaunchSettingsCard(app: b.app) }   // a GBA game has no settings window: Quick settings in the game holds its choices
                         if let tid, let repo = model.env?.repo, let n = GameInsights.notes(repo: repo, titleID: tid) { NotesCard(notes: n, verified: model.verified[tid]) }
                         if let b, model.engine != nil, !model.isSameEngine(b) { ChangesCard(model: model, build: b, titleID: tid) }
                     }
@@ -88,13 +88,15 @@ struct GamePage: View {
                 }
                 if let b, let tid, GBA.isTitleID(tid) {
                     PortDetailsCard(app: b.app, titleID: tid)
+                } else if let b, let tid, Wii.isTitleID(tid) {
+                    WiiPortCard(app: b.app)
                 } else if let b, let tid {
                     layout {
                         CheatsCard(model: model, app: b.app, titleID: tid, name: name)
                         ModsCard(model: model, app: b.app, titleID: tid, name: name)
                     }
                     EnhancementsCard(model: model, app: b.app)
-                } else if let tid, !GBA.isTitleID(tid) {
+                } else if let tid, !GBA.isTitleID(tid), !Wii.isTitleID(tid) {
                     // not built yet: its cheats can be fetched and switched on now, for the version its files hold
                     CheatsCard(model: model, app: nil, titleID: tid, name: name, version: g?.versionNumber)
                 }

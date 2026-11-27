@@ -16,7 +16,7 @@ extension AppModel {
         let sorted = librarySorted(builds)
         // grouped: the Switch 2 section first, each in the chosen order, so the arrow keys walk the games as shown
         guard libraryGrouped else { return sorted }
-        return sorted.filter { $0.console == .switch2 } + sorted.filter { $0.console == .switch1 } + sorted.filter { $0.console == .gba }
+        return sorted.filter { $0.console == .switch2 } + sorted.filter { $0.console == .switch1 } + sorted.filter { $0.console == .gba } + sorted.filter { $0.console == .wii } + sorted.filter { $0.console == .gamecube }
     }
 
     /// The Library in a Switch 2 section and a Switch one: chosen, and both consoles on show.
@@ -694,7 +694,8 @@ struct LibraryPage: View {
         let two = games.filter { $0.console == .switch2 }
         let one = games.filter { $0.console == .switch1 }
         let gba = games.filter { $0.console == .gba }
-        return [LibrarySection(title: Console.switch2.rawValue, games: two), LibrarySection(title: Console.switch1.rawValue, games: one), LibrarySection(title: Console.gba.rawValue, games: gba)].filter { !$0.games.isEmpty }
+        return [LibrarySection(title: Console.switch2.rawValue, games: two), LibrarySection(title: Console.switch1.rawValue, games: one), LibrarySection(title: Console.gba.rawValue, games: gba),
+                LibrarySection(title: Console.wii.rawValue, games: games.filter { $0.console == .wii }), LibrarySection(title: Console.gamecube.rawValue, games: games.filter { $0.console == .gamecube })].filter { !$0.games.isEmpty }
     }
 
     func revealPath(_ g: LibraryGame) -> String { g.shared ? "\(g.path)/\(g.files.first ?? "")" : g.path }

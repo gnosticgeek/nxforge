@@ -73,6 +73,10 @@ Controls, saves and settings: [Playing](https://github.com/seedds/nxnative/blob/
 
 NXForge also converts Game Boy Advance games you own into Mac apps: point Settings › Library › Game Boy Advance folder at your `.gba` or `.zip` files, and Convert builds each one. The game's code is translated ahead of time by [gba-recomp](https://github.com/JRickey/gba-recomp) and plays in NXForge's own player with the same Quick settings sidebar, cartridge saves, instant save states and Enhanced audio. No BIOS is needed. [gba/README.md](gba/README.md) has the details.
 
+### Wii and GameCube games
+
+NXForge also makes Mac apps for Wii and GameCube games you own: point Settings › Library › Wii and GameCube folder at your disc images (`.iso`, `.rvz`, `.wbfs`, `.gcz` and others), and Convert makes an app for each. The app plays the disc where it is with [Dolphin](https://github.com/dolphin-emu/dolphin), built once on your Mac as a library, inside NXForge's own player with the same Quick settings sidebar, save states and the usual save backups. [wii/README.md](wii/README.md) has the details.
+
 ### Switch 2 games
 
 A Switch 2 game is built from one [NUP](https://github.com/a55uka/nup) container (a `.nup` file) or a folder of its files, not from NSPs. Neither needs `prod.keys`. A game this project has no profile for is surveyed and gets a provisional profile, as NSPs do ([Port another game](https://github.com/seedds/nxnative/blob/main/docs/development.md#port-another-game)), which may not boot. You get a Mac app; iPhone and iPad are untested.

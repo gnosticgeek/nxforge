@@ -10,7 +10,7 @@ enum StageTab: String, CaseIterable { case home = "Home", discover = "Discover" 
 /// Discover's two collections: every game in the games folder, or only the ones built and playable on this Mac
 enum StageScope: String, CaseIterable { case owned = "Owned", built = "Built" }
 enum StageFilter: String, CaseIterable {
-    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", gba = "GBA", notBuilt = "Not built yet"
+    case all = "All", favorites = "Favourites", switch2 = "Switch 2", switch1 = "Switch", gba = "GBA", wii = "Wii", gamecube = "GameCube", notBuilt = "Not built yet"
     /// the filters that mean something in a collection: Built has no unbuilt games
     static func shown(_ scope: StageScope, _ s: Settings) -> [StageFilter] {
         allCases.filter { f in
@@ -23,6 +23,8 @@ enum StageFilter: String, CaseIterable {
         case .switch2: .switch2
         case .switch1: .switch1
         case .gba: .gba
+        case .wii: .wii
+        case .gamecube: .gamecube
         default: nil
         }
     }
@@ -155,6 +157,8 @@ extension AppModel {
         case .switch2: out = out.filter { $0.console == .switch2 }
         case .switch1: out = out.filter { $0.console == .switch1 }
         case .gba: out = out.filter { $0.console == .gba }
+        case .wii: out = out.filter { $0.console == .wii }
+        case .gamecube: out = out.filter { $0.console == .gamecube }
         case .notBuilt: out = out.filter { $0.app == nil }
         }
         let q = stageSearch.trimmingCharacters(in: .whitespaces)
@@ -345,8 +349,8 @@ extension AppModel {
         case .theatreTilt: flip(&settings.theatreTilt)
         case .theatreCollector: flip(&settings.theatreCollector)
         case .museumLighting: cycle(&settings.museumLighting)
-        case .showSwitch2, .showSwitch1, .showGBA:
-            let c: Console = row == .showSwitch2 ? .switch2 : row == .showSwitch1 ? .switch1 : .gba
+        case .showSwitch2, .showSwitch1, .showGBA, .showWii, .showGameCube:
+            let c: Console = row == .showSwitch2 ? .switch2 : row == .showSwitch1 ? .switch1 : row == .showGBA ? .gba : row == .showWii ? .wii : .gamecube
             var on = settings.shows(c)
             flip(&on)
             setSystemShown(c, on)
@@ -381,8 +385,10 @@ extension AppModel {
         CoverStore.shared.showHeroes = settings.downloadHeroes
         CoverStore.shared.fetchNintendoLife(games.map { ($0.coverKey, $0.titleID, $0.name, $0.console.rawValue) },
                                             heroes: settings.downloadHeroes, boxes: settings.downloadCovers)
-        if settings.downloadHeroes { CoverStore.shared.fetchHeroes(games.map { ($0.coverKey, $0.titleID, $0.name) }) }
-        if settings.downloadCovers || settings.squareCovers { CoverStore.shared.fetchSquares(games.map { ($0.coverKey, $0.titleID, $0.name) }) }
+        // the Nintendo store's pictures are of Switch games: a Wii or GameCube game of the same name would get the wrong art
+        let store = games.filter { !$0.console.dolphin }
+        if settings.downloadHeroes { CoverStore.shared.fetchHeroes(store.map { ($0.coverKey, $0.titleID, $0.name) }) }
+        if settings.downloadCovers || settings.squareCovers { CoverStore.shared.fetchSquares(store.map { ($0.coverKey, $0.titleID, $0.name) }) }
         guard settings.downloadCovers else { return }
         CoverStore.shared.fetchMissing(games.map { ($0.coverKey, $0.name) })
     }
@@ -1043,6 +1049,8 @@ struct StageLibrary: View {
         case .switch2: pool.filter { $0.console == .switch2 }.count
         case .switch1: pool.filter { $0.console == .switch1 }.count
         case .gba: pool.filter { $0.console == .gba }.count
+        case .wii: pool.filter { $0.console == .wii }.count
+        case .gamecube: pool.filter { $0.console == .gamecube }.count
         case .notBuilt: pool.filter { $0.app == nil }.count
         }
     }

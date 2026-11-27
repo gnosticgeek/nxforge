@@ -203,6 +203,7 @@ struct ConvertCard: View {
 
     /// "Nintendo Switch · Base game + update", or a Switch 2 game's container
     var kindLine: String {
+        if let s = model.source, s.kind == .wii { return "\(Wii.isGameCubeID(s.titleID) ? "Nintendo GameCube" : "Nintendo Wii") · disc image\(s.fileBytes > 0 ? String(format: " · %.2f GB", Double(s.fileBytes) / 1e9) : "") · played with Dolphin" }
         if let s = model.source, s.kind == .gba { return "Game Boy Advance · cartridge\(s.fileBytes > 0 ? String(format: " · %.0f MB", Double(s.fileBytes) / 1048576) : "")" }
         if let s = model.source { return "Nintendo Switch 2 · \(s.form)\(s.romfsBytes > 0 ? String(format: " · %.1f GB", Double(s.romfsBytes) / 1e9) : "")" }
         guard let v = model.validation, !v.files.isEmpty else { return "Nintendo Switch" }
@@ -455,7 +456,7 @@ struct ConvertCard: View {
                 Button { reveal(app) } label: { Label("Show in Finder", systemImage: "folder") }
             }
             .buttonStyle(.stage)
-            if b?.launched != true, !GBA.isApp(app) { FirstLaunchNote() }
+            if b?.launched != true, !GBA.isApp(app), !Wii.isApp(app) { FirstLaunchNote() }
         }
     }
 
@@ -530,6 +531,7 @@ struct ConvertCard: View {
         if let d = model.diskNeed { parts += ["\(Disk.gb(d.need)) needed", "\(Disk.gb(d.free)) available"] }
         let total = Estimates.plan(model.expected).map(\.seconds).reduce(0, +)
         if total > 0 { parts.append("about \(duration(total))\(model.buildCache != nil && !scratch ? " at most" : "")") }
+        else if model.source?.kind == .wii { parts.append(Wii.engineBuilt ? "about a minute" : "about 20 to 30 min the first time (Dolphin is built once)") }
         else { parts.append("about 20 to 60 min") }
         return parts.joined(separator: " · ")
     }

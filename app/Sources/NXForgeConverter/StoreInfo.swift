@@ -282,7 +282,8 @@ final class StoreInfoStore {
 
     /// Look a game up once (again after 30 days, or a week when it was not found), then fetch its screenshots
     func load(key: String, titleID: String?, name: String) {
-        guard !loading.contains(key) else { return }
+        // the store lists Switch games: a Wii or GameCube game of the same name would take a Switch game's facts
+        guard !loading.contains(key), !Wii.isTitleID(titleID) else { return }
         loading.insert(key)
         Task.detached(priority: .utility) {
             defer { Task { @MainActor in StoreInfoStore.shared.loading.remove(key) } }

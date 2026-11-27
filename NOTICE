@@ -42,3 +42,11 @@ not copied into this repository: gba/ENGINE names the commit, gba/patches
 holds NXForge's two changes to it, and scripts/gba_engine.py fetches and
 assembles it. NXForge's player and library around it (gba/host) are NXForge's
 own, under the same MIT License.
+
+Wii and GameCube games are played with Dolphin (https://github.com/dolphin-emu/dolphin,
+GPL-2.0-or-later, Copyright the Dolphin Emulator Project). Dolphin is not in this
+repository: scripts/wii_engine.py fetches the commit in wii/ENGINE. The files that are
+built into Dolphin or load it, wii/bridge/ and wii/host/mac/wii_front_mac.m, are
+GPL-2.0-or-later too (wii/bridge/nxdolphin.mm started from RetroReplay's
+DolphinBridge.mm, by the same author). A game app made with them carries Dolphin's
+licences in Contents/Resources/Dolphin licences.

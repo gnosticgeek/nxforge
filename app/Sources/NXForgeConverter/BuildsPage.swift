@@ -19,6 +19,8 @@ struct BuildsPage: View {
         case .switch2: b = b.filter { Console.of($0) == .switch2 }
         case .switch1: b = b.filter { Console.of($0) == .switch1 }
         case .gba: b = b.filter { Console.of($0) == .gba }
+        case .wii: b = b.filter { Console.of($0) == .wii }
+        case .gamecube: b = b.filter { Console.of($0) == .gamecube }
         }
         if olderOnly { b = b.filter { model.engine != nil && !model.isCurrent($0) && $0.kept != true } }
         switch model.buildSort {
@@ -312,7 +314,7 @@ struct BuildDetail: View {
                 .buttonStyle(.plain).fixedSize().help("Launch settings, playtime, notes and saves for this game (double-click or Return)")
             }
             .padding(.top, 26)
-            if build.launched != true, !GBA.isApp(build.app) { FirstLaunchNote().padding(.top, 12) }
+            if build.launched != true, !GBA.isApp(build.app), !Wii.isApp(build.app) { FirstLaunchNote().padding(.top, 12) }
             rule.padding(.top, 26)
             }
             // "Built today at 21:11 · 2 min · Engine 0.40.0"

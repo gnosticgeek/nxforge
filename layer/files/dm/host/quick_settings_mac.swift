@@ -16,7 +16,7 @@ import SwiftUI
 
 // The sidebar's own version, released as tags sidebar-vX.Y.Z with SIDEBAR_CHANGELOG.md (UPSTREAM.md, Versions); shown under the footer's legend.
 // scripts/release_check.py reads this line: bump it with a new SIDEBAR_CHANGELOG.md entry when the sidebar changes.
-let SIDEBAR_VERSION = "0.11.0"
+let SIDEBAR_VERSION = "0.12.0"
 
 private let env = ProcessInfo.processInfo.environment
 private let pfxCRT = Int(DM_PFX_CRT)   // front.h DM_PFX_*: the sidebar offers off (0) and CRT
@@ -36,8 +36,19 @@ private let gbaChoices: [[GbaChoice]] = [
     [GbaChoice(2, "2×"), GbaChoice(3, "3×"), GbaChoice(4, "4×"), GbaChoice(8, "8×"), GbaChoice(0, "As fast as it goes")],          // 3 Fast forward speed
     [GbaChoice(0, "Hold"), GbaChoice(1, "Press to switch")],                                            // 4 Fast forward key
     [GbaChoice(25, "25%"), GbaChoice(50, "50%"), GbaChoice(75, "75%")],                                          // 5 Slow motion
+    // Sidebar 0.12.0: a Wii or GameCube game's (wii/host/mac/wii_front_mac.m; Dolphin's own settings, applied at once)
+    [GbaChoice(1, "Native (480p)"), GbaChoice(2, "2× (720p)"), GbaChoice(3, "3× (1080p)"), GbaChoice(4, "4× (1440p)"), GbaChoice(6, "6× (4K)")],   // 6 Internal resolution
+    [GbaChoice(1, "Off"), GbaChoice(2, "2× MSAA"), GbaChoice(4, "4× MSAA")],                                     // 7 Anti-aliasing
+    [GbaChoice(0, "Auto"), GbaChoice(1, "16:9"), GbaChoice(2, "4:3"), GbaChoice(3, "Stretch to window")],         // 8 Aspect ratio
+    [GbaChoice(0, "Off"), GbaChoice(1, "On")],                                                          // 9 Widescreen hack
+    [GbaChoice(-1, "The game's own"), GbaChoice(2, "4×"), GbaChoice(4, "16×")],                                  // 10 Texture filtering
+    [GbaChoice(0, "Upright, with Nunchuk"), GbaChoice(1, "Sideways"), GbaChoice(2, "Upright, alone")],           // 11 Wii Remote
+    [GbaChoice(100, "Normal"), GbaChoice(150, "150%"), GbaChoice(200, "200%"), GbaChoice(0, "As fast as it goes")],      // 12 Speed limit
 ]
-private let gbaDefaults = [0, 0, 30, 4, 0, 50]
+private let gbaDefaults = [0, 0, 30, 4, 0, 50, 3, 1, 0, 0, -1, 0, 100]
+private let wiiGraphicsRows = 6...10
+private let valueTitles = ["Handheld colours", "Frame blending", "Rewind", "Fast forward", "Fast forward key", "Slow motion",
+                           "Internal resolution", "Anti-aliasing", "Aspect ratio", "Widescreen hack", "Texture filtering", "Wii Remote", "Speed limit"]
 private let gbaFilters = [0, Int(DM_PFX_CRT), Int(DM_PFX_LCD)]   // a GBA game's Screen filter: off, CRT, LCD grid
 private let gbaFilterNames = [0: "Off", Int(DM_PFX_CRT): "CRT", Int(DM_PFX_LCD): "LCD grid"]
 private let scaleFixed = env["DM_PRESENT_SCALE"] != nil
@@ -205,6 +216,9 @@ private let searchWords: [Nav: String] = [
     .resetGraphics: "defaults", .resetPerformance: "defaults", .resetControls: "defaults keys buttons remap", .defaultsSave: "every game", .undoSession: "undo revert",
     .gbaValue(0): "colour color correction lcd palette backlit sp", .gbaValue(1): "ghosting flicker interframe blend transparency", .gbaValue(2): "rewind back undo time",
     .gbaValue(3): "fast forward turbo speed", .gbaValue(4): "fast forward toggle hold", .gbaValue(5): "slow motion speed",
+    .gbaValue(6): "internal resolution scale sharp 1080p 4k efb", .gbaValue(7): "msaa jaggies edges smooth", .gbaValue(8): "16:9 4:3 stretch shape",
+    .gbaValue(9): "widescreen 16:9 hack wide", .gbaValue(10): "anisotropic texture sharp angle", .gbaValue(11): "wiimote remote nunchuk sideways controller",
+    .gbaValue(12): "speed fast unlimited turbo",
     .settingsShow: "text file", .cheatsAllOff: "cheats", .modsOpen: "mods folder", .cheatsOpen: "cheats folder", .playerFirst(1): "controller swap",
 ]
 struct Cheat: Identifiable {
@@ -502,14 +516,18 @@ final class QuickSettings: ObservableObject {
     @Published var fullscreen = false
     @Published var pauseOpen = true   // pause the game while the sidebar is up
     @Published var duckOpen = false   // quieter sound while it is up
-    // A Game Boy Advance game (gba/host/mac/gba_front_mac.m): its sound switches (Enhanced audio, bass lift, wider stereo), the handheld screen's colours, and whether each save state holds one
-    let gba = front_qs_gba() != 0
+    // A Game Boy Advance game (gba/host/mac/gba_front_mac.m): its sound switches (Enhanced audio, bass lift, wider stereo), the handheld screen's colours, and whether each save state holds one.
+    // Sidebar 0.12.0: front_qs_gba() is 2 in a Wii or GameCube game (wii/host/mac/wii_front_mac.m), which shares the save states and the settings with several values (6 to 12)
+    let gba = front_qs_gba() == 1
+    let wii = front_qs_gba() == 2
+    /// A game without the Switch player's present pass, mods or key remapping
+    var lite: Bool { gba || wii }
     @Published var gbaOpts = [true, false, false, false]
     @Published var gbaStates = [false, false, false]
     func setGbaOpt(_ i: Int, _ on: Bool) { gbaOpts[i] = on; front_qs_gba_opt_set(Int32(i), on ? 1 : 0) }
     func gbaState(_ n: Int, load: Bool) { _ = front_qs_gba_state(Int32(n), load ? 2 : 1); refreshGba() }
     func refreshGba() {
-        guard gba else { return }
+        guard lite else { return }
         gbaOpts = (0..<4).map { front_qs_gba_opt(Int32($0)) != 0 }; gbaStates = (1...3).map { front_qs_gba_state(Int32($0), 0) != 0 }
         gbaValues = gbaChoices.indices.map { Int(front_qs_gba_value(Int32($0))) }
     }
@@ -755,10 +773,12 @@ final class QuickSettings: ObservableObject {
     func setBorder(_ n: Int) { guard !borderFixed else { return }; border = n; mtl_present_border_set(Int32(n)); front_qs_live_changed(); UserDefaults.standard.set(n, forKey: optKey("border")) }
     func toggleFullscreen() { front_qs_fullscreen_toggle() }
     var graphicsChanged: Bool {
+        if wii { return wiiGraphicsRows.contains { gbaValues[$0] != gbaDefaults[$0] } }
         if gba { return pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || scale != 0 || border != borderDefault || gbaValues[0] != 0 || gbaValues[1] != 0 }
         return pixel != Int(DM_PIXEL_AUTO) || filter != 0 || abs(strength - 0.5) > 0.001 || scanline != 0 || !upscale || aa != 0 || aniso != anisoDefault || scale != 0 || border != 0 || edr || abs(edrStrength - 0.5) > 0.001
     }
     func resetGraphics() {   // each setting the environment does not fix, back to the Mac's default
+        if wii { wiiGraphicsRows.forEach { setGbaValue($0, gbaDefaults[$0]) }; return }
         if !filterFixed { setFilter(0, 0.5) }
         if env["DM_PRESENT_SCANLINE"] == nil { setScanline(0) }
         setUpscale(true); setScale(0); setBorder(borderDefault); setPixel(Int(DM_PIXEL_AUTO))
@@ -1023,6 +1043,7 @@ final class QuickSettings: ObservableObject {
         case .settingsShow: return "Settings file"
         case .defaultsSave: return "Make these my defaults"
         case .defaultsUse: return "Use my defaults"
+        case .gbaValue(let i): return valueTitles[safe: i]
         case .fullscreen: return "Full screen"
         case .scale: return "Picture size"
         case .border: return "Around the picture"
@@ -1172,7 +1193,8 @@ final class QuickSettings: ObservableObject {
     func pageRows(_ p: Int) -> [[Nav]] {
         switch p {
         case pGeneral:
-            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + (gba ? (2...5).map { [Nav.gbaValue($0)] } + (0..<3).map { [Nav.gbaOpt($0)] } : []) + [[Nav.backup, Nav.backupShow]] + (gba ? (1...3).map { [Nav.stateSave($0), Nav.stateLoad($0)] } : (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] }) + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+            return (sessionChanges.isEmpty ? [] : [[.undoSession]]) + [[Nav.pauseOpen], [Nav.duckOpen]] + (frontEndApp == nil ? [] : [[Nav.keepLibrary]]) + (battery == nil ? [] : [[Nav.batterySaver]]) + (gba ? (2...5).map { [Nav.gbaValue($0)] } + (0..<3).map { [Nav.gbaOpt($0)] } : []) + (wii ? [[Nav.gbaValue(11)], [Nav.gbaValue(12)]] : []) + [[Nav.backup, Nav.backupShow]] + (lite ? (1...3).map { [Nav.stateSave($0), Nav.stateLoad($0)] } : (1...SaveSlots.count).map { [Nav.slotSave($0), Nav.slotLoad($0)] }) + (settingsPath.isEmpty ? [] : [[.settingsShow, .settingsOpen]]) + [defaultsExist ? [.defaultsSave, .defaultsUse] : [.defaultsSave]]
+        case pGraphics where wii: return [[.fullscreen]] + wiiGraphicsRows.map { [Nav.gbaValue($0)] } + [[.resetGraphics]]
         case pGraphics: return (hasPresets ? [Preset.allCases.map { Nav.preset($0.rawValue) }] : []) + [[.fullscreen], [.scale], [.border], [.pixel], [.crt]] + (gba ? (filter != 0 ? [[.strength]] : []) + (crtOn ? [[.scanlines]] : []) + [[.gbaValue(0)], [.gbaValue(1)]]
                 : (crtOn ? [[.strength], [.scanlines]] : []) + [[.upscale], [.aa], [.aniso], [.edr]] + (edr ? [[.edrStrength]] : [])) + [[.resetGraphics]]
         case pPerformance: return [[.fps]] + (fps ? [[.corner], [.fpsMs]] : []) + [[.interp], [.frameTimes], [.frameTimesFolder], [.resetPerformance]]
@@ -1180,7 +1202,7 @@ final class QuickSettings: ObservableObject {
             let shots = captures.map { Nav.capture($0.path) }
             return [[Nav.replay]] + (replay ? [[Nav.replaySave]] : []) + (shots.isEmpty ? [] : [Array(shots.prefix(3))] + (shots.count > 3 ? [Array(shots.dropFirst(3))] : []) + [[.captureCopy, .captureOpen, .captureReveal]])
                 + [[.showFolder, .changeFolder]] + (customDir ? [[.defaultFolder]] : [])
-        case pMods where gba: return []
+        case pMods where lite: return []
         case pMods: return mods.map { [.mod($0), .modUp($0), .modDown($0)] } + [[.modsOpen, .modsRefresh]]
         case pCheats:
             var r: [[Nav]] = cheatsSafe ? [[.cheatsRestore]] : []
@@ -1189,7 +1211,7 @@ final class QuickSettings: ObservableObject {
                 r += g.rows.filter { !$0.label }.map { [.cheat($0.id)] }
             }
             return r + (cheatsOn > 0 ? [[.cheatsAllOff]] : []) + [[.cheatsOpen, .cheatsRefresh]]
-        case pControls where gba: return []
+        case pControls where lite: return []
         case pControls: return players.filter { $0.slot > 0 && $0.canMove && players.first?.canMove != false }.map { [Nav.playerFirst($0.slot)] } + actionNames.indices.map { [.key($0)] } + padDefaults.indices.map { [.pad($0)] } + [[.resetControls]]
         default: return []
         }
@@ -1350,7 +1372,7 @@ final class QuickSettings: ObservableObject {
         } else { r.append(Hint(caps: [Cap(symbol: nil, text: pad ? "▲▼" : "↑↓")], text: "Move")) }
         r += [Hint(caps: [back], text: "Close"), Hint(caps: turn, text: "Page")]
         // Hold to peek where the line has room (no selection, or one with a single hint): else the eye button's help says it. On the Graphics page with something to compare, Hold to compare
-        if r.count <= 3 && page == pGraphics && search.isEmpty && compareOffered && !gba { return r + [Hint(caps: [pad ? Cap(symbol: compareGlyph, text: "Y") : Cap(symbol: nil, text: "C")], text: "Hold to compare")] }
+        if r.count <= 3 && page == pGraphics && search.isEmpty && compareOffered && !lite { return r + [Hint(caps: [pad ? Cap(symbol: compareGlyph, text: "Y") : Cap(symbol: nil, text: "C")], text: "Hold to compare")] }
         return r.count <= 3 ? r + [Hint(caps: [pad ? Cap(symbol: peekGlyph, text: "X") : Cap(symbol: nil, text: "P")], text: "Hold to peek")] : r
     }
 }
@@ -1603,9 +1625,9 @@ struct QuickSettingsView: View {
         case pGraphics: graphics
         case pPerformance: performance
         case pCapture: capture
-        case pMods: if m.gba { Text("Game Boy Advance games have no mods folder. Cheats are on the next page.").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) } else { mods }
+        case pMods: if m.wii { Text("Wii and GameCube games have no mods folder yet.").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) } else if m.gba { Text("Game Boy Advance games have no mods folder. Cheats are on the next page.").font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) } else { mods }
         case pCheats: cheats
-        default: if m.gba { gbaControls } else { controls }
+        default: if m.wii { wiiControls } else if m.gba { gbaControls } else { controls }
         }
     }
     private func subhead(_ t: String) -> some View { Text(t.uppercased()).font(.caption.weight(.semibold)).kerning(0.8).foregroundStyle(.secondary).padding(.top, 2) }
@@ -1707,6 +1729,13 @@ struct QuickSettingsView: View {
                 gbaRow(1, "Bass lift", on: "A little more low end, for speakers larger than the handheld's", off: nil)
                 gbaRow(2, "Wider stereo", on: "The left and right channels a little further apart", off: nil)
             }
+            if m.wii {
+                subhead("Play").padding(.top, 6)
+                gbaPicker(11, "Wii Remote", m.gbaValues[11] == 1 ? "Held on its side, like a classic pad: the right-hand buttons are 1 and 2. For games that play that way"
+                          : m.gbaValues[11] == 2 ? "Held upright with nothing plugged in: point with the mouse or the right stick"
+                          : "Held upright with a Nunchuk: the left stick is the Nunchuk's, the right stick or the mouse points")
+                gbaPicker(12, "Speed limit", m.gbaValues[12] == 100 ? "The console's own speed" : m.gbaValues[12] == 0 ? "As fast as this Mac runs it; the sound may crackle" : "Faster than the console; the sound speeds up too")
+            }
             subhead("Save").padding(.top, 6)
             HStack(spacing: 10) {
                 Button { m.backup() } label: { Label(m.backupBusy ? "Backing up…" : "Back up save now", systemImage: "externaldrive.badge.timemachine").frame(maxWidth: .infinity) }
@@ -1718,7 +1747,7 @@ struct QuickSettingsView: View {
                 else if let d = m.lastBackup { Text("Last backup \(d.formatted(.relative(presentation: .named))). The NXForge Converter's Builds page restores it (Save snapshots).").foregroundStyle(.secondary) }
                 else { Text("A checked copy of this game's save, kept beside it; the NXForge Converter's Builds page restores it.").foregroundStyle(.secondary) }
             }.font(.caption).fixedSize(horizontal: false, vertical: true)
-            if m.gba {
+            if m.lite {
                 subhead("Save states").padding(.top, 6)
                 ForEach(1...3, id: \.self) { n in
                     HStack(spacing: 10) {
@@ -1730,13 +1759,14 @@ struct QuickSettingsView: View {
                         Button { m.gbaState(n, load: true) } label: { Label("Load", systemImage: "arrow.counterclockwise").frame(maxWidth: 110) }.modifier(GlassButton(prominent: false)).disabled(!m.gbaStates[n - 1]).nav(m, .stateLoad(n))
                     }.controlSize(.large)
                 }
-                Text("A save state is this exact moment, saved and loaded at once: ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too. States last until you quit the game; the game's own save is kept as always.")
+                Text(m.wii ? "A save state is this exact moment, saved and loaded at once: ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too. States are kept after you quit; a state from an older NXForge may not load. The game's own save is kept as always."
+                     : "A save state is this exact moment, saved and loaded at once: ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too. States last until you quit the game; the game's own save is kept as always.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
             subhead("Quick-save slots").padding(.top, 6)
             ForEach(1...SaveSlots.count, id: \.self) { n in slotRow(n) }
             }
-            if !m.gba { Text(SaveSlots.canLoad ? "A slot keeps the game's own save as it last saved it (not this exact moment). Loading restarts the game from that save; ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too."
+            if !m.lite { Text(SaveSlots.canLoad ? "A slot keeps the game's own save as it last saved it (not this exact moment). Loading restarts the game from that save; ⌘1–⌘3 save and ⌥⌘1–⌥⌘3 load from the game too."
                  : "A slot keeps the game's own save as it last saved it. Loading one needs the game opened from its app, which restarts it.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             if !m.settingsPath.isEmpty {
@@ -1786,7 +1816,26 @@ struct QuickSettingsView: View {
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
-    private var graphics: some View {
+    @ViewBuilder private var graphics: some View {
+        if m.wii { wiiGraphics } else { switchGraphics }
+    }
+    // A Wii or GameCube game's Graphics page: Dolphin draws the picture itself, so its own settings stand in for the present pass's
+    private var wiiGraphics: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            subhead("Display")
+            Row(title: "Full screen", changed: false) {
+                Toggle("Full screen", isOn: Binding(get: { m.fullscreen }, set: { _ in m.toggleFullscreen() })).toggleStyle(.switch).labelsHidden()
+            }.nav(m, .fullscreen)
+            gbaPicker(8, "Aspect ratio", m.gbaValues[8] == 0 ? "The shape the game asks for, 4:3 or 16:9" : m.gbaValues[8] == 3 ? "Fills the window; the picture may look wider or taller than the game draws it" : "This shape whatever the game asks for")
+            gbaPicker(9, "Widescreen hack", m.gbaValues[9] == 1 ? "Draws a 4:3 game wider, as 16:9. Some games show glitches at the edges" : "Off: the game's own field of view")
+            subhead("Image quality").padding(.top, 6)
+            gbaPicker(6, "Internal resolution", "The size the game is drawn at before it is fitted to the window. Higher is sharper and needs more of the GPU")
+            gbaPicker(7, "Anti-aliasing", m.gbaValues[7] == 1 ? "Off: the edges as the game draws them" : "Smoother edges on 3D shapes; more GPU at high internal resolutions")
+            gbaPicker(10, "Texture filtering", m.gbaValues[10] == -1 ? "Each texture as the game asks for it" : "Sharper textures on surfaces seen at an angle")
+            resetButton("Reset graphics", .resetGraphics, enabled: m.graphicsChanged) { m.resetGraphics() }
+        }
+    }
+    private var switchGraphics: some View {
         VStack(alignment: .leading, spacing: 12) {
             if m.paused { Label("The game is paused: it draws its picture again after each change, so changes here show at once. Settings tagged Next launch wait for Restart game.", systemImage: "pause.circle")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
@@ -2060,6 +2109,21 @@ struct QuickSettingsView: View {
                 Button { m.openModsFolder() } label: { Label("Open mods folder", systemImage: "folder").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .modsOpen)
                 Button { withAnimation(motion) { m.refresh() } } label: { Label("Refresh", systemImage: "arrow.clockwise").frame(maxWidth: .infinity) }.modifier(GlassButton(prominent: false)).nav(m, .modsRefresh)
             }.controlSize(.large)
+        }
+    }
+    private var wiiControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("A Wii or GameCube game's buttons. They are fixed for now; how the Wii Remote is held is on the General page.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            subhead("Keyboard").padding(.top, 4)
+            ForEach([("Stick and D-pad", "Arrow keys"), ("A (Remote A, held sideways 2)", "X"), ("B (Remote B, held sideways 1)", "Z"), ("X (Remote 1)", "S"), ("Y (Remote 2)", "A"), ("Start (Remote +)", "Return"),
+                     ("Remote −", "Tab"), ("Remote Home", "H"), ("L (Nunchuk Z)", "Q"), ("R (Nunchuk C)", "W"), ("Z (shakes the Remote)", "E"), ("Pointer", "The mouse; click for A and B"), ("This menu", "Esc")], id: \.0) { r in
+                Row(title: r.0) { Text(r.1).foregroundStyle(.secondary) }
+            }
+            subhead("Controller").padding(.top, 6)
+            ForEach([("A, B, X, Y", "The buttons with those letters"), ("Sticks", "Main stick and C-stick (the Nunchuk's stick, and the pointer)"), ("L / R", "The triggers, pressed part way or all the way"),
+                     ("Z", "Right shoulder"), ("Start", "Menu"), ("Remote −", "Left shoulder or Options"), ("Remote Home", "Left stick pressed"), ("Re-centre the pointer", "Right stick pressed"), ("This menu", "Home")], id: \.0) { r in
+                Row(title: r.0) { Text(r.1).foregroundStyle(.secondary) }
+            }
         }
     }
     private var gbaControls: some View {

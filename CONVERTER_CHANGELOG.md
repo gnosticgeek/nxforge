@@ -4,6 +4,14 @@ The NXForge Converter (the Mac app under `app/`) has its own version, separate f
 
 What counts as the converter: everything under `app/` (the SwiftUI app, its tests, `bundle.sh`, `install.sh` and `make_icon.swift`).
 
+## 0.30.0 (2026-11-27)
+
+Shipped in NXForge 0.63.0.
+
+- **Wii and GameCube games.** Settings › Library has a Wii and GameCube folder (folders named `wii` or `gamecube` beside the Switch games folder or the Game Boy Advance one are found by themselves, two levels deep). Disc images are listed under Wii and GameCube by the game ID and title in their header, a few hundred bytes of each file; an app already made in the game's own folder is found too. Convert runs `scripts/wii_build.py`; Ready to build says "about a minute", or 20 to 30 minutes the first time while Dolphin is built. Code: `Wii.swift`, `Source.swift`, `Converter.swift`, `LibraryModel.swift`.
+- **Wii and GameCube everywhere.** Two more consoles in the Systems switches, the Builds and Discover filters, the Game Files sections and Theatre's Museum wall (a white Wii and an indigo GameCube on their plinths). The game page shows a Disc card (where the disc is, the trial run) in place of cheats and mods.
+- **Box art by game ID.** A Wii or GameCube game's box, back and spine come from GameTDB's Wii art by the disc's own ID, and Nintendo Life is asked under its Wii, WiiWare or GameCube pages. The Nintendo store's wide art, square art and facts are not asked for these games, which would match Switch games of the same name.
+
 ## 0.29.3 (2026-11-23)
 
 Shipped in NXForge 0.60.2.
