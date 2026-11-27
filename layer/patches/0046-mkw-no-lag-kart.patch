@@ -461,7 +461,7 @@ index ccefdca5cd8749ab16f849c65b4cff95998f040c..c31a330e1850e1911aeb70ab6a07bb9e
  	clang $(CFLAGS) -fobjc-arc -o $@ t_pool_chunks.m $(MTL_T_SRC) $(FW)
  t_pool_retire: t_pool_retire.m $(MTL_T_DEP)
 diff --git a/dm/gfx/tests/t_copy_alias.m b/dm/gfx/tests/t_copy_alias.m
-index 595d4956d082425206d4cd78f7de03a4ca6e3d35..48b09e7bcdde5015227b1e604a254ad7f900bbd8 100644
+index 595d4956d082425206d4cd78f7de03a4ca6e3d35..579f068e6589714dc112a7ed67f29b1181b9dcc0 100644
 --- a/dm/gfx/tests/t_copy_alias.m
 +++ b/dm/gfx/tests/t_copy_alias.m
 @@ -40,6 +40,43 @@ static void separate_buffers(void) {
@@ -503,7 +503,7 @@ index 595d4956d082425206d4cd78f7de03a4ca6e3d35..48b09e7bcdde5015227b1e604a254ad7
 +    CHECK(!tex_storage_overlap(&ts, &t2) && !tex_storage_overlap(&ts, &t1), "with the sparse pool finalized its range is one like any other");
 +    h_nvnMemoryPoolFinalize((NVNmemoryPool *)&p1); h_nvnMemoryPoolFinalize((NVNmemoryPool *)&p2);
 +    ua_drain_drops();   // the finalized pools are on this stack: off the drop list before they go out of scope, as the replay would take them
-+    munmap(m1, len); munmap(m2, len);
++    munmap(m1, len); munmap(m2, len);   // NOLINT(clang-analyzer-core.StackAddressEscape): ua_drain_drops above emptied the drop list (count 0); the analyzer still sees the stale slot
 +}
  static void sparse_copies(void) {
      const size_t n = 256, len = 4 * getpagesize();
